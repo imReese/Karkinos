@@ -1,0 +1,10 @@
+.venv/
+.git/
+.gitnexus/
+.pytest_cache/
+__pycache__/
+*.pyc
+web/node_modules/
+data/store/
+.env
+.claude/

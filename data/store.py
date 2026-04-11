@@ -91,6 +91,26 @@ class DataStore:
             df["timestamp"] = pd.to_datetime(df["timestamp"])
         return df
 
+    def append_bars(
+        self,
+        symbol: Symbol,
+        frequency: BarFrequency,
+        new_df: pd.DataFrame,
+    ) -> None:
+        """追加 K 线数据到已有 Parquet，按 timestamp 去重排序。"""
+        existing = self.load_bars(symbol, frequency)
+
+        if existing is None or existing.empty:
+            self.save_bars(symbol, frequency, new_df)
+            return
+
+        combined = pd.concat([existing, new_df], ignore_index=True)
+        if "timestamp" in combined.columns:
+            combined = combined.drop_duplicates(subset=["timestamp"], keep="last")
+            combined = combined.sort_values("timestamp").reset_index(drop=True)
+
+        self.save_bars(symbol, frequency, combined)
+
     def get_meta(self, symbol: Symbol, frequency: BarFrequency) -> dict | None:
         """获取行情元数据。"""
         with sqlite3.connect(self._meta_path) as conn:

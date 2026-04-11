@@ -1,0 +1,23 @@
+services:
+  myquant:
+    build: .
+    container_name: myquant
+    ports:
+      - "8000:8000"
+    volumes:
+      - myquant-data:/app/data/store      # Parquet 缓存 + SQLite
+      - ./config.json:/app/config.json:ro  # 配置文件（只读挂载）
+    environment:
+      - TZ=Asia/Shanghai                   # 时区设为中国
+      - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}   # 可选：从 .env 读取
+      - MYQUANT_HOST=${MYQUANT_HOST:-}     # 可选：覆盖监听地址
+      - MYQUANT_PORT=${MYQUANT_PORT:-}     # 可选：覆盖 config.json 中的端口
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/settings"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  myquant-data:

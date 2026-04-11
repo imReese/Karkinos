@@ -1,10 +1,22 @@
 {
-    "initial_cash": "1000000",
-    "start_date": "2024-01-02",
-    "end_date": "2024-12-31",
-    "symbols": ["600519"],
+    "initial_cash": 100000,
+    "start_date": "2025-01-02",
+    "end_date": "",
+    "assets": [
+        {"symbol": "600519", "asset_class": "stock"},
+        {"symbol": "510300", "asset_class": "etf"},
+        {"symbol": "Au99.99", "asset_class": "gold"},
+        {"symbol": "sh010107", "asset_class": "bond"}
+    ],
     "strategy": "dual_ma",
     "short_period": 5,
     "long_period": 20,
-    "commission_rate": "0.0003"
+    "data_source": "akshare",
+    "notification": {
+        "type": "console",
+        "telegram_bot_token": "",
+        "telegram_chat_id": "",
+        "wechat_sendkey": ""
+    },
+    "live_poll_interval": 60
 }

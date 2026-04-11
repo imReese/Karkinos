@@ -8,8 +8,10 @@ from core.event_bus import EventBus
 from core.events import MarketEvent
 from core.types import Symbol
 from strategy.base import Strategy
+from strategy.registry import register_strategy
 
 
+@register_strategy("dual_ma")
 class DualMAStrategy(Strategy):
     """双均线交叉策略。
 
