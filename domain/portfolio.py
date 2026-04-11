@@ -28,7 +28,7 @@ class Portfolio:
     def __init__(
         self,
         event_bus: EventBus,
-        initial_cash: Decimal = Decimal("1000000"),
+        initial_cash: Decimal = Decimal("100000"),
     ) -> None:
         self.event_bus = event_bus
         self.cash = initial_cash
@@ -132,6 +132,20 @@ class Portfolio:
         """每日结算：解冻 T+1。"""
         for pos in self.positions.values():
             pos.advance_settlement_day()
+
+    def deposit(self, amount: Decimal) -> None:
+        """入金（Live 模式专用）。"""
+        if amount <= ZERO:
+            raise ValueError("入金金额必须为正数")
+        self.cash += amount
+
+    def withdraw(self, amount: Decimal) -> None:
+        """出金（Live 模式专用）。"""
+        if amount <= ZERO:
+            raise ValueError("出金金额必须为正数")
+        if amount > self.cash:
+            raise ValueError("可用资金不足")
+        self.cash -= amount
 
     def mark_to_market(self, prices: dict[Symbol, Decimal]) -> None:
         """盯市。"""

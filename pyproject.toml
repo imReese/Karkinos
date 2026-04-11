@@ -20,6 +20,28 @@ dev = [
     "isort>=6.0",
     "black>=25.1",
 ]
+server = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "aiosqlite>=0.20",
+    "websockets>=12.0",
+    "pydantic>=2.0",
+]
+
+[tool.setuptools.packages.find]
+include = [
+    "core", "core.*",
+    "domain", "domain.*",
+    "data", "data.*",
+    "strategy", "strategy.*",
+    "execution", "execution.*",
+    "risk", "risk.*",
+    "backtest", "backtest.*",
+    "analytics", "analytics.*",
+    "notification", "notification.*",
+    "utils", "utils.*",
+    "server", "server.*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -39,7 +61,7 @@ dev-dependencies = [
 [tool.isort]
 profile = "black"
 line_length = 88
-known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "utils"]
+known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "utils", "server"]
 
 # === black 配置 ===
 [tool.black]

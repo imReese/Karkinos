@@ -16,6 +16,7 @@ from core.types import (
     STAMP_TAX_RATE,
     TRANSFER_FEE_RATE,
     ZERO,
+    CommissionType,
     OrderSide,
 )
 
@@ -98,3 +99,38 @@ class BondExchangeCommission(CommissionCalculator):
     def calculate(self, side: OrderSide, price: Decimal, quantity: Decimal) -> Decimal:
         amount = price * quantity
         return max(amount * BOND_COMMISSION_RATE, MIN_BOND_COMMISSION)
+
+
+class MultiAssetCommission(CommissionCalculator):
+    """多资产佣金调度器。
+
+    根据 CommissionType 路由到对应的佣金模型。
+    """
+
+    def __init__(self) -> None:
+        self._calculators: dict[CommissionType, CommissionCalculator] = {
+            CommissionType.STOCK_A: StockACommission(),
+            CommissionType.FUND_ETF: ETFCommission(),
+            CommissionType.GOLD_SPOT: GoldSpotCommission(),
+            CommissionType.BOND_EXCHANGE: BondExchangeCommission(),
+        }
+        self._default = StockACommission()
+
+    def set_commission(
+        self, commission_type: CommissionType, calc: CommissionCalculator
+    ) -> None:
+        self._calculators[commission_type] = calc
+
+    def calculate(self, side: OrderSide, price: Decimal, quantity: Decimal) -> Decimal:
+        # 默认使用 A 股佣金
+        return self._default.calculate(side, price, quantity)
+
+    def calculate_for(
+        self,
+        commission_type: CommissionType,
+        side: OrderSide,
+        price: Decimal,
+        quantity: Decimal,
+    ) -> Decimal:
+        calc = self._calculators.get(commission_type, self._default)
+        return calc.calculate(side, price, quantity)

@@ -15,7 +15,11 @@ from core.types import ZERO, Symbol
 from data.handler import DataHandler
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
-from execution.commission import CommissionCalculator, StockACommission
+from execution.commission import (
+    CommissionCalculator,
+    MultiAssetCommission,
+    StockACommission,
+)
 from execution.simulator import SimulatedExecution
 from risk.manager import RiskManager
 from strategy.base import Strategy
@@ -38,7 +42,7 @@ class BacktestEngine:
         strategy: Strategy,
         instruments: dict[Symbol, Instrument],
         data_handlers: dict[Symbol, DataHandler],
-        initial_cash: Decimal = Decimal("1000000"),
+        initial_cash: Decimal = Decimal("100000"),
         commission_calc: CommissionCalculator | None = None,
     ) -> None:
         self.event_bus = EventBus()
@@ -56,9 +60,13 @@ class BacktestEngine:
         for inst in instruments.values():
             self.portfolio.add_instrument(inst)
 
-        self.execution = SimulatedExecution(
-            commission_calc=commission_calc or StockACommission()
-        )
+        # 多资产佣金调度
+        if commission_calc is None:
+            self._multi_commission = MultiAssetCommission()
+            self.execution = SimulatedExecution(commission_calc=self._multi_commission)
+        else:
+            self._multi_commission = None
+            self.execution = SimulatedExecution(commission_calc=commission_calc)
 
         self.risk_manager = RiskManager(self.event_bus)
 
@@ -119,6 +127,32 @@ class BacktestEngine:
 
     def _on_order_event(self, event: OrderEvent) -> None:
         """执行委托单。"""
+        if self._multi_commission is not None:
+            inst = self.instruments.get(event.symbol)
+            if inst is not None:
+                commission = self._multi_commission.calculate_for(
+                    inst.commission_type,
+                    event.side,
+                    event.price or ZERO,
+                    event.quantity,
+                )
+                fill = self.execution.execute(event)
+                if fill is not None:
+                    # 覆盖佣金为按资产类型计算的值
+                    fill = FillEvent(
+                        timestamp=fill.timestamp,
+                        fill_id=fill.fill_id,
+                        order_id=fill.order_id,
+                        symbol=fill.symbol,
+                        side=fill.side,
+                        fill_price=fill.fill_price,
+                        fill_quantity=fill.fill_quantity,
+                        commission=commission,
+                        slippage=fill.slippage,
+                    )
+                    self.event_bus.publish(fill)
+                    return
+
         fill = self.execution.execute(event)
         if fill is not None:
             self.event_bus.publish(fill)

@@ -1,0 +1,103 @@
+"""MyQuant 实时信号监控入口。
+
+盘中轮询行情，策略产生信号后通过微信/Telegram 推送买卖建议。
+仅做建议，不自动下单。
+"""
+
+from __future__ import annotations
+
+import os
+import time
+
+from config import BacktestConfig
+from core.event_bus import EventBus
+from core.events import SignalEvent
+from core.types import AssetClass, Symbol
+from data.live import LiveDataFeed
+from data.providers.akshare_source import AKShareSource
+from notification.notifier import build_notifier, format_signal_message
+from strategy.examples.dual_ma import DualMAStrategy
+
+# 配置中的 asset_class 字符串 → AssetClass 枚举
+_ASSET_CLASS_MAP = {
+    "stock": AssetClass.STOCK,
+    "etf": AssetClass.FUND,
+    "fund": AssetClass.FUND,
+    "gold": AssetClass.GOLD,
+    "bond": AssetClass.BOND,
+}
+
+
+def main() -> None:
+    """实时监控主循环。"""
+    config = BacktestConfig()
+    event_bus = EventBus()
+    source = AKShareSource()
+    feed = LiveDataFeed(source, event_bus)
+
+    # 构建关注列表
+    watchlist: list[tuple[Symbol, AssetClass]] = []
+    for asset_cfg in config.assets:
+        sym = Symbol(asset_cfg["symbol"])
+        ac = _ASSET_CLASS_MAP[asset_cfg["asset_class"]]
+        watchlist.append((sym, ac))
+
+    if not watchlist:
+        print("未配置任何标的，退出。")
+        return
+
+    # 配置通知
+    notifier = build_notifier(config.notification)
+
+    # 创建策略
+    strategy = DualMAStrategy(
+        event_bus,
+        short_period=config.short_period,
+        long_period=config.long_period,
+    )
+    strategy.on_init([sym for sym, _ in watchlist])
+
+    # 订阅 SignalEvent → 推送通知
+    def on_signal(event: SignalEvent) -> None:
+        direction = "买入" if event.target_weight > 0 else "卖出"
+        # 查找 asset_class
+        ac_str = "stock"
+        for sym, ac in watchlist:
+            if sym == event.symbol:
+                ac_str = ac.value
+                break
+
+        message = format_signal_message(
+            symbol=str(event.symbol),
+            direction=direction,
+            target_weight=float(event.target_weight),
+            price=float(event.price) if event.price else None,
+            strategy_id=event.strategy_id,
+            asset_class=ac_str,
+            timestamp=str(event.timestamp),
+        )
+        notifier.send(title=f"MyQuant 信号: {event.symbol}", message=message)
+
+    event_bus.subscribe(SignalEvent, on_signal)
+
+    # 主循环
+    print(f"MyQuant 实时监控启动，关注 {len(watchlist)} 个标的")
+    print(f"轮询间隔: {config.live_poll_interval}s")
+    print("按 Ctrl+C 退出\n")
+
+    try:
+        while True:
+            events = feed.poll_all(watchlist)
+            if events:
+                # 推送行情到策略
+                for market_event in events:
+                    strategy.on_data(market_event)
+                # 处理产生的信号
+                event_bus.drain()
+            time.sleep(config.live_poll_interval)
+    except KeyboardInterrupt:
+        print("\n实时监控已停止。")
+
+
+if __name__ == "__main__":
+    main()

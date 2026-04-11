@@ -1,20 +1,98 @@
-"""AKShare 数据适配器。"""
+"""AKShare 多资产数据适配器。"""
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import pandas as pd
 
-from core.types import BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, Symbol
 from data.source import DataSource
+
+logger = logging.getLogger(__name__)
+
+# 资产类别 → (日线函数名, 列名映射, 是否有成交量)
+_HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
+    AssetClass.STOCK: (
+        "stock_zh_a_hist",
+        {
+            "日期": "timestamp",
+            "开盘": "open",
+            "最高": "high",
+            "最低": "low",
+            "收盘": "close",
+            "成交量": "volume",
+            "成交额": "amount",
+        },
+        True,
+    ),
+    AssetClass.FUND: (
+        "fund_etf_hist_em",
+        {
+            "日期": "timestamp",
+            "开盘": "open",
+            "最高": "high",
+            "最低": "low",
+            "收盘": "close",
+            "成交量": "volume",
+            "成交额": "amount",
+        },
+        True,
+    ),
+    AssetClass.GOLD: (
+        "spot_hist_sge",
+        {
+            "date": "timestamp",
+            "open": "open",
+            "close": "close",
+            "high": "high",
+            "low": "low",
+        },
+        False,
+    ),
+    AssetClass.BOND: (
+        "bond_zh_hs_daily",
+        {
+            "date": "timestamp",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+        },
+        False,
+    ),
+}
 
 
 class AKShareSource(DataSource):
-    """AKShare 数据源适配器。
+    """AKShare 多资产数据源适配器。
 
-    将 AKShare 返回的 DataFrame 列名映射到统一格式。
+    根据 asset_class 调用不同的 AKShare 函数，统一列名映射。
     """
+
+    _MAX_RETRIES = 3
+    _RETRY_DELAY = 2  # seconds
+
+    def _call_with_retry(self, func, **kwargs):
+        """带重试的 AKShare API 调用。"""
+        import time
+
+        last_error = None
+        for attempt in range(self._MAX_RETRIES):
+            try:
+                return func(**kwargs)
+            except Exception as e:
+                last_error = e
+                if attempt < self._MAX_RETRIES - 1:
+                    logger.warning(
+                        "AKShare 调用失败 (第%d次), %ds 后重试: %s",
+                        attempt + 1,
+                        self._RETRY_DELAY,
+                        e,
+                    )
+                    time.sleep(self._RETRY_DELAY)
+        raise last_error
 
     def fetch_bars(
         self,
@@ -22,22 +100,93 @@ class AKShareSource(DataSource):
         start: datetime,
         end: datetime,
         frequency: BarFrequency = BarFrequency.DAILY,
+        asset_class: AssetClass = AssetClass.STOCK,
     ) -> pd.DataFrame:
         import akshare as ak
 
-        if frequency == BarFrequency.DAILY:
-            df = ak.stock_zh_a_hist(
+        # 分钟线 — 仅支持 A股/ETF
+        if frequency in (BarFrequency.MIN_1, BarFrequency.MIN_5):
+            return self._fetch_minute_bars(
+                ak, symbol, start, end, frequency, asset_class
+            )
+
+        if frequency != BarFrequency.DAILY:
+            raise NotImplementedError(
+                f"AKShare does not support frequency: {frequency}"
+            )
+
+        config = _HIST_CONFIG.get(asset_class)
+        if config is None:
+            raise NotImplementedError(
+                f"AKShare does not support asset class: {asset_class}"
+            )
+
+        func_name, col_map, has_volume = config
+        func = getattr(ak, func_name)
+
+        # A股/ETF 支持日期范围参数；黄金/债券需全量拉取后过滤
+        if asset_class in (AssetClass.STOCK, AssetClass.FUND):
+            df = self._call_with_retry(
+                func,
                 symbol=str(symbol),
+                period="daily",
                 start_date=start.strftime("%Y%m%d"),
                 end_date=end.strftime("%Y%m%d"),
                 adjust="qfq",
             )
         else:
-            raise NotImplementedError(
-                f"AKShare does not support frequency: {frequency}"
-            )
+            # 黄金/债券：全量拉取
+            df = self._call_with_retry(func, symbol=str(symbol))
 
-        return self._normalize_bars(df)
+        df = self._normalize_bars(df, col_map, has_volume)
+
+        # 按日期范围过滤
+        if "timestamp" in df.columns and len(df) > 0:
+            df = df[
+                (df["timestamp"] >= pd.Timestamp(start))
+                & (df["timestamp"] <= pd.Timestamp(end))
+            ]
+
+        return df.reset_index(drop=True)
+
+    def _fetch_minute_bars(
+        self,
+        ak,
+        symbol: Symbol,
+        start: datetime,
+        end: datetime,
+        frequency: BarFrequency,
+        asset_class: AssetClass,
+    ) -> pd.DataFrame:
+        """获取分钟线数据（仅 A股/ETF）。"""
+        if asset_class == AssetClass.STOCK:
+            func = ak.stock_zh_a_hist_min_em
+        elif asset_class == AssetClass.FUND:
+            func = ak.fund_etf_hist_min_em
+        else:
+            raise NotImplementedError(f"Minute bars not supported for {asset_class}")
+
+        period = "1" if frequency == BarFrequency.MIN_1 else "5"
+        df = self._call_with_retry(func, symbol=str(symbol), period=period)
+
+        col_map = {
+            "时间": "timestamp",
+            "开盘": "open",
+            "最高": "high",
+            "最低": "low",
+            "收盘": "close",
+            "成交量": "volume",
+            "成交额": "amount",
+        }
+        df = self._normalize_bars(df, col_map, has_volume=True)
+
+        if "timestamp" in df.columns and len(df) > 0:
+            df = df[
+                (df["timestamp"] >= pd.Timestamp(start))
+                & (df["timestamp"] <= pd.Timestamp(end))
+            ]
+
+        return df.reset_index(drop=True)
 
     def fetch_ticks(
         self,
@@ -53,19 +202,93 @@ class AKShareSource(DataSource):
         df = ak.stock_zh_a_spot_em()
         return [Symbol(str(code)) for code in df["代码"].tolist()]
 
+    def fetch_latest(
+        self,
+        symbol: Symbol,
+        asset_class: AssetClass = AssetClass.STOCK,
+    ) -> dict | None:
+        """获取最新行情快照。"""
+        import akshare as ak
+
+        try:
+            if asset_class == AssetClass.STOCK:
+                df = self._call_with_retry(ak.stock_zh_a_spot_em)
+                row = df[df["代码"] == str(symbol)]
+                if row.empty:
+                    return None
+                row = row.iloc[0]
+                return {
+                    "price": float(row["最新价"]),
+                    "volume": float(row["成交额"]) if "成交额" in row else None,
+                    "timestamp": str(row.get("时间", "")),
+                }
+
+            elif asset_class == AssetClass.FUND:
+                df = self._call_with_retry(ak.fund_etf_spot_em)
+                row = df[df["代码"] == str(symbol)]
+                if row.empty:
+                    return None
+                row = row.iloc[0]
+                return {
+                    "price": float(row["最新价"]),
+                    "volume": float(row["成交额"]) if "成交额" in row else None,
+                    "timestamp": str(row.get("时间", "")),
+                }
+
+            elif asset_class == AssetClass.GOLD:
+                df = self._call_with_retry(ak.spot_quotations_sge, symbol=str(symbol))
+                if df.empty:
+                    return None
+                row = df.iloc[0]
+                return {
+                    "price": (
+                        float(row["最新价"]) if "最新价" in row else float(row.iloc[0])
+                    ),
+                    "volume": None,
+                    "timestamp": str(row.get("时间", "")),
+                }
+
+            elif asset_class == AssetClass.BOND:
+                df = self._call_with_retry(ak.bond_zh_hs_spot)
+                row = df[df["代码"] == str(symbol)]
+                if row.empty:
+                    return None
+                row = row.iloc[0]
+                return {
+                    "price": (
+                        float(row["最新价"]) if "最新价" in row else float(row.iloc[0])
+                    ),
+                    "volume": None,
+                    "timestamp": str(row.get("时间", "")),
+                }
+
+        except Exception:
+            logger.exception("fetch_latest failed for %s (%s)", symbol, asset_class)
+            return None
+
+        return None
+
     @staticmethod
-    def _normalize_bars(df: pd.DataFrame) -> pd.DataFrame:
+    def _normalize_bars(
+        df: pd.DataFrame,
+        col_map: dict,
+        has_volume: bool = True,
+    ) -> pd.DataFrame:
         """将 AKShare 返回的列名映射到统一格式。"""
-        column_map = {
-            "日期": "timestamp",
-            "开盘": "open",
-            "最高": "high",
-            "最低": "low",
-            "收盘": "close",
-            "成交量": "volume",
-            "成交额": "amount",
-        }
-        df = df.rename(columns=column_map)
+        # 只映射存在的列
+        existing = {k: v for k, v in col_map.items() if k in df.columns}
+        df = df.rename(columns=existing)
+
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+        if not has_volume:
+            df["volume"] = 0
+            df["amount"] = 0
+
+        # 确保关键列存在且为 float
+        for col in ("open", "high", "low", "close", "volume"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
         return df

@@ -6,7 +6,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from core.types import BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, Symbol
 from data.source import DataSource
 
 
@@ -32,8 +32,14 @@ class TushareSource(DataSource):
         start: datetime,
         end: datetime,
         frequency: BarFrequency = BarFrequency.DAILY,
+        asset_class: AssetClass = AssetClass.STOCK,
     ) -> pd.DataFrame:
         pro = self._get_pro()
+
+        if asset_class != AssetClass.STOCK:
+            raise NotImplementedError(
+                f"Tushare adapter only supports STOCK, got: {asset_class}"
+            )
 
         if frequency == BarFrequency.DAILY:
             df = pro.daily(
