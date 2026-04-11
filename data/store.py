@@ -27,7 +27,8 @@ class DataStore:
 
     def _init_meta_db(self) -> None:
         with sqlite3.connect(self._meta_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS bar_meta (
                     symbol TEXT NOT NULL,
                     frequency TEXT NOT NULL,
@@ -37,7 +38,8 @@ class DataStore:
                     row_count INTEGER DEFAULT 0,
                     PRIMARY KEY (symbol, frequency)
                 )
-            """)
+            """
+            )
 
     # ---------- 行情数据 ----------
 
