@@ -1,0 +1,29 @@
+[project]
+name = "myquant"
+version = "0.1.0"
+description = "个人量化交易辅助系统 - 面向中国市场"
+requires-python = ">=3.12"
+dependencies = [
+    "akshare>=1.14",
+    "tushare>=1.4",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "pyarrow>=15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+]
