@@ -32,9 +32,11 @@ class Instrument:
 # ---------- 工厂函数 ----------
 
 
-def make_stock(symbol: str, name: str, *, limit_pct: Decimal | None = None) -> Instrument:
+def make_stock(
+    symbol: str, name: str, *, limit_pct: Decimal | None = None
+) -> Instrument:
     """创建 A 股标的。"""
-    from core.types import MAIN_BOARD_LIMIT_PCT, GEM_LIMIT_PCT
+    from core.types import GEM_LIMIT_PCT, MAIN_BOARD_LIMIT_PCT
 
     if limit_pct is None:
         # 简单判断：6/0 开头为主板，3/68 开头为创业板/科创板

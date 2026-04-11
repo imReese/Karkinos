@@ -45,9 +45,7 @@ class EventBus:
     ) -> None:
         """取消订阅。"""
         entries = self._handlers.get(event_type, [])
-        self._handlers[event_type] = [
-            (p, h) for p, h in entries if h != handler
-        ]
+        self._handlers[event_type] = [(p, h) for p, h in entries if h != handler]
 
     # ---------- 发布 ----------
 

@@ -37,12 +37,16 @@ class TushareSource(DataSource):
 
         if frequency == BarFrequency.DAILY:
             df = pro.daily(
-                ts_code=f"{symbol}.SH" if str(symbol).startswith("6") else f"{symbol}.SZ",
+                ts_code=(
+                    f"{symbol}.SH" if str(symbol).startswith("6") else f"{symbol}.SZ"
+                ),
                 start_date=start.strftime("%Y%m%d"),
                 end_date=end.strftime("%Y%m%d"),
             )
         else:
-            raise NotImplementedError(f"Tushare does not support frequency: {frequency}")
+            raise NotImplementedError(
+                f"Tushare does not support frequency: {frequency}"
+            )
 
         return self._normalize_bars(df)
 

@@ -32,4 +32,6 @@ class Signal:
         self.strength = strength
 
     def __repr__(self) -> str:
-        return f"Signal({self.signal_type.value}, {self.symbol}, strength={self.strength})"
+        return (
+            f"Signal({self.signal_type.value}, {self.symbol}, strength={self.strength})"
+        )

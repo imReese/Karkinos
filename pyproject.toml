@@ -16,6 +16,9 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
+    "pre-commit>=4.0",
+    "isort>=6.0",
+    "black>=25.1",
 ]
 
 [tool.pytest.ini_options]
@@ -26,4 +29,19 @@ pythonpath = ["."]
 dev-dependencies = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
+    "pre-commit>=4.0",
+    "isort>=6.0",
+    "black>=25.1",
 ]
+
+# === isort 配置 ===
+# 与 black 兼容的关键设置
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "utils"]
+
+# === black 配置 ===
+[tool.black]
+line-length = 88
+target-version = ["py312"]

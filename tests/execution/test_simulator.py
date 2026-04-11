@@ -9,9 +9,9 @@ import pytest
 
 from core.events import OrderEvent
 from core.types import OrderSide, OrderType, Symbol
+from execution.commission import ETFCommission, StockACommission
 from execution.simulator import SimulatedExecution
 from execution.slippage import FixedSlippage, PercentSlippage
-from execution.commission import StockACommission, ETFCommission
 
 
 class TestSimulatedExecution:

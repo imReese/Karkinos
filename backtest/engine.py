@@ -7,18 +7,18 @@ from decimal import Decimal
 
 import pandas as pd
 
+from backtest.result import BacktestResult
 from core.clock import SimulatedClock
 from core.event_bus import EventBus
 from core.events import FillEvent, MarketEvent, OrderEvent, SignalEvent
-from core.types import Symbol, ZERO
+from core.types import ZERO, Symbol
 from data.handler import DataHandler
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from execution.commission import CommissionCalculator, StockACommission
 from execution.simulator import SimulatedExecution
-from backtest.result import BacktestResult
-from strategy.base import Strategy
 from risk.manager import RiskManager
+from strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
 

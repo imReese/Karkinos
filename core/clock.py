@@ -29,9 +29,7 @@ class SimulatedClock(Clock):
     def advance_to(self, dt: datetime) -> None:
         """前进到指定时间（不允许倒退）。"""
         if self._current_time is not None and dt < self._current_time:
-            raise ValueError(
-                f"Cannot advance backwards: {dt} < {self._current_time}"
-            )
+            raise ValueError(f"Cannot advance backwards: {dt} < {self._current_time}")
         self._current_time = dt
 
 

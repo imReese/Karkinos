@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import functools
-import time
 import logging
+import time
 from typing import Callable, TypeVar
 
 logger = logging.getLogger(__name__)

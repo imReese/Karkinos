@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from core.types import Money, Symbol, ZERO
+from core.types import ZERO, Money, Symbol
 
 
 class Position:

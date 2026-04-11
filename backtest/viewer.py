@@ -24,7 +24,12 @@ class BacktestViewer:
 
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(timestamps, equities, linewidth=1.5, label="Equity")
-        ax.axhline(y=float(result.initial_cash), color="gray", linestyle="--", label="Initial Cash")
+        ax.axhline(
+            y=float(result.initial_cash),
+            color="gray",
+            linestyle="--",
+            label="Initial Cash",
+        )
         ax.set_title("Backtest Equity Curve")
         ax.set_xlabel("Date")
         ax.set_ylabel("Equity (CNY)")

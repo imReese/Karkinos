@@ -18,7 +18,9 @@ class SharpeRatio:
     """Sharpe 比率。"""
 
     @staticmethod
-    def calculate(returns: list[Decimal] | list[float], risk_free_rate: float = 0.03) -> float:
+    def calculate(
+        returns: list[Decimal] | list[float], risk_free_rate: float = 0.03
+    ) -> float:
         """计算 Sharpe 比率。
 
         Args:
@@ -46,7 +48,9 @@ class SortinoRatio:
     """Sortino 比率。"""
 
     @staticmethod
-    def calculate(returns: list[Decimal] | list[float], risk_free_rate: float = 0.03) -> float:
+    def calculate(
+        returns: list[Decimal] | list[float], risk_free_rate: float = 0.03
+    ) -> float:
         """计算 Sortino 比率。
 
         只考虑下行波动率。
@@ -62,7 +66,7 @@ class SortinoRatio:
         if len(downside) == 0:
             return float("inf") if np.mean(excess) > 0 else 0.0
 
-        downside_std = np.sqrt(np.mean(downside ** 2))
+        downside_std = np.sqrt(np.mean(downside**2))
         if downside_std == 0:
             return 0.0
 
@@ -102,7 +106,9 @@ class AnnualizedReturn:
     """年化收益率。"""
 
     @staticmethod
-    def calculate(equity_curve: list[Decimal] | list[float], trading_days: int = 252) -> float:
+    def calculate(
+        equity_curve: list[Decimal] | list[float], trading_days: int = 252
+    ) -> float:
         """计算年化收益率。
 
         Args:

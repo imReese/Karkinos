@@ -48,7 +48,12 @@ class TestSortinoRatio:
         assert sortino > 0 or sortino == float("inf")
 
     def test_mixed_returns(self):
-        returns = [Decimal("0.02"), Decimal("-0.01"), Decimal("0.01"), Decimal("-0.005")]
+        returns = [
+            Decimal("0.02"),
+            Decimal("-0.01"),
+            Decimal("0.01"),
+            Decimal("-0.005"),
+        ]
         sortino = SortinoRatio.calculate(returns)
         # 只要能计算即可
         assert isinstance(sortino, float)
@@ -80,7 +85,12 @@ class TestWinRate:
         assert wr == 1.0
 
     def test_mixed(self):
-        returns = [Decimal("0.01"), Decimal("-0.01"), Decimal("0.02"), Decimal("-0.005")]
+        returns = [
+            Decimal("0.01"),
+            Decimal("-0.01"),
+            Decimal("0.02"),
+            Decimal("-0.005"),
+        ]
         wr = WinRate.calculate(returns)
         assert wr == 0.5
 

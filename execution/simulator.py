@@ -6,10 +6,10 @@ import uuid
 from decimal import Decimal
 
 from core.events import FillEvent, OrderEvent
-from core.types import Symbol, ZERO
+from core.types import ZERO, Symbol
 from execution.commission import CommissionCalculator, StockACommission
 from execution.engine import ExecutionEngine
-from execution.slippage import SlippageModel, FixedSlippage
+from execution.slippage import FixedSlippage, SlippageModel
 
 
 class SimulatedExecution(ExecutionEngine):
@@ -33,7 +33,9 @@ class SimulatedExecution(ExecutionEngine):
         """
         fill_price = self._apply_slippage(order)
         fill_quantity = order.quantity
-        commission = self.commission_calc.calculate(order.side, fill_price, fill_quantity)
+        commission = self.commission_calc.calculate(
+            order.side, fill_price, fill_quantity
+        )
         slippage = abs(fill_price - (order.price or fill_price)) * fill_quantity
 
         return FillEvent(
