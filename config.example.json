@@ -1,0 +1,10 @@
+{
+    "initial_cash": "1000000",
+    "start_date": "2024-01-02",
+    "end_date": "2024-12-31",
+    "symbols": ["600519"],
+    "strategy": "dual_ma",
+    "short_period": 5,
+    "long_period": 20,
+    "commission_rate": "0.0003"
+}
