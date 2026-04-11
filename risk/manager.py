@@ -6,7 +6,7 @@ import logging
 
 from core.event_bus import EventBus
 from core.events import FillEvent, OrderEvent, RiskAlertEvent
-from core.types import OrderSide, OrderStatus, Symbol, ZERO
+from core.types import ZERO, OrderSide, OrderStatus, Symbol
 from domain.position import Position
 from risk.rules import RiskCheckResult, RiskRule
 

@@ -8,17 +8,17 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from core.event_bus import EventBus
-from core.events import MarketEvent, SignalEvent
-from core.types import BarFrequency, OrderSide, OrderType, Symbol, ZERO
-from data.handler import DataHandler
-from domain.instrument import make_stock, make_etf
-from domain.portfolio import Portfolio
 from backtest.engine import BacktestEngine
 from backtest.result import BacktestResult
-from strategy.base import Strategy
-from risk.manager import RiskManager
+from core.event_bus import EventBus
+from core.events import MarketEvent, SignalEvent
+from core.types import ZERO, BarFrequency, OrderSide, OrderType, Symbol
+from data.handler import DataHandler
+from domain.instrument import make_etf, make_stock
+from domain.portfolio import Portfolio
 from risk.limits import PositionLimitRule
+from risk.manager import RiskManager
+from strategy.base import Strategy
 
 
 class SimpleBuyStrategy(Strategy):
@@ -41,18 +41,21 @@ class SimpleBuyStrategy(Strategy):
 def make_price_df(base: float = 1800.0, n: int = 30, seed: int = 42) -> pd.DataFrame:
     """生成模拟行情 DataFrame。"""
     import numpy as np
+
     np.random.seed(seed)
     dates = pd.bdate_range("2024-01-02", periods=n)
     changes = np.random.randn(n) * 5
     close = base + np.cumsum(changes)
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": close - 1,
-        "high": close + 2,
-        "low": close - 2,
-        "close": close,
-        "volume": [10000.0] * n,
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": close - 1,
+            "high": close + 2,
+            "low": close - 2,
+            "close": close,
+            "volume": [10000.0] * n,
+        }
+    )
 
 
 class TestBacktestEngine:

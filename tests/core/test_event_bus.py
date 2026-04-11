@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 
 from core.event_bus import EventBus
-from core.events import Event, MarketEvent, SignalEvent, OrderEvent, FillEvent
+from core.events import Event, FillEvent, MarketEvent, OrderEvent, SignalEvent
 from core.types import BarFrequency, OrderSide, OrderType, Symbol
 
 

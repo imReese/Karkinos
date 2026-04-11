@@ -15,13 +15,15 @@ def price_df() -> pd.DataFrame:
     np.random.seed(42)
     n = 100
     close = 100 + np.cumsum(np.random.randn(n) * 0.5)
-    return pd.DataFrame({
-        "open": close - np.random.rand(n) * 0.5,
-        "high": close + np.abs(np.random.randn(n)) * 0.5,
-        "low": close - np.abs(np.random.randn(n)) * 0.5,
-        "close": close,
-        "volume": np.random.randint(1000, 10000, n).astype(float),
-    })
+    return pd.DataFrame(
+        {
+            "open": close - np.random.rand(n) * 0.5,
+            "high": close + np.abs(np.random.randn(n)) * 0.5,
+            "low": close - np.abs(np.random.randn(n)) * 0.5,
+            "close": close,
+            "volume": np.random.randint(1000, 10000, n).astype(float),
+        }
+    )
 
 
 class TestFeatureEngine:

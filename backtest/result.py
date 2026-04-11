@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from core.types import Symbol, ZERO
+from core.types import ZERO, Symbol
 from domain.position import Position
 
 

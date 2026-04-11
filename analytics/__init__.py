@@ -1,7 +1,13 @@
 """分析层。"""
 
-from analytics.metrics import SharpeRatio, SortinoRatio, MaxDrawdown, WinRate, AnnualizedReturn
 from analytics.equity import EquityCurve
+from analytics.metrics import (
+    AnnualizedReturn,
+    MaxDrawdown,
+    SharpeRatio,
+    SortinoRatio,
+    WinRate,
+)
 
 __all__ = [
     "SharpeRatio",

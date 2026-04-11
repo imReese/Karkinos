@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import numpy as np
+import pandas as pd
+
+from analytics.report import generate_report
+from backtest.engine import BacktestEngine
+from config import BacktestConfig
 from core.event_bus import EventBus
 from core.types import Symbol
 from data.handler import DataHandler
 from domain.instrument import make_stock
-from backtest.engine import BacktestEngine
-from analytics.report import generate_report
 from strategy.examples.dual_ma import DualMAStrategy
-from config import BacktestConfig
-
-import numpy as np
-import pandas as pd
 
 
 def make_synthetic_data(
@@ -28,14 +28,16 @@ def make_synthetic_data(
     dates = pd.bdate_range("2024-01-02", periods=n_days)
     changes = np.random.randn(n_days) * 5
     close = base_price + np.cumsum(changes)
-    return pd.DataFrame({
-        "timestamp": dates,
-        "open": close - 1,
-        "high": close + 2,
-        "low": close - 2,
-        "close": close,
-        "volume": [10000.0] * n_days,
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": close - 1,
+            "high": close + 2,
+            "low": close - 2,
+            "close": close,
+            "volume": [10000.0] * n_days,
+        }
+    )
 
 
 def main() -> None:

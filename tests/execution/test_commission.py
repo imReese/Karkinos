@@ -8,10 +8,10 @@ import pytest
 
 from core.types import OrderSide
 from execution.commission import (
-    StockACommission,
+    BondExchangeCommission,
     ETFCommission,
     GoldSpotCommission,
-    BondExchangeCommission,
+    StockACommission,
 )
 
 

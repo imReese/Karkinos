@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from core.event_bus import EventBus
 from core.events import FillEvent, OrderEvent, SignalEvent
-from core.types import OrderSide, OrderType, Symbol, ZERO
+from core.types import ZERO, OrderSide, OrderType, Symbol
 from domain.instrument import Instrument
 from domain.position import Position
 
@@ -146,9 +146,7 @@ class Portfolio:
 
     def _calculate_equity(self, price: Decimal) -> Decimal:
         """估算总权益（简化：用单一价格）。"""
-        positions_value = sum(
-            pos.quantity * price for pos in self.positions.values()
-        )
+        positions_value = sum(pos.quantity * price for pos in self.positions.values())
         return self.cash + positions_value
 
     def _calculate_equity_with_prices(self, prices: dict[Symbol, Decimal]) -> Decimal:

@@ -33,7 +33,9 @@ class AKShareSource(DataSource):
                 adjust="qfq",
             )
         else:
-            raise NotImplementedError(f"AKShare does not support frequency: {frequency}")
+            raise NotImplementedError(
+                f"AKShare does not support frequency: {frequency}"
+            )
 
         return self._normalize_bars(df)
 

@@ -65,7 +65,14 @@ class DataStore:
                 """INSERT OR REPLACE INTO bar_meta
                    (symbol, frequency, start_date, end_date, last_updated, row_count)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (str(symbol), frequency.value, start, end, datetime.now().isoformat(), len(df)),
+                (
+                    str(symbol),
+                    frequency.value,
+                    start,
+                    end,
+                    datetime.now().isoformat(),
+                    len(df),
+                ),
             )
 
     def load_bars(
@@ -96,12 +103,11 @@ class DataStore:
 
     # ---------- 辅助 ----------
 
-    def list_symbols(self, frequency: BarFrequency = BarFrequency.DAILY) -> list[Symbol]:
+    def list_symbols(
+        self, frequency: BarFrequency = BarFrequency.DAILY
+    ) -> list[Symbol]:
         """列出已存储的标的。"""
         freq_dir = self._root / "bars" / frequency.value
         if not freq_dir.exists():
             return []
-        return [
-            Symbol(p.stem)
-            for p in freq_dir.glob("*.parquet")
-        ]
+        return [Symbol(p.stem) for p in freq_dir.glob("*.parquet")]

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 from datetime import datetime
 from decimal import Decimal
+
+import pytest
 
 from core.types import Symbol
 

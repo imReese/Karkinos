@@ -20,14 +20,16 @@ def store(tmp_path: Path) -> DataStore:
 
 @pytest.fixture
 def sample_df() -> pd.DataFrame:
-    return pd.DataFrame({
-        "timestamp": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
-        "open": [1800.0, 1820.0, 1830.0],
-        "high": [1850.0, 1840.0, 1860.0],
-        "low": [1790.0, 1810.0, 1820.0],
-        "close": [1830.0, 1835.0, 1850.0],
-        "volume": [10000.0, 12000.0, 11000.0],
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+            "open": [1800.0, 1820.0, 1830.0],
+            "high": [1850.0, 1840.0, 1860.0],
+            "low": [1790.0, 1810.0, 1820.0],
+            "close": [1830.0, 1835.0, 1850.0],
+            "volume": [10000.0, 12000.0, 11000.0],
+        }
+    )
 
 
 class TestDataStore:

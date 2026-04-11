@@ -34,7 +34,9 @@ class TestPositionBuy:
         assert pos.avg_cost == Decimal("1850")
 
     def test_buy_with_commission(self, pos: Position):
-        pos.update_on_fill("buy", Decimal("100"), Decimal("1800"), commission=Decimal("5"))
+        pos.update_on_fill(
+            "buy", Decimal("100"), Decimal("1800"), commission=Decimal("5")
+        )
         assert pos.commission_paid == Decimal("5")
 
 
@@ -61,7 +63,9 @@ class TestPositionSell:
     def test_sell_with_commission(self, pos: Position):
         pos.update_on_fill("buy", Decimal("100"), Decimal("1800"))
         pos.advance_settlement_day()
-        pos.update_on_fill("sell", Decimal("100"), Decimal("1850"), commission=Decimal("10"))
+        pos.update_on_fill(
+            "sell", Decimal("100"), Decimal("1850"), commission=Decimal("10")
+        )
         # 盈亏 = (1850 - 1800) * 100 - 10 = 4990
         assert pos.realized_pnl == Decimal("4990")
         assert pos.commission_paid == Decimal("10")

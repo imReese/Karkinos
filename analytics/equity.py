@@ -38,7 +38,9 @@ class EquityCurve:
         return [(eq - initial) / initial for _, eq in equity_curve]
 
     @staticmethod
-    def rolling_max_drawdown(equity_curve: list[tuple], window: int = 20) -> list[float]:
+    def rolling_max_drawdown(
+        equity_curve: list[tuple], window: int = 20
+    ) -> list[float]:
         """计算滚动最大回撤。"""
         equities = np.array([float(e) for _, e in equity_curve])
         if len(equities) < window:
