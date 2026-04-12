@@ -19,6 +19,20 @@ from domain.instrument import (
 
 logger = logging.getLogger(__name__)
 
+
+def build_sources(
+    data_source: str = "akshare", tushare_token: str = ""
+) -> dict[str, DataSource]:
+    """集中构建数据源字典，消除四处重复代码。"""
+    from data.providers.akshare_source import AKShareSource
+    from data.providers.tushare_source import TushareSource
+
+    sources: dict[str, DataSource] = {"akshare": AKShareSource()}
+    if tushare_token:
+        sources["tushare"] = TushareSource(token=tushare_token)
+    return sources
+
+
 # 资产类别 → 标的名称模板
 _ASSET_NAMES: dict[AssetClass, str] = {
     AssetClass.STOCK: "A股",

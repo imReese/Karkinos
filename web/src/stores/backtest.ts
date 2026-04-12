@@ -60,10 +60,31 @@ export interface StrategyInfo {
   params: StrategyParam[]
 }
 
+export interface CompareRequest {
+  start_date: string
+  end_date: string
+  initial_cash: number
+  strategies: string[] | null
+  assets: Array<{ symbol: string; asset_class: string }> | null
+}
+
+export interface StrategyCompareItem {
+  strategy: string
+  description: string
+  metrics: BacktestMetrics
+  equity_curve: EquityPoint[]
+}
+
+export interface CompareResponse {
+  results: StrategyCompareItem[]
+}
+
 export const useBacktestStore = defineStore('backtest', () => {
   const results = ref<BacktestSummary[]>([])
   const currentResult = ref<BacktestResponse | null>(null)
+  const compareResults = ref<StrategyCompareItem[]>([])
   const running = ref(false)
+  const comparing = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -114,6 +135,22 @@ export const useBacktestStore = defineStore('backtest', () => {
     }
   }
 
+  async function runCompare(request: CompareRequest) {
+    comparing.value = true
+    error.value = null
+    try {
+      const { data } = await client.post<CompareResponse>('/backtest/compare', request)
+      compareResults.value = data.results
+      return data
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || '策略对比运行失败'
+      error.value = msg
+      throw e
+    } finally {
+      comparing.value = false
+    }
+  }
+
   async function fetchStrategies() {
     error.value = null
     try {
@@ -126,5 +163,5 @@ export const useBacktestStore = defineStore('backtest', () => {
     }
   }
 
-  return { results, currentResult, running, loading, error, clearError, runBacktest, fetchResults, fetchResult, fetchStrategies }
+  return { results, currentResult, compareResults, running, comparing, loading, error, clearError, runBacktest, runCompare, fetchResults, fetchResult, fetchStrategies }
 })

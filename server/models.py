@@ -170,6 +170,25 @@ class BacktestResponse(BaseModel):
     equity_curve: list[EquityPoint]
 
 
+class CompareRequest(BaseModel):
+    start_date: str = "2011-06-01"
+    end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
+    initial_cash: float = 100_000
+    strategies: list[str] | None = None  # None = 全部策略
+    assets: list[dict[str, str]] | None = None
+
+
+class StrategyCompareItem(BaseModel):
+    strategy: str
+    description: str
+    metrics: BacktestMetrics
+    equity_curve: list[EquityPoint]
+
+
+class CompareResponse(BaseModel):
+    results: list[StrategyCompareItem]
+
+
 class BacktestSummary(BaseModel):
     id: int
     created_at: str
@@ -200,6 +219,7 @@ class SettingsResponse(BaseModel):
     short_period: int = 5
     long_period: int = 20
     data_source: str = "akshare"
+    tushare_token: str = ""
     notification: dict = Field(default_factory=lambda: {"type": "console"})
     live_poll_interval: int = 60
 

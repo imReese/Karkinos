@@ -30,6 +30,7 @@ class BacktestConfig:
     long_period: int = 20
     commission_rate: Decimal = Decimal("0.0003")
     data_source: str = "akshare"
+    tushare_token: str = ""
     notification: dict = field(default_factory=lambda: {"type": "console"})
     live_poll_interval: int = 60
 

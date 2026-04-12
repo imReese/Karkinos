@@ -12,6 +12,7 @@
     "short_period": 5,
     "long_period": 20,
     "data_source": "akshare",
+    "tushare_token": "",
     "notification": {
         "type": "console",
         "telegram_bot_token": "",
