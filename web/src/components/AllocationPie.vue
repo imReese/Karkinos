@@ -35,9 +35,9 @@ function updateChart() {
     tooltip: {
       trigger: 'item',
       formatter: '{b}: {d}%',
-      backgroundColor: 'rgba(26, 27, 35, 0.95)',
-      borderColor: 'var(--border)',
-      textStyle: { color: '#e4e4e7' },
+      backgroundColor: 'rgba(22, 22, 22, 0.95)',
+      borderColor: '#27272a',
+      textStyle: { color: '#ededed' },
     },
     legend: {
       bottom: 0,
@@ -51,7 +51,7 @@ function updateChart() {
       avoidLabelOverlap: true,
       itemStyle: {
         borderRadius: 6,
-        borderColor: '#1a1b23',
+        borderColor: '#161616',
         borderWidth: 2,
       },
       label: {

@@ -305,7 +305,7 @@ onMounted(async () => {
 .control-status {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: 16px;
   font-weight: 600;
 }
@@ -339,20 +339,20 @@ onMounted(async () => {
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 16px;
 }
 
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .form-group label {
   display: block;
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
 }
 
 .form-group input,
@@ -378,34 +378,34 @@ onMounted(async () => {
 .asset-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   align-items: center;
 }
 
 .asset-input {
   flex: 1;
-  padding: 6px 10px;
+  padding: 8px 12px;
 }
 
 .asset-select {
-  width: 100px;
-  padding: 6px 10px;
+  width: 104px;
+  padding: 8px 12px;
 }
 
 .config-editor {
   width: 100%;
   font-family: var(--font-mono);
   font-size: 12px;
-  padding: 12px;
-  border-radius: 8px;
+  padding: 16px;
+  border-radius: var(--radius-md);
   resize: vertical;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .json-actions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 @keyframes pulse {
@@ -429,7 +429,7 @@ onMounted(async () => {
 
 .token-hint {
   font-size: 12px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 @media (max-width: 768px) {

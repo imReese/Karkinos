@@ -69,9 +69,9 @@ function updateChart() {
     chart.setOption({
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(26, 27, 35, 0.95)',
-        borderColor: '#2a2b3a',
-        textStyle: { color: '#e4e4e7' },
+        backgroundColor: 'rgba(22, 22, 22, 0.95)',
+        borderColor: '#27272a',
+        textStyle: { color: '#ededed' },
         formatter: (params: any) => {
           if (!Array.isArray(params)) return ''
           let html = `${params[0]?.axisValue}<br/>`
@@ -88,12 +88,12 @@ function updateChart() {
         textStyle: { color: '#a1a1aa', fontSize: 12 },
         top: 0,
       },
-      grid: { left: 80, right: 20, top: 40, bottom: 60 },
+      grid: { left: 80, right: 24, top: 40, bottom: 48 },
       xAxis: {
         type: 'category',
         data: dates,
         axisLabel: { fontSize: 11, color: '#71717a' },
-        axisLine: { lineStyle: { color: '#2a2b3a' } },
+        axisLine: { lineStyle: { color: '#27272a' } },
       },
       yAxis: {
         type: 'value',
@@ -102,7 +102,7 @@ function updateChart() {
           color: '#71717a',
           formatter: (v: number) => `¥${(v / 10000).toFixed(0)}万`,
         },
-        splitLine: { lineStyle: { color: '#2a2b3a' } },
+        splitLine: { lineStyle: { color: '#27272a' } },
       },
       dataZoom: [{ type: 'inside' }],
       series: chartSeries,
@@ -118,20 +118,20 @@ function updateChart() {
   chart.setOption({
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(26, 27, 35, 0.95)',
-      borderColor: '#2a2b3a',
-      textStyle: { color: '#e4e4e7' },
+      backgroundColor: 'rgba(22, 22, 22, 0.95)',
+      borderColor: '#27272a',
+      textStyle: { color: '#ededed' },
       formatter: (params: any) => {
         const p = params[0]
         return `${p.axisValue}<br/>权益: ¥${Number(p.value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
       },
     },
-    grid: { left: 80, right: 20, top: 20, bottom: 60 },
+    grid: { left: 80, right: 24, top: 24, bottom: 48 },
     xAxis: {
       type: 'category',
       data: dates,
       axisLabel: { fontSize: 11, color: '#71717a' },
-      axisLine: { lineStyle: { color: '#2a2b3a' } },
+      axisLine: { lineStyle: { color: '#27272a' } },
     },
     yAxis: {
       type: 'value',
@@ -140,7 +140,7 @@ function updateChart() {
         color: '#71717a',
         formatter: (v: number) => `¥${(v / 10000).toFixed(0)}万`,
       },
-      splitLine: { lineStyle: { color: '#2a2b3a' } },
+      splitLine: { lineStyle: { color: '#27272a' } },
     },
     dataZoom: [{ type: 'inside' }],
     series: [{
@@ -150,8 +150,8 @@ function updateChart() {
       lineStyle: { color: '#6366f1', width: 2 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(99, 102, 241, 0.3)' },
-          { offset: 1, color: 'rgba(99, 102, 241, 0.02)' },
+          { offset: 0, color: 'rgba(99, 102, 241, 0.2)' },
+          { offset: 1, color: 'rgba(99, 102, 241, 0.01)' },
         ]),
       },
     }],

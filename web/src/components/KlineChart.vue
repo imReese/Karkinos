@@ -37,20 +37,20 @@ function updateChart() {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'cross' },
-      backgroundColor: 'rgba(26, 27, 35, 0.95)',
-      borderColor: '#2a2b3a',
-      textStyle: { color: '#e4e4e7' },
+      backgroundColor: 'rgba(22, 22, 22, 0.95)',
+      borderColor: '#27272a',
+      textStyle: { color: '#ededed' },
     },
     grid: [
-      { left: 80, right: 20, top: 10, height: '55%' },
-      { left: 80, right: 20, top: '72%', height: '20%' },
+      { left: 80, right: 24, top: 16, height: '55%' },
+      { left: 80, right: 24, top: '72%', height: '20%' },
     ],
     xAxis: [
-      { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#2a2b3a' } } },
-      { type: 'category', data: dates, gridIndex: 1, axisLabel: { fontSize: 10, color: '#71717a' }, axisLine: { lineStyle: { color: '#2a2b3a' } } },
+      { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false }, axisLine: { lineStyle: { color: '#27272a' } } },
+      { type: 'category', data: dates, gridIndex: 1, axisLabel: { fontSize: 10, color: '#71717a' }, axisLine: { lineStyle: { color: '#27272a' } } },
     ],
     yAxis: [
-      { type: 'value', gridIndex: 0, scale: true, axisLabel: { fontSize: 11, color: '#71717a' }, splitLine: { lineStyle: { color: '#2a2b3a' } } },
+      { type: 'value', gridIndex: 0, scale: true, axisLabel: { fontSize: 11, color: '#71717a' }, splitLine: { lineStyle: { color: '#27272a' } } },
       { type: 'value', gridIndex: 1, axisLabel: { show: false }, splitLine: { show: false } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }],

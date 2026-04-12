@@ -111,10 +111,10 @@ onUnmounted(() => {
 .asset-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
   font-weight: 500;
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--primary-subtle);
   color: var(--primary);
   text-transform: uppercase;
 }
