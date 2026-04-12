@@ -94,11 +94,13 @@ async function submit() {
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 300;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.2s, visibility 0.2s;
+  transition: opacity var(--transition-normal), visibility var(--transition-normal);
 }
 
 .drawer-overlay.open {
@@ -117,7 +119,7 @@ async function submit() {
   border-left: 1px solid var(--border);
   z-index: 301;
   transform: translateX(100%);
-  transition: transform 0.25s ease;
+  transition: transform var(--transition-normal);
   display: flex;
   flex-direction: column;
 }
@@ -130,7 +132,7 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
+  padding: 24px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -148,6 +150,7 @@ async function submit() {
   cursor: pointer;
   padding: 0;
   line-height: 1;
+  transition: color var(--transition-fast);
 }
 
 .drawer-close:hover {
@@ -163,9 +166,9 @@ async function submit() {
 .flow-tabs {
   display: flex;
   gap: 4px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   background: var(--bg-input);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 3px;
 }
 
@@ -173,20 +176,19 @@ async function submit() {
   flex: 1;
   padding: 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition-fast);
   font-family: var(--font-sans);
 }
 
 .flow-tabs button.active {
   background: var(--bg-card);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .flow-form {
@@ -194,16 +196,16 @@ async function submit() {
 }
 
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .form-group label {
   display: block;
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
 }
 
 .form-group input {
@@ -212,7 +214,7 @@ async function submit() {
 
 .submit-btn {
   width: 100%;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .flow-history {
@@ -224,13 +226,13 @@ async function submit() {
   font-size: 12px;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 12px;
+  letter-spacing: 0.06em;
+  margin-bottom: 16px;
 }
 
 .empty-text {
   text-align: center;
-  padding: 24px 0;
+  padding: 32px 0;
   font-size: 13px;
 }
 
@@ -238,7 +240,7 @@ async function submit() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -255,17 +257,17 @@ async function submit() {
 .flow-type-badge {
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
 }
 
 .flow-type-badge.deposit {
-  background: rgba(34, 197, 94, 0.15);
+  background: rgba(34, 197, 94, 0.12);
   color: var(--success);
 }
 
 .flow-type-badge.withdraw {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
 }
 
@@ -294,7 +296,7 @@ async function submit() {
   cursor: pointer;
   padding: 0 4px;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
 }
 
 .flow-item:hover .btn-remove {

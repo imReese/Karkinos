@@ -13,12 +13,12 @@ import SideNav from './components/SideNav.vue'
 
 <style>
 :root {
-  --bg-page: #0f1117;
-  --bg-card: #1a1b23;
-  --bg-sidebar: #13141c;
-  --bg-input: #1e1f2b;
-  --border: #2a2b3a;
-  --text-primary: #e4e4e7;
+  --bg-page: #0a0a0a;
+  --bg-card: #161616;
+  --bg-sidebar: #111111;
+  --bg-input: #1c1c1c;
+  --border: #27272a;
+  --text-primary: #ededed;
   --text-secondary: #a1a1aa;
   --text-muted: #71717a;
   --primary: #6366f1;
@@ -31,6 +31,16 @@ import SideNav from './components/SideNav.vue'
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   --sidebar-w: 220px;
   --sidebar-collapsed: 64px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --spacing-unit: 8px;
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --primary-subtle: rgba(99, 102, 241, 0.12);
 }
 
 * {
@@ -44,6 +54,7 @@ body {
   background: var(--bg-page);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
 }
 
 #app {
@@ -53,33 +64,33 @@ body {
 
 .main-content {
   margin-left: var(--sidebar-w);
-  padding: 24px 32px;
+  padding: 32px 40px;
   min-height: 100vh;
-  transition: margin-left 0.2s ease;
+  transition: margin-left var(--transition-normal);
   width: calc(100% - var(--sidebar-w));
 }
 
 /* Card system */
 .card {
   background: var(--bg-card);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--radius-lg);
+  padding: 24px;
   border: 1px solid var(--border);
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   margin-bottom: 16px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
 }
 
 /* Grid */
 .grid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
@@ -96,7 +107,7 @@ body {
     margin-left: 0;
     padding: 16px;
     width: 100%;
-    padding-top: 60px;
+    padding-top: 64px;
   }
   .grid-2, .grid-3, .grid-4 {
     grid-template-columns: 1fr;
@@ -110,7 +121,7 @@ table {
 }
 
 th, td {
-  padding: 10px 12px;
+  padding: 12px 16px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
@@ -121,7 +132,11 @@ th {
   color: var(--text-muted);
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
+}
+
+tbody tr:hover {
+  background: var(--surface-hover);
 }
 
 /* Buttons */
@@ -129,14 +144,14 @@ th {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   padding: 8px 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition-normal);
   font-family: var(--font-sans);
   min-height: 36px;
 }
@@ -156,23 +171,23 @@ th {
 }
 
 .btn-secondary {
-  background: var(--bg-input);
+  background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border);
 }
 
 .btn-secondary:hover {
-  background: var(--border);
+  background: var(--surface-hover);
 }
 
 .btn-danger {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.2);
 }
 
 .btn-sm {
@@ -185,17 +200,18 @@ th {
 input, select, textarea {
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 8px 12px;
   font-size: 13px;
   color: var(--text-primary);
   font-family: var(--font-sans);
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   outline: none;
 }
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
 }
 
 input::placeholder, textarea::placeholder {

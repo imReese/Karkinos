@@ -39,7 +39,7 @@ onMounted(async () => {
 .live-indicator {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 12px;
 }
 
@@ -52,12 +52,12 @@ onMounted(async () => {
 
 .connected .dot {
   background: var(--success);
-  box-shadow: 0 0 6px var(--success);
+  box-shadow: 0 0 8px var(--success);
 }
 
 .connecting .dot {
   background: var(--warning);
-  box-shadow: 0 0 6px var(--warning);
+  box-shadow: 0 0 8px var(--warning);
 }
 
 .disconnected .dot {
@@ -71,11 +71,11 @@ onMounted(async () => {
 
 .market-badge {
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(245, 158, 11, 0.15);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.12);
   color: var(--warning);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 @keyframes pulse {

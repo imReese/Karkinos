@@ -93,7 +93,7 @@ function isActive(path: string): boolean {
   display: flex;
   flex-direction: column;
   z-index: 100;
-  transition: width 0.2s ease;
+  transition: width var(--transition-normal);
 }
 
 .side-nav.collapsed {
@@ -101,20 +101,20 @@ function isActive(path: string): boolean {
 }
 
 .nav-header {
-  padding: 20px 16px 16px;
+  padding: 24px 16px 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .nav-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .brand-mark {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--primary);
   color: #fff;
   display: flex;
@@ -145,34 +145,47 @@ function isActive(path: string): boolean {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   margin-bottom: 2px;
   cursor: pointer;
   border: none;
   background: none;
   width: 100%;
   text-align: left;
+  position: relative;
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
 .nav-item.active {
-  background: rgba(99, 102, 241, 0.15);
+  background: var(--primary-subtle);
   color: var(--primary);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 1px;
 }
 
 .collapsed .nav-item {
   justify-content: center;
-  padding: 10px;
+  padding: 8px;
 }
 
 .nav-icon {
@@ -194,6 +207,8 @@ function isActive(path: string): boolean {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .collapsed .nav-footer {
@@ -205,16 +220,16 @@ function isActive(path: string): boolean {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all var(--transition-fast);
 }
 
 .collapse-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
@@ -222,12 +237,12 @@ function isActive(path: string): boolean {
 .mobile-hamburger {
   display: none;
   position: fixed;
-  top: 12px;
-  left: 12px;
+  top: 16px;
+  left: 16px;
   z-index: 200;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   cursor: pointer;
   padding: 8px;
@@ -237,7 +252,7 @@ function isActive(path: string): boolean {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   z-index: 99;
 }
 
@@ -245,6 +260,9 @@ function isActive(path: string): boolean {
   .side-nav {
     transform: translateX(-100%);
     width: var(--sidebar-w) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: rgba(17, 17, 17, 0.85);
   }
 
   .side-nav.mobile-open {
@@ -265,6 +283,10 @@ function isActive(path: string): boolean {
 
   .collapse-btn {
     display: none;
+  }
+
+  .nav-item.active::before {
+    left: -8px;
   }
 }
 </style>

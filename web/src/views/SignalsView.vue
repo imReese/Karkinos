@@ -57,14 +57,14 @@ onMounted(() => {
 .direction-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .new-badge {
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(99, 102, 241, 0.2);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-subtle);
   color: var(--primary);
   font-weight: 600;
   animation: fadeIn 0.3s ease;

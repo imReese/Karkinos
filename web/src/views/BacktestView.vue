@@ -343,8 +343,8 @@ onMounted(async () => {
 .error-banner {
   background: rgba(239, 68, 68, 0.1);
   color: var(--danger);
-  padding: 10px 16px;
-  border-radius: 8px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
   margin-bottom: 16px;
   display: flex;
   justify-content: space-between;
@@ -365,8 +365,8 @@ onMounted(async () => {
   display: flex;
   gap: 4px;
   background: var(--bg-input);
-  border-radius: 8px;
-  padding: 4px;
+  border-radius: var(--radius-md);
+  padding: 3px;
 }
 
 .tab {
@@ -377,8 +377,9 @@ onMounted(async () => {
   color: var(--text-muted);
   font-size: 14px;
   cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.2s;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-normal);
+  font-family: var(--font-sans);
 }
 
 .tab.active {
@@ -387,16 +388,16 @@ onMounted(async () => {
 }
 
 .form-group {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .form-group label {
   display: block;
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
 }
 
 .form-group input,
@@ -407,30 +408,30 @@ onMounted(async () => {
 .asset-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   align-items: center;
 }
 
 .asset-input {
   flex: 1;
-  padding: 6px 10px;
+  padding: 8px 12px;
 }
 
 .asset-select {
-  width: 90px;
-  padding: 6px 10px;
+  width: 96px;
+  padding: 8px 12px;
 }
 
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 16px;
 }
 
 .metric-item {
-  padding: 12px;
+  padding: 16px;
   background: var(--bg-input);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .metric-label {

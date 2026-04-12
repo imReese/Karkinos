@@ -164,9 +164,9 @@ onMounted(() => {
 }
 
 .overview-item {
-  padding: 12px;
+  padding: 16px;
   background: var(--bg-input);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .ov-label {
@@ -184,10 +184,10 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 12px;
-  padding: 10px 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
   background: var(--bg-input);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 14px;
 }
 
@@ -199,29 +199,28 @@ onMounted(() => {
 .toggle-row {
   display: flex;
   gap: 4px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   background: var(--bg-input);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 3px;
   width: fit-content;
 }
 
 .toggle-row button {
-  padding: 6px 14px;
+  padding: 8px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   font-size: 13px;
   cursor: pointer;
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  transition: all 0.15s;
+  transition: all var(--transition-fast);
 }
 
 .toggle-row button.active {
   background: var(--bg-card);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .group-breakdown {
@@ -231,7 +230,7 @@ onMounted(() => {
 .group-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
@@ -260,40 +259,40 @@ onMounted(() => {
 .group-weight {
   font-size: 12px;
   color: var(--text-muted);
-  min-width: 50px;
+  min-width: 48px;
   text-align: right;
 }
 
 .empty-text {
   text-align: center;
-  padding: 24px 0;
+  padding: 32px 0;
   font-size: 13px;
 }
 
 /* FAB */
 .fab-single {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 32px;
+  right: 32px;
   z-index: 200;
 }
 
 .fab {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-xl);
   background: var(--primary);
   color: #fff;
-  border: none;
+  border: 1px solid rgba(99, 102, 241, 0.5);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-  transition: transform 0.15s;
+  transition: background var(--transition-normal), transform var(--transition-fast);
 }
 
 .fab:hover {
+  background: var(--primary-hover);
   transform: scale(1.05);
 }
 

@@ -166,9 +166,9 @@ onMounted(() => {
 .direction-toggle {
   display: flex;
   gap: 4px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   background: var(--bg-input);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 3px;
 }
 
@@ -176,26 +176,24 @@ onMounted(() => {
   flex: 1;
   padding: 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition-normal);
   font-family: var(--font-sans);
 }
 
 .dir-btn.buy.active {
-  background: rgba(34, 197, 94, 0.15);
+  background: rgba(34, 197, 94, 0.12);
   color: var(--success);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .dir-btn.sell.active {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .trade-form {
@@ -203,16 +201,16 @@ onMounted(() => {
 }
 
 .form-group {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .form-group label {
   display: block;
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
 }
 
 .form-group input,
@@ -224,7 +222,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 20px;
+  margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
@@ -261,18 +259,18 @@ onMounted(() => {
 .dir-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 600;
 }
 
 .dir-badge.buy {
-  background: rgba(34, 197, 94, 0.15);
+  background: rgba(34, 197, 94, 0.12);
   color: var(--success);
 }
 
 .dir-badge.sell {
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
 }
 
@@ -285,7 +283,7 @@ onMounted(() => {
 @media (max-width: 768px) {
   .form-actions {
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
   }
   .submit-btn {
     width: 100%;
