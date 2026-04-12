@@ -14,6 +14,14 @@ logger = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path("config.json")
 
+_MASK = "****"
+
+
+def _mask_token(token: str) -> str:
+    if not token:
+        return ""
+    return f"{_MASK}{token[-4:]}" if len(token) > 4 else _MASK
+
 
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -37,6 +45,7 @@ def create_router() -> APIRouter:
             short_period=config.short_period,
             long_period=config.long_period,
             data_source=config.data_source,
+            tushare_token=_mask_token(config.tushare_token),
             notification=config.notification,
             live_poll_interval=config.live_poll_interval,
         )
@@ -61,6 +70,10 @@ def create_router() -> APIRouter:
         config.short_period = settings.short_period
         config.long_period = settings.long_period
         config.data_source = settings.data_source
+        # tushare_token 条件更新：非脱敏值才写入
+        new_token = settings.tushare_token
+        if not new_token.startswith(_MASK):
+            config.tushare_token = new_token
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
 
@@ -77,12 +90,28 @@ def create_router() -> APIRouter:
             "short_period": config.short_period,
             "long_period": config.long_period,
             "data_source": config.data_source,
+            "tushare_token": config.tushare_token,
             "notification": config.notification,
             "live_poll_interval": config.live_poll_interval,
         }
         _CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
-        return settings
+        return SettingsResponse(
+            host=config.host,
+            port=config.port,
+            live_auto_start=config.live_auto_start,
+            initial_cash=float(config.initial_cash),
+            start_date=config.start_date,
+            end_date=config.end_date,
+            assets=config.assets,
+            strategy=config.strategy,
+            short_period=config.short_period,
+            long_period=config.long_period,
+            data_source=config.data_source,
+            tushare_token=_mask_token(config.tushare_token),
+            notification=config.notification,
+            live_poll_interval=config.live_poll_interval,
+        )
 
     @r.post("/live/start", response_model=LiveStatusResponse)
     async def start_live() -> LiveStatusResponse:

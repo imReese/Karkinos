@@ -12,7 +12,6 @@ from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
 from core.types import AssetClass, Symbol
 from data.live import LiveDataFeed
-from data.providers.akshare_source import AKShareSource
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from notification.notifier import build_notifier, format_signal_message
@@ -157,11 +156,15 @@ class TradingScheduler:
 
     def _run_loop(self) -> None:
         """后台线程主循环。"""
-        from data.manager import DataManager
+        from data.manager import DataManager, build_sources
 
         # 初始化组件
         self._event_bus = EventBus()
-        source = AKShareSource()
+        sources = build_sources(
+            data_source=self._config.data_source,
+            tushare_token=self._config.tushare_token,
+        )
+        source = sources.get(self._config.data_source, sources["akshare"])
         feed = LiveDataFeed(source, self._event_bus)
         store = None
         try:
@@ -172,7 +175,7 @@ class TradingScheduler:
             pass
 
         data_manager = DataManager(
-            sources={"akshare": source},
+            sources=sources,
             store=store,
             default_source=self._config.data_source,
         )

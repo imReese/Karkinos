@@ -17,7 +17,10 @@ from server.models import (
     BacktestRequest,
     BacktestResponse,
     BacktestSummary,
+    CompareRequest,
+    CompareResponse,
     EquityPoint,
+    StrategyCompareItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,8 +40,8 @@ class StrategyInfoResponse(BaseModel):
     params: list[dict[str, Any]]
 
 
-def _run_backtest(request: BacktestRequest, config: Any) -> dict[str, Any]:
-    """同步运行回测（在线程池中执行）。"""
+def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any]:
+    """同步运行单次回测（在线程池中执行），供 run 和 compare 共用。"""
     from datetime import datetime
 
     from analytics.metrics import (
@@ -49,8 +52,7 @@ def _run_backtest(request: BacktestRequest, config: Any) -> dict[str, Any]:
         WinRate,
     )
     from backtest.engine import BacktestEngine
-    from data.manager import DataManager
-    from data.providers.akshare_source import AKShareSource
+    from data.manager import DataManager, build_sources
     from data.store import DataStore
     from execution.commission import MultiAssetCommission
     from strategy.registry import StrategyRegistry
@@ -63,7 +65,10 @@ def _run_backtest(request: BacktestRequest, config: Any) -> dict[str, Any]:
         pass
 
     dm = DataManager(
-        sources={"akshare": AKShareSource()},
+        sources=build_sources(
+            data_source=config.data_source,
+            tushare_token=config.tushare_token,
+        ),
         store=store,
         default_source=config.data_source,
     )
@@ -142,6 +147,10 @@ def _run_backtest(request: BacktestRequest, config: Any) -> dict[str, Any]:
         "duration_days": result.duration_days,
         "equity_curve": equity_curve,
     }
+
+
+# Keep backward-compatible alias
+_run_backtest = _run_single_backtest
 
 
 def create_router() -> APIRouter:
@@ -254,5 +263,88 @@ def create_router() -> APIRouter:
             ),
             equity_curve=[EquityPoint(**p) for p in equity_data],
         )
+
+    @r.post("/compare", response_model=CompareResponse)
+    async def compare_strategies(request: CompareRequest) -> CompareResponse:
+        """多策略对比回测：遍历指定策略（或全部），每个策略运行一次回测。"""
+        from server.app import get_app_state
+        from strategy.registry import StrategyRegistry
+
+        state = get_app_state()
+        config = state.config
+
+        # 确定要对比的策略列表
+        all_strategies = StrategyRegistry.get_info()
+        if request.strategies:
+            strategy_names = [
+                s
+                for s in request.strategies
+                if any(a["name"] == s for a in all_strategies)
+            ]
+        else:
+            strategy_names = [s["name"] for s in all_strategies]
+
+        if not strategy_names:
+            return CompareResponse(results=[])
+
+        results: list[StrategyCompareItem] = []
+        for strat_name in strategy_names:
+            strat_info = next(
+                (s for s in all_strategies if s["name"] == strat_name), None
+            )
+            if not strat_info:
+                continue
+
+            # 构造 BacktestRequest：使用默认策略参数
+            bt_request = BacktestRequest(
+                start_date=request.start_date,
+                end_date=request.end_date,
+                initial_cash=request.initial_cash,
+                strategy=strat_name,
+                assets=request.assets,
+                **{p["name"]: p["default"] for p in strat_info["params"]},
+            )
+
+            bt_result = await asyncio.to_thread(
+                _run_single_backtest, bt_request, config
+            )
+
+            # 保存到数据库
+            config_json = bt_request.model_dump_json()
+            equity_curve_json = json.dumps(bt_result["equity_curve"])
+            await state.db.save_backtest_result(
+                config_json=config_json,
+                initial_cash=bt_result["initial_cash"],
+                final_equity=bt_result["final_equity"],
+                total_return=bt_result["total_return"],
+                sharpe=bt_result["sharpe"],
+                max_dd=bt_result["max_drawdown"],
+                equity_curve_json=equity_curve_json,
+                annual_return=bt_result["annual_return"],
+                sortino=bt_result["sortino"],
+                win_rate=bt_result["win_rate"],
+                duration_days=bt_result["duration_days"],
+            )
+
+            results.append(
+                StrategyCompareItem(
+                    strategy=strat_name,
+                    description=strat_info.get("description", strat_name),
+                    metrics=BacktestMetrics(
+                        initial_cash=bt_result["initial_cash"],
+                        final_equity=bt_result["final_equity"],
+                        total_return=bt_result["total_return"],
+                        annual_return=bt_result["annual_return"],
+                        sharpe=bt_result["sharpe"],
+                        sortino=bt_result["sortino"],
+                        max_drawdown=bt_result["max_drawdown"],
+                        win_rate=bt_result["win_rate"],
+                        duration_days=bt_result["duration_days"],
+                    ),
+                    equity_curve=[EquityPoint(**p) for p in bt_result["equity_curve"]],
+                )
+            )
+
+        return CompareResponse(results=results)
 
     return r

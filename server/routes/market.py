@@ -62,9 +62,13 @@ def create_router() -> APIRouter:
                 return MarketQuote(symbol=symbol, **q)
 
         try:
-            from data.providers.akshare_source import AKShareSource
+            from data.manager import build_sources
 
-            source = AKShareSource()
+            sources = build_sources(
+                data_source=config.data_source,
+                tushare_token=config.tushare_token,
+            )
+            source = sources.get(config.data_source, sources["akshare"])
             ac = AssetClass.STOCK
             config = state.config
             for asset_cfg in config.assets:
@@ -106,8 +110,7 @@ def create_router() -> APIRouter:
                 break
 
         try:
-            from data.manager import DataManager
-            from data.providers.akshare_source import AKShareSource
+            from data.manager import DataManager, build_sources
             from data.store import DataStore
 
             store = None
@@ -117,7 +120,10 @@ def create_router() -> APIRouter:
                 pass
 
             dm = DataManager(
-                sources={"akshare": AKShareSource()},
+                sources=build_sources(
+                    data_source=config.data_source,
+                    tushare_token=config.tushare_token,
+                ),
                 store=store,
                 default_source=config.data_source,
             )

@@ -13,9 +13,7 @@ from backtest.engine import BacktestEngine
 from config import BacktestConfig
 from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
-from data.manager import DataManager
-from data.providers.akshare_source import AKShareSource
-from data.providers.tushare_source import TushareSource
+from data.manager import DataManager, build_sources
 from data.store import DataStore
 from strategy.registry import StrategyRegistry
 
@@ -34,10 +32,10 @@ def main() -> None:
     config = BacktestConfig()
 
     # 构建数据源
-    sources: dict = {"akshare": AKShareSource()}
-    tushare_token = os.environ.get("TUSHARE_TOKEN")
-    if tushare_token:
-        sources["tushare"] = TushareSource(token=tushare_token)
+    sources = build_sources(
+        data_source=config.data_source,
+        tushare_token=os.environ.get("TUSHARE_TOKEN") or config.tushare_token,
+    )
 
     manager = DataManager(sources, store=DataStore("data/store"))
 

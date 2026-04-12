@@ -101,6 +101,21 @@
           </select>
         </div>
       </div>
+      <div v-if="config.data_source === 'tushare'" class="form-group" style="margin-top: 12px;">
+        <label>Tushare Token</label>
+        <div class="token-input-wrapper">
+          <input
+            :type="showToken ? 'text' : 'password'"
+            v-model="config.tushare_token"
+            :placeholder="tokenPlaceholder"
+            class="token-input"
+          />
+          <button class="btn btn-sm btn-secondary toggle-visibility" @click="showToken = !showToken">
+            {{ showToken ? '隐藏' : '显示' }}
+          </button>
+        </div>
+        <p v-if="hasToken" class="text-muted token-hint">Token 已配置，如需修改请输入新 Token</p>
+      </div>
     </div>
 
     <!-- Notification -->
@@ -145,12 +160,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import client from '../api/client'
 
 const liveRunning = ref(false)
 const testResult = ref<{ status: string; message: string } | null>(null)
 const configJson = ref('')
+const showToken = ref(false)
+const hasToken = ref(false)
 
 const config = reactive({
   host: '0.0.0.0',
@@ -164,6 +181,7 @@ const config = reactive({
   short_period: 5,
   long_period: 20,
   data_source: 'akshare',
+  tushare_token: '',
   live_poll_interval: 60,
   notification: {
     type: 'console',
@@ -172,6 +190,8 @@ const config = reactive({
     recipient: '',
   },
 })
+
+const tokenPlaceholder = computed(() => hasToken.value ? '****（已配置）' : '请输入 Tushare Token')
 
 async function refreshStatus() {
   try {
@@ -217,6 +237,8 @@ async function loadConfig() {
   config.short_period = data.short_period ?? 5
   config.long_period = data.long_period ?? 20
   config.data_source = data.data_source ?? 'akshare'
+  hasToken.value = !!(data.tushare_token && data.tushare_token.startsWith('****'))
+  config.tushare_token = data.tushare_token ?? ''
   config.live_poll_interval = data.live_poll_interval ?? 60
   config.notification = {
     type: data.notification?.type ?? 'console',
@@ -239,6 +261,7 @@ function loadFromJson() {
       short_period: parsed.short_period ?? config.short_period,
       long_period: parsed.long_period ?? config.long_period,
       data_source: parsed.data_source ?? config.data_source,
+      tushare_token: parsed.tushare_token ?? config.tushare_token,
       live_poll_interval: parsed.live_poll_interval ?? config.live_poll_interval,
       notification: parsed.notification ?? config.notification,
     })
@@ -261,6 +284,7 @@ async function saveConfig() {
       short_period: config.short_period,
       long_period: config.long_period,
       data_source: config.data_source,
+      tushare_token: config.tushare_token,
       live_poll_interval: config.live_poll_interval,
       notification: config.notification,
     }
@@ -387,6 +411,25 @@ onMounted(async () => {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+.token-input-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.token-input {
+  flex: 1;
+}
+
+.toggle-visibility {
+  white-space: nowrap;
+}
+
+.token-hint {
+  font-size: 12px;
+  margin-top: 6px;
 }
 
 @media (max-width: 768px) {
