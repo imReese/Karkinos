@@ -4,43 +4,49 @@
     <main class="main-content">
       <router-view />
     </main>
+    <AppToastStack />
   </div>
 </template>
 
 <script setup lang="ts">
+import AppToastStack from './components/AppToastStack.vue'
 import SideNav from './components/SideNav.vue'
 </script>
 
 <style>
 :root {
-  --bg-page: #0a0a0a;
-  --bg-card: #161616;
-  --bg-sidebar: #111111;
-  --bg-input: #1c1c1c;
-  --border: #27272a;
-  --text-primary: #ededed;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --danger: #ef4444;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --cash: #38bdf8;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  --sidebar-w: 220px;
+  --bg-page: #f5f5f7;
+  --bg-card: rgba(255, 255, 255, 0.74);
+  --bg-card-strong: #ffffff;
+  --bg-sidebar: rgba(16, 17, 20, 0.92);
+  --bg-input: rgba(255, 255, 255, 0.84);
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.14);
+  --text-primary: #111317;
+  --text-secondary: #4b5563;
+  --text-muted: #8a94a6;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #c2413b;
+  --success: #1f8a70;
+  --warning: #d08700;
+  --cash: #0f6f8f;
+  --font-sans: 'Avenir Next', 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', 'JetBrains Mono', monospace;
+  --sidebar-w: 236px;
   --sidebar-collapsed: 64px;
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
   --spacing-unit: 8px;
   --transition-fast: 0.15s ease;
   --transition-normal: 0.2s ease;
-  --overlay: rgba(0, 0, 0, 0.6);
-  --surface-hover: rgba(255, 255, 255, 0.04);
-  --primary-subtle: rgba(99, 102, 241, 0.12);
+  --overlay: rgba(15, 23, 42, 0.34);
+  --surface-hover: rgba(37, 99, 235, 0.06);
+  --primary-subtle: rgba(37, 99, 235, 0.1);
+  --shadow-soft: 0 20px 50px rgba(15, 23, 42, 0.08);
+  --shadow-card: 0 12px 30px rgba(15, 23, 42, 0.05);
 }
 
 * {
@@ -51,31 +57,97 @@ import SideNav from './components/SideNav.vue'
 
 body {
   font-family: var(--font-sans);
-  background: var(--bg-page);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.88), transparent 24%),
+    radial-gradient(circle at top right, rgba(212, 222, 240, 0.34), transparent 26%),
+    linear-gradient(180deg, #fbfbfc 0%, #f4f5f7 52%, #eef1f4 100%);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   line-height: 1.6;
 }
 
 #app {
-  display: flex;
   min-height: 100vh;
 }
 
 .main-content {
   margin-left: var(--sidebar-w);
-  padding: 32px 40px;
+  padding: 30px clamp(24px, 2.6vw, 44px) 48px;
   min-height: 100vh;
   transition: margin-left var(--transition-normal);
-  width: calc(100% - var(--sidebar-w));
+  width: calc(100vw - var(--sidebar-w));
+  max-width: none;
 }
 
-/* Card system */
+.page-intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 0 4px;
+}
+
+.section-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.page-title,
+.surface-title {
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+}
+
+.page-title {
+  font-size: 22px;
+  line-height: 1.08;
+}
+
+.page-copy {
+  margin-top: 8px;
+  max-width: 42ch;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.surface {
+  padding: 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+}
+
+.surface-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.surface-title {
+  font-size: 22px;
+  line-height: 1.08;
+}
+
+.surface-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .card {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   padding: 24px;
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
 }
 
 .card-title {
@@ -106,11 +178,16 @@ body {
   .main-content {
     margin-left: 0;
     padding: 16px;
-    width: 100%;
+    width: 100vw;
     padding-top: 64px;
   }
   .grid-2, .grid-3, .grid-4 {
     grid-template-columns: 1fr;
+  }
+
+  .page-intro,
+  .surface-head {
+    flex-direction: column;
   }
 }
 
@@ -156,9 +233,16 @@ tbody tr:hover {
   min-height: 36px;
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .btn-primary {
   background: var(--primary);
   color: #fff;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.16);
 }
 
 .btn-primary:hover {
@@ -171,13 +255,14 @@ tbody tr:hover {
 }
 
 .btn-secondary {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.82);
   color: var(--text-primary);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(15, 23, 42, 0.1);
 }
 
 .btn-secondary:hover {
-  background: var(--surface-hover);
+  background: rgba(247, 249, 252, 0.96);
+  border-color: rgba(15, 23, 42, 0.16);
 }
 
 .btn-danger {
@@ -201,7 +286,7 @@ input, select, textarea {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 8px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   color: var(--text-primary);
   font-family: var(--font-sans);

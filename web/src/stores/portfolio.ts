@@ -39,6 +39,23 @@ export interface PortfolioSnapshot {
   allocation_grouped: AllocationGroup[]
 }
 
+export interface AccountOverview {
+  total_equity: number
+  available_cash: number
+  total_deposits: number
+  positions_count: number
+  unrealized_pnl: number
+  realized_pnl: number
+  cash_ratio: number
+}
+
+export interface RiskSummaryItem {
+  kind: string
+  level: string
+  title: string
+  detail: string
+}
+
 export interface CashFlowCreate {
   timestamp: string
   amount: number
@@ -58,6 +75,15 @@ export interface CashFlowResponse {
 export interface EquityPoint {
   timestamp: string
   equity: number
+}
+
+export interface ActivityItem {
+  kind: string
+  title: string
+  detail: string
+  timestamp: string
+  amount: number | null
+  symbol: string | null
 }
 
 export interface TradeCreate {
@@ -86,10 +112,13 @@ export interface TradeResponse {
 
 export const usePortfolioStore = defineStore('portfolio', () => {
   const snapshot = ref<PortfolioSnapshot | null>(null)
+  const overview = ref<AccountOverview | null>(null)
+  const riskSummary = ref<RiskSummaryItem[]>([])
   const loading = ref(false)
   const cashFlows = ref<CashFlowResponse[]>([])
   const equityCurve = ref<EquityPoint[]>([])
   const trades = ref<TradeResponse[]>([])
+  const activities = ref<ActivityItem[]>([])
 
   async function fetchPortfolio() {
     loading.value = true
@@ -98,6 +127,24 @@ export const usePortfolioStore = defineStore('portfolio', () => {
       snapshot.value = data
     } finally {
       loading.value = false
+    }
+  }
+
+  async function fetchOverview() {
+    try {
+      const { data } = await client.get('/portfolio/overview')
+      overview.value = data
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchRiskSummary() {
+    try {
+      const { data } = await client.get('/portfolio/risk-summary')
+      riskSummary.value = data
+    } catch {
+      // ignore
     }
   }
 
@@ -113,14 +160,20 @@ export const usePortfolioStore = defineStore('portfolio', () => {
   async function addCashFlow(flow: CashFlowCreate) {
     const { data } = await client.post('/portfolio/cash-flow', flow)
     await fetchPortfolio()
+    await fetchOverview()
+    await fetchRiskSummary()
     await fetchCashFlows()
+    await fetchActivity()
     return data as CashFlowResponse
   }
 
   async function deleteCashFlow(id: number) {
     await client.delete(`/portfolio/cash-flow/${id}`)
     await fetchPortfolio()
+    await fetchOverview()
+    await fetchRiskSummary()
     await fetchCashFlows()
+    await fetchActivity()
   }
 
   async function fetchEquityCurve() {
@@ -141,22 +194,37 @@ export const usePortfolioStore = defineStore('portfolio', () => {
     }
   }
 
+  async function fetchActivity(limit = 10) {
+    try {
+      const { data } = await client.get('/portfolio/activity', { params: { limit } })
+      activities.value = data
+    } catch {
+      // ignore
+    }
+  }
+
   async function addTrade(trade: TradeCreate) {
     const { data } = await client.post('/portfolio/trade', trade)
     await fetchPortfolio()
+    await fetchOverview()
+    await fetchRiskSummary()
     await fetchTrades()
+    await fetchActivity()
     return data as TradeResponse
   }
 
   async function deleteTrade(id: number) {
     await client.delete(`/portfolio/trade/${id}`)
     await fetchPortfolio()
+    await fetchOverview()
+    await fetchRiskSummary()
     await fetchTrades()
+    await fetchActivity()
   }
 
   return {
-    snapshot, loading, cashFlows, equityCurve, trades,
-    fetchPortfolio, fetchCashFlows, addCashFlow, deleteCashFlow,
-    fetchEquityCurve, fetchTrades, addTrade, deleteTrade,
+    snapshot, overview, riskSummary, loading, cashFlows, equityCurve, trades, activities,
+    fetchPortfolio, fetchOverview, fetchRiskSummary, fetchCashFlows, addCashFlow, deleteCashFlow,
+    fetchEquityCurve, fetchTrades, fetchActivity, addTrade, deleteTrade,
   }
 })

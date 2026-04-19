@@ -20,15 +20,13 @@ def main() -> None:
 
     # 尝试从 config.json 读取默认值
     try:
-        from pathlib import Path
-
         from config import ServerConfig
+        from server.bootstrap import load_runtime_config
 
-        config_path = Path("config.json")
-        if config_path.exists():
-            config = ServerConfig.from_json(config_path)
-        else:
-            config = ServerConfig()
+        config = load_runtime_config(
+            ServerConfig,
+            **({"live_auto_start": False} if args.no_live else {}),
+        )
     except Exception:
         config = None
 
@@ -39,13 +37,16 @@ def main() -> None:
     port = args.port or env_port or (config.port if config else 8000)
     reload = args.reload
 
-    if args.no_live and config is not None:
-        config.live_auto_start = False
-
     import uvicorn
+    from server.app import create_app
 
     uvicorn.run(
-        "server.app:create_app", host=host, port=port, reload=reload, factory=True
+        create_app(
+            config_overrides={"live_auto_start": False} if args.no_live else {}
+        ),
+        host=host,
+        port=port,
+        reload=reload,
     )
 
 

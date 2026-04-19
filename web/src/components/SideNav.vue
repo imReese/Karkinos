@@ -11,17 +11,17 @@
     </div>
 
     <nav class="nav-items">
-      <router-link
+      <button
         v-for="item in navItems"
         :key="item.path"
-        :to="item.path"
+        type="button"
         class="nav-item"
         :class="{ active: isActive(item.path) }"
-        @click="mobileOpen = false"
+        @click="navigateTo(item.path)"
       >
         <component :is="item.icon" class="nav-icon" :size="20" />
         <span class="nav-label" v-if="!isCollapsed">{{ item.label }}</span>
-      </router-link>
+      </button>
     </nav>
 
     <div class="nav-footer">
@@ -46,7 +46,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   LayoutDashboard,
   Briefcase,
@@ -62,15 +62,16 @@ import {
 import LiveIndicator from './LiveIndicator.vue'
 
 const route = useRoute()
+const router = useRouter()
 const isCollapsed = ref(false)
 const mobileOpen = ref(false)
 
 const navItems = [
-  { path: '/', label: '仪表盘', icon: LayoutDashboard },
+  { path: '/', label: '首页', icon: LayoutDashboard },
   { path: '/portfolio', label: '投资组合', icon: Briefcase },
   { path: '/trade', label: '交易记录', icon: ArrowLeftRight },
   { path: '/market', label: '行情', icon: LineChart },
-  { path: '/signals', label: '信号', icon: Radio },
+  { path: '/signals', label: '任务中心', icon: Radio },
   { path: '/backtest', label: '回测', icon: FlaskConical },
   { path: '/settings', label: '设置', icon: Settings },
 ]
@@ -78,6 +79,12 @@ const navItems = [
 function isActive(path: string): boolean {
   if (path === '/') return route.path === '/'
   return route.path.startsWith(path)
+}
+
+function navigateTo(path: string) {
+  mobileOpen.value = false
+  if (route.path === path) return
+  router.push(path)
 }
 </script>
 
@@ -88,12 +95,15 @@ function isActive(path: string): boolean {
   top: 0;
   bottom: 0;
   width: var(--sidebar-w);
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(17, 18, 22, 0.96), rgba(24, 25, 29, 0.92)),
+    rgba(16, 17, 20, 0.94);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   z-index: 100;
   transition: width var(--transition-normal);
+  box-shadow: 30px 0 80px rgba(15, 23, 42, 0.16);
 }
 
 .side-nav.collapsed {
@@ -101,8 +111,8 @@ function isActive(path: string): boolean {
 }
 
 .nav-header {
-  padding: 24px 16px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 24px 18px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .nav-brand {
@@ -115,7 +125,7 @@ function isActive(path: string): boolean {
   width: 32px;
   height: 32px;
   border-radius: var(--radius-md);
-  background: var(--primary);
+  background: linear-gradient(135deg, #c8d2e1, #8a96a8);
   color: #fff;
   display: flex;
   align-items: center;
@@ -128,7 +138,8 @@ function isActive(path: string): boolean {
 .brand-text {
   font-size: 18px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #f3f4f6;
+  letter-spacing: 0.02em;
 }
 
 .collapsed-brand {
@@ -138,7 +149,10 @@ function isActive(path: string): boolean {
 .nav-items {
   flex: 1;
   padding: 8px;
+  padding-bottom: 18px;
   overflow-y: auto;
+  position: relative;
+  z-index: 0;
 }
 
 .nav-item {
@@ -147,7 +161,7 @@ function isActive(path: string): boolean {
   gap: 12px;
   padding: 8px 12px;
   border-radius: var(--radius-md);
-  color: var(--text-secondary);
+  color: rgba(226, 232, 240, 0.66);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
@@ -162,13 +176,13 @@ function isActive(path: string): boolean {
 }
 
 .nav-item:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f8fafc;
 }
 
 .nav-item.active {
-  background: var(--primary-subtle);
-  color: var(--primary);
+  background: rgba(255, 255, 255, 0.065);
+  color: #f8fafc;
 }
 
 .nav-item.active::before {
@@ -179,7 +193,7 @@ function isActive(path: string): boolean {
   transform: translateY(-50%);
   width: 2px;
   height: 16px;
-  background: var(--primary);
+  background: linear-gradient(180deg, #d7e1ef, #8b97a9);
   border-radius: 1px;
 }
 
@@ -203,12 +217,14 @@ function isActive(path: string): boolean {
 
 .nav-footer {
   padding: 12px 8px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  position: relative;
+  z-index: 1;
 }
 
 .collapsed .nav-footer {
@@ -218,7 +234,7 @@ function isActive(path: string): boolean {
 .collapse-btn {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: rgba(226, 232, 240, 0.5);
   cursor: pointer;
   padding: 8px;
   border-radius: var(--radius-sm);
@@ -229,8 +245,8 @@ function isActive(path: string): boolean {
 }
 
 .collapse-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
 }
 
 /* Mobile hamburger */
@@ -246,6 +262,7 @@ function isActive(path: string): boolean {
   color: var(--text-primary);
   cursor: pointer;
   padding: 8px;
+  box-shadow: var(--shadow-card);
 }
 
 .mobile-overlay {
@@ -262,7 +279,7 @@ function isActive(path: string): boolean {
     width: var(--sidebar-w) !important;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    background: rgba(17, 17, 17, 0.85);
+    background: rgba(15, 23, 42, 0.92);
   }
 
   .side-nav.mobile-open {

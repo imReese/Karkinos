@@ -16,6 +16,32 @@ export interface WatchlistItem {
   symbol: string
   asset_class: string
   name: string
+  is_holding: boolean
+  quantity: number | null
+  avg_cost: number | null
+  market_value: number | null
+  unrealized_pnl: number | null
+  realized_pnl: number | null
+  last_snapshot_at: string | null
+}
+
+export interface DataHealthQuote {
+  symbol: string
+  asset_class: string
+  timestamp: string | null
+  price: number | null
+}
+
+export interface DataHealthResponse {
+  quotes: DataHealthQuote[]
+  bars: Array<{
+    symbol: string
+    start: string | null
+    end: string | null
+    rows: number
+  }>
+  market_open?: boolean
+  refresh_policy?: 'live' | 'cache_only'
 }
 
 export interface KlineBar {
@@ -30,6 +56,7 @@ export interface KlineBar {
 export const useMarketStore = defineStore('market', () => {
   const watchlist = ref<WatchlistItem[]>([])
   const quotes = ref<Record<string, MarketQuote>>({})
+  const dataHealth = ref<DataHealthResponse | null>(null)
   const loading = ref(false)
   let wsListenerActive = false
 
@@ -59,10 +86,33 @@ export const useMarketStore = defineStore('market', () => {
     }
   }
 
-  async function fetchKline(symbol: string, start?: string, end?: string) {
+  async function fetchDataHealth() {
+    const { data } = await client.get('/market/data-health')
+    dataHealth.value = data as DataHealthResponse
+    return dataHealth.value
+  }
+
+  async function addWatchlistItem(symbol: string, assetClass: string) {
+    const { data } = await client.post('/market/watchlist', {
+      symbol,
+      asset_class: assetClass,
+    })
+    watchlist.value = data
+    return data as WatchlistItem[]
+  }
+
+  async function removeWatchlistItem(symbol: string) {
+    const { data } = await client.delete(`/market/watchlist/${encodeURIComponent(symbol)}`)
+    watchlist.value = data
+    delete quotes.value[symbol]
+    return data as WatchlistItem[]
+  }
+
+  async function fetchKline(symbol: string, start?: string, end?: string, interval = '1d') {
     const params: Record<string, string> = {}
     if (start) params.start = start
     if (end) params.end = end
+    params.interval = interval
     const { data } = await client.get(`/market/kline/${symbol}`, { params })
     return data as KlineBar[]
   }
@@ -87,5 +137,18 @@ export const useMarketStore = defineStore('market', () => {
     })
   }
 
-  return { watchlist, quotes, loading, fetchWatchlist, fetchQuote, fetchAllQuotes, fetchKline, startListening }
+  return {
+    watchlist,
+    quotes,
+    dataHealth,
+    loading,
+    fetchWatchlist,
+    fetchQuote,
+    fetchAllQuotes,
+    fetchDataHealth,
+    addWatchlistItem,
+    removeWatchlistItem,
+    fetchKline,
+    startListening,
+  }
 })

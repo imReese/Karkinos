@@ -11,7 +11,9 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from core.types import AssetClass, Symbol
+from config import BacktestConfig
+from core.types import Symbol
+from server.bootstrap import build_strategy, build_watchlist
 from server.models import (
     BacktestMetrics,
     BacktestRequest,
@@ -24,15 +26,6 @@ from server.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-_ASSET_CLASS_MAP = {
-    "stock": AssetClass.STOCK,
-    "etf": AssetClass.FUND,
-    "fund": AssetClass.FUND,
-    "gold": AssetClass.GOLD,
-    "bond": AssetClass.BOND,
-}
-
 
 class StrategyInfoResponse(BaseModel):
     name: str
@@ -54,8 +47,6 @@ def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any
     from backtest.engine import BacktestEngine
     from data.manager import DataManager, build_sources
     from data.store import DataStore
-    from execution.commission import MultiAssetCommission
-    from strategy.registry import StrategyRegistry
 
     assets = request.assets or config.assets
     store = None
@@ -73,11 +64,10 @@ def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any
         default_source=config.data_source,
     )
 
+    watchlist = build_watchlist(BacktestConfig(assets=assets))
     instruments = {}
     data_handlers = {}
-    for asset_cfg in assets:
-        sym = Symbol(asset_cfg["symbol"])
-        ac = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
+    for sym, ac in watchlist:
         instrument = DataManager.get_instrument(sym, ac)
         instruments[sym] = instrument
 
@@ -92,20 +82,12 @@ def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any
     event_bus_placeholder = type(
         "EventBus", (), {"subscribe": lambda *a: None, "publish": lambda *a: None}
     )()
-
-    # 从请求中提取策略参数
-    strategy_info = StrategyRegistry.get(request.strategy)
-    if strategy_info:
-        param_names = {p["name"] for p in strategy_info["params"]}
-        strategy_kwargs = {
-            k: v for k, v in request.model_dump().items() if k in param_names
-        }
-    else:
-        strategy_kwargs = {}
-
-    strategy = StrategyRegistry.create(
-        request.strategy, event_bus_placeholder, **strategy_kwargs
+    strategy_config = BacktestConfig(
+        strategy=request.strategy,
+        short_period=request.short_period,
+        long_period=request.long_period,
     )
+    strategy = build_strategy(strategy_config, event_bus_placeholder)
 
     engine = BacktestEngine(
         strategy=strategy,
