@@ -9,38 +9,21 @@ from __future__ import annotations
 import os
 import time
 
-from config import BacktestConfig
 from core.event_bus import EventBus
 from core.events import SignalEvent
-from core.types import AssetClass, Symbol
 from data.live import LiveDataFeed
-from data.providers.akshare_source import AKShareSource
 from notification.notifier import build_notifier, format_signal_message
-from strategy.examples.dual_ma import DualMAStrategy
-
-# 配置中的 asset_class 字符串 → AssetClass 枚举
-_ASSET_CLASS_MAP = {
-    "stock": AssetClass.STOCK,
-    "etf": AssetClass.FUND,
-    "fund": AssetClass.FUND,
-    "gold": AssetClass.GOLD,
-    "bond": AssetClass.BOND,
-}
+from server.bootstrap import build_strategy, create_runtime_context, load_runtime_config
 
 
 def main() -> None:
     """实时监控主循环。"""
-    config = BacktestConfig()
+    config = load_runtime_config()
+    runtime = create_runtime_context(config)
     event_bus = EventBus()
-    source = AKShareSource()
+    source = runtime.sources.get(config.data_source, runtime.sources["akshare"])
     feed = LiveDataFeed(source, event_bus)
-
-    # 构建关注列表
-    watchlist: list[tuple[Symbol, AssetClass]] = []
-    for asset_cfg in config.assets:
-        sym = Symbol(asset_cfg["symbol"])
-        ac = _ASSET_CLASS_MAP[asset_cfg["asset_class"]]
-        watchlist.append((sym, ac))
+    watchlist = runtime.watchlist
 
     if not watchlist:
         print("未配置任何标的，退出。")
@@ -50,11 +33,7 @@ def main() -> None:
     notifier = build_notifier(config.notification)
 
     # 创建策略
-    strategy = DualMAStrategy(
-        event_bus,
-        short_period=config.short_period,
-        long_period=config.long_period,
-    )
+    strategy = build_strategy(config, event_bus)
     strategy.on_init([sym for sym, _ in watchlist])
 
     # 订阅 SignalEvent → 推送通知

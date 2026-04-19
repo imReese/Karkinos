@@ -15,8 +15,25 @@ export interface SignalResponse {
   isNew?: boolean
 }
 
+export interface ActionCard {
+  id: number | null
+  source_signal_id?: number | null
+  symbol: string
+  title: string
+  detail: string
+  direction: string
+  urgency: string
+  target_weight: number
+  price: number | null
+  strategy_id: string
+  timestamp: string
+  asset_class: string
+  status: string
+}
+
 export const useSignalsStore = defineStore('signals', () => {
   const signals = ref<SignalResponse[]>([])
+  const actionCards = ref<ActionCard[]>([])
   const loading = ref(false)
   let wsListenerActive = false
 
@@ -33,6 +50,18 @@ export const useSignalsStore = defineStore('signals', () => {
   async function fetchLatest(limit = 10) {
     const { data } = await client.get('/signals/latest', { params: { limit } })
     return data as SignalResponse[]
+  }
+
+  async function fetchActions(limit = 6) {
+    const { data } = await client.get('/signals/actions', { params: { limit } })
+    actionCards.value = data
+    return data as ActionCard[]
+  }
+
+  async function updateActionStatus(actionId: number, status: string) {
+    const { data } = await client.patch(`/signals/actions/${actionId}`, { status })
+    actionCards.value = actionCards.value.filter(action => action.id !== actionId)
+    return data as ActionCard
   }
 
   function startListening() {
@@ -59,5 +88,14 @@ export const useSignalsStore = defineStore('signals', () => {
     })
   }
 
-  return { signals, loading, fetchSignals, fetchLatest, startListening }
+  return {
+    signals,
+    actionCards,
+    loading,
+    fetchSignals,
+    fetchLatest,
+    fetchActions,
+    updateActionStatus,
+    startListening,
+  }
 })

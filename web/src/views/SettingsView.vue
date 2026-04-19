@@ -1,9 +1,17 @@
 <template>
   <div class="settings">
+    <section class="page-intro">
+      <div>
+        <div class="section-eyebrow">设置</div>
+        <h1 class="page-title">运行方式、策略与通知配置</h1>
+        <p class="page-copy">管理服务运行状态、关注列表、策略参数和通知方式。</p>
+      </div>
+    </section>
+
     <!-- Live control -->
     <div class="grid grid-2 mb-4">
       <div class="card">
-        <div class="card-title">实盘控制</div>
+        <div class="card-title">服务控制</div>
         <div class="control-status">
           <span class="status-dot" :class="liveRunning ? 'running' : 'stopped'"></span>
           <span :class="liveRunning ? 'text-green' : 'text-red'">
@@ -21,9 +29,14 @@
         <div class="card-title">通知测试</div>
         <p class="text-muted section-desc">发送一条测试消息验证通知配置是否正确。</p>
         <button class="btn btn-primary" @click="testNotification">发送测试通知</button>
-        <div v-if="testResult" class="mt-4" :class="testResult.status === 'ok' ? 'text-green' : 'text-red'">
-          {{ testResult.message }}
-        </div>
+        <AppNotice
+          v-if="inlineNotice"
+          class="mt-4"
+          :tone="inlineNotice.tone"
+          :title="inlineNotice.title"
+          :message="inlineNotice.message"
+          dense
+        />
       </div>
     </div>
 
@@ -58,7 +71,7 @@
 
     <!-- Watchlist -->
     <div class="card mb-4">
-      <div class="card-title">关注列表</div>
+      <div class="card-title">关注标的</div>
       <div v-for="(asset, idx) in config.assets" :key="idx" class="asset-row">
         <input type="text" v-model="asset.symbol" placeholder="代码" class="asset-input" />
         <select v-model="asset.asset_class" class="asset-select">
@@ -74,7 +87,7 @@
 
     <!-- Strategy -->
     <div class="card mb-4">
-      <div class="card-title">策略</div>
+      <div class="card-title">策略参数</div>
       <div class="settings-grid">
         <div class="form-group">
           <label>策略</label>
@@ -120,7 +133,7 @@
 
     <!-- Notification -->
     <div class="card mb-4">
-      <div class="card-title">通知</div>
+      <div class="card-title">通知方式</div>
       <div class="form-group">
         <label>通知类型</label>
         <select v-model="config.notification.type">
@@ -147,7 +160,7 @@
 
     <!-- Raw JSON fallback -->
     <div class="card mb-4">
-      <div class="card-title">高级 (JSON)</div>
+      <div class="card-title">高级配置 (JSON)</div>
       <div class="form-group">
         <textarea v-model="configJson" rows="10" class="config-editor"></textarea>
       </div>
@@ -162,12 +175,15 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import client from '../api/client'
+import AppNotice from '../components/AppNotice.vue'
+import { useUiStore } from '../stores/ui'
 
 const liveRunning = ref(false)
-const testResult = ref<{ status: string; message: string } | null>(null)
+const inlineNotice = ref<{ tone: 'success' | 'error' | 'info'; title: string; message: string } | null>(null)
 const configJson = ref('')
 const showToken = ref(false)
 const hasToken = ref(false)
+const uiStore = useUiStore()
 
 const config = reactive({
   host: '0.0.0.0',
@@ -198,27 +214,48 @@ async function refreshStatus() {
     const { data } = await client.get('/settings/live/status')
     liveRunning.value = data.running
   } catch {
-    // ignore
+    uiStore.error('当前无法获取服务运行状态。', '状态获取失败')
   }
 }
 
 async function startLive() {
-  await client.post('/settings/live/start')
-  await refreshStatus()
+  try {
+    await client.post('/settings/live/start')
+    await refreshStatus()
+    inlineNotice.value = { tone: 'success', title: '服务已启动', message: '实时任务已经进入运行状态。' }
+    uiStore.success('实时任务已经启动。', '服务已启动')
+  } catch {
+    inlineNotice.value = { tone: 'error', title: '启动失败', message: '服务未能启动，请检查后端状态。' }
+    uiStore.error('实时任务未能启动，请检查后端状态。', '启动失败')
+  }
 }
 
 async function stopLive() {
-  await client.post('/settings/live/stop')
-  await refreshStatus()
+  try {
+    await client.post('/settings/live/stop')
+    await refreshStatus()
+    inlineNotice.value = { tone: 'info', title: '服务已停止', message: '实时任务已经停止运行。' }
+    uiStore.info('实时任务已经停止。', '服务已停止')
+  } catch {
+    inlineNotice.value = { tone: 'error', title: '停止失败', message: '服务未能停止，请稍后重试。' }
+    uiStore.error('实时任务未能停止，请稍后重试。', '停止失败')
+  }
 }
 
 async function testNotification() {
-  testResult.value = null
+  inlineNotice.value = null
   try {
     const { data } = await client.post('/settings/notification/test')
-    testResult.value = data
+    const tone = data.status === 'ok' ? 'success' : 'error'
+    inlineNotice.value = { tone, title: '通知测试', message: data.message }
+    if (tone === 'success') {
+      uiStore.success(data.message, '通知测试')
+    } else {
+      uiStore.error(data.message, '通知测试')
+    }
   } catch (e: any) {
-    testResult.value = { status: 'error', message: e.message }
+    inlineNotice.value = { tone: 'error', title: '通知测试失败', message: e.message }
+    uiStore.error(e.message, '通知测试失败')
   }
 }
 
@@ -265,8 +302,11 @@ function loadFromJson() {
       live_poll_interval: parsed.live_poll_interval ?? config.live_poll_interval,
       notification: parsed.notification ?? config.notification,
     })
+    inlineNotice.value = { tone: 'info', title: 'JSON 已载入', message: '表单已经按 JSON 内容更新。' }
+    uiStore.info('表单已经按 JSON 内容更新。', 'JSON 已载入')
   } catch {
-    alert('JSON 格式错误')
+    inlineNotice.value = { tone: 'error', title: 'JSON 格式错误', message: '请先修正 JSON 再重新载入。' }
+    uiStore.error('请先修正 JSON 再重新载入。', 'JSON 格式错误')
   }
 }
 
@@ -290,8 +330,11 @@ async function saveConfig() {
     }
     await client.put('/settings', payload)
     configJson.value = JSON.stringify(payload, null, 2)
+    inlineNotice.value = { tone: 'success', title: '配置已保存', message: '设置已经写入后端配置。' }
+    uiStore.success('设置已经写入后端配置。', '配置已保存')
   } catch (e: any) {
-    alert('保存失败: ' + e.message)
+    inlineNotice.value = { tone: 'error', title: '保存失败', message: e.message }
+    uiStore.error(e.message, '保存失败')
   }
 }
 

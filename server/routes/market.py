@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from core.types import AssetClass, BarFrequency, Symbol
-from server.models import KlineBar, MarketQuote, WatchlistItem
+from server.models import KlineBar, MarketQuote, WatchlistCreateRequest, WatchlistItem
+from server.services.market_hours import is_cn_trading_session
+from server.services.data_health import build_data_health
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+_CONFIG_PATH = Path("config.json")
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -23,79 +29,195 @@ _ASSET_CLASS_MAP = {
 }
 
 
+def _resolve_asset_class(symbol: str, assets: list[dict[str, str]]) -> AssetClass:
+    for asset_cfg in assets:
+        if asset_cfg["symbol"] == symbol:
+            return _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
+    return AssetClass.STOCK
+
+
+def _persist_config(config) -> None:
+    data = {
+        "host": config.host,
+        "port": config.port,
+        "live_auto_start": config.live_auto_start,
+        "initial_cash": str(config.initial_cash),
+        "start_date": config.start_date,
+        "end_date": config.end_date,
+        "assets": config.assets,
+        "strategy": config.strategy,
+        "short_period": config.short_period,
+        "long_period": config.long_period,
+        "data_source": config.data_source,
+        "tushare_token": config.tushare_token,
+        "notification": config.notification,
+        "live_poll_interval": config.live_poll_interval,
+    }
+    _CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict | None:
+    from data.manager import build_sources
+
+    sources = build_sources(
+        data_source=state.config.data_source,
+        tushare_token=state.config.tushare_token,
+    )
+    source = sources.get(state.config.data_source, sources["akshare"])
+    snapshot = source.fetch_latest(Symbol(symbol), asset_class)
+    if not snapshot:
+        return None
+    payload = {
+        "symbol": symbol,
+        "asset_class": asset_class.value,
+        "price": snapshot["price"],
+        "volume": snapshot.get("volume"),
+        "timestamp": snapshot.get("timestamp"),
+    }
+    if state.db is not None and payload["timestamp"]:
+        state.db.save_quote_snapshot_sync(
+            symbol=symbol,
+            asset_class=payload["asset_class"],
+            price=float(payload["price"]),
+            volume=None if payload["volume"] is None else float(payload["volume"]),
+            timestamp=str(payload["timestamp"]),
+        )
+    return payload
+
+
+async def _refresh_quote_snapshot(state, symbol: str, asset_class: AssetClass) -> None:
+    try:
+        await asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class)
+    except Exception:
+        logger.exception("Async quote refresh failed for %s", symbol)
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/market", tags=["market"])
 
     @r.get("/watchlist", response_model=list[WatchlistItem])
     async def get_watchlist() -> list[WatchlistItem]:
-        """获取配置的关注列表 + 最新报价。"""
+        """获取配置的关注列表，并附带持仓与快照信息。"""
         from server.app import get_app_state
 
         state = get_app_state()
         config = state.config
         scheduler = state.scheduler
+        portfolio = scheduler.portfolio if scheduler else None
+        positions = getattr(portfolio, "positions", {}) if portfolio else {}
+        latest_quotes: dict[str, dict] = {}
+        if scheduler and getattr(scheduler, "latest_quotes", None):
+            latest_quotes.update(scheduler.latest_quotes)
+        if state.db is not None:
+            for row in state.db.get_latest_quotes_sync():
+                latest_quotes.setdefault(row["symbol"], row)
+
         items: list[WatchlistItem] = []
         for asset_cfg in config.assets:
             sym = asset_cfg["symbol"]
             ac = asset_cfg["asset_class"]
-            items.append(WatchlistItem(symbol=sym, asset_class=ac))
-
-        if scheduler and scheduler.is_running:
-            for item in items:
-                quote = scheduler.latest_quotes.get(item.symbol)
-                if quote:
-                    item.name = f"{item.symbol}"
+            position = positions.get(Symbol(sym)) or positions.get(sym)
+            quote = latest_quotes.get(sym)
+            items.append(
+                WatchlistItem(
+                    symbol=sym,
+                    asset_class=ac,
+                    name=sym,
+                    is_holding=position is not None,
+                    quantity=None if position is None else float(position.quantity),
+                    avg_cost=None if position is None else float(position.avg_cost),
+                    market_value=None if position is None else float(position.market_value),
+                    unrealized_pnl=None
+                    if position is None
+                    else float(position.unrealized_pnl),
+                    realized_pnl=None if position is None else float(position.realized_pnl),
+                    last_snapshot_at=None if quote is None else quote.get("timestamp"),
+                )
+            )
 
         return items
 
+    @r.post("/watchlist", response_model=list[WatchlistItem])
+    async def add_watchlist_item(request: WatchlistCreateRequest) -> list[WatchlistItem]:
+        """新增关注标的并写入配置。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        config = state.config
+        symbol = request.symbol.strip()
+        if not symbol:
+            raise HTTPException(status_code=400, detail="symbol is required")
+        if any(asset["symbol"].lower() == symbol.lower() for asset in config.assets):
+            raise HTTPException(status_code=409, detail="symbol already exists")
+
+        config.assets.append({"symbol": symbol, "asset_class": request.asset_class})
+        _persist_config(config)
+        return await get_watchlist()
+
+    @r.delete("/watchlist/{symbol}", response_model=list[WatchlistItem])
+    async def remove_watchlist_item(symbol: str) -> list[WatchlistItem]:
+        """移除关注标的并写入配置。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        config = state.config
+        original_len = len(config.assets)
+        config.assets = [
+            asset for asset in config.assets if asset["symbol"].lower() != symbol.lower()
+        ]
+        if len(config.assets) == original_len:
+            raise HTTPException(status_code=404, detail="symbol not found")
+
+        _persist_config(config)
+        return await get_watchlist()
+
     @r.get("/quote/{symbol}", response_model=MarketQuote)
-    async def get_quote(symbol: str) -> MarketQuote:
-        """获取单标的报价。"""
+    async def get_quote(symbol: str, background_tasks: BackgroundTasks) -> MarketQuote:
+        """本地优先获取报价，并异步刷新快照。"""
         from server.app import get_app_state
 
         state = get_app_state()
         scheduler = state.scheduler
+        asset_class = _resolve_asset_class(symbol, state.config.assets)
 
         if scheduler and scheduler.is_running:
             q = scheduler.latest_quotes.get(symbol)
             if q:
+                if is_cn_trading_session():
+                    background_tasks.add_task(
+                        _refresh_quote_snapshot, state, symbol, asset_class
+                    )
                 return MarketQuote(symbol=symbol, **q)
 
-        try:
-            from data.manager import build_sources
-
-            sources = build_sources(
-                data_source=config.data_source,
-                tushare_token=config.tushare_token,
-            )
-            source = sources.get(config.data_source, sources["akshare"])
-            ac = AssetClass.STOCK
-            config = state.config
-            for asset_cfg in config.assets:
-                if asset_cfg["symbol"] == symbol:
-                    ac = _ASSET_CLASS_MAP.get(
-                        asset_cfg["asset_class"], AssetClass.STOCK
+        if state.db is not None:
+            cached = await state.db.get_latest_quote(symbol)
+            if cached:
+                if is_cn_trading_session():
+                    background_tasks.add_task(
+                        _refresh_quote_snapshot, state, symbol, asset_class
                     )
-                    break
-            snapshot = source.fetch_latest(Symbol(symbol), ac)
+                return MarketQuote(**cached)
+
+        if not is_cn_trading_session():
+            return MarketQuote(symbol=symbol, price=0, asset_class=asset_class.value)
+
+        try:
+            snapshot = await asyncio.to_thread(
+                _fetch_latest_snapshot, state, symbol, asset_class
+            )
             if snapshot:
-                return MarketQuote(
-                    symbol=symbol,
-                    price=snapshot["price"],
-                    volume=snapshot.get("volume"),
-                    timestamp=snapshot.get("timestamp"),
-                    asset_class=ac.value,
-                )
+                return MarketQuote(**snapshot)
         except Exception:
             logger.exception("Failed to fetch quote for %s", symbol)
 
-        return MarketQuote(symbol=symbol, price=0)
+        return MarketQuote(symbol=symbol, price=0, asset_class=asset_class.value)
 
     @r.get("/kline/{symbol}", response_model=list[KlineBar])
     async def get_kline(
         symbol: str,
         start: str = "2025-01-02",
         end: str = _DEFAULT_END_DATE,
+        interval: str = "1d",
     ) -> list[KlineBar]:
         """获取历史 K 线数据。"""
         from server.app import get_app_state
@@ -127,11 +249,16 @@ def create_router() -> APIRouter:
                 store=store,
                 default_source=config.data_source,
             )
+            frequency = {
+                "1m": BarFrequency.MIN_1,
+                "5m": BarFrequency.MIN_5,
+                "1d": BarFrequency.DAILY,
+            }.get(interval, BarFrequency.DAILY)
             handler = dm.get_bars(
                 Symbol(symbol),
                 datetime.strptime(start, "%Y-%m-%d"),
                 datetime.strptime(end, "%Y-%m-%d"),
-                BarFrequency.DAILY,
+                frequency,
                 ac,
             )
             bars: list[KlineBar] = []
@@ -150,5 +277,45 @@ def create_router() -> APIRouter:
         except Exception:
             logger.exception("Failed to fetch kline for %s", symbol)
             return []
+
+    @r.get("/data-health")
+    async def get_data_health() -> dict:
+        """获取数据缓存与快照健康度概览。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        scheduler = state.scheduler
+
+        if scheduler and getattr(scheduler, "watchlist", None):
+            watchlist = [
+                (str(symbol), getattr(asset_class, "value", str(asset_class)))
+                for symbol, asset_class in scheduler.watchlist
+            ]
+        else:
+            watchlist = [
+                (asset_cfg["symbol"], asset_cfg["asset_class"])
+                for asset_cfg in state.config.assets
+            ]
+
+        latest_quotes: dict[str, dict] = {}
+        if scheduler and getattr(scheduler, "latest_quotes", None):
+            latest_quotes.update(scheduler.latest_quotes)
+
+        if state.db is not None:
+            for row in state.db.get_latest_quotes_sync():
+                latest_quotes.setdefault(row["symbol"], row)
+
+        payload = build_data_health(
+            watchlist=watchlist,
+            latest_quotes=latest_quotes,
+            bar_coverage={},
+        )
+        payload["market_open"] = is_cn_trading_session()
+        payload["refresh_policy"] = (
+            "live"
+            if payload["market_open"]
+            else "cache_only"
+        )
+        return payload
 
     return r

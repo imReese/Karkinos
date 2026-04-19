@@ -66,13 +66,11 @@ async def lifespan(app: FastAPI):
     from config import ServerConfig
     from core.event_bus import EventBus
     from notification.notifier import build_notifier
+    from server.bootstrap import load_runtime_config
 
     # 加载配置
-    config_path = Path("config.json")
-    if config_path.exists():
-        config = ServerConfig.from_json(config_path)
-    else:
-        config = ServerConfig()
+    config_overrides = getattr(app.state, "config_overrides", {})
+    config = load_runtime_config(ServerConfig, **config_overrides)
     state.config = config
 
     # 初始化数据库
@@ -129,7 +127,7 @@ async def lifespan(app: FastAPI):
     logger.info("MyQuant Server stopped")
 
 
-def create_app() -> FastAPI:
+def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     """创建 FastAPI 应用实例。"""
     app = FastAPI(
         title="MyQuant Server",
@@ -137,6 +135,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.state.config_overrides = config_overrides or {}
 
     # CORS — 开发环境允许所有来源
     app.add_middleware(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -28,12 +29,15 @@ class AppDatabase:
 
     async def init(self) -> None:
         """初始化数据库表。"""
-        import aiosqlite
+        await asyncio.to_thread(self.init_sync)
+        logger.info("Database initialized: %s", self._path)
 
-        async with aiosqlite.connect(self._path) as db:
-            await db.execute("PRAGMA journal_mode=WAL")
-            await db.executescript(_SCHEMA)
-            await db.commit()
+    def init_sync(self) -> None:
+        """同步初始化数据库表。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.executescript(_SCHEMA)
+            conn.commit()
         logger.info("Database initialized: %s", self._path)
 
     # ---------- Signals ----------
@@ -84,6 +88,121 @@ class AppDatabase:
     async def get_latest_signals(self, limit: int = 10) -> list[dict[str, Any]]:
         """获取最新信号。"""
         return await self.get_signals(limit=limit, offset=0)
+
+    # ---------- Action Tasks ----------
+
+    def upsert_action_task_sync(
+        self,
+        *,
+        source_signal_id: int,
+        symbol: str,
+        title: str,
+        detail: str,
+        direction: str,
+        urgency: str,
+        target_weight: float,
+        price: float | None,
+        strategy_id: str,
+        timestamp: str,
+        asset_class: str,
+    ) -> None:
+        """同步写入或更新待执行任务，避免重复生成。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """
+                INSERT INTO action_tasks (
+                    source_signal_id, symbol, title, detail, direction, urgency,
+                    target_weight, price, strategy_id, timestamp, asset_class, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                ON CONFLICT(source_signal_id) DO UPDATE SET
+                    symbol = excluded.symbol,
+                    title = excluded.title,
+                    detail = excluded.detail,
+                    direction = excluded.direction,
+                    urgency = excluded.urgency,
+                    target_weight = excluded.target_weight,
+                    price = excluded.price,
+                    strategy_id = excluded.strategy_id,
+                    timestamp = excluded.timestamp,
+                    asset_class = excluded.asset_class,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    source_signal_id,
+                    symbol,
+                    title,
+                    detail,
+                    direction,
+                    urgency,
+                    target_weight,
+                    price,
+                    strategy_id,
+                    timestamp,
+                    asset_class,
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+
+    async def get_action_tasks(
+        self, statuses: list[str] | None = None, limit: int = 20, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """列出待执行任务。"""
+        return self.get_action_tasks_sync(
+            statuses=statuses, limit=limit, offset=offset
+        )
+
+    def get_action_tasks_sync(
+        self, statuses: list[str] | None = None, limit: int = 20, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """同步版本，避免事件循环中 sqlite 读取挂住。"""
+        query = """
+            SELECT id, source_signal_id, symbol, title, detail, direction, urgency,
+                   target_weight, price, strategy_id, timestamp, asset_class, status,
+                   created_at, updated_at
+            FROM action_tasks
+        """
+        params: list[Any] = []
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            query += f" WHERE status IN ({placeholders})"
+            params.extend(statuses)
+        query += " ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, tuple(params)).fetchall()
+            return [dict(row) for row in rows]
+
+    async def update_action_task_status(
+        self, task_id: int, status: str
+    ) -> dict[str, Any] | None:
+        """更新任务状态并返回新值。"""
+        return self.update_action_task_status_sync(task_id=task_id, status=status)
+
+    def update_action_task_status_sync(
+        self, task_id: int, status: str
+    ) -> dict[str, Any] | None:
+        """同步版本，供线程池包装。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                "UPDATE action_tasks SET status = ?, updated_at = ? WHERE id = ?",
+                (status, datetime.now().isoformat(), task_id),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT id, source_signal_id, symbol, title, detail, direction, urgency,
+                       target_weight, price, strategy_id, timestamp, asset_class, status,
+                       created_at, updated_at
+                FROM action_tasks WHERE id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+            return dict(row) if row else None
 
     # ---------- Backtest Results ----------
 
@@ -151,6 +270,69 @@ class AppDatabase:
             )
             row = await cursor.fetchone()
             return dict(row) if row else None
+
+    # ---------- Quote Snapshots ----------
+
+    def save_quote_snapshot_sync(
+        self,
+        symbol: str,
+        asset_class: str,
+        price: float,
+        volume: float | None,
+        timestamp: str,
+    ) -> None:
+        """同步写入实时行情快照（后台线程调用）。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """INSERT INTO quote_snapshots
+                   (symbol, asset_class, price, volume, timestamp, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    symbol,
+                    asset_class,
+                    price,
+                    volume,
+                    timestamp,
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+
+    async def get_latest_quote(self, symbol: str) -> dict[str, Any] | None:
+        """获取单个标的最新行情快照。"""
+        import aiosqlite
+
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """SELECT symbol, asset_class, price, volume, timestamp
+                   FROM quote_snapshots
+                   WHERE symbol = ?
+                   ORDER BY timestamp DESC, id DESC
+                   LIMIT 1""",
+                (symbol,),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_latest_quotes_sync(self) -> list[dict[str, Any]]:
+        """同步获取各标的最新行情快照，供启动恢复使用。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT qs.symbol, qs.asset_class, qs.price, qs.volume, qs.timestamp
+                FROM quote_snapshots qs
+                JOIN (
+                    SELECT symbol, MAX(timestamp) AS max_timestamp
+                    FROM quote_snapshots
+                    GROUP BY symbol
+                ) latest
+                ON qs.symbol = latest.symbol AND qs.timestamp = latest.max_timestamp
+                ORDER BY qs.symbol
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     # ---------- Portfolio Snapshots ----------
 
@@ -339,9 +521,39 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     allocation_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS quote_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    price REAL NOT NULL,
+    volume REAL,
+    timestamp TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS action_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_signal_id INTEGER NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    urgency TEXT NOT NULL,
+    target_weight REAL NOT NULL,
+    price REAL,
+    strategy_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_results(created_at);
+CREATE INDEX IF NOT EXISTS idx_quote_snapshots_symbol_ts ON quote_snapshots(symbol, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_action_tasks_status_ts ON action_tasks(status, timestamp DESC);
 
 CREATE TABLE IF NOT EXISTS cash_flows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,5 +1,13 @@
 <template>
   <div class="backtest">
+    <section class="page-intro">
+      <div>
+        <div class="section-eyebrow">回测</div>
+        <h1 class="page-title">策略回测与结果比较</h1>
+        <p class="page-copy">配置标的、策略和区间，然后查看结果、曲线和历史记录。</p>
+      </div>
+    </section>
+
     <!-- Error banner -->
     <div v-if="backtestStore.error" class="error-banner">
       <span>{{ backtestStore.error }}</span>
@@ -16,7 +24,7 @@
     <template v-if="mode === 'single'">
       <div class="grid grid-2 mb-4">
         <div class="card">
-          <div class="card-title">回测配置</div>
+          <div class="card-title">单策略配置</div>
 
           <!-- Symbol selector -->
           <div class="form-group">
@@ -72,7 +80,7 @@
         </div>
 
         <div class="card" v-if="backtestStore.currentResult">
-          <div class="card-title">回测指标</div>
+          <div class="card-title">结果指标</div>
           <div class="metrics-grid">
             <div class="metric-item" v-for="m in metricsDisplay" :key="m.label">
               <div class="metric-label">{{ m.label }}</div>
@@ -83,7 +91,7 @@
       </div>
 
       <div class="card" v-if="backtestStore.currentResult && backtestStore.currentResult.equity_curve.length > 0">
-        <div class="card-title">权益曲线</div>
+        <div class="card-title">结果曲线</div>
         <EquityCurve :data="backtestStore.currentResult.equity_curve" />
       </div>
     </template>
@@ -131,7 +139,7 @@
 
         <!-- Compare results table -->
         <div class="card" v-if="backtestStore.compareResults.length > 0">
-          <div class="card-title">策略指标对比</div>
+          <div class="card-title">策略对比结果</div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -165,14 +173,14 @@
 
       <!-- Overlaid equity curves -->
       <div class="card" v-if="backtestStore.compareResults.length > 0">
-        <div class="card-title">权益曲线对比</div>
+        <div class="card-title">对比曲线</div>
         <EquityCurve :series="compareSeries" />
       </div>
     </template>
 
     <!-- History backtest results list -->
     <div class="card mt-4" v-if="backtestStore.results.length > 0">
-      <div class="card-title">历史回测结果</div>
+      <div class="card-title">历史结果</div>
       <div class="table-wrap">
         <table>
           <thead>

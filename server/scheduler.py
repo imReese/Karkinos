@@ -9,27 +9,20 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from core.event_bus import EventBus
-from core.events import MarketEvent, SignalEvent
+from core.events import SignalEvent
 from core.types import AssetClass, Symbol
 from data.live import LiveDataFeed
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from notification.notifier import build_notifier, format_signal_message
+from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
+from server.services.market_hours import is_cn_trading_session
 
 if TYPE_CHECKING:
     from config import ServerConfig
 
 logger = logging.getLogger(__name__)
-
-# 配置中的 asset_class 字符串 → AssetClass 枚举
-_ASSET_CLASS_MAP = {
-    "stock": AssetClass.STOCK,
-    "etf": AssetClass.FUND,
-    "fund": AssetClass.FUND,
-    "gold": AssetClass.GOLD,
-    "bond": AssetClass.BOND,
-}
 
 # A 股交易时段（上午 9:30-11:30，下午 13:00-15:00）
 _MORNING_OPEN = time(9, 30)
@@ -122,11 +115,7 @@ class TradingScheduler:
     @staticmethod
     def _is_market_open() -> bool:
         """Bug 7: 判断当前是否在 A 股交易时段内。"""
-        now = datetime.now().time()
-        return (
-            _MORNING_OPEN <= now <= _MORNING_CLOSE
-            or _AFTERNOON_OPEN <= now <= _AFTERNOON_CLOSE
-        )
+        return is_cn_trading_session()
 
     def _warmup_strategy(self, data_manager, strategy) -> None:
         """Bug 6: 用历史日线预热策略，避免前 N 个周期信号不准。
@@ -156,45 +145,39 @@ class TradingScheduler:
 
     def _run_loop(self) -> None:
         """后台线程主循环。"""
-        from data.manager import DataManager, build_sources
-
         # 初始化组件
         self._event_bus = EventBus()
-        sources = build_sources(
-            data_source=self._config.data_source,
-            tushare_token=self._config.tushare_token,
+        runtime = create_runtime_context(self._config)
+        source = runtime.sources.get(
+            self._config.data_source, runtime.sources["akshare"]
         )
-        source = sources.get(self._config.data_source, sources["akshare"])
         feed = LiveDataFeed(source, self._event_bus)
-        store = None
-        try:
-            from data.store import DataStore
-
-            store = DataStore()
-        except Exception:
-            pass
-
-        data_manager = DataManager(
-            sources=sources,
-            store=store,
-            default_source=self._config.data_source,
-        )
+        data_manager = runtime.data_manager
 
         # 构建关注列表
         with self._lock:
-            self._watchlist = []
-            self._instruments = {}
-            for asset_cfg in self._config.assets:
-                sym = Symbol(asset_cfg["symbol"])
-                ac = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
-                self._watchlist.append((sym, ac))
-                instrument = DataManager.get_instrument(sym, ac)
-                self._instruments[sym] = instrument
+            self._watchlist = list(runtime.watchlist)
+            self._instruments = dict(runtime.instruments)
+            self._latest_quotes = {}
 
         if not self._watchlist:
             logger.warning("No watchlist configured, stopping scheduler")
             self._running.clear()
             return
+
+        if self._db is not None:
+            try:
+                persisted_quotes = self._db.get_latest_quotes_sync()
+                with self._lock:
+                    for quote in persisted_quotes:
+                        self._latest_quotes[quote["symbol"]] = {
+                            "price": float(quote["price"]),
+                            "volume": float(quote["volume"]) if quote["volume"] is not None else None,
+                            "timestamp": quote["timestamp"],
+                            "asset_class": quote["asset_class"],
+                        }
+            except Exception:
+                logger.warning("恢复实时行情快照失败，将忽略", exc_info=True)
 
         # 创建组合
         with self._lock:
@@ -216,24 +199,7 @@ class TradingScheduler:
                     logger.warning("恢复历史入金失败，将跳过", exc_info=True)
 
         # 创建策略（使用注册表）
-        import strategy.examples  # noqa: F401 — 触发注册
-        from strategy.registry import StrategyRegistry
-
-        strategy_info = StrategyRegistry.get(self._config.strategy)
-        if strategy_info:
-            param_names = {p["name"] for p in strategy_info["params"]}
-            strategy_kwargs = {
-                k: v for k, v in self._config.__dict__.items() if k in param_names
-            }
-        else:
-            strategy_kwargs = {
-                "short_period": self._config.short_period,
-                "long_period": self._config.long_period,
-            }
-
-        strategy = StrategyRegistry.create(
-            self._config.strategy, self._event_bus, **strategy_kwargs
-        )
+        strategy = build_strategy(self._config, self._event_bus)
         strategy.on_init([sym for sym, _ in self._watchlist])
 
         # Bug 6: 历史数据预热
@@ -270,7 +236,16 @@ class TradingScheduler:
                                 "price": float(market_event.close),
                                 "volume": float(market_event.volume),
                                 "timestamp": market_event.timestamp.isoformat(),
+                                "asset_class": market_event.asset_class.value,
                             }
+                        if self._db is not None:
+                            self._db.save_quote_snapshot_sync(
+                                symbol=sym_str,
+                                asset_class=market_event.asset_class.value,
+                                price=float(market_event.close),
+                                volume=float(market_event.volume),
+                                timestamp=market_event.timestamp.isoformat(),
+                            )
                         strategy.on_data(market_event)
                     self._event_bus.drain()
 

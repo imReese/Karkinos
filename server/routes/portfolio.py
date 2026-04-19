@@ -10,6 +10,9 @@ from fastapi import APIRouter
 
 from core.types import ZERO, Symbol
 from server.models import (
+    AccountStateResponse,
+    AccountOverview,
+    ActivityItem,
     AllocationGroup,
     AllocationItem,
     CashFlowCreate,
@@ -17,9 +20,12 @@ from server.models import (
     EquityPoint,
     PortfolioSnapshot,
     PositionResponse,
+    RiskSummaryItem,
     TradeCreate,
     TradeResponse,
 )
+from server.services.account_state import build_account_state_projection
+from server.services.risk_engine import build_risk_summary
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +62,59 @@ def _build_grouped_allocation(
     # 现金排第一，其余按市值降序
     result.sort(key=lambda g: (g.asset_class != "cash", -g.value))
     return result
+
+
+def _build_activity_items(
+    trades: list[dict], cash_flows: list[dict]
+) -> list[ActivityItem]:
+    items: list[ActivityItem] = []
+
+    for trade in trades:
+        action = "买入" if trade["direction"] == "buy" else "卖出"
+        items.append(
+            ActivityItem(
+                kind="trade",
+                title=f"{action} {trade['symbol']}",
+                detail=f"{trade['quantity']:.0f} 股 @ ¥{trade['price']:.2f}",
+                timestamp=trade["timestamp"],
+                amount=float(trade["quantity"] * trade["price"]),
+                symbol=trade["symbol"],
+            )
+        )
+
+    for flow in cash_flows:
+        flow_title = "入金" if flow["flow_type"] == "deposit" else "出金"
+        items.append(
+            ActivityItem(
+                kind="cash_flow",
+                title=flow_title,
+                detail=flow.get("note") or "手工记录资金流水",
+                timestamp=flow["timestamp"],
+                amount=float(flow["amount"]),
+            )
+        )
+
+    items.sort(key=lambda item: item.timestamp, reverse=True)
+    return items
+
+
+def _collect_latest_quote_timestamps(state) -> dict[str, str]:
+    latest: dict[str, str] = {}
+    scheduler = state.scheduler
+    if scheduler and getattr(scheduler, "latest_quotes", None):
+        for symbol, quote in scheduler.latest_quotes.items():
+            timestamp = quote.get("timestamp")
+            if timestamp:
+                latest[str(symbol)] = timestamp
+
+    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
+        for row in state.db.get_latest_quotes_sync():
+            timestamp = row.get("timestamp")
+            symbol = row.get("symbol")
+            if symbol and timestamp and str(symbol) not in latest:
+                latest[str(symbol)] = timestamp
+
+    return latest
 
 
 def create_router() -> APIRouter:
@@ -158,6 +217,44 @@ def create_router() -> APIRouter:
         snapshot = await get_portfolio()
         return snapshot.allocation
 
+    @r.get("/overview", response_model=AccountOverview)
+    async def get_overview() -> AccountOverview:
+        """获取首页账户总览投影。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        snapshot = await get_portfolio()
+        projection = build_account_state_projection(
+            snapshot,
+            build_risk_summary(snapshot, _collect_latest_quote_timestamps(state)),
+        )
+        return projection.summary
+
+    @r.get("/state", response_model=AccountStateResponse)
+    async def get_account_state() -> AccountStateResponse:
+        """获取规范化账户状态投影。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        snapshot = await get_portfolio()
+        risks = build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
+        projection = build_account_state_projection(snapshot, risks)
+        return AccountStateResponse(
+            summary=projection.summary,
+            snapshot=projection.snapshot,
+            risks=projection.risks,
+            next_step=projection.next_step,
+        )
+
+    @r.get("/risk-summary", response_model=list[RiskSummaryItem])
+    async def get_risk_summary() -> list[RiskSummaryItem]:
+        """获取首页风险摘要。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        snapshot = await get_portfolio()
+        return build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
+
     @r.get("/equity-curve", response_model=list[EquityPoint])
     async def get_equity_curve() -> list[EquityPoint]:
         """获取权益曲线。"""
@@ -174,6 +271,16 @@ def create_router() -> APIRouter:
             EquityPoint(timestamp=ts.isoformat(), equity=float(eq))
             for ts, eq in portfolio.equity_curve
         ]
+
+    @r.get("/activity", response_model=list[ActivityItem])
+    async def get_activity(limit: int = 10) -> list[ActivityItem]:
+        """获取首页最近活动流。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        trades = await state.db.get_trades(limit=limit, offset=0)
+        flows = await state.db.get_cash_flows(limit=limit, offset=0)
+        return _build_activity_items(trades, flows)[:limit]
 
     # ---------- Cash Flows ----------
 

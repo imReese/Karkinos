@@ -25,6 +25,18 @@ class WatchlistItem(BaseModel):
     symbol: str
     asset_class: str
     name: str = ""
+    is_holding: bool = False
+    quantity: float | None = None
+    avg_cost: float | None = None
+    market_value: float | None = None
+    unrealized_pnl: float | None = None
+    realized_pnl: float | None = None
+    last_snapshot_at: str | None = None
+
+
+class WatchlistCreateRequest(BaseModel):
+    symbol: str
+    asset_class: str = "stock"
 
 
 class KlineBar(BaseModel):
@@ -78,6 +90,46 @@ class PortfolioSnapshot(BaseModel):
     allocation_grouped: list[AllocationGroup] = []
 
 
+class AccountOverview(BaseModel):
+    total_equity: float
+    available_cash: float
+    total_deposits: float = 0.0
+    positions_count: int
+    unrealized_pnl: float
+    realized_pnl: float
+    cash_ratio: float
+
+
+class AccountStateResponse(BaseModel):
+    summary: AccountOverview
+    snapshot: PortfolioSnapshot
+    risks: list["RiskSummaryItem"]
+    next_step: str
+
+
+class RiskSummaryItem(BaseModel):
+    kind: str
+    level: str
+    title: str
+    detail: str
+
+
+class ActionCard(BaseModel):
+    id: int | None = None
+    source_signal_id: int | None = None
+    symbol: str
+    title: str
+    detail: str
+    direction: str
+    urgency: str
+    target_weight: float
+    price: float | None = None
+    strategy_id: str
+    timestamp: str
+    asset_class: str = "stock"
+    status: str = "pending"
+
+
 class CashFlowCreate(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     amount: float
@@ -123,6 +175,15 @@ class EquityPoint(BaseModel):
     equity: float
 
 
+class ActivityItem(BaseModel):
+    kind: str
+    title: str
+    detail: str
+    timestamp: str
+    amount: float | None = None
+    symbol: str | None = None
+
+
 # ---------- Signals ----------
 
 
@@ -135,6 +196,10 @@ class SignalResponse(BaseModel):
     target_weight: float
     price: float | None = None
     asset_class: str = "stock"
+
+
+class ActionTaskStatusUpdate(BaseModel):
+    status: str
 
 
 # ---------- Backtest ----------

@@ -147,6 +147,18 @@ secret.py
 
 # Claude Code
 .claude/
+.codex
+.codex/
 
 # Node.js
 node_modules/
+web/tsconfig.tsbuildinfo
+
+# Local build / tool caches
+.uv-cache/
+
+# Local temporary databases
+tmp-*.db
+tmp-*.sqlite
+*.db-wal
+*.db-shm
