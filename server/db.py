@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -395,6 +395,18 @@ class AppDatabase:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    def get_cash_flows_sync(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """同步列出资金流水，最新优先。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM cash_flows ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     async def delete_cash_flow(self, flow_id: int) -> bool:
         """删除资金流水记录。"""
         import aiosqlite
@@ -455,6 +467,18 @@ class AppDatabase:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    def get_trades_sync(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """同步列出交易记录，最新优先。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM trades ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     async def delete_trade(self, trade_id: int) -> bool:
         """删除交易记录。"""
         import aiosqlite
@@ -483,6 +507,67 @@ class AppDatabase:
             )
             row = cursor.fetchone()
             return float(row[0]) if row else 0.0
+
+    # ---------- Ledger Entries ----------
+
+    def insert_ledger_entry_sync(
+        self,
+        *,
+        entry_type: str,
+        timestamp: str,
+        amount: float | None = None,
+        symbol: str | None = None,
+        direction: str | None = None,
+        quantity: float | None = None,
+        price: float | None = None,
+        commission: float = 0.0,
+        asset_class: str = "stock",
+        note: str = "",
+        source: str = "manual",
+        source_ref: str | None = None,
+        created_at: str | None = None,
+    ) -> int:
+        """同步写入账本事件。"""
+        normalized_timestamp = _normalize_timestamp(timestamp)
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                """INSERT INTO ledger_entries
+                   (entry_type, timestamp, amount, symbol, direction, quantity,
+                    price, commission, asset_class, note, source, source_ref, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    entry_type,
+                    normalized_timestamp,
+                    amount,
+                    symbol,
+                    direction,
+                    quantity,
+                    price,
+                    commission,
+                    asset_class,
+                    note,
+                    source,
+                    source_ref,
+                    created_at or datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
+    def get_ledger_entries_sync(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """同步列出账本事件，最新优先。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT *
+                   FROM ledger_entries
+                   ORDER BY timestamp DESC, id DESC
+                   LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
 
 _SCHEMA = """
@@ -581,4 +666,36 @@ CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 
 CREATE INDEX IF NOT EXISTS idx_cash_flows_timestamp ON cash_flows(timestamp);
+
+CREATE TABLE IF NOT EXISTS ledger_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    amount REAL,
+    symbol TEXT,
+    direction TEXT,
+    quantity REAL,
+    price REAL,
+    commission REAL DEFAULT 0,
+    asset_class TEXT DEFAULT 'stock',
+    note TEXT DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'manual',
+    source_ref TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(source, source_ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_timestamp ON ledger_entries(timestamp);
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_type_ts ON ledger_entries(entry_type, timestamp DESC);
 """
+
+
+def _normalize_timestamp(value: str) -> str:
+    """Normalize timestamps to stable ISO-8601 text for ordering."""
+    normalized_value = value.strip().replace("Z", "+00:00")
+    dt = datetime.fromisoformat(normalized_value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat(timespec="seconds")

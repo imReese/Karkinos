@@ -18,6 +18,7 @@ from notification.notifier import build_notifier, format_signal_message
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
 from server.services.market_hours import is_cn_trading_session
+from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 
 if TYPE_CHECKING:
     from config import ServerConfig
@@ -181,22 +182,27 @@ class TradingScheduler:
 
         # 创建组合
         with self._lock:
-            self._portfolio = Portfolio(
-                self._event_bus,
-                initial_cash=self._config.initial_cash,
+            rebuilt = (
+                rebuild_portfolio_from_ledger(
+                    self._config,
+                    self._db,
+                    latest_quotes=self._latest_quotes,
+                )
+                if self._db is not None
+                else None
             )
+            self._portfolio = (
+                rebuilt.portfolio
+                if rebuilt is not None
+                else Portfolio(
+                    self._event_bus,
+                    initial_cash=self._config.initial_cash,
+                )
+            )
+            if rebuilt is not None:
+                self._instruments.update(rebuilt.instruments)
             for inst in self._instruments.values():
                 self._portfolio.add_instrument(inst)
-
-            # 恢复历史入金（调度器重启时重新应用）
-            if self._db:
-                try:
-                    total_deposits = self._db.get_total_deposits_sync()
-                    if total_deposits > 0:
-                        self._portfolio.deposit(Decimal(str(total_deposits)))
-                        logger.info("恢复历史入金: %.2f", total_deposits)
-                except Exception:
-                    logger.warning("恢复历史入金失败，将跳过", exc_info=True)
 
         # 创建策略（使用注册表）
         strategy = build_strategy(self._config, self._event_bus)

@@ -179,3 +179,65 @@ class TestDataManager:
         """创建债券 Instrument。"""
         inst = DataManager.get_instrument(Symbol("sh010107"), AssetClass.BOND)
         assert inst.asset_class == AssetClass.BOND
+
+    def test_cache_miss_without_remote_refresh_returns_empty_handler(self, tmp_path):
+        """禁用远端刷新时，缓存未命中应返回空结果而不是拉取。"""
+        source = MockSource()
+        from data.store import DataStore
+
+        store = DataStore(str(tmp_path / "store"))
+        manager = DataManager({"mock": source}, store=store, default_source="mock")
+
+        handler = manager.get_bars(
+            Symbol("600519"),
+            start=_TEST_START,
+            end=_TEST_END,
+            allow_remote_refresh=False,
+            degrade_to_cache=True,
+        )
+
+        assert handler.total_bars == 0
+        assert source.fetch_count == 0
+
+    def test_partial_cache_without_remote_refresh_uses_cached_slice(self, tmp_path):
+        """禁用远端刷新时，部分缓存也应直接返回本地已有区间。"""
+        source = MockSource()
+        from data.store import DataStore
+
+        store = DataStore(str(tmp_path / "store"))
+        cached_df = _make_bars_df(n=10)
+        store.save_bars(Symbol("600519"), BarFrequency.DAILY, cached_df)
+        manager = DataManager({"mock": source}, store=store, default_source="mock")
+
+        handler = manager.get_bars(
+            Symbol("600519"),
+            start=_TEST_START,
+            end=_TEST_END,
+            allow_remote_refresh=False,
+            degrade_to_cache=True,
+        )
+
+        assert handler.total_bars == 10
+        assert source.fetch_count == 0
+
+    def test_partial_cache_with_recent_meta_skips_remote_refresh(self, tmp_path):
+        """开市允许刷新时，若缓存刚更新过则仍应命中节流，不重复拉取。"""
+        source = MockSource()
+        from data.store import DataStore
+
+        store = DataStore(str(tmp_path / "store"))
+        cached_df = _make_bars_df(n=10)
+        store.save_bars(Symbol("600519"), BarFrequency.DAILY, cached_df)
+        manager = DataManager({"mock": source}, store=store, default_source="mock")
+
+        handler = manager.get_bars(
+            Symbol("600519"),
+            start=_TEST_START,
+            end=datetime.now(),
+            allow_remote_refresh=True,
+            refresh_ttl_seconds=3600,
+            degrade_to_cache=True,
+        )
+
+        assert handler.total_bars == 10
+        assert source.fetch_count == 0

@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter
 
-from server.models import LiveStatusResponse, SettingsResponse
+from server.models import (
+    DataSourceSettingsUpdate,
+    LiveStatusResponse,
+    SettingsResponse,
+)
+from server.bootstrap import resolve_config_path
 
 logger = logging.getLogger(__name__)
-
-_CONFIG_PATH = Path("config.json")
 
 _MASK = "****"
 
@@ -94,7 +96,57 @@ def create_router() -> APIRouter:
             "notification": config.notification,
             "live_poll_interval": config.live_poll_interval,
         }
-        _CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        resolve_config_path().write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+        return SettingsResponse(
+            host=config.host,
+            port=config.port,
+            live_auto_start=config.live_auto_start,
+            initial_cash=float(config.initial_cash),
+            start_date=config.start_date,
+            end_date=config.end_date,
+            assets=config.assets,
+            strategy=config.strategy,
+            short_period=config.short_period,
+            long_period=config.long_period,
+            data_source=config.data_source,
+            tushare_token=_mask_token(config.tushare_token),
+            notification=config.notification,
+            live_poll_interval=config.live_poll_interval,
+        )
+
+    @r.put("/data-source", response_model=SettingsResponse)
+    async def update_data_source_settings(
+        payload: DataSourceSettingsUpdate,
+    ) -> SettingsResponse:
+        """仅更新数据源相关配置，避免覆盖账户与持仓基线。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        config = state.config
+
+        config.data_source = payload.data_source
+        if not payload.tushare_token.startswith(_MASK):
+            config.tushare_token = payload.tushare_token
+        config.live_poll_interval = payload.live_poll_interval
+
+        data = {
+            "host": config.host,
+            "port": config.port,
+            "live_auto_start": config.live_auto_start,
+            "initial_cash": str(config.initial_cash),
+            "start_date": config.start_date,
+            "end_date": config.end_date,
+            "assets": config.assets,
+            "strategy": config.strategy,
+            "short_period": config.short_period,
+            "long_period": config.long_period,
+            "data_source": config.data_source,
+            "tushare_token": config.tushare_token,
+            "notification": config.notification,
+            "live_poll_interval": config.live_poll_interval,
+        }
+        resolve_config_path().write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
         return SettingsResponse(
             host=config.host,

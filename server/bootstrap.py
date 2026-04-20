@@ -45,11 +45,21 @@ class RuntimeContext:
     instruments: dict[Symbol, Any]
 
 
+def resolve_config_path() -> Path:
+    """Return the runtime config path, defaulting to ./config.json."""
+    return Path(os.environ.get("MYQUANT_CONFIG_PATH") or "config.json")
+
+
+def resolve_data_dir() -> str:
+    """Return the runtime data directory, defaulting to data/store."""
+    return os.environ.get("MYQUANT_DATA_DIR") or "data/store"
+
+
 def load_runtime_config(
     config_cls: type[BacktestConfig] = BacktestConfig, **overrides: Any
 ) -> BacktestConfig:
     """Load config.json when present, otherwise use dataclass defaults."""
-    config_path = Path("config.json")
+    config_path = resolve_config_path()
     if config_path.exists():
         config = config_cls.from_json(config_path)
     else:
@@ -94,7 +104,7 @@ def create_runtime_context(config: BacktestConfig) -> RuntimeContext:
         data_source=config.data_source,
         tushare_token=os.environ.get("TUSHARE_TOKEN") or config.tushare_token,
     )
-    store = DataStore("data/store")
+    store = DataStore(resolve_data_dir())
     data_manager = DataManager(
         sources=sources,
         store=store,

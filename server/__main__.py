@@ -40,13 +40,28 @@ def main() -> None:
     import uvicorn
     from server.app import create_app
 
+    if args.no_live:
+        os.environ["MYQUANT_LIVE_AUTO_START"] = "false"
+    else:
+        os.environ.pop("MYQUANT_LIVE_AUTO_START", None)
+
+    if reload:
+        uvicorn.run(
+            "server.app:create_app",
+            host=host,
+            port=port,
+            reload=True,
+            factory=True,
+        )
+        return
+
     uvicorn.run(
         create_app(
             config_overrides={"live_auto_start": False} if args.no_live else {}
         ),
         host=host,
         port=port,
-        reload=reload,
+        reload=False,
     )
 
 

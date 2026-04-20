@@ -184,6 +184,73 @@ class ActivityItem(BaseModel):
     symbol: str | None = None
 
 
+class LedgerEntryCreatedResponse(BaseModel):
+    id: int
+    entry_type: str
+    status: str = "ok"
+
+
+class LedgerEntryResponse(BaseModel):
+    id: int
+    entry_type: str
+    timestamp: str
+    amount: float | None = None
+    symbol: str | None = None
+    direction: str | None = None
+    quantity: float | None = None
+    price: float | None = None
+    commission: float = 0.0
+    asset_class: str = "stock"
+    note: str = ""
+    source: str = "manual"
+    source_ref: str | None = None
+    created_at: str | None = None
+
+
+class LedgerTradeCreate(BaseModel):
+    occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    symbol: str
+    asset_class: str = "stock"
+    direction: str  # buy / sell
+    quantity: float
+    unit_price: float
+    fee: float = 0.0
+    note: str = ""
+    source: str = "manual"
+    source_ref: str | None = None
+
+
+class LedgerCashFlowCreate(BaseModel):
+    occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    amount: float
+    flow_type: str = "deposit"  # deposit / withdrawal
+    note: str = ""
+    source: str = "manual"
+    source_ref: str | None = None
+
+
+class LedgerDividendCreate(BaseModel):
+    occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    symbol: str
+    asset_class: str = "stock"
+    amount: float
+    note: str = ""
+    source: str = "manual"
+    source_ref: str | None = None
+
+
+class LedgerAdjustmentCreate(BaseModel):
+    occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    symbol: str | None = None
+    asset_class: str = "stock"
+    amount: float | None = None
+    quantity: float | None = None
+    price: float | None = None
+    note: str = ""
+    source: str = "manual"
+    source_ref: str | None = None
+
+
 # ---------- Signals ----------
 
 
@@ -286,6 +353,12 @@ class SettingsResponse(BaseModel):
     data_source: str = "akshare"
     tushare_token: str = ""
     notification: dict = Field(default_factory=lambda: {"type": "console"})
+    live_poll_interval: int = 60
+
+
+class DataSourceSettingsUpdate(BaseModel):
+    data_source: str = "akshare"
+    tushare_token: str = ""
     live_poll_interval: int = 60
 
 

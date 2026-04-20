@@ -149,6 +149,12 @@ secret.py
 .claude/
 .codex
 .codex/
+.superpowers/
+
+# Docs
+docs/*
+!docs/README.en.md
+!docs/README.zh.md
 
 # Node.js
 node_modules/
@@ -156,6 +162,8 @@ web/tsconfig.tsbuildinfo
 
 # Local build / tool caches
 .uv-cache/
+.run/
+logs/
 
 # Local temporary databases
 tmp-*.db

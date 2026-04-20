@@ -5,6 +5,9 @@
 __pycache__/
 *.pyc
 web/node_modules/
+web/dist/
 data/store/
 .env
 .claude/
+.codex
+docs/superpowers/

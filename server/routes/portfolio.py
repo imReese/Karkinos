@@ -24,14 +24,19 @@ from server.models import (
     TradeCreate,
     TradeResponse,
 )
+from server.projections.service import (
+    build_equity_curve_from_db,
+    build_portfolio_projection_from_db,
+)
 from server.services.account_state import build_account_state_projection
+from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.risk_engine import build_risk_summary
 
 logger = logging.getLogger(__name__)
 
 _ASSET_CLASS_LABELS = {
     "stock": "A股",
-    "fund": "ETF",
+    "fund": "基金",
     "etf": "ETF",
     "gold": "黄金",
     "bond": "债券",
@@ -117,6 +122,72 @@ def _collect_latest_quote_timestamps(state) -> dict[str, str]:
     return latest
 
 
+def _collect_latest_quotes(state) -> dict[str, dict]:
+    latest: dict[str, dict] = {}
+    scheduler = state.scheduler
+    if scheduler and getattr(scheduler, "latest_quotes", None):
+        for symbol, quote in scheduler.latest_quotes.items():
+            latest[str(symbol)] = quote
+
+    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
+        for row in state.db.get_latest_quotes_sync():
+            symbol = row.get("symbol")
+            if symbol and str(symbol) not in latest:
+                latest[str(symbol)] = row
+
+    return latest
+
+
+def _has_rows(rows: list[dict]) -> bool:
+    return len(rows) > 0
+
+
+def _resolve_projection_sources(state) -> tuple[object | None, dict]:
+    scheduler = state.scheduler
+    portfolio = scheduler.portfolio if scheduler else None
+    instruments = scheduler.instruments if scheduler else {}
+
+    if portfolio is not None or state.db is None:
+        return portfolio, instruments
+
+    latest_quotes = _collect_latest_quotes(state)
+    legacy_cash_flows = (
+        state.db.get_cash_flows_sync(limit=1, offset=0)
+        if hasattr(state.db, "get_cash_flows_sync")
+        else []
+    )
+    legacy_trades = (
+        state.db.get_trades_sync(limit=1, offset=0)
+        if hasattr(state.db, "get_trades_sync")
+        else []
+    )
+
+    if _has_rows(legacy_cash_flows) or _has_rows(legacy_trades):
+        rebuilt = rebuild_portfolio_from_ledger(
+            state.config,
+            state.db,
+            latest_quotes=latest_quotes,
+        )
+        return rebuilt.portfolio, rebuilt.instruments
+
+    ledger_entries = (
+        state.db.get_ledger_entries_sync(limit=1, offset=0)
+        if hasattr(state.db, "get_ledger_entries_sync")
+        else []
+    )
+    if _has_rows(ledger_entries):
+        return (
+            build_portfolio_projection_from_db(
+                state.db,
+                initial_cash=state.config.initial_cash,
+                latest_quotes=latest_quotes,
+            ),
+            {},
+        )
+
+    return None, {}
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -127,18 +198,13 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         scheduler = state.scheduler
-        portfolio = scheduler.portfolio if scheduler else None
-
-        # 获取入金总额
-        total_deposits = 0.0
-        if state.db:
-            total_deposits = await state.db.get_total_deposits()
+        portfolio, instruments = _resolve_projection_sources(state)
 
         if portfolio is None:
             return PortfolioSnapshot(
                 cash=float(state.config.initial_cash),
                 total_equity=float(state.config.initial_cash),
-                total_deposits=total_deposits,
+                total_deposits=0.0,
                 positions=[],
                 allocation=[],
                 allocation_grouped=[],
@@ -186,9 +252,16 @@ def create_router() -> APIRouter:
                         if str(sym) == pos.symbol:
                             ac = asset_class.value
                             break
+                if pos.symbol in {
+                    str(symbol) for symbol, instrument in instruments.items()
+                    if getattr(instrument, "asset_class", None) is not None
+                }:
+                    instrument = instruments.get(Symbol(pos.symbol))
+                    if instrument is not None:
+                        ac = instrument.asset_class.value
                 name = pos.symbol
-                if scheduler and Symbol(pos.symbol) in scheduler.instruments:
-                    name = scheduler.instruments[Symbol(pos.symbol)].name
+                if Symbol(pos.symbol) in instruments:
+                    name = instruments[Symbol(pos.symbol)].name
 
                 allocation.append(
                     AllocationItem(
@@ -202,6 +275,13 @@ def create_router() -> APIRouter:
 
         allocation_grouped = _build_grouped_allocation(allocation, total_equity)
 
+        if hasattr(portfolio, "total_deposits"):
+            total_deposits = float(portfolio.total_deposits)
+        elif state.db is not None:
+            total_deposits = await state.db.get_total_deposits()
+        else:
+            total_deposits = 0.0
+
         return PortfolioSnapshot(
             cash=float(portfolio.cash),
             total_equity=total_equity,
@@ -210,6 +290,12 @@ def create_router() -> APIRouter:
             allocation=allocation,
             allocation_grouped=allocation_grouped,
         )
+
+    @r.get("/positions", response_model=list[PositionResponse])
+    async def get_positions() -> list[PositionResponse]:
+        """获取投影后的持仓列表。"""
+        snapshot = await get_portfolio()
+        return snapshot.positions
 
     @r.get("/allocation", response_model=list[AllocationItem])
     async def get_allocation() -> list[AllocationItem]:
@@ -265,7 +351,36 @@ def create_router() -> APIRouter:
         portfolio = scheduler.portfolio if scheduler else None
 
         if portfolio is None:
-            return []
+            if state.db is None:
+                return []
+
+            legacy_cash_flows = (
+                state.db.get_cash_flows_sync(limit=1, offset=0)
+                if hasattr(state.db, "get_cash_flows_sync")
+                else []
+            )
+            legacy_trades = (
+                state.db.get_trades_sync(limit=1, offset=0)
+                if hasattr(state.db, "get_trades_sync")
+                else []
+            )
+            ledger_entries = (
+                state.db.get_ledger_entries_sync(limit=1, offset=0)
+                if hasattr(state.db, "get_ledger_entries_sync")
+                else []
+            )
+            if (_has_rows(legacy_cash_flows) or _has_rows(legacy_trades)) or not _has_rows(ledger_entries):
+                return []
+
+            points = build_equity_curve_from_db(
+                state.db,
+                initial_cash=state.config.initial_cash,
+                latest_quotes=_collect_latest_quotes(state),
+            )
+            return [
+                EquityPoint(timestamp=ts.isoformat(), equity=float(eq))
+                for ts, eq in points
+            ]
 
         return [
             EquityPoint(timestamp=ts.isoformat(), equity=float(eq))

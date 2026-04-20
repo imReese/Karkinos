@@ -8,6 +8,8 @@ from server.bootstrap import (
     build_watchlist,
     create_runtime_context,
     load_runtime_config,
+    resolve_config_path,
+    resolve_data_dir,
 )
 
 
@@ -143,6 +145,46 @@ def test_load_runtime_config_allows_live_auto_start_override(tmp_path, monkeypat
     config = load_runtime_config(ServerConfig, live_auto_start=False)
 
     assert config.live_auto_start is False
+
+
+def test_load_runtime_config_supports_env_config_path(tmp_path, monkeypatch):
+    custom_config = tmp_path / "runtime-config.json"
+    custom_config.write_text('{"strategy": "dual_ma", "initial_cash": 555000}')
+    monkeypatch.setenv("MYQUANT_CONFIG_PATH", str(custom_config))
+
+    config = load_runtime_config()
+
+    assert resolve_config_path() == custom_config
+    assert config.initial_cash == Decimal("555000")
+
+
+def test_create_runtime_context_supports_env_data_dir(monkeypatch):
+    created = {}
+
+    class FakeStore:
+        def __init__(self, base_path="data/store"):
+            created["store_path"] = base_path
+
+    class FakeDataManager:
+        def __init__(self, sources, store=None, default_source="akshare"):
+            created["store"] = store
+
+        @staticmethod
+        def get_instrument(sym, ac):
+            return (sym, ac)
+
+    monkeypatch.setenv("MYQUANT_DATA_DIR", "/tmp/myquant-data")
+    monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
+    monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
+    monkeypatch.setattr(
+        "server.bootstrap.build_sources",
+        lambda data_source, tushare_token: {data_source: object()},
+    )
+
+    create_runtime_context(BacktestConfig())
+
+    assert resolve_data_dir() == "/tmp/myquant-data"
+    assert created["store_path"] == "/tmp/myquant-data"
 
 
 def test_create_app_accepts_config_overrides():
