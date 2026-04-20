@@ -1,0 +1,339 @@
+"""Deterministic portfolio reconstruction from ledger entries."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from server.ledger.models import LedgerEntry
+from server.projections.models import PortfolioProjection, ProjectedPosition, ZERO
+from server.valuation.service import value_position
+
+_CASH_DEPOSIT_TYPES = {"cash_deposit", "deposit"}
+_CASH_WITHDRAW_TYPES = {"cash_withdraw", "cash_withdrawal", "withdraw"}
+_BUY_TYPES = {"trade_buy", "buy", "trade"}
+_SELL_TYPES = {"trade_sell", "sell"}
+_DIVIDEND_TYPES = {"dividend"}
+_FEE_TYPES = {"fee"}
+_MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
+
+
+def build_portfolio_projection(
+    entries: Sequence[LedgerEntry],
+    *,
+    initial_cash: float | Decimal = 0,
+    latest_quotes: Mapping[str, Any] | None = None,
+) -> PortfolioProjection:
+    """Reconstruct portfolio state from a sequence of ledger entries."""
+    projection = PortfolioProjection(cash=_as_decimal(initial_cash))
+
+    for entry in _sorted_entries(entries):
+        _apply_ledger_entry(projection, entry)
+
+    _apply_valuations(projection, latest_quotes or {})
+    projection.total_equity = projection.cash + sum(
+        position.market_value for position in projection.positions.values()
+    )
+    return projection
+
+
+def build_portfolio_projection_from_db(
+    db,
+    *,
+    initial_cash: float | Decimal = 0,
+    latest_quotes: Mapping[str, Any] | None = None,
+    batch_size: int = 500,
+) -> PortfolioProjection:
+    """Load every ledger entry from the DB and reconstruct the projection."""
+    entries: list[LedgerEntry] = []
+    offset = 0
+    while True:
+        rows = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not rows:
+            break
+        entries.extend(LedgerEntry.from_row(row) for row in rows)
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+    return build_portfolio_projection(
+        entries,
+        initial_cash=initial_cash,
+        latest_quotes=latest_quotes,
+    )
+
+
+def build_equity_curve_from_entries(
+    entries: Sequence[LedgerEntry],
+    *,
+    initial_cash: float | Decimal = 0,
+    latest_quotes: Mapping[str, Any] | None = None,
+) -> list[tuple[datetime, Decimal]]:
+    projection = PortfolioProjection(cash=_as_decimal(initial_cash))
+    points: list[tuple[datetime, Decimal]] = []
+    quotes = latest_quotes or {}
+
+    for entry in _sorted_entries(entries):
+        _apply_ledger_entry(projection, entry)
+        _apply_valuations(projection, quotes)
+        total_equity = projection.cash + sum(
+            position.market_value for position in projection.positions.values()
+        )
+        points.append((datetime.fromisoformat(entry.timestamp), total_equity))
+
+    return points
+
+
+def build_equity_curve_from_db(
+    db,
+    *,
+    initial_cash: float | Decimal = 0,
+    latest_quotes: Mapping[str, Any] | None = None,
+    batch_size: int = 500,
+) -> list[tuple[datetime, Decimal]]:
+    entries: list[LedgerEntry] = []
+    offset = 0
+    while True:
+        rows = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not rows:
+            break
+        entries.extend(LedgerEntry.from_row(row) for row in rows)
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+
+    return build_equity_curve_from_entries(
+        entries,
+        initial_cash=initial_cash,
+        latest_quotes=latest_quotes,
+    )
+
+
+def _sorted_entries(entries: Sequence[LedgerEntry]) -> list[LedgerEntry]:
+    return sorted(entries, key=lambda entry: (entry.timestamp, entry.id or 0))
+
+
+def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
+    entry_type = (entry.entry_type or "").strip().lower()
+    if entry_type in _CASH_DEPOSIT_TYPES:
+        amount = _require_decimal(entry.amount, "amount")
+        projection.cash += amount
+        projection.total_deposits += amount
+        return
+
+    if entry_type in _CASH_WITHDRAW_TYPES:
+        amount = _require_decimal(entry.amount, "amount")
+        projection.cash -= amount
+        projection.total_deposits -= amount
+        return
+
+    if entry_type in _BUY_TYPES or entry_type in _SELL_TYPES:
+        _apply_trade_entry(projection, entry)
+        return
+
+    if entry_type in _DIVIDEND_TYPES:
+        _apply_cash_income(projection, entry)
+        return
+
+    if entry_type in _FEE_TYPES:
+        _apply_cash_expense(projection, entry)
+        return
+
+    if entry_type in _MANUAL_ADJUSTMENT_TYPES:
+        _apply_manual_adjustment(projection, entry)
+        return
+
+    raise ValueError(f"Unsupported ledger entry_type: {entry.entry_type!r}")
+
+
+def _apply_trade_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
+    symbol = _require_text(entry.symbol, "symbol")
+    quantity = _require_decimal(entry.quantity, "quantity")
+    price = _require_decimal(entry.price, "price")
+    commission = _as_decimal(entry.commission)
+    side = _trade_side(entry)
+
+    position = projection.positions.get(symbol)
+    if position is None:
+        position = ProjectedPosition(symbol=symbol)
+        projection.positions[symbol] = position
+
+    if side == "buy":
+        _apply_buy(projection, position, quantity, price, commission)
+        return
+
+    if side == "sell":
+        _apply_sell(projection, position, quantity, price, commission)
+        return
+
+    raise ValueError(f"Unknown trade direction for entry_type={entry.entry_type!r}")
+
+
+def _apply_buy(
+    projection: PortfolioProjection,
+    position: ProjectedPosition,
+    quantity: Decimal,
+    price: Decimal,
+    commission: Decimal,
+) -> None:
+    projection.cash -= quantity * price + commission
+    if position.quantity == ZERO:
+        position.avg_cost = price
+    else:
+        previous_cost = position.quantity * position.avg_cost
+        new_cost = quantity * price
+        total_quantity = position.quantity + quantity
+        position.avg_cost = (previous_cost + new_cost) / total_quantity
+
+    position.quantity += quantity
+    position.commission_paid += commission
+    position.sync_available_qty()
+
+
+def _apply_sell(
+    projection: PortfolioProjection,
+    position: ProjectedPosition,
+    quantity: Decimal,
+    price: Decimal,
+    commission: Decimal,
+) -> None:
+    if quantity > position.quantity:
+        raise ValueError(
+            f"Sell quantity {quantity} exceeds position {position.quantity} for {position.symbol}"
+        )
+
+    projection.cash += quantity * price - commission
+    position.realized_pnl += (price - position.avg_cost) * quantity - commission
+    position.commission_paid += commission
+    position.quantity -= quantity
+    if position.quantity == ZERO:
+        position.avg_cost = ZERO
+    position.sync_available_qty()
+
+
+def _apply_cash_income(
+    projection: PortfolioProjection, entry: LedgerEntry
+) -> None:
+    amount = _require_decimal(entry.amount, "amount")
+    projection.cash += amount
+
+    symbol = (entry.symbol or "").strip()
+    if symbol:
+        position = projection.positions.get(symbol)
+        if position is None:
+            position = ProjectedPosition(symbol=symbol)
+            projection.positions[symbol] = position
+        position.realized_pnl += amount
+
+
+def _apply_cash_expense(
+    projection: PortfolioProjection, entry: LedgerEntry
+) -> None:
+    amount = _require_decimal(entry.amount, "amount")
+    projection.cash -= amount
+
+    symbol = (entry.symbol or "").strip()
+    if symbol:
+        position = projection.positions.get(symbol)
+        if position is None:
+            position = ProjectedPosition(symbol=symbol)
+            projection.positions[symbol] = position
+        position.realized_pnl -= amount
+
+
+def _apply_manual_adjustment(
+    projection: PortfolioProjection, entry: LedgerEntry
+) -> None:
+    amount = entry.amount
+    if amount is not None:
+        projection.cash += _as_decimal(amount)
+
+    symbol = (entry.symbol or "").strip()
+    quantity = entry.quantity
+    if not symbol or quantity is None:
+        return
+
+    position = projection.positions.get(symbol)
+    if position is None:
+        position = ProjectedPosition(symbol=symbol)
+        projection.positions[symbol] = position
+
+    delta = _as_decimal(quantity)
+    if delta < ZERO and abs(delta) > position.quantity:
+        raise ValueError(
+            f"Manual adjustment quantity {delta} exceeds position {position.quantity} for {symbol}"
+        )
+
+    previous_quantity = position.quantity
+    price = entry.price
+    if delta > ZERO:
+        if price is not None and previous_quantity > ZERO:
+            previous_cost = previous_quantity * position.avg_cost
+            added_cost = delta * _as_decimal(price)
+            position.avg_cost = (previous_cost + added_cost) / (previous_quantity + delta)
+        elif price is not None and previous_quantity == ZERO:
+            position.avg_cost = _as_decimal(price)
+    position.quantity = previous_quantity + delta
+    if position.quantity == ZERO:
+        position.avg_cost = ZERO
+    position.sync_available_qty()
+
+
+def _apply_valuations(
+    projection: PortfolioProjection, latest_quotes: Mapping[str, Any]
+) -> None:
+    for symbol, position in projection.positions.items():
+        market_price = _quote_price(symbol, position.avg_cost, latest_quotes)
+        valuation = value_position(position.quantity, position.avg_cost, market_price)
+        position.market_value = valuation.market_value
+        position.unrealized_pnl = valuation.unrealized_pnl
+
+
+def _quote_price(
+    symbol: str, fallback: Decimal, latest_quotes: Mapping[str, Any]
+) -> Decimal:
+    quote = latest_quotes.get(symbol)
+    if isinstance(quote, Mapping):
+        price = quote.get("price")
+    else:
+        price = quote
+
+    if price in {None, "", 0, 0.0}:
+        return fallback
+    return _as_decimal(price)
+
+
+def _trade_side(entry: LedgerEntry) -> str:
+    direction = (entry.direction or "").strip().lower()
+    if direction in {"buy", "sell"}:
+        return direction
+
+    entry_type = (entry.entry_type or "").strip().lower()
+    if entry_type.endswith("_buy"):
+        return "buy"
+    if entry_type.endswith("_sell"):
+        return "sell"
+    if entry_type == "buy":
+        return "buy"
+    if entry_type == "sell":
+        return "sell"
+    return ""
+
+
+def _require_decimal(value: float | Decimal | None, field_name: str) -> Decimal:
+    if value is None:
+        raise ValueError(f"Missing {field_name} on ledger entry")
+    return _as_decimal(value)
+
+
+def _require_text(value: str | None, field_name: str) -> str:
+    if not value:
+        raise ValueError(f"Missing {field_name} on ledger entry")
+    return value
+
+
+def _as_decimal(value: float | Decimal | int | str) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))

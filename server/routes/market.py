@@ -6,19 +6,20 @@ import asyncio
 import json
 import logging
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from core.types import AssetClass, BarFrequency, Symbol
 from server.models import KlineBar, MarketQuote, WatchlistCreateRequest, WatchlistItem
+from server.bootstrap import resolve_config_path
 from server.services.market_hours import is_cn_trading_session
 from server.services.data_health import build_data_health
+from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
-_CONFIG_PATH = Path("config.json")
+_QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -34,6 +35,80 @@ def _resolve_asset_class(symbol: str, assets: list[dict[str, str]]) -> AssetClas
         if asset_cfg["symbol"] == symbol:
             return _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
     return AssetClass.STOCK
+
+
+def _normalize_asset_class(asset_class: AssetClass | str | None) -> str:
+    if isinstance(asset_class, AssetClass):
+        return asset_class.value
+    if isinstance(asset_class, str):
+        return asset_class
+    return AssetClass.STOCK.value
+
+
+def _extract_runtime_portfolio(state):
+    scheduler = state.scheduler
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+    instruments = getattr(scheduler, "instruments", {}) if scheduler else {}
+    latest_quotes: dict[str, dict] = {}
+    if scheduler and getattr(scheduler, "latest_quotes", None):
+        latest_quotes.update(scheduler.latest_quotes)
+    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
+        for row in state.db.get_latest_quotes_sync():
+            latest_quotes.setdefault(row["symbol"], row)
+
+    if (
+        portfolio is None
+        and state.db is not None
+        and hasattr(state.db, "get_trades_sync")
+        and hasattr(state.db, "get_cash_flows_sync")
+    ):
+        rebuilt = rebuild_portfolio_from_ledger(
+            state.config,
+            state.db,
+            latest_quotes=latest_quotes,
+        )
+        portfolio = rebuilt.portfolio
+        instruments = rebuilt.instruments
+
+    positions = getattr(portfolio, "positions", {}) if portfolio else {}
+    return portfolio, positions, instruments, latest_quotes
+
+
+def _position_for_symbol(positions, symbol: str):
+    return positions.get(Symbol(symbol)) or positions.get(symbol)
+
+
+def _merged_watchlist_assets(state) -> list[dict[str, str]]:
+    _, positions, instruments, latest_quotes = _extract_runtime_portfolio(state)
+    merged: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for asset_cfg in state.config.assets:
+        symbol = asset_cfg["symbol"]
+        if symbol in seen:
+            continue
+        merged.append(
+            {
+                "symbol": symbol,
+                "asset_class": asset_cfg["asset_class"],
+            }
+        )
+        seen.add(symbol)
+
+    for raw_symbol in positions:
+        symbol = str(raw_symbol)
+        if symbol in seen:
+            continue
+        instrument = instruments.get(Symbol(symbol))
+        asset_class = _normalize_asset_class(
+            getattr(instrument, "asset_class", None)
+            or latest_quotes.get(symbol, {}).get("asset_class")
+            or AssetClass.STOCK.value
+        )
+        merged.append({"symbol": symbol, "asset_class": asset_class})
+        seen.add(symbol)
+
+    return merged
 
 
 def _persist_config(config) -> None:
@@ -53,7 +128,7 @@ def _persist_config(config) -> None:
         "notification": config.notification,
         "live_poll_interval": config.live_poll_interval,
     }
-    _CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    resolve_config_path().write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict | None:
@@ -89,7 +164,31 @@ async def _refresh_quote_snapshot(state, symbol: str, asset_class: AssetClass) -
     try:
         await asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class)
     except Exception:
-        logger.exception("Async quote refresh failed for %s", symbol)
+        logger.warning("Async quote refresh failed for %s", symbol, exc_info=True)
+
+
+def _quote_refresh_due(state, symbol: str, asset_class: AssetClass) -> bool:
+    if not is_cn_trading_session():
+        return False
+
+    ttl = max(int(getattr(state.config, "live_poll_interval", 60) or 60), 15)
+    key = (symbol, asset_class.value)
+    now = datetime.now()
+    last_attempt = _QUOTE_REFRESH_ATTEMPTS.get(key)
+    if last_attempt is not None and (now - last_attempt).total_seconds() < ttl:
+        return False
+    _QUOTE_REFRESH_ATTEMPTS[key] = now
+    return True
+
+
+def _maybe_schedule_quote_refresh(
+    state,
+    background_tasks: BackgroundTasks,
+    symbol: str,
+    asset_class: AssetClass,
+) -> None:
+    if _quote_refresh_due(state, symbol, asset_class):
+        background_tasks.add_task(_refresh_quote_snapshot, state, symbol, asset_class)
 
 
 def create_router() -> APIRouter:
@@ -101,22 +200,13 @@ def create_router() -> APIRouter:
         from server.app import get_app_state
 
         state = get_app_state()
-        config = state.config
-        scheduler = state.scheduler
-        portfolio = scheduler.portfolio if scheduler else None
-        positions = getattr(portfolio, "positions", {}) if portfolio else {}
-        latest_quotes: dict[str, dict] = {}
-        if scheduler and getattr(scheduler, "latest_quotes", None):
-            latest_quotes.update(scheduler.latest_quotes)
-        if state.db is not None:
-            for row in state.db.get_latest_quotes_sync():
-                latest_quotes.setdefault(row["symbol"], row)
+        _, positions, _, latest_quotes = _extract_runtime_portfolio(state)
 
         items: list[WatchlistItem] = []
-        for asset_cfg in config.assets:
+        for asset_cfg in _merged_watchlist_assets(state):
             sym = asset_cfg["symbol"]
             ac = asset_cfg["asset_class"]
-            position = positions.get(Symbol(sym)) or positions.get(sym)
+            position = _position_for_symbol(positions, sym)
             quote = latest_quotes.get(sym)
             items.append(
                 WatchlistItem(
@@ -178,24 +268,32 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         scheduler = state.scheduler
-        asset_class = _resolve_asset_class(symbol, state.config.assets)
+        asset_class = _ASSET_CLASS_MAP.get(
+            next(
+                (
+                    asset["asset_class"]
+                    for asset in _merged_watchlist_assets(state)
+                    if asset["symbol"] == symbol
+                ),
+                AssetClass.STOCK.value,
+            ),
+            AssetClass.STOCK,
+        )
 
         if scheduler and scheduler.is_running:
             q = scheduler.latest_quotes.get(symbol)
             if q:
-                if is_cn_trading_session():
-                    background_tasks.add_task(
-                        _refresh_quote_snapshot, state, symbol, asset_class
-                    )
+                _maybe_schedule_quote_refresh(
+                    state, background_tasks, symbol, asset_class
+                )
                 return MarketQuote(symbol=symbol, **q)
 
         if state.db is not None:
             cached = await state.db.get_latest_quote(symbol)
             if cached:
-                if is_cn_trading_session():
-                    background_tasks.add_task(
-                        _refresh_quote_snapshot, state, symbol, asset_class
-                    )
+                _maybe_schedule_quote_refresh(
+                    state, background_tasks, symbol, asset_class
+                )
                 return MarketQuote(**cached)
 
         if not is_cn_trading_session():
@@ -208,7 +306,7 @@ def create_router() -> APIRouter:
             if snapshot:
                 return MarketQuote(**snapshot)
         except Exception:
-            logger.exception("Failed to fetch quote for %s", symbol)
+            logger.warning("Failed to fetch quote for %s", symbol, exc_info=True)
 
         return MarketQuote(symbol=symbol, price=0, asset_class=asset_class.value)
 
@@ -260,6 +358,9 @@ def create_router() -> APIRouter:
                 datetime.strptime(end, "%Y-%m-%d"),
                 frequency,
                 ac,
+                allow_remote_refresh=is_cn_trading_session(),
+                refresh_ttl_seconds=max(int(config.live_poll_interval or 60), 15),
+                degrade_to_cache=True,
             )
             bars: list[KlineBar] = []
             for event in handler:
@@ -275,7 +376,7 @@ def create_router() -> APIRouter:
                 )
             return bars
         except Exception:
-            logger.exception("Failed to fetch kline for %s", symbol)
+            logger.warning("Failed to fetch kline for %s", symbol, exc_info=True)
             return []
 
     @r.get("/data-health")
@@ -286,16 +387,10 @@ def create_router() -> APIRouter:
         state = get_app_state()
         scheduler = state.scheduler
 
-        if scheduler and getattr(scheduler, "watchlist", None):
-            watchlist = [
-                (str(symbol), getattr(asset_class, "value", str(asset_class)))
-                for symbol, asset_class in scheduler.watchlist
-            ]
-        else:
-            watchlist = [
-                (asset_cfg["symbol"], asset_cfg["asset_class"])
-                for asset_cfg in state.config.assets
-            ]
+        watchlist = [
+            (asset_cfg["symbol"], asset_cfg["asset_class"])
+            for asset_cfg in _merged_watchlist_assets(state)
+        ]
 
         latest_quotes: dict[str, dict] = {}
         if scheduler and getattr(scheduler, "latest_quotes", None):

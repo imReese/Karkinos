@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  --app-bg: #09090b;
+  --app-bg-accent: rgba(113, 113, 122, 0.22);
+  --app-panel: rgba(24, 24, 27, 0.84);
+  --app-panel-strong: rgba(9, 9, 11, 0.92);
+  --app-border: rgba(63, 63, 70, 0.8);
+  --app-text: #f4f4f5;
+  --app-muted: #a1a1aa;
+  --app-soft: #d4d4d8;
+  --app-input: rgba(9, 9, 11, 0.92);
+  --app-button: #f4f4f5;
+  --app-button-text: #09090b;
+  --app-secondary: rgba(24, 24, 27, 0.92);
+  --app-secondary-text: #e4e4e7;
+  --app-danger-bg: rgba(69, 10, 10, 0.4);
+  --app-danger-border: rgba(127, 29, 29, 0.7);
+  background: var(--app-bg);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --app-bg: #f4f4f5;
+  --app-bg-accent: rgba(161, 161, 170, 0.2);
+  --app-panel: rgba(255, 255, 255, 0.92);
+  --app-panel-strong: rgba(250, 250, 250, 0.98);
+  --app-border: rgba(212, 212, 216, 0.95);
+  --app-text: #18181b;
+  --app-muted: #52525b;
+  --app-soft: #3f3f46;
+  --app-input: rgba(255, 255, 255, 0.96);
+  --app-button: #18181b;
+  --app-button-text: #fafafa;
+  --app-secondary: rgba(244, 244, 245, 0.96);
+  --app-secondary-text: #27272a;
+  --app-danger-bg: rgba(254, 242, 242, 0.95);
+  --app-danger-border: rgba(248, 113, 113, 0.55);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, var(--app-bg-accent), transparent 32%),
+    var(--app-bg);
+  color: var(--app-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-root {
+  background: var(--app-bg);
+  color: var(--app-text);
+}
+
+.app-panel {
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-text);
+}
+
+.app-panel-strong {
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-strong);
+  color: var(--app-text);
+}
+
+.app-panel-danger {
+  border: 1px solid var(--app-danger-border);
+  background: var(--app-danger-bg);
+  color: #fca5a5;
+}
+
+.app-field {
+  border: 1px solid var(--app-border);
+  background: var(--app-input);
+  color: var(--app-text);
+}
+
+.app-button-primary {
+  border: 1px solid transparent;
+  background: var(--app-button);
+  color: var(--app-button-text);
+}
+
+.app-button-secondary {
+  border: 1px solid var(--app-border);
+  background: var(--app-secondary);
+  color: var(--app-secondary-text);
+}
+
+.app-kicker {
+  color: var(--app-muted);
+}
+
+.app-muted {
+  color: var(--app-muted);
+}
+
+.app-soft {
+  color: var(--app-soft);
+}
+
+.app-progress-track {
+  background: rgba(113, 113, 122, 0.18);
+}
+
+.app-progress-fill {
+  background: currentColor;
+}
+
+.app-nav-item {
+  border: 1px solid transparent;
+  color: var(--app-muted);
+}
+
+.app-nav-item:hover {
+  border-color: var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-text);
+}
+
+.app-nav-item-active {
+  border-color: var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-text);
+}

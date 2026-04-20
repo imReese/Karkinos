@@ -265,6 +265,26 @@ class TestAKShareFetchLatest:
         assert result is not None
         assert result["price"] == 4.05
 
+    @patch("akshare.fund_open_fund_daily_em")
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_fetch_latest_open_end_fund_by_name(self, mock_name_map, mock_daily, source):
+        """开放式基金可按基金简称解析净值。"""
+        mock_name_map.return_value = {"永赢先进制造智选混合C": "018124"}
+        mock_daily.return_value = pd.DataFrame(
+            {
+                "基金代码": ["018124"],
+                "基金简称": ["永赢先进制造智选混合C"],
+                "2026-04-18-单位净值": [1.023],
+                "2026-04-18-累计净值": [1.023],
+            }
+        )
+
+        result = source.fetch_latest(Symbol("永赢先进制造智选混合C"), AssetClass.FUND)
+
+        assert result is not None
+        assert result["price"] == 1.023
+        assert result["timestamp"] == "2026-04-18"
+
     @patch("akshare.stock_zh_a_spot_em")
     def test_fetch_latest_not_found(self, mock_ak, source):
         """找不到 symbol 时返回 None。"""

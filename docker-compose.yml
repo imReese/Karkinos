@@ -5,19 +5,22 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - myquant-data:/app/data/store      # Parquet 缓存 + SQLite
-      - ./config.json:/app/config.json:ro  # 配置文件（只读挂载）
+      - myquant-data:/app/data/store
+      - ./config.json:/app/config.json:ro
     environment:
-      - TZ=Asia/Shanghai                   # 时区设为中国
-      - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}   # 可选：从 .env 读取
-      - MYQUANT_HOST=${MYQUANT_HOST:-}     # 可选：覆盖监听地址
-      - MYQUANT_PORT=${MYQUANT_PORT:-}     # 可选：覆盖 config.json 中的端口
+      - TZ=Asia/Shanghai
+      - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
+      - MYQUANT_HOST=0.0.0.0
+      - MYQUANT_PORT=8000
+      - MYQUANT_CONFIG_PATH=/app/config.json
+      - MYQUANT_DATA_DIR=/app/data/store
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/settings"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/settings', timeout=5).read()"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 20s
 
 volumes:
   myquant-data:

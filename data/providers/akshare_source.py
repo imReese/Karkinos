@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from datetime import datetime
 
 import pandas as pd
@@ -74,6 +75,28 @@ class AKShareSource(DataSource):
     _MAX_RETRIES = 3
     _RETRY_DELAY = 2  # seconds
 
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _open_end_fund_name_map() -> dict[str, str]:
+        import akshare as ak
+
+        df = ak.fund_name_em()
+        mapping: dict[str, str] = {}
+        if "基金简称" not in df.columns or "基金代码" not in df.columns:
+            return mapping
+        for _, row in df.iterrows():
+            name = str(row["基金简称"]).strip()
+            code = str(row["基金代码"]).strip()
+            if name and code:
+                mapping[name] = code
+        return mapping
+
+    def _resolve_open_end_fund_code(self, symbol: Symbol) -> str | None:
+        symbol_str = str(symbol).strip()
+        if symbol_str[:1].isdigit():
+            return symbol_str
+        return self._open_end_fund_name_map().get(symbol_str)
+
     def _call_with_retry(self, func, **kwargs):
         """带重试的 AKShare API 调用。"""
         import time
@@ -126,19 +149,48 @@ class AKShareSource(DataSource):
 
         # A股/ETF 支持日期范围参数；黄金/债券需全量拉取后过滤
         if asset_class in (AssetClass.STOCK, AssetClass.FUND):
-            df = self._call_with_retry(
-                func,
-                symbol=str(symbol),
-                period="daily",
-                start_date=start.strftime("%Y%m%d"),
-                end_date=end.strftime("%Y%m%d"),
-                adjust="qfq",
-            )
+            if asset_class == AssetClass.FUND and not str(symbol)[:1].isdigit():
+                fund_code = self._resolve_open_end_fund_code(symbol)
+                if not fund_code:
+                    return pd.DataFrame(
+                        columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+                    )
+                df = self._call_with_retry(
+                    ak.fund_open_fund_info_em,
+                    symbol=fund_code,
+                    indicator="单位净值走势",
+                )
+                if df.empty:
+                    return pd.DataFrame(
+                        columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+                    )
+                df = df.rename(
+                    columns={
+                        "净值日期": "timestamp",
+                        "单位净值": "close",
+                    }
+                )
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                df["open"] = pd.to_numeric(df["close"], errors="coerce")
+                df["high"] = pd.to_numeric(df["close"], errors="coerce")
+                df["low"] = pd.to_numeric(df["close"], errors="coerce")
+                df["volume"] = 0.0
+                df["amount"] = 0.0
+            else:
+                df = self._call_with_retry(
+                    func,
+                    symbol=str(symbol),
+                    period="daily",
+                    start_date=start.strftime("%Y%m%d"),
+                    end_date=end.strftime("%Y%m%d"),
+                    adjust="qfq",
+                )
         else:
             # 黄金/债券：全量拉取
             df = self._call_with_retry(func, symbol=str(symbol))
 
-        df = self._normalize_bars(df, col_map, has_volume)
+        if not {"timestamp", "open", "high", "low", "close", "volume"}.issubset(df.columns):
+            df = self._normalize_bars(df, col_map, has_volume)
 
         # 按日期范围过滤
         if "timestamp" in df.columns and len(df) > 0:
@@ -224,15 +276,47 @@ class AKShareSource(DataSource):
                 }
 
             elif asset_class == AssetClass.FUND:
-                df = self._call_with_retry(ak.fund_etf_spot_em)
-                row = df[df["代码"] == str(symbol)]
+                if str(symbol)[:1].isdigit():
+                    df = self._call_with_retry(ak.fund_etf_spot_em)
+                    row = df[df["代码"] == str(symbol)]
+                    if row.empty:
+                        return None
+                    row = row.iloc[0]
+                    return {
+                        "price": float(row["最新价"]),
+                        "volume": float(row["成交额"]) if "成交额" in row else None,
+                        "timestamp": str(row.get("时间", "")),
+                    }
+
+                fund_code = self._resolve_open_end_fund_code(symbol)
+                if not fund_code:
+                    return None
+                df = self._call_with_retry(ak.fund_open_fund_daily_em)
+                row = df[
+                    (df["基金代码"].astype(str) == fund_code)
+                    | (df["基金简称"].astype(str).str.strip() == str(symbol).strip())
+                ]
                 if row.empty:
                     return None
                 row = row.iloc[0]
+                nav_column = next(
+                    (
+                        column
+                        for column in row.index
+                        if str(column).endswith("-单位净值")
+                    ),
+                    None,
+                )
+                if nav_column is None:
+                    return None
+                price = pd.to_numeric(row[nav_column], errors="coerce")
+                if pd.isna(price):
+                    return None
+                trade_day = str(nav_column).replace("-单位净值", "")
                 return {
-                    "price": float(row["最新价"]),
-                    "volume": float(row["成交额"]) if "成交额" in row else None,
-                    "timestamp": str(row.get("时间", "")),
+                    "price": float(price),
+                    "volume": None,
+                    "timestamp": trade_day,
                 }
 
             elif asset_class == AssetClass.GOLD:

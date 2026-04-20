@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,13 @@ from server.scheduler import TradingScheduler
 from server.ws.hub import ConnectionHub
 
 logger = logging.getLogger(__name__)
+
+
+def _env_flag(name: str) -> bool | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class AppState:
@@ -129,13 +137,18 @@ async def lifespan(app: FastAPI):
 
 def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     """创建 FastAPI 应用实例。"""
+    effective_overrides = dict(config_overrides or {})
+    env_live_auto_start = _env_flag("MYQUANT_LIVE_AUTO_START")
+    if env_live_auto_start is not None:
+        effective_overrides.setdefault("live_auto_start", env_live_auto_start)
+
     app = FastAPI(
         title="MyQuant Server",
         description="个人量化交易辅助系统",
         version="0.1.0",
         lifespan=lifespan,
     )
-    app.state.config_overrides = config_overrides or {}
+    app.state.config_overrides = effective_overrides
 
     # CORS — 开发环境允许所有来源
     app.add_middleware(
@@ -148,6 +161,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
 
     # 注册路由
     from server.routes.backtest import create_router as backtest_router
+    from server.routes.ledger import create_router as ledger_router
     from server.routes.market import create_router as market_router
     from server.routes.portfolio import create_router as portfolio_router
     from server.routes.settings import create_router as settings_router
@@ -155,6 +169,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.ws.handlers import router as ws_router
 
     app.include_router(market_router())
+    app.include_router(ledger_router())
     app.include_router(portfolio_router())
     app.include_router(signals_router())
     app.include_router(backtest_router())
