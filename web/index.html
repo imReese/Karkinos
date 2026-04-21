@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyQuant</title>
+    <script>
+      (() => {
+        const themeKey = "myquant.theme";
+        const root = document.documentElement;
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const savedTheme = window.localStorage.getItem(themeKey);
+        const theme =
+          savedTheme === "light" || savedTheme === "dark" ? savedTheme : "system";
+        const resolvedTheme =
+          theme === "dark" || (theme === "system" && media.matches) ? "dark" : "light";
+
+        root.dataset.theme = resolvedTheme;
+        root.style.colorScheme = resolvedTheme;
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />

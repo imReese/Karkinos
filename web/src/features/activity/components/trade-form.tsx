@@ -147,5 +147,5 @@ function FieldError({ message }: { message?: string }) {
   if (!message) {
     return null;
   }
-  return <div className="text-sm text-red-400">{message}</div>;
+  return <div className="app-error-text text-sm">{message}</div>;
 }

@@ -28,13 +28,13 @@ export function WorkspaceToolbar({
   const labels = copy.portfolio.toolbar;
 
   return (
-    <div className="app-panel rounded-2xl p-5">
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr_1fr]">
+    <div className="app-panel rounded-2xl p-4 sm:p-5">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,1fr))]">
         <div className="space-y-2">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {labels.view}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {[
               { value: "account", label: copy.mode.accountShort },
               { value: "strategy", label: copy.mode.strategyShort },
@@ -43,7 +43,7 @@ export function WorkspaceToolbar({
                 key={item.value}
                 type="button"
                 onClick={() => onModeChange(item.value as WorkspaceMode)}
-                className={`rounded-xl px-4 py-2 text-sm transition ${
+                className={`rounded-xl px-3 py-2 text-sm transition sm:px-4 ${
                   mode === item.value ? "app-button-primary" : "app-button-secondary"
                 }`}
               >

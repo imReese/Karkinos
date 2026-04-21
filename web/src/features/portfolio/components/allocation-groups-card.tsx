@@ -12,14 +12,14 @@ export function AllocationGroupsCard({ groups }: { groups: AllocationGroup[] }) 
 
   if (groups.length === 0) {
     return (
-      <div className="app-panel rounded-2xl p-5 text-sm app-muted">
+      <div className="app-panel rounded-2xl p-4 text-sm app-muted sm:p-5">
         {copy.portfolio.allocationGroups.empty}
       </div>
     );
   }
 
   return (
-    <div className="app-panel rounded-2xl p-5">
+    <div className="app-panel rounded-2xl p-4 sm:p-5">
       <div className="app-kicker mb-4 text-xs uppercase tracking-[0.18em]">
         {copy.portfolio.allocationGroups.title}
       </div>

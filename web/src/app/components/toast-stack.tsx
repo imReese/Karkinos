@@ -6,8 +6,10 @@ export type ToastItem = {
 };
 
 const toneClassName: Record<ToastItem["tone"], string> = {
-  success: "border-emerald-800/80 bg-emerald-950/70 text-emerald-100",
-  error: "border-red-900/80 bg-red-950/70 text-red-100",
+  success:
+    "border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]",
+  error:
+    "border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]",
 };
 
 export function ToastStack({ toasts }: { toasts: ToastItem[] }) {
@@ -20,7 +22,7 @@ export function ToastStack({ toasts }: { toasts: ToastItem[] }) {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`rounded-2xl border px-4 py-3 shadow-2xl shadow-black/30 ${toneClassName[toast.tone]}`}
+          className={`rounded-2xl border px-4 py-3 ${toneClassName[toast.tone]}`}
         >
           <div className="text-sm font-semibold">{toast.title}</div>
           <div className="mt-1 text-sm opacity-90">{toast.message}</div>

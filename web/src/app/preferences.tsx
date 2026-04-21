@@ -30,14 +30,27 @@ const PreferencesContext = createContext<PreferencesContextValue>({
 const LOCALE_KEY = "myquant.locale";
 const THEME_KEY = "myquant.theme";
 
+function readStoredTheme(): ThemePreference {
+  if (typeof window === "undefined") {
+    return "system";
+  }
+  const stored = window.localStorage.getItem(THEME_KEY);
+  return stored === "light" || stored === "dark" ? stored : "system";
+}
+
 function resolveSystemTheme(): ResolvedTheme {
   if (
     typeof window !== "undefined" &&
-    window.matchMedia("(prefers-color-scheme: light)").matches
+    window.matchMedia("(prefers-color-scheme: dark)").matches
   ) {
-    return "light";
+    return "dark";
   }
-  return "dark";
+  return "light";
+}
+
+function applyThemeToDocument(nextTheme: ResolvedTheme) {
+  document.documentElement.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme;
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
@@ -49,13 +62,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     return stored === "zh" ? "zh" : "en";
   });
   const [theme, setTheme] = useState<ThemePreference>(() => {
-    if (typeof window === "undefined") {
-      return "system";
-    }
-    const stored = window.localStorage.getItem(THEME_KEY);
-    return stored === "light" || stored === "dark" || stored === "system"
-      ? stored
-      : "system";
+    return readStoredTheme();
   });
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(
     resolveSystemTheme(),
@@ -66,20 +73,24 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       return;
     }
     window.localStorage.setItem(LOCALE_KEY, locale);
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en-US";
   }, [locale]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(THEME_KEY, theme);
+    if (theme === "system") {
+      window.localStorage.removeItem(THEME_KEY);
+    } else {
+      window.localStorage.setItem(THEME_KEY, theme);
+    }
 
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => {
       const nextTheme = theme === "system" ? resolveSystemTheme() : theme;
       setResolvedTheme(nextTheme);
-      document.documentElement.dataset.theme = nextTheme;
-      document.documentElement.style.colorScheme = nextTheme;
+      applyThemeToDocument(nextTheme);
     };
 
     applyTheme();

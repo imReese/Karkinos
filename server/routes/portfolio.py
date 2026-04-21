@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter
@@ -18,9 +19,24 @@ from server.models import (
     CashFlowCreate,
     CashFlowResponse,
     EquityPoint,
+    ExplainabilityBridgeItem,
+    ExplainabilityDriver,
+    ExplainabilityPositionDriver,
+    ExplainabilityResponse,
+    ExplainabilityTimelineEvent,
+    ExplainabilityTimelinePoint,
+    LiveHoldingGroupResponse,
+    LiveHoldingItemResponse,
+    LiveHoldingsResponse,
     PortfolioSnapshot,
     PositionResponse,
+    RiskConcentrationItem,
+    RiskDrawdownPoint,
+    RiskDrawdownSummary,
+    RiskExposureBucket,
+    RiskMetricItem,
     RiskSummaryItem,
+    RiskWorkspaceResponse,
     TradeCreate,
     TradeResponse,
 )
@@ -31,6 +47,7 @@ from server.projections.service import (
 from server.services.account_state import build_account_state_projection
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.risk_engine import build_risk_summary
+from server.services.risk_workspace import build_risk_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +59,15 @@ _ASSET_CLASS_LABELS = {
     "bond": "债券",
     "cash": "现金",
 }
+
+
+def _normalize_asset_class(value: str | None) -> str:
+    if not value:
+        return "other"
+    normalized = str(value).strip().lower()
+    if normalized in {"stock", "fund", "etf", "gold", "bond", "cash"}:
+        return normalized
+    return "other"
 
 
 def _build_grouped_allocation(
@@ -103,6 +129,233 @@ def _build_activity_items(
     return items
 
 
+def _build_recent_drivers(entries: list[dict]) -> list[ExplainabilityDriver]:
+    drivers: list[ExplainabilityDriver] = []
+    for entry in entries:
+        entry_type = entry.get("entry_type")
+        symbol = entry.get("symbol")
+        amount = entry.get("amount")
+        title = entry_type or "ledger"
+        detail = entry.get("note") or "Ledger activity"
+
+        if entry_type == "cash_deposit":
+            title = "Cash deposited"
+            detail = entry.get("note") or "Capital added to the portfolio."
+        elif entry_type == "cash_withdrawal":
+            title = "Cash withdrawn"
+            detail = entry.get("note") or "Capital removed from the portfolio."
+        elif entry_type == "trade_buy":
+            title = f"Bought {symbol}"
+            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+        elif entry_type == "trade_sell":
+            title = f"Sold {symbol}"
+            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+        elif entry_type == "dividend":
+            title = f"Dividend from {symbol}"
+            detail = entry.get("note") or "Cash income recorded from holdings."
+        elif entry_type == "manual_adjustment":
+            title = "Manual adjustment"
+            detail = entry.get("note") or "Manual valuation or position adjustment."
+
+        drivers.append(
+            ExplainabilityDriver(
+                kind=entry_type or "ledger",
+                title=title,
+                detail=detail,
+                timestamp=entry["timestamp"],
+                symbol=symbol,
+                amount=float(amount) if amount is not None else None,
+            )
+        )
+    return drivers
+
+
+def _build_timeline(
+    equity_curve: list[EquityPoint],
+    entries: list[dict],
+    *,
+    event_kind: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> list[ExplainabilityTimelinePoint]:
+    if not equity_curve:
+        return []
+
+    events_by_date: dict[str, list[ExplainabilityTimelineEvent]] = defaultdict(list)
+    external_flow_by_date: dict[str, float] = defaultdict(float)
+
+    for entry in entries:
+        timestamp = str(entry.get("timestamp") or "")
+        if not timestamp:
+            continue
+        event_date = timestamp.split("T")[0]
+        entry_type = entry.get("entry_type") or "ledger"
+        if event_kind and entry_type != event_kind:
+            continue
+        symbol = entry.get("symbol")
+        amount = float(entry.get("amount") or 0.0)
+        category = "portfolio"
+        impact_source = "market"
+
+        title = entry_type.replace("_", " ").title()
+        detail = entry.get("note") or "Ledger activity"
+        if entry_type == "cash_deposit":
+            title = "Cash deposited"
+            detail = entry.get("note") or "Capital added to the portfolio."
+            external_flow_by_date[event_date] += amount
+            category = "capital"
+            impact_source = "external"
+        elif entry_type == "cash_withdrawal":
+            title = "Cash withdrawn"
+            detail = entry.get("note") or "Capital removed from the portfolio."
+            external_flow_by_date[event_date] -= abs(amount)
+            amount = -abs(amount)
+            category = "capital"
+            impact_source = "external"
+        elif entry_type == "dividend":
+            title = f"Dividend from {symbol}"
+            detail = entry.get("note") or "Cash income recorded from holdings."
+            external_flow_by_date[event_date] += amount
+            category = "income"
+            impact_source = "cash"
+        elif entry_type == "manual_adjustment":
+            title = "Manual adjustment"
+            detail = entry.get("note") or "Manual ledger override applied."
+            external_flow_by_date[event_date] += amount
+            category = "override"
+            impact_source = "manual"
+        elif entry_type == "trade_buy":
+            title = f"Bought {symbol}"
+            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+            amount = None
+            category = "trade"
+            impact_source = "positioning"
+        elif entry_type == "trade_sell":
+            title = f"Sold {symbol}"
+            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+            amount = None
+            category = "trade"
+            impact_source = "positioning"
+
+        events_by_date[event_date].append(
+            ExplainabilityTimelineEvent(
+                category=category,
+                impact_source=impact_source,
+                kind=entry_type,
+                title=title,
+                detail=detail,
+                timestamp=timestamp,
+                symbol=symbol,
+                amount=amount,
+            )
+        )
+
+    timeline: list[ExplainabilityTimelinePoint] = []
+    previous_equity: float | None = None
+    for point in equity_curve:
+        point_date = point.timestamp.split("T")[0]
+        if from_date and point_date < from_date:
+            previous_equity = point.equity
+            continue
+        if to_date and point_date > to_date:
+            continue
+        delta = 0.0 if previous_equity is None else point.equity - previous_equity
+        external_flow = external_flow_by_date.get(point_date, 0.0)
+        market_pnl = 0.0 if previous_equity is None else delta - external_flow
+        timeline.append(
+            ExplainabilityTimelinePoint(
+                date=point_date,
+                equity=point.equity,
+                delta=delta,
+                external_flow=external_flow,
+                market_pnl=market_pnl,
+                events=events_by_date.get(point_date, []),
+            )
+        )
+        previous_equity = point.equity
+
+    return timeline
+
+
+def _build_position_drivers(
+    snapshot: PortfolioSnapshot, entries: list[dict]
+) -> list[ExplainabilityPositionDriver]:
+    by_symbol: dict[str, dict] = {}
+    for entry in entries:
+        symbol = entry.get("symbol")
+        if not symbol:
+            continue
+        previous = by_symbol.get(symbol)
+        if previous is None or entry["timestamp"] > previous["timestamp"]:
+            by_symbol[symbol] = entry
+
+    asset_class_by_symbol = {
+        item.symbol: item.asset_class for item in snapshot.allocation if item.asset_class != "cash"
+    }
+    drivers: list[ExplainabilityPositionDriver] = []
+    for position in snapshot.positions:
+        last_entry = by_symbol.get(position.symbol, {})
+        drivers.append(
+            ExplainabilityPositionDriver(
+                symbol=position.symbol,
+                asset_class=asset_class_by_symbol.get(position.symbol, "stock"),
+                quantity=position.quantity,
+                avg_cost=position.avg_cost,
+                market_value=position.market_value,
+                unrealized_pnl=position.unrealized_pnl,
+                realized_pnl=position.realized_pnl,
+                last_activity_at=last_entry.get("timestamp"),
+                last_activity_note=last_entry.get("note"),
+            )
+        )
+    return drivers
+
+
+def _build_equity_bridge(
+    snapshot: PortfolioSnapshot, summary: AccountOverview
+) -> list[ExplainabilityBridgeItem]:
+    market_value = max(snapshot.total_equity - snapshot.cash, 0)
+    total_pnl = summary.realized_pnl + summary.unrealized_pnl
+    return [
+        ExplainabilityBridgeItem(
+            key="deposits",
+            label="Net Deposits",
+            value=snapshot.total_deposits,
+            detail="External capital recorded through deposits and withdrawals.",
+        ),
+        ExplainabilityBridgeItem(
+            key="realized",
+            label="Realized PnL",
+            value=summary.realized_pnl,
+            detail="Closed trade outcome already locked in.",
+        ),
+        ExplainabilityBridgeItem(
+            key="unrealized",
+            label="Unrealized PnL",
+            value=summary.unrealized_pnl,
+            detail="Mark-to-market move on current positions.",
+        ),
+        ExplainabilityBridgeItem(
+            key="cash",
+            label="Cash",
+            value=snapshot.cash,
+            detail="Immediate buffer available for redeployment.",
+        ),
+        ExplainabilityBridgeItem(
+            key="market_value",
+            label="Market Value",
+            value=market_value,
+            detail="Current marked value of open positions.",
+        ),
+        ExplainabilityBridgeItem(
+            key="equity",
+            label="Total Equity",
+            value=snapshot.total_equity,
+            detail=f"Deposits plus total PnL ({total_pnl:.2f}).",
+        ),
+    ]
+
+
 def _collect_latest_quote_timestamps(state) -> dict[str, str]:
     latest: dict[str, str] = {}
     scheduler = state.scheduler
@@ -136,6 +389,132 @@ def _collect_latest_quotes(state) -> dict[str, dict]:
                 latest[str(symbol)] = row
 
     return latest
+
+
+def _get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict]:
+    if (
+        state.db is None
+        or not hasattr(state.db, "get_recent_quote_snapshots_sync")
+    ):
+        return []
+    rows = state.db.get_recent_quote_snapshots_sync(symbol, limit=limit)
+    return rows if isinstance(rows, list) else []
+
+
+def _resolve_live_holding_baseline(
+    state, symbol: str, latest_quote: dict | None
+) -> tuple[float | None, str | None, str]:
+    latest_timestamp = latest_quote.get("timestamp") if latest_quote else None
+    trade_date = (
+        str(latest_timestamp).split("T")[0]
+        if latest_timestamp
+        else datetime.now().date().isoformat()
+    )
+
+    if state.db is not None and hasattr(state.db, "get_latest_daily_close_before_sync"):
+        daily_close = state.db.get_latest_daily_close_before_sync(symbol, trade_date)
+        if daily_close:
+            return (
+                float(daily_close["close_price"]),
+                daily_close.get("trade_date"),
+                "previous_close",
+            )
+
+    if state.db is not None and hasattr(state.db, "get_latest_quote_before_date_sync"):
+        fallback_quote = state.db.get_latest_quote_before_date_sync(symbol, trade_date)
+        if fallback_quote:
+            if hasattr(state.db, "save_daily_close_snapshot_sync"):
+                state.db.save_daily_close_snapshot_sync(
+                    symbol=symbol,
+                    asset_class=str(fallback_quote.get("asset_class") or "stock"),
+                    trade_date=str(fallback_quote["timestamp"]).split("T")[0],
+                    close_price=float(fallback_quote["price"]),
+                    source="quote_fallback",
+                )
+            return (
+                float(fallback_quote["price"]),
+                fallback_quote.get("timestamp"),
+                "fallback_close",
+            )
+
+    return None, None, "unavailable"
+
+
+def _build_live_holdings_response(state) -> LiveHoldingsResponse:
+    portfolio, instruments = _resolve_projection_sources(state)
+    if portfolio is None:
+        return LiveHoldingsResponse(groups=[])
+
+    latest_quotes = _collect_latest_quotes(state)
+    groups: dict[str, list[LiveHoldingItemResponse]] = defaultdict(list)
+
+    for sym, pos in portfolio.positions.items():
+        quantity = float(pos.quantity)
+        if quantity == 0:
+            continue
+
+        symbol = str(sym)
+        instrument = instruments.get(Symbol(symbol)) if instruments else None
+        latest_quote = latest_quotes.get(symbol, {})
+        asset_class = _normalize_asset_class(
+            latest_quote.get("asset_class")
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+        )
+        latest_price = latest_quote.get("price")
+        latest_price_value = float(latest_price) if latest_price not in {None, ""} else None
+        baseline_price, baseline_timestamp, baseline_source = _resolve_live_holding_baseline(
+            state,
+            symbol,
+            latest_quote if latest_quote else None,
+        )
+        avg_cost = float(pos.avg_cost)
+        market_value = float(pos.market_value)
+        cost_basis = quantity * avg_cost
+        since_buy_pnl = market_value - cost_basis
+        since_buy_pnl_pct = None if cost_basis == 0 else since_buy_pnl / cost_basis
+        today_change = None
+        today_change_pct = None
+        if baseline_price not in {None, 0}:
+            today_change = quantity * ((latest_price_value or avg_cost) - baseline_price)
+            today_change_pct = ((latest_price_value or avg_cost) / baseline_price) - 1
+
+        groups[asset_class].append(
+            LiveHoldingItemResponse(
+                symbol=symbol,
+                name=getattr(instrument, "name", symbol),
+                asset_class=asset_class,
+                quantity=quantity,
+                avg_cost=avg_cost,
+                market_value=market_value,
+                latest_price=latest_price_value,
+                quote_timestamp=latest_quote.get("timestamp"),
+                since_buy_pnl=since_buy_pnl,
+                since_buy_pnl_pct=since_buy_pnl_pct,
+                today_change=today_change,
+                today_change_pct=today_change_pct,
+                baseline_price=baseline_price,
+                baseline_timestamp=baseline_timestamp,
+                baseline_source=baseline_source,
+                quote_status="live" if latest_price_value is not None else "stale",
+            )
+        )
+
+    response_groups: list[LiveHoldingGroupResponse] = []
+    for asset_class, items in groups.items():
+        items.sort(key=lambda item: item.market_value, reverse=True)
+        response_groups.append(
+            LiveHoldingGroupResponse(
+                asset_class=asset_class,
+                label=_ASSET_CLASS_LABELS.get(asset_class, asset_class.upper()),
+                total_market_value=sum(item.market_value for item in items),
+                total_today_change=sum(item.today_change or 0.0 for item in items),
+                total_since_buy_pnl=sum(item.since_buy_pnl for item in items),
+                items=items,
+            )
+        )
+
+    response_groups.sort(key=lambda group: -group.total_market_value)
+    return LiveHoldingsResponse(groups=response_groups)
 
 
 def _has_rows(rows: list[dict]) -> bool:
@@ -291,6 +670,14 @@ def create_router() -> APIRouter:
             allocation_grouped=allocation_grouped,
         )
 
+    @r.get("/live-holdings", response_model=LiveHoldingsResponse)
+    async def get_live_holdings() -> LiveHoldingsResponse:
+        """按资产类别返回当前持仓的实时价格、累计收益和日内变化。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return _build_live_holdings_response(state)
+
     @r.get("/positions", response_model=list[PositionResponse])
     async def get_positions() -> list[PositionResponse]:
         """获取投影后的持仓列表。"""
@@ -396,6 +783,45 @@ def create_router() -> APIRouter:
         trades = await state.db.get_trades(limit=limit, offset=0)
         flows = await state.db.get_cash_flows(limit=limit, offset=0)
         return _build_activity_items(trades, flows)[:limit]
+
+    @r.get("/explainability", response_model=ExplainabilityResponse)
+    async def get_explainability(
+        limit: int = 50,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        event_kind: str | None = None,
+    ) -> ExplainabilityResponse:
+        """Return traceable drivers for equity, PnL, and current positions."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        snapshot = await get_portfolio()
+        summary = await get_overview()
+        equity_curve = await get_equity_curve()
+
+        entries = []
+        if state.db is not None and hasattr(state.db, "get_ledger_entries_sync"):
+            entries = state.db.get_ledger_entries_sync(limit=limit, offset=0)
+
+        return ExplainabilityResponse(
+            equity_bridge=_build_equity_bridge(snapshot, summary),
+            recent_drivers=_build_recent_drivers(entries),
+            positions=_build_position_drivers(snapshot, entries),
+            timeline=_build_timeline(
+                equity_curve,
+                entries,
+                event_kind=event_kind,
+                from_date=from_date,
+                to_date=to_date,
+            ),
+        )
+
+    @r.get("/risk-workspace", response_model=RiskWorkspaceResponse)
+    async def get_risk_workspace() -> RiskWorkspaceResponse:
+        """Return richer drawdown, exposure, and concentration diagnostics."""
+        snapshot = await get_portfolio()
+        equity_curve = await get_equity_curve()
+        return build_risk_workspace(snapshot, equity_curve)
 
     # ---------- Cash Flows ----------
 
