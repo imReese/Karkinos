@@ -83,10 +83,14 @@ export function useLedgerEntriesQuery() {
 function invalidatePortfolioQueries(queryClient: ReturnType<typeof useQueryClient>) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ["account-overview"] }),
+    queryClient.invalidateQueries({ queryKey: ["account-state"] }),
     queryClient.invalidateQueries({ queryKey: ["account-equity-curve"] }),
+    queryClient.invalidateQueries({ queryKey: ["portfolio-risk-summary"] }),
+    queryClient.invalidateQueries({ queryKey: ["portfolio-explainability"] }),
     queryClient.invalidateQueries({ queryKey: ["portfolio-positions"] }),
     queryClient.invalidateQueries({ queryKey: ["portfolio-allocation"] }),
     queryClient.invalidateQueries({ queryKey: ["portfolio-snapshot"] }),
+    queryClient.invalidateQueries({ queryKey: ["market-research-board"] }),
     queryClient.invalidateQueries({ queryKey: ["ledger-entries"] }),
   ]);
 }

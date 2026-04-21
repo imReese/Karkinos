@@ -252,6 +252,14 @@ class TradingScheduler:
                                 volume=float(market_event.volume),
                                 timestamp=market_event.timestamp.isoformat(),
                             )
+                            if market_event.timestamp.time() >= _AFTERNOON_CLOSE:
+                                self._db.save_daily_close_snapshot_sync(
+                                    symbol=sym_str,
+                                    asset_class=market_event.asset_class.value,
+                                    trade_date=market_event.timestamp.date().isoformat(),
+                                    close_price=float(market_event.close),
+                                    source="scheduler_close",
+                                )
                         strategy.on_data(market_event)
                     self._event_bus.drain()
 

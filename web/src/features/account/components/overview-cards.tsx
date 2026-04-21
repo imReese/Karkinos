@@ -35,13 +35,15 @@ export function OverviewCards({ overview }: { overview: AccountOverview }) {
   ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
       {items.map((item) => (
-        <div key={item.label} className="app-panel rounded-2xl p-5">
+        <div key={item.label} className="app-panel rounded-2xl p-5 lg:p-6">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {item.label}
           </div>
-          <div className="mt-5 text-2xl font-semibold">{item.value}</div>
+          <div className="mt-4 text-xl font-semibold sm:mt-5 sm:text-2xl lg:text-[2rem]">
+            {item.value}
+          </div>
         </div>
       ))}
     </div>

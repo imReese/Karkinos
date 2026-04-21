@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -177,11 +178,230 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
 
     response = asyncio.run(endpoint())
 
-    assert response["quotes"][0]["symbol"] == "600519"
-    assert response["quotes"][0]["price"] == 123.45
-    assert response["bars"][0]["rows"] == 0
-    assert response["market_open"] is False
-    assert response["refresh_policy"] == "cache_only"
+    assert response.quotes[0].symbol == "600519"
+    assert response.quotes[0].price == 123.45
+    assert response.market_open is False
+    assert response.refresh_policy == "cache_only"
+
+
+def test_market_research_board_merges_watchlist_and_health(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    board_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/research-board"
+    )
+    endpoint = board_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        avg_cost=10.5,
+        market_value=1234.5,
+        unrealized_pnl=184.5,
+        realized_pnl=20.0,
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+        ),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            latest_quotes={
+                "600519": {
+                    "timestamp": "2026-04-18T10:00:00",
+                    "price": 123.45,
+                }
+            },
+            portfolio=SimpleNamespace(positions={"600519": fake_position}),
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(endpoint())
+
+    assert response.items[0].symbol == "600519"
+    assert response.items[0].price == 123.45
+    assert response.items[0].is_holding is True
+    assert response.health.market_open is True
+
+
+def test_market_research_notes_create_and_list(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    list_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/research-notes"
+    )
+    create_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/research-notes"
+        and "POST" in route.methods
+    )
+
+    notes: list[dict] = []
+
+    async def fake_add_research_note(**payload):
+        note_id = len(notes) + 1
+        notes.append(
+            {
+                "id": note_id,
+                **payload,
+                "created_at": "2026-04-20T10:00:00",
+                "updated_at": "2026-04-20T10:00:00",
+            }
+        )
+        return note_id
+
+    async def fake_get_research_notes(
+        symbol=None,
+        entry_kind=None,
+        priority=None,
+        event_date_from=None,
+        event_date_to=None,
+        limit=100,
+        offset=0,
+    ):
+        rows = [row for row in notes if symbol is None or row["symbol"] == symbol]
+        return list(reversed(rows))[:limit]
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            add_research_note=fake_add_research_note,
+            get_research_notes=fake_get_research_notes,
+        )
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    created = asyncio.run(
+        create_route.endpoint(
+            market_routes.ResearchNoteCreate(
+                symbol="600519",
+                asset_class="stock",
+                entry_kind="thesis",
+                title="Margin stability",
+                content="Premium mix remains resilient.",
+                priority="high",
+            )
+        )
+    )
+    listed = asyncio.run(list_route.endpoint(symbol="600519", limit=50))
+
+    assert created.id == 1
+    assert created.entry_kind == "thesis"
+    assert listed.items[0].symbol == "600519"
+    assert listed.items[0].title == "Margin stability"
+
+
+def test_market_research_notes_update_and_filter(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    list_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/research-notes"
+    )
+    update_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/research-notes/{note_id}"
+        and "PUT" in route.methods
+    )
+
+    notes = [
+        {
+            "id": 1,
+            "symbol": "600519",
+            "asset_class": "stock",
+            "entry_kind": "note",
+            "title": "Old note",
+            "content": "old",
+            "priority": "low",
+            "event_date": "2026-04-25",
+            "created_at": "2026-04-20T10:00:00",
+            "updated_at": "2026-04-20T10:00:00",
+        }
+    ]
+
+    async def fake_update_research_note(**payload):
+        for note in notes:
+            if note["id"] == payload["note_id"]:
+                note.update(
+                    entry_kind=payload["entry_kind"],
+                    title=payload["title"],
+                    content=payload["content"],
+                    priority=payload["priority"],
+                    event_date=payload["event_date"],
+                    updated_at="2026-04-20T11:00:00",
+                )
+                return True
+        return False
+
+    async def fake_get_research_notes(
+        symbol=None,
+        entry_kind=None,
+        priority=None,
+        event_date_from=None,
+        event_date_to=None,
+        limit=100,
+        offset=0,
+    ):
+        rows = list(notes)
+        if symbol:
+            rows = [row for row in rows if row["symbol"] == symbol]
+        if entry_kind:
+            rows = [row for row in rows if row["entry_kind"] == entry_kind]
+        if priority:
+            rows = [row for row in rows if row["priority"] == priority]
+        if event_date_from:
+            rows = [row for row in rows if (row["event_date"] or "") >= event_date_from]
+        if event_date_to:
+            rows = [row for row in rows if (row["event_date"] or "") <= event_date_to]
+        return rows[:limit]
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            update_research_note=fake_update_research_note,
+            get_research_notes=fake_get_research_notes,
+        )
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    updated = asyncio.run(
+        update_route.endpoint(
+            1,
+            market_routes.ResearchNoteUpdate(
+                entry_kind="catalyst",
+                title="Earnings watch",
+                content="Track the upcoming print.",
+                priority="high",
+                event_date="2026-04-28",
+            ),
+        )
+    )
+    listed = asyncio.run(
+        list_route.endpoint(
+            symbol="600519",
+            entry_kind="catalyst",
+            priority="high",
+            event_date_from="2026-04-27",
+            event_date_to="2026-04-29",
+            limit=50,
+        )
+    )
+
+    assert updated.title == "Earnings watch"
+    assert listed.items[0].entry_kind == "catalyst"
+    assert listed.items[0].priority == "high"
 
 
 def test_market_quote_falls_back_to_persisted_snapshot(monkeypatch):
@@ -860,6 +1080,206 @@ def test_portfolio_activity_merges_trades_and_cash_flows(monkeypatch):
     assert response[1].title == "入金"
 
 
+def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    explain_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/explainability"
+    )
+    endpoint = explain_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=1500,
+        unrealized_pnl=200,
+        realized_pnl=50,
+        commission_paid=3,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_latest_quotes_sync=lambda: [],
+            get_ledger_entries_sync=lambda limit=12, offset=0: [
+                {
+                    "id": 1,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-18T10:00:00+00:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 10.0,
+                    "commission": 3.0,
+                    "asset_class": "stock",
+                    "note": "first build",
+                    "source": "manual",
+                    "source_ref": None,
+                    "created_at": "2026-04-18T10:00:01+00:00",
+                }
+            ],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=500,
+                positions={"600519": fake_position},
+                equity_curve=[
+                    (datetime.fromisoformat("2026-04-17T00:00:00+00:00"), Decimal("1400")),
+                    (datetime.fromisoformat("2026-04-18T00:00:00+00:00"), Decimal("2000")),
+                ],
+            ),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.equity_bridge[-1].label == "Total Equity"
+    assert response.recent_drivers[0].title == "Bought 600519"
+    assert response.positions[0].symbol == "600519"
+    assert response.timeline[-1].date == "2026-04-18"
+    assert response.timeline[-1].market_pnl == 600
+
+
+def test_portfolio_explainability_filters_timeline(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    explain_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/explainability"
+    )
+    endpoint = explain_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=1500,
+        unrealized_pnl=200,
+        realized_pnl=50,
+        commission_paid=3,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_latest_quotes_sync=lambda: [],
+            get_ledger_entries_sync=lambda limit=50, offset=0: [
+                {
+                    "id": 1,
+                    "entry_type": "dividend",
+                    "timestamp": "2026-04-18T10:00:00+00:00",
+                    "symbol": "600519",
+                    "amount": 20.0,
+                    "note": "cash income",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-19T10:00:00+00:00",
+                    "symbol": "600519",
+                    "quantity": 100.0,
+                    "price": 10.0,
+                    "note": "added",
+                },
+            ],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=500,
+                positions={"600519": fake_position},
+                equity_curve=[
+                    (datetime.fromisoformat("2026-04-18T00:00:00+00:00"), Decimal("1400")),
+                    (datetime.fromisoformat("2026-04-19T00:00:00+00:00"), Decimal("2000")),
+                ],
+            ),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(
+        endpoint(limit=50, from_date="2026-04-19", to_date="2026-04-19", event_kind="trade_buy")
+    )
+
+    assert len(response.timeline) == 1
+    assert response.timeline[0].date == "2026-04-19"
+    assert response.timeline[0].events[0].category == "trade"
+
+
+def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    workspace_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/risk-workspace"
+    )
+    endpoint = workspace_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=1200,
+        unrealized_pnl=180,
+        realized_pnl=50,
+        commission_paid=3,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=SimpleNamespace(get_total_deposits=fake_get_total_deposits),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=800,
+                positions={"600519": fake_position},
+                equity_curve=[
+                    (datetime.fromisoformat("2026-04-17T00:00:00+00:00"), Decimal("2200")),
+                    (datetime.fromisoformat("2026-04-18T00:00:00+00:00"), Decimal("2000")),
+                ],
+            ),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.drawdown.max_drawdown > 0
+    assert response.metrics[0].key == "current_drawdown"
+    assert response.exposure_buckets[0].positions_count == 1
+    assert response.concentration[0].symbol == "600519"
+
+
 def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
@@ -1201,3 +1621,226 @@ def test_portfolio_equity_curve_uses_ledger_projection_when_scheduler_missing(mo
     assert len(curve) == 2
     assert curve[0].equity == 100000.0
     assert curve[-1].equity > curve[0].equity
+
+
+def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        available_qty=100.0,
+        frozen_qty=0.0,
+        avg_cost=10.0,
+        market_value=1200.0,
+        unrealized_pnl=200.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+    fake_portfolio = SimpleNamespace(cash=500.0, positions={"510300": fake_position})
+    fake_instrument = SimpleNamespace(
+        name="CSI 300 ETF",
+        asset_class=SimpleNamespace(value="etf"),
+    )
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "510300",
+                    "asset_class": "etf",
+                    "price": 12.0,
+                    "volume": 1000.0,
+                    "timestamp": "2026-04-21T14:30:00",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            assert symbol == "510300"
+            assert trade_date == "2026-04-21"
+            return {
+                "symbol": "510300",
+                "asset_class": "etf",
+                "trade_date": "2026-04-20",
+                "close_price": 11.5,
+                "source": "scheduler_close",
+                "captured_at": "2026-04-20T15:01:00",
+            }
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def save_daily_close_snapshot_sync(self, **kwargs):
+            raise AssertionError("should not persist fallback when previous close exists")
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=100000),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            instruments={"510300": fake_instrument},
+            watchlist=[("510300", SimpleNamespace(value="etf"))],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(live_holdings_route.endpoint())
+
+    assert response.groups[0].asset_class == "etf"
+    assert response.groups[0].label == "ETF"
+    assert response.groups[0].total_market_value == 1200.0
+    assert response.groups[0].total_today_change == 50.0
+    assert response.groups[0].total_since_buy_pnl == 200.0
+    assert response.groups[0].items[0].symbol == "510300"
+    assert response.groups[0].items[0].latest_price == 12.0
+    assert response.groups[0].items[0].today_change == 50.0
+    assert response.groups[0].items[0].today_change_pct == 12.0 / 11.5 - 1
+    assert response.groups[0].items[0].since_buy_pnl == 200.0
+    assert response.groups[0].items[0].since_buy_pnl_pct == 0.2
+    assert response.groups[0].items[0].baseline_source == "previous_close"
+
+
+def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=50.0,
+        available_qty=50.0,
+        frozen_qty=0.0,
+        avg_cost=20.0,
+        market_value=1050.0,
+        unrealized_pnl=50.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+    fake_portfolio = SimpleNamespace(cash=0.0, positions={"159915": fake_position})
+    fake_instrument = SimpleNamespace(
+        name="ChiNext ETF",
+        asset_class=SimpleNamespace(value="etf"),
+    )
+    persisted: dict[str, object] = {}
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "159915",
+                    "asset_class": "etf",
+                    "price": 21.0,
+                    "volume": 500.0,
+                    "timestamp": "2026-04-21T14:30:00",
+                },
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return {
+                "symbol": "159915",
+                "asset_class": "etf",
+                "price": 20.5,
+                "volume": 450.0,
+                "timestamp": "2026-04-18T15:00:00",
+            }
+
+        def save_daily_close_snapshot_sync(self, **kwargs):
+            persisted.update(kwargs)
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=100000),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            instruments={"159915": fake_instrument},
+            watchlist=[("159915", SimpleNamespace(value="etf"))],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(live_holdings_route.endpoint())
+
+    assert response.groups[0].items[0].baseline_source == "fallback_close"
+    assert response.groups[0].items[0].today_change == 25.0
+    assert persisted["trade_date"] == "2026-04-18"
+    assert persisted["close_price"] == 20.5
+    assert persisted["source"] == "quote_fallback"
+
+
+def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=10.0,
+        available_qty=10.0,
+        frozen_qty=0.0,
+        avg_cost=100.0,
+        market_value=980.0,
+        unrealized_pnl=-20.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+    fake_portfolio = SimpleNamespace(cash=0.0, positions={"600519": fake_position})
+    fake_instrument = SimpleNamespace(
+        name="Kweichow Moutai",
+        asset_class=SimpleNamespace(value="stock"),
+    )
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 98.0,
+                    "volume": 100.0,
+                    "timestamp": "2026-04-21T10:30:00",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=100000),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            instruments={"600519": fake_instrument},
+            watchlist=[("600519", SimpleNamespace(value="stock"))],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(live_holdings_route.endpoint())
+
+    assert response.groups[0].asset_class == "stock"
+    assert response.groups[0].items[0].today_change is None
+    assert response.groups[0].items[0].today_change_pct is None
+    assert response.groups[0].items[0].baseline_source == "unavailable"

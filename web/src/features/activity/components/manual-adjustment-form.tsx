@@ -122,5 +122,5 @@ export function ManualAdjustmentForm({
 }
 
 function FieldError({ message }: { message?: string }) {
-  return message ? <div className="text-sm text-red-400">{message}</div> : null;
+  return message ? <div className="app-error-text text-sm">{message}</div> : null;
 }

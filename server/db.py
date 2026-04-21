@@ -334,6 +334,93 @@ class AppDatabase:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_recent_quote_snapshots_sync(
+        self, symbol: str, limit: int = 2
+    ) -> list[dict[str, Any]]:
+        """同步获取单个标的最近的行情快照序列。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT symbol, asset_class, price, volume, timestamp
+                FROM quote_snapshots
+                WHERE symbol = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                (symbol, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def save_daily_close_snapshot_sync(
+        self,
+        *,
+        symbol: str,
+        asset_class: str,
+        trade_date: str,
+        close_price: float,
+        source: str,
+    ) -> None:
+        """同步写入日收盘基准。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """
+                INSERT INTO daily_close_snapshots
+                    (symbol, asset_class, trade_date, close_price, source, captured_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, trade_date) DO UPDATE SET
+                    asset_class = excluded.asset_class,
+                    close_price = excluded.close_price,
+                    source = excluded.source,
+                    captured_at = excluded.captured_at
+                """,
+                (
+                    symbol,
+                    asset_class,
+                    trade_date,
+                    close_price,
+                    source,
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def get_latest_daily_close_before_sync(
+        self, symbol: str, trade_date: str
+    ) -> dict[str, Any] | None:
+        """获取某日之前最近一个交易日收盘基准。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT symbol, asset_class, trade_date, close_price, source, captured_at
+                FROM daily_close_snapshots
+                WHERE symbol = ? AND trade_date < ?
+                ORDER BY trade_date DESC, id DESC
+                LIMIT 1
+                """,
+                (symbol, trade_date),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_latest_quote_before_date_sync(
+        self, symbol: str, trade_date: str
+    ) -> dict[str, Any] | None:
+        """获取某日之前最近一个交易日的最后一条报价快照。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT symbol, asset_class, price, volume, timestamp
+                FROM quote_snapshots
+                WHERE symbol = ? AND substr(timestamp, 1, 10) < ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT 1
+                """,
+                (symbol, trade_date),
+            ).fetchone()
+            return dict(row) if row else None
+
     # ---------- Portfolio Snapshots ----------
 
     def save_portfolio_snapshot_sync(
@@ -569,6 +656,169 @@ class AppDatabase:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    # ---------- Market Research ----------
+
+    async def add_research_note(
+        self,
+        *,
+        symbol: str,
+        asset_class: str,
+        entry_kind: str,
+        title: str,
+        content: str,
+        priority: str = "normal",
+        event_date: str | None = None,
+    ) -> int:
+        """新增研究记录，供市场研究工作台持久化使用。"""
+        import aiosqlite
+
+        now = datetime.now().isoformat()
+        async with aiosqlite.connect(self._path) as db:
+            cursor = await db.execute(
+                """INSERT INTO market_research_notes
+                   (symbol, asset_class, entry_kind, title, content, priority, event_date, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    symbol,
+                    asset_class,
+                    entry_kind,
+                    title,
+                    content,
+                    priority,
+                    event_date,
+                    now,
+                    now,
+                ),
+            )
+            await db.commit()
+            return cursor.lastrowid or 0
+
+    async def get_research_notes(
+        self,
+        *,
+        symbol: str | None = None,
+        entry_kind: str | None = None,
+        priority: str | None = None,
+        event_date_from: str | None = None,
+        event_date_to: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """异步读取研究记录，按更新时间倒序。"""
+        import aiosqlite
+
+        query = "SELECT * FROM market_research_notes"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if entry_kind:
+            clauses.append("entry_kind = ?")
+            params.append(entry_kind)
+        if priority:
+            clauses.append("priority = ?")
+            params.append(priority)
+        if event_date_from:
+            clauses.append("COALESCE(event_date, '') >= ?")
+            params.append(event_date_from)
+        if event_date_to:
+            clauses.append("COALESCE(event_date, '') <= ?")
+            params.append(event_date_to)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        async with aiosqlite.connect(self._path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(query, tuple(params))
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def get_research_notes_sync(
+        self,
+        *,
+        symbol: str | None = None,
+        entry_kind: str | None = None,
+        priority: str | None = None,
+        event_date_from: str | None = None,
+        event_date_to: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """同步读取研究记录，供聚合看板快速汇总。"""
+        query = "SELECT * FROM market_research_notes"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if entry_kind:
+            clauses.append("entry_kind = ?")
+            params.append(entry_kind)
+        if priority:
+            clauses.append("priority = ?")
+            params.append(priority)
+        if event_date_from:
+            clauses.append("COALESCE(event_date, '') >= ?")
+            params.append(event_date_from)
+        if event_date_to:
+            clauses.append("COALESCE(event_date, '') <= ?")
+            params.append(event_date_to)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, tuple(params)).fetchall()
+            return [dict(row) for row in rows]
+
+    async def delete_research_note(self, note_id: int) -> bool:
+        """删除研究记录。"""
+        import aiosqlite
+
+        async with aiosqlite.connect(self._path) as db:
+            cursor = await db.execute(
+                "DELETE FROM market_research_notes WHERE id = ?",
+                (note_id,),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def update_research_note(
+        self,
+        *,
+        note_id: int,
+        entry_kind: str,
+        title: str,
+        content: str,
+        priority: str,
+        event_date: str | None = None,
+    ) -> bool:
+        """更新研究记录。"""
+        import aiosqlite
+
+        async with aiosqlite.connect(self._path) as db:
+            cursor = await db.execute(
+                """UPDATE market_research_notes
+                   SET entry_kind = ?, title = ?, content = ?, priority = ?, event_date = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    entry_kind,
+                    title,
+                    content,
+                    priority,
+                    event_date,
+                    datetime.now().isoformat(),
+                    note_id,
+                ),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
@@ -616,6 +866,17 @@ CREATE TABLE IF NOT EXISTS quote_snapshots (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS daily_close_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    trade_date TEXT NOT NULL,
+    close_price REAL NOT NULL,
+    source TEXT NOT NULL DEFAULT 'scheduler_close',
+    captured_at TEXT NOT NULL,
+    UNIQUE(symbol, trade_date)
+);
+
 CREATE TABLE IF NOT EXISTS action_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_signal_id INTEGER NOT NULL UNIQUE,
@@ -638,6 +899,7 @@ CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_results(created_at);
 CREATE INDEX IF NOT EXISTS idx_quote_snapshots_symbol_ts ON quote_snapshots(symbol, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_daily_close_symbol_trade_date ON daily_close_snapshots(symbol, trade_date DESC);
 CREATE INDEX IF NOT EXISTS idx_action_tasks_status_ts ON action_tasks(status, timestamp DESC);
 
 CREATE TABLE IF NOT EXISTS cash_flows (
@@ -687,6 +949,22 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
 
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_timestamp ON ledger_entries(timestamp);
 CREATE INDEX IF NOT EXISTS idx_ledger_entries_type_ts ON ledger_entries(entry_type, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS market_research_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    entry_kind TEXT NOT NULL DEFAULT 'note',
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'normal',
+    event_date TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_research_symbol_updated
+ON market_research_notes(symbol, updated_at DESC);
 """
 
 

@@ -17,6 +17,148 @@ export type EquityPoint = {
   equity: number;
 };
 
+export type RiskSummaryItem = {
+  kind: string;
+  level: string;
+  title: string;
+  detail: string;
+};
+
+export type AccountStateResponse = {
+  summary: AccountOverview;
+  snapshot: {
+    cash: number;
+    total_equity: number;
+    total_deposits: number;
+    positions: Array<{
+      symbol: string;
+      quantity: number;
+      available_qty: number;
+      frozen_qty: number;
+      avg_cost: number;
+      market_value: number;
+      unrealized_pnl: number;
+      realized_pnl: number;
+      commission_paid: number;
+    }>;
+    allocation: Array<{
+      symbol: string;
+      name: string;
+      weight: number;
+      value: number;
+      asset_class: string;
+    }>;
+    allocation_grouped: Array<{
+      asset_class: string;
+      name: string;
+      value: number;
+      weight: number;
+      items: Array<{
+        symbol: string;
+        name: string;
+        weight: number;
+        value: number;
+        asset_class: string;
+      }>;
+    }>;
+  };
+  risks: RiskSummaryItem[];
+  next_step: string;
+};
+
+export type ExplainabilityBridgeItem = {
+  key: string;
+  label: string;
+  value: number;
+  detail: string;
+};
+
+export type ExplainabilityDriver = {
+  kind: string;
+  title: string;
+  detail: string;
+  timestamp: string;
+  symbol: string | null;
+  amount: number | null;
+};
+
+export type ExplainabilityPositionDriver = {
+  symbol: string;
+  asset_class: string;
+  quantity: number;
+  avg_cost: number;
+  market_value: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+  last_activity_at: string | null;
+  last_activity_note: string | null;
+};
+
+export type ExplainabilityResponse = {
+  equity_bridge: ExplainabilityBridgeItem[];
+  recent_drivers: ExplainabilityDriver[];
+  positions: ExplainabilityPositionDriver[];
+  timeline: Array<{
+    date: string;
+    equity: number;
+    delta: number;
+    external_flow: number;
+    market_pnl: number;
+    events: Array<{
+      category: string;
+      impact_source: string;
+      kind: string;
+      title: string;
+      detail: string;
+      timestamp: string;
+      symbol: string | null;
+      amount: number | null;
+    }>;
+  }>;
+};
+
+export type RiskWorkspaceResponse = {
+  metrics: Array<{
+    key: string;
+    label: string;
+    value: number;
+    display_value: string;
+    level: string;
+    detail: string;
+  }>;
+  drawdown: {
+    current_drawdown: number;
+    max_drawdown: number;
+    latest_equity: number;
+    peak_equity: number;
+    peak_timestamp: string | null;
+    trough_timestamp: string | null;
+  };
+  drawdown_series: Array<{
+    timestamp: string;
+    equity: number;
+    peak_equity: number;
+    drawdown: number;
+  }>;
+  exposure_buckets: Array<{
+    bucket: string;
+    label: string;
+    value: number;
+    weight: number;
+    positions_count: number;
+    symbols: string[];
+  }>;
+  concentration: Array<{
+    symbol: string;
+    asset_class: string;
+    market_value: number;
+    weight: number;
+    unrealized_pnl: number;
+    avg_cost: number;
+    quantity: number;
+  }>;
+};
+
 export function useAccountOverviewQuery() {
   return useQuery({
     queryKey: ["account-overview"],
@@ -28,5 +170,44 @@ export function useEquityCurveQuery() {
   return useQuery({
     queryKey: ["account-equity-curve"],
     queryFn: () => apiClient<EquityPoint[]>("/api/portfolio/equity-curve"),
+  });
+}
+
+export function useAccountStateQuery() {
+  return useQuery({
+    queryKey: ["account-state"],
+    queryFn: () => apiClient<AccountStateResponse>("/api/portfolio/state"),
+  });
+}
+
+export function useRiskSummaryQuery() {
+  return useQuery({
+    queryKey: ["portfolio-risk-summary"],
+    queryFn: () => apiClient<RiskSummaryItem[]>("/api/portfolio/risk-summary"),
+  });
+}
+
+export function useExplainabilityQuery(filters?: {
+  from_date?: string;
+  to_date?: string;
+  event_kind?: string;
+}) {
+  return useQuery({
+    queryKey: ["portfolio-explainability", filters],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (filters?.from_date) params.set("from_date", filters.from_date);
+      if (filters?.to_date) params.set("to_date", filters.to_date);
+      if (filters?.event_kind) params.set("event_kind", filters.event_kind);
+      const suffix = params.size > 0 ? `?${params.toString()}` : "";
+      return apiClient<ExplainabilityResponse>(`/api/portfolio/explainability${suffix}`);
+    },
+  });
+}
+
+export function useRiskWorkspaceQuery() {
+  return useQuery({
+    queryKey: ["portfolio-risk-workspace"],
+    queryFn: () => apiClient<RiskWorkspaceResponse>("/api/portfolio/risk-workspace"),
   });
 }

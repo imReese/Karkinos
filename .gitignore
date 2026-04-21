@@ -158,7 +158,8 @@ docs/*
 
 # Node.js
 node_modules/
-web/tsconfig.tsbuildinfo
+web/dist/
+*.tsbuildinfo
 
 # Local build / tool caches
 .uv-cache/

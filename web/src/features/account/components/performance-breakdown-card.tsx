@@ -80,19 +80,14 @@ export function PerformanceBreakdownCard({
         ];
 
   return (
-    <div className="app-panel rounded-2xl p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {mode === "account" ? labels.accountKicker : labels.strategyKicker}
-          </div>
-          <div className="mt-2 text-lg font-semibold">
-            {mode === "account" ? labels.accountTitle : labels.strategyTitle}
-          </div>
+    <div className="app-panel rounded-2xl p-4 sm:p-5">
+      <div className="app-card-header">
+        <div className="app-card-title">
+          {mode === "account" ? labels.accountTitle : labels.strategyTitle}
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {items.map((item) => (
           <div key={item.label} className="app-panel-strong rounded-2xl px-4 py-4">
             <div className="app-kicker text-xs uppercase tracking-[0.16em]">

@@ -39,6 +39,38 @@ export type PortfolioSnapshot = {
   allocation_grouped: AllocationGroup[];
 };
 
+export type LiveHoldingItem = {
+  symbol: string;
+  name: string;
+  asset_class: string;
+  quantity: number;
+  avg_cost: number;
+  market_value: number;
+  latest_price: number | null;
+  quote_timestamp: string | null;
+  since_buy_pnl: number;
+  since_buy_pnl_pct: number | null;
+  today_change: number | null;
+  today_change_pct: number | null;
+  baseline_price: number | null;
+  baseline_timestamp: string | null;
+  baseline_source: string;
+  quote_status: string;
+};
+
+export type LiveHoldingGroup = {
+  asset_class: string;
+  label: string;
+  total_market_value: number;
+  total_today_change: number;
+  total_since_buy_pnl: number;
+  items: LiveHoldingItem[];
+};
+
+export type LiveHoldingsResponse = {
+  groups: LiveHoldingGroup[];
+};
+
 export function usePositionsQuery() {
   return useQuery({
     queryKey: ["portfolio-positions"],
@@ -57,5 +89,12 @@ export function usePortfolioSnapshotQuery() {
   return useQuery({
     queryKey: ["portfolio-snapshot"],
     queryFn: () => apiClient<PortfolioSnapshot>("/api/portfolio"),
+  });
+}
+
+export function useLiveHoldingsQuery() {
+  return useQuery({
+    queryKey: ["portfolio-live-holdings"],
+    queryFn: () => apiClient<LiveHoldingsResponse>("/api/portfolio/live-holdings"),
   });
 }

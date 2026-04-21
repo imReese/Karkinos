@@ -48,6 +48,76 @@ class KlineBar(BaseModel):
     volume: float
 
 
+class MarketHealthQuote(BaseModel):
+    symbol: str
+    asset_class: str
+    timestamp: str | None = None
+    price: float | None = None
+
+
+class MarketDataHealthResponse(BaseModel):
+    quotes: list[MarketHealthQuote]
+    market_open: bool = False
+    refresh_policy: str = "cache_only"
+
+
+class ResearchBoardItem(BaseModel):
+    symbol: str
+    asset_class: str
+    name: str = ""
+    is_holding: bool = False
+    quantity: float | None = None
+    avg_cost: float | None = None
+    market_value: float | None = None
+    unrealized_pnl: float | None = None
+    realized_pnl: float | None = None
+    last_snapshot_at: str | None = None
+    price: float | None = None
+    volume: float | None = None
+    research_count: int = 0
+    last_research_at: str | None = None
+
+
+class ResearchBoardResponse(BaseModel):
+    items: list[ResearchBoardItem]
+    health: MarketDataHealthResponse
+
+
+class ResearchNoteCreate(BaseModel):
+    symbol: str
+    asset_class: str = "stock"
+    entry_kind: str = "note"
+    title: str
+    content: str
+    priority: str = "normal"
+    event_date: str | None = None
+
+
+class ResearchNoteUpdate(BaseModel):
+    entry_kind: str = "note"
+    title: str
+    content: str
+    priority: str = "normal"
+    event_date: str | None = None
+
+
+class ResearchNoteResponse(BaseModel):
+    id: int
+    symbol: str
+    asset_class: str = "stock"
+    entry_kind: str
+    title: str
+    content: str
+    priority: str = "normal"
+    event_date: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ResearchNoteListResponse(BaseModel):
+    items: list[ResearchNoteResponse]
+
+
 # ---------- Portfolio ----------
 
 
@@ -90,6 +160,38 @@ class PortfolioSnapshot(BaseModel):
     allocation_grouped: list[AllocationGroup] = []
 
 
+class LiveHoldingItemResponse(BaseModel):
+    symbol: str
+    name: str
+    asset_class: str
+    quantity: float
+    avg_cost: float
+    market_value: float
+    latest_price: float | None = None
+    quote_timestamp: str | None = None
+    since_buy_pnl: float
+    since_buy_pnl_pct: float | None = None
+    today_change: float | None = None
+    today_change_pct: float | None = None
+    baseline_price: float | None = None
+    baseline_timestamp: str | None = None
+    baseline_source: str = "unavailable"
+    quote_status: str = "stale"
+
+
+class LiveHoldingGroupResponse(BaseModel):
+    asset_class: str
+    label: str
+    total_market_value: float
+    total_today_change: float
+    total_since_buy_pnl: float
+    items: list[LiveHoldingItemResponse]
+
+
+class LiveHoldingsResponse(BaseModel):
+    groups: list[LiveHoldingGroupResponse]
+
+
 class AccountOverview(BaseModel):
     total_equity: float
     available_cash: float
@@ -112,6 +214,113 @@ class RiskSummaryItem(BaseModel):
     level: str
     title: str
     detail: str
+
+
+class ExplainabilityBridgeItem(BaseModel):
+    key: str
+    label: str
+    value: float
+    detail: str
+
+
+class ExplainabilityDriver(BaseModel):
+    kind: str
+    title: str
+    detail: str
+    timestamp: str
+    symbol: str | None = None
+    amount: float | None = None
+
+
+class ExplainabilityPositionDriver(BaseModel):
+    symbol: str
+    asset_class: str = "stock"
+    quantity: float
+    avg_cost: float
+    market_value: float
+    unrealized_pnl: float
+    realized_pnl: float
+    last_activity_at: str | None = None
+    last_activity_note: str | None = None
+
+
+class ExplainabilityTimelineEvent(BaseModel):
+    category: str
+    impact_source: str
+    kind: str
+    title: str
+    detail: str
+    timestamp: str
+    symbol: str | None = None
+    amount: float | None = None
+
+
+class ExplainabilityTimelinePoint(BaseModel):
+    date: str
+    equity: float
+    delta: float
+    external_flow: float
+    market_pnl: float
+    events: list[ExplainabilityTimelineEvent]
+
+
+class ExplainabilityResponse(BaseModel):
+    equity_bridge: list[ExplainabilityBridgeItem]
+    recent_drivers: list[ExplainabilityDriver]
+    positions: list[ExplainabilityPositionDriver]
+    timeline: list[ExplainabilityTimelinePoint] = []
+
+
+class RiskMetricItem(BaseModel):
+    key: str
+    label: str
+    value: float
+    display_value: str
+    level: str = "low"
+    detail: str
+
+
+class RiskDrawdownPoint(BaseModel):
+    timestamp: str
+    equity: float
+    peak_equity: float
+    drawdown: float
+
+
+class RiskDrawdownSummary(BaseModel):
+    current_drawdown: float
+    max_drawdown: float
+    latest_equity: float
+    peak_equity: float
+    peak_timestamp: str | None = None
+    trough_timestamp: str | None = None
+
+
+class RiskExposureBucket(BaseModel):
+    bucket: str
+    label: str
+    value: float
+    weight: float
+    positions_count: int
+    symbols: list[str]
+
+
+class RiskConcentrationItem(BaseModel):
+    symbol: str
+    asset_class: str
+    market_value: float
+    weight: float
+    unrealized_pnl: float
+    avg_cost: float
+    quantity: float
+
+
+class RiskWorkspaceResponse(BaseModel):
+    metrics: list[RiskMetricItem]
+    drawdown: RiskDrawdownSummary
+    drawdown_series: list[RiskDrawdownPoint]
+    exposure_buckets: list[RiskExposureBucket]
+    concentration: list[RiskConcentrationItem]
 
 
 class ActionCard(BaseModel):

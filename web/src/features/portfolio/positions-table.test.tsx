@@ -22,6 +22,7 @@ test("renders active positions", () => {
     />,
   );
 
-  expect(screen.getByText("600519")).toBeTruthy();
-  expect(screen.getByText("60")).toBeTruthy();
+  expect(screen.getAllByText("600519").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("60").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Market Value").length).toBeGreaterThan(0);
 });
