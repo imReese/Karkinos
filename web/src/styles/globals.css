@@ -225,30 +225,6 @@ select {
   color: var(--app-button-text);
 }
 
-.app-toolbar-chip {
-  border: 1px solid var(--app-border);
-  background: var(--app-panel);
-  color: var(--app-soft);
-}
-
-.app-toolbar-chip-subtle {
-  border-color: color-mix(in srgb, var(--app-border) 70%, transparent);
-  background: color-mix(in srgb, var(--app-panel) 42%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.app-toolbar-label {
-  color: var(--app-muted);
-}
-
-.app-toolbar-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--app-border);
-  opacity: 0.64;
-}
-
 .app-page-header {
   display: flex;
   flex-direction: column;
@@ -284,217 +260,74 @@ select {
   letter-spacing: -0.01em;
 }
 
-.toolbar-control-widget {
+.app-surface-section {
+  border: 1px solid color-mix(in srgb, var(--app-border) 78%, transparent);
+  background: color-mix(in srgb, var(--app-panel) 52%, transparent);
+}
+
+.app-surface-section-header {
   display: flex;
-  width: 112px;
-  flex-direction: column;
-  gap: 0;
-  align-self: center;
-  border: 1px solid color-mix(in srgb, var(--app-surface-1) 46%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--app-surface-0) 68%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 8px 24px rgba(17, 17, 27, 0.1);
-  padding: 5px;
-}
-
-.toolbar-control-trigger {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--app-muted);
-  padding: 0 8px;
-  cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
-}
-
-.toolbar-control-trigger-block {
-  width: 100%;
-  justify-content: center;
-  border-radius: 12px;
-}
-
-.toolbar-control-trigger:hover,
-.toolbar-control-trigger[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--app-surface-1) 56%, transparent);
-  color: var(--app-text);
-}
-
-.toolbar-control-trigger:focus-visible {
-  outline: 2px solid var(--app-accent-secondary);
-  outline-offset: 2px;
-}
-
-.toolbar-control-trigger svg {
-  width: 14px;
-  height: 14px;
-}
-
-.toolbar-floating-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 60;
-  width: 100%;
-  border: 1px solid var(--app-border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--app-panel) 88%, transparent);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 12px 40px rgba(17, 17, 27, 0.16);
-  padding: 6px;
-}
-
-.toolbar-control-separator {
-  height: 1px;
-  margin: 4px 7px;
-  background: color-mix(in srgb, var(--app-surface-1) 18%, transparent);
-}
-
-.toolbar-floating-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  border: 0;
-  border-radius: 10px;
+  gap: 16px;
+  padding: 20px 20px 0;
+}
+
+.app-surface-pane {
+  border-color: color-mix(in srgb, var(--app-border) 72%, transparent);
+  padding: 20px;
+}
+
+.app-surface-pane-accent {
+  background: color-mix(in srgb, var(--app-panel-strong) 28%, transparent);
+}
+
+.app-surface-card {
   background: transparent;
-  color: var(--app-muted);
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
-}
-
-.toolbar-floating-item:hover {
-  background: var(--app-accent-ghost);
   color: var(--app-text);
 }
 
-.toolbar-floating-item-active {
-  color: var(--app-text);
-}
-
-.toolbar-floating-item svg {
-  width: 12px;
-  height: 12px;
-}
-
-.theme-switcher {
-  --theme-index: 0;
-  position: relative;
+.app-inline-segmented {
   display: inline-flex;
   align-items: center;
-  gap: 0;
-  border: 1px solid var(--app-border);
+  gap: 2px;
+  border: 1px solid color-mix(in srgb, var(--app-border) 72%, transparent);
   border-radius: 9999px;
-  background: var(--app-secondary);
-  padding: 4px;
-}
-
-.theme-switcher-compact {
-  height: 28px;
-  border: 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--app-panel-strong) 24%, transparent);
   padding: 2px;
 }
 
-.theme-switcher-block {
-  width: 100%;
-}
-
-.theme-switcher-indicator {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 40px;
-  height: 40px;
-  border-radius: 9999px;
-  border: 1px solid var(--app-accent-border);
-  background: var(--app-accent);
-  transform: translateX(calc(var(--theme-index, 0) * 100%));
-  transition:
-    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 0.28s ease,
-    border-color 0.28s ease;
-}
-
-.theme-switcher-compact .theme-switcher-indicator {
-  top: 2px;
-  left: 2px;
-  width: calc((100% - 4px) / 3);
-  height: 24px;
-  border-color: transparent;
-  background: color-mix(in srgb, var(--app-accent) 20%, transparent);
-  border-radius: 12px;
-  transform: translateX(calc(var(--theme-index, 0) * 100%));
-  transition:
-    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 0.28s ease,
-    border-color 0.28s ease;
-}
-
-.theme-switcher-btn {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
+.app-inline-segmented-btn {
+  height: 28px;
   border: 0;
   border-radius: 9999px;
   background: transparent;
   color: var(--app-muted);
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   transition:
-    color 0.2s ease,
-    transform 0.2s ease;
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
-.theme-switcher-compact .theme-switcher-btn {
-  flex: 1 1 0%;
-  width: auto;
-  height: 24px;
-  color: var(--app-muted);
-}
-
-.theme-switcher-btn:hover {
+.app-inline-segmented-btn:hover {
   color: var(--app-text);
 }
 
-.theme-switcher-btn:focus-visible {
-  outline: 2px solid var(--app-accent-secondary);
-  outline-offset: 2px;
+.app-inline-segmented-btn-active {
+  background: color-mix(in srgb, var(--app-accent) 18%, transparent);
+  color: var(--app-text);
 }
 
-.theme-switcher-btn:active {
-  transform: scale(0.96);
+.app-surface-metric-row {
+  padding: 12px 4px;
 }
 
-.theme-switcher-btn-active {
-  color: var(--app-accent);
-}
-
-.theme-switcher-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.theme-switcher-compact .theme-switcher-btn svg {
-  width: 14px;
-  height: 14px;
+.app-surface-metric-row-divider {
+  border-top: 1px solid color-mix(in srgb, var(--app-border) 72%, transparent);
 }
 
 .app-positive {

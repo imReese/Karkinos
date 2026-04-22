@@ -81,20 +81,23 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main className="app-shell-main flex min-w-0 flex-1 flex-col overflow-hidden">
           <header className="app-toolbar-shell shrink-0 border-b">
-            <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-6 lg:px-8 xl:px-10 2xl:px-12">
+            <div className="flex h-14 items-center justify-between gap-4 px-4">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="app-product-mark">MyQuant</div>
-                  <div className="app-toolbar-divider hidden sm:block" aria-hidden="true" />
+                  <div
+                    className="hidden h-4 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_64%,transparent)] sm:block"
+                    aria-hidden="true"
+                  />
                   <div className="truncate text-sm font-semibold sm:text-[15px]">
                     {copy.shell.toolbarTitle}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 self-center">
+              <div className="flex shrink-0 flex-row items-center justify-end gap-4 self-center whitespace-nowrap">
                 <div
-                  className="hidden flex-wrap items-center gap-1.5 self-center xl:flex"
+                  className="hidden flex-row flex-nowrap items-center gap-2 self-center xl:flex"
                   aria-label={copy.shell.accountStatus}
                 >
                   <StatusChip label={copy.shell.accountStatus} value={copy.shell.ledgerMode} />
@@ -102,9 +105,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <StatusChip label={copy.shell.navStatus} value={copy.shell.valuationMode} />
                 </div>
 
+                <div
+                  className="hidden h-6 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_34%,transparent)] xl:block"
+                  aria-hidden="true"
+                />
+
                 <button
                   type="button"
-                  className="app-button-secondary rounded-xl px-3 py-2 text-sm lg:hidden"
+                  className="app-button-secondary h-8 rounded-xl px-3 text-sm lg:hidden"
                   aria-label={
                     mobileNavOpen ? copy.shell.closeNavigation : copy.shell.openNavigation
                   }
@@ -114,7 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {copy.shell.navigation}
                 </button>
 
-                <div className="toolbar-control-widget self-center">
+                <div className="flex flex-row items-center gap-6">
                   <ThemeSwitcher
                     label={copy.shell.theme}
                     value={theme}
@@ -137,7 +145,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                       },
                     ]}
                   />
-                  <div className="toolbar-control-separator" aria-hidden="true" />
                   <LanguageMenu
                     label={copy.shell.language}
                     value={locale}
@@ -170,7 +177,7 @@ function LanguageMenu({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const currentLabel = value === "zh" ? "ZH" : "EN";
+  const currentLabel = value === "zh" ? "中文" : "English";
 
   useEffect(() => {
     if (!open) {
@@ -199,23 +206,29 @@ function LanguageMenu({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative w-auto">
       <button
         type="button"
-        className="toolbar-control-trigger toolbar-control-trigger-block"
+        className={`inline-flex h-9 w-auto items-center gap-2 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_46%,transparent)] px-3 text-[11px] font-semibold tracking-[0.08em] text-[var(--app-muted)] backdrop-blur-md transition-colors duration-200 hover:border-[color-mix(in_srgb,var(--app-border)_74%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-1)_34%,transparent)] hover:text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
+          open ? "border-[color-mix(in_srgb,var(--app-border)_74%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_34%,transparent)] text-[var(--app-text)]" : ""
+        }`}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <GlobeIcon />
-        <span className="text-[10px] font-medium tracking-[0.08em]">{currentLabel}</span>
+        <GlobeIcon className="h-3.5 w-3.5" />
+        <span className="min-w-max whitespace-nowrap">{currentLabel}</span>
       </button>
       {open ? (
-        <div className="toolbar-floating-menu" role="menu" aria-label={label}>
+        <div
+          className="absolute right-0 top-[calc(100%+6px)] z-[60] min-w-full min-w-max rounded-xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-panel)_88%,transparent)] p-1.5 shadow-[0_12px_40px_rgba(17,17,27,0.16)] backdrop-blur-lg"
+          role="menu"
+          aria-label={label}
+        >
           {([
-            ["en", "EN"],
-            ["zh", "ZH"],
+            ["en", "English"],
+            ["zh", "中文"],
           ] as const).map(([nextValue, menuLabel]) => {
             const active = nextValue === value;
             return (
@@ -224,14 +237,16 @@ function LanguageMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
-                className={`toolbar-floating-item ${active ? "toolbar-floating-item-active" : ""}`}
+                className={`flex w-full min-w-max items-center justify-between gap-3 rounded-[10px] bg-transparent px-3 py-2 text-left text-xs font-medium text-[var(--app-muted)] transition-colors duration-200 hover:bg-[var(--app-accent-ghost)] hover:text-[var(--app-text)] ${
+                  active ? "text-[var(--app-text)]" : ""
+                }`}
                 onClick={() => {
                   onChange(nextValue as Locale);
                   setOpen(false);
                 }}
               >
                 <span>{menuLabel}</span>
-                {active ? <CheckIcon /> : null}
+                {active ? <CheckIcon className="h-3 w-3" /> : null}
               </button>
             );
           })}
@@ -256,19 +271,12 @@ function ThemeSwitcher({
     icon: ComponentType<SVGProps<SVGSVGElement>>;
   }>;
 }) {
-  const activeIndex = Math.max(
-    0,
-    options.findIndex((option) => option.value === value),
-  );
-
   return (
     <div
-      className="theme-switcher theme-switcher-compact theme-switcher-block"
+      className="inline-flex flex-row items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_46%,transparent)] p-1 backdrop-blur-md"
       role="group"
       aria-label={label}
-      style={{ ["--theme-index" as string]: activeIndex }}
     >
-      <div className="theme-switcher-indicator" aria-hidden="true" />
       {options.map((option) => {
         const Icon = option.icon;
         const active = value === option.value;
@@ -278,7 +286,11 @@ function ThemeSwitcher({
             type="button"
             aria-label={option.label}
             aria-pressed={active}
-            className={`theme-switcher-btn ${active ? "theme-switcher-btn-active" : ""}`}
+            className={`inline-flex items-center justify-center rounded-full px-2.5 py-1.5 text-[var(--app-muted)] transition-colors duration-200 hover:text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] [&>svg]:h-4 [&>svg]:w-4 ${
+              active
+                ? "bg-[color-mix(in_srgb,var(--app-accent)_20%,transparent)] text-[var(--app-accent)]"
+                : ""
+            }`}
             onClick={() => onChange(option.value)}
           >
             <Icon />
@@ -325,8 +337,8 @@ function DarkThemeIcon(props: SVGProps<SVGSVGElement>) {
 
 function StatusChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="app-toolbar-chip app-toolbar-chip-subtle rounded-full px-2.5 py-1.5 text-[11px]">
-      <span className="app-toolbar-label mr-1.5 uppercase tracking-[0.16em]">{label}</span>
+    <div className="inline-flex h-8 items-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_46%,transparent)] px-3 text-[11px] text-[var(--app-soft)] backdrop-blur-md">
+      <span className="mr-1.5 uppercase tracking-[0.16em] text-[var(--app-muted)]">{label}</span>
       <span className="font-medium text-[var(--app-text)]">{value}</span>
     </div>
   );

@@ -160,13 +160,6 @@ function OverviewPage() {
         subtitle={copy.overview.subtitle}
       />
 
-      <SegmentedMode
-        mode={mode}
-        onModeChange={setMode}
-        accountLabel={copy.mode.account}
-        strategyLabel={copy.mode.strategy}
-      />
-
       {overview.isLoading || snapshot.isLoading ? (
         <StatusCard title={copy.states.loading} detail={copy.overview.loading} />
       ) : overview.isError || snapshot.isError ? (
@@ -212,33 +205,44 @@ function OverviewPage() {
             drivers={explainability.data?.recent_drivers ?? []}
             isLoading={explainability.isLoading}
           />
-          <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
-            <div className="min-w-0">
-              {equityCurve.isLoading ? (
-                <StatusCard title={copy.states.loading} detail={copy.overview.curveLoading} />
-              ) : equityCurve.isError ? (
-                <StatusCard
-                  tone="danger"
-                  title={copy.states.error}
-                  detail={copy.overview.curveError}
-                  actionLabel={copy.states.retry}
-                  onAction={() => void equityCurve.refetch()}
-                />
-              ) : (
-                <EquityCurveCard points={equityCurve.data ?? []} />
-              )}
+          <section className="app-surface-section overflow-hidden rounded-[28px]">
+            <div className="app-surface-section-header">
+              <div>
+                <div className="app-product-mark">{copy.overview.kicker}</div>
+                <div className="mt-2 text-lg font-semibold sm:text-xl">
+                  {copy.overview.title}
+                </div>
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="space-y-5 sm:space-y-6">
+            <div className="grid gap-0 xl:grid-cols-[minmax(0,1.28fr)_minmax(340px,0.92fr)]">
+              <div className="app-surface-pane min-w-0">
+                {equityCurve.isLoading ? (
+                  <StatusCard title={copy.states.loading} detail={copy.overview.curveLoading} />
+                ) : equityCurve.isError ? (
+                  <StatusCard
+                    tone="danger"
+                    title={copy.states.error}
+                    detail={copy.overview.curveError}
+                    actionLabel={copy.states.retry}
+                    onAction={() => void equityCurve.refetch()}
+                  />
+                ) : (
+                  <EquityCurveCard points={equityCurve.data ?? []} />
+                )}
+              </div>
+              <div className="app-surface-pane app-surface-pane-accent min-w-0 xl:border-l">
                 <PerformanceBreakdownCard
                   overview={overview.data}
                   snapshot={snapshot.data}
                   mode={mode}
+                  onModeChange={setMode}
+                  accountLabel={copy.mode.accountShort}
+                  strategyLabel={copy.mode.strategyShort}
                 />
-                <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
               </div>
             </div>
-          </div>
+          </section>
+          <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
         </div>
       ) : (
         <StatusCard title={copy.states.empty} detail={copy.overview.empty} />
@@ -427,6 +431,9 @@ function PortfolioPage() {
                 overview={overview.data}
                 snapshot={snapshot.data}
                 mode={mode}
+                onModeChange={setMode}
+                accountLabel={copy.mode.accountShort}
+                strategyLabel={copy.mode.strategyShort}
               />
               <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
               <AllocationCard items={filteredAllocation} />
@@ -2077,40 +2084,6 @@ function StatusCard({
           {actionLabel}
         </button>
       ) : null}
-    </div>
-  );
-}
-
-function SegmentedMode({
-  mode,
-  onModeChange,
-  accountLabel,
-  strategyLabel,
-}: {
-  mode: "account" | "strategy";
-  onModeChange: (mode: "account" | "strategy") => void;
-  accountLabel: string;
-  strategyLabel: string;
-}) {
-  return (
-    <div className="app-panel rounded-2xl p-3 sm:p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {[
-          { value: "account", label: accountLabel },
-          { value: "strategy", label: strategyLabel },
-        ].map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onModeChange(item.value as "account" | "strategy")}
-            className={`rounded-xl px-3 py-2 text-sm sm:px-4 ${
-              mode === item.value ? "app-button-primary" : "app-button-secondary"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

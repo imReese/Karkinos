@@ -20,10 +20,16 @@ export function PerformanceBreakdownCard({
   overview,
   snapshot,
   mode,
+  onModeChange,
+  accountLabel,
+  strategyLabel,
 }: {
   overview: AccountOverview;
   snapshot: PortfolioSnapshot;
   mode: BreakdownMode;
+  onModeChange: (mode: BreakdownMode) => void;
+  accountLabel: string;
+  strategyLabel: string;
 }) {
   const copy = useCopy();
   const labels = copy.overview.breakdown;
@@ -80,16 +86,38 @@ export function PerformanceBreakdownCard({
         ];
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="app-card-header">
+    <div className="app-surface-card p-5 sm:p-6">
+      <div className="app-card-header items-end">
         <div className="app-card-title">
           {mode === "account" ? labels.accountTitle : labels.strategyTitle}
+        </div>
+        <div className="app-inline-segmented">
+          {[
+            { value: "account", label: accountLabel },
+            { value: "strategy", label: strategyLabel },
+          ].map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onModeChange(item.value as BreakdownMode)}
+              className={`app-inline-segmented-btn ${
+                mode === item.value ? "app-inline-segmented-btn-active" : ""
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item.label} className="app-panel-strong rounded-2xl px-4 py-4">
+        {items.map((item, index) => (
+          <div
+            key={item.label}
+            className={`app-surface-metric-row sm:px-2 ${
+              index > 1 ? "app-surface-metric-row-divider" : ""
+            }`}
+          >
             <div className="app-kicker text-xs uppercase tracking-[0.16em]">
               {item.label}
             </div>

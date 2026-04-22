@@ -5,38 +5,46 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PID_FILE="${REPO_ROOT}/.run/server.pid"
+WEB_PID_FILE="${REPO_ROOT}/.run/web.pid"
 
-if [[ ! -f "${PID_FILE}" ]]; then
-  echo "MyQuant Web service is not running."
-  exit 0
-fi
+stop_pid_file() {
+  local pid_file="$1"
+  local label="$2"
 
-PID="$(cat "${PID_FILE}")"
-
-if [[ -z "${PID}" ]]; then
-  echo "Error: PID file is empty." >&2
-  rm -f "${PID_FILE}"
-  exit 1
-fi
-
-if ! kill -0 "${PID}" >/dev/null 2>&1; then
-  echo "MyQuant Web service is not running, cleaning stale PID file."
-  rm -f "${PID_FILE}"
-  exit 0
-fi
-
-kill "${PID}"
-
-for _ in {1..20}; do
-  if ! kill -0 "${PID}" >/dev/null 2>&1; then
-    rm -f "${PID_FILE}"
-    echo "Stopped MyQuant Web service (${PID})."
-    exit 0
+  if [[ ! -f "${pid_file}" ]]; then
+    echo "${label} is not running."
+    return 0
   fi
-  sleep 0.5
-done
 
-echo "MyQuant Web service did not stop gracefully, sending SIGKILL."
-kill -9 "${PID}"
-rm -f "${PID_FILE}"
-echo "Stopped MyQuant Web service (${PID})."
+  local pid
+  pid="$(cat "${pid_file}")"
+  if [[ -z "${pid}" ]]; then
+    echo "Error: ${label} PID file is empty." >&2
+    rm -f "${pid_file}"
+    return 1
+  fi
+
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    echo "${label} is not running, cleaning stale PID file."
+    rm -f "${pid_file}"
+    return 0
+  fi
+
+  kill "${pid}"
+  for _ in {1..20}; do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      rm -f "${pid_file}"
+      echo "Stopped ${label} (${pid})."
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "${label} did not stop gracefully, sending SIGKILL."
+  kill -9 "${pid}"
+  rm -f "${pid_file}"
+  echo "Stopped ${label} (${pid})."
+}
+
+stop_pid_file "${WEB_PID_FILE}" "MyQuant Web frontend"
+stop_pid_file "${PID_FILE}" "MyQuant Web service"

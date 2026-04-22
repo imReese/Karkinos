@@ -17,9 +17,13 @@ RUN_DIR="${REPO_ROOT}/.run"
 LOG_DIR="${REPO_ROOT}/logs"
 PID_FILE="${RUN_DIR}/server.pid"
 LOG_FILE="${LOG_DIR}/server.log"
+WEB_PID_FILE="${RUN_DIR}/web.pid"
+WEB_LOG_FILE="${LOG_DIR}/web.log"
+FRONTEND_HOST="${MYQUANT_FRONTEND_HOST:-127.0.0.1}"
+FRONTEND_PORT="${MYQUANT_FRONTEND_PORT:-5173}"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage:
   ./scripts/start_server.sh [dev|prod] [extra server args...]
 
@@ -32,11 +36,13 @@ Examples:
   ./scripts/start_server.sh prod --host 0.0.0.0 --port 9000
 
 Notes:
-  - This script starts the Web service via `python -m server` in the background.
-  - `dev` defaults to `--reload --no-live`.
-  - `prod` starts without hot reload and preserves server defaults unless extra args are passed.
-  - Output is redirected to `logs/server.log`.
-  - PID is written to `.run/server.pid`.
+  - This script starts the Web service via \`python -m server\` in the background.
+  - \`dev\` defaults to \`--reload\` with live monitoring enabled.
+  - \`dev\` also starts the Vite frontend on ${FRONTEND_HOST}:${FRONTEND_PORT}.
+  - \`prod\` starts without hot reload and also enables live monitoring by default.
+  - Pass \`--no-live\` explicitly if you want to disable live monitoring in either mode.
+  - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
+  - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It does not install dependencies automatically.
 EOF
 }
@@ -49,6 +55,11 @@ fi
 if ! command -v uv >/dev/null 2>&1; then
   echo "Error: 'uv' was not found in PATH." >&2
   echo "Install uv first, or make sure \$HOME/.local/bin/env exists and is loadable." >&2
+  exit 1
+fi
+
+if [[ "${MODE:-${1:-dev}}" == "dev" ]] && ! command -v npm >/dev/null 2>&1; then
+  echo "Error: npm was not found in PATH." >&2
   exit 1
 fi
 
@@ -73,10 +84,11 @@ EOF
 fi
 
 MODE="${1:-dev}"
+ENV_PREFIX=()
 case "${MODE}" in
   dev)
     shift || true
-    SERVER_ARGS=(--reload --no-live "$@")
+    SERVER_ARGS=(--reload "$@")
     ;;
   prod)
     shift || true
@@ -84,7 +96,7 @@ case "${MODE}" in
     ;;
   -*)
     MODE="dev"
-    SERVER_ARGS=(--reload --no-live "$@")
+    SERVER_ARGS=(--reload "$@")
     ;;
   *)
     echo "Error: unknown mode '${MODE}'." >&2
@@ -93,6 +105,27 @@ case "${MODE}" in
     exit 1
     ;;
 esac
+
+BACKEND_HOST="127.0.0.1"
+BACKEND_PORT="8000"
+for ((i = 0; i < ${#SERVER_ARGS[@]}; i++)); do
+  case "${SERVER_ARGS[$i]}" in
+    --host)
+      if (( i + 1 < ${#SERVER_ARGS[@]} )); then
+        BACKEND_HOST="${SERVER_ARGS[$((i + 1))]}"
+      fi
+      ;;
+    --port)
+      if (( i + 1 < ${#SERVER_ARGS[@]} )); then
+        BACKEND_PORT="${SERVER_ARGS[$((i + 1))]}"
+      fi
+      ;;
+  esac
+done
+
+if [[ ! " ${SERVER_ARGS[*]} " =~ [[:space:]]--no-live[[:space:]] ]]; then
+  ENV_PREFIX=(MYQUANT_LIVE_AUTO_START=true)
+fi
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}"
 
@@ -106,16 +139,30 @@ if [[ -f "${PID_FILE}" ]]; then
   rm -f "${PID_FILE}"
 fi
 
+if [[ "${MODE}" == "dev" && -f "${WEB_PID_FILE}" ]]; then
+  EXISTING_WEB_PID="$(cat "${WEB_PID_FILE}")"
+  if [[ -n "${EXISTING_WEB_PID}" ]] && kill -0 "${EXISTING_WEB_PID}" >/dev/null 2>&1; then
+    echo "Error: MyQuant Web frontend is already running with PID ${EXISTING_WEB_PID}." >&2
+    echo "Stop it first with ./scripts/stop_server.sh" >&2
+    exit 1
+  fi
+  rm -f "${WEB_PID_FILE}"
+fi
+
 echo "Mode: ${MODE}"
 echo "Starting MyQuant Web service from ${REPO_ROOT}"
 echo "Log file: ${LOG_FILE}"
-echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
+if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then
+  echo "Command: ${ENV_PREFIX[*]} UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
+else
+  echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
+fi
 
 if command -v setsid >/dev/null 2>&1; then
-  setsid nohup env UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+  setsid nohup env "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
     uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 else
-  nohup env UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+  nohup env "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
     uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 fi
 
@@ -137,3 +184,43 @@ if ! kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
 fi
 
 echo "MyQuant Web service started with PID ${TRACKED_PID}"
+
+if [[ "${MODE}" != "dev" ]]; then
+  exit 0
+fi
+
+echo "Starting MyQuant Web frontend from ${REPO_ROOT}/web"
+echo "Frontend log file: ${WEB_LOG_FILE}"
+echo "Frontend command: npm run dev -- --host ${FRONTEND_HOST} --port ${FRONTEND_PORT}"
+
+pushd "${REPO_ROOT}/web" >/dev/null
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" >>"${WEB_LOG_FILE}" 2>&1 &
+else
+  nohup npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}" >>"${WEB_LOG_FILE}" 2>&1 &
+fi
+WEB_LAUNCH_PID=$!
+popd >/dev/null
+
+TRACKED_WEB_PID="${WEB_LAUNCH_PID}"
+sleep 1
+WEB_CHILD_PID="$(pgrep -P "${WEB_LAUNCH_PID}" | tail -n 1 || true)"
+if [[ -n "${WEB_CHILD_PID}" ]]; then
+  TRACKED_WEB_PID="${WEB_CHILD_PID}"
+fi
+
+echo "${TRACKED_WEB_PID}" > "${WEB_PID_FILE}"
+
+if ! kill -0 "${TRACKED_WEB_PID}" >/dev/null 2>&1; then
+  echo "Error: MyQuant Web frontend failed to start. Check ${WEB_LOG_FILE}" >&2
+  rm -f "${WEB_PID_FILE}"
+  exit 1
+fi
+
+cat <<EOF
+MyQuant dev environment started.
+Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}
+Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}
+
+Use ./scripts/stop_server.sh to stop both processes.
+EOF

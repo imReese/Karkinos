@@ -1,3 +1,4 @@
+from pathlib import Path
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -193,3 +194,63 @@ def test_create_app_accepts_config_overrides():
     app = create_app({"live_auto_start": False})
 
     assert app.state.config_overrides == {"live_auto_start": False}
+
+
+def test_create_app_serves_spa_index_for_client_routes(monkeypatch, tmp_path):
+    from server import app as app_module
+
+    dist_dir = tmp_path / "web" / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html><body>myquant-spa</body></html>")
+
+    original_path = Path
+
+    def fake_path(value="."):
+        if value == "web/dist":
+            return original_path(dist_dir)
+        return original_path(value)
+
+    monkeypatch.setattr(app_module, "Path", fake_path)
+
+    static = app_module.SPAStaticFiles(directory=str(dist_dir), html=True)
+    response = __import__("asyncio").run(
+        static.get_response(
+            "activity",
+            {"type": "http", "method": "GET", "path": "/activity", "headers": []},
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.path.endswith("index.html")
+
+
+def test_create_app_keeps_missing_static_assets_as_404(monkeypatch, tmp_path):
+    from server import app as app_module
+
+    dist_dir = tmp_path / "web" / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html><body>myquant-spa</body></html>")
+
+    original_path = Path
+
+    def fake_path(value="."):
+        if value == "web/dist":
+            return original_path(dist_dir)
+        return original_path(value)
+
+    monkeypatch.setattr(app_module, "Path", fake_path)
+
+    static = app_module.SPAStaticFiles(directory=str(dist_dir), html=True)
+    response = __import__("asyncio").run(
+        static.get_response(
+            "assets/missing.js",
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/assets/missing.js",
+                "headers": [],
+            },
+        )
+    )
+
+    assert response.status_code == 404

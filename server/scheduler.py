@@ -152,7 +152,10 @@ class TradingScheduler:
         source = runtime.sources.get(
             self._config.data_source, runtime.sources["akshare"]
         )
-        feed = LiveDataFeed(source, self._event_bus)
+        fallback_source = None
+        if self._config.data_source != "akshare":
+            fallback_source = runtime.sources.get("akshare")
+        feed = LiveDataFeed(source, self._event_bus, fallback_source=fallback_source)
         data_manager = runtime.data_manager
 
         # 构建关注列表

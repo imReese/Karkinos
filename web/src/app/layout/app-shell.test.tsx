@@ -112,7 +112,7 @@ test("switches interface language from english to chinese", async () => {
   const user = userEvent.setup();
 
   await user.click(await screen.findByRole("button", { name: "Language" }));
-  await user.click(await screen.findByRole("menuitemradio", { name: "ZH" }));
+  await user.click(await screen.findByRole("menuitemradio", { name: "中文" }));
 
   expect(await screen.findByText("总览")).toBeTruthy();
   expect(await screen.findByText("组合")).toBeTruthy();
@@ -147,6 +147,48 @@ test("switches theme preference and persists it", async () => {
     matchMedia.setDarkMode(false);
   });
   expect(document.documentElement.dataset.theme).toBe("light");
+});
+
+test("keeps the desktop toolbar controls in a single centered row", async () => {
+  renderShell();
+
+  const toolbarTitle = await screen.findByText("Workspace toolbar");
+  const toolbarRow = toolbarTitle.closest("header")?.firstElementChild as HTMLElement | null;
+  expect(toolbarRow).toBeTruthy();
+  expect(toolbarRow?.className).toContain("h-14");
+  expect(toolbarRow?.className).toContain("items-center");
+  expect(toolbarRow?.className).toContain("px-4");
+
+  const accountStatus = await screen.findByLabelText("Account Status");
+  expect(accountStatus.className).toContain("flex-nowrap");
+  expect(accountStatus.className).not.toContain("flex-wrap");
+
+  const themeSwitcher = await screen.findByRole("group", { name: "Theme" });
+  expect(themeSwitcher.className).toContain("flex-row");
+  expect(themeSwitcher.className).toContain("items-center");
+  expect(themeSwitcher.className).toContain("rounded-full");
+
+  const languageButton = await screen.findByRole("button", { name: "Language" });
+  expect(languageButton.className).toContain("w-auto");
+  expect(languageButton.className).toContain("whitespace-nowrap");
+  expect(languageButton.textContent).toBe("English");
+});
+
+test("uses full language names and fluid menu width", async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  const languageButton = await screen.findByRole("button", { name: "Language" });
+  expect(languageButton.className).toContain("w-auto");
+  expect(languageButton.className).toContain("px-3");
+  expect(languageButton.textContent).toBe("English");
+
+  await user.click(languageButton);
+
+  const menu = await screen.findByRole("menu", { name: "Language" });
+  expect(menu.className).toContain("min-w-max");
+  expect(await screen.findByRole("menuitemradio", { name: "English" })).toBeTruthy();
+  expect(await screen.findByRole("menuitemradio", { name: "中文" })).toBeTruthy();
 });
 
 test("toggles mobile navigation from the global toolbar", async () => {

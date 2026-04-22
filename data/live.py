@@ -21,8 +21,14 @@ class LiveDataFeed:
     发布 MarketEvent 到 EventBus。
     """
 
-    def __init__(self, source: DataSource, event_bus: EventBus) -> None:
+    def __init__(
+        self,
+        source: DataSource,
+        event_bus: EventBus,
+        fallback_source: DataSource | None = None,
+    ) -> None:
         self.source = source
+        self.fallback_source = fallback_source
         self.event_bus = event_bus
         self._last_prices: dict[tuple[Symbol, AssetClass], float] = {}
 
@@ -33,6 +39,13 @@ class LiveDataFeed:
     ) -> MarketEvent | None:
         """拉取最新行情快照，发布 MarketEvent。"""
         snapshot = self.source.fetch_latest(symbol, asset_class)
+        if (
+            snapshot is None
+            and asset_class == AssetClass.FUND
+            and self.fallback_source is not None
+            and self.fallback_source is not self.source
+        ):
+            snapshot = self.fallback_source.fetch_latest(symbol, asset_class)
         if snapshot is None:
             logger.warning("获取实时行情失败: %s (%s)", symbol, asset_class.value)
             return None

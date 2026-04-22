@@ -37,7 +37,7 @@ export function OverviewCards({ overview }: { overview: AccountOverview }) {
   return (
     <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(250px,1fr))]">
       {items.map((item) => (
-        <div key={item.label} className="app-panel rounded-2xl p-5 lg:p-6">
+        <div key={item.label} className="app-surface-card p-5 lg:p-6">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {item.label}
           </div>

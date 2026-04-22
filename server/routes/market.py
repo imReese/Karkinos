@@ -43,11 +43,23 @@ _ASSET_CLASS_MAP = {
 }
 
 
-def _resolve_asset_class(symbol: str, assets: list[dict[str, str]]) -> AssetClass:
+def _find_asset_config(assets: list[dict[str, str]], symbol: str) -> dict[str, str] | None:
     for asset_cfg in assets:
         if asset_cfg["symbol"] == symbol:
-            return _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
+            return asset_cfg
+    return None
+
+
+def _resolve_asset_class(symbol: str, assets: list[dict[str, str]]) -> AssetClass:
+    if asset_cfg := _find_asset_config(assets, symbol):
+        return _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
     return AssetClass.STOCK
+
+
+def _resolve_asset_display_name(assets: list[dict[str, str]], symbol: str) -> str:
+    if asset_cfg := _find_asset_config(assets, symbol):
+        return str(asset_cfg.get("display_name") or asset_cfg["symbol"])
+    return symbol
 
 
 def _normalize_asset_class(asset_class: AssetClass | str | None) -> str:
@@ -104,6 +116,7 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
             {
                 "symbol": symbol,
                 "asset_class": asset_cfg["asset_class"],
+                "display_name": asset_cfg.get("display_name", symbol),
             }
         )
         seen.add(symbol)
@@ -163,8 +176,18 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         data_source=state.config.data_source,
         tushare_token=state.config.tushare_token,
     )
-    source = sources.get(state.config.data_source, sources["akshare"])
-    snapshot = source.fetch_latest(Symbol(symbol), asset_class)
+    preferred = sources.get(state.config.data_source, sources["akshare"])
+    source_chain = [preferred]
+    if asset_class == AssetClass.FUND and state.config.data_source != "akshare":
+        akshare = sources.get("akshare")
+        if akshare is not None and akshare is not preferred:
+            source_chain.append(akshare)
+
+    snapshot = None
+    for source in source_chain:
+        snapshot = source.fetch_latest(Symbol(symbol), asset_class)
+        if snapshot:
+            break
     if not snapshot:
         return None
     payload = {
@@ -237,7 +260,7 @@ def create_router() -> APIRouter:
                 WatchlistItem(
                     symbol=sym,
                     asset_class=ac,
-                    name=sym,
+                    name=str(asset_cfg.get("display_name") or sym),
                     is_holding=position is not None,
                     quantity=None if position is None else float(position.quantity),
                     avg_cost=None if position is None else float(position.avg_cost),
@@ -265,7 +288,13 @@ def create_router() -> APIRouter:
         if any(asset["symbol"].lower() == symbol.lower() for asset in config.assets):
             raise HTTPException(status_code=409, detail="symbol already exists")
 
-        config.assets.append({"symbol": symbol, "asset_class": request.asset_class})
+        config.assets.append(
+            {
+                "symbol": symbol,
+                "asset_class": request.asset_class,
+                "display_name": symbol,
+            }
+        )
         _persist_config(config)
         return await get_watchlist()
 

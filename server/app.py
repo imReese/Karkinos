@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 from server.bridge import EventBusBridge
 from server.db import AppDatabase
@@ -61,6 +62,21 @@ async def _forward_events(bridge: EventBusBridge, hub: ConnectionHub) -> None:
         except Exception:
             logger.exception("Error forwarding event")
             await asyncio.sleep(1)
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles with SPA index fallback for client-side routes."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code != 404:
+            return response
+
+        requested = Path(path)
+        if requested.suffix:
+            return response
+
+        return await super().get_response("index.html", scope)
 
 
 @asynccontextmanager
@@ -179,8 +195,6 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     # 挂载前端静态文件（生产构建）
     dist_dir = Path("web/dist")
     if dist_dir.exists():
-        from fastapi.staticfiles import StaticFiles
-
-        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="static")
+        app.mount("/", SPAStaticFiles(directory=str(dist_dir), html=True), name="static")
 
     return app
