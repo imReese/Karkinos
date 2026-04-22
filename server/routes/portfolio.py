@@ -70,6 +70,13 @@ def _normalize_asset_class(value: str | None) -> str:
     return "other"
 
 
+def _resolve_display_name(state, symbol: str, fallback: str | None = None) -> str:
+    for asset_cfg in getattr(state.config, "assets", []):
+        if asset_cfg.get("symbol") == symbol:
+            return str(asset_cfg.get("display_name") or asset_cfg["symbol"])
+    return fallback or symbol
+
+
 def _build_grouped_allocation(
     allocation: list[AllocationItem], total_equity: float
 ) -> list[AllocationGroup]:
@@ -391,6 +398,49 @@ def _collect_latest_quotes(state) -> dict[str, dict]:
     return latest
 
 
+def _hydrate_missing_position_quotes(
+    state,
+    portfolio,
+    instruments: dict,
+) -> tuple[object, dict, bool]:
+    if portfolio is None:
+        return portfolio, instruments, False
+
+    latest_quotes = _collect_latest_quotes(state)
+    missing: list[tuple[str, object]] = []
+    for sym in portfolio.positions:
+        symbol = str(sym)
+        if symbol in latest_quotes:
+            continue
+        instrument = instruments.get(Symbol(symbol)) if instruments else None
+        asset_class = getattr(instrument, "asset_class", None)
+        if asset_class is None:
+            continue
+        missing.append((symbol, asset_class))
+
+    if not missing:
+        return portfolio, instruments, False
+
+    from server.routes.market import _fetch_latest_snapshot
+
+    hydrated = False
+    for symbol, asset_class in missing:
+        snapshot = _fetch_latest_snapshot(state, symbol, asset_class)
+        if snapshot:
+            latest_quotes[symbol] = snapshot
+            hydrated = True
+
+    if not hydrated or state.db is None:
+        return portfolio, instruments, hydrated
+
+    rebuilt = rebuild_portfolio_from_ledger(
+        state.config,
+        state.db,
+        latest_quotes=latest_quotes,
+    )
+    return rebuilt.portfolio, rebuilt.instruments, True
+
+
 def _get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict]:
     if (
         state.db is None
@@ -442,6 +492,11 @@ def _resolve_live_holding_baseline(
 
 def _build_live_holdings_response(state) -> LiveHoldingsResponse:
     portfolio, instruments = _resolve_projection_sources(state)
+    portfolio, instruments, _ = _hydrate_missing_position_quotes(
+        state,
+        portfolio,
+        instruments,
+    )
     if portfolio is None:
         return LiveHoldingsResponse(groups=[])
 
@@ -481,7 +536,11 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         groups[asset_class].append(
             LiveHoldingItemResponse(
                 symbol=symbol,
-                name=getattr(instrument, "name", symbol),
+                name=_resolve_display_name(
+                    state,
+                    symbol,
+                    getattr(instrument, "name", symbol),
+                ),
                 asset_class=asset_class,
                 quantity=quantity,
                 avg_cost=avg_cost,
@@ -578,6 +637,11 @@ def create_router() -> APIRouter:
         state = get_app_state()
         scheduler = state.scheduler
         portfolio, instruments = _resolve_projection_sources(state)
+        portfolio, instruments, _ = _hydrate_missing_position_quotes(
+            state,
+            portfolio,
+            instruments,
+        )
 
         if portfolio is None:
             return PortfolioSnapshot(
@@ -641,6 +705,7 @@ def create_router() -> APIRouter:
                 name = pos.symbol
                 if Symbol(pos.symbol) in instruments:
                     name = instruments[Symbol(pos.symbol)].name
+                name = _resolve_display_name(state, pos.symbol, name)
 
                 allocation.append(
                     AllocationItem(

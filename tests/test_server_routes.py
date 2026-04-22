@@ -6,8 +6,10 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi import BackgroundTasks
 from fastapi.routing import APIRoute
+from core.types import Symbol
 
 
 def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch):
@@ -646,6 +648,83 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
     assert response.price == 1.023
 
 
+def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_returns_none(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="tushare",
+            tushare_token="token-1234",
+            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            live_poll_interval=120,
+        ),
+        db=SimpleNamespace(
+            save_quote_snapshot_sync=lambda **kwargs: None,
+        ),
+    )
+
+    class NullSource:
+        def fetch_latest(self, symbol, asset_class):
+            return None
+
+    class AkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 1.126,
+                "volume": None,
+                "timestamp": "2026-04-21",
+            }
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "tushare": NullSource(),
+            "akshare": AkshareSource(),
+        },
+    )
+
+    response = market_routes._fetch_latest_snapshot(fake_state, "018125", market_routes.AssetClass.FUND)
+
+    assert response["asset_class"] == "fund"
+    assert response["price"] == 1.126
+    assert response["timestamp"] == "2026-04-21"
+
+
+def test_market_watchlist_prefers_display_name_from_config(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    watchlist_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/watchlist"
+    )
+    endpoint = watchlist_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {
+                    "symbol": "018125",
+                    "asset_class": "fund",
+                    "display_name": "永赢先进制造智选混合发起C",
+                }
+            ]
+        ),
+        scheduler=SimpleNamespace(is_running=False, latest_quotes={}, portfolio=None),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response[0].symbol == "018125"
+    assert response[0].name == "永赢先进制造智选混合发起C"
+
+
 def test_market_watchlist_add_and_remove(monkeypatch, tmp_path):
     from server.routes import market as market_routes
 
@@ -802,6 +881,160 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
     assert response.unrealized_pnl == 500
     assert response.realized_pnl == 120
     assert response.cash_ratio == 0.25
+
+
+def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    portfolio_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio"
+    )
+    endpoint = portfolio_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=1000,
+        available_qty=1000,
+        frozen_qty=0,
+        avg_cost=1.0,
+        market_value=1126.0,
+        unrealized_pnl=126.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=4000,
+            data_source="akshare",
+            tushare_token="",
+            assets=[
+                {
+                    "symbol": "018125",
+                    "asset_class": "fund",
+                    "display_name": "永赢先进制造智选混合发起C",
+                }
+            ],
+        ),
+        db=SimpleNamespace(get_total_deposits=AsyncMock(return_value=0.0)),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=2500.0, positions={"018125": fake_position}),
+            latest_quotes={},
+            watchlist=[(Symbol("018125"), SimpleNamespace(value="fund"))],
+            instruments={Symbol("018125"): SimpleNamespace(asset_class=SimpleNamespace(value="fund"), name="018125")},
+        ),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.allocation[1].symbol == "018125"
+    assert response.allocation[1].name == "永赢先进制造智选混合发起C"
+
+
+def test_portfolio_snapshot_hydrates_missing_fund_quotes_outside_trading_hours(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    portfolio_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio"
+    )
+    endpoint = portfolio_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=1000,
+        available_qty=1000,
+        frozen_qty=0,
+        avg_cost=1.0,
+        market_value=1000.0,
+        unrealized_pnl=0.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+
+    class FakeDb:
+        async def get_total_deposits(self):
+            return 0.0
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def save_quote_snapshot_sync(self, **kwargs):
+            return None
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=4000,
+            data_source="akshare",
+            tushare_token="",
+            assets=[
+                {
+                    "symbol": "018125",
+                    "asset_class": "fund",
+                    "display_name": "永赢先进制造智选混合发起C",
+                }
+            ],
+        ),
+        db=FakeDb(),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=2500.0, positions={"018125": fake_position}),
+            latest_quotes={},
+            watchlist=[(Symbol("018125"), SimpleNamespace(value="fund"))],
+            instruments={
+                Symbol("018125"): SimpleNamespace(
+                    asset_class=SimpleNamespace(value="fund"),
+                    name="018125",
+                )
+            },
+        ),
+    )
+
+    def fake_rebuild(config, db, latest_quotes):
+        price = latest_quotes["018125"]["price"]
+        return SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=2500.0,
+                positions={
+                    "018125": SimpleNamespace(
+                        quantity=1000,
+                        available_qty=1000,
+                        frozen_qty=0,
+                        avg_cost=1.0,
+                        market_value=price * 1000,
+                        unrealized_pnl=(price - 1.0) * 1000,
+                        realized_pnl=0.0,
+                        commission_paid=0.0,
+                    )
+                },
+            ),
+            instruments=fake_state.scheduler.instruments,
+        )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.market._fetch_latest_snapshot",
+        lambda state, symbol, asset_class: {
+            "symbol": symbol,
+            "asset_class": "fund",
+            "price": 1.126,
+            "volume": None,
+            "timestamp": "2026-04-22",
+        },
+    )
+    monkeypatch.setattr(
+        "server.routes.portfolio.rebuild_portfolio_from_ledger",
+        fake_rebuild,
+    )
+
+    response = asyncio.run(endpoint())
+
+    assert response.total_equity == 3626.0
+    assert response.positions[0].market_value == 1126.0
+    assert response.positions[0].unrealized_pnl == pytest.approx(126.0)
 
 
 def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):

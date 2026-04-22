@@ -192,15 +192,23 @@ uv sync --extra server
 
 访问 http://localhost:8000 打开 Web 仪表盘。
 
-本地前端联调时，另开一个终端运行：
+开发模式下，启动脚本会同时拉起后端和前端：
 
 ```bash
-cd web
-npm install
-npm run dev
+./scripts/start_server.sh dev --host 127.0.0.1 --port 8000
 ```
 
-访问 http://localhost:5173 打开 React 前端。
+它会同时启动：
+- 后端 API：`http://127.0.0.1:8000`
+- 前端 Vite：`http://127.0.0.1:5173`
+
+停止时统一执行：
+
+```bash
+./scripts/stop_server.sh
+```
+
+本地联调访问 http://localhost:5173，生产构建由 FastAPI 托管时访问 http://localhost:8000。
 
 ### Docker 部署
 

@@ -32,6 +32,27 @@ class StubSource(DataSource):
         return self._snapshot
 
 
+class SequenceSource(DataSource):
+    """按资产返回快照的测试 source。"""
+
+    def __init__(self, snapshots):
+        self._snapshots = snapshots
+        self.calls: list[tuple[str, AssetClass]] = []
+
+    def fetch_bars(self, symbol, start, end, frequency=None, asset_class=None):
+        return MagicMock()
+
+    def fetch_ticks(self, symbol, start, end):
+        raise NotImplementedError
+
+    def list_symbols(self):
+        return []
+
+    def fetch_latest(self, symbol, asset_class=AssetClass.STOCK):
+        self.calls.append((str(symbol), asset_class))
+        return self._snapshots.get((str(symbol), asset_class))
+
+
 class TestLiveDataFeed:
     """LiveDataFeed 测试。"""
 
@@ -87,3 +108,25 @@ class TestLiveDataFeed:
         watchlist = [(Symbol("600519"), AssetClass.STOCK)]
         events = feed.poll_all(watchlist)
         assert len(events) == 0
+
+    def test_poll_latest_falls_back_to_akshare_for_fund_quotes(self):
+        """基金主源失败时应回退到备用行情源。"""
+        primary = SequenceSource({("018125", AssetClass.FUND): None})
+        fallback = SequenceSource(
+            {
+                ("018125", AssetClass.FUND): {
+                    "price": 1.126,
+                    "volume": None,
+                    "timestamp": "2026-04-21",
+                }
+            }
+        )
+        bus = EventBus()
+        feed = LiveDataFeed(primary, bus, fallback_source=fallback)
+
+        event = feed.poll_latest(Symbol("018125"), AssetClass.FUND)
+
+        assert event is not None
+        assert float(event.close) == pytest.approx(1.126)
+        assert primary.calls == [("018125", AssetClass.FUND)]
+        assert fallback.calls == [("018125", AssetClass.FUND)]

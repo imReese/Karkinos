@@ -65,6 +65,8 @@ _HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
     ),
 }
 
+_OPEN_END_FUND_NOISE = ("发起式", "发起", "A类", "C类", "（", "）", "(", ")", " ")
+
 
 class AKShareSource(DataSource):
     """AKShare 多资产数据源适配器。
@@ -91,11 +93,120 @@ class AKShareSource(DataSource):
                 mapping[name] = code
         return mapping
 
+    @staticmethod
+    def _normalize_open_end_fund_name(name: str) -> str:
+        normalized = str(name).strip()
+        for token in _OPEN_END_FUND_NOISE:
+            normalized = normalized.replace(token, "")
+        return normalized
+
+    @classmethod
+    def _open_end_fund_alias_map(cls) -> dict[str, str]:
+        aliases: dict[str, str] = {}
+        for name, code in cls._open_end_fund_name_map().items():
+            aliases.setdefault(name, code)
+            normalized = cls._normalize_open_end_fund_name(name)
+            if normalized:
+                aliases.setdefault(normalized, code)
+        return aliases
+
+    def _resolve_open_end_fund_name(self, symbol: Symbol) -> str | None:
+        symbol_str = str(symbol).strip()
+        name_map = self._open_end_fund_name_map()
+        if symbol_str in name_map:
+            return symbol_str
+        fund_code = self._resolve_open_end_fund_code(symbol)
+        if not fund_code:
+            return None
+        for name, code in name_map.items():
+            if code == fund_code:
+                return name
+        return None
+
     def _resolve_open_end_fund_code(self, symbol: Symbol) -> str | None:
         symbol_str = str(symbol).strip()
         if symbol_str[:1].isdigit():
-            return symbol_str
-        return self._open_end_fund_name_map().get(symbol_str)
+            if symbol_str in set(self._open_end_fund_name_map().values()):
+                return symbol_str
+            return None
+        if code := self._open_end_fund_name_map().get(symbol_str):
+            return code
+        normalized = self._normalize_open_end_fund_name(symbol_str)
+        if not normalized:
+            return None
+        return self._open_end_fund_alias_map().get(normalized)
+
+    def _fetch_open_end_fund_bars(
+        self,
+        symbol: Symbol,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        import akshare as ak
+
+        fund_code = self._resolve_open_end_fund_code(symbol)
+        if not fund_code:
+            return pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+            )
+        df = self._call_with_retry(
+            ak.fund_open_fund_info_em,
+            symbol=fund_code,
+            indicator="单位净值走势",
+        )
+        if df.empty:
+            return pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+            )
+        df = df.rename(
+            columns={
+                "净值日期": "timestamp",
+                "单位净值": "close",
+            }
+        )
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        df["open"] = df["close"]
+        df["high"] = df["close"]
+        df["low"] = df["close"]
+        df["volume"] = 0.0
+        df["amount"] = 0.0
+        return df[
+            (df["timestamp"] >= pd.Timestamp(start))
+            & (df["timestamp"] <= pd.Timestamp(end))
+        ].reset_index(drop=True)
+
+    def _fetch_open_end_fund_latest(self, symbol: Symbol) -> dict | None:
+        import akshare as ak
+
+        fund_code = self._resolve_open_end_fund_code(symbol)
+        if not fund_code:
+            return None
+
+        canonical_name = self._resolve_open_end_fund_name(symbol)
+        df = self._call_with_retry(ak.fund_open_fund_daily_em)
+        row = df[df["基金代码"].astype(str) == fund_code]
+        if row.empty and canonical_name:
+            row = df[df["基金简称"].astype(str).str.strip() == canonical_name]
+        if row.empty:
+            return None
+
+        row = row.iloc[0]
+        nav_column = next(
+            (column for column in row.index if str(column).endswith("-单位净值")),
+            None,
+        )
+        if nav_column is None:
+            return None
+        price = pd.to_numeric(row[nav_column], errors="coerce")
+        if pd.isna(price):
+            return None
+        trade_day = str(nav_column).replace("-单位净值", "")
+        return {
+            "price": float(price),
+            "volume": None,
+            "timestamp": trade_day,
+        }
 
     def _call_with_retry(self, func, **kwargs):
         """带重试的 AKShare API 调用。"""
@@ -149,33 +260,8 @@ class AKShareSource(DataSource):
 
         # A股/ETF 支持日期范围参数；黄金/债券需全量拉取后过滤
         if asset_class in (AssetClass.STOCK, AssetClass.FUND):
-            if asset_class == AssetClass.FUND and not str(symbol)[:1].isdigit():
-                fund_code = self._resolve_open_end_fund_code(symbol)
-                if not fund_code:
-                    return pd.DataFrame(
-                        columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
-                    )
-                df = self._call_with_retry(
-                    ak.fund_open_fund_info_em,
-                    symbol=fund_code,
-                    indicator="单位净值走势",
-                )
-                if df.empty:
-                    return pd.DataFrame(
-                        columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
-                    )
-                df = df.rename(
-                    columns={
-                        "净值日期": "timestamp",
-                        "单位净值": "close",
-                    }
-                )
-                df["timestamp"] = pd.to_datetime(df["timestamp"])
-                df["open"] = pd.to_numeric(df["close"], errors="coerce")
-                df["high"] = pd.to_numeric(df["close"], errors="coerce")
-                df["low"] = pd.to_numeric(df["close"], errors="coerce")
-                df["volume"] = 0.0
-                df["amount"] = 0.0
+            if asset_class == AssetClass.FUND and self._resolve_open_end_fund_code(symbol):
+                df = self._fetch_open_end_fund_bars(symbol, start, end)
             else:
                 df = self._call_with_retry(
                     func,
@@ -276,47 +362,18 @@ class AKShareSource(DataSource):
                 }
 
             elif asset_class == AssetClass.FUND:
-                if str(symbol)[:1].isdigit():
-                    df = self._call_with_retry(ak.fund_etf_spot_em)
-                    row = df[df["代码"] == str(symbol)]
-                    if row.empty:
-                        return None
-                    row = row.iloc[0]
-                    return {
-                        "price": float(row["最新价"]),
-                        "volume": float(row["成交额"]) if "成交额" in row else None,
-                        "timestamp": str(row.get("时间", "")),
-                    }
+                if open_end_snapshot := self._fetch_open_end_fund_latest(symbol):
+                    return open_end_snapshot
 
-                fund_code = self._resolve_open_end_fund_code(symbol)
-                if not fund_code:
-                    return None
-                df = self._call_with_retry(ak.fund_open_fund_daily_em)
-                row = df[
-                    (df["基金代码"].astype(str) == fund_code)
-                    | (df["基金简称"].astype(str).str.strip() == str(symbol).strip())
-                ]
+                df = self._call_with_retry(ak.fund_etf_spot_em)
+                row = df[df["代码"] == str(symbol)]
                 if row.empty:
                     return None
                 row = row.iloc[0]
-                nav_column = next(
-                    (
-                        column
-                        for column in row.index
-                        if str(column).endswith("-单位净值")
-                    ),
-                    None,
-                )
-                if nav_column is None:
-                    return None
-                price = pd.to_numeric(row[nav_column], errors="coerce")
-                if pd.isna(price):
-                    return None
-                trade_day = str(nav_column).replace("-单位净值", "")
                 return {
-                    "price": float(price),
-                    "volume": None,
-                    "timestamp": trade_day,
+                    "price": float(row["最新价"]),
+                    "volume": float(row["成交额"]) if "成交额" in row else None,
+                    "timestamp": str(row.get("时间", "")),
                 }
 
             elif asset_class == AssetClass.GOLD:

@@ -47,13 +47,18 @@ export function RiskSummaryCard({
   ];
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="app-kicker mb-4 text-xs uppercase tracking-[0.18em]">
-        {labels.title}
+    <div className="app-surface-card p-5 sm:p-6">
+      <div className="app-card-header">
+        <div className="app-card-title">{labels.title}</div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item.label} className="app-panel-strong rounded-2xl px-4 py-4">
+        {items.map((item, index) => (
+          <div
+            key={item.label}
+            className={`app-surface-metric-row sm:px-2 ${
+              index > 1 ? "app-surface-metric-row-divider" : ""
+            }`}
+          >
             <div className="app-kicker text-xs uppercase tracking-[0.16em]">
               {item.label}
             </div>

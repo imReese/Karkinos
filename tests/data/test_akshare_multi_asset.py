@@ -177,8 +177,10 @@ class TestAKShareMultiAsset:
         assert "timestamp" in df.columns
 
     @patch("akshare.fund_etf_hist_em")
-    def test_fetch_bars_etf_calls_akshare(self, mock_ak, source):
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_fetch_bars_etf_calls_akshare(self, mock_name_map, mock_ak, source):
         """ETF fetch_bars 调用 akshare.fund_etf_hist_em。"""
+        mock_name_map.return_value = {}
         mock_ak.return_value = _make_etf_df()
         start = datetime(2025, 1, 2)
         end = datetime(2025, 3, 1)
@@ -250,8 +252,10 @@ class TestAKShareFetchLatest:
         assert result["price"] == 1850.0
 
     @patch("akshare.fund_etf_spot_em")
-    def test_fetch_latest_etf(self, mock_ak, source):
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_fetch_latest_etf(self, mock_name_map, mock_ak, source):
         """ETF 实时行情快照。"""
+        mock_name_map.return_value = {}
         mock_ak.return_value = pd.DataFrame(
             {
                 "代码": ["510300", "510050"],
@@ -284,6 +288,42 @@ class TestAKShareFetchLatest:
         assert result is not None
         assert result["price"] == 1.023
         assert result["timestamp"] == "2026-04-18"
+
+    @patch("akshare.fund_etf_spot_em")
+    @patch("akshare.fund_open_fund_daily_em")
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_fetch_latest_open_end_fund_by_code(
+        self, mock_name_map, mock_daily, mock_etf, source
+    ):
+        """开放式基金代码应优先走净值接口，而不是 ETF 行情接口。"""
+        mock_name_map.return_value = {"永赢先进制造智选混合发起C": "018125"}
+        mock_daily.return_value = pd.DataFrame(
+            {
+                "基金代码": ["018125"],
+                "基金简称": ["永赢先进制造智选混合发起C"],
+                "2026-04-21-单位净值": [1.126],
+                "2026-04-21-累计净值": [1.126],
+            }
+        )
+
+        result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
+
+        assert result is not None
+        assert result["price"] == 1.126
+        assert result["timestamp"] == "2026-04-21"
+        mock_daily.assert_called_once()
+        mock_etf.assert_not_called()
+
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_resolve_open_end_fund_code_accepts_alias_name(self, mock_name_map, source):
+        """缺少“发起/发起式”的输入别名也应解析到标准基金代码。"""
+        mock_name_map.return_value = {
+            "永赢先进制造智选混合发起C": "018125",
+            "融通科技臻选混合发起式C": "026539",
+        }
+
+        assert source._resolve_open_end_fund_code(Symbol("永赢先进制造智选混合C")) == "018125"
+        assert source._resolve_open_end_fund_code(Symbol("融通科技臻选混合C")) == "026539"
 
     @patch("akshare.stock_zh_a_spot_em")
     def test_fetch_latest_not_found(self, mock_ak, source):

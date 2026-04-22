@@ -28,11 +28,11 @@ export function EquityCurveCard({ points }: { points: EquityPoint[] }) {
 
   if (points.length === 0) {
     return (
-      <div className="app-panel rounded-2xl p-4 sm:p-5">
-        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-          {copy.overview.equityCurve.title}
+      <div className="app-surface-card p-5 sm:p-6">
+        <div className="app-card-header">
+          <div className="app-card-title">{copy.overview.equityCurve.title}</div>
         </div>
-        <div className="app-panel-strong mt-4 rounded-2xl p-4 sm:p-5">
+        <div className="rounded-2xl bg-[color-mix(in_srgb,var(--app-panel)_42%,transparent)] p-4 sm:p-5">
           <div className="text-base font-semibold">{copy.overview.equityCurve.emptyTitle}</div>
           <div className="app-muted mt-2 text-sm leading-6">
             {copy.overview.equityCurve.emptyDetail}
@@ -61,12 +61,10 @@ export function EquityCurveCard({ points }: { points: EquityPoint[] }) {
   const endValue = displayedPoints[displayedPoints.length - 1]?.equity ?? 0;
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-          {labels.title}
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <div className="app-surface-card p-5 sm:p-6">
+      <div className="app-card-header">
+        <div className="app-card-title">{labels.title}</div>
+        <div className="app-inline-segmented">
           {([
             ["1m", labels.oneMonth],
             ["3m", labels.threeMonths],
@@ -77,8 +75,8 @@ export function EquityCurveCard({ points }: { points: EquityPoint[] }) {
               key={value}
               type="button"
               onClick={() => setRange(value)}
-              className={`rounded-xl px-3 py-2 text-sm transition ${
-                range === value ? "app-button-primary" : "app-button-secondary"
+              className={`app-inline-segmented-btn ${
+                range === value ? "app-inline-segmented-btn-active" : ""
               }`}
               aria-label={`${labels.range}: ${label}`}
             >

@@ -2,6 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../../lib/api/client";
 
+const LIVE_REFETCH_MS = 30_000;
+
+function liveRefetchInterval() {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return false;
+  }
+  return LIVE_REFETCH_MS;
+}
+
 export type AccountOverview = {
   total_equity: number;
   available_cash: number;
@@ -163,6 +172,9 @@ export function useAccountOverviewQuery() {
   return useQuery({
     queryKey: ["account-overview"],
     queryFn: () => apiClient<AccountOverview>("/api/portfolio/overview"),
+    staleTime: 10_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -170,6 +182,9 @@ export function useEquityCurveQuery() {
   return useQuery({
     queryKey: ["account-equity-curve"],
     queryFn: () => apiClient<EquityPoint[]>("/api/portfolio/equity-curve"),
+    staleTime: 15_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -184,6 +199,9 @@ export function useRiskSummaryQuery() {
   return useQuery({
     queryKey: ["portfolio-risk-summary"],
     queryFn: () => apiClient<RiskSummaryItem[]>("/api/portfolio/risk-summary"),
+    staleTime: 15_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -202,6 +220,9 @@ export function useExplainabilityQuery(filters?: {
       const suffix = params.size > 0 ? `?${params.toString()}` : "";
       return apiClient<ExplainabilityResponse>(`/api/portfolio/explainability${suffix}`);
     },
+    staleTime: 15_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -209,5 +230,8 @@ export function useRiskWorkspaceQuery() {
   return useQuery({
     queryKey: ["portfolio-risk-workspace"],
     queryFn: () => apiClient<RiskWorkspaceResponse>("/api/portfolio/risk-workspace"),
+    staleTime: 15_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
