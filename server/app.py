@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,18 @@ async def _forward_events(bridge: EventBusBridge, hub: ConnectionHub) -> None:
         except Exception:
             logger.exception("Error forwarding event")
             await asyncio.sleep(1)
+
+
+def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
+    """Confirm published fund subscriptions without blocking API startup."""
+    try:
+        from server.routes.portfolio import confirm_pending_fund_orders
+
+        confirmed_count = confirm_pending_fund_orders(state)
+        if confirmed_count:
+            logger.info("Confirmed %d pending fund orders", confirmed_count)
+    except Exception:
+        logger.warning("Failed to confirm pending fund orders during startup", exc_info=True)
 
 
 class SPAStaticFiles(StaticFiles):
@@ -130,6 +143,13 @@ async def lifespan(app: FastAPI):
 
     # 启动事件转发任务
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
+    pending_confirm_thread = threading.Thread(
+        target=_confirm_pending_fund_orders_on_startup,
+        args=(state,),
+        daemon=True,
+        name="pending-fund-confirm",
+    )
+    pending_confirm_thread.start()
 
     # 自动启动实时监控
     if config.live_auto_start:

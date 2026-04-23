@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from decimal import Decimal
+import json
 
 from fastapi import APIRouter
 
@@ -19,6 +20,7 @@ from server.models import (
     CashFlowCreate,
     CashFlowResponse,
     EquityPoint,
+    EquitySeriesPoint,
     ExplainabilityBridgeItem,
     ExplainabilityDriver,
     ExplainabilityPositionDriver,
@@ -29,6 +31,7 @@ from server.models import (
     LiveHoldingItemResponse,
     LiveHoldingsResponse,
     PortfolioSnapshot,
+    PendingFundOrderResponse,
     PositionResponse,
     RiskConcentrationItem,
     RiskDrawdownPoint,
@@ -42,6 +45,7 @@ from server.models import (
 )
 from server.projections.service import (
     build_equity_curve_from_db,
+    build_equity_series_from_db,
     build_portfolio_projection_from_db,
 )
 from server.services.account_state import build_account_state_projection
@@ -50,6 +54,7 @@ from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
 
 logger = logging.getLogger(__name__)
+_FUND_SUBSCRIPTION_CUTOFF = time(15, 0)
 
 _ASSET_CLASS_LABELS = {
     "stock": "A股",
@@ -75,6 +80,223 @@ def _resolve_display_name(state, symbol: str, fallback: str | None = None) -> st
         if asset_cfg.get("symbol") == symbol:
             return str(asset_cfg.get("display_name") or asset_cfg["symbol"])
     return fallback or symbol
+
+
+def _persist_runtime_config(config) -> None:
+    from server.bootstrap import resolve_config_path
+
+    payload = {
+        "host": getattr(config, "host", "0.0.0.0"),
+        "port": getattr(config, "port", 8000),
+        "live_auto_start": getattr(config, "live_auto_start", True),
+        "initial_cash": str(getattr(config, "initial_cash", 0)),
+        "start_date": getattr(config, "start_date", ""),
+        "end_date": getattr(config, "end_date", ""),
+        "assets": getattr(config, "assets", []),
+        "strategy": getattr(config, "strategy", "dual_ma"),
+        "short_period": getattr(config, "short_period", 5),
+        "long_period": getattr(config, "long_period", 20),
+        "data_source": getattr(config, "data_source", "akshare"),
+        "tushare_token": getattr(config, "tushare_token", ""),
+        "notification": getattr(config, "notification", {"type": "console"}),
+        "live_poll_interval": getattr(config, "live_poll_interval", 60),
+    }
+    resolve_config_path().write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def _ensure_asset_config(
+    state,
+    *,
+    symbol: str,
+    asset_class: str,
+    display_name: str | None = None,
+) -> None:
+    assets = getattr(state.config, "assets", [])
+    for asset in assets:
+        if asset.get("symbol") == symbol:
+            updated = False
+            if display_name:
+                updated = asset.get("display_name") != display_name
+                asset["display_name"] = display_name
+            if updated:
+                _persist_runtime_config(state.config)
+            return
+
+    assets.append(
+        {
+            "symbol": symbol,
+            "asset_class": asset_class,
+            "display_name": display_name or symbol,
+        }
+    )
+    _persist_runtime_config(state.config)
+
+
+def _resolve_fund_buy_fill(
+    state,
+    *,
+    symbol: str,
+    timestamp: str,
+    gross_amount: float,
+    commission: float,
+) -> dict:
+    from data.manager import build_sources
+    from core.types import AssetClass, BarFrequency, Symbol
+
+    submitted_at = datetime.fromisoformat(timestamp)
+    target_date = submitted_at.date()
+    if submitted_at.time() >= _FUND_SUBSCRIPTION_CUTOFF:
+        target_date += timedelta(days=1)
+
+    sources = build_sources(
+        data_source=getattr(state.config, "data_source", "akshare"),
+        tushare_token=getattr(state.config, "tushare_token", ""),
+    )
+    akshare = sources["akshare"]
+    symbol_obj = Symbol(symbol.strip())
+    display_name = (
+        akshare._resolve_open_end_fund_name(symbol_obj)
+        if hasattr(akshare, "_resolve_open_end_fund_name")
+        else str(symbol_obj)
+    ) or str(symbol_obj)
+    canonical_symbol = (
+        akshare._resolve_open_end_fund_code(symbol_obj)
+        if hasattr(akshare, "_resolve_open_end_fund_code")
+        else str(symbol_obj)
+    ) or str(symbol_obj)
+
+    start = datetime.combine(submitted_at.date() - timedelta(days=1), time.min)
+    end = datetime.combine(submitted_at.date() + timedelta(days=10), time.max)
+    bars = akshare.fetch_bars(
+        Symbol(canonical_symbol),
+        start=start,
+        end=end,
+        frequency=BarFrequency.DAILY,
+        asset_class=AssetClass.FUND,
+    )
+    if bars.empty:
+        raise ValueError("No fund NAV history available from AKShare")
+
+    eligible = bars[bars["timestamp"].dt.date >= target_date].sort_values("timestamp")
+    latest_available = bars["timestamp"].max().date()
+    if eligible.empty:
+        raise LookupError(
+            f"Fund NAV for target trade date {target_date.isoformat()} is not published yet "
+            f"(latest available {latest_available.isoformat()})."
+        )
+
+    confirmed = eligible.iloc[0]
+    confirmed_trade_date = confirmed["timestamp"].date().isoformat()
+    confirmed_nav = float(confirmed["close"])
+    net_amount = gross_amount - commission
+    if net_amount <= 0:
+        raise ValueError("Net subscription amount must be positive")
+    quantity = net_amount / confirmed_nav
+    return {
+        "symbol": canonical_symbol,
+        "display_name": display_name,
+        "price": confirmed_nav,
+        "quantity": quantity,
+        "confirmed_trade_date": confirmed_trade_date,
+        "gross_amount": gross_amount,
+        "target_trade_date": target_date.isoformat(),
+    }
+
+
+def _resolve_fund_identity(state, symbol: str) -> dict[str, str]:
+    from data.manager import build_sources
+    from core.types import Symbol
+
+    sources = build_sources(
+        data_source=getattr(state.config, "data_source", "akshare"),
+        tushare_token=getattr(state.config, "tushare_token", ""),
+    )
+    akshare = sources["akshare"]
+    symbol_obj = Symbol(symbol.strip())
+    display_name = (
+        akshare._resolve_open_end_fund_name(symbol_obj)
+        if hasattr(akshare, "_resolve_open_end_fund_name")
+        else str(symbol_obj)
+    ) or str(symbol_obj)
+    canonical_symbol = (
+        akshare._resolve_open_end_fund_code(symbol_obj)
+        if hasattr(akshare, "_resolve_open_end_fund_code")
+        else str(symbol_obj)
+    ) or str(symbol_obj)
+    return {"symbol": canonical_symbol, "display_name": display_name}
+
+
+def _fund_target_trade_date(timestamp: str) -> str:
+    submitted_at = datetime.fromisoformat(timestamp)
+    target_date = submitted_at.date()
+    if submitted_at.time() >= _FUND_SUBSCRIPTION_CUTOFF:
+        target_date += timedelta(days=1)
+    return target_date.isoformat()
+
+
+def confirm_pending_fund_orders(state) -> int:
+    """Try to convert published pending fund subscriptions into normal trades."""
+    if state.db is None or not hasattr(state.db, "get_pending_fund_orders_sync"):
+        return 0
+
+    confirmed_count = 0
+    for order in state.db.get_pending_fund_orders_sync(status="pending"):
+        try:
+            resolved = _resolve_fund_buy_fill(
+                state,
+                symbol=order["symbol"],
+                timestamp=order["submitted_at"],
+                gross_amount=float(order["amount"]),
+                commission=float(order.get("commission") or 0.0),
+            )
+        except (LookupError, ValueError):
+            continue
+
+        note_parts = [
+            order.get("note") or "",
+            f"Auto-confirmed pending fund subscription: gross_amount={resolved['gross_amount']:.2f}",
+            f"confirmed_trade_date={resolved['confirmed_trade_date']}",
+            f"confirmed_nav={resolved['price']:.6f}",
+        ]
+        trade_id = state.db.add_trade_sync(
+            timestamp=order["submitted_at"],
+            symbol=resolved["symbol"],
+            direction="buy",
+            quantity=resolved["quantity"],
+            price=resolved["price"],
+            commission=float(order.get("commission") or 0.0),
+            asset_class="fund",
+            note=" | ".join(part for part in note_parts if part),
+        )
+        state.db.insert_ledger_entry_sync(
+            entry_type="trade_buy",
+            timestamp=order["submitted_at"],
+            amount=resolved["quantity"] * resolved["price"],
+            symbol=resolved["symbol"],
+            direction="buy",
+            quantity=resolved["quantity"],
+            price=resolved["price"],
+            commission=float(order.get("commission") or 0.0),
+            asset_class="fund",
+            note=" | ".join(part for part in note_parts if part),
+            source="portfolio_trade",
+            source_ref=f"trade:{trade_id}",
+        )
+        state.db.mark_pending_fund_order_confirmed_sync(
+            order_id=int(order["id"]),
+            trade_id=trade_id,
+            confirmed_nav=resolved["price"],
+            confirmed_quantity=resolved["quantity"],
+            confirmed_trade_date=resolved["confirmed_trade_date"],
+        )
+        _ensure_asset_config(
+            state,
+            symbol=resolved["symbol"],
+            asset_class="fund",
+            display_name=resolved["display_name"],
+        )
+        confirmed_count += 1
+    return confirmed_count
 
 
 def _build_grouped_allocation(
@@ -454,6 +676,19 @@ def _get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict
 def _resolve_live_holding_baseline(
     state, symbol: str, latest_quote: dict | None
 ) -> tuple[float | None, str | None, str]:
+    if latest_quote:
+        previous_close = latest_quote.get("previous_close")
+        previous_close_date = latest_quote.get("previous_close_date")
+        if previous_close not in {None, 0, ""} and previous_close_date not in {
+            None,
+            "",
+        }:
+            return (
+                float(previous_close),
+                str(previous_close_date),
+                "previous_close",
+            )
+
     latest_timestamp = latest_quote.get("timestamp") if latest_quote else None
     trade_date = (
         str(latest_timestamp).split("T")[0]
@@ -530,8 +765,9 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         today_change = None
         today_change_pct = None
         if baseline_price not in {None, 0}:
-            today_change = quantity * ((latest_price_value or avg_cost) - baseline_price)
-            today_change_pct = ((latest_price_value or avg_cost) / baseline_price) - 1
+            reference_price = latest_price_value if latest_price_value is not None else avg_cost
+            today_change = quantity * (reference_price - baseline_price)
+            today_change_pct = (reference_price / baseline_price) - 1
 
         groups[asset_class].append(
             LiveHoldingItemResponse(
@@ -839,6 +1075,36 @@ def create_router() -> APIRouter:
             for ts, eq in portfolio.equity_curve
         ]
 
+    @r.get("/equity-curve/series", response_model=list[EquitySeriesPoint])
+    async def get_equity_curve_series() -> list[EquitySeriesPoint]:
+        """获取按资产类别拆分的权益曲线。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        if state.db is None or not hasattr(state.db, "get_ledger_entries_sync"):
+            return []
+
+        sample_entries = state.db.get_ledger_entries_sync(limit=1, offset=0)
+        if not _has_rows(sample_entries):
+            return []
+
+        points = build_equity_series_from_db(
+            state.db,
+            initial_cash=state.config.initial_cash,
+            latest_quotes=_collect_latest_quotes(state),
+        )
+        return [
+            EquitySeriesPoint(
+                timestamp=str(point["timestamp"].isoformat()),
+                total=float(point["total"]),
+                stocks=float(point["stocks"]),
+                funds=float(point["funds"]),
+                others=float(point["others"]),
+                cash=float(point["cash"]),
+            )
+            for point in points
+        ]
+
     @r.get("/activity", response_model=list[ActivityItem])
     async def get_activity(limit: int = 10) -> list[ActivityItem]:
         """获取首页最近活动流。"""
@@ -954,15 +1220,106 @@ def create_router() -> APIRouter:
         state = get_app_state()
         db = state.db
 
+        symbol = body.symbol.strip()
+        quantity = body.quantity
+        price = body.price
+        note = body.note
+
+        if body.asset_class == "fund" and body.direction == "buy" and body.amount is not None:
+            try:
+                resolved = _resolve_fund_buy_fill(
+                    state,
+                    symbol=symbol,
+                    timestamp=body.timestamp,
+                    gross_amount=body.amount,
+                    commission=body.commission,
+                )
+            except LookupError as exc:
+                from fastapi.responses import JSONResponse
+
+                identity = _resolve_fund_identity(state, symbol)
+                _ensure_asset_config(
+                    state,
+                    symbol=identity["symbol"],
+                    asset_class=body.asset_class,
+                    display_name=identity["display_name"],
+                )
+                pending_id = db.add_pending_fund_order_sync(
+                    submitted_at=body.timestamp,
+                    symbol=identity["symbol"],
+                    display_name=identity["display_name"],
+                    amount=body.amount,
+                    commission=body.commission,
+                    asset_class=body.asset_class,
+                    target_trade_date=_fund_target_trade_date(body.timestamp),
+                    note=body.note,
+                )
+                return JSONResponse(
+                    status_code=202,
+                    content={
+                        "status": "pending",
+                        "id": pending_id,
+                        "symbol": identity["symbol"],
+                        "display_name": identity["display_name"],
+                        "amount": body.amount,
+                        "commission": body.commission,
+                        "asset_class": body.asset_class,
+                        "target_trade_date": _fund_target_trade_date(body.timestamp),
+                        "detail": str(exc),
+                    },
+                )
+            except ValueError as exc:
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            symbol = resolved["symbol"]
+            quantity = resolved["quantity"]
+            price = resolved["price"]
+            fund_note_parts = [
+                body.note.strip() if body.note.strip() else "",
+                f"Auto-confirmed fund subscription: gross_amount={resolved['gross_amount']:.2f}",
+                f"confirmed_trade_date={resolved['confirmed_trade_date']}",
+                f"confirmed_nav={resolved['price']:.6f}",
+            ]
+            note = " | ".join(part for part in fund_note_parts if part)
+            _ensure_asset_config(
+                state,
+                symbol=symbol,
+                asset_class=body.asset_class,
+                display_name=resolved["display_name"],
+            )
+        elif quantity is None or price is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=400,
+                detail="quantity and price are required unless this is a fund buy with amount",
+            )
+
         trade_id = await db.add_trade(
             timestamp=body.timestamp,
-            symbol=body.symbol,
+            symbol=symbol,
             direction=body.direction,
-            quantity=body.quantity,
-            price=body.price,
+            quantity=quantity,
+            price=price,
             commission=body.commission,
             asset_class=body.asset_class,
-            note=body.note,
+            note=note,
+        )
+        db.insert_ledger_entry_sync(
+            entry_type=f"trade_{body.direction}",
+            timestamp=body.timestamp,
+            amount=float(quantity) * float(price),
+            symbol=symbol,
+            direction=body.direction,
+            quantity=float(quantity),
+            price=float(price),
+            commission=body.commission,
+            asset_class=body.asset_class,
+            note=note,
+            source="portfolio_trade",
+            source_ref=f"trade:{trade_id}",
         )
 
         # If live is running, synthesize FillEvent to update portfolio
@@ -980,10 +1337,10 @@ def create_router() -> APIRouter:
                         ),
                         fill_id=f"MANUAL-{uuid.uuid4().hex[:8]}",
                         order_id=f"MANUAL-ORD-{uuid.uuid4().hex[:8]}",
-                        symbol=Symbol(body.symbol),
+                        symbol=Symbol(symbol),
                         side=side,
-                        fill_price=Decimal(str(body.price)),
-                        fill_quantity=Decimal(str(body.quantity)),
+                        fill_price=Decimal(str(price)),
+                        fill_quantity=Decimal(str(quantity)),
                         commission=Decimal(str(body.commission)),
                         slippage=Decimal("0"),
                     )
@@ -1000,6 +1357,17 @@ def create_router() -> APIRouter:
         state = get_app_state()
         trades = await state.db.get_trades(limit, offset)
         return [TradeResponse(**t) for t in trades]
+
+    @r.get("/pending-fund-orders", response_model=list[PendingFundOrderResponse])
+    async def list_pending_fund_orders() -> list[PendingFundOrderResponse]:
+        """列出等待确认净值的基金申购。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        if state.db is None or not hasattr(state.db, "get_pending_fund_orders_sync"):
+            return []
+        rows = state.db.get_pending_fund_orders_sync(status="pending")
+        return [PendingFundOrderResponse(**row) for row in rows]
 
     @r.delete("/trade/{trade_id}")
     async def delete_trade(trade_id: int) -> dict:

@@ -19,13 +19,33 @@ export type LedgerEntry = {
   created_at: string | null;
 };
 
+export type PendingFundOrder = {
+  id: number;
+  submitted_at: string;
+  symbol: string;
+  display_name: string;
+  amount: number;
+  commission: number;
+  asset_class: string;
+  target_trade_date: string;
+  status: string;
+  note: string;
+  confirmed_nav: number | null;
+  confirmed_quantity: number | null;
+  confirmed_trade_date: string | null;
+  trade_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type TradePayload = {
   occurred_at: string;
   symbol: string;
   asset_class: string;
   direction: string;
-  quantity: number;
-  unit_price: number;
+  quantity?: number | null;
+  unit_price?: number | null;
+  amount?: number | null;
   fee: number;
   note: string;
 };
@@ -67,7 +87,16 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
+    let message = detail || `Request failed: ${response.status}`;
+    try {
+      const parsed = JSON.parse(detail) as { detail?: unknown };
+      if (typeof parsed.detail === "string") {
+        message = parsed.detail;
+      }
+    } catch {
+      // Keep the raw response text when it is not JSON.
+    }
+    throw new Error(message);
   }
 
   return (await response.json()) as T;
@@ -80,11 +109,20 @@ export function useLedgerEntriesQuery() {
   });
 }
 
+export function usePendingFundOrdersQuery() {
+  return useQuery({
+    queryKey: ["pending-fund-orders"],
+    queryFn: () => apiClient<PendingFundOrder[]>("/api/portfolio/pending-fund-orders"),
+    staleTime: 15_000,
+  });
+}
+
 function invalidatePortfolioQueries(queryClient: ReturnType<typeof useQueryClient>) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ["account-overview"] }),
     queryClient.invalidateQueries({ queryKey: ["account-state"] }),
     queryClient.invalidateQueries({ queryKey: ["account-equity-curve"] }),
+    queryClient.invalidateQueries({ queryKey: ["account-equity-curve-series"] }),
     queryClient.invalidateQueries({ queryKey: ["portfolio-risk-summary"] }),
     queryClient.invalidateQueries({ queryKey: ["portfolio-explainability"] }),
     queryClient.invalidateQueries({ queryKey: ["portfolio-positions"] }),
@@ -92,6 +130,7 @@ function invalidatePortfolioQueries(queryClient: ReturnType<typeof useQueryClien
     queryClient.invalidateQueries({ queryKey: ["portfolio-snapshot"] }),
     queryClient.invalidateQueries({ queryKey: ["market-research-board"] }),
     queryClient.invalidateQueries({ queryKey: ["ledger-entries"] }),
+    queryClient.invalidateQueries({ queryKey: ["pending-fund-orders"] }),
   ]);
 }
 
@@ -100,7 +139,17 @@ export function useCreateTradeMutation() {
 
   return useMutation({
     mutationFn: (payload: TradePayload) =>
-      postJson("/api/ledger/trades", payload),
+      postJson("/api/portfolio/trade", {
+        timestamp: payload.occurred_at,
+        symbol: payload.symbol,
+        direction: payload.direction,
+        quantity: payload.quantity ?? null,
+        price: payload.unit_price ?? null,
+        amount: payload.amount ?? null,
+        commission: payload.fee,
+        asset_class: payload.asset_class,
+        note: payload.note,
+      }),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },

@@ -118,6 +118,8 @@ class TestLiveDataFeed:
                     "price": 1.126,
                     "volume": None,
                     "timestamp": "2026-04-21",
+                    "previous_close": 1.12,
+                    "previous_close_date": "2026-04-18",
                 }
             }
         )
@@ -128,5 +130,13 @@ class TestLiveDataFeed:
 
         assert event is not None
         assert float(event.close) == pytest.approx(1.126)
+        assert event.timestamp.isoformat() == "2026-04-21T15:00:00"
+        assert feed.get_last_snapshot(Symbol("018125"), AssetClass.FUND) == {
+            "price": 1.126,
+            "volume": None,
+            "timestamp": "2026-04-21",
+            "previous_close": 1.12,
+            "previous_close_date": "2026-04-18",
+        }
         assert primary.calls == [("018125", AssetClass.FUND)]
         assert fallback.calls == [("018125", AssetClass.FUND)]

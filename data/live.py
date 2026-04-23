@@ -31,6 +31,31 @@ class LiveDataFeed:
         self.fallback_source = fallback_source
         self.event_bus = event_bus
         self._last_prices: dict[tuple[Symbol, AssetClass], float] = {}
+        self._last_snapshots: dict[tuple[Symbol, AssetClass], dict] = {}
+
+    @staticmethod
+    def _snapshot_datetime(snapshot: dict) -> datetime:
+        raw_timestamp = snapshot.get("timestamp")
+        if raw_timestamp in {None, ""}:
+            return datetime.now()
+
+        timestamp = str(raw_timestamp).strip()
+        try:
+            if len(timestamp) == 10:
+                return datetime.fromisoformat(f"{timestamp}T15:00:00")
+            if len(timestamp) == 8 and timestamp.count(":") == 2:
+                return datetime.combine(
+                    datetime.now().date(),
+                    datetime.strptime(timestamp, "%H:%M:%S").time(),
+                )
+            return datetime.fromisoformat(timestamp)
+        except ValueError:
+            return datetime.now()
+
+    def get_last_snapshot(
+        self, symbol: Symbol, asset_class: AssetClass = AssetClass.STOCK
+    ) -> dict | None:
+        return self._last_snapshots.get((symbol, asset_class))
 
     def poll_latest(
         self,
@@ -54,9 +79,11 @@ class LiveDataFeed:
         if price is None or price <= 0:
             return None
 
+        event_timestamp = self._snapshot_datetime(snapshot)
+
         # 用当前价构造 OHLC（实时快照全部用最新价）
         event = MarketEvent(
-            timestamp=datetime.now(),
+            timestamp=event_timestamp,
             symbol=symbol,
             open=Decimal(str(price)),
             high=Decimal(str(price)),
@@ -69,6 +96,7 @@ class LiveDataFeed:
 
         self.event_bus.publish(event)
         self._last_prices[(symbol, asset_class)] = price
+        self._last_snapshots[(symbol, asset_class)] = dict(snapshot)
         logger.info("实时行情: %s (%s) price=%.2f", symbol, asset_class.value, price)
         return event
 

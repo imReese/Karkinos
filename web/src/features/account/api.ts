@@ -26,6 +26,15 @@ export type EquityPoint = {
   equity: number;
 };
 
+export type EquitySeriesPoint = {
+  timestamp: string;
+  total: number;
+  stocks: number;
+  funds: number;
+  others: number;
+  cash: number;
+};
+
 export type RiskSummaryItem = {
   kind: string;
   level: string;
@@ -182,6 +191,16 @@ export function useEquityCurveQuery() {
   return useQuery({
     queryKey: ["account-equity-curve"],
     queryFn: () => apiClient<EquityPoint[]>("/api/portfolio/equity-curve"),
+    staleTime: 15_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useEquityCurveSeriesQuery() {
+  return useQuery({
+    queryKey: ["account-equity-curve-series"],
+    queryFn: () => apiClient<EquitySeriesPoint[]>("/api/portfolio/equity-curve/series"),
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,

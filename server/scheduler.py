@@ -238,14 +238,22 @@ class TradingScheduler:
                 events = feed.poll_all(self._watchlist)
                 if events:
                     for market_event in events:
+                        snapshot = feed.get_last_snapshot(
+                            market_event.symbol, market_event.asset_class
+                        ) or {}
+                        snapshot_timestamp = str(
+                            snapshot.get("timestamp") or market_event.timestamp.isoformat()
+                        )
                         # 更新报价缓存
                         sym_str = str(market_event.symbol)
                         with self._lock:
                             self._latest_quotes[sym_str] = {
                                 "price": float(market_event.close),
                                 "volume": float(market_event.volume),
-                                "timestamp": market_event.timestamp.isoformat(),
+                                "timestamp": snapshot_timestamp,
                                 "asset_class": market_event.asset_class.value,
+                                "previous_close": snapshot.get("previous_close"),
+                                "previous_close_date": snapshot.get("previous_close_date"),
                             }
                         if self._db is not None:
                             self._db.save_quote_snapshot_sync(
@@ -253,13 +261,26 @@ class TradingScheduler:
                                 asset_class=market_event.asset_class.value,
                                 price=float(market_event.close),
                                 volume=float(market_event.volume),
-                                timestamp=market_event.timestamp.isoformat(),
+                                timestamp=snapshot_timestamp,
                             )
-                            if market_event.timestamp.time() >= _AFTERNOON_CLOSE:
+                            previous_close = snapshot.get("previous_close")
+                            previous_close_date = snapshot.get("previous_close_date")
+                            if previous_close not in {None, ""} and previous_close_date not in {
+                                None,
+                                "",
+                            }:
                                 self._db.save_daily_close_snapshot_sync(
                                     symbol=sym_str,
                                     asset_class=market_event.asset_class.value,
-                                    trade_date=market_event.timestamp.date().isoformat(),
+                                    trade_date=str(previous_close_date),
+                                    close_price=float(previous_close),
+                                    source="reported_previous_close",
+                                )
+                            elif market_event.timestamp.time() >= _AFTERNOON_CLOSE:
+                                self._db.save_daily_close_snapshot_sync(
+                                    symbol=sym_str,
+                                    asset_class=market_event.asset_class.value,
+                                    trade_date=str(snapshot_timestamp).split("T")[0],
                                     close_price=float(market_event.close),
                                     source="scheduler_close",
                                 )

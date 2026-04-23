@@ -172,13 +172,15 @@ def _build_research_note_stats(rows: list[dict]) -> dict[str, dict[str, int | st
 def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict | None:
     from data.manager import build_sources
 
+    data_source = getattr(state.config, "data_source", "akshare")
+    tushare_token = getattr(state.config, "tushare_token", "")
     sources = build_sources(
-        data_source=state.config.data_source,
-        tushare_token=state.config.tushare_token,
+        data_source=data_source,
+        tushare_token=tushare_token,
     )
-    preferred = sources.get(state.config.data_source, sources["akshare"])
+    preferred = sources.get(data_source, sources["akshare"])
     source_chain = [preferred]
-    if asset_class == AssetClass.FUND and state.config.data_source != "akshare":
+    if asset_class == AssetClass.FUND and data_source != "akshare":
         akshare = sources.get("akshare")
         if akshare is not None and akshare is not preferred:
             source_chain.append(akshare)
@@ -205,6 +207,22 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
             volume=None if payload["volume"] is None else float(payload["volume"]),
             timestamp=str(payload["timestamp"]),
         )
+        previous_close = snapshot.get("previous_close")
+        previous_close_date = snapshot.get("previous_close_date")
+        if (
+            previous_close not in {None, ""}
+            and previous_close_date not in {None, ""}
+            and hasattr(state.db, "save_daily_close_snapshot_sync")
+        ):
+            state.db.save_daily_close_snapshot_sync(
+                symbol=symbol,
+                asset_class=payload["asset_class"],
+                trade_date=str(previous_close_date),
+                close_price=float(previous_close),
+                source="reported_previous_close",
+            )
+        payload["previous_close"] = previous_close
+        payload["previous_close_date"] = previous_close_date
     return payload
 
 

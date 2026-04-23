@@ -301,16 +301,24 @@ class TestAKShareFetchLatest:
             {
                 "基金代码": ["018125"],
                 "基金简称": ["永赢先进制造智选混合发起C"],
-                "2026-04-21-单位净值": [1.126],
-                "2026-04-21-累计净值": [1.126],
+                "2026-04-22-单位净值": [2.2503],
+                "2026-04-22-累计净值": [2.2503],
+                "2026-04-21-单位净值": [2.2606],
+                "2026-04-21-累计净值": [2.2606],
+                "日增长值": [-0.0103],
+                "日增长率": [-0.46],
             }
         )
 
         result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
 
         assert result is not None
-        assert result["price"] == 1.126
-        assert result["timestamp"] == "2026-04-21"
+        assert result["price"] == 2.2503
+        assert result["timestamp"] == "2026-04-22"
+        assert result["previous_close"] == 2.2606
+        assert result["previous_close_date"] == "2026-04-21"
+        assert result["day_change_value"] == pytest.approx(-0.0103)
+        assert result["day_change_pct"] == pytest.approx(-0.0046)
         mock_daily.assert_called_once()
         mock_etf.assert_not_called()
 
