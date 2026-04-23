@@ -1,4 +1,4 @@
-# MyQuant — Personal Quantitative Trading Assistant
+# Karkinos — Personal Quantitative Trading Assistant
 
 [中文](README.zh.md) | [Back to Summary](../README.md)
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-MyQuant is a personal quantitative trading system designed for the Chinese market. It features an event-driven architecture with a backtest-first, daily-bar-oriented design, supporting A-shares, ETFs, gold spot, and exchange-traded bonds.
+Karkinos is a personal quantitative trading system designed for the Chinese market. It features an event-driven architecture with a backtest-first, daily-bar-oriented design, supporting A-shares, ETFs, gold spot, and exchange-traded bonds.
 
 Key Features:
 
@@ -38,7 +38,7 @@ DataHandler → EventBus → Strategy → Portfolio → RiskManager(-10) → Exe
 ## Project Structure
 
 ```
-MyQuant/
+Karkinos/
 ├── core/                   # Core infrastructure
 │   ├── types.py            # Type definitions (Symbol, Money, enums, constants)
 │   ├── events.py           # Event types (Market, Signal, Order, Fill, RiskAlert)
@@ -134,7 +134,7 @@ MyQuant/
 
 ```bash
 # Clone the repository
-git clone <repo-url> && cd MyQuant
+git clone <repo-url> && cd Karkinos
 
 # Install core dependencies (uv creates .venv automatically)
 uv sync
@@ -156,7 +156,7 @@ Example output:
 
 ```
 ==================================================
-         MyQuant Backtest Report
+         Karkinos Backtest Report
 ==================================================
 Initial Cash:      1,000,000.00 CNY
 Final Equity:        985,210.62 CNY
@@ -220,7 +220,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-By default the container reads `./config.json` as runtime config and persists market cache / SQLite data in the `myquant-data` volume.
+By default the container reads `./config.json` as runtime config and persists market cache / SQLite data in the `karkinos-data` volume.
 
 See [Docker Deployment](#docker-deployment) section for details.
 
@@ -285,8 +285,8 @@ Copy `config.example.json` to `config.json` and modify as needed.
 | Variable | Description | Config Field |
 |----------|-------------|-------------|
 | `TUSHARE_TOKEN` | Tushare API token | — (auto-enables Tushare data source) |
-| `MYQUANT_HOST` | Server listen address | `ServerConfig.host` |
-| `MYQUANT_PORT` | Server listen port | `ServerConfig.port` |
+| `KARKINOS_HOST` | Server listen address | `ServerConfig.host` |
+| `KARKINOS_PORT` | Server listen port | `ServerConfig.port` |
 
 ### Priority Chain
 
@@ -294,7 +294,7 @@ Copy `config.example.json` to `config.json` and modify as needed.
 CLI args > Environment variables > config.json > Defaults
 ```
 
-Example: `python -m server --port 9000` takes precedence over `MYQUANT_PORT=8080`, which takes precedence over `"port": 8000` in config.json.
+Example: `python -m server --port 9000` takes precedence over `KARKINOS_PORT=8080`, which takes precedence over `"port": 8000` in config.json.
 
 ## CLI Reference
 
@@ -390,26 +390,26 @@ Streams EventBus events in real-time after connection. Each message includes an 
 ### Dockerfile (Multi-Stage Build)
 
 - **Stage 1** (`node:20-alpine`): Builds Vue frontend with `npm ci && npm run build`, output to `web/dist/`
-- **Stage 2** (`python:3.12-slim`): Copies source + frontend dist, installs server dependencies, sets `MYQUANT_CONFIG_PATH=/app/config.json` and `MYQUANT_DATA_DIR=/app/data/store`, then starts with `python -m server`
+- **Stage 2** (`python:3.12-slim`): Copies source + frontend dist, installs server dependencies, sets `KARKINOS_CONFIG_PATH=/app/config.json` and `KARKINOS_DATA_DIR=/app/data/store`, then starts with `python -m server`
 
 ### docker-compose.yml
 
 ```yaml
 services:
-  myquant:
+  karkinos:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - myquant-data:/app/data/store
+      - karkinos-data:/app/data/store
       - ./config.json:/app/config.json:ro
     environment:
       - TZ=Asia/Shanghai
       - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
-      - MYQUANT_HOST=0.0.0.0
-      - MYQUANT_PORT=8000
-      - MYQUANT_CONFIG_PATH=/app/config.json
-      - MYQUANT_DATA_DIR=/app/data/store
+      - KARKINOS_HOST=0.0.0.0
+      - KARKINOS_PORT=8000
+      - KARKINOS_CONFIG_PATH=/app/config.json
+      - KARKINOS_DATA_DIR=/app/data/store
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/settings', timeout=5).read()"]
@@ -433,13 +433,13 @@ docker compose down
 
 ```bash
 # Use port 9000
-MYQUANT_PORT=9000 docker compose up -d
+KARKINOS_PORT=9000 docker compose up -d
 # Or modify ports in docker-compose.yml to "9000:9000"
 ```
 
 ### Data Volumes
 
-- `myquant-data`: Mounted at `/app/data/store`, stores Parquet files and SQLite database. Data persists across container rebuilds.
+- `karkinos-data`: Mounted at `/app/data/store`, stores Parquet files and SQLite database. Data persists across container rebuilds.
 
 ## Web Frontend
 

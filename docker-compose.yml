@@ -1,19 +1,19 @@
 services:
-  myquant:
+  karkinos:
     build: .
-    container_name: myquant
+    container_name: karkinos
     ports:
       - "8000:8000"
     volumes:
-      - myquant-data:/app/data/store
+      - karkinos-data:/app/data/store
       - ./config.json:/app/config.json:ro
     environment:
       - TZ=Asia/Shanghai
       - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
-      - MYQUANT_HOST=0.0.0.0
-      - MYQUANT_PORT=8000
-      - MYQUANT_CONFIG_PATH=/app/config.json
-      - MYQUANT_DATA_DIR=/app/data/store
+      - KARKINOS_HOST=0.0.0.0
+      - KARKINOS_PORT=8000
+      - KARKINOS_CONFIG_PATH=/app/config.json
+      - KARKINOS_DATA_DIR=/app/data/store
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/settings', timeout=5).read()"]
@@ -23,4 +23,4 @@ services:
       start_period: 20s
 
 volumes:
-  myquant-data:
+  karkinos-data:

@@ -7,7 +7,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -107,6 +107,19 @@ test("renders portfolio workspace navigation", async () => {
   expect(await screen.findByLabelText("Account Status")).toBeTruthy();
 });
 
+test("uses minimalist sidebar active styling and subtext icons", async () => {
+  renderShell();
+
+  const activeItem = await screen.findByTestId("sidebar-nav-overview");
+  const activeIcon = await screen.findByTestId("sidebar-nav-overview-icon");
+  const inactiveIcon = await screen.findByTestId("sidebar-nav-portfolio-icon");
+
+  expect(activeItem.className).toContain("app-nav-item-active");
+  expect(activeItem.className).not.toContain("app-button-primary");
+  expect(activeIcon.getAttribute("class")).toContain("app-nav-icon");
+  expect(inactiveIcon.getAttribute("class")).toContain("app-nav-icon");
+});
+
 test("switches interface language from english to chinese", async () => {
   renderShell();
   const user = userEvent.setup();
@@ -119,7 +132,7 @@ test("switches interface language from english to chinese", async () => {
   expect(await screen.findByText("流水")).toBeTruthy();
   expect(await screen.findByText("风险")).toBeTruthy();
   expect(await screen.findByText("全局工具栏")).toBeTruthy();
-  expect(window.localStorage.getItem("myquant.locale")).toBe("zh");
+  expect(window.localStorage.getItem("karkinos.locale")).toBe("zh");
 });
 
 test("switches theme preference and persists it", async () => {
@@ -128,11 +141,11 @@ test("switches theme preference and persists it", async () => {
 
   await user.click(await screen.findByRole("button", { name: "Dark theme" }));
   expect(document.documentElement.dataset.theme).toBe("dark");
-  expect(window.localStorage.getItem("myquant.theme")).toBe("dark");
+  expect(window.localStorage.getItem("karkinos.theme")).toBe("dark");
 
   await user.click(await screen.findByRole("button", { name: "Light theme" }));
   expect(document.documentElement.dataset.theme).toBe("light");
-  expect(window.localStorage.getItem("myquant.theme")).toBe("light");
+  expect(window.localStorage.getItem("karkinos.theme")).toBe("light");
 
   act(() => {
     matchMedia.setDarkMode(true);
@@ -140,7 +153,7 @@ test("switches theme preference and persists it", async () => {
   expect(document.documentElement.dataset.theme).toBe("light");
 
   await user.click(await screen.findByRole("button", { name: "System theme" }));
-  expect(window.localStorage.getItem("myquant.theme")).toBeNull();
+  expect(window.localStorage.getItem("karkinos.theme")).toBeNull();
   expect(document.documentElement.dataset.theme).toBe("dark");
 
   act(() => {
@@ -155,7 +168,7 @@ test("keeps the desktop toolbar controls in a single centered row", async () => 
   const toolbarTitle = await screen.findByText("Workspace toolbar");
   const toolbarRow = toolbarTitle.closest("header")?.firstElementChild as HTMLElement | null;
   expect(toolbarRow).toBeTruthy();
-  expect(toolbarRow?.className).toContain("h-14");
+  expect(toolbarRow?.className).toContain("h-12");
   expect(toolbarRow?.className).toContain("items-center");
   expect(toolbarRow?.className).toContain("px-4");
 
@@ -189,6 +202,37 @@ test("uses full language names and fluid menu width", async () => {
   expect(menu.className).toContain("min-w-max");
   expect(await screen.findByRole("menuitemradio", { name: "English" })).toBeTruthy();
   expect(await screen.findByRole("menuitemradio", { name: "中文" })).toBeTruthy();
+});
+
+test("allows manual toolbar resync and returns to ready state", async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  const ledgerButton = await screen.findByTestId("status-pill-ledger");
+  expect(ledgerButton.getAttribute("title")).toBe("Click to resync ledger");
+
+  await user.click(ledgerButton);
+
+  expect(await screen.findByText("Syncing")).toBeTruthy();
+  expect((await screen.findByTestId("status-pill-ledger-indicator")).tagName).toBe("svg");
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 1450));
+  });
+
+  expect(await screen.findByText("Ledger synced")).toBeTruthy();
+  expect((await screen.findByTestId("status-pill-ledger-indicator")).tagName).toBe("SPAN");
+}, 7000);
+
+test("shows broker latency details in a popover", async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByTestId("status-pill-broker"));
+
+  const dialog = await screen.findByRole("dialog", { name: "Broker API ready" });
+  expect(dialog).toBeTruthy();
+  expect(within(dialog).getByText("42ms")).toBeTruthy();
 });
 
 test("toggles mobile navigation from the global toolbar", async () => {

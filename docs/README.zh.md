@@ -1,4 +1,4 @@
-# MyQuant — 个人量化交易辅助系统
+# Karkinos — 个人量化交易辅助系统
 
 [English](README.en.md) | [返回摘要](../README.md)
 
@@ -6,7 +6,7 @@
 
 ## 概述
 
-MyQuant 是一个面向中国市场的个人量化交易辅助系统，采用事件驱动架构，以回测优先、日线为主的设计理念，支持 A 股、ETF、黄金现货、交易所债券等资产类型。
+Karkinos 是一个面向中国市场的个人量化交易辅助系统，采用事件驱动架构，以回测优先、日线为主的设计理念，支持 A 股、ETF、黄金现货、交易所债券等资产类型。
 
 核心特性：
 
@@ -38,7 +38,7 @@ DataHandler → EventBus → Strategy → Portfolio → RiskManager(-10) → Exe
 ## 项目结构
 
 ```
-MyQuant/
+Karkinos/
 ├── core/                   # 核心基础设施
 │   ├── types.py            # 类型定义（Symbol, Money, 枚举, 常量）
 │   ├── events.py           # 事件类型（Market, Signal, Order, Fill, RiskAlert）
@@ -134,7 +134,7 @@ MyQuant/
 
 ```bash
 # 克隆仓库
-git clone <repo-url> && cd MyQuant
+git clone <repo-url> && cd Karkinos
 
 # 安装核心依赖（uv 自动创建 .venv）
 uv sync
@@ -156,7 +156,7 @@ uv run python main.py
 
 ```
 ==================================================
-         MyQuant 回测报告
+         Karkinos 回测报告
 ==================================================
 初始资金:      1,000,000.00 CNY
 最终权益:        985,210.62 CNY
@@ -180,7 +180,10 @@ Sortino比率:         -3.55
 # 安装服务端依赖
 uv sync --extra server
 
-# 开发模式启动，自动热重载，后台运行，并写入 PID / 日志文件
+# 安装前端依赖，用于构建 8000 产品入口需要的 web/dist
+cd web && npm install && cd ..
+
+# 开发模式启动：先构建产品前端包，再启动后端和 Vite 热更新服务
 ./scripts/start_server.sh dev --host 127.0.0.1 --port 8000
 
 # 停止服务
@@ -190,7 +193,7 @@ uv sync --extra server
 ./scripts/start_server.sh prod --host 0.0.0.0 --port 8000
 ```
 
-访问 http://localhost:8000 打开 Web 仪表盘。
+访问 http://localhost:8000 打开 Web 仪表盘。这个地址是产品/客户入口，刷新或直接打开 `/portfolio`、`/activity`、`/risk`、`/market`、`/settings` 等页面时，后端会返回前端应用入口并保留当前 URL。
 
 开发模式下，启动脚本会同时拉起后端和前端：
 
@@ -199,8 +202,8 @@ uv sync --extra server
 ```
 
 它会同时启动：
-- 后端 API：`http://127.0.0.1:8000`
-- 前端 Vite：`http://127.0.0.1:5173`
+- 产品入口 + 后端 API：`http://127.0.0.1:8000`
+- 前端 Vite 热更新入口：`http://127.0.0.1:5173`
 
 停止时统一执行：
 
@@ -208,7 +211,16 @@ uv sync --extra server
 ./scripts/stop_server.sh
 ```
 
-本地联调访问 http://localhost:5173，生产构建由 FastAPI 托管时访问 http://localhost:8000。
+对外演示、客户使用、刷新/分享页面路径时使用 http://localhost:8000。只有在编辑前端代码并需要热更新时才访问 http://localhost:5173。
+
+如果手动使用 `prod` 模式，需先生成前端构建产物：
+
+```bash
+cd web
+npm run build
+cd ..
+./scripts/start_server.sh prod --host 0.0.0.0 --port 8000
+```
 
 ### Docker 部署
 
@@ -220,7 +232,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-默认读取项目根目录的 `config.json` 作为运行配置，并把行情缓存 / SQLite 持久化到 `myquant-data` 卷。
+默认读取项目根目录的 `config.json` 作为运行配置，并把行情缓存 / SQLite 持久化到 `karkinos-data` 卷。
 
 详见 [Docker 部署](#docker-部署) 章节。
 
@@ -285,8 +297,8 @@ docker compose logs -f
 | 变量 | 说明 | 对应配置字段 |
 |------|------|-------------|
 | `TUSHARE_TOKEN` | Tushare API Token | — （自动启用 Tushare 数据源） |
-| `MYQUANT_HOST` | 服务监听地址 | `ServerConfig.host` |
-| `MYQUANT_PORT` | 服务监听端口 | `ServerConfig.port` |
+| `KARKINOS_HOST` | 服务监听地址 | `ServerConfig.host` |
+| `KARKINOS_PORT` | 服务监听端口 | `ServerConfig.port` |
 
 ### 优先级链
 
@@ -294,7 +306,7 @@ docker compose logs -f
 CLI 参数 > 环境变量 > config.json > 默认值
 ```
 
-示例：`python -m server --port 9000` 优先于 `MYQUANT_PORT=8080`，优先于 `config.json` 中的 `"port": 8000`。
+示例：`python -m server --port 9000` 优先于 `KARKINOS_PORT=8080`，优先于 `config.json` 中的 `"port": 8000`。
 
 ## CLI 参考
 
@@ -390,26 +402,26 @@ uv run python live.py
 ### Dockerfile（多阶段构建）
 
 - **Stage 1**（`node:20-alpine`）：构建 Vue 前端，`npm ci && npm run build`，输出到 `web/dist/`
-- **Stage 2**（`python:3.12-slim`）：复制源码与前端产物，安装服务端依赖，设置 `MYQUANT_CONFIG_PATH=/app/config.json` 和 `MYQUANT_DATA_DIR=/app/data/store`，并以 `python -m server` 启动
+- **Stage 2**（`python:3.12-slim`）：复制源码与前端产物，安装服务端依赖，设置 `KARKINOS_CONFIG_PATH=/app/config.json` 和 `KARKINOS_DATA_DIR=/app/data/store`，并以 `python -m server` 启动
 
 ### docker-compose.yml
 
 ```yaml
 services:
-  myquant:
+  karkinos:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - myquant-data:/app/data/store
+      - karkinos-data:/app/data/store
       - ./config.json:/app/config.json:ro
     environment:
       - TZ=Asia/Shanghai
       - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
-      - MYQUANT_HOST=0.0.0.0
-      - MYQUANT_PORT=8000
-      - MYQUANT_CONFIG_PATH=/app/config.json
-      - MYQUANT_DATA_DIR=/app/data/store
+      - KARKINOS_HOST=0.0.0.0
+      - KARKINOS_PORT=8000
+      - KARKINOS_CONFIG_PATH=/app/config.json
+      - KARKINOS_DATA_DIR=/app/data/store
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/settings', timeout=5).read()"]
@@ -433,39 +445,41 @@ docker compose down
 
 ```bash
 # 使用 9000 端口
-MYQUANT_PORT=9000 docker compose up -d
+KARKINOS_PORT=9000 docker compose up -d
 # 或修改 docker-compose.yml 中 ports 为 "9000:9000"
 ```
 
 ### 数据卷
 
-- `myquant-data`：挂载到 `/app/data/store`，存储 Parquet 文件和 SQLite 数据库，容器重建后数据不丢失
+- `karkinos-data`：挂载到 `/app/data/store`，存储 Parquet 文件和 SQLite 数据库，容器重建后数据不丢失
 
 ## Web 前端
 
 ### 技术栈
 
-Vue 3 + TypeScript + Pinia + Vue Router + ECharts + Axios + Vite
+React + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 
 ### 视图说明
 
 | 视图 | 路径 | 说明 |
 |------|------|------|
-| DashboardView | `/` | 仪表盘，组合概览 + 实时指标 |
-| PortfolioView | `/portfolio` | 持仓明细 + 配置饼图 |
-| MarketView | `/market` | 行情报价 + K 线图 |
-| SignalsView | `/signals` | 信号历史 + 信号徽章 |
-| BacktestView | `/backtest` | 运行回测 + 权益曲线 |
-| SettingsView | `/settings` | 配置管理 + 实盘控制 + 通知测试 |
+| Overview | `/` | 账户概览、实时持仓摘要、权益曲线 |
+| Portfolio | `/portfolio` | 持仓明细、资产筛选、配置分组 |
+| Activity | `/activity` | 交易、分红、现金流、手工调整流水 |
+| Risk | `/risk` | 风险指标、回撤、集中度、权益解释 |
+| Market | `/market` | 研究看板、关注列表、K 线与研究笔记 |
+| Settings | `/settings` | 设置入口 |
 
 ### 开发
 
 ```bash
 cd web
 npm install
-npm run dev       # 开发服务器，代理 /api → localhost:8000
-npm run build     # 构建生产版本到 dist/
+npm run dev       # 热更新开发入口：http://localhost:5173，代理 /api → localhost:8000
+npm run build     # 构建产品入口需要的 web/dist
 ```
+
+客户入口仍然是后端托管的 http://localhost:8000；`5173` 只用于前端热更新开发。
 
 ## 策略开发
 

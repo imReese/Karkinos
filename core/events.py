@@ -1,4 +1,4 @@
-"""MyQuant 事件类型定义（frozen dataclass）。"""
+"""Karkinos 事件类型定义（frozen dataclass）。"""
 
 from __future__ import annotations
 

@@ -27,8 +27,8 @@ const PreferencesContext = createContext<PreferencesContextValue>({
   resolvedTheme: "dark",
 });
 
-const LOCALE_KEY = "myquant.locale";
-const THEME_KEY = "myquant.theme";
+const LOCALE_KEY = "karkinos.locale";
+const THEME_KEY = "karkinos.theme";
 
 function readStoredTheme(): ThemePreference {
   if (typeof window === "undefined") {

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import { PreferencesProvider } from "../../../app/preferences";
-import { EquityCurveCard } from "./equity-curve-card";
+import { EquityCurveCard, EquityCurveSkeleton } from "./equity-curve-card";
 import type { EquitySeriesPoint } from "../api";
 
 const points: EquitySeriesPoint[] = [
@@ -135,4 +135,37 @@ test("toggles category chips without removing the control", async () => {
   await user.click(stocks);
 
   expect(stocks.getAttribute("aria-pressed")).toBe("false");
+});
+
+test("renders a terminal empty state for periods without chart data", async () => {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+
+  render(
+    <PreferencesProvider>
+      <EquityCurveCard points={[]} />
+    </PreferencesProvider>,
+  );
+
+  const emptyState = await screen.findByText("No data available for this period.");
+  expect(emptyState.className).toContain("text-[var(--app-subtext-0)]");
+});
+
+test("renders chart skeleton with shimmer and terminal surface colors", () => {
+  render(<EquityCurveSkeleton />);
+
+  const skeleton = screen.getByTestId("equity-curve-skeleton");
+  expect(skeleton.className).toContain("animate-pulse");
+  expect(skeleton.className).toContain("var(--app-surface-0)");
 });

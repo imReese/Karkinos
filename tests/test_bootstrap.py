@@ -2,6 +2,9 @@ from pathlib import Path
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from config import BacktestConfig, ServerConfig
 from core.types import AssetClass, Symbol
 from server.bootstrap import (
@@ -151,7 +154,7 @@ def test_load_runtime_config_allows_live_auto_start_override(tmp_path, monkeypat
 def test_load_runtime_config_supports_env_config_path(tmp_path, monkeypatch):
     custom_config = tmp_path / "runtime-config.json"
     custom_config.write_text('{"strategy": "dual_ma", "initial_cash": 555000}')
-    monkeypatch.setenv("MYQUANT_CONFIG_PATH", str(custom_config))
+    monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(custom_config))
 
     config = load_runtime_config()
 
@@ -174,7 +177,7 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
         def get_instrument(sym, ac):
             return (sym, ac)
 
-    monkeypatch.setenv("MYQUANT_DATA_DIR", "/tmp/myquant-data")
+    monkeypatch.setenv("KARKINOS_DATA_DIR", "/tmp/karkinos-data")
     monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
     monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
     monkeypatch.setattr(
@@ -184,8 +187,8 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
 
     create_runtime_context(BacktestConfig())
 
-    assert resolve_data_dir() == "/tmp/myquant-data"
-    assert created["store_path"] == "/tmp/myquant-data"
+    assert resolve_data_dir() == "/tmp/karkinos-data"
+    assert created["store_path"] == "/tmp/karkinos-data"
 
 
 def test_create_app_accepts_config_overrides():
@@ -201,7 +204,7 @@ def test_create_app_serves_spa_index_for_client_routes(monkeypatch, tmp_path):
 
     dist_dir = tmp_path / "web" / "dist"
     dist_dir.mkdir(parents=True)
-    (dist_dir / "index.html").write_text("<html><body>myquant-spa</body></html>")
+    (dist_dir / "index.html").write_text("<html><body>karkinos-spa</body></html>")
 
     original_path = Path
 
@@ -213,15 +216,55 @@ def test_create_app_serves_spa_index_for_client_routes(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "Path", fake_path)
 
     static = app_module.SPAStaticFiles(directory=str(dist_dir), html=True)
-    response = __import__("asyncio").run(
-        static.get_response(
-            "activity",
-            {"type": "http", "method": "GET", "path": "/activity", "headers": []},
+    for route in ["", "portfolio", "activity", "risk", "market", "settings"]:
+        response = __import__("asyncio").run(
+            static.get_response(
+                route,
+                {
+                    "type": "http",
+                    "method": "GET",
+                    "path": f"/{route}" if route else "/",
+                    "headers": [],
+                },
+            )
         )
-    )
 
-    assert response.status_code == 200
-    assert response.path.endswith("index.html")
+        assert response.status_code == 200
+        assert response.path.endswith("index.html")
+
+
+def test_create_app_does_not_fallback_reserved_backend_namespaces(monkeypatch, tmp_path):
+    from server import app as app_module
+
+    dist_dir = tmp_path / "web" / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html><body>karkinos-spa</body></html>")
+
+    original_path = Path
+
+    def fake_path(value="."):
+        if value == "web/dist":
+            return original_path(dist_dir)
+        return original_path(value)
+
+    monkeypatch.setattr(app_module, "Path", fake_path)
+
+    static = app_module.SPAStaticFiles(directory=str(dist_dir), html=True)
+    for route in ["api/missing", "ws/missing"]:
+        with pytest.raises(StarletteHTTPException) as exc_info:
+            __import__("asyncio").run(
+                static.get_response(
+                    route,
+                    {
+                        "type": "http",
+                        "method": "GET",
+                        "path": f"/{route}",
+                        "headers": [],
+                    },
+                )
+            )
+
+        assert exc_info.value.status_code == 404
 
 
 def test_create_app_keeps_missing_static_assets_as_404(monkeypatch, tmp_path):
@@ -229,7 +272,7 @@ def test_create_app_keeps_missing_static_assets_as_404(monkeypatch, tmp_path):
 
     dist_dir = tmp_path / "web" / "dist"
     dist_dir.mkdir(parents=True)
-    (dist_dir / "index.html").write_text("<html><body>myquant-spa</body></html>")
+    (dist_dir / "index.html").write_text("<html><body>karkinos-spa</body></html>")
 
     original_path = Path
 
@@ -241,16 +284,17 @@ def test_create_app_keeps_missing_static_assets_as_404(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "Path", fake_path)
 
     static = app_module.SPAStaticFiles(directory=str(dist_dir), html=True)
-    response = __import__("asyncio").run(
-        static.get_response(
-            "assets/missing.js",
-            {
-                "type": "http",
-                "method": "GET",
-                "path": "/assets/missing.js",
-                "headers": [],
-            },
+    with pytest.raises(StarletteHTTPException) as exc_info:
+        __import__("asyncio").run(
+            static.get_response(
+                "assets/missing.js",
+                {
+                    "type": "http",
+                    "method": "GET",
+                    "path": "/assets/missing.js",
+                    "headers": [],
+                },
+            )
         )
-    )
 
-    assert response.status_code == 404
+    assert exc_info.value.status_code == 404

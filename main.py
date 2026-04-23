@@ -1,4 +1,4 @@
-"""MyQuant — 个人量化交易系统入口。"""
+"""Karkinos — 个人量化交易系统入口。"""
 
 from __future__ import annotations
 

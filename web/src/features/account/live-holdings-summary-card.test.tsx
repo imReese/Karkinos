@@ -6,7 +6,7 @@ import { LiveHoldingsSummaryCard } from "./components/live-holdings-summary-card
 
 function renderCard(locale: "en" | "zh" = "en", onSelectAssetClass?: (value: string) => void) {
   window.localStorage.clear();
-  window.localStorage.setItem("myquant.locale", locale);
+  window.localStorage.setItem("karkinos.locale", locale);
   document.documentElement.lang = locale === "zh" ? "zh-CN" : "en-US";
   Object.defineProperty(window, "matchMedia", {
     writable: true,

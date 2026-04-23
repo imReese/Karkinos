@@ -35,7 +35,7 @@ def generate_report(result: BacktestResult) -> str:
 
     lines = [
         "=" * 50,
-        "         MyQuant 回测报告",
+        "         Karkinos 回测报告",
         "=" * 50,
         f"初始资金:   {result.initial_cash:>15,.2f} CNY",
         f"最终权益:   {result.final_equity:>15,.2f} CNY",

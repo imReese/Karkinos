@@ -214,7 +214,7 @@ def create_router() -> APIRouter:
 
         try:
             notifier.send(
-                title="MyQuant 测试通知",
+                title="Karkinos 测试通知",
                 message="如果你看到这条消息，说明通知配置正确！",
             )
             return {"status": "ok", "message": "Test notification sent"}

@@ -1,4 +1,4 @@
-"""MyQuant 核心类型定义。"""
+"""Karkinos 核心类型定义。"""
 
 from decimal import Decimal
 from enum import Enum

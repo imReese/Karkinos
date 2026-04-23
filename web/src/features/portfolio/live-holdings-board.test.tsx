@@ -7,7 +7,7 @@ import { LiveHoldingsBoard } from "./components/live-holdings-board";
 
 function renderBoard(locale: "en" | "zh" = "en") {
   window.localStorage.clear();
-  window.localStorage.setItem("myquant.locale", locale);
+  window.localStorage.setItem("karkinos.locale", locale);
   document.documentElement.lang = locale === "zh" ? "zh-CN" : "en-US";
   Object.defineProperty(window, "matchMedia", {
     writable: true,

@@ -7,7 +7,7 @@ import sys
 
 
 def setup_logger(
-    name: str = "myquant",
+    name: str = "karkinos",
     level: int = logging.INFO,
 ) -> logging.Logger:
     """创建并配置 logger。"""

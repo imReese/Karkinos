@@ -58,7 +58,7 @@ def format_signal_message(
     price_str = f"{price:.2f}" if price is not None else "N/A"
 
     return (
-        f"MyQuant 信号提醒\n"
+        f"Karkinos 信号提醒\n"
         f"标的: {symbol} [{asset_label}]\n"
         f"方向: {direction}\n"
         f"目标权重: {weight_pct}\n"

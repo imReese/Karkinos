@@ -47,23 +47,27 @@ export function RiskSummaryCard({
   ];
 
   return (
-    <div className="app-surface-card p-5 sm:p-6">
-      <div className="app-card-header">
-        <div className="app-card-title">{labels.title}</div>
+    <div className="app-surface-card p-4 sm:p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-semibold tracking-[-0.01em]">{labels.title}</div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid overflow-hidden rounded-lg border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] sm:grid-cols-2">
         {items.map((item, index) => (
           <div
             key={item.label}
-            className={`app-surface-metric-row sm:px-2 ${
-              index > 1 ? "app-surface-metric-row-divider" : ""
+            className={`px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] ${
+              index > 0 ? "border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]" : ""
+            } ${
+              index === 1 ? "sm:border-t-0" : ""
+            } ${
+              index % 2 === 1 ? "sm:border-l sm:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]" : ""
             }`}
           >
-            <div className="app-kicker text-xs uppercase tracking-[0.16em]">
+            <div className="app-kicker text-[10px] uppercase tracking-[0.16em]">
               {item.label}
             </div>
-            <div className="mt-3 text-xl font-semibold">{item.value}</div>
-            <div className="app-muted mt-2 text-sm">{item.hint}</div>
+            <div className="mt-2 text-lg font-medium tabular-nums">{item.value}</div>
+            <div className="app-muted mt-1.5 text-xs">{item.hint}</div>
           </div>
         ))}
       </div>

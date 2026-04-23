@@ -1,0 +1,95 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { expect, test, vi } from "vitest";
+
+import { PreferencesProvider } from "../../../app/preferences";
+import type { PortfolioSnapshot } from "../../portfolio/api";
+import type { AccountOverview } from "../api";
+import { OverviewCards, OverviewCardsSkeleton } from "./overview-cards";
+import { PerformanceBreakdownCard } from "./performance-breakdown-card";
+
+function renderWithPreferences(ui: ReactNode) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+
+  render(<PreferencesProvider>{ui}</PreferencesProvider>);
+}
+
+const overview: AccountOverview = {
+  total_equity: 101_550,
+  available_cash: 76_000,
+  total_deposits: 100_000,
+  positions_count: 5,
+  unrealized_pnl: 1_550,
+  realized_pnl: 220,
+  cash_ratio: 0.7484,
+};
+
+const snapshot: PortfolioSnapshot = {
+  cash: 76_000,
+  total_equity: 101_550,
+  total_deposits: 100_000,
+  positions: [],
+  allocation: [],
+  allocation_grouped: [],
+};
+
+test("renders account metrics as a single integrated terminal rail", () => {
+  renderWithPreferences(<OverviewCards overview={overview} />);
+
+  const rail = screen.getByTestId("account-metrics-rail");
+
+  expect(rail.className).toContain("tabular-nums");
+  expect(rail.className).toContain("divide-y");
+  expect(rail.className).toContain("xl:divide-x");
+  expect(screen.getByText("Total Assets")).toBeTruthy();
+  expect(screen.getByText("Cash Ratio")).toBeTruthy();
+});
+
+test("renders a responsive shimmering metrics rail skeleton", () => {
+  render(<OverviewCardsSkeleton />);
+
+  const skeleton = screen.getByTestId("account-metrics-skeleton");
+
+  expect(skeleton.className).toContain("animate-pulse");
+  expect(skeleton.className).toContain("xl:grid-cols-4");
+  expect(skeleton.className).toContain("var(--app-surface-0)");
+});
+
+test("keeps the localized perspective switcher in the breakdown header", async () => {
+  const user = userEvent.setup();
+  const onModeChange = vi.fn();
+
+  renderWithPreferences(
+    <PerformanceBreakdownCard
+      overview={overview}
+      snapshot={snapshot}
+      mode="account"
+      onModeChange={onModeChange}
+      accountLabel="Account Perspective"
+      strategyLabel="Strategy Perspective"
+    />,
+  );
+
+  const switcher = screen.getByTestId("breakdown-perspective-switcher");
+  expect(switcher.className).toContain("rounded-full");
+  expect(
+    screen.getByRole("button", { name: "Account Perspective" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+
+  await user.click(screen.getByRole("button", { name: "Strategy Perspective" }));
+
+  expect(onModeChange).toHaveBeenCalledWith("strategy");
+});

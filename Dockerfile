@@ -11,10 +11,10 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    MYQUANT_CONFIG_PATH=/app/config.json \
-    MYQUANT_DATA_DIR=/app/data/store \
-    MYQUANT_HOST=0.0.0.0 \
-    MYQUANT_PORT=8000
+    KARKINOS_CONFIG_PATH=/app/config.json \
+    KARKINOS_DATA_DIR=/app/data/store \
+    KARKINOS_HOST=0.0.0.0 \
+    KARKINOS_PORT=8000
 
 WORKDIR /app
 
@@ -24,11 +24,11 @@ COPY . .
 COPY --from=frontend-build /app/web/dist /app/web/dist
 
 RUN uv pip install --system ".[server]" && \
-    useradd --create-home --shell /bin/bash myquant && \
+    useradd --create-home --shell /bin/bash karkinos && \
     mkdir -p /app/data/store && \
-    chown -R myquant:myquant /app
+    chown -R karkinos:karkinos /app
 
-USER myquant
+USER karkinos
 
 VOLUME ["/app/data/store"]
 

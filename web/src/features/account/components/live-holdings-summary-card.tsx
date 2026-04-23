@@ -58,7 +58,7 @@ export function LiveHoldingsSummaryCard({
 
   if (groups.length === 0) {
     return (
-      <div className="app-panel rounded-2xl p-4 text-sm app-muted sm:p-5">
+      <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 text-sm app-muted sm:p-5">
         <div className="app-card-title text-[var(--app-text)]">{labels.title}</div>
         <div className="mt-3">{labels.empty}</div>
       </div>
@@ -66,22 +66,26 @@ export function LiveHoldingsSummaryCard({
   }
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="app-card-header">
-        <div className="app-card-title">{labels.title}</div>
+    <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)]">
+      <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-4 py-3 sm:px-5">
+        <div className="text-sm font-semibold tracking-[-0.01em]">{labels.title}</div>
       </div>
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid divide-y divide-[color-mix(in_srgb,var(--app-border)_24%,transparent)] lg:grid-cols-3 lg:divide-x lg:divide-y-0">
         {groups.map((group) => (
           <button
             key={group.asset_class}
             type="button"
             onClick={() => onSelectAssetClass?.(group.asset_class)}
-            className="app-panel-strong rounded-2xl px-4 py-4 text-left transition hover:border-[var(--app-border)]"
+            className="group relative px-4 py-3 text-left transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
           >
-            <div className="text-sm font-semibold">
+            <span
+              className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-0 transition-opacity duration-200 group-hover:opacity-50"
+              aria-hidden="true"
+            />
+            <div className="text-sm font-semibold tracking-[-0.01em]">
               {assetClassLabel(group.asset_class, copy.common)}
             </div>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-3 grid gap-2">
               <Metric label={labels.marketValue} value={formatCurrency(group.total_market_value)} />
               <Metric
                 label={labels.todayMove}
@@ -112,8 +116,8 @@ function Metric({
 }) {
   return (
     <div>
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">{label}</div>
-      <div className={`mt-2 text-sm font-semibold ${tone ?? ""}`}>{value}</div>
+      <div className="app-kicker text-[10px] uppercase tracking-[0.16em]">{label}</div>
+      <div className={`mt-1 text-sm font-medium tabular-nums ${tone ?? ""}`}>{value}</div>
     </div>
   );
 }
