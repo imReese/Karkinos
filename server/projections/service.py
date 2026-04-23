@@ -85,6 +85,64 @@ def build_equity_curve_from_entries(
     return points
 
 
+def build_equity_series_from_entries(
+    entries: Sequence[LedgerEntry],
+    *,
+    initial_cash: float | Decimal = 0,
+    latest_quotes: Mapping[str, Any] | None = None,
+) -> list[dict[str, datetime | Decimal]]:
+    projection = PortfolioProjection(cash=_as_decimal(initial_cash))
+    points: list[dict[str, datetime | Decimal]] = []
+    quotes = latest_quotes or {}
+    asset_classes: dict[str, str] = {}
+
+    for entry in _sorted_entries(entries):
+        _record_asset_class(asset_classes, entry)
+        _apply_ledger_entry(projection, entry)
+        _apply_valuations(projection, quotes)
+
+        buckets = _bucket_position_values(projection, asset_classes)
+        cash = projection.cash
+        total = cash + buckets["stocks"] + buckets["funds"] + buckets["others"]
+        points.append(
+            {
+                "timestamp": datetime.fromisoformat(entry.timestamp),
+                "total": total,
+                "stocks": buckets["stocks"],
+                "funds": buckets["funds"],
+                "others": buckets["others"],
+                "cash": cash,
+            }
+        )
+
+    return points
+
+
+def build_equity_series_from_db(
+    db,
+    *,
+    initial_cash: float | Decimal = 0,
+    latest_quotes: Mapping[str, Any] | None = None,
+    batch_size: int = 500,
+) -> list[dict[str, datetime | Decimal]]:
+    entries: list[LedgerEntry] = []
+    offset = 0
+    while True:
+        rows = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not rows:
+            break
+        entries.extend(LedgerEntry.from_row(row) for row in rows)
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+
+    return build_equity_series_from_entries(
+        entries,
+        initial_cash=initial_cash,
+        latest_quotes=latest_quotes,
+    )
+
+
 def build_equity_curve_from_db(
     db,
     *,
@@ -108,6 +166,42 @@ def build_equity_curve_from_db(
         initial_cash=initial_cash,
         latest_quotes=latest_quotes,
     )
+
+
+def _record_asset_class(asset_classes: dict[str, str], entry: LedgerEntry) -> None:
+    symbol = (entry.symbol or "").strip()
+    if not symbol:
+        return
+    asset_classes[symbol] = (entry.asset_class or "stock").strip().lower()
+
+
+def _bucket_position_values(
+    projection: PortfolioProjection,
+    asset_classes: Mapping[str, str],
+) -> dict[str, Decimal]:
+    buckets = {
+        "stocks": ZERO,
+        "funds": ZERO,
+        "others": ZERO,
+    }
+    for symbol, position in projection.positions.items():
+        if position.quantity == ZERO:
+            continue
+        bucket = _equity_bucket(asset_classes.get(symbol))
+        if bucket is not None:
+            buckets[bucket] += position.market_value
+    return buckets
+
+
+def _equity_bucket(asset_class: str | None) -> str | None:
+    normalized = (asset_class or "stock").strip().lower()
+    if normalized == "stock":
+        return "stocks"
+    if normalized in {"fund", "etf"}:
+        return "funds"
+    if normalized in {"bond", "gold"}:
+        return "others"
+    return None
 
 
 def _sorted_entries(entries: Sequence[LedgerEntry]) -> list[LedgerEntry]:

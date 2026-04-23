@@ -359,8 +359,9 @@ class TradeCreate(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     symbol: str
     direction: str  # 'buy' / 'sell'
-    quantity: float
-    price: float
+    quantity: float | None = None
+    price: float | None = None
+    amount: float | None = None
     commission: float = 0.0
     asset_class: str = "stock"
     note: str = ""
@@ -379,9 +380,37 @@ class TradeResponse(BaseModel):
     created_at: str
 
 
+class PendingFundOrderResponse(BaseModel):
+    id: int
+    submitted_at: str
+    symbol: str
+    display_name: str
+    amount: float
+    commission: float
+    asset_class: str
+    target_trade_date: str
+    status: str
+    note: str
+    confirmed_nav: float | None = None
+    confirmed_quantity: float | None = None
+    confirmed_trade_date: str | None = None
+    trade_id: int | None = None
+    created_at: str
+    updated_at: str
+
+
 class EquityPoint(BaseModel):
     timestamp: str
     equity: float
+
+
+class EquitySeriesPoint(BaseModel):
+    timestamp: str
+    total: float
+    stocks: float
+    funds: float
+    others: float
+    cash: float
 
 
 class ActivityItem(BaseModel):

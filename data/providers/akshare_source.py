@@ -192,21 +192,41 @@ class AKShareSource(DataSource):
             return None
 
         row = row.iloc[0]
-        nav_column = next(
-            (column for column in row.index if str(column).endswith("-单位净值")),
-            None,
+        nav_columns = sorted(
+            (
+                str(column)
+                for column in row.index
+                if str(column).endswith("-单位净值")
+            ),
+            reverse=True,
         )
-        if nav_column is None:
+        if not nav_columns:
             return None
+        nav_column = nav_columns[0]
         price = pd.to_numeric(row[nav_column], errors="coerce")
         if pd.isna(price):
             return None
         trade_day = str(nav_column).replace("-单位净值", "")
-        return {
+        payload = {
             "price": float(price),
             "volume": None,
             "timestamp": trade_day,
         }
+        if len(nav_columns) > 1:
+            previous_nav_column = nav_columns[1]
+            previous_close = pd.to_numeric(row[previous_nav_column], errors="coerce")
+            if not pd.isna(previous_close):
+                payload["previous_close"] = float(previous_close)
+                payload["previous_close_date"] = str(previous_nav_column).replace(
+                    "-单位净值", ""
+                )
+        growth_rate = pd.to_numeric(row.get("日增长率"), errors="coerce")
+        growth_value = pd.to_numeric(row.get("日增长值"), errors="coerce")
+        if not pd.isna(growth_rate):
+            payload["day_change_pct"] = float(growth_rate) / 100
+        if not pd.isna(growth_value):
+            payload["day_change_value"] = float(growth_value)
+        return payload
 
     def _call_with_retry(self, func, **kwargs):
         """带重试的 AKShare API 调用。"""

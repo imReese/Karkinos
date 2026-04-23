@@ -14,7 +14,7 @@ import {
   useAccountOverviewQuery,
   useAccountStateQuery,
   useExplainabilityQuery,
-  useEquityCurveQuery,
+  useEquityCurveSeriesQuery,
   useRiskSummaryQuery,
   useRiskWorkspaceQuery,
 } from "../features/account/api";
@@ -29,6 +29,7 @@ import {
   useCreateDividendMutation,
   useCreateTradeMutation,
   useLedgerEntriesQuery,
+  usePendingFundOrdersQuery,
 } from "../features/activity/api";
 import { ActivityFeed } from "../features/activity/components/activity-feed";
 import {
@@ -47,6 +48,10 @@ import {
   TradeForm,
   type TradeFormValues,
 } from "../features/activity/components/trade-form";
+import {
+  FundBatchForm,
+  type FundBatchFormValues,
+} from "../features/activity/components/fund-batch-form";
 import {
   type AllocationGroup,
   type AllocationItem,
@@ -149,7 +154,7 @@ function OverviewPage() {
   const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
-  const equityCurve = useEquityCurveQuery();
+  const equityCurve = useEquityCurveSeriesQuery();
   const explainability = useExplainabilityQuery();
 
   return (
@@ -1173,6 +1178,7 @@ function ActivityPage() {
   const copy = useCopy();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const entries = useLedgerEntriesQuery();
+  const pendingFundOrders = usePendingFundOrdersQuery();
   const createTrade = useCreateTradeMutation();
   const createCashFlow = useCreateCashFlowMutation();
   const createDividend = useCreateDividendMutation();
@@ -1187,11 +1193,43 @@ function ActivityPage() {
   };
 
   const handleTradeSubmit = async (values: TradeFormValues) => {
+    const normalizeNumber = (value: number | null | undefined) =>
+      typeof value === "number" && Number.isFinite(value) ? value : null;
     try {
       await createTrade.mutateAsync({
         ...values,
         occurred_at: new Date(values.occurred_at).toISOString(),
+        quantity: normalizeNumber(values.quantity),
+        unit_price: normalizeNumber(values.unit_price),
+        amount: normalizeNumber(values.amount),
+        fee: normalizeNumber(values.fee) ?? 0,
+        asset_class: values.asset_class.trim().toLowerCase(),
+        symbol: values.symbol.trim(),
       });
+      pushToast("success", copy.activity.tradeSaved, copy.activity.feedRefreshed);
+    } catch (error) {
+      pushToast("error", copy.activity.tradeFailed, getErrorMessage(error));
+      throw error;
+    }
+  };
+
+  const handleFundBatchSubmit = async (values: FundBatchFormValues) => {
+    try {
+      for (const order of values.orders) {
+        await createTrade.mutateAsync({
+          occurred_at: new Date(values.occurred_at).toISOString(),
+          symbol: order.symbol,
+          asset_class: "fund",
+          direction: "buy",
+          quantity: null,
+          unit_price: null,
+          amount: order.amount,
+          fee: 0,
+          note: [values.note.trim(), order.display_name, copy.activity.forms.fundBatch.title]
+            .filter(Boolean)
+            .join(" | "),
+        });
+      }
       pushToast("success", copy.activity.tradeSaved, copy.activity.feedRefreshed);
     } catch (error) {
       pushToast("error", copy.activity.tradeFailed, getErrorMessage(error));
@@ -1263,6 +1301,10 @@ function ActivityPage() {
 
         <div className="grid gap-6 xl:grid-cols-[1.05fr_1.05fr_1.4fr]">
           <div className="space-y-6">
+            <FundBatchForm
+              onSubmit={handleFundBatchSubmit}
+              pending={createTrade.isPending}
+            />
             <TradeForm onSubmit={handleTradeSubmit} pending={createTrade.isPending} />
             <DividendForm
               onSubmit={handleDividendSubmit}
@@ -1279,22 +1321,103 @@ function ActivityPage() {
               pending={createAdjustment.isPending}
             />
           </div>
-          {entries.isLoading ? (
-            <StatusCard title={copy.states.loading} detail={copy.activity.loading} />
-          ) : entries.isError ? (
-            <StatusCard
-              tone="danger"
-              title={copy.states.error}
-              detail={copy.activity.error}
-              actionLabel={copy.states.retry}
-              onAction={() => void entries.refetch()}
+          <div className="space-y-6">
+            <PendingFundOrdersCard
+              orders={pendingFundOrders.data ?? []}
+              loading={pendingFundOrders.isLoading}
+              error={pendingFundOrders.isError}
+              onRetry={() => void pendingFundOrders.refetch()}
             />
-          ) : (
-            <ActivityFeed entries={entries.data ?? []} />
-          )}
+            {entries.isLoading ? (
+              <StatusCard title={copy.states.loading} detail={copy.activity.loading} />
+            ) : entries.isError ? (
+              <StatusCard
+                tone="danger"
+                title={copy.states.error}
+                detail={copy.activity.error}
+                actionLabel={copy.states.retry}
+                onAction={() => void entries.refetch()}
+              />
+            ) : (
+              <ActivityFeed entries={entries.data ?? []} />
+            )}
+          </div>
         </div>
       </section>
     </>
+  );
+}
+
+function PendingFundOrdersCard({
+  orders,
+  loading,
+  error,
+  onRetry,
+}: {
+  orders: Array<{
+    id: number;
+    submitted_at: string;
+    symbol: string;
+    display_name: string;
+    amount: number;
+    target_trade_date: string;
+    status: string;
+  }>;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+}) {
+  const copy = useCopy();
+
+  if (loading) {
+    return <StatusCard title={copy.states.loading} detail={copy.activity.pending.loading} />;
+  }
+  if (error) {
+    return (
+      <StatusCard
+        tone="danger"
+        title={copy.states.error}
+        detail={copy.activity.pending.error}
+        actionLabel={copy.states.retry}
+        onAction={onRetry}
+      />
+    );
+  }
+  if (orders.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="app-panel rounded-2xl p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="app-product-mark">{copy.activity.pending.kicker}</div>
+          <h2 className="mt-2 text-base font-semibold">{copy.activity.pending.title}</h2>
+        </div>
+        <span className="app-chip app-chip-warn text-xs">{orders.length}</span>
+      </div>
+      <div className="mt-4 space-y-3">
+        {orders.map((order) => (
+          <div key={order.id} className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-1)] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">{order.display_name}</div>
+                <div className="app-muted mt-1 text-xs">
+                  {order.symbol} · {copy.activity.pending.submittedAt} {order.submitted_at}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-semibold">{formatCurrency(order.amount)}</div>
+                <div className="app-muted mt-1 text-xs">{order.status}</div>
+              </div>
+            </div>
+            <div className="app-muted mt-3 text-xs">
+              {copy.activity.pending.waitingFor} {order.target_trade_date}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

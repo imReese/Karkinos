@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import sqlite3
@@ -29,13 +28,16 @@ class AppDatabase:
 
     async def init(self) -> None:
         """初始化数据库表。"""
-        await asyncio.to_thread(self.init_sync)
+        self.init_sync()
         logger.info("Database initialized: %s", self._path)
 
     def init_sync(self) -> None:
         """同步初始化数据库表。"""
-        with sqlite3.connect(self._path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.execute("PRAGMA busy_timeout=2000")
+            journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
+            if journal_mode and str(journal_mode[0]).lower() != "wal":
+                conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
             conn.commit()
         logger.info("Database initialized: %s", self._path)
@@ -539,6 +541,39 @@ class AppDatabase:
             await db.commit()
             return cursor.lastrowid or 0
 
+    def add_trade_sync(
+        self,
+        *,
+        timestamp: str,
+        symbol: str,
+        direction: str,
+        quantity: float,
+        price: float,
+        commission: float = 0.0,
+        asset_class: str = "stock",
+        note: str = "",
+    ) -> int:
+        """同步添加交易记录，供后台确认任务使用。"""
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                """INSERT INTO trades
+                   (timestamp, symbol, direction, quantity, price, commission, asset_class, note, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    timestamp,
+                    symbol,
+                    direction,
+                    quantity,
+                    price,
+                    commission,
+                    asset_class,
+                    note,
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
     async def get_trades(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
@@ -574,6 +609,95 @@ class AppDatabase:
             cursor = await db.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
             await db.commit()
             return cursor.rowcount > 0
+
+    # ---------- Pending Fund Orders ----------
+
+    def add_pending_fund_order_sync(
+        self,
+        *,
+        submitted_at: str,
+        symbol: str,
+        display_name: str,
+        amount: float,
+        commission: float = 0.0,
+        asset_class: str = "fund",
+        target_trade_date: str,
+        status: str = "pending",
+        note: str = "",
+    ) -> int:
+        """同步写入待确认基金申购，等待确认净值发布后转交易。"""
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO pending_fund_orders
+                    (submitted_at, symbol, display_name, amount, commission, asset_class,
+                     target_trade_date, status, note, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    submitted_at,
+                    symbol,
+                    display_name,
+                    amount,
+                    commission,
+                    asset_class,
+                    target_trade_date,
+                    status,
+                    note,
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
+    def get_pending_fund_orders_sync(self, status: str = "pending") -> list[dict[str, Any]]:
+        """同步读取待确认基金申购。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM pending_fund_orders
+                WHERE status = ?
+                ORDER BY submitted_at ASC, id ASC
+                """,
+                (status,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_pending_fund_order_confirmed_sync(
+        self,
+        *,
+        order_id: int,
+        trade_id: int,
+        confirmed_nav: float,
+        confirmed_quantity: float,
+        confirmed_trade_date: str,
+    ) -> None:
+        """标记待确认基金申购已转正式交易。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """
+                UPDATE pending_fund_orders
+                SET status = 'confirmed',
+                    confirmed_nav = ?,
+                    confirmed_quantity = ?,
+                    confirmed_trade_date = ?,
+                    trade_id = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    confirmed_nav,
+                    confirmed_quantity,
+                    confirmed_trade_date,
+                    trade_id,
+                    datetime.now().isoformat(),
+                    order_id,
+                ),
+            )
+            conn.commit()
 
     async def get_total_deposits(self) -> float:
         """所有入金总额（deposit - withdraw）。"""
@@ -928,6 +1052,28 @@ CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
 
 CREATE INDEX IF NOT EXISTS idx_cash_flows_timestamp ON cash_flows(timestamp);
+
+CREATE TABLE IF NOT EXISTS pending_fund_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    submitted_at TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    amount REAL NOT NULL,
+    commission REAL DEFAULT 0,
+    asset_class TEXT DEFAULT 'fund',
+    target_trade_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    note TEXT DEFAULT '',
+    confirmed_nav REAL,
+    confirmed_quantity REAL,
+    confirmed_trade_date TEXT,
+    trade_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_fund_orders_status_date
+ON pending_fund_orders(status, target_trade_date);
 
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

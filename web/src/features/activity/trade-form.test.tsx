@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { TradeForm } from "./components/trade-form";
+import { FundBatchForm } from "./components/fund-batch-form";
 import { CashFlowForm } from "./components/cash-flow-form";
 import { DividendForm } from "./components/dividend-form";
 import { ManualAdjustmentForm } from "./components/manual-adjustment-form";
@@ -33,6 +34,58 @@ test("submits a manual trade payload", async () => {
       unit_price: 1500,
     }),
   );
+});
+
+test("submits a fund buy by subscription amount", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(<TradeForm onSubmit={onSubmit} />);
+
+  fireEvent.change(screen.getByLabelText("Symbol"), {
+    target: { value: "012710" },
+  });
+  fireEvent.change(screen.getByLabelText("Asset Class"), {
+    target: { value: "fund" },
+  });
+  fireEvent.change(screen.getByLabelText("Subscription Amount"), {
+    target: { value: "200" },
+  });
+  fireEvent.click(screen.getByText("Save Trade"));
+
+  await waitFor(() => {
+    expect(onSubmit).toHaveBeenCalled();
+  });
+
+  expect(onSubmit.mock.calls[0][0]).toEqual(
+    expect.objectContaining({
+      symbol: "012710",
+      asset_class: "fund",
+      amount: 200,
+    }),
+  );
+});
+
+test("submits a batch fund add payload with positive rows only", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(<FundBatchForm onSubmit={onSubmit} />);
+
+  fireEvent.change(screen.getByLabelText("018125 Amount"), {
+    target: { value: "200" },
+  });
+  fireEvent.change(screen.getByLabelText("012710 Amount"), {
+    target: { value: "300" },
+  });
+  fireEvent.click(screen.getByText("Save Batch"));
+
+  await waitFor(() => {
+    expect(onSubmit).toHaveBeenCalled();
+  });
+
+  expect(onSubmit.mock.calls[0][0].orders).toEqual([
+    expect.objectContaining({ symbol: "018125", amount: 200 }),
+    expect.objectContaining({ symbol: "012710", amount: 300 }),
+  ]);
 });
 
 test("submits a dividend payload", async () => {

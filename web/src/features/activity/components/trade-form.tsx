@@ -8,8 +8,9 @@ export type TradeFormValues = {
   symbol: string;
   asset_class: string;
   direction: string;
-  quantity: number;
-  unit_price: number;
+  quantity: number | null;
+  unit_price: number | null;
+  amount: number | null;
   fee: number;
   note: string;
 };
@@ -29,8 +30,9 @@ export function TradeForm({
     occurred_at: new Date().toISOString().slice(0, 16),
     asset_class: "stock",
     direction: "buy",
-    quantity: 0,
-    unit_price: 0,
+    quantity: null,
+    unit_price: null,
+    amount: null,
     fee: 0,
     note: "",
     symbol: "",
@@ -39,11 +41,15 @@ export function TradeForm({
   const {
     register,
     handleSubmit,
+    watch,
     reset,
     formState: { errors },
   } = useForm<TradeFormValues>({
     defaultValues: createDefaultValues(),
   });
+  const assetClass = watch("asset_class");
+  const direction = watch("direction");
+  const isFundBuy = assetClass.trim().toLowerCase() === "fund" && direction === "buy";
 
   return (
     <form
@@ -92,27 +98,53 @@ export function TradeForm({
         />
       </div>
       {errors.asset_class ? <FieldError message={errors.asset_class.message} /> : null}
+      {isFundBuy ? (
+        <>
+          <input
+            aria-label="Subscription Amount"
+            type="number"
+            step="any"
+            placeholder={labels.amountPlaceholder}
+            className="app-field w-full rounded-xl px-3 py-2 text-sm"
+            {...register("amount", {
+              valueAsNumber: true,
+              validate: (value) =>
+                typeof value === "number" && value > 0
+                  ? true
+                  : labels.amountRequired,
+            })}
+          />
+          {errors.amount ? <FieldError message={errors.amount.message} /> : null}
+          <div className="app-muted text-xs">{labels.fundAmountHelp}</div>
+        </>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-3">
         <input
           aria-label="Quantity"
           type="number"
           step="any"
+          placeholder={labels.quantityPlaceholder}
           className="app-field rounded-xl px-3 py-2 text-sm"
           {...register("quantity", {
-            required: common.required,
             valueAsNumber: true,
-            min: { value: 0.000001, message: common.mustBePositive },
+            validate: (value) =>
+              isFundBuy ||
+              (typeof value === "number" && value > 0) ||
+              common.mustBePositive,
           })}
         />
         <input
           aria-label="Unit Price"
           type="number"
           step="any"
+          placeholder={labels.pricePlaceholder}
           className="app-field rounded-xl px-3 py-2 text-sm"
           {...register("unit_price", {
-            required: common.required,
             valueAsNumber: true,
-            min: { value: 0.000001, message: common.mustBePositive },
+            validate: (value) =>
+              isFundBuy ||
+              (typeof value === "number" && value > 0) ||
+              common.mustBePositive,
           })}
         />
         <input
