@@ -324,4 +324,4 @@ class TradingScheduler:
             asset_class=ac_str,
             timestamp=str(event.timestamp),
         )
-        self._notifier.send(title=f"MyQuant 信号: {event.symbol}", message=message)
+        self._notifier.send(title=f"Karkinos 信号: {event.symbol}", message=message)

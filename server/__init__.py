@@ -1,1 +1,1 @@
-"""MyQuant Server — FastAPI + WebSocket + background trading loop."""
+"""Karkinos Server — FastAPI + WebSocket + background trading loop."""

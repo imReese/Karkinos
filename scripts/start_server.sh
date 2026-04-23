@@ -19,8 +19,8 @@ PID_FILE="${RUN_DIR}/server.pid"
 LOG_FILE="${LOG_DIR}/server.log"
 WEB_PID_FILE="${RUN_DIR}/web.pid"
 WEB_LOG_FILE="${LOG_DIR}/web.log"
-FRONTEND_HOST="${MYQUANT_FRONTEND_HOST:-127.0.0.1}"
-FRONTEND_PORT="${MYQUANT_FRONTEND_PORT:-5173}"
+FRONTEND_HOST="${KARKINOS_FRONTEND_HOST:-127.0.0.1}"
+FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 
 usage() {
   cat <<EOF
@@ -64,7 +64,7 @@ if [[ "${MODE:-${1:-dev}}" == "dev" ]] && ! command -v npm >/dev/null 2>&1; then
 fi
 
 if [[ ! -f "${REPO_ROOT}/pyproject.toml" ]]; then
-  echo "Error: pyproject.toml was not found. Are you running inside the MyQuant repository?" >&2
+  echo "Error: pyproject.toml was not found. Are you running inside the Karkinos repository?" >&2
   exit 1
 fi
 
@@ -122,17 +122,34 @@ for ((i = 0; i < ${#SERVER_ARGS[@]}; i++)); do
       ;;
   esac
 done
+PRODUCT_ENTRY_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"
+HOT_RELOAD_URL="http://${FRONTEND_HOST}:${FRONTEND_PORT}"
 
 if [[ ! " ${SERVER_ARGS[*]} " =~ [[:space:]]--no-live[[:space:]] ]]; then
-  ENV_PREFIX=(MYQUANT_LIVE_AUTO_START=true)
+  ENV_PREFIX=(KARKINOS_LIVE_AUTO_START=true)
 fi
 
 mkdir -p "${RUN_DIR}" "${LOG_DIR}"
 
+if [[ "${MODE}" == "dev" ]]; then
+  echo "Building product frontend bundle for ${PRODUCT_ENTRY_URL}"
+  echo "Frontend build command: npm run build"
+  pushd "${REPO_ROOT}/web" >/dev/null
+  npm run build
+  popd >/dev/null
+elif [[ ! -f "${REPO_ROOT}/web/dist/index.html" ]]; then
+  cat >&2 <<EOF
+Warning: web/dist/index.html was not found.
+The backend API will start, but ${PRODUCT_ENTRY_URL} cannot serve the product UI until the frontend is built.
+Build it with:
+  cd web && npm run build
+EOF
+fi
+
 if [[ -f "${PID_FILE}" ]]; then
   EXISTING_PID="$(cat "${PID_FILE}")"
   if [[ -n "${EXISTING_PID}" ]] && kill -0 "${EXISTING_PID}" >/dev/null 2>&1; then
-    echo "Error: MyQuant Web service is already running with PID ${EXISTING_PID}." >&2
+    echo "Error: Karkinos Web service is already running with PID ${EXISTING_PID}." >&2
     echo "Stop it first with ./scripts/stop_server.sh" >&2
     exit 1
   fi
@@ -142,7 +159,7 @@ fi
 if [[ "${MODE}" == "dev" && -f "${WEB_PID_FILE}" ]]; then
   EXISTING_WEB_PID="$(cat "${WEB_PID_FILE}")"
   if [[ -n "${EXISTING_WEB_PID}" ]] && kill -0 "${EXISTING_WEB_PID}" >/dev/null 2>&1; then
-    echo "Error: MyQuant Web frontend is already running with PID ${EXISTING_WEB_PID}." >&2
+    echo "Error: Karkinos Web frontend is already running with PID ${EXISTING_WEB_PID}." >&2
     echo "Stop it first with ./scripts/stop_server.sh" >&2
     exit 1
   fi
@@ -150,7 +167,7 @@ if [[ "${MODE}" == "dev" && -f "${WEB_PID_FILE}" ]]; then
 fi
 
 echo "Mode: ${MODE}"
-echo "Starting MyQuant Web service from ${REPO_ROOT}"
+echo "Starting Karkinos Web service from ${REPO_ROOT}"
 echo "Log file: ${LOG_FILE}"
 if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then
   echo "Command: ${ENV_PREFIX[*]} UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
@@ -178,20 +195,26 @@ fi
 echo "${TRACKED_PID}" > "${PID_FILE}"
 
 if ! kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
-  echo "Error: MyQuant Web service failed to start. Check ${LOG_FILE}" >&2
+  echo "Error: Karkinos Web service failed to start. Check ${LOG_FILE}" >&2
   rm -f "${PID_FILE}"
   exit 1
 fi
 
-echo "MyQuant Web service started with PID ${TRACKED_PID}"
+echo "Karkinos Web service started with PID ${TRACKED_PID}"
+if [[ -f "${REPO_ROOT}/web/dist/index.html" ]]; then
+  echo "Product entry: ${PRODUCT_ENTRY_URL}"
+  echo "Page refresh and direct links are served from web/dist via FastAPI."
+fi
 
 if [[ "${MODE}" != "dev" ]]; then
   exit 0
 fi
 
-echo "Starting MyQuant Web frontend from ${REPO_ROOT}/web"
+echo "Starting Karkinos Web frontend from ${REPO_ROOT}/web"
 echo "Frontend log file: ${WEB_LOG_FILE}"
 echo "Frontend command: npm run dev -- --host ${FRONTEND_HOST} --port ${FRONTEND_PORT}"
+echo "Hot-reload frontend: ${HOT_RELOAD_URL}"
+echo "Use ${PRODUCT_ENTRY_URL} for product-like customer flow; use ${HOT_RELOAD_URL} only while editing frontend code."
 
 pushd "${REPO_ROOT}/web" >/dev/null
 if command -v setsid >/dev/null 2>&1; then
@@ -212,13 +235,13 @@ fi
 echo "${TRACKED_WEB_PID}" > "${WEB_PID_FILE}"
 
 if ! kill -0 "${TRACKED_WEB_PID}" >/dev/null 2>&1; then
-  echo "Error: MyQuant Web frontend failed to start. Check ${WEB_LOG_FILE}" >&2
+  echo "Error: Karkinos Web frontend failed to start. Check ${WEB_LOG_FILE}" >&2
   rm -f "${WEB_PID_FILE}"
   exit 1
 fi
 
 cat <<EOF
-MyQuant dev environment started.
+Karkinos dev environment started.
 Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}
 Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}
 

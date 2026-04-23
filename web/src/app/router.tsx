@@ -18,9 +18,15 @@ import {
   useRiskSummaryQuery,
   useRiskWorkspaceQuery,
 } from "../features/account/api";
-import { EquityCurveCard } from "../features/account/components/equity-curve-card";
+import {
+  EquityCurveCard,
+  EquityCurveSkeleton,
+} from "../features/account/components/equity-curve-card";
 import { LiveHoldingsSummaryCard } from "../features/account/components/live-holdings-summary-card";
-import { OverviewCards } from "../features/account/components/overview-cards";
+import {
+  OverviewCards,
+  OverviewCardsSkeleton,
+} from "../features/account/components/overview-cards";
 import { PerformanceBreakdownCard } from "../features/account/components/performance-breakdown-card";
 import { RiskSummaryCard } from "../features/account/components/risk-summary-card";
 import {
@@ -158,7 +164,7 @@ function OverviewPage() {
   const explainability = useExplainabilityQuery();
 
   return (
-    <section className="space-y-5 sm:space-y-6">
+    <section className="space-y-3">
       <PageHeader
         kicker={copy.overview.kicker}
         title={copy.overview.title}
@@ -166,7 +172,22 @@ function OverviewPage() {
       />
 
       {overview.isLoading || snapshot.isLoading ? (
-        <StatusCard title={copy.states.loading} detail={copy.overview.loading} />
+        <div className="space-y-3">
+          <OverviewCardsSkeleton />
+          <section className="app-surface-section overflow-hidden rounded-xl">
+            <div className="app-surface-section-header">
+              <div>
+                <div className="app-product-mark">{copy.overview.kicker}</div>
+                <div className="mt-1.5 text-base font-semibold">
+                  {copy.overview.title}
+                </div>
+              </div>
+            </div>
+            <div className="app-surface-pane min-w-0">
+              <EquityCurveSkeleton />
+            </div>
+          </section>
+        </div>
       ) : overview.isError || snapshot.isError ? (
         <StatusCard
           tone="danger"
@@ -179,7 +200,7 @@ function OverviewPage() {
           }}
         />
       ) : overview.data && snapshot.data ? (
-        <div className="space-y-5 sm:space-y-6">
+        <div className="space-y-3">
           <OverviewCards overview={overview.data} />
           {liveHoldings.isLoading ? (
             <StatusCard title={copy.states.loading} detail={copy.overview.livePulse.loading} />
@@ -210,11 +231,11 @@ function OverviewPage() {
             drivers={explainability.data?.recent_drivers ?? []}
             isLoading={explainability.isLoading}
           />
-          <section className="app-surface-section overflow-hidden rounded-[28px]">
+          <section className="app-surface-section overflow-hidden rounded-xl">
             <div className="app-surface-section-header">
               <div>
                 <div className="app-product-mark">{copy.overview.kicker}</div>
-                <div className="mt-2 text-lg font-semibold sm:text-xl">
+                <div className="mt-1.5 text-base font-semibold">
                   {copy.overview.title}
                 </div>
               </div>
@@ -222,7 +243,7 @@ function OverviewPage() {
             <div className="grid gap-0 xl:grid-cols-[minmax(0,1.28fr)_minmax(340px,0.92fr)]">
               <div className="app-surface-pane min-w-0">
                 {equityCurve.isLoading ? (
-                  <StatusCard title={copy.states.loading} detail={copy.overview.curveLoading} />
+                  <EquityCurveSkeleton />
                 ) : equityCurve.isError ? (
                   <StatusCard
                     tone="danger"
@@ -241,13 +262,15 @@ function OverviewPage() {
                   snapshot={snapshot.data}
                   mode={mode}
                   onModeChange={setMode}
-                  accountLabel={copy.mode.accountShort}
-                  strategyLabel={copy.mode.strategyShort}
+                  accountLabel={copy.mode.account}
+                  strategyLabel={copy.mode.strategy}
                 />
               </div>
             </div>
           </section>
-          <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
+          <section className="app-surface-section overflow-hidden rounded-xl">
+            <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
+          </section>
         </div>
       ) : (
         <StatusCard title={copy.states.empty} detail={copy.overview.empty} />
@@ -437,8 +460,8 @@ function PortfolioPage() {
                 snapshot={snapshot.data}
                 mode={mode}
                 onModeChange={setMode}
-                accountLabel={copy.mode.accountShort}
-                strategyLabel={copy.mode.strategyShort}
+                accountLabel={copy.mode.account}
+                strategyLabel={copy.mode.strategy}
               />
               <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
               <AllocationCard items={filteredAllocation} />
@@ -1440,18 +1463,36 @@ function ExplainabilityCard({
   }
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-        {copy.explainability.title}
+    <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)]">
+      <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 sm:px-5">
+        <div className="app-kicker text-[10px] uppercase tracking-[0.18em]">
+          {copy.explainability.title}
+        </div>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        {(drivers.length > 0 ? drivers.slice(0, 3) : [{ title: copy.explainability.empty, detail: "", timestamp: "" }]).map((driver) => (
-          <div key={`${driver.title}-${driver.timestamp}`} className="app-panel-strong rounded-2xl px-4 py-4">
-            <div className="text-sm font-semibold">{driver.title}</div>
-            {driver.detail ? <div className="app-muted mt-2 text-sm">{driver.detail}</div> : null}
-            {driver.timestamp ? <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">{driver.timestamp}</div> : null}
-          </div>
-        ))}
+      <div className="grid divide-y divide-[color-mix(in_srgb,var(--app-border)_22%,transparent)] md:grid-cols-3 md:divide-x md:divide-y-0">
+        {(drivers.length > 0
+          ? drivers.slice(0, 3)
+          : [{ title: copy.explainability.empty, detail: "", timestamp: "" }]
+        ).map((driver) => (
+            <div
+              key={`${driver.title}-${driver.timestamp}`}
+              className="group relative px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
+            >
+              <span
+                className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-45 transition-opacity duration-200 group-hover:opacity-80"
+                aria-hidden="true"
+              />
+              <div className="text-sm font-medium tracking-[-0.01em]">{driver.title}</div>
+              {driver.detail ? (
+                <div className="app-muted mt-1.5 text-xs leading-5">{driver.detail}</div>
+              ) : null}
+              {driver.timestamp ? (
+                <div className="app-kicker mt-2 text-[10px] uppercase tracking-[0.16em]">
+                  {driver.timestamp}
+                </div>
+              ) : null}
+            </div>
+          ))}
       </div>
     </div>
   );
@@ -2192,12 +2233,12 @@ function StatusCard({
     <div
       className={
         tone === "danger"
-          ? "app-panel-danger rounded-2xl p-4 sm:p-5"
-          : "app-panel rounded-2xl p-4 sm:p-5"
+          ? "app-panel-danger rounded-xl p-4 sm:p-5"
+          : "rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 sm:p-5"
       }
     >
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-2 text-sm opacity-90">{detail}</div>
+      <div className="text-sm font-semibold tracking-[-0.01em]">{title}</div>
+      <div className="mt-2 text-sm opacity-80">{detail}</div>
       {actionLabel && onAction ? (
         <button
           type="button"
@@ -2221,7 +2262,7 @@ function PageHeader({
   subtitle: string;
 }) {
   return (
-    <header className="app-page-header">
+    <header className="app-page-header pb-1">
       <div className="app-product-mark">{kicker}</div>
       <h1 className="app-page-title">{title}</h1>
       <p className="app-page-subtitle">{subtitle}</p>

@@ -91,8 +91,8 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_82%,transparent)] px-4 py-3 text-xs shadow-[0_18px_60px_rgba(17,17,27,0.28)] backdrop-blur-xl">
-      <div className="mb-2 font-semibold text-[var(--app-text)]">
+    <div className="z-[90] rounded-xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-2.5 text-xs shadow-[0_14px_44px_rgba(17,17,27,0.22)] backdrop-blur-md tabular-nums">
+      <div className="mb-2 font-medium text-[var(--app-text)]">
         {new Date(point.timestamp).toLocaleDateString()}
       </div>
       <div className="space-y-1.5">
@@ -112,7 +112,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
                 />
                 {item.name}
               </span>
-              <span className="font-medium text-[var(--app-text)]">
+              <span className="font-medium tabular-nums text-[var(--app-text)]">
                 {formatCurrency(item.value)}
               </span>
             </div>
@@ -120,6 +120,43 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
         })}
       </div>
     </div>
+  );
+}
+
+export function EquityCurveSkeleton() {
+  return (
+    <section
+      data-testid="equity-curve-skeleton"
+      aria-hidden="true"
+      className="w-full animate-pulse bg-[color-mix(in_srgb,var(--app-surface-0)_0%,transparent)] px-0 py-1"
+    >
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="h-5 w-44 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_86%,transparent)]" />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-6 w-16 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_72%,transparent)]"
+              />
+            ))}
+          </div>
+        </div>
+        <div className="h-8 w-60 max-w-full rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_82%,transparent)]" />
+      </div>
+
+      <div className="relative h-[320px] overflow-hidden bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] sm:h-[380px]">
+        <div className="absolute inset-x-8 top-12 space-y-12">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-px bg-[color-mix(in_srgb,var(--app-surface-0)_68%,transparent)]"
+            />
+          ))}
+        </div>
+        <div className="absolute bottom-12 left-8 right-8 h-36 rounded-[55%_45%_50%_50%/60%_46%_54%_40%] border-t-2 border-[color-mix(in_srgb,var(--app-accent)_38%,transparent)] bg-gradient-to-t from-transparent to-[color-mix(in_srgb,var(--app-accent)_14%,transparent)]" />
+      </div>
+    </section>
   );
 }
 
@@ -137,17 +174,20 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
 
   if (points.length === 0) {
     return (
-      <section className="w-full px-0 py-2">
-        <div className="mb-5">
-          <div className="text-xl font-bold tracking-[-0.02em] text-[var(--app-text)]">
+      <section className="w-full px-0 py-1">
+        <div className="mb-3">
+          <div className="text-base font-semibold tracking-[-0.02em] text-[var(--app-text)]">
             {labels.title}
           </div>
         </div>
-        <div className="rounded-2xl bg-[color-mix(in_srgb,var(--app-panel)_42%,transparent)] p-4 sm:p-5">
-          <div className="text-base font-semibold">{labels.emptyTitle}</div>
-          <div className="app-muted mt-2 text-sm leading-6">{labels.emptyDetail}</div>
-          <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
-            {labels.emptyHint}
+        <div className="flex h-[320px] items-center justify-center border-y border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-6 text-center sm:h-[380px]">
+          <div>
+            <div className="text-sm font-medium text-[var(--app-subtext-0)]">
+              {labels.emptyPeriod}
+            </div>
+            <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
+              {labels.emptyHint}
+            </div>
           </div>
         </div>
       </section>
@@ -173,13 +213,13 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
   };
 
   return (
-    <section className="w-full px-0 py-2">
-      <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <div className="text-xl font-bold tracking-[-0.02em] text-[var(--app-text)] sm:text-2xl">
+    <section className="w-full px-0 py-1">
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="text-base font-semibold tracking-[-0.02em] text-[var(--app-text)]">
             {labels.title}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {SERIES_META.map((series) => {
               const active = visibleSeries[series.key];
               return (
@@ -194,10 +234,10 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
                       [series.key]: !current[series.key],
                     }))
                   }
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-300 ${
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-200 ${
                     active
-                      ? "border-[color-mix(in_srgb,var(--app-border)_62%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_52%,transparent)] text-[var(--app-text)] shadow-[inset_0_1px_0_color-mix(in_srgb,white_6%,transparent)]"
-                      : "border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:opacity-100"
+                      ? "bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] text-[var(--app-text)]"
+                      : "bg-transparent text-[var(--app-muted)] opacity-55 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_10%,transparent)] hover:opacity-100"
                   }`}
                 >
                   <span
@@ -211,9 +251,9 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
           </div>
         </div>
 
-        <div className="relative inline-flex w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_48%,transparent)] p-1 backdrop-blur-md">
+        <div className="relative inline-flex w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_30%,transparent)] p-0.5 backdrop-blur-md">
           <div
-            className="absolute bottom-1 top-1 w-[calc(100%/6)] rounded-full bg-[color-mix(in_srgb,var(--app-accent)_22%,transparent)] transition-transform duration-300 ease-out"
+            className="absolute bottom-0.5 top-0.5 w-[calc(100%/6)] rounded-full bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] transition-transform duration-300 ease-out"
             style={
               {
                 transform: `translateX(${Math.max(activeRangeIndex, 0) * 100}%)`,
@@ -230,7 +270,7 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
               onClick={() => {
                 startTransition(() => setRange(value));
               }}
-              className={`relative z-10 h-8 min-w-11 rounded-full px-3 text-xs font-semibold transition-colors duration-200 ${
+              className={`relative z-10 h-7 min-w-10 rounded-full px-2.5 text-[11px] font-semibold transition-colors duration-200 ${
                 range === value ? "text-[var(--app-accent)]" : "text-[var(--app-muted)]"
               }`}
             >
@@ -240,9 +280,9 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
         </div>
       </div>
 
-      <div className="h-[320px] w-full sm:h-[380px]">
+      <div className="-mx-4 h-[320px] w-[calc(100%+2rem)] border-y border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] sm:h-[380px]">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartPoints} margin={{ top: 18, right: 8, left: 0, bottom: 8 }}>
+          <AreaChart data={chartPoints} margin={{ top: 18, right: 4, left: -14, bottom: 8 }}>
             <defs>
               {SERIES_META.map((series) => (
                 <linearGradient
@@ -285,6 +325,7 @@ export function EquityCurveCard({ points }: { points: EquitySeriesPoint[] }) {
             <Tooltip
               content={<CustomTooltip />}
               cursor={{ stroke: "#cba6f7", strokeOpacity: 0.32, strokeWidth: 1 }}
+              wrapperStyle={{ zIndex: 90, outline: "none" }}
             />
             {SERIES_META.map((series) => {
               const active = visibleSeries[series.key];

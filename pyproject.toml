@@ -1,5 +1,5 @@
 [project]
-name = "myquant"
+name = "karkinos"
 version = "0.1.0"
 description = "个人量化交易辅助系统 - 面向中国市场"
 requires-python = ">=3.12"

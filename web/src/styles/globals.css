@@ -19,6 +19,7 @@
   --app-border: #45475a;
   --app-text: #cdd6f4;
   --app-muted: #a6adc8;
+  --app-subtext-0: #a6adc8;
   --app-soft: #bac2de;
   --app-foreground: #cdd6f4;
   --app-input: #313244;
@@ -45,9 +46,11 @@
   --app-surface-1: #45475a;
   --app-radius-lg: 14px;
   --app-radius-xl: 20px;
-  --app-shell-stroke: color-mix(in srgb, var(--app-border) 78%, transparent);
-  --app-shell-fill: color-mix(in srgb, var(--app-panel) 34%, transparent);
-  --app-shell-inset: color-mix(in srgb, var(--app-panel-strong) 32%, transparent);
+  --app-base: #1e1e2e;
+  --app-mantle: #181825;
+  --app-shell-stroke: color-mix(in srgb, var(--app-border) 30%, transparent);
+  --app-shell-fill: var(--app-base);
+  --app-shell-inset: color-mix(in srgb, var(--app-panel-strong) 18%, var(--app-base));
   background: var(--app-bg);
 }
 
@@ -61,6 +64,7 @@
   --app-border: #bcc0cc;
   --app-text: #4c4f69;
   --app-muted: #6c6f85;
+  --app-subtext-0: #6c6f85;
   --app-soft: #5c5f77;
   --app-foreground: #4c4f69;
   --app-input: #e6e9ef;
@@ -85,9 +89,11 @@
   --app-chart-label: #6c6f85;
   --app-surface-0: #ccd0da;
   --app-surface-1: #bcc0cc;
-  --app-shell-stroke: color-mix(in srgb, var(--app-border) 82%, transparent);
-  --app-shell-fill: color-mix(in srgb, var(--app-panel-strong) 48%, transparent);
-  --app-shell-inset: color-mix(in srgb, var(--app-panel) 42%, transparent);
+  --app-base: #eff1f5;
+  --app-mantle: #e6e9ef;
+  --app-shell-stroke: color-mix(in srgb, var(--app-border) 34%, transparent);
+  --app-shell-fill: var(--app-base);
+  --app-shell-inset: color-mix(in srgb, var(--app-panel-strong) 58%, var(--app-base));
 }
 
 :root[data-theme="dark"] {
@@ -98,10 +104,9 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top, var(--app-bg-accent), transparent 34%),
-    var(--app-bg);
+  background: var(--app-bg);
   color: var(--app-text);
+  font-variant-numeric: tabular-nums;
 }
 
 * {
@@ -125,8 +130,8 @@ select {
 }
 
 .app-shell-sidebar {
-  border-color: var(--app-border);
-  background: var(--app-sidebar);
+  border-color: color-mix(in srgb, var(--app-border) 34%, transparent);
+  background: var(--app-mantle);
 }
 
 .app-shell-main {
@@ -139,19 +144,21 @@ select {
 }
 
 .app-toolbar-shell {
-  border-color: var(--app-border);
-  background: var(--app-toolbar);
+  border-color: color-mix(in srgb, var(--app-border) 30%, transparent);
+  background: color-mix(in srgb, var(--app-surface-0) 50%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .app-panel {
-  border: 1px solid var(--app-border);
-  background: var(--app-panel);
+  border: 1px solid color-mix(in srgb, var(--app-border) 32%, transparent);
+  background: color-mix(in srgb, var(--app-surface-0) 24%, transparent);
   color: var(--app-text);
 }
 
 .app-panel-strong {
-  border: 1px solid var(--app-border);
-  background: var(--app-panel-strong);
+  border: 1px solid color-mix(in srgb, var(--app-border) 24%, transparent);
+  background: color-mix(in srgb, var(--app-panel-strong) 30%, transparent);
   color: var(--app-text);
 }
 
@@ -209,30 +216,63 @@ select {
 }
 
 .app-nav-item {
-  border: 1px solid transparent;
-  color: var(--app-muted);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  color: var(--app-subtext-0);
+}
+
+.app-nav-icon {
+  color: var(--app-subtext-0);
+  transition:
+    color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.app-nav-active-rail {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 3px;
+  border-radius: 9999px;
+  background: var(--app-accent);
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
 
 .app-nav-item:hover {
-  border-color: var(--app-border);
-  background: var(--app-accent-ghost);
+  background: color-mix(in srgb, var(--app-surface-0) 18%, transparent);
   color: var(--app-text);
 }
 
+.app-nav-item:hover .app-nav-icon {
+  color: var(--app-soft);
+}
+
 .app-nav-item-active {
-  border-color: var(--app-accent-border);
-  background: var(--app-accent);
-  color: var(--app-button-text);
+  background: color-mix(in srgb, var(--app-surface-0) 28%, transparent);
+  color: var(--app-text);
+}
+
+.app-nav-item-active .app-nav-icon {
+  color: var(--app-accent);
+}
+
+.app-nav-item-active .app-nav-active-rail {
+  opacity: 1;
 }
 
 .app-page-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .app-page-title {
-  font-size: clamp(1.5rem, 1.18rem + 0.9vw, 2rem);
+  font-size: clamp(1.28rem, 1.08rem + 0.62vw, 1.72rem);
   font-weight: 600;
   line-height: 1.08;
   letter-spacing: -0.02em;
@@ -241,7 +281,7 @@ select {
 .app-page-subtitle {
   max-width: 42rem;
   color: var(--app-muted);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -261,8 +301,8 @@ select {
 }
 
 .app-surface-section {
-  border: 1px solid color-mix(in srgb, var(--app-border) 78%, transparent);
-  background: color-mix(in srgb, var(--app-panel) 52%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-border) 30%, transparent);
+  background: color-mix(in srgb, var(--app-surface-0) 18%, transparent);
 }
 
 .app-surface-section-header {
@@ -270,16 +310,16 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 20px 0;
+  padding: 14px 16px 0;
 }
 
 .app-surface-pane {
-  border-color: color-mix(in srgb, var(--app-border) 72%, transparent);
-  padding: 20px;
+  border-color: color-mix(in srgb, var(--app-border) 30%, transparent);
+  padding: 16px;
 }
 
 .app-surface-pane-accent {
-  background: color-mix(in srgb, var(--app-panel-strong) 28%, transparent);
+  background: color-mix(in srgb, var(--app-panel-strong) 18%, transparent);
 }
 
 .app-surface-card {
@@ -291,9 +331,9 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  border: 1px solid color-mix(in srgb, var(--app-border) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-border) 30%, transparent);
   border-radius: 9999px;
-  background: color-mix(in srgb, var(--app-panel-strong) 24%, transparent);
+  background: color-mix(in srgb, var(--app-surface-0) 28%, transparent);
   padding: 2px;
 }
 
@@ -318,8 +358,8 @@ select {
 }
 
 .app-inline-segmented-btn-active {
-  background: color-mix(in srgb, var(--app-accent) 18%, transparent);
-  color: var(--app-text);
+  background: color-mix(in srgb, var(--app-accent) 14%, transparent);
+  color: var(--app-accent);
 }
 
 .app-surface-metric-row {
@@ -388,24 +428,24 @@ select {
 
 @media (min-width: 1024px) {
   .app-shell-sidebar {
-    border-width: 1px;
-    border-radius: var(--app-radius-xl);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
+    border-width: 0 1px 0 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .app-shell-main {
-    border-width: 1px;
-    border-radius: var(--app-radius-xl);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+    border-width: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .app-toolbar-shell {
-    border-top-left-radius: var(--app-radius-xl);
-    border-top-right-radius: var(--app-radius-xl);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
   }
 
   .app-shell-content {
-    border-bottom-left-radius: var(--app-radius-xl);
-    border-bottom-right-radius: var(--app-radius-xl);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 }

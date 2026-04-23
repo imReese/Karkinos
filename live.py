@@ -1,4 +1,4 @@
-"""MyQuant 实时信号监控入口。
+"""Karkinos 实时信号监控入口。
 
 盘中轮询行情，策略产生信号后通过微信/Telegram 推送买卖建议。
 仅做建议，不自动下单。
@@ -55,12 +55,12 @@ def main() -> None:
             asset_class=ac_str,
             timestamp=str(event.timestamp),
         )
-        notifier.send(title=f"MyQuant 信号: {event.symbol}", message=message)
+        notifier.send(title=f"Karkinos 信号: {event.symbol}", message=message)
 
     event_bus.subscribe(SignalEvent, on_signal)
 
     # 主循环
-    print(f"MyQuant 实时监控启动，关注 {len(watchlist)} 个标的")
+    print(f"Karkinos 实时监控启动，关注 {len(watchlist)} 个标的")
     print(f"轮询间隔: {config.live_poll_interval}s")
     print("按 Ctrl+C 退出\n")
 

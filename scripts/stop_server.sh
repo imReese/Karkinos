@@ -6,8 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PID_FILE="${REPO_ROOT}/.run/server.pid"
 WEB_PID_FILE="${REPO_ROOT}/.run/web.pid"
-BACKEND_PORT="${MYQUANT_BACKEND_PORT:-8000}"
-FRONTEND_PORT="${MYQUANT_FRONTEND_PORT:-5173}"
+BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
+FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 
 is_number() {
   [[ "${1:-}" =~ ^[0-9]+$ ]]
@@ -118,13 +118,13 @@ cleanup_orphans_by_port() {
   done <<< "${pids}"
 }
 
-stop_pid_file "${WEB_PID_FILE}" "MyQuant Web frontend"
-stop_pid_file "${PID_FILE}" "MyQuant Web service"
+stop_pid_file "${WEB_PID_FILE}" "Karkinos Web frontend"
+stop_pid_file "${PID_FILE}" "Karkinos Web service"
 
-cleanup_orphans_by_command "${REPO_ROOT}/web/node_modules/.bin/vite --host .* --port ${FRONTEND_PORT}" "MyQuant Web frontend"
-cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "MyQuant Web service"
-cleanup_orphans_by_command "uv run python -m server" "MyQuant Web service"
-cleanup_orphans_by_port "${FRONTEND_PORT}" "MyQuant Web frontend"
-cleanup_orphans_by_port "${BACKEND_PORT}" "MyQuant Web service"
+cleanup_orphans_by_command "${REPO_ROOT}/web/node_modules/.bin/vite --host .* --port ${FRONTEND_PORT}" "Karkinos Web frontend"
+cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service"
+cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service"
+cleanup_orphans_by_port "${FRONTEND_PORT}" "Karkinos Web frontend"
+cleanup_orphans_by_port "${BACKEND_PORT}" "Karkinos Web service"
 
-echo "MyQuant Web processes stopped."
+echo "Karkinos Web processes stopped."

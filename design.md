@@ -1,8 +1,8 @@
-# Design System Inspiration of MyQuant
+# Design System Inspiration of Karkinos
 
 ## 1. Visual Theme & Atmosphere
 
-MyQuant's current interface is a restrained portfolio workbench built for long-running daily use rather than short-lived campaign impact. The visual language combines an airy, near-white financial canvas with a graphite navigation rail and one dense dark “balance slab” used for the highest-signal financial number on the page. The result sits somewhere between Apple’s premium calm, GPT’s low-noise product surfaces, and a private-banking dashboard that has been simplified for a single operator.
+Karkinos's current interface is a restrained portfolio workbench built for long-running daily use rather than short-lived campaign impact. The visual language combines an airy, near-white financial canvas with a graphite navigation rail and one dense dark “balance slab” used for the highest-signal financial number on the page. The result sits somewhere between Apple’s premium calm, GPT’s low-noise product surfaces, and a private-banking dashboard that has been simplified for a single operator.
 
 This is not a trading terminal, and it should never drift into brokerage clutter. The homepage is intentionally quiet: large whitespace, few chromatic signals, clear numeric hierarchy, and compact operational modules. Most surfaces use translucent white with soft blur and low-contrast borders, allowing the background gradient to provide atmosphere without turning the UI into a decorative landing page. The dark sidebar and dark hero balance card create two anchors: navigation on the left, net-worth orientation on the right.
 
@@ -12,7 +12,7 @@ Typography is part of that restraint. The primary sans stack starts with Avenir 
 - Cool light canvas with subtle radial haze and no aggressive gradients
 - Graphite-black sidebar (`rgba(16, 17, 20, 0.92)`) as the persistent structural frame
 - Frosted white cards (`rgba(255, 255, 255, 0.72–0.74)`) with soft shadows and minimal border contrast
-- Single saturated action color: MyQuant Blue (`#2563eb`) used for primary actions and focus
+- Single saturated action color: Karkinos Blue (`#2563eb`) used for primary actions and focus
 - Controlled semantic accents only: teal cash, green profit, amber warning, red loss
 - Large financial numerals presented in monospace, especially in the dark hero slab
 - Dense but calm workspace layout: main action column + secondary state rail
@@ -45,8 +45,8 @@ Typography is part of that restraint. The primary sans stack starts with Avenir 
 
 ### Primary and Semantic Colors
 
-- **MyQuant Blue** (`#2563eb`): The single primary interactive color. Buttons, focus states, strong navigation/action emphasis.
-- **MyQuant Blue Hover** (`#1d4ed8`): Hover/pressed state for primary actions.
+- **Karkinos Blue** (`#2563eb`): The single primary interactive color. Buttons, focus states, strong navigation/action emphasis.
+- **Karkinos Blue Hover** (`#1d4ed8`): Hover/pressed state for primary actions.
 - **Cash Teal** (`#0f6f8f`): Cash-related values and icons.
 - **Profit Green** (`#1f8a70`): Positive PnL, healthy status states.
 - **Warning Amber** (`#d08700`): Alerts, caution, degraded state.

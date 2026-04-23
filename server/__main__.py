@@ -5,7 +5,7 @@ import os
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="MyQuant Server")
+    parser = argparse.ArgumentParser(description="Karkinos Server")
     parser.add_argument(
         "--host", default=None, help="监听地址 (默认读 config.json 或 0.0.0.0)"
     )
@@ -31,8 +31,8 @@ def main() -> None:
         config = None
 
     # 优先级：CLI 参数 > 环境变量 > config.json > 默认值
-    env_host = os.environ.get("MYQUANT_HOST") or None
-    env_port = int(os.environ.get("MYQUANT_PORT", "0")) or None
+    env_host = os.environ.get("KARKINOS_HOST") or None
+    env_port = int(os.environ.get("KARKINOS_PORT", "0")) or None
     host = args.host or env_host or (config.host if config else "0.0.0.0")
     port = args.port or env_port or (config.port if config else 8000)
     reload = args.reload
@@ -41,9 +41,9 @@ def main() -> None:
     from server.app import create_app
 
     if args.no_live:
-        os.environ["MYQUANT_LIVE_AUTO_START"] = "false"
+        os.environ["KARKINOS_LIVE_AUTO_START"] = "false"
     else:
-        os.environ.pop("MYQUANT_LIVE_AUTO_START", None)
+        os.environ.pop("KARKINOS_LIVE_AUTO_START", None)
 
     if reload:
         uvicorn.run(

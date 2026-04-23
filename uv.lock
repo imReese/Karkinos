@@ -981,7 +981,7 @@ wheels = [
 ]
 
 [[package]]
-name = "myquant"
+name = "karkinos"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

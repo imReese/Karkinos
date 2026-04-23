@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
 
 from server.bridge import EventBusBridge
@@ -20,6 +21,7 @@ from server.scheduler import TradingScheduler
 from server.ws.hub import ConnectionHub
 
 logger = logging.getLogger(__name__)
+_SPA_RESERVED_PREFIXES = {"api", "ws"}
 
 
 def _env_flag(name: str) -> bool | None:
@@ -77,16 +79,29 @@ def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
         logger.warning("Failed to confirm pending fund orders during startup", exc_info=True)
 
 
+def _is_spa_fallback_path(path: str) -> bool:
+    requested = Path(path)
+    if requested.suffix:
+        return False
+    first_part = requested.parts[0] if requested.parts else ""
+    return first_part not in _SPA_RESERVED_PREFIXES
+
+
 class SPAStaticFiles(StaticFiles):
     """StaticFiles with SPA index fallback for client-side routes."""
 
     async def get_response(self, path: str, scope):
-        response = await super().get_response(path, scope)
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or not _is_spa_fallback_path(path):
+                raise
+            return await super().get_response("index.html", scope)
+
         if response.status_code != 404:
             return response
 
-        requested = Path(path)
-        if requested.suffix:
+        if not _is_spa_fallback_path(path):
             return response
 
         return await super().get_response("index.html", scope)
@@ -155,7 +170,7 @@ async def lifespan(app: FastAPI):
     if config.live_auto_start:
         scheduler.start()
 
-    logger.info("MyQuant Server started")
+    logger.info("Karkinos Server started")
 
     yield
 
@@ -168,18 +183,18 @@ async def lifespan(app: FastAPI):
 
     scheduler.stop()
     bridge.stop()
-    logger.info("MyQuant Server stopped")
+    logger.info("Karkinos Server stopped")
 
 
 def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     """创建 FastAPI 应用实例。"""
     effective_overrides = dict(config_overrides or {})
-    env_live_auto_start = _env_flag("MYQUANT_LIVE_AUTO_START")
+    env_live_auto_start = _env_flag("KARKINOS_LIVE_AUTO_START")
     if env_live_auto_start is not None:
         effective_overrides.setdefault("live_auto_start", env_live_auto_start)
 
     app = FastAPI(
-        title="MyQuant Server",
+        title="Karkinos Server",
         description="个人量化交易辅助系统",
         version="0.1.0",
         lifespan=lifespan,
