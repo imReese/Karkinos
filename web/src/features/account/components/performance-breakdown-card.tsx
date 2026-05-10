@@ -1,20 +1,9 @@
-import { useCopy } from "../../../app/copy";
-import type { AccountOverview } from "../api";
-import type { PortfolioSnapshot } from "../../portfolio/api";
+import { useCopy } from '../../../app/copy';
+import { formatCurrency, formatPercent } from '../../../shared/format';
+import type { AccountOverview } from '../api';
+import type { PortfolioSnapshot } from '../../portfolio/api';
 
-const currency = new Intl.NumberFormat("zh-CN", {
-  style: "currency",
-  currency: "CNY",
-  maximumFractionDigits: 2,
-});
-
-const percent = new Intl.NumberFormat("zh-CN", {
-  style: "percent",
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-
-type BreakdownMode = "account" | "strategy";
+type BreakdownMode = 'account' | 'strategy';
 
 export function PerformanceBreakdownCard({
   overview,
@@ -39,48 +28,48 @@ export function PerformanceBreakdownCard({
     snapshot.total_equity > 0 ? investedCapital / snapshot.total_equity : 0;
 
   const items =
-    mode === "account"
+    mode === 'account'
       ? [
           {
             label: labels.marketValue,
-            value: currency.format(investedCapital),
+            value: formatCurrency(investedCapital),
             hint: labels.activePositions(overview.positions_count),
           },
           {
             label: labels.cashReserve,
-            value: currency.format(snapshot.cash),
-            hint: percent.format(overview.cash_ratio),
+            value: formatCurrency(snapshot.cash),
+            hint: formatPercent(overview.cash_ratio),
           },
           {
             label: labels.netDeposits,
-            value: currency.format(snapshot.total_deposits),
+            value: formatCurrency(snapshot.total_deposits),
             hint: labels.capitalBase,
           },
           {
             label: labels.deployment,
-            value: percent.format(deploymentRatio),
+            value: formatPercent(deploymentRatio),
             hint: labels.capitalAtWork,
           },
         ]
       : [
           {
             label: labels.unrealizedPnl,
-            value: currency.format(overview.unrealized_pnl),
+            value: formatCurrency(overview.unrealized_pnl),
             hint: labels.openPositions,
           },
           {
             label: labels.realizedPnl,
-            value: currency.format(overview.realized_pnl),
+            value: formatCurrency(overview.realized_pnl),
             hint: labels.closedActivity,
           },
           {
             label: labels.totalPnl,
-            value: currency.format(totalPnl),
+            value: formatCurrency(totalPnl),
             hint: labels.totalPnlHint,
           },
           {
             label: labels.payoutBuffer,
-            value: currency.format(snapshot.cash),
+            value: formatCurrency(snapshot.cash),
             hint: labels.payoutBufferHint,
           },
         ];
@@ -90,10 +79,10 @@ export function PerformanceBreakdownCard({
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="app-kicker text-[10px] uppercase tracking-[0.18em]">
-            {mode === "account" ? labels.accountKicker : labels.strategyKicker}
+            {mode === 'account' ? labels.accountKicker : labels.strategyKicker}
           </div>
-          <div className="mt-1.5 text-base font-semibold tracking-[-0.02em]">
-            {mode === "account" ? labels.accountTitle : labels.strategyTitle}
+          <div className="app-card-title mt-1.5">
+            {mode === 'account' ? labels.accountTitle : labels.strategyTitle}
           </div>
         </div>
         <div
@@ -101,8 +90,8 @@ export function PerformanceBreakdownCard({
           className="app-inline-segmented shrink-0 rounded-full"
         >
           {[
-            { value: "account", label: accountLabel },
-            { value: "strategy", label: strategyLabel },
+            { value: 'account', label: accountLabel },
+            { value: 'strategy', label: strategyLabel },
           ].map((item) => (
             <button
               key={item.value}
@@ -110,7 +99,7 @@ export function PerformanceBreakdownCard({
               aria-pressed={mode === item.value}
               onClick={() => onModeChange(item.value as BreakdownMode)}
               className={`app-inline-segmented-btn ${
-                mode === item.value ? "app-inline-segmented-btn-active" : ""
+                mode === item.value ? 'app-inline-segmented-btn-active' : ''
               }`}
             >
               {item.label}
@@ -124,17 +113,17 @@ export function PerformanceBreakdownCard({
           <div
             key={item.label}
             className={`px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] ${
-              index > 0 ? "border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]" : ""
-            } ${
-              index === 1 ? "sm:border-t-0" : ""
-            } ${
-              index % 2 === 1 ? "sm:border-l sm:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]" : ""
+              index > 0
+                ? 'border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]'
+                : ''
+            } ${index === 1 ? 'sm:border-t-0' : ''} ${
+              index % 2 === 1
+                ? 'sm:border-l sm:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]'
+                : ''
             }`}
           >
-            <div className="app-kicker text-[10px] uppercase tracking-[0.16em]">
-              {item.label}
-            </div>
-            <div className="mt-2 text-lg font-medium tracking-[-0.02em] tabular-nums">
+            <div className="app-kicker app-tier-4-label">{item.label}</div>
+            <div className="mt-2 text-lg font-semibold tracking-[-0.02em] tabular-nums">
               {item.value}
             </div>
             <div className="app-muted mt-1.5 text-xs">{item.hint}</div>

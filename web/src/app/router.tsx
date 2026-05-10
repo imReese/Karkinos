@@ -1,36 +1,37 @@
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode } from 'react';
 import {
   createRoute,
   createRootRoute,
   createRouter,
   Outlet,
   useNavigate,
-} from "@tanstack/react-router";
+} from '@tanstack/react-router';
 
-import { useCopy, type AppCopy } from "./copy";
-import { ToastStack, type ToastItem } from "./components/toast-stack";
-import { AppShell } from "./layout/app-shell";
+import { useCopy, type AppCopy } from './copy';
+import { ToastStack, type ToastItem } from './components/toast-stack';
+import { AppShell } from './layout/app-shell';
 import {
   useAccountOverviewQuery,
+  type EquityCurveRange,
   useAccountStateQuery,
   useExplainabilityQuery,
   useEquityCurveSeriesQuery,
   useRiskSummaryQuery,
   useRiskWorkspaceQuery,
-} from "../features/account/api";
+} from '../features/account/api';
 import {
   EquityCurveCard,
   EquityCurveSkeleton,
-} from "../features/account/components/equity-curve-card";
-import { LiveHoldingsSummaryCard } from "../features/account/components/live-holdings-summary-card";
+} from '../features/account/components/equity-curve-card';
+import { LiveHoldingsSummaryCard } from '../features/account/components/live-holdings-summary-card';
 import {
   OverviewCards,
   OverviewCardsSkeleton,
-} from "../features/account/components/overview-cards";
-import { PerformanceBreakdownCard } from "../features/account/components/performance-breakdown-card";
-import { RiskSummaryCard } from "../features/account/components/risk-summary-card";
-import { KillSwitchPanel } from "../features/trading/components/kill-switch-panel";
-import { OrderApprovalTable } from "../features/trading/components/order-approval-table";
+} from '../features/account/components/overview-cards';
+import { PerformanceBreakdownCard } from '../features/account/components/performance-breakdown-card';
+import { RiskSummaryCard } from '../features/account/components/risk-summary-card';
+import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
+import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
 import {
   useCreateAdjustmentMutation,
   useCreateCashFlowMutation,
@@ -38,40 +39,40 @@ import {
   useCreateTradeMutation,
   useLedgerEntriesQuery,
   usePendingFundOrdersQuery,
-} from "../features/activity/api";
-import { ActivityFeed } from "../features/activity/components/activity-feed";
+} from '../features/activity/api';
+import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
   CashFlowForm,
   type CashFlowFormValues,
-} from "../features/activity/components/cash-flow-form";
+} from '../features/activity/components/cash-flow-form';
 import {
   DividendForm,
   type DividendFormValues,
-} from "../features/activity/components/dividend-form";
+} from '../features/activity/components/dividend-form';
 import {
   ManualAdjustmentForm,
   type ManualAdjustmentFormValues,
-} from "../features/activity/components/manual-adjustment-form";
+} from '../features/activity/components/manual-adjustment-form';
 import {
   TradeForm,
   type TradeFormValues,
-} from "../features/activity/components/trade-form";
+} from '../features/activity/components/trade-form';
 import {
   FundBatchForm,
   type FundBatchFormValues,
-} from "../features/activity/components/fund-batch-form";
+} from '../features/activity/components/fund-batch-form';
 import {
   type AllocationGroup,
   type AllocationItem,
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
   usePositionsQuery,
-} from "../features/portfolio/api";
-import { AllocationCard } from "../features/portfolio/components/allocation-card";
-import { AllocationGroupsCard } from "../features/portfolio/components/allocation-groups-card";
-import { LiveHoldingsBoard } from "../features/portfolio/components/live-holdings-board";
-import { PositionsTable } from "../features/portfolio/components/positions-table";
-import { WorkspaceToolbar } from "../features/portfolio/components/workspace-toolbar";
+} from '../features/portfolio/api';
+import { AllocationCard } from '../features/portfolio/components/allocation-card';
+import { AllocationGroupsCard } from '../features/portfolio/components/allocation-groups-card';
+import { LiveHoldingsBoard } from '../features/portfolio/components/live-holdings-board';
+import { PositionsTable } from '../features/portfolio/components/positions-table';
+import { WorkspaceToolbar } from '../features/portfolio/components/workspace-toolbar';
 import {
   useAddWatchlistItemMutation,
   useCreateResearchNoteMutation,
@@ -81,11 +82,16 @@ import {
   useResearchBoardQuery,
   useResearchNotesQuery,
   useRemoveWatchlistItemMutation,
-} from "../features/market/api";
+} from '../features/market/api';
+import {
+  formatCurrency as formatCurrencyValue,
+  formatPercent as formatPercentValue,
+  formatQuantity,
+} from '../shared/format';
 
 type PortfolioSearchState = {
   assetClass: string;
-  pnl: "all" | "winners" | "losers";
+  pnl: 'all' | 'winners' | 'losers';
   q: string;
 };
 
@@ -99,48 +105,50 @@ const rootRoute = createRootRoute({
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: '/',
   component: OverviewPage,
 });
 
 const portfolioRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/portfolio",
+  path: '/portfolio',
   validateSearch: (search: Record<string, unknown>) => ({
     assetClass:
-      typeof search.assetClass === "string" && search.assetClass.length > 0
+      typeof search.assetClass === 'string' && search.assetClass.length > 0
         ? search.assetClass
-        : "all",
+        : 'all',
     pnl:
-      search.pnl === "winners" || search.pnl === "losers" || search.pnl === "all"
+      search.pnl === 'winners' ||
+      search.pnl === 'losers' ||
+      search.pnl === 'all'
         ? search.pnl
-        : "all",
-    q: typeof search.q === "string" ? search.q : "",
+        : 'all',
+    q: typeof search.q === 'string' ? search.q : '',
   }),
   component: PortfolioPage,
 });
 
 const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/activity",
+  path: '/activity',
   component: ActivityPage,
 });
 
 const riskRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/risk",
+  path: '/risk',
   component: RiskPage,
 });
 
 const marketRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/market",
+  path: '/market',
   component: MarketPage,
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/settings",
+  path: '/settings',
   component: PlaceholderPage,
 });
 
@@ -158,11 +166,13 @@ export const router = createRouter({ routeTree });
 function OverviewPage() {
   const copy = useCopy();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"account" | "strategy">("account");
+  const [mode, setMode] = useState<'account' | 'strategy'>('account');
+  const [equityCurveRange, setEquityCurveRange] =
+    useState<EquityCurveRange>('1m');
   const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
-  const equityCurve = useEquityCurveSeriesQuery();
+  const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
   const explainability = useExplainabilityQuery();
 
   return (
@@ -180,7 +190,7 @@ function OverviewPage() {
             <div className="app-surface-section-header">
               <div>
                 <div className="app-product-mark">{copy.overview.kicker}</div>
-                <div className="mt-1.5 text-base font-semibold">
+                <div className="app-card-title mt-1.5">
                   {copy.overview.title}
                 </div>
               </div>
@@ -205,7 +215,10 @@ function OverviewPage() {
         <div className="space-y-3">
           <OverviewCards overview={overview.data} />
           {liveHoldings.isLoading ? (
-            <StatusCard title={copy.states.loading} detail={copy.overview.livePulse.loading} />
+            <StatusCard
+              title={copy.states.loading}
+              detail={copy.overview.livePulse.loading}
+            />
           ) : liveHoldings.isError ? (
             <StatusCard
               tone="danger"
@@ -219,11 +232,11 @@ function OverviewPage() {
               groups={liveHoldings.data?.groups ?? []}
               onSelectAssetClass={(assetClass) => {
                 void navigate({
-                  to: "/portfolio",
+                  to: '/portfolio',
                   search: {
                     assetClass,
-                    pnl: "all",
-                    q: "",
+                    pnl: 'all',
+                    q: '',
                   },
                 });
               }}
@@ -237,7 +250,7 @@ function OverviewPage() {
             <div className="app-surface-section-header">
               <div>
                 <div className="app-product-mark">{copy.overview.kicker}</div>
-                <div className="mt-1.5 text-base font-semibold">
+                <div className="app-card-title mt-1.5">
                   {copy.overview.title}
                 </div>
               </div>
@@ -255,7 +268,10 @@ function OverviewPage() {
                     onAction={() => void equityCurve.refetch()}
                   />
                 ) : (
-                  <EquityCurveCard points={equityCurve.data ?? []} />
+                  <EquityCurveCard
+                    points={equityCurve.data ?? []}
+                    onRangeChange={setEquityCurveRange}
+                  />
                 )}
               </div>
               <div className="app-surface-pane app-surface-pane-accent min-w-0 xl:border-l">
@@ -271,7 +287,10 @@ function OverviewPage() {
             </div>
           </section>
           <section className="app-surface-section overflow-hidden rounded-xl">
-            <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
+            <RiskSummaryCard
+              overview={overview.data}
+              snapshot={snapshot.data}
+            />
           </section>
         </div>
       ) : (
@@ -285,7 +304,7 @@ function PortfolioPage() {
   const copy = useCopy();
   const navigate = useNavigate();
   const searchState = portfolioRoute.useSearch();
-  const [mode, setMode] = useState<"account" | "strategy">("account");
+  const [mode, setMode] = useState<'account' | 'strategy'>('account');
   const overview = useAccountOverviewQuery();
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
@@ -293,7 +312,7 @@ function PortfolioPage() {
   const explainability = useExplainabilityQuery();
   const search = searchState.q;
   const assetClassFilter = searchState.assetClass;
-  const pnlFilter = searchState.pnl as "all" | "winners" | "losers";
+  const pnlFilter = searchState.pnl as 'all' | 'winners' | 'losers';
 
   const allocationBySymbol = new Map(
     (snapshot.data?.allocation ?? []).map((item) => [item.symbol, item]),
@@ -302,20 +321,23 @@ function PortfolioPage() {
     new Set((snapshot.data?.allocation ?? []).map((item) => item.asset_class)),
   );
   const filteredPositions = (positions.data ?? []).filter((position) => {
-    const assetClass = allocationBySymbol.get(position.symbol)?.asset_class ?? "unknown";
+    const assetClass =
+      allocationBySymbol.get(position.symbol)?.asset_class ?? 'unknown';
     const matchesSearch =
       search.trim().length === 0 ||
       position.symbol.toLowerCase().includes(search.trim().toLowerCase());
     const matchesAssetClass =
-      assetClassFilter === "all" || assetClass === assetClassFilter;
+      assetClassFilter === 'all' || assetClass === assetClassFilter;
     const matchesPnl =
-      pnlFilter === "all" ||
-      (pnlFilter === "winners" && position.unrealized_pnl >= 0) ||
-      (pnlFilter === "losers" && position.unrealized_pnl < 0);
+      pnlFilter === 'all' ||
+      (pnlFilter === 'winners' && position.unrealized_pnl >= 0) ||
+      (pnlFilter === 'losers' && position.unrealized_pnl < 0);
     return matchesSearch && matchesAssetClass && matchesPnl;
   });
 
-  const filteredSymbols = new Set(filteredPositions.map((position) => position.symbol));
+  const filteredSymbols = new Set(
+    filteredPositions.map((position) => position.symbol),
+  );
   const filteredAllocation = (snapshot.data?.allocation ?? []).filter((item) =>
     filteredSymbols.has(item.symbol),
   );
@@ -329,20 +351,29 @@ function PortfolioPage() {
           item.symbol.toLowerCase().includes(search.trim().toLowerCase()) ||
           item.name.toLowerCase().includes(search.trim().toLowerCase());
         const matchesAssetClass =
-          assetClassFilter === "all" || group.asset_class === assetClassFilter;
+          assetClassFilter === 'all' || group.asset_class === assetClassFilter;
         const matchesPnl =
-          pnlFilter === "all" ||
-          (pnlFilter === "winners" && item.since_buy_pnl >= 0) ||
-          (pnlFilter === "losers" && item.since_buy_pnl < 0);
+          pnlFilter === 'all' ||
+          (pnlFilter === 'winners' && item.since_buy_pnl >= 0) ||
+          (pnlFilter === 'losers' && item.since_buy_pnl < 0);
         return matchesSearch && matchesAssetClass && matchesPnl;
       }),
     }))
     .filter((group) => group.items.length > 0)
     .map((group) => ({
       ...group,
-      total_market_value: group.items.reduce((sum, item) => sum + item.market_value, 0),
-      total_today_change: group.items.reduce((sum, item) => sum + (item.today_change ?? 0), 0),
-      total_since_buy_pnl: group.items.reduce((sum, item) => sum + item.since_buy_pnl, 0),
+      total_market_value: group.items.reduce(
+        (sum, item) => sum + item.market_value,
+        0,
+      ),
+      total_today_change: group.items.reduce(
+        (sum, item) => sum + (item.today_change ?? 0),
+        0,
+      ),
+      total_since_buy_pnl: group.items.reduce(
+        (sum, item) => sum + item.since_buy_pnl,
+        0,
+      ),
     }));
 
   return (
@@ -359,7 +390,7 @@ function PortfolioPage() {
         search={search}
         onSearchChange={(value) => {
           void navigate({
-            to: "/portfolio",
+            to: '/portfolio',
             search: (current: PortfolioSearchState) => ({
               ...current,
               q: value,
@@ -370,7 +401,7 @@ function PortfolioPage() {
         assetClassFilter={assetClassFilter}
         onAssetClassFilterChange={(value) => {
           void navigate({
-            to: "/portfolio",
+            to: '/portfolio',
             search: (current: PortfolioSearchState) => ({
               ...current,
               assetClass: value,
@@ -380,7 +411,7 @@ function PortfolioPage() {
         pnlFilter={pnlFilter}
         onPnlFilterChange={(value) => {
           void navigate({
-            to: "/portfolio",
+            to: '/portfolio',
             search: (current: PortfolioSearchState) => ({
               ...current,
               pnl: value,
@@ -393,7 +424,10 @@ function PortfolioPage() {
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.95fr)]">
         <div className="min-w-0 space-y-5 sm:space-y-6">
           {liveHoldings.isLoading ? (
-            <StatusCard title={copy.states.loading} detail={copy.portfolio.liveBoard.loading} />
+            <StatusCard
+              title={copy.states.loading}
+              detail={copy.portfolio.liveBoard.loading}
+            />
           ) : liveHoldings.isError ? (
             <StatusCard
               tone="danger"
@@ -410,7 +444,10 @@ function PortfolioPage() {
             isLoading={explainability.isLoading}
           />
           {positions.isLoading ? (
-            <StatusCard title={copy.states.loading} detail={copy.portfolio.positionsLoading} />
+            <StatusCard
+              title={copy.states.loading}
+              detail={copy.portfolio.positionsLoading}
+            />
           ) : positions.isError ? (
             <StatusCard
               tone="danger"
@@ -432,10 +469,9 @@ function PortfolioPage() {
             <PositionsTable
               positions={filteredPositions}
               assetClassBySymbol={Object.fromEntries(
-                Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
-                  symbol,
-                  item.asset_class,
-                ]),
+                Array.from(allocationBySymbol.entries()).map(
+                  ([symbol, item]) => [symbol, item.asset_class],
+                ),
               )}
             />
           )}
@@ -443,7 +479,10 @@ function PortfolioPage() {
 
         <div className="min-w-0 space-y-5 sm:space-y-6">
           {snapshot.isLoading || overview.isLoading ? (
-            <StatusCard title={copy.states.loading} detail={copy.portfolio.sidebarLoading} />
+            <StatusCard
+              title={copy.states.loading}
+              detail={copy.portfolio.sidebarLoading}
+            />
           ) : snapshot.isError || overview.isError ? (
             <StatusCard
               tone="danger"
@@ -465,12 +504,18 @@ function PortfolioPage() {
                 accountLabel={copy.mode.account}
                 strategyLabel={copy.mode.strategy}
               />
-              <RiskSummaryCard overview={overview.data} snapshot={snapshot.data} />
+              <RiskSummaryCard
+                overview={overview.data}
+                snapshot={snapshot.data}
+              />
               <AllocationCard items={filteredAllocation} />
               <AllocationGroupsCard groups={filteredGroups} />
             </>
           ) : (
-            <StatusCard title={copy.states.empty} detail={copy.portfolio.sidebarEmpty} />
+            <StatusCard
+              title={copy.states.empty}
+              detail={copy.portfolio.sidebarEmpty}
+            />
           )}
         </div>
       </div>
@@ -483,9 +528,9 @@ function RiskPage() {
   const state = useAccountStateQuery();
   const risks = useRiskSummaryQuery();
   const workspace = useRiskWorkspaceQuery();
-  const [timelineFromDate, setTimelineFromDate] = useState("");
-  const [timelineToDate, setTimelineToDate] = useState("");
-  const [timelineEventKind, setTimelineEventKind] = useState("");
+  const [timelineFromDate, setTimelineFromDate] = useState('');
+  const [timelineToDate, setTimelineToDate] = useState('');
+  const [timelineEventKind, setTimelineEventKind] = useState('');
   const explainability = useExplainabilityQuery({
     from_date: timelineFromDate || undefined,
     to_date: timelineToDate || undefined,
@@ -501,9 +546,20 @@ function RiskPage() {
       />
 
       {state.isLoading || risks.isLoading || workspace.isLoading ? (
-        <StatusCard title={copy.states.loading} detail={copy.riskPage.loading} />
-      ) : state.isError || risks.isError || workspace.isError || !state.data || !workspace.data ? (
-        <StatusCard title={copy.states.error} detail={copy.riskPage.error} tone="danger" />
+        <StatusCard
+          title={copy.states.loading}
+          detail={copy.riskPage.loading}
+        />
+      ) : state.isError ||
+        risks.isError ||
+        workspace.isError ||
+        !state.data ||
+        !workspace.data ? (
+        <StatusCard
+          title={copy.states.error}
+          detail={copy.riskPage.error}
+          tone="danger"
+        />
       ) : (
         <div className="space-y-5 sm:space-y-6">
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -513,11 +569,16 @@ function RiskPage() {
 
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {workspace.data.metrics.map((metric) => (
-              <div key={metric.key} className="app-panel rounded-2xl p-4 sm:p-5">
+              <div
+                key={metric.key}
+                className="app-panel rounded-2xl p-4 sm:p-5"
+              >
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {getRiskMetricLabel(copy, metric.key)}
                 </div>
-                <div className="mt-3 text-2xl font-semibold">{metric.display_value}</div>
+                <div className="mt-3 text-2xl font-semibold">
+                  {metric.display_value}
+                </div>
                 <div className="app-muted mt-2 text-sm">
                   {getRiskMetricDetail(copy, metric.key)}
                 </div>
@@ -535,9 +596,9 @@ function RiskPage() {
                   <div
                     key={`${item.kind}-${item.title}`}
                     className={`rounded-2xl border px-4 py-4 ${
-                      item.level === "high" || item.level === "medium"
-                        ? "app-panel-danger"
-                        : "app-panel-strong"
+                      item.level === 'high' || item.level === 'medium'
+                        ? 'app-panel-danger'
+                        : 'app-panel-strong'
                     }`}
                   >
                     <div className="text-sm font-semibold">{item.title}</div>
@@ -555,7 +616,9 @@ function RiskPage() {
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {copy.riskPage.nextStep}
                 </div>
-                <div className="mt-3 text-lg font-semibold">{state.data.next_step}</div>
+                <div className="mt-3 text-lg font-semibold">
+                  {state.data.next_step}
+                </div>
               </div>
             </div>
           </div>
@@ -576,22 +639,27 @@ function RiskPage() {
                 </div>
                 <div className="mt-4 grid gap-3">
                   {workspace.data.exposure_buckets.map((bucket) => (
-                    <div key={bucket.bucket} className="app-panel-strong rounded-2xl px-4 py-4">
+                    <div
+                      key={bucket.bucket}
+                      className="app-panel-strong rounded-2xl px-4 py-4"
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold">
                           {getRiskBucketLabel(copy, bucket.bucket)}
                         </div>
-                        <div className="text-sm font-medium">
-                          {Math.round(bucket.weight * 1000) / 10}%
+                        <div className="text-sm font-semibold tabular-nums">
+                          {formatPercentValue(bucket.weight)}
                         </div>
                       </div>
                       <div className="app-muted mt-2 text-sm">
-                        {formatCurrency(bucket.value)} ·{" "}
-                        {copy.overview.risk.positionsHint(bucket.positions_count)}
+                        {formatCurrency(bucket.value)} ·{' '}
+                        {copy.overview.risk.positionsHint(
+                          bucket.positions_count,
+                        )}
                       </div>
                       {bucket.symbols.length > 0 ? (
                         <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
-                          {bucket.symbols.join(" · ")}
+                          {bucket.symbols.join(' · ')}
                         </div>
                       ) : null}
                     </div>
@@ -606,21 +674,29 @@ function RiskPage() {
                 <div className="mt-4 grid gap-3">
                   {workspace.data.concentration.length > 0 ? (
                     workspace.data.concentration.map((item) => (
-                      <div key={item.symbol} className="app-panel-strong rounded-2xl px-4 py-4">
+                      <div
+                        key={item.symbol}
+                        className="app-panel-strong rounded-2xl px-4 py-4"
+                      >
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-semibold">{item.symbol}</div>
-                          <div className="text-sm font-medium">
-                            {Math.round(item.weight * 1000) / 10}%
+                          <div className="text-sm font-semibold">
+                            {item.symbol}
+                          </div>
+                          <div className="text-sm font-semibold tabular-nums">
+                            {formatPercentValue(item.weight)}
                           </div>
                         </div>
                         <div className="app-muted mt-2 text-sm">
-                          {formatCurrency(item.market_value)} ·{" "}
-                          {copy.portfolio.table.unrealized} {formatCurrency(item.unrealized_pnl)}
+                          {formatCurrency(item.market_value)} ·{' '}
+                          {copy.portfolio.table.unrealized}{' '}
+                          {formatCurrency(item.unrealized_pnl)}
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="app-muted text-sm">{copy.riskPage.noConcentration}</div>
+                    <div className="app-muted text-sm">
+                      {copy.riskPage.noConcentration}
+                    </div>
                   )}
                 </div>
               </div>
@@ -637,17 +713,23 @@ function RiskPage() {
             filters={
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.noteDateFrom}</span>
+                  <span className="text-sm font-medium">
+                    {copy.market.noteDateFrom}
+                  </span>
                   <input
                     type="date"
                     value={timelineFromDate}
-                    onChange={(event) => setTimelineFromDate(event.target.value)}
+                    onChange={(event) =>
+                      setTimelineFromDate(event.target.value)
+                    }
                     className="app-field rounded-xl px-3 py-2 text-sm"
                     aria-label={copy.market.noteDateFrom}
                   />
                 </label>
                 <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.noteDateTo}</span>
+                  <span className="text-sm font-medium">
+                    {copy.market.noteDateTo}
+                  </span>
                   <input
                     type="date"
                     value={timelineToDate}
@@ -662,17 +744,31 @@ function RiskPage() {
                   </span>
                   <select
                     value={timelineEventKind}
-                    onChange={(event) => setTimelineEventKind(event.target.value)}
+                    onChange={(event) =>
+                      setTimelineEventKind(event.target.value)
+                    }
                     className="app-field rounded-xl px-3 py-2 text-sm"
                     aria-label={copy.explainability.timelineEventKind}
                   >
                     <option value="">{copy.explainability.allEvents}</option>
-                    <option value="cash_deposit">{copy.explainability.deposits}</option>
-                    <option value="cash_withdrawal">{copy.explainability.withdrawals}</option>
-                    <option value="dividend">{copy.explainability.dividends}</option>
-                    <option value="trade_buy">{copy.explainability.buys}</option>
-                    <option value="trade_sell">{copy.explainability.sells}</option>
-                    <option value="manual_adjustment">{copy.explainability.adjustments}</option>
+                    <option value="cash_deposit">
+                      {copy.explainability.deposits}
+                    </option>
+                    <option value="cash_withdrawal">
+                      {copy.explainability.withdrawals}
+                    </option>
+                    <option value="dividend">
+                      {copy.explainability.dividends}
+                    </option>
+                    <option value="trade_buy">
+                      {copy.explainability.buys}
+                    </option>
+                    <option value="trade_sell">
+                      {copy.explainability.sells}
+                    </option>
+                    <option value="manual_adjustment">
+                      {copy.explainability.adjustments}
+                    </option>
                   </select>
                 </label>
               </div>
@@ -691,23 +787,24 @@ function MarketPage() {
   const addWatchlistItem = useAddWatchlistItemMutation();
   const removeWatchlistItem = useRemoveWatchlistItemMutation();
   const createResearchNote = useCreateResearchNoteMutation();
-  const [selectedSymbol, setSelectedSymbol] = useState("");
-  const [newSymbol, setNewSymbol] = useState("");
-  const [newAssetClass, setNewAssetClass] = useState("stock");
-  const [noteFilterType, setNoteFilterType] = useState("");
-  const [noteFilterPriority, setNoteFilterPriority] = useState("");
-  const [noteFilterDateFrom, setNoteFilterDateFrom] = useState("");
-  const [noteFilterDateTo, setNoteFilterDateTo] = useState("");
-  const [noteType, setNoteType] = useState("note");
-  const [notePriority, setNotePriority] = useState("normal");
-  const [noteTitle, setNoteTitle] = useState("");
-  const [noteContent, setNoteContent] = useState("");
-  const [noteDate, setNoteDate] = useState("");
+  const [selectedSymbol, setSelectedSymbol] = useState('');
+  const [newSymbol, setNewSymbol] = useState('');
+  const [newAssetClass, setNewAssetClass] = useState('stock');
+  const [noteFilterType, setNoteFilterType] = useState('');
+  const [noteFilterPriority, setNoteFilterPriority] = useState('');
+  const [noteFilterDateFrom, setNoteFilterDateFrom] = useState('');
+  const [noteFilterDateTo, setNoteFilterDateTo] = useState('');
+  const [noteType, setNoteType] = useState('note');
+  const [notePriority, setNotePriority] = useState('normal');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [noteDate, setNoteDate] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const items = board.data?.items ?? [];
-  const activeSymbol = selectedSymbol || items[0]?.symbol || "";
+  const activeSymbol = selectedSymbol || items[0]?.symbol || '';
   const updateResearchNote = useUpdateResearchNoteMutation(activeSymbol);
-  const selectedItem = items.find((item) => item.symbol === activeSymbol) ?? null;
+  const selectedItem =
+    items.find((item) => item.symbol === activeSymbol) ?? null;
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -717,14 +814,18 @@ function MarketPage() {
   });
   const deleteResearchNote = useDeleteResearchNoteMutation(activeSymbol);
   const assetClassOptions = [
-    ["stock", copy.common.assetClassStock],
-    ["etf", copy.common.assetClassEtf],
-    ["fund", copy.common.assetClassFund],
-    ["gold", copy.common.assetClassGold],
-    ["bond", copy.common.assetClassBond],
+    ['stock', copy.common.assetClassStock],
+    ['etf', copy.common.assetClassEtf],
+    ['fund', copy.common.assetClassFund],
+    ['gold', copy.common.assetClassGold],
+    ['bond', copy.common.assetClassBond],
   ] as const;
 
-  const pushToast = (tone: ToastItem["tone"], title: string, message: string) => {
+  const pushToast = (
+    tone: ToastItem['tone'],
+    title: string,
+    message: string,
+  ) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((current) => [...current, { id, tone, title, message }]);
     window.setTimeout(() => {
@@ -743,461 +844,565 @@ function MarketPage() {
         />
 
         {board.isLoading ? (
-          <StatusCard title={copy.states.loading} detail={copy.market.loading} />
+          <StatusCard
+            title={copy.states.loading}
+            detail={copy.market.loading}
+          />
         ) : board.isError ? (
-          <StatusCard title={copy.states.error} detail={copy.market.error} tone="danger" />
+          <StatusCard
+            title={copy.states.error}
+            detail={copy.market.error}
+            tone="danger"
+          />
         ) : (
           <div className="space-y-5 sm:space-y-6">
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.market.watchlist}
-                </div>
-                <div className="app-muted text-sm">
-                  {board.data?.health.market_open
-                    ? copy.market.marketOpen
-                    : copy.market.marketClosed}
-                </div>
-              </div>
-
-              <form
-                className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_100px]"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  if (!newSymbol.trim()) {
-                    return;
-                  }
-                  await addWatchlistItem.mutateAsync({
-                    symbol: newSymbol.trim(),
-                    asset_class: newAssetClass,
-                  });
-                  setNewSymbol("");
-                  setSelectedSymbol("");
-                }}
-              >
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.symbolLabel}</span>
-                <input
-                  name="watchlist_symbol"
-                  autoComplete="off"
-                  value={newSymbol}
-                  onChange={(event) => setNewSymbol(event.target.value)}
-                  placeholder={copy.market.symbolPlaceholder}
-                  className="app-field rounded-xl px-3 py-2 text-sm"
-                />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.assetClass}</span>
-                <select
-                  name="watchlist_asset_class"
-                  value={newAssetClass}
-                  onChange={(event) => setNewAssetClass(event.target.value)}
-                  className="app-field rounded-xl px-3 py-2 text-sm"
-                >
-                  {assetClassOptions.map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                </label>
-                <button type="submit" className="app-button-primary rounded-xl px-4 py-2 text-sm">
-                  {copy.market.add}
-                </button>
-              </form>
-
-              <div className="grid gap-3">
-                {items.map((item) => (
-                  <button
-                    key={item.symbol}
-                    type="button"
-                    onClick={() => setSelectedSymbol(item.symbol)}
-                    className={`app-panel-strong rounded-2xl p-4 text-left ${
-                      activeSymbol === item.symbol ? "ring-1 ring-[var(--app-border)]" : ""
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold">{item.symbol}</div>
-                        <div className="app-muted mt-1 text-xs">
-                          {getAssetClassLabel(copy, item.asset_class)}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="app-button-secondary rounded-xl px-3 py-1 text-xs"
-                        onClick={async (event) => {
-                          event.stopPropagation();
-                          await removeWatchlistItem.mutateAsync(item.symbol);
-                          if (activeSymbol === item.symbol) {
-                            setSelectedSymbol("");
-                          }
-                        }}
-                      >
-                        {copy.market.remove}
-                      </button>
-                    </div>
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                          {copy.market.priceLabel}
-                        </div>
-                        <div className="mt-1 text-sm font-medium">
-                          {formatCurrency(item.price ?? 0)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                          {copy.market.holdingsContext}
-                        </div>
-                        <div className="mt-1 text-sm font-medium">
-                          {item.is_holding
-                            ? formatCurrency(item.market_value ?? 0)
-                            : "--"}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                          {copy.market.researchCount}
-                        </div>
-                        <div className="mt-1 text-sm font-medium">{item.research_count}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-5">
               <div className="app-panel rounded-2xl p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.market.health}
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                    {copy.market.watchlist}
+                  </div>
+                  <div className="app-muted text-sm">
+                    {board.data?.health.market_open
+                      ? copy.market.marketOpen
+                      : copy.market.marketClosed}
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <MetricBlock
-                    label={copy.market.marketOpen}
-                    value={
-                      board.data?.health.market_open
-                        ? copy.market.marketOpen
-                        : copy.market.marketClosed
+
+                <form
+                  className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_100px]"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    if (!newSymbol.trim()) {
+                      return;
                     }
-                  />
-                  <MetricBlock
-                    label={copy.market.refreshPolicy}
-                    value={board.data?.health.refresh_policy ?? "--"}
-                  />
+                    await addWatchlistItem.mutateAsync({
+                      symbol: newSymbol.trim(),
+                      asset_class: newAssetClass,
+                    });
+                    setNewSymbol('');
+                    setSelectedSymbol('');
+                  }}
+                >
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.market.symbolLabel}
+                    </span>
+                    <input
+                      name="watchlist_symbol"
+                      autoComplete="off"
+                      value={newSymbol}
+                      onChange={(event) => setNewSymbol(event.target.value)}
+                      placeholder={copy.market.symbolPlaceholder}
+                      className="app-field rounded-xl px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.market.assetClass}
+                    </span>
+                    <select
+                      name="watchlist_asset_class"
+                      value={newAssetClass}
+                      onChange={(event) => setNewAssetClass(event.target.value)}
+                      className="app-field rounded-xl px-3 py-2 text-sm"
+                    >
+                      {assetClassOptions.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="submit"
+                    className="app-button-primary rounded-xl px-4 py-2 text-sm"
+                  >
+                    {copy.market.add}
+                  </button>
+                </form>
+
+                <div className="grid gap-3">
+                  {items.map((item) => (
+                    <button
+                      key={item.symbol}
+                      type="button"
+                      onClick={() => setSelectedSymbol(item.symbol)}
+                      className={`app-panel-strong rounded-2xl p-4 text-left ${
+                        activeSymbol === item.symbol
+                          ? 'ring-1 ring-[var(--app-border)]'
+                          : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {item.symbol}
+                          </div>
+                          <div className="app-muted mt-1 text-xs">
+                            {getAssetClassLabel(copy, item.asset_class)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                          onClick={async (event) => {
+                            event.stopPropagation();
+                            await removeWatchlistItem.mutateAsync(item.symbol);
+                            if (activeSymbol === item.symbol) {
+                              setSelectedSymbol('');
+                            }
+                          }}
+                        >
+                          {copy.market.remove}
+                        </button>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                            {copy.market.priceLabel}
+                          </div>
+                          <div className="mt-1 text-sm font-medium">
+                            {formatCurrency(item.price ?? 0)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                            {copy.market.holdingsContext}
+                          </div>
+                          <div className="mt-1 text-sm font-medium">
+                            {item.is_holding
+                              ? formatCurrency(item.market_value ?? 0)
+                              : '--'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                            {copy.market.researchCount}
+                          </div>
+                          <div className="mt-1 text-sm font-medium">
+                            {item.research_count}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="app-panel rounded-2xl p-4 sm:p-5">
+                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                    {copy.market.health}
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <MetricBlock
+                      label={copy.market.marketOpen}
+                      value={
+                        board.data?.health.market_open
+                          ? copy.market.marketOpen
+                          : copy.market.marketClosed
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.refreshPolicy}
+                      value={board.data?.health.refresh_policy ?? '--'}
+                    />
+                  </div>
+                </div>
+                <div className="app-panel rounded-2xl p-4 sm:p-5">
+                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                    {copy.market.promptsTitle}
+                  </div>
+                  <div className="mt-4 grid gap-3">
+                    {copy.market.prompts.map((prompt) => (
+                      <div
+                        key={prompt}
+                        className="app-panel-strong rounded-2xl px-4 py-3 text-sm"
+                      >
+                        {prompt}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+              <div className="app-panel rounded-2xl p-4 sm:p-5">
+                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                  {copy.market.chart}
+                </div>
+                <div className="mt-4">
+                  {selectedItem ? (
+                    <PriceStructureChart
+                      bars={kline.data ?? []}
+                      emptyLabel={copy.market.noChart}
+                    />
+                  ) : (
+                    <div className="app-muted text-sm">
+                      {copy.market.noSelection}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="app-panel rounded-2xl p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.market.promptsTitle}
+                  {copy.market.selectedSymbol}
                 </div>
-                <div className="mt-4 grid gap-3">
-                  {copy.market.prompts.map((prompt) => (
-                    <div key={prompt} className="app-panel-strong rounded-2xl px-4 py-3 text-sm">
-                      {prompt}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                {copy.market.chart}
-              </div>
-              <div className="mt-4">
                 {selectedItem ? (
-                  <PriceStructureChart bars={kline.data ?? []} emptyLabel={copy.market.noChart} />
+                  <div className="mt-4 space-y-3">
+                    <MetricBlock
+                      label={copy.market.symbolLabel}
+                      value={selectedItem.symbol}
+                    />
+                    <MetricBlock
+                      label={copy.market.priceLabel}
+                      value={formatCurrency(selectedItem.price ?? 0)}
+                    />
+                    <MetricBlock
+                      label={copy.market.holdingsContext}
+                      value={
+                        selectedItem.is_holding
+                          ? `${copy.explainability.quantity} ${formatQuantity(
+                              selectedItem.quantity,
+                            )} / ${formatCurrency(
+                              selectedItem.market_value ?? 0,
+                            )}`
+                          : '--'
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.snapshotLabel}
+                      value={selectedItem.last_snapshot_at ?? '--'}
+                    />
+                    <MetricBlock
+                      label={copy.market.lastResearch}
+                      value={selectedItem.last_research_at ?? '--'}
+                    />
+                  </div>
                 ) : (
-                  <div className="app-muted text-sm">{copy.market.noSelection}</div>
+                  <div className="app-muted mt-4 text-sm">
+                    {copy.market.noSelection}
+                  </div>
                 )}
               </div>
             </div>
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                {copy.market.selectedSymbol}
-              </div>
-              {selectedItem ? (
-                <div className="mt-4 space-y-3">
-                  <MetricBlock label={copy.market.symbolLabel} value={selectedItem.symbol} />
-                  <MetricBlock
-                    label={copy.market.priceLabel}
-                    value={formatCurrency(selectedItem.price ?? 0)}
-                  />
-                  <MetricBlock
-                    label={copy.market.holdingsContext}
-                    value={
-                      selectedItem.is_holding
-                        ? `${copy.explainability.quantity} ${selectedItem.quantity ?? 0} / ${formatCurrency(
-                            selectedItem.market_value ?? 0,
-                          )}`
-                        : "--"
-                    }
-                  />
-                  <MetricBlock
-                    label={copy.market.snapshotLabel}
-                    value={selectedItem.last_snapshot_at ?? "--"}
-                  />
-                  <MetricBlock
-                    label={copy.market.lastResearch}
-                    value={selectedItem.last_research_at ?? "--"}
-                  />
-                </div>
-              ) : (
-                <div className="app-muted mt-4 text-sm">{copy.market.noSelection}</div>
-              )}
-            </div>
-          </div>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                {copy.market.notesTitle}
-              </div>
-              {selectedItem ? (
-                <form
-                  className="mt-4 grid gap-3"
-                  onSubmit={async (event) => {
-                    event.preventDefault();
-                    if (!noteTitle.trim() || !noteContent.trim()) {
-                      pushToast("error", copy.market.noteFailed, copy.common.required);
-                      return;
-                    }
-                    try {
-                      if (editingNoteId !== null) {
-                        await updateResearchNote.mutateAsync({
-                          noteId: editingNoteId,
-                          entry_kind: noteType,
-                          title: noteTitle.trim(),
-                          content: noteContent.trim(),
-                          priority: notePriority,
-                          event_date: noteDate || null,
-                        });
-                      } else {
-                        await createResearchNote.mutateAsync({
-                          symbol: selectedItem.symbol,
-                          asset_class: selectedItem.asset_class,
-                          entry_kind: noteType,
-                          title: noteTitle.trim(),
-                          content: noteContent.trim(),
-                          priority: notePriority,
-                          event_date: noteDate || null,
-                        });
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+              <div className="app-panel rounded-2xl p-4 sm:p-5">
+                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                  {copy.market.notesTitle}
+                </div>
+                {selectedItem ? (
+                  <form
+                    className="mt-4 grid gap-3"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      if (!noteTitle.trim() || !noteContent.trim()) {
+                        pushToast(
+                          'error',
+                          copy.market.noteFailed,
+                          copy.common.required,
+                        );
+                        return;
                       }
-                      setEditingNoteId(null);
-                      setNoteType("note");
-                      setNotePriority("normal");
-                      setNoteTitle("");
-                      setNoteContent("");
-                      setNoteDate("");
-                      pushToast(
-                        "success",
-                        editingNoteId !== null ? copy.market.updateNote : copy.market.noteSaved,
-                        selectedItem.symbol,
-                      );
-                    } catch (error) {
-                      pushToast("error", copy.market.noteFailed, getErrorMessage(error));
-                    }
-                  }}
-                >
-                  <div className="grid gap-3 md:grid-cols-2">
+                      try {
+                        if (editingNoteId !== null) {
+                          await updateResearchNote.mutateAsync({
+                            noteId: editingNoteId,
+                            entry_kind: noteType,
+                            title: noteTitle.trim(),
+                            content: noteContent.trim(),
+                            priority: notePriority,
+                            event_date: noteDate || null,
+                          });
+                        } else {
+                          await createResearchNote.mutateAsync({
+                            symbol: selectedItem.symbol,
+                            asset_class: selectedItem.asset_class,
+                            entry_kind: noteType,
+                            title: noteTitle.trim(),
+                            content: noteContent.trim(),
+                            priority: notePriority,
+                            event_date: noteDate || null,
+                          });
+                        }
+                        setEditingNoteId(null);
+                        setNoteType('note');
+                        setNotePriority('normal');
+                        setNoteTitle('');
+                        setNoteContent('');
+                        setNoteDate('');
+                        pushToast(
+                          'success',
+                          editingNoteId !== null
+                            ? copy.market.updateNote
+                            : copy.market.noteSaved,
+                          selectedItem.symbol,
+                        );
+                      } catch (error) {
+                        pushToast(
+                          'error',
+                          copy.market.noteFailed,
+                          getErrorMessage(error),
+                        );
+                      }
+                    }}
+                  >
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="grid gap-2">
+                        <span className="text-sm font-medium">
+                          {copy.market.noteType}
+                        </span>
+                        <select
+                          name="research_note_type"
+                          value={noteType}
+                          onChange={(event) => setNoteType(event.target.value)}
+                          className="app-field rounded-xl px-3 py-2 text-sm"
+                        >
+                          <option value="note">{copy.market.note}</option>
+                          <option value="thesis">{copy.market.thesis}</option>
+                          <option value="catalyst">
+                            {copy.market.catalyst}
+                          </option>
+                        </select>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-medium">
+                          {copy.market.notePriority}
+                        </span>
+                        <select
+                          name="research_note_priority"
+                          value={notePriority}
+                          onChange={(event) =>
+                            setNotePriority(event.target.value)
+                          }
+                          className="app-field rounded-xl px-3 py-2 text-sm"
+                        >
+                          <option value="high">
+                            {copy.market.highPriority}
+                          </option>
+                          <option value="normal">
+                            {copy.market.normalPriority}
+                          </option>
+                          <option value="low">{copy.market.lowPriority}</option>
+                        </select>
+                      </label>
+                    </div>
                     <label className="grid gap-2">
-                      <span className="text-sm font-medium">{copy.market.noteType}</span>
+                      <span className="text-sm font-medium">
+                        {copy.market.noteTitle}
+                      </span>
+                      <input
+                        name="research_note_title"
+                        autoComplete="off"
+                        value={noteTitle}
+                        onChange={(event) => setNoteTitle(event.target.value)}
+                        placeholder={copy.market.noteTitlePlaceholder}
+                        className="app-field rounded-xl px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-medium">
+                        {copy.market.noteContent}
+                      </span>
+                      <textarea
+                        name="research_note_content"
+                        value={noteContent}
+                        onChange={(event) => setNoteContent(event.target.value)}
+                        placeholder={copy.market.noteContentPlaceholder}
+                        rows={5}
+                        className="app-field min-h-32 rounded-xl px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-medium">
+                        {copy.market.noteDate}
+                      </span>
+                      <input
+                        name="research_note_date"
+                        type="date"
+                        value={noteDate}
+                        onChange={(event) => setNoteDate(event.target.value)}
+                        className="app-field rounded-xl px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={
+                        createResearchNote.isPending ||
+                        updateResearchNote.isPending
+                      }
+                      className="app-button-primary rounded-xl px-4 py-2 text-sm"
+                    >
+                      {createResearchNote.isPending ||
+                      updateResearchNote.isPending
+                        ? copy.market.savingNote
+                        : editingNoteId !== null
+                          ? copy.market.updateNote
+                          : copy.market.saveNote}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="app-muted mt-4 text-sm">
+                    {copy.market.noSelection}
+                  </div>
+                )}
+              </div>
+
+              <div className="app-panel rounded-2xl p-4 sm:p-5">
+                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                  {copy.market.notesTitle}
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.market.noteType}
+                    </span>
                     <select
-                      name="research_note_type"
-                      value={noteType}
-                      onChange={(event) => setNoteType(event.target.value)}
+                      value={noteFilterType}
+                      onChange={(event) =>
+                        setNoteFilterType(event.target.value)
+                      }
                       className="app-field rounded-xl px-3 py-2 text-sm"
                     >
+                      <option value="">{copy.market.allTypes}</option>
                       <option value="note">{copy.market.note}</option>
                       <option value="thesis">{copy.market.thesis}</option>
                       <option value="catalyst">{copy.market.catalyst}</option>
                     </select>
-                    </label>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-medium">{copy.market.notePriority}</span>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.market.notePriority}
+                    </span>
                     <select
-                      name="research_note_priority"
-                      value={notePriority}
-                      onChange={(event) => setNotePriority(event.target.value)}
+                      value={noteFilterPriority}
+                      onChange={(event) =>
+                        setNoteFilterPriority(event.target.value)
+                      }
                       className="app-field rounded-xl px-3 py-2 text-sm"
                     >
+                      <option value="">{copy.market.allPriorities}</option>
                       <option value="high">{copy.market.highPriority}</option>
-                      <option value="normal">{copy.market.normalPriority}</option>
+                      <option value="normal">
+                        {copy.market.normalPriority}
+                      </option>
                       <option value="low">{copy.market.lowPriority}</option>
                     </select>
-                    </label>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.market.noteDateFrom}
+                    </span>
+                    <input
+                      type="date"
+                      value={noteFilterDateFrom}
+                      onChange={(event) =>
+                        setNoteFilterDateFrom(event.target.value)
+                      }
+                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      aria-label={copy.market.noteDateFrom}
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.market.noteDateTo}
+                    </span>
+                    <input
+                      type="date"
+                      value={noteFilterDateTo}
+                      onChange={(event) =>
+                        setNoteFilterDateTo(event.target.value)
+                      }
+                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      aria-label={copy.market.noteDateTo}
+                    />
+                  </label>
+                </div>
+                {notes.isLoading ? (
+                  <div className="app-muted mt-4 text-sm">
+                    {copy.states.loading}
                   </div>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-medium">{copy.market.noteTitle}</span>
-                  <input
-                    name="research_note_title"
-                    autoComplete="off"
-                    value={noteTitle}
-                    onChange={(event) => setNoteTitle(event.target.value)}
-                    placeholder={copy.market.noteTitlePlaceholder}
-                    className="app-field rounded-xl px-3 py-2 text-sm"
-                  />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-medium">{copy.market.noteContent}</span>
-                  <textarea
-                    name="research_note_content"
-                    value={noteContent}
-                    onChange={(event) => setNoteContent(event.target.value)}
-                    placeholder={copy.market.noteContentPlaceholder}
-                    rows={5}
-                    className="app-field min-h-32 rounded-xl px-3 py-2 text-sm"
-                  />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-medium">{copy.market.noteDate}</span>
-                  <input
-                    name="research_note_date"
-                    type="date"
-                    value={noteDate}
-                    onChange={(event) => setNoteDate(event.target.value)}
-                    className="app-field rounded-xl px-3 py-2 text-sm"
-                  />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={createResearchNote.isPending || updateResearchNote.isPending}
-                    className="app-button-primary rounded-xl px-4 py-2 text-sm"
-                  >
-                    {createResearchNote.isPending || updateResearchNote.isPending
-                      ? copy.market.savingNote
-                      : editingNoteId !== null
-                        ? copy.market.updateNote
-                        : copy.market.saveNote}
-                  </button>
-                </form>
-              ) : (
-                <div className="app-muted mt-4 text-sm">{copy.market.noSelection}</div>
-              )}
-            </div>
-
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                {copy.market.notesTitle}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.noteType}</span>
-                <select
-                  value={noteFilterType}
-                  onChange={(event) => setNoteFilterType(event.target.value)}
-                  className="app-field rounded-xl px-3 py-2 text-sm"
-                >
-                  <option value="">{copy.market.allTypes}</option>
-                  <option value="note">{copy.market.note}</option>
-                  <option value="thesis">{copy.market.thesis}</option>
-                  <option value="catalyst">{copy.market.catalyst}</option>
-                </select>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.notePriority}</span>
-                <select
-                  value={noteFilterPriority}
-                  onChange={(event) => setNoteFilterPriority(event.target.value)}
-                  className="app-field rounded-xl px-3 py-2 text-sm"
-                >
-                  <option value="">{copy.market.allPriorities}</option>
-                  <option value="high">{copy.market.highPriority}</option>
-                  <option value="normal">{copy.market.normalPriority}</option>
-                  <option value="low">{copy.market.lowPriority}</option>
-                </select>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.noteDateFrom}</span>
-                <input
-                  type="date"
-                  value={noteFilterDateFrom}
-                  onChange={(event) => setNoteFilterDateFrom(event.target.value)}
-                  className="app-field rounded-xl px-3 py-2 text-sm"
-                  aria-label={copy.market.noteDateFrom}
-                />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">{copy.market.noteDateTo}</span>
-                <input
-                  type="date"
-                  value={noteFilterDateTo}
-                  onChange={(event) => setNoteFilterDateTo(event.target.value)}
-                  className="app-field rounded-xl px-3 py-2 text-sm"
-                  aria-label={copy.market.noteDateTo}
-                />
-                </label>
-              </div>
-              {notes.isLoading ? (
-                <div className="app-muted mt-4 text-sm">{copy.states.loading}</div>
-              ) : notes.isError ? (
-                <div className="app-muted mt-4 text-sm">{copy.market.noteFailed}</div>
-              ) : notes.data && notes.data.items.length > 0 ? (
-                <div className="mt-4 grid gap-3">
-                  {notes.data.items.map((note) => (
-                    <div key={note.id} className="app-panel-strong rounded-2xl px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold">{note.title}</div>
-                          <div className="app-kicker mt-2 text-[11px] uppercase tracking-[0.16em]">
-                            {getNoteTypeLabel(copy, note.entry_kind)} ·{" "}
-                            {getPriorityLabel(copy, note.priority)}
-                            {note.event_date ? ` · ${note.event_date}` : ""}
+                ) : notes.isError ? (
+                  <div className="app-muted mt-4 text-sm">
+                    {copy.market.noteFailed}
+                  </div>
+                ) : notes.data && notes.data.items.length > 0 ? (
+                  <div className="mt-4 grid gap-3">
+                    {notes.data.items.map((note) => (
+                      <div
+                        key={note.id}
+                        className="app-panel-strong rounded-2xl px-4 py-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {note.title}
+                            </div>
+                            <div className="app-kicker mt-2 text-[11px] uppercase tracking-[0.16em]">
+                              {getNoteTypeLabel(copy, note.entry_kind)} ·{' '}
+                              {getPriorityLabel(copy, note.priority)}
+                              {note.event_date ? ` · ${note.event_date}` : ''}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                              onClick={() => {
+                                setEditingNoteId(note.id);
+                                setNoteType(note.entry_kind);
+                                setNotePriority(note.priority);
+                                setNoteTitle(note.title);
+                                setNoteContent(note.content);
+                                setNoteDate(note.event_date ?? '');
+                              }}
+                            >
+                              {copy.market.editNote}
+                            </button>
+                            <button
+                              type="button"
+                              className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                              onClick={async () => {
+                                try {
+                                  await deleteResearchNote.mutateAsync(note.id);
+                                  pushToast(
+                                    'success',
+                                    copy.market.noteDeleted,
+                                    note.title,
+                                  );
+                                } catch (error) {
+                                  pushToast(
+                                    'error',
+                                    copy.market.noteDeleteFailed,
+                                    getErrorMessage(error),
+                                  );
+                                }
+                              }}
+                            >
+                              {copy.market.remove}
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="app-button-secondary rounded-xl px-3 py-1 text-xs"
-                            onClick={() => {
-                              setEditingNoteId(note.id);
-                              setNoteType(note.entry_kind);
-                              setNotePriority(note.priority);
-                              setNoteTitle(note.title);
-                              setNoteContent(note.content);
-                              setNoteDate(note.event_date ?? "");
-                            }}
-                          >
-                            {copy.market.editNote}
-                          </button>
-                          <button
-                            type="button"
-                            className="app-button-secondary rounded-xl px-3 py-1 text-xs"
-                            onClick={async () => {
-                              try {
-                                await deleteResearchNote.mutateAsync(note.id);
-                                pushToast("success", copy.market.noteDeleted, note.title);
-                              } catch (error) {
-                                pushToast(
-                                  "error",
-                                  copy.market.noteDeleteFailed,
-                                  getErrorMessage(error),
-                                );
-                              }
-                            }}
-                          >
-                            {copy.market.remove}
-                          </button>
+                        <div className="app-muted mt-3 text-sm leading-6">
+                          {note.content}
+                        </div>
+                        <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
+                          {note.updated_at}
                         </div>
                       </div>
-                      <div className="app-muted mt-3 text-sm leading-6">{note.content}</div>
-                      <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
-                        {note.updated_at}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="app-muted mt-4 text-sm">{copy.market.notesEmpty}</div>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="app-muted mt-4 text-sm">
+                    {copy.market.notesEmpty}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         )}
       </section>
     </>
@@ -1214,7 +1419,11 @@ function ActivityPage() {
   const createDividend = useCreateDividendMutation();
   const createAdjustment = useCreateAdjustmentMutation();
 
-  const pushToast = (tone: ToastItem["tone"], title: string, message: string) => {
+  const pushToast = (
+    tone: ToastItem['tone'],
+    title: string,
+    message: string,
+  ) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((current) => [...current, { id, tone, title, message }]);
     window.setTimeout(() => {
@@ -1224,7 +1433,7 @@ function ActivityPage() {
 
   const handleTradeSubmit = async (values: TradeFormValues) => {
     const normalizeNumber = (value: number | null | undefined) =>
-      typeof value === "number" && Number.isFinite(value) ? value : null;
+      typeof value === 'number' && Number.isFinite(value) ? value : null;
     try {
       await createTrade.mutateAsync({
         ...values,
@@ -1236,9 +1445,13 @@ function ActivityPage() {
         asset_class: values.asset_class.trim().toLowerCase(),
         symbol: values.symbol.trim(),
       });
-      pushToast("success", copy.activity.tradeSaved, copy.activity.feedRefreshed);
+      pushToast(
+        'success',
+        copy.activity.tradeSaved,
+        copy.activity.feedRefreshed,
+      );
     } catch (error) {
-      pushToast("error", copy.activity.tradeFailed, getErrorMessage(error));
+      pushToast('error', copy.activity.tradeFailed, getErrorMessage(error));
       throw error;
     }
   };
@@ -1249,20 +1462,28 @@ function ActivityPage() {
         await createTrade.mutateAsync({
           occurred_at: new Date(values.occurred_at).toISOString(),
           symbol: order.symbol,
-          asset_class: "fund",
-          direction: "buy",
+          asset_class: 'fund',
+          direction: 'buy',
           quantity: null,
           unit_price: null,
           amount: order.amount,
           fee: 0,
-          note: [values.note.trim(), order.display_name, copy.activity.forms.fundBatch.title]
+          note: [
+            values.note.trim(),
+            order.display_name,
+            copy.activity.forms.fundBatch.title,
+          ]
             .filter(Boolean)
-            .join(" | "),
+            .join(' | '),
         });
       }
-      pushToast("success", copy.activity.tradeSaved, copy.activity.feedRefreshed);
+      pushToast(
+        'success',
+        copy.activity.tradeSaved,
+        copy.activity.feedRefreshed,
+      );
     } catch (error) {
-      pushToast("error", copy.activity.tradeFailed, getErrorMessage(error));
+      pushToast('error', copy.activity.tradeFailed, getErrorMessage(error));
       throw error;
     }
   };
@@ -1273,9 +1494,13 @@ function ActivityPage() {
         ...values,
         occurred_at: new Date(values.occurred_at).toISOString(),
       });
-      pushToast("success", copy.activity.cashFlowSaved, copy.activity.feedRefreshed);
+      pushToast(
+        'success',
+        copy.activity.cashFlowSaved,
+        copy.activity.feedRefreshed,
+      );
     } catch (error) {
-      pushToast("error", copy.activity.cashFlowFailed, getErrorMessage(error));
+      pushToast('error', copy.activity.cashFlowFailed, getErrorMessage(error));
       throw error;
     }
   };
@@ -1286,9 +1511,13 @@ function ActivityPage() {
         ...values,
         occurred_at: new Date(values.occurred_at).toISOString(),
       });
-      pushToast("success", copy.activity.dividendSaved, copy.activity.feedRefreshed);
+      pushToast(
+        'success',
+        copy.activity.dividendSaved,
+        copy.activity.feedRefreshed,
+      );
     } catch (error) {
-      pushToast("error", copy.activity.dividendFailed, getErrorMessage(error));
+      pushToast('error', copy.activity.dividendFailed, getErrorMessage(error));
       throw error;
     }
   };
@@ -1299,18 +1528,30 @@ function ActivityPage() {
         ...values,
         symbol: values.symbol || null,
         amount:
-          values.amount === null || Number.isNaN(values.amount) ? null : values.amount,
+          values.amount === null || Number.isNaN(values.amount)
+            ? null
+            : values.amount,
         quantity:
           values.quantity === null || Number.isNaN(values.quantity)
             ? null
             : values.quantity,
         price:
-          values.price === null || Number.isNaN(values.price) ? null : values.price,
+          values.price === null || Number.isNaN(values.price)
+            ? null
+            : values.price,
         occurred_at: new Date(values.occurred_at).toISOString(),
       });
-      pushToast("success", copy.activity.adjustmentSaved, copy.activity.feedRefreshed);
+      pushToast(
+        'success',
+        copy.activity.adjustmentSaved,
+        copy.activity.feedRefreshed,
+      );
     } catch (error) {
-      pushToast("error", copy.activity.adjustmentFailed, getErrorMessage(error));
+      pushToast(
+        'error',
+        copy.activity.adjustmentFailed,
+        getErrorMessage(error),
+      );
       throw error;
     }
   };
@@ -1335,7 +1576,10 @@ function ActivityPage() {
               onSubmit={handleFundBatchSubmit}
               pending={createTrade.isPending}
             />
-            <TradeForm onSubmit={handleTradeSubmit} pending={createTrade.isPending} />
+            <TradeForm
+              onSubmit={handleTradeSubmit}
+              pending={createTrade.isPending}
+            />
             <DividendForm
               onSubmit={handleDividendSubmit}
               pending={createDividend.isPending}
@@ -1359,7 +1603,10 @@ function ActivityPage() {
               onRetry={() => void pendingFundOrders.refetch()}
             />
             {entries.isLoading ? (
-              <StatusCard title={copy.states.loading} detail={copy.activity.loading} />
+              <StatusCard
+                title={copy.states.loading}
+                detail={copy.activity.loading}
+              />
             ) : entries.isError ? (
               <StatusCard
                 tone="danger"
@@ -1400,7 +1647,12 @@ function PendingFundOrdersCard({
   const copy = useCopy();
 
   if (loading) {
-    return <StatusCard title={copy.states.loading} detail={copy.activity.pending.loading} />;
+    return (
+      <StatusCard
+        title={copy.states.loading}
+        detail={copy.activity.pending.loading}
+      />
+    );
   }
   if (error) {
     return (
@@ -1422,22 +1674,32 @@ function PendingFundOrdersCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="app-product-mark">{copy.activity.pending.kicker}</div>
-          <h2 className="mt-2 text-base font-semibold">{copy.activity.pending.title}</h2>
+          <h2 className="mt-2 text-base font-semibold">
+            {copy.activity.pending.title}
+          </h2>
         </div>
         <span className="app-chip app-chip-warn text-xs">{orders.length}</span>
       </div>
       <div className="mt-4 space-y-3">
         {orders.map((order) => (
-          <div key={order.id} className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-1)] p-4">
+          <div
+            key={order.id}
+            className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-1)] p-4"
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold">{order.display_name}</div>
+                <div className="text-sm font-semibold">
+                  {order.display_name}
+                </div>
                 <div className="app-muted mt-1 text-xs">
-                  {order.symbol} · {copy.activity.pending.submittedAt} {order.submitted_at}
+                  {order.symbol} · {copy.activity.pending.submittedAt}{' '}
+                  {order.submitted_at}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm font-semibold">{formatCurrency(order.amount)}</div>
+                <div className="text-sm font-semibold">
+                  {formatCurrency(order.amount)}
+                </div>
                 <div className="app-muted mt-1 text-xs">{order.status}</div>
               </div>
             </div>
@@ -1466,7 +1728,9 @@ function ExplainabilityCard({
   const copy = useCopy();
 
   if (isLoading) {
-    return <StatusCard title={copy.states.loading} detail={copy.states.loading} />;
+    return (
+      <StatusCard title={copy.states.loading} detail={copy.states.loading} />
+    );
   }
 
   return (
@@ -1479,27 +1743,31 @@ function ExplainabilityCard({
       <div className="grid divide-y divide-[color-mix(in_srgb,var(--app-border)_22%,transparent)] md:grid-cols-3 md:divide-x md:divide-y-0">
         {(drivers.length > 0
           ? drivers.slice(0, 3)
-          : [{ title: copy.explainability.empty, detail: "", timestamp: "" }]
+          : [{ title: copy.explainability.empty, detail: '', timestamp: '' }]
         ).map((driver) => (
-            <div
-              key={`${driver.title}-${driver.timestamp}`}
-              className="group relative px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
-            >
-              <span
-                className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-45 transition-opacity duration-200 group-hover:opacity-80"
-                aria-hidden="true"
-              />
-              <div className="text-sm font-medium tracking-[-0.01em]">{driver.title}</div>
-              {driver.detail ? (
-                <div className="app-muted mt-1.5 text-xs leading-5">{driver.detail}</div>
-              ) : null}
-              {driver.timestamp ? (
-                <div className="app-kicker mt-2 text-[10px] uppercase tracking-[0.16em]">
-                  {driver.timestamp}
-                </div>
-              ) : null}
+          <div
+            key={`${driver.title}-${driver.timestamp}`}
+            className="group relative px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
+          >
+            <span
+              className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-45 transition-opacity duration-200 group-hover:opacity-80"
+              aria-hidden="true"
+            />
+            <div className="text-sm font-medium tracking-[-0.01em]">
+              {driver.title}
             </div>
-          ))}
+            {driver.detail ? (
+              <div className="app-muted mt-1.5 text-xs leading-5">
+                {driver.detail}
+              </div>
+            ) : null}
+            {driver.timestamp ? (
+              <div className="app-kicker mt-2 text-[10px] uppercase tracking-[0.16em]">
+                {driver.timestamp}
+              </div>
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1520,8 +1788,17 @@ function ExplainabilityWorkspace({
   emptyLabel: string;
   explainability:
     | {
-        equity_bridge: Array<{ key: string; label: string; value: number; detail: string }>;
-        recent_drivers: Array<{ title: string; detail: string; timestamp: string }>;
+        equity_bridge: Array<{
+          key: string;
+          label: string;
+          value: number;
+          detail: string;
+        }>;
+        recent_drivers: Array<{
+          title: string;
+          detail: string;
+          timestamp: string;
+        }>;
         positions: Array<{
           symbol: string;
           quantity: number;
@@ -1552,25 +1829,57 @@ function ExplainabilityWorkspace({
 
   if (loading) {
     return (
-      <div className="app-panel rounded-2xl p-4 sm:p-5">{copy.states.loading}</div>
+      <div className="app-panel rounded-2xl p-4 sm:p-5">
+        {copy.states.loading}
+      </div>
     );
   }
+
+  const equityBridge = explainability?.equity_bridge ?? [];
+  const equityBridgeTotalPnl = equityBridge
+    .filter(
+      (bridgeItem) =>
+        bridgeItem.key === 'realized' || bridgeItem.key === 'unrealized',
+    )
+    .reduce((sum, bridgeItem) => sum + bridgeItem.value, 0);
 
   return (
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
         <div className="app-panel rounded-2xl p-4 sm:p-5">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">{title}</div>
+          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {title}
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {(explainability?.equity_bridge ?? []).map((item) => (
-              <div key={item.key} className="app-panel-strong rounded-2xl px-4 py-4">
-                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                  {item.label}
+            {equityBridge.map((item) => {
+              const label =
+                copy.explainability.equityBridgeLabels[
+                  item.key as keyof typeof copy.explainability.equityBridgeLabels
+                ] ?? item.label;
+              const detailTemplate =
+                copy.explainability.equityBridgeDetails[
+                  item.key as keyof typeof copy.explainability.equityBridgeDetails
+                ];
+              const detail =
+                typeof detailTemplate === 'function'
+                  ? detailTemplate(formatCurrency(equityBridgeTotalPnl))
+                  : (detailTemplate ?? item.detail);
+
+              return (
+                <div
+                  key={item.key}
+                  className="app-panel-strong rounded-2xl px-4 py-4"
+                >
+                  <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                    {label}
+                  </div>
+                  <div className="mt-2 text-lg font-semibold tabular-nums">
+                    {formatCurrency(item.value)}
+                  </div>
+                  <div className="app-muted mt-2 text-sm">{detail}</div>
                 </div>
-                <div className="mt-2 text-lg font-semibold">{formatCurrency(item.value)}</div>
-                <div className="app-muted mt-2 text-sm">{item.detail}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -1582,7 +1891,7 @@ function ExplainabilityWorkspace({
             <div className="mt-4 grid gap-3">
               {(explainability?.recent_drivers?.length
                 ? explainability.recent_drivers
-                : [{ title: emptyLabel, detail: "", timestamp: "" }]
+                : [{ title: emptyLabel, detail: '', timestamp: '' }]
               ).map((item) => (
                 <div
                   key={`${item.title}-${item.timestamp}`}
@@ -1608,7 +1917,10 @@ function ExplainabilityWorkspace({
             </div>
             <div className="mt-4 grid gap-3">
               {(explainability?.positions ?? []).map((item) => (
-                <div key={item.symbol} className="app-panel-strong rounded-2xl px-4 py-4">
+                <div
+                  key={item.symbol}
+                  className="app-panel-strong rounded-2xl px-4 py-4"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-semibold">{item.symbol}</div>
                     <div className="text-sm font-medium">
@@ -1616,8 +1928,10 @@ function ExplainabilityWorkspace({
                     </div>
                   </div>
                   <div className="app-muted mt-2 text-sm">
-                    {copy.explainability.quantity} {item.quantity} ·{" "}
-                    {copy.portfolio.table.unrealized} {formatCurrency(item.unrealized_pnl)}
+                    {copy.explainability.quantity}{' '}
+                    {formatQuantity(item.quantity)} ·{' '}
+                    {copy.portfolio.table.unrealized}{' '}
+                    {formatCurrency(item.unrealized_pnl)}
                   </div>
                   {item.last_activity_at ? (
                     <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
@@ -1639,7 +1953,16 @@ function ExplainabilityWorkspace({
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {(explainability?.timeline?.length
             ? explainability.timeline.slice().reverse()
-            : [{ date: "", equity: 0, delta: 0, external_flow: 0, market_pnl: 0, events: [] }]
+            : [
+                {
+                  date: '',
+                  equity: 0,
+                  delta: 0,
+                  external_flow: 0,
+                  market_pnl: 0,
+                  events: [],
+                },
+              ]
           ).map((point) => (
             <div
               key={`${point.date}-${point.equity}`}
@@ -1649,13 +1972,22 @@ function ExplainabilityWorkspace({
                 <>
                   <div className="text-sm font-semibold">{point.date}</div>
                   <div className="mt-3 grid gap-2">
-                    <MetricBlock label={copy.explainability.equity} value={formatCurrency(point.equity)} />
-                    <MetricBlock label={copy.explainability.netChange} value={formatCurrency(point.delta)} />
+                    <MetricBlock
+                      label={copy.explainability.equity}
+                      value={formatCurrency(point.equity)}
+                    />
+                    <MetricBlock
+                      label={copy.explainability.netChange}
+                      value={formatCurrency(point.delta)}
+                    />
                     <MetricBlock
                       label={copy.explainability.externalFlow}
                       value={formatCurrency(point.external_flow)}
                     />
-                    <MetricBlock label={copy.explainability.marketPnl} value={formatCurrency(point.market_pnl)} />
+                    <MetricBlock
+                      label={copy.explainability.marketPnl}
+                      value={formatCurrency(point.market_pnl)}
+                    />
                   </div>
                   {point.events.length > 0 ? (
                     <div className="mt-3 grid gap-2">
@@ -1664,8 +1996,8 @@ function ExplainabilityWorkspace({
                           key={`${event.timestamp}-${event.title}`}
                           className="app-kicker text-[11px] uppercase tracking-[0.16em]"
                         >
-                          {event.title} · {getEventKindLabel(copy, event.kind)} ·{" "}
-                          {getEventCategoryLabel(copy, event.category)} ·{" "}
+                          {event.title} · {getEventKindLabel(copy, event.kind)}{' '}
+                          · {getEventCategoryLabel(copy, event.category)} ·{' '}
                           {getImpactSourceLabel(copy, event.impact_source)}
                         </div>
                       ))}
@@ -1673,7 +2005,9 @@ function ExplainabilityWorkspace({
                   ) : null}
                 </>
               ) : (
-                <div className="app-muted text-sm">{copy.explainability.timelineEmpty}</div>
+                <div className="app-muted text-sm">
+                  {copy.explainability.timelineEmpty}
+                </div>
               )}
             </div>
           ))}
@@ -1688,7 +2022,9 @@ function ExplainabilityWorkspace({
 function MetricBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="app-panel-strong rounded-2xl px-4 py-4">
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">{label}</div>
+      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+        {label}
+      </div>
       <div className="mt-2 text-sm font-medium">{value}</div>
     </div>
   );
@@ -1714,7 +2050,7 @@ function PriceStructureChart({
       const y = 220 - ((close - min) / range) * 220;
       return `${x},${y}`;
     })
-    .join(" ");
+    .join(' ');
 
   return (
     <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
@@ -1738,16 +2074,23 @@ function DrawdownChart({
   const copy = useCopy();
 
   if (points.length === 0) {
-    return <div className="app-muted text-sm">{copy.explainability.timelineEmpty}</div>;
+    return (
+      <div className="app-muted text-sm">
+        {copy.explainability.timelineEmpty}
+      </div>
+    );
   }
 
   const path = points
     .map((point, index) => {
       const x = (index / Math.max(points.length - 1, 1)) * 640;
-      const y = (point.drawdown / Math.max(...points.map((item) => item.drawdown), 0.01)) * 220;
+      const y =
+        (point.drawdown /
+          Math.max(...points.map((item) => item.drawdown), 0.01)) *
+        220;
       return `${x},${y}`;
     })
-    .join(" ");
+    .join(' ');
 
   return (
     <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
@@ -1775,9 +2118,13 @@ function ReturnCalendarCard({
   }>;
 }) {
   const copy = useCopy();
-  const [viewMode, setViewMode] = useState<"heatmap" | "table" | "curve">("heatmap");
-  const [bucket, setBucket] = useState<"day" | "week" | "month" | "year">("day");
-  const [metric, setMetric] = useState<"amount" | "percent">("amount");
+  const [viewMode, setViewMode] = useState<'heatmap' | 'table' | 'curve'>(
+    'heatmap',
+  );
+  const [bucket, setBucket] = useState<'day' | 'week' | 'month' | 'year'>(
+    'day',
+  );
+  const [metric, setMetric] = useState<'amount' | 'percent'>('amount');
 
   const aggregated = aggregateReturnTimeline(timeline, bucket);
 
@@ -1793,7 +2140,7 @@ function ReturnCalendarCard({
           <select
             value={viewMode}
             onChange={(event) =>
-              setViewMode(event.target.value as "heatmap" | "table" | "curve")
+              setViewMode(event.target.value as 'heatmap' | 'table' | 'curve')
             }
             className="app-field rounded-xl px-3 py-2 text-sm"
           >
@@ -1804,7 +2151,7 @@ function ReturnCalendarCard({
           <select
             value={bucket}
             onChange={(event) =>
-              setBucket(event.target.value as "day" | "week" | "month" | "year")
+              setBucket(event.target.value as 'day' | 'week' | 'month' | 'year')
             }
             className="app-field rounded-xl px-3 py-2 text-sm"
           >
@@ -1815,7 +2162,9 @@ function ReturnCalendarCard({
           </select>
           <select
             value={metric}
-            onChange={(event) => setMetric(event.target.value as "amount" | "percent")}
+            onChange={(event) =>
+              setMetric(event.target.value as 'amount' | 'percent')
+            }
             className="app-field rounded-xl px-3 py-2 text-sm"
           >
             <option value="amount">{copy.explainability.amountMetric}</option>
@@ -1825,35 +2174,54 @@ function ReturnCalendarCard({
       </div>
 
       {aggregated.length === 0 ? (
-        <div className="app-muted mt-4 text-sm">{copy.explainability.timelineEmpty}</div>
-      ) : viewMode === "heatmap" ? (
-        <div className="mt-4">
-          <ReturnHeatmap rows={aggregated} bucket={bucket} metric={metric} copy={copy} />
+        <div className="app-muted mt-4 text-sm">
+          {copy.explainability.timelineEmpty}
         </div>
-      ) : viewMode === "table" ? (
+      ) : viewMode === 'heatmap' ? (
+        <div className="mt-4">
+          <ReturnHeatmap
+            rows={aggregated}
+            bucket={bucket}
+            metric={metric}
+            copy={copy}
+          />
+        </div>
+      ) : viewMode === 'table' ? (
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="app-kicker text-[11px] uppercase tracking-[0.16em]">
               <tr>
                 <th className="px-3 py-2">{copy.explainability.bucketLabel}</th>
                 <th className="px-3 py-2">{copy.explainability.netChange}</th>
-                <th className="px-3 py-2">{copy.explainability.externalFlow}</th>
+                <th className="px-3 py-2">
+                  {copy.explainability.externalFlow}
+                </th>
                 <th className="px-3 py-2">{copy.explainability.marketPnl}</th>
               </tr>
             </thead>
             <tbody>
-              {aggregated.slice().reverse().map((row) => (
-                <tr key={row.label} className="border-t border-[var(--app-border)]">
-                  <td className="px-3 py-3 font-medium">{row.label}</td>
-                  <td className="px-3 py-3">
-                    {metric === "amount"
-                      ? formatCurrency(row.delta)
-                      : formatPercent(row.percentChange)}
-                  </td>
-                  <td className="px-3 py-3">{formatCurrency(row.externalFlow)}</td>
-                  <td className="px-3 py-3">{formatCurrency(row.marketPnl)}</td>
-                </tr>
-              ))}
+              {aggregated
+                .slice()
+                .reverse()
+                .map((row) => (
+                  <tr
+                    key={row.label}
+                    className="border-t border-[var(--app-border)]"
+                  >
+                    <td className="px-3 py-3 font-medium">{row.label}</td>
+                    <td className="px-3 py-3">
+                      {metric === 'amount'
+                        ? formatCurrency(row.delta)
+                        : formatPercent(row.percentChange)}
+                    </td>
+                    <td className="px-3 py-3">
+                      {formatCurrency(row.externalFlow)}
+                    </td>
+                    <td className="px-3 py-3">
+                      {formatCurrency(row.marketPnl)}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -1862,7 +2230,7 @@ function ReturnCalendarCard({
           <ReturnCurveChart
             points={aggregated.map((row) => ({
               label: row.label,
-              value: metric === "amount" ? row.delta : row.percentChange,
+              value: metric === 'amount' ? row.delta : row.percentChange,
             }))}
           />
         </div>
@@ -1889,7 +2257,7 @@ function ReturnCurveChart({
       const y = 220 - ((point.value - min) / range) * 220;
       return `${x},${y}`;
     })
-    .join(" ");
+    .join(' ');
 
   return (
     <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
@@ -1913,7 +2281,7 @@ function aggregateReturnTimeline(
     external_flow: number;
     market_pnl: number;
   }>,
-  bucket: "day" | "week" | "month" | "year",
+  bucket: 'day' | 'week' | 'month' | 'year',
 ) {
   const groups = new Map<
     string,
@@ -1955,21 +2323,24 @@ function aggregateReturnTimeline(
   }));
 }
 
-function toReturnBucket(dateText: string, bucket: "day" | "week" | "month" | "year") {
-  if (bucket === "day") {
+function toReturnBucket(
+  dateText: string,
+  bucket: 'day' | 'week' | 'month' | 'year',
+) {
+  if (bucket === 'day') {
     return dateText;
   }
   const date = new Date(`${dateText}T00:00:00`);
-  if (bucket === "month") {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  if (bucket === 'month') {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
   }
-  if (bucket === "year") {
+  if (bucket === 'year') {
     return `${date.getFullYear()}`;
   }
   const start = new Date(date);
   const day = start.getDay() || 7;
   start.setDate(start.getDate() - day + 1);
-  return `${start.getFullYear()}-W${String(weekOfYear(start)).padStart(2, "0")}`;
+  return `${start.getFullYear()}-W${String(weekOfYear(start)).padStart(2, '0')}`;
 }
 
 function weekOfYear(date: Date) {
@@ -1979,19 +2350,14 @@ function weekOfYear(date: Date) {
 }
 
 function formatPercent(value: number) {
-  return `${(value * 100).toFixed(2)}%`;
+  return formatPercentValue(value, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatCurrency(value: number) {
-  const locale =
-    typeof document !== "undefined" && document.documentElement.lang.startsWith("zh")
-      ? "zh-CN"
-      : "en-US";
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency: "CNY",
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatCurrencyValue(value);
 }
 
 function ReturnHeatmap({
@@ -2007,41 +2373,52 @@ function ReturnHeatmap({
     marketPnl: number;
     percentChange: number;
   }>;
-  bucket: "day" | "week" | "month" | "year";
-  metric: "amount" | "percent";
+  bucket: 'day' | 'week' | 'month' | 'year';
+  metric: 'amount' | 'percent';
   copy: AppCopy;
 }) {
   const maxMagnitude = Math.max(
-    ...rows.map((row) => Math.abs(metric === "amount" ? row.delta : row.percentChange)),
+    ...rows.map((row) =>
+      Math.abs(metric === 'amount' ? row.delta : row.percentChange),
+    ),
     0.0001,
   );
   const columns =
-    bucket === "day" ? "grid-cols-7" : bucket === "week" ? "grid-cols-4" : "grid-cols-3";
+    bucket === 'day'
+      ? 'grid-cols-7'
+      : bucket === 'week'
+        ? 'grid-cols-4'
+        : 'grid-cols-3';
 
   return (
     <div className={`grid gap-2 ${columns}`}>
       {rows.map((row) => {
-        const value = metric === "amount" ? row.delta : row.percentChange;
+        const value = metric === 'amount' ? row.delta : row.percentChange;
         const tone = getHeatmapTone(value, maxMagnitude);
         return (
           <div
             key={row.label}
             className={`rounded-2xl border px-3 py-3 text-left ${tone}`}
             title={`${row.label} · ${
-              metric === "amount" ? formatCurrency(row.delta) : formatPercent(row.percentChange)
+              metric === 'amount'
+                ? formatCurrency(row.delta)
+                : formatPercent(row.percentChange)
             }`}
           >
             <div className="text-xs font-semibold uppercase tracking-[0.12em]">
               {row.label}
             </div>
             <div className="mt-3 text-sm font-semibold">
-              {metric === "amount" ? formatCurrency(row.delta) : formatPercent(row.percentChange)}
+              {metric === 'amount'
+                ? formatCurrency(row.delta)
+                : formatPercent(row.percentChange)}
             </div>
             <div className="mt-2 text-xs opacity-80">
               {copy.explainability.marketPnl}: {formatCurrency(row.marketPnl)}
             </div>
             <div className="mt-1 text-xs opacity-80">
-              {copy.explainability.externalFlow}: {formatCurrency(row.externalFlow)}
+              {copy.explainability.externalFlow}:{' '}
+              {formatCurrency(row.externalFlow)}
             </div>
           </div>
         );
@@ -2055,38 +2432,38 @@ function getHeatmapTone(value: number, maxMagnitude: number) {
 
   if (value > 0) {
     if (intensity > 0.66) {
-      return "app-heat-positive-strong";
+      return 'app-heat-positive-strong';
     }
     if (intensity > 0.33) {
-      return "app-heat-positive-medium";
+      return 'app-heat-positive-medium';
     }
-    return "app-heat-positive-soft";
+    return 'app-heat-positive-soft';
   }
 
   if (value < 0) {
     if (intensity > 0.66) {
-      return "app-heat-negative-strong";
+      return 'app-heat-negative-strong';
     }
     if (intensity > 0.33) {
-      return "app-heat-negative-medium";
+      return 'app-heat-negative-medium';
     }
-    return "app-heat-negative-soft";
+    return 'app-heat-negative-soft';
   }
 
-  return "border-[var(--app-border)] bg-[var(--app-panel-strong)] text-[var(--app-foreground)]";
+  return 'border-[var(--app-border)] bg-[var(--app-panel-strong)] text-[var(--app-foreground)]';
 }
 
 function getAssetClassLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "stock":
+    case 'stock':
       return copy.common.assetClassStock;
-    case "etf":
+    case 'etf':
       return copy.common.assetClassEtf;
-    case "fund":
+    case 'fund':
       return copy.common.assetClassFund;
-    case "gold":
+    case 'gold':
       return copy.common.assetClassGold;
-    case "bond":
+    case 'bond':
       return copy.common.assetClassBond;
     default:
       return value;
@@ -2095,11 +2472,11 @@ function getAssetClassLabel(copy: AppCopy, value: string) {
 
 function getNoteTypeLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "note":
+    case 'note':
       return copy.market.note;
-    case "thesis":
+    case 'thesis':
       return copy.market.thesis;
-    case "catalyst":
+    case 'catalyst':
       return copy.market.catalyst;
     default:
       return value;
@@ -2108,11 +2485,11 @@ function getNoteTypeLabel(copy: AppCopy, value: string) {
 
 function getPriorityLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "high":
+    case 'high':
       return copy.market.highPriority;
-    case "normal":
+    case 'normal':
       return copy.market.normalPriority;
-    case "low":
+    case 'low':
       return copy.market.lowPriority;
     default:
       return value;
@@ -2121,17 +2498,17 @@ function getPriorityLabel(copy: AppCopy, value: string) {
 
 function getEventKindLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "cash_deposit":
+    case 'cash_deposit':
       return copy.explainability.deposits;
-    case "cash_withdrawal":
+    case 'cash_withdrawal':
       return copy.explainability.withdrawals;
-    case "dividend":
+    case 'dividend':
       return copy.explainability.dividends;
-    case "trade_buy":
+    case 'trade_buy':
       return copy.explainability.buys;
-    case "trade_sell":
+    case 'trade_sell':
       return copy.explainability.sells;
-    case "manual_adjustment":
+    case 'manual_adjustment':
       return copy.explainability.adjustments;
     default:
       return value;
@@ -2140,13 +2517,13 @@ function getEventKindLabel(copy: AppCopy, value: string) {
 
 function getEventCategoryLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "capital":
+    case 'capital':
       return copy.explainability.categoryCapital;
-    case "income":
+    case 'income':
       return copy.explainability.categoryIncome;
-    case "override":
+    case 'override':
       return copy.explainability.categoryOverride;
-    case "trade":
+    case 'trade':
       return copy.explainability.categoryTrade;
     default:
       return value;
@@ -2155,13 +2532,13 @@ function getEventCategoryLabel(copy: AppCopy, value: string) {
 
 function getImpactSourceLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "external":
+    case 'external':
       return copy.explainability.sourceExternal;
-    case "cash":
+    case 'cash':
       return copy.explainability.sourceCash;
-    case "manual":
+    case 'manual':
       return copy.explainability.sourceManual;
-    case "positioning":
+    case 'positioning':
       return copy.explainability.sourcePositioning;
     default:
       return value;
@@ -2170,17 +2547,17 @@ function getImpactSourceLabel(copy: AppCopy, value: string) {
 
 function getRiskMetricLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "current_drawdown":
+    case 'current_drawdown':
       return copy.riskPage.currentDrawdown;
-    case "max_drawdown":
+    case 'max_drawdown':
       return copy.riskPage.maxDrawdown;
-    case "gross_exposure":
+    case 'gross_exposure':
       return copy.riskPage.grossExposure;
-    case "cash_ratio":
+    case 'cash_ratio':
       return copy.riskPage.cashRatio;
-    case "largest_weight":
+    case 'largest_weight':
       return copy.riskPage.largestPosition;
-    case "top3_weight":
+    case 'top3_weight':
       return copy.riskPage.top3Concentration;
     default:
       return value;
@@ -2189,17 +2566,17 @@ function getRiskMetricLabel(copy: AppCopy, value: string) {
 
 function getRiskMetricDetail(copy: AppCopy, value: string) {
   switch (value) {
-    case "current_drawdown":
+    case 'current_drawdown':
       return copy.riskPage.currentDrawdownDetail;
-    case "max_drawdown":
+    case 'max_drawdown':
       return copy.riskPage.maxDrawdownDetail;
-    case "gross_exposure":
+    case 'gross_exposure':
       return copy.riskPage.grossExposureDetail;
-    case "cash_ratio":
+    case 'cash_ratio':
       return copy.riskPage.cashRatioDetail;
-    case "largest_weight":
+    case 'largest_weight':
       return copy.riskPage.largestPositionDetail;
-    case "top3_weight":
+    case 'top3_weight':
       return copy.riskPage.top3ConcentrationDetail;
     default:
       return value;
@@ -2208,15 +2585,15 @@ function getRiskMetricDetail(copy: AppCopy, value: string) {
 
 function getRiskBucketLabel(copy: AppCopy, value: string) {
   switch (value) {
-    case "heavy":
+    case 'heavy':
       return copy.riskPage.bucketHeavy;
-    case "core":
+    case 'core':
       return copy.riskPage.bucketCore;
-    case "starter":
+    case 'starter':
       return copy.riskPage.bucketStarter;
-    case "small":
+    case 'small':
       return copy.riskPage.bucketSmall;
-    case "cash":
+    case 'cash':
       return copy.riskPage.bucketCash;
     default:
       return value;
@@ -2226,22 +2603,22 @@ function getRiskBucketLabel(copy: AppCopy, value: string) {
 function StatusCard({
   title,
   detail,
-  tone = "default",
+  tone = 'default',
   actionLabel,
   onAction,
 }: {
   title: string;
   detail: string;
-  tone?: "default" | "danger";
+  tone?: 'default' | 'danger';
   actionLabel?: string;
   onAction?: () => void;
 }) {
   return (
     <div
       className={
-        tone === "danger"
-          ? "app-panel-danger rounded-xl p-4 sm:p-5"
-          : "rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 sm:p-5"
+        tone === 'danger'
+          ? 'app-panel-danger rounded-xl p-4 sm:p-5'
+          : 'rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 sm:p-5'
       }
     >
       <div className="text-sm font-semibold tracking-[-0.01em]">{title}</div>
@@ -2298,12 +2675,14 @@ function groupAllocation(items: AllocationItem[]): AllocationGroup[] {
     });
   });
 
-  return Array.from(grouped.values()).sort((left, right) => right.value - left.value);
+  return Array.from(grouped.values()).sort(
+    (left, right) => right.value - left.value,
+  );
 }
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
-  return "Request failed. Check your payload and server logs.";
+  return 'Request failed. Check your payload and server logs.';
 }

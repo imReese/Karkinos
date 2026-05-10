@@ -1,43 +1,32 @@
-import { useCopy } from "../../../app/copy";
-import type { AccountOverview } from "../api";
-
-const currency = new Intl.NumberFormat("zh-CN", {
-  style: "currency",
-  currency: "CNY",
-  maximumFractionDigits: 2,
-});
-
-const percent = new Intl.NumberFormat("zh-CN", {
-  style: "percent",
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
+import { useCopy } from '../../../app/copy';
+import { formatCurrency, formatPercent } from '../../../shared/format';
+import type { AccountOverview } from '../api';
 
 export function OverviewCards({ overview }: { overview: AccountOverview }) {
   const copy = useCopy();
   const items = [
     {
       label: copy.overview.cards.totalAssets,
-      value: currency.format(overview.total_equity),
+      value: formatCurrency(overview.total_equity),
     },
     {
       label: copy.overview.cards.availableCash,
-      value: currency.format(overview.available_cash),
+      value: formatCurrency(overview.available_cash),
     },
     {
       label: copy.overview.cards.unrealizedPnl,
-      value: currency.format(overview.unrealized_pnl),
+      value: formatCurrency(overview.unrealized_pnl),
     },
     {
       label: copy.overview.cards.cashRatio,
-      value: percent.format(overview.cash_ratio),
+      value: formatPercent(overview.cash_ratio),
     },
   ];
 
   return (
     <div
       data-testid="account-metrics-rail"
-      className="grid overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_22%,transparent)] divide-y divide-[color-mix(in_srgb,var(--app-border)_30%,transparent)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4 xl:divide-x tabular-nums"
+      className="grid overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_22%,transparent)] divide-y divide-[color-mix(in_srgb,var(--app-border)_30%,transparent)] font-mono sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4 xl:divide-x tabular-nums"
     >
       {items.map((item, index) => (
         <div
@@ -46,13 +35,13 @@ export function OverviewCards({ overview }: { overview: AccountOverview }) {
         >
           <div
             className={`absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-0 transition-opacity duration-200 group-hover:opacity-60 ${
-              index === 0 ? "opacity-60" : ""
+              index === 0 ? 'opacity-60' : ''
             }`}
           />
-          <div className="app-kicker text-[10px] uppercase tracking-[0.18em]">
+          <div className="app-kicker app-tier-4-label text-[11px] font-bold text-[var(--app-subtext-0)]">
             {item.label}
           </div>
-          <div className="mt-2 truncate text-lg font-medium tracking-[-0.02em] sm:text-xl lg:text-[1.35rem]">
+          <div className="mt-2 truncate text-lg font-semibold tracking-[-0.02em] sm:text-xl lg:text-[1.35rem]">
             {item.value}
           </div>
         </div>

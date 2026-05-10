@@ -1,23 +1,12 @@
-import { useCopy } from "../../../app/copy";
-import type { LiveHoldingGroup } from "../../portfolio/api";
-
-function formatCurrency(value: number) {
-  const locale =
-    typeof document !== "undefined" && document.documentElement.lang.startsWith("zh")
-      ? "zh-CN"
-      : "en-US";
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency: "CNY",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+import { useCopy } from '../../../app/copy';
+import { formatCurrency } from '../../../shared/format';
+import type { LiveHoldingGroup } from '../../portfolio/api';
 
 function toneClass(value: number) {
   if (value === 0) {
-    return "text-[var(--app-foreground)]";
+    return 'text-[var(--app-foreground)]';
   }
-  return value > 0 ? "app-positive" : "app-negative";
+  return value > 0 ? 'app-positive' : 'app-negative';
 }
 
 function assetClassLabel(
@@ -31,15 +20,15 @@ function assetClassLabel(
   },
 ) {
   switch (assetClass) {
-    case "stock":
+    case 'stock':
       return labels.assetClassStock;
-    case "etf":
+    case 'etf':
       return labels.assetClassEtf;
-    case "fund":
+    case 'fund':
       return labels.assetClassFund;
-    case "gold":
+    case 'gold':
       return labels.assetClassGold;
-    case "bond":
+    case 'bond':
       return labels.assetClassBond;
     default:
       return assetClass;
@@ -59,7 +48,9 @@ export function LiveHoldingsSummaryCard({
   if (groups.length === 0) {
     return (
       <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 text-sm app-muted sm:p-5">
-        <div className="app-card-title text-[var(--app-text)]">{labels.title}</div>
+        <div className="app-card-title text-[var(--app-text)]">
+          {labels.title}
+        </div>
         <div className="mt-3">{labels.empty}</div>
       </div>
     );
@@ -68,7 +59,7 @@ export function LiveHoldingsSummaryCard({
   return (
     <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)]">
       <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-4 py-3 sm:px-5">
-        <div className="text-sm font-semibold tracking-[-0.01em]">{labels.title}</div>
+        <div className="app-card-title">{labels.title}</div>
       </div>
       <div className="grid divide-y divide-[color-mix(in_srgb,var(--app-border)_24%,transparent)] lg:grid-cols-3 lg:divide-x lg:divide-y-0">
         {groups.map((group) => (
@@ -82,11 +73,14 @@ export function LiveHoldingsSummaryCard({
               className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-0 transition-opacity duration-200 group-hover:opacity-50"
               aria-hidden="true"
             />
-            <div className="text-sm font-semibold tracking-[-0.01em]">
+            <div className="text-base font-semibold">
               {assetClassLabel(group.asset_class, copy.common)}
             </div>
             <div className="mt-3 grid gap-2">
-              <Metric label={labels.marketValue} value={formatCurrency(group.total_market_value)} />
+              <Metric
+                label={labels.marketValue}
+                value={formatCurrency(group.total_market_value)}
+              />
               <Metric
                 label={labels.todayMove}
                 value={formatCurrency(group.total_today_change)}
@@ -116,8 +110,10 @@ function Metric({
 }) {
   return (
     <div>
-      <div className="app-kicker text-[10px] uppercase tracking-[0.16em]">{label}</div>
-      <div className={`mt-1 text-sm font-medium tabular-nums ${tone ?? ""}`}>{value}</div>
+      <div className="app-kicker app-tier-4-label">{label}</div>
+      <div className={`mt-1 text-sm font-semibold tabular-nums ${tone ?? ''}`}>
+        {value}
+      </div>
     </div>
   );
 }

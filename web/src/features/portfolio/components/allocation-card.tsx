@@ -1,17 +1,6 @@
-import { useCopy } from "../../../app/copy";
-import type { AllocationItem } from "../api";
-
-const currency = new Intl.NumberFormat("zh-CN", {
-  style: "currency",
-  currency: "CNY",
-  maximumFractionDigits: 2,
-});
-
-const percent = new Intl.NumberFormat("zh-CN", {
-  style: "percent",
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
+import { useCopy } from '../../../app/copy';
+import { formatCurrency, formatPercent } from '../../../shared/format';
+import type { AllocationItem } from '../api';
 
 export function AllocationCard({ items }: { items: AllocationItem[] }) {
   const copy = useCopy();
@@ -34,7 +23,9 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
           <div key={item.symbol} className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span>{item.name}</span>
-              <span>{percent.format(item.weight)}</span>
+              <span className="font-semibold tabular-nums">
+                {formatPercent(item.weight)}
+              </span>
             </div>
             <div className="app-progress-track h-2 overflow-hidden rounded-full">
               <div
@@ -42,7 +33,9 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
                 style={{ width: `${Math.max(item.weight * 100, 2)}%` }}
               />
             </div>
-            <div className="app-muted text-xs">{currency.format(item.value)}</div>
+            <div className="app-muted text-xs tabular-nums">
+              {formatCurrency(item.value)}
+            </div>
           </div>
         ))}
       </div>

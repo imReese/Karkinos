@@ -2,6 +2,11 @@ import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import {
+  formatPrice,
+  formatQuantity,
+  formatTimestamp,
+} from '../../../shared/format';
+import {
   useConfirmManualOrderMutation,
   usePendingManualOrdersQuery,
   useRejectManualOrderMutation,
@@ -96,7 +101,7 @@ export function OrderApprovalTable() {
                       <SideBadge side={order.side} />
                     </td>
                     <td className="px-3 py-4 tabular-nums">
-                      {formatNumber(order.quantity)}
+                      {formatQuantity(order.quantity)}
                     </td>
                     <td className="px-3 py-4 tabular-nums">
                       {formatPrice(order.price)}
@@ -114,7 +119,7 @@ export function OrderApprovalTable() {
                           }))
                         }
                         placeholder={labels.rejectReasonPlaceholder}
-                        className="app-field w-full rounded-xl px-3 py-2 text-sm"
+                        className="app-field w-full rounded-2xl px-4 py-2.5 text-sm"
                         aria-label={`${labels.rejectReason}: ${order.symbol}`}
                       />
                     </td>
@@ -124,7 +129,7 @@ export function OrderApprovalTable() {
                           type="button"
                           disabled={busy}
                           onClick={() => void handleConfirm(order.order_id)}
-                          className="app-button-primary rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                          className="app-button-primary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           {labels.confirm}
                         </button>
@@ -132,7 +137,7 @@ export function OrderApprovalTable() {
                           type="button"
                           disabled={busy}
                           onClick={() => void handleReject(order.order_id)}
-                          className="app-button-secondary rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                          className="app-button-secondary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           {labels.reject}
                         </button>
@@ -215,35 +220,6 @@ function parsePayload(value: string): Record<string, string | null> | null {
   } catch {
     return null;
   }
-}
-
-function formatTimestamp(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('zh-CN', {
-    maximumFractionDigits: 4,
-  }).format(value);
-}
-
-function formatPrice(value: number | null) {
-  if (value === null) {
-    return '--';
-  }
-  return new Intl.NumberFormat('zh-CN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  }).format(value);
 }
 
 function getErrorMessage(error: unknown) {
