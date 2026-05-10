@@ -1,6 +1,18 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from "../../lib/api/client";
+import { apiClient } from '../../lib/api/client';
+
+const LIVE_REFETCH_MS = 5_000;
+
+function liveRefetchInterval() {
+  if (
+    typeof document !== 'undefined' &&
+    document.visibilityState !== 'visible'
+  ) {
+    return false;
+  }
+  return LIVE_REFETCH_MS;
+}
 
 export type LedgerEntry = {
   id: number;
@@ -77,10 +89,10 @@ export type AdjustmentPayload = {
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify(body),
   });
@@ -90,7 +102,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     let message = detail || `Request failed: ${response.status}`;
     try {
       const parsed = JSON.parse(detail) as { detail?: unknown };
-      if (typeof parsed.detail === "string") {
+      if (typeof parsed.detail === 'string') {
         message = parsed.detail;
       }
     } catch {
@@ -102,35 +114,44 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function useLedgerEntriesQuery() {
+export function useLedgerEntriesQuery(limit = 50) {
   return useQuery({
-    queryKey: ["ledger-entries"],
-    queryFn: () => apiClient<LedgerEntry[]>("/api/ledger/entries"),
+    queryKey: ['ledger-entries', limit],
+    queryFn: () =>
+      apiClient<LedgerEntry[]>(`/api/ledger/entries?limit=${limit}`),
+    staleTime: 2_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
   });
 }
 
 export function usePendingFundOrdersQuery() {
   return useQuery({
-    queryKey: ["pending-fund-orders"],
-    queryFn: () => apiClient<PendingFundOrder[]>("/api/portfolio/pending-fund-orders"),
+    queryKey: ['pending-fund-orders'],
+    queryFn: () =>
+      apiClient<PendingFundOrder[]>('/api/portfolio/pending-fund-orders'),
     staleTime: 15_000,
   });
 }
 
-function invalidatePortfolioQueries(queryClient: ReturnType<typeof useQueryClient>) {
+function invalidatePortfolioQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["account-overview"] }),
-    queryClient.invalidateQueries({ queryKey: ["account-state"] }),
-    queryClient.invalidateQueries({ queryKey: ["account-equity-curve"] }),
-    queryClient.invalidateQueries({ queryKey: ["account-equity-curve-series"] }),
-    queryClient.invalidateQueries({ queryKey: ["portfolio-risk-summary"] }),
-    queryClient.invalidateQueries({ queryKey: ["portfolio-explainability"] }),
-    queryClient.invalidateQueries({ queryKey: ["portfolio-positions"] }),
-    queryClient.invalidateQueries({ queryKey: ["portfolio-allocation"] }),
-    queryClient.invalidateQueries({ queryKey: ["portfolio-snapshot"] }),
-    queryClient.invalidateQueries({ queryKey: ["market-research-board"] }),
-    queryClient.invalidateQueries({ queryKey: ["ledger-entries"] }),
-    queryClient.invalidateQueries({ queryKey: ["pending-fund-orders"] }),
+    queryClient.invalidateQueries({ queryKey: ['account-overview'] }),
+    queryClient.invalidateQueries({ queryKey: ['account-state'] }),
+    queryClient.invalidateQueries({ queryKey: ['account-equity-curve'] }),
+    queryClient.invalidateQueries({
+      queryKey: ['account-equity-curve-series'],
+    }),
+    queryClient.invalidateQueries({ queryKey: ['portfolio-risk-summary'] }),
+    queryClient.invalidateQueries({ queryKey: ['portfolio-explainability'] }),
+    queryClient.invalidateQueries({ queryKey: ['portfolio-positions'] }),
+    queryClient.invalidateQueries({ queryKey: ['portfolio-allocation'] }),
+    queryClient.invalidateQueries({ queryKey: ['portfolio-snapshot'] }),
+    queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+    queryClient.invalidateQueries({ queryKey: ['ledger-entries'] }),
+    queryClient.invalidateQueries({ queryKey: ['pending-fund-orders'] }),
   ]);
 }
 
@@ -139,7 +160,7 @@ export function useCreateTradeMutation() {
 
   return useMutation({
     mutationFn: (payload: TradePayload) =>
-      postJson("/api/portfolio/trade", {
+      postJson('/api/portfolio/trade', {
         timestamp: payload.occurred_at,
         symbol: payload.symbol,
         direction: payload.direction,
@@ -161,7 +182,7 @@ export function useCreateCashFlowMutation() {
 
   return useMutation({
     mutationFn: (payload: CashFlowPayload) =>
-      postJson("/api/ledger/cash-flows", payload),
+      postJson('/api/ledger/cash-flows', payload),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
@@ -173,7 +194,7 @@ export function useCreateDividendMutation() {
 
   return useMutation({
     mutationFn: (payload: DividendPayload) =>
-      postJson("/api/ledger/dividends", payload),
+      postJson('/api/ledger/dividends', payload),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
@@ -185,7 +206,7 @@ export function useCreateAdjustmentMutation() {
 
   return useMutation({
     mutationFn: (payload: AdjustmentPayload) =>
-      postJson("/api/ledger/adjustments", payload),
+      postJson('/api/ledger/adjustments', payload),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },

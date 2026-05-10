@@ -103,3 +103,27 @@ export function formatTimestamp(value: string | null | undefined) {
     timeZone: 'Asia/Shanghai',
   }).format(date);
 }
+
+export function formatDateTime(
+  value: string | number | Date | null | undefined,
+) {
+  if (value === null || value === undefined || value === '') {
+    return '--';
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  const parts = new Intl.DateTimeFormat(resolveLocale(), {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).formatToParts(date);
+  const byType = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return `${byType.month ?? '--'}-${byType.day ?? '--'} ${byType.hour ?? '--'}:${byType.minute ?? '--'}`;
+}

@@ -1,16 +1,16 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
-import { expect, test, vi } from "vitest";
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
+import { expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from "../../../app/preferences";
-import type { PortfolioSnapshot } from "../../portfolio/api";
-import type { AccountOverview } from "../api";
-import { OverviewCards, OverviewCardsSkeleton } from "./overview-cards";
-import { PerformanceBreakdownCard } from "./performance-breakdown-card";
+import { PreferencesProvider } from '../../../app/preferences';
+import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { AccountOverview } from '../api';
+import { OverviewCards, OverviewCardsSkeleton } from './overview-cards';
+import { PerformanceBreakdownCard } from './performance-breakdown-card';
 
 function renderWithPreferences(ui: ReactNode) {
-  Object.defineProperty(window, "matchMedia", {
+  Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
       matches: false,
@@ -46,29 +46,34 @@ const snapshot: PortfolioSnapshot = {
   allocation_grouped: [],
 };
 
-test("renders account metrics as a single integrated terminal rail", () => {
+test('renders account metrics as a single integrated terminal rail', () => {
   renderWithPreferences(<OverviewCards overview={overview} />);
 
-  const rail = screen.getByTestId("account-metrics-rail");
+  const rail = screen.getByTestId('account-metrics-rail');
+  const totalAssetsLabel = screen.getByText('Total Assets');
 
-  expect(rail.className).toContain("tabular-nums");
-  expect(rail.className).toContain("divide-y");
-  expect(rail.className).toContain("xl:divide-x");
-  expect(screen.getByText("Total Assets")).toBeTruthy();
-  expect(screen.getByText("Cash Ratio")).toBeTruthy();
+  expect(rail.className).toContain('font-mono');
+  expect(rail.className).toContain('tabular-nums');
+  expect(rail.className).toContain('divide-y');
+  expect(rail.className).toContain('xl:divide-x');
+  expect(totalAssetsLabel.className).toContain('font-bold');
+  expect(totalAssetsLabel.className).toContain('text-[11px]');
+  expect(totalAssetsLabel.className).toContain('text-[var(--app-subtext-0)]');
+  expect(screen.getByText('Total Assets')).toBeTruthy();
+  expect(screen.getByText('Cash Ratio')).toBeTruthy();
 });
 
-test("renders a responsive shimmering metrics rail skeleton", () => {
+test('renders a responsive shimmering metrics rail skeleton', () => {
   render(<OverviewCardsSkeleton />);
 
-  const skeleton = screen.getByTestId("account-metrics-skeleton");
+  const skeleton = screen.getByTestId('account-metrics-skeleton');
 
-  expect(skeleton.className).toContain("animate-pulse");
-  expect(skeleton.className).toContain("xl:grid-cols-4");
-  expect(skeleton.className).toContain("var(--app-surface-0)");
+  expect(skeleton.className).toContain('animate-pulse');
+  expect(skeleton.className).toContain('xl:grid-cols-5');
+  expect(skeleton.className).toContain('var(--app-surface-0)');
 });
 
-test("keeps the localized perspective switcher in the breakdown header", async () => {
+test('keeps the localized perspective switcher in the breakdown header', async () => {
   const user = userEvent.setup();
   const onModeChange = vi.fn();
 
@@ -83,13 +88,17 @@ test("keeps the localized perspective switcher in the breakdown header", async (
     />,
   );
 
-  const switcher = screen.getByTestId("breakdown-perspective-switcher");
-  expect(switcher.className).toContain("rounded-full");
+  const switcher = screen.getByTestId('breakdown-perspective-switcher');
+  expect(switcher.className).toContain('rounded-full');
   expect(
-    screen.getByRole("button", { name: "Account Perspective" }).getAttribute("aria-pressed"),
-  ).toBe("true");
+    screen
+      .getByRole('button', { name: 'Account Perspective' })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
 
-  await user.click(screen.getByRole("button", { name: "Strategy Perspective" }));
+  await user.click(
+    screen.getByRole('button', { name: 'Strategy Perspective' }),
+  );
 
-  expect(onModeChange).toHaveBeenCalledWith("strategy");
+  expect(onModeChange).toHaveBeenCalledWith('strategy');
 });

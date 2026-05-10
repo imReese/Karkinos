@@ -1,11 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query';
 
-import { apiClient } from "../../lib/api/client";
+import { apiClient } from '../../lib/api/client';
 
-const LIVE_REFETCH_MS = 30_000;
+const LIVE_REFETCH_MS = 5_000;
 
 function liveRefetchInterval() {
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+  if (
+    typeof document !== 'undefined' &&
+    document.visibilityState !== 'visible'
+  ) {
     return false;
   }
   return LIVE_REFETCH_MS;
@@ -82,8 +85,8 @@ export type LiveHoldingsResponse = {
 
 export function usePositionsQuery() {
   return useQuery({
-    queryKey: ["portfolio-positions"],
-    queryFn: () => apiClient<Position[]>("/api/portfolio/positions"),
+    queryKey: ['portfolio-positions'],
+    queryFn: () => apiClient<Position[]>('/api/portfolio/positions'),
     staleTime: 10_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -92,8 +95,8 @@ export function usePositionsQuery() {
 
 export function useAllocationQuery() {
   return useQuery({
-    queryKey: ["portfolio-allocation"],
-    queryFn: () => apiClient<AllocationItem[]>("/api/portfolio/allocation"),
+    queryKey: ['portfolio-allocation'],
+    queryFn: () => apiClient<AllocationItem[]>('/api/portfolio/allocation'),
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -102,8 +105,8 @@ export function useAllocationQuery() {
 
 export function usePortfolioSnapshotQuery() {
   return useQuery({
-    queryKey: ["portfolio-snapshot"],
-    queryFn: () => apiClient<PortfolioSnapshot>("/api/portfolio"),
+    queryKey: ['portfolio-snapshot'],
+    queryFn: () => apiClient<PortfolioSnapshot>('/api/portfolio'),
     staleTime: 10_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -112,8 +115,9 @@ export function usePortfolioSnapshotQuery() {
 
 export function useLiveHoldingsQuery() {
   return useQuery({
-    queryKey: ["portfolio-live-holdings"],
-    queryFn: () => apiClient<LiveHoldingsResponse>("/api/portfolio/live-holdings"),
+    queryKey: ['portfolio-live-holdings'],
+    queryFn: () =>
+      apiClient<LiveHoldingsResponse>('/api/portfolio/live-holdings'),
     staleTime: 10_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
