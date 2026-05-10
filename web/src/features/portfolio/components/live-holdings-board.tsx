@@ -1,33 +1,16 @@
-import { useCopy } from "../../../app/copy";
-import type { LiveHoldingGroup } from "../api";
-
-function formatCurrency(value: number | null) {
-  if (value === null) {
-    return "--";
-  }
-  const locale =
-    typeof document !== "undefined" && document.documentElement.lang.startsWith("zh")
-      ? "zh-CN"
-      : "en-US";
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency: "CNY",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatPercent(value: number | null) {
-  if (value === null) {
-    return "--";
-  }
-  return `${(value * 100).toFixed(2)}%`;
-}
+import { useCopy } from '../../../app/copy';
+import {
+  formatCurrency,
+  formatPercent,
+  formatQuantity,
+} from '../../../shared/format';
+import type { LiveHoldingGroup } from '../api';
 
 function toneClass(value: number | null) {
   if (value === null || value === 0) {
-    return "text-[var(--app-foreground)]";
+    return 'text-[var(--app-foreground)]';
   }
-  return value > 0 ? "app-positive" : "app-negative";
+  return value > 0 ? 'app-positive' : 'app-negative';
 }
 
 function baselineLabel(
@@ -36,10 +19,10 @@ function baselineLabel(
   fallbackCloseLabel: string,
   unavailableLabel: string,
 ) {
-  if (baselineSource === "previous_close") {
+  if (baselineSource === 'previous_close') {
     return previousCloseLabel;
   }
-  if (baselineSource === "fallback_close") {
+  if (baselineSource === 'fallback_close') {
     return fallbackCloseLabel;
   }
   return unavailableLabel;
@@ -56,15 +39,15 @@ function assetClassLabel(
   },
 ) {
   switch (assetClass) {
-    case "stock":
+    case 'stock':
       return labels.assetClassStock;
-    case "etf":
+    case 'etf':
       return labels.assetClassEtf;
-    case "fund":
+    case 'fund':
       return labels.assetClassFund;
-    case "gold":
+    case 'gold':
       return labels.assetClassGold;
-    case "bond":
+    case 'bond':
       return labels.assetClassBond;
     default:
       return assetClass;
@@ -91,12 +74,17 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
 
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         {groups.map((group) => (
-          <div key={group.asset_class} className="app-panel-strong rounded-2xl px-4 py-4">
+          <div
+            key={group.asset_class}
+            className="app-panel-strong rounded-2xl px-4 py-4"
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">
                 {assetClassLabel(group.asset_class, copy.common)}
               </div>
-              <div className={`text-sm font-semibold ${toneClass(group.total_today_change)}`}>
+              <div
+                className={`text-sm font-semibold ${toneClass(group.total_today_change)}`}
+              >
                 {formatCurrency(group.total_today_change)}
               </div>
             </div>
@@ -106,7 +94,8 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
             <div className="mt-2 flex items-center justify-between gap-3 text-xs">
               <span className="app-muted">{labels.todayMove}</span>
               <span className={toneClass(group.total_since_buy_pnl)}>
-                {labels.sinceBuyReturn} {formatCurrency(group.total_since_buy_pnl)}
+                {labels.sinceBuyReturn}{' '}
+                {formatCurrency(group.total_since_buy_pnl)}
               </span>
             </div>
           </div>
@@ -134,15 +123,17 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                     <div>
                       <div className="text-sm font-semibold">{item.name}</div>
                       <div className="app-muted mt-1 text-xs">
-                        {item.symbol} · {item.quantity}
+                        {item.symbol} · {formatQuantity(item.quantity)}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="app-button-secondary rounded-full px-3 py-1">
-                        {item.quote_status === "live" ? labels.quoteLive : labels.quoteStale}
+                        {item.quote_status === 'live'
+                          ? labels.quoteLive
+                          : labels.quoteStale}
                       </span>
                       <span className="app-button-secondary rounded-full px-3 py-1">
-                        {labels.baseline}:{" "}
+                        {labels.baseline}:{' '}
                         {baselineLabel(
                           item.baseline_source,
                           labels.baselinePreviousClose,
@@ -154,7 +145,10 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                   </div>
 
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <Metric label={labels.latestPrice} value={formatCurrency(item.latest_price)} />
+                    <Metric
+                      label={labels.latestPrice}
+                      value={formatCurrency(item.latest_price)}
+                    />
                     <Metric
                       label={labels.todayMove}
                       value={formatCurrency(item.today_change)}
@@ -175,7 +169,7 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                   </div>
 
                   <div className="app-muted mt-3 text-xs">
-                    {labels.updatedAt}: {item.quote_timestamp ?? "--"}
+                    {labels.updatedAt}: {item.quote_timestamp ?? '--'}
                   </div>
                 </div>
               ))}
@@ -200,8 +194,10 @@ function Metric({
 }) {
   return (
     <div className="rounded-2xl border border-[var(--app-border)] px-4 py-4">
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">{label}</div>
-      <div className={`mt-2 text-sm font-semibold ${tone ?? ""}`}>{value}</div>
+      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+        {label}
+      </div>
+      <div className={`mt-2 text-sm font-semibold ${tone ?? ''}`}>{value}</div>
       {hint ? <div className="app-muted mt-2 text-xs">{hint}</div> : null}
     </div>
   );

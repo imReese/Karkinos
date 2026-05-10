@@ -1,13 +1,12 @@
-import { useCopy } from "../../../app/copy";
-import type { AllocationGroup } from "../api";
+import { useCopy } from '../../../app/copy';
+import { formatPercent } from '../../../shared/format';
+import type { AllocationGroup } from '../api';
 
-const percent = new Intl.NumberFormat("zh-CN", {
-  style: "percent",
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-
-export function AllocationGroupsCard({ groups }: { groups: AllocationGroup[] }) {
+export function AllocationGroupsCard({
+  groups,
+}: {
+  groups: AllocationGroup[];
+}) {
   const copy = useCopy();
 
   if (groups.length === 0) {
@@ -28,7 +27,9 @@ export function AllocationGroupsCard({ groups }: { groups: AllocationGroup[] }) 
           <div key={group.asset_class} className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span>{group.name}</span>
-              <span>{percent.format(group.weight)}</span>
+              <span className="font-semibold tabular-nums">
+                {formatPercent(group.weight)}
+              </span>
             </div>
             <div className="app-progress-track h-2 overflow-hidden rounded-full">
               <div

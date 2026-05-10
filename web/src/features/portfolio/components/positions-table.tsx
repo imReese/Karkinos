@@ -1,11 +1,6 @@
-import { useCopy } from "../../../app/copy";
-import type { Position } from "../api";
-
-const currency = new Intl.NumberFormat("zh-CN", {
-  style: "currency",
-  currency: "CNY",
-  maximumFractionDigits: 2,
-});
+import { useCopy } from '../../../app/copy';
+import { formatCurrency, formatQuantity } from '../../../shared/format';
+import type { Position } from '../api';
 
 export function PositionsTable({
   positions,
@@ -26,26 +21,34 @@ export function PositionsTable({
               <div>
                 <div className="text-base font-semibold">{position.symbol}</div>
                 <div className="app-muted mt-1 text-sm">
-                  {assetClassBySymbol[position.symbol] ?? "--"}
+                  {assetClassBySymbol[position.symbol] ?? '--'}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-sm font-semibold">
-                  {currency.format(position.market_value)}
+                  {formatCurrency(position.market_value)}
                 </div>
-                <div className="app-muted mt-1 text-xs">{labels.marketValue}</div>
+                <div className="app-muted mt-1 text-xs">
+                  {labels.marketValue}
+                </div>
               </div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
-                [labels.quantity, String(position.quantity)],
-                [labels.availFrozen, `${position.available_qty} / ${position.frozen_qty}`],
-                [labels.avgCost, currency.format(position.avg_cost)],
-                [labels.unrealized, currency.format(position.unrealized_pnl)],
-                [labels.realized, currency.format(position.realized_pnl)],
+                [labels.quantity, formatQuantity(position.quantity)],
+                [
+                  labels.availFrozen,
+                  `${formatQuantity(position.available_qty)} / ${formatQuantity(position.frozen_qty)}`,
+                ],
+                [labels.avgCost, formatCurrency(position.avg_cost)],
+                [labels.unrealized, formatCurrency(position.unrealized_pnl)],
+                [labels.realized, formatCurrency(position.realized_pnl)],
               ].map(([label, value]) => (
-                <div key={label} className="app-panel-strong rounded-2xl px-4 py-3">
+                <div
+                  key={label}
+                  className="app-panel-strong rounded-2xl px-4 py-3"
+                >
                   <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
                     {label}
                   </div>
@@ -76,18 +79,31 @@ export function PositionsTable({
               <tr
                 key={position.symbol}
                 className="border-t"
-                style={{ borderColor: "var(--app-border)" }}
+                style={{ borderColor: 'var(--app-border)' }}
               >
                 <td className="px-4 py-3 font-medium">{position.symbol}</td>
-                <td className="px-4 py-3">{assetClassBySymbol[position.symbol] ?? "--"}</td>
-                <td className="px-4 py-3">{position.quantity}</td>
                 <td className="px-4 py-3">
-                  {position.available_qty} / {position.frozen_qty}
+                  {assetClassBySymbol[position.symbol] ?? '--'}
                 </td>
-                <td className="px-4 py-3">{currency.format(position.avg_cost)}</td>
-                <td className="px-4 py-3">{currency.format(position.market_value)}</td>
-                <td className="px-4 py-3">{currency.format(position.unrealized_pnl)}</td>
-                <td className="px-4 py-3">{currency.format(position.realized_pnl)}</td>
+                <td className="px-4 py-3 tabular-nums">
+                  {formatQuantity(position.quantity)}
+                </td>
+                <td className="px-4 py-3">
+                  {formatQuantity(position.available_qty)} /{' '}
+                  {formatQuantity(position.frozen_qty)}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {formatCurrency(position.avg_cost)}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {formatCurrency(position.market_value)}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {formatCurrency(position.unrealized_pnl)}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {formatCurrency(position.realized_pnl)}
+                </td>
               </tr>
             ))}
           </tbody>

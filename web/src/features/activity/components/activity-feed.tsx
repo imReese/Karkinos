@@ -1,17 +1,16 @@
-import { useCopy } from "../../../app/copy";
-import type { LedgerEntry } from "../api";
-
-const currency = new Intl.NumberFormat("zh-CN", {
-  style: "currency",
-  currency: "CNY",
-  maximumFractionDigits: 2,
-});
+import { useCopy } from '../../../app/copy';
+import { formatCurrency } from '../../../shared/format';
+import type { LedgerEntry } from '../api';
 
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const copy = useCopy();
 
   if (entries.length === 0) {
-    return <div className="app-panel rounded-2xl p-5 text-sm app-muted">{copy.activity.feed.empty}</div>;
+    return (
+      <div className="app-panel rounded-2xl p-5 text-sm app-muted">
+        {copy.activity.feed.empty}
+      </div>
+    );
   }
 
   return (
@@ -27,19 +26,21 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               <div>
                 <div className="text-sm font-medium">
                   {entry.entry_type}
-                  {entry.symbol ? ` · ${entry.symbol}` : ""}
+                  {entry.symbol ? ` · ${entry.symbol}` : ''}
                 </div>
                 <div className="app-muted mt-1 text-xs">{entry.timestamp}</div>
               </div>
               <div className="app-soft text-sm">
                 {entry.amount !== null
-                  ? currency.format(entry.amount)
+                  ? formatCurrency(entry.amount)
                   : entry.price !== null && entry.quantity !== null
-                    ? currency.format(entry.price * entry.quantity)
-                    : "--"}
+                    ? formatCurrency(entry.price * entry.quantity)
+                    : '--'}
               </div>
             </div>
-            {entry.note ? <div className="app-muted mt-2 text-sm">{entry.note}</div> : null}
+            {entry.note ? (
+              <div className="app-muted mt-2 text-sm">{entry.note}</div>
+            ) : null}
           </div>
         ))}
       </div>
