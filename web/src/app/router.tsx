@@ -29,6 +29,8 @@ import {
 } from "../features/account/components/overview-cards";
 import { PerformanceBreakdownCard } from "../features/account/components/performance-breakdown-card";
 import { RiskSummaryCard } from "../features/account/components/risk-summary-card";
+import { KillSwitchPanel } from "../features/trading/components/kill-switch-panel";
+import { OrderApprovalTable } from "../features/trading/components/order-approval-table";
 import {
   useCreateAdjustmentMutation,
   useCreateCashFlowMutation,
@@ -504,6 +506,11 @@ function RiskPage() {
         <StatusCard title={copy.states.error} detail={copy.riskPage.error} tone="danger" />
       ) : (
         <div className="space-y-5 sm:space-y-6">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <KillSwitchPanel />
+            <OrderApprovalTable />
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {workspace.data.metrics.map((metric) => (
               <div key={metric.key} className="app-panel rounded-2xl p-4 sm:p-5">
