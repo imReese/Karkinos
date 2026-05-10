@@ -1683,11 +1683,7 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
 
 
 def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_path):
-    from server.db import AppDatabase
     from server.routes import portfolio as portfolio_routes
-
-    db = AppDatabase(tmp_path / "app.db")
-    db.init_sync()
 
     router = portfolio_routes.create_router()
     trade_route = next(
@@ -1695,6 +1691,29 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         for route in router.routes
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
+
+    class FakeDb:
+        def __init__(self):
+            self.trades: list[dict] = []
+            self.ledger_entries: list[dict] = []
+
+        async def add_trade(self, **payload):
+            trade_id = len(self.trades) + 1
+            self.trades.insert(
+                0,
+                {
+                    "id": trade_id,
+                    **payload,
+                    "created_at": "2026-04-22T14:46:01",
+                },
+            )
+            return trade_id
+
+        def insert_ledger_entry_sync(self, **payload):
+            self.ledger_entries.append(payload)
+
+        async def get_trades(self, limit=50, offset=0):
+            return self.trades[offset : offset + limit]
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -1714,7 +1733,7 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
             live_poll_interval=120,
         ),
         scheduler=SimpleNamespace(is_running=False),
-        db=db,
+        db=FakeDb(),
     )
 
     class FakeAkshareSource:
@@ -1761,12 +1780,9 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
 
 
 def test_portfolio_trade_returns_pending_when_fund_nav_not_published(monkeypatch, tmp_path):
-    from fastapi import HTTPException
-    from server.db import AppDatabase
-    from server.routes import portfolio as portfolio_routes
+    import json
 
-    db = AppDatabase(tmp_path / "app.db")
-    db.init_sync()
+    from server.routes import portfolio as portfolio_routes
 
     router = portfolio_routes.create_router()
     trade_route = next(
@@ -1774,6 +1790,15 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(monkeypatch
         for route in router.routes
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
+
+    class FakeDb:
+        def __init__(self):
+            self.pending_orders: list[dict] = []
+
+        def add_pending_fund_order_sync(self, **payload):
+            order_id = len(self.pending_orders) + 1
+            self.pending_orders.append({"id": order_id, **payload})
+            return order_id
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -1793,7 +1818,7 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(monkeypatch
             live_poll_interval=120,
         ),
         scheduler=SimpleNamespace(is_running=False),
-        db=db,
+        db=FakeDb(),
     )
 
     class FakeAkshareSource:
@@ -1820,21 +1845,23 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(monkeypatch
     )
     monkeypatch.setattr(portfolio_routes, "_persist_runtime_config", lambda config: None)
 
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(
-            trade_route.endpoint(
-                portfolio_routes.TradeCreate(
-                    timestamp="2026-04-23T14:46:00",
-                    symbol="012710",
-                    direction="buy",
-                    amount=200.0,
-                    asset_class="fund",
-                )
+    response = asyncio.run(
+        trade_route.endpoint(
+            portfolio_routes.TradeCreate(
+                timestamp="2026-04-23T14:46:00",
+                symbol="012710",
+                direction="buy",
+                amount=200.0,
+                asset_class="fund",
             )
         )
+    )
+    payload = json.loads(response.body)
 
-    assert exc.value.status_code == 409
-    assert "2026-04-23" in exc.value.detail
+    assert response.status_code == 202
+    assert payload["status"] == "pending"
+    assert payload["target_trade_date"] == "2026-04-23"
+    assert "2026-04-23" in payload["detail"]
     assert fake_state.config.assets[0]["symbol"] == "012710"
 
 
