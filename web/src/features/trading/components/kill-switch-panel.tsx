@@ -1,18 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
-import { useCopy } from "../../../app/copy";
+import { useCopy } from '../../../app/copy';
 import {
   useKillSwitchQuery,
   useSetKillSwitchMutation,
   type KillSwitchSnapshot,
-} from "../api";
+} from '../api';
 
 export function KillSwitchPanel() {
   const copy = useCopy();
   const labels = copy.trading.killSwitch;
   const killSwitch = useKillSwitchQuery();
   const setKillSwitch = useSetKillSwitchMutation();
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   const snapshot = killSwitch.data;
@@ -63,14 +63,22 @@ export function KillSwitchPanel() {
                   setFormError(null);
                 }
               }}
-              placeholder={enabled ? labels.currentReasonPlaceholder : labels.reasonPlaceholder}
+              placeholder={
+                enabled
+                  ? labels.currentReasonPlaceholder
+                  : labels.reasonPlaceholder
+              }
               className="app-field rounded-xl px-3 py-2 text-sm"
               aria-label={labels.reason}
             />
           </label>
-          {formError ? <div className="app-error-text text-sm">{formError}</div> : null}
+          {formError ? (
+            <div className="app-error-text text-sm">{formError}</div>
+          ) : null}
           {setKillSwitch.isError ? (
-            <div className="app-error-text text-sm">{getErrorMessage(setKillSwitch.error)}</div>
+            <div className="app-error-text text-sm">
+              {getErrorMessage(setKillSwitch.error)}
+            </div>
           ) : null}
           {killSwitch.isError ? (
             <div className="app-error-text text-sm">{labels.loadFailed}</div>
@@ -82,7 +90,9 @@ export function KillSwitchPanel() {
               onClick={() => void updateKillSwitch(true)}
               className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {setKillSwitch.isPending && !enabled ? labels.submitting : labels.enable}
+              {setKillSwitch.isPending && !enabled
+                ? labels.submitting
+                : labels.enable}
             </button>
             <button
               type="button"
@@ -90,11 +100,14 @@ export function KillSwitchPanel() {
               onClick={() => void updateKillSwitch(false)}
               className="app-button-secondary rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
             >
-              {setKillSwitch.isPending && enabled ? labels.submitting : labels.disable}
+              {setKillSwitch.isPending && enabled
+                ? labels.submitting
+                : labels.disable}
             </button>
           </div>
           <div className="app-muted text-xs">
-            {labels.updatedAt}: {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
+            {labels.updatedAt}:{' '}
+            {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
           </div>
         </div>
       </div>
@@ -116,8 +129,8 @@ function KillSwitchBadge({
     <span
       className={`rounded-full px-3 py-1 text-xs font-semibold ${
         enabled
-          ? "bg-red-500/15 text-red-300 ring-1 ring-red-500/35"
-          : "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35"
+          ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
+          : 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
       }`}
     >
       {snapshot ? (enabled ? labels.enabled : labels.disabled) : labels.loading}
@@ -133,11 +146,11 @@ function formatTimestamp(value?: string | null) {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(date);
 }
 
