@@ -2,15 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
-from analytics.metrics import (
-    AnnualizedReturn,
-    MaxDrawdown,
-    SharpeRatio,
-    SortinoRatio,
-    WinRate,
-)
 from backtest.result import BacktestResult
 
 
@@ -19,19 +10,7 @@ def generate_report(result: BacktestResult) -> str:
     if not result.equity_curve:
         return "No data in backtest result."
 
-    # 计算日收益率
-    equities = [float(e) for _, e in result.equity_curve]
-    returns = [
-        Decimal(str((equities[i] - equities[i - 1]) / equities[i - 1]))
-        for i in range(1, len(equities))
-        if equities[i - 1] != 0
-    ]
-
-    sharpe = SharpeRatio.calculate(returns)
-    sortino = SortinoRatio.calculate(returns)
-    max_dd = MaxDrawdown.calculate(equities)
-    win_rate = WinRate.calculate(returns)
-    annual_return = AnnualizedReturn.calculate(equities)
+    metrics = result.metrics
 
     lines = [
         "=" * 50,
@@ -41,11 +20,14 @@ def generate_report(result: BacktestResult) -> str:
         f"最终权益:   {result.final_equity:>15,.2f} CNY",
         f"总盈亏:     {result.total_pnl:>15,.2f} CNY",
         f"总收益率:   {result.total_return * 100:>14.2f}%",
-        f"年化收益:   {annual_return * 100:>14.2f}%",
-        f"Sharpe比率: {sharpe:>14.2f}",
-        f"Sortino比率:{sortino:>14.2f}",
-        f"最大回撤:   {max_dd * 100:>14.2f}%",
-        f"胜率:       {win_rate * 100:>14.2f}%",
+        f"年化收益:   {metrics.annual_return * 100:>14.2f}%",
+        f"Sharpe比率: {metrics.sharpe:>14.2f}",
+        f"Sortino比率:{metrics.sortino:>14.2f}",
+        f"最大回撤:   {metrics.max_drawdown * 100:>14.2f}%",
+        f"Calmar比率: {metrics.calmar:>14.2f}",
+        f"胜率:       {metrics.win_rate * 100:>14.2f}%",
+        f"总手续费:   {result.cost_summary.total_commission:>14,.2f} CNY",
+        f"总滑点成本: {result.cost_summary.total_slippage:>14,.2f} CNY",
         f"回测天数:   {result.duration_days:>14d}",
         "-" * 50,
         "持仓:",

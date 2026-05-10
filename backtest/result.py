@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from analytics.backtest_metrics import BacktestMetrics, CostSummary
+from core.events import FillEvent
 from core.types import ZERO, Symbol
 from domain.position import Position
 
@@ -17,6 +19,9 @@ class BacktestResult:
     positions: dict[Symbol, Position]
     initial_cash: Decimal
     final_equity: Decimal
+    metrics: BacktestMetrics = field(default_factory=BacktestMetrics)
+    fills: list[FillEvent] = field(default_factory=list)
+    cost_summary: CostSummary = field(default_factory=CostSummary)
 
     @property
     def total_return(self) -> Decimal:

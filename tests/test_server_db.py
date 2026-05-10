@@ -93,3 +93,32 @@ def test_app_database_persists_risk_decision_audit(tmp_path):
     assert rows[0]["intent_id"] == "INTENT-1"
     assert rows[0]["passed"] == 0
     assert rows[0]["symbol"] == "600519"
+
+
+def test_app_database_persists_backtest_metrics_and_cost_summary_json(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    result_id = asyncio.run(
+        db.save_backtest_result(
+            config_json="{}",
+            initial_cash=100000.0,
+            final_equity=110000.0,
+            total_return=0.1,
+            sharpe=1.2,
+            max_dd=0.08,
+            equity_curve_json="[]",
+            annual_return=0.12,
+            sortino=1.8,
+            win_rate=0.55,
+            duration_days=252,
+            metrics_json='{"calmar": 1.5}',
+            cost_summary_json='{"total_commission": 12.3}',
+        )
+    )
+
+    row = asyncio.run(db.get_backtest_result(result_id))
+
+    assert row is not None
+    assert row["metrics_json"] == '{"calmar": 1.5}'
+    assert row["cost_summary_json"] == '{"total_commission": 12.3}'

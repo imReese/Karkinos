@@ -11,11 +11,13 @@ import pytest
 from backtest.engine import BacktestEngine
 from backtest.result import BacktestResult
 from core.event_bus import EventBus
-from core.events import MarketEvent, SignalEvent
+from core.events import MarketEvent, OrderEvent, SignalEvent
 from core.types import ZERO, BarFrequency, OrderSide, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_etf, make_stock
 from domain.portfolio import Portfolio
+from execution.commission import ETFCommission
+from execution.slippage import PercentSlippage
 from risk.limits import PositionLimitRule
 from risk.manager import RiskManager
 from strategy.base import Strategy
@@ -126,6 +128,33 @@ class TestBacktestEngine:
         if pos:
             assert pos.frozen_qty == ZERO or pos.available_qty > ZERO
 
+    def test_multi_asset_commission_uses_slipped_fill_price(self):
+        symbol = Symbol("510300")
+        inst = make_etf("510300", "沪深300ETF")
+        df = make_price_df(base=100.0)
+        engine = BacktestEngine(
+            strategy=SimpleBuyStrategy(EventBus()),
+            instruments={symbol: inst},
+            data_handlers={symbol: DataHandler(df, symbol)},
+            slippage_model=PercentSlippage(Decimal("0.01")),
+        )
+        engine._on_order_event(
+            OrderEvent(
+                timestamp=datetime(2024, 1, 1),
+                order_id="ORD-ETF",
+                symbol=symbol,
+                side=OrderSide.SELL,
+                order_type=OrderType.MARKET,
+                quantity=Decimal("100"),
+                price=Decimal("100"),
+            )
+        )
+
+        assert engine.fills[0].fill_price == Decimal("99.00")
+        assert engine.fills[0].commission == ETFCommission().calculate(
+            OrderSide.SELL, Decimal("99.00"), Decimal("100")
+        )
+
 
 class TestBacktestResult:
     def test_total_return_calculation(self):
@@ -149,3 +178,15 @@ class TestBacktestResult:
             final_equity=Decimal("1050000"),
         )
         assert result.duration_days == 31
+
+    def test_result_has_metrics_fills_and_cost_summary_defaults(self):
+        result = BacktestResult(
+            equity_curve=[(datetime(2024, 1, 1), Decimal("1000000"))],
+            positions={},
+            initial_cash=Decimal("1000000"),
+            final_equity=Decimal("1000000"),
+        )
+
+        assert result.metrics.sharpe == 0.0
+        assert result.fills == []
+        assert result.cost_summary.total_commission == Decimal("0")
