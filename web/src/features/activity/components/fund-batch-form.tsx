@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState } from 'react';
 
-import { useCopy } from "../../../app/copy";
+import { useCopy } from '../../../app/copy';
 
 export type FundBatchOrder = {
   symbol: string;
@@ -14,16 +14,16 @@ export type FundBatchFormValues = {
   orders: FundBatchOrder[];
 };
 
-const DEFAULT_FUNDS: Omit<FundBatchOrder, "amount">[] = [
-  { symbol: "018125", display_name: "永赢先进制造智选混合C" },
-  { symbol: "026539", display_name: "融通科技臻选混合C" },
-  { symbol: "012710", display_name: "华夏核心成长混合C" },
+const DEFAULT_FUNDS: Omit<FundBatchOrder, 'amount'>[] = [
+  { symbol: '018125', display_name: '永赢先进制造智选混合C' },
+  { symbol: '026539', display_name: '融通科技臻选混合C' },
+  { symbol: '012710', display_name: '华夏核心成长混合C' },
 ];
 
 function defaultValues(): FundBatchFormValues {
   return {
     occurred_at: new Date().toISOString().slice(0, 16),
-    note: "",
+    note: '',
     orders: DEFAULT_FUNDS.map((fund) => ({ ...fund, amount: null })),
   };
 }
@@ -50,7 +50,10 @@ export function FundBatchForm({
   };
 
   const activeOrders = values.orders.filter(
-    (order) => typeof order.amount === "number" && Number.isFinite(order.amount) && order.amount > 0,
+    (order) =>
+      typeof order.amount === 'number' &&
+      Number.isFinite(order.amount) &&
+      order.amount > 0,
   );
 
   return (
@@ -80,54 +83,60 @@ export function FundBatchForm({
         <p className="app-muted mt-2 text-xs leading-5">{labels.helper}</p>
       </div>
       <input
-        aria-label="Batch Occurred At"
+        aria-label={labels.occurredAtLabel}
         type="datetime-local"
         value={values.occurred_at}
         onChange={(event) =>
-          setValues((current) => ({ ...current, occurred_at: event.target.value }))
+          setValues((current) => ({
+            ...current,
+            occurred_at: event.target.value,
+          }))
         }
-        className="app-field w-full rounded-xl px-3 py-2 text-sm"
+        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
       />
       <div className="space-y-2">
         {values.orders.map((order, index) => (
           <div
             key={order.symbol}
-            className="grid gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-surface-1)] p-3 sm:grid-cols-[minmax(0,1fr)_150px]"
+            className="app-panel-strong grid gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_150px]"
           >
             <div>
               <div className="text-sm font-semibold">{order.display_name}</div>
               <div className="app-muted mt-1 text-xs">{order.symbol}</div>
             </div>
             <input
-              aria-label={`${order.symbol} Amount`}
+              aria-label={labels.amountLabel(order.symbol)}
               type="number"
               step="any"
               min="0"
               placeholder={labels.amountPlaceholder}
-              value={order.amount ?? ""}
+              value={order.amount ?? ''}
               onChange={(event) => {
-                const nextAmount = event.target.value === "" ? null : Number(event.target.value);
+                const nextAmount =
+                  event.target.value === '' ? null : Number(event.target.value);
                 updateOrderAmount(index, nextAmount);
               }}
-              className="app-field rounded-xl px-3 py-2 text-sm"
+              className="app-field rounded-2xl px-4 py-3 text-sm"
             />
           </div>
         ))}
       </div>
       <input
-        aria-label="Batch Fund Note"
+        aria-label={labels.noteLabel}
         placeholder={labels.notePlaceholder}
         value={values.note}
         onChange={(event) =>
           setValues((current) => ({ ...current, note: event.target.value }))
         }
-        className="app-field w-full rounded-xl px-3 py-2 text-sm"
+        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
       />
-      {submitError ? <div className="app-error-text text-sm">{submitError}</div> : null}
+      {submitError ? (
+        <div className="app-error-text text-sm">{submitError}</div>
+      ) : null}
       <button
         type="submit"
         disabled={pending}
-        className="app-button-primary rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50"
+        className="app-button-primary rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
       >
         {pending ? labels.saving : labels.submit}
       </button>

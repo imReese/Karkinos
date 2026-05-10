@@ -1,7 +1,7 @@
-import { useCopy } from "../../../app/copy";
+import { useCopy } from '../../../app/copy';
 
-type WorkspaceMode = "account" | "strategy";
-type PnlFilter = "all" | "winners" | "losers";
+type WorkspaceMode = 'account' | 'strategy';
+type PnlFilter = 'all' | 'winners' | 'losers';
 
 export function WorkspaceToolbar({
   mode,
@@ -36,15 +36,17 @@ export function WorkspaceToolbar({
           </div>
           <div className="flex flex-wrap gap-2">
             {[
-              { value: "account", label: copy.mode.accountShort },
-              { value: "strategy", label: copy.mode.strategyShort },
+              { value: 'account', label: copy.mode.accountShort },
+              { value: 'strategy', label: copy.mode.strategyShort },
             ].map((item) => (
               <button
                 key={item.value}
                 type="button"
                 onClick={() => onModeChange(item.value as WorkspaceMode)}
-                className={`rounded-xl px-3 py-2 text-sm transition sm:px-4 ${
-                  mode === item.value ? "app-button-primary" : "app-button-secondary"
+                className={`rounded-2xl px-3 py-2 text-sm font-semibold transition sm:px-4 ${
+                  mode === item.value
+                    ? 'app-button-primary'
+                    : 'app-button-secondary'
                 }`}
               >
                 {item.label}
@@ -62,7 +64,7 @@ export function WorkspaceToolbar({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={labels.searchPlaceholder}
-            className="app-field w-full rounded-xl px-3 py-2 text-sm"
+            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
           />
         </label>
 
@@ -73,7 +75,7 @@ export function WorkspaceToolbar({
           <select
             value={assetClassFilter}
             onChange={(event) => onAssetClassFilterChange(event.target.value)}
-            className="app-field w-full rounded-xl px-3 py-2 text-sm"
+            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
           >
             <option value="all">{labels.allAssetClasses}</option>
             {assetClasses.map((assetClass) => (
@@ -90,8 +92,10 @@ export function WorkspaceToolbar({
           </div>
           <select
             value={pnlFilter}
-            onChange={(event) => onPnlFilterChange(event.target.value as PnlFilter)}
-            className="app-field w-full rounded-xl px-3 py-2 text-sm"
+            onChange={(event) =>
+              onPnlFilterChange(event.target.value as PnlFilter)
+            }
+            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
           >
             <option value="all">{labels.allHoldings}</option>
             <option value="winners">{labels.winnersOnly}</option>

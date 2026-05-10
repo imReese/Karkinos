@@ -53,7 +53,7 @@ export function RiskSummaryCard({
       <div className="mb-3 flex items-center justify-between">
         <div className="app-card-title">{labels.title}</div>
       </div>
-      <div className="grid overflow-hidden rounded-lg border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] sm:grid-cols-2">
+      <div className="grid overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] sm:grid-cols-2">
         {items.map((item, index) => (
           <div
             key={item.label}

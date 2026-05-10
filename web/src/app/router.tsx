@@ -186,7 +186,7 @@ function OverviewPage() {
       {overview.isLoading || snapshot.isLoading ? (
         <div className="space-y-3">
           <OverviewCardsSkeleton />
-          <section className="app-surface-section overflow-hidden rounded-xl">
+          <section className="app-surface-section overflow-hidden rounded-2xl">
             <div className="app-surface-section-header">
               <div>
                 <div className="app-product-mark">{copy.overview.kicker}</div>
@@ -246,7 +246,7 @@ function OverviewPage() {
             drivers={explainability.data?.recent_drivers ?? []}
             isLoading={explainability.isLoading}
           />
-          <section className="app-surface-section overflow-hidden rounded-xl">
+          <section className="app-surface-section overflow-hidden rounded-2xl">
             <div className="app-surface-section-header">
               <div>
                 <div className="app-product-mark">{copy.overview.kicker}</div>
@@ -286,7 +286,7 @@ function OverviewPage() {
               </div>
             </div>
           </section>
-          <section className="app-surface-section overflow-hidden rounded-xl">
+          <section className="app-surface-section overflow-hidden rounded-2xl">
             <RiskSummaryCard
               overview={overview.data}
               snapshot={snapshot.data}
@@ -722,7 +722,7 @@ function RiskPage() {
                     onChange={(event) =>
                       setTimelineFromDate(event.target.value)
                     }
-                    className="app-field rounded-xl px-3 py-2 text-sm"
+                    className="app-field rounded-2xl px-3 py-2 text-sm"
                     aria-label={copy.market.noteDateFrom}
                   />
                 </label>
@@ -734,7 +734,7 @@ function RiskPage() {
                     type="date"
                     value={timelineToDate}
                     onChange={(event) => setTimelineToDate(event.target.value)}
-                    className="app-field rounded-xl px-3 py-2 text-sm"
+                    className="app-field rounded-2xl px-3 py-2 text-sm"
                     aria-label={copy.market.noteDateTo}
                   />
                 </label>
@@ -747,7 +747,7 @@ function RiskPage() {
                     onChange={(event) =>
                       setTimelineEventKind(event.target.value)
                     }
-                    className="app-field rounded-xl px-3 py-2 text-sm"
+                    className="app-field rounded-2xl px-3 py-2 text-sm"
                     aria-label={copy.explainability.timelineEventKind}
                   >
                     <option value="">{copy.explainability.allEvents}</option>
@@ -894,7 +894,7 @@ function MarketPage() {
                       value={newSymbol}
                       onChange={(event) => setNewSymbol(event.target.value)}
                       placeholder={copy.market.symbolPlaceholder}
-                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      className="app-field rounded-2xl px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="grid gap-2">
@@ -905,7 +905,7 @@ function MarketPage() {
                       name="watchlist_asset_class"
                       value={newAssetClass}
                       onChange={(event) => setNewAssetClass(event.target.value)}
-                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      className="app-field rounded-2xl px-3 py-2 text-sm"
                     >
                       {assetClassOptions.map(([value, label]) => (
                         <option key={value} value={value}>
@@ -916,7 +916,7 @@ function MarketPage() {
                   </label>
                   <button
                     type="submit"
-                    className="app-button-primary rounded-xl px-4 py-2 text-sm"
+                    className="app-button-primary rounded-2xl px-4 py-2 text-sm"
                   >
                     {copy.market.add}
                   </button>
@@ -945,7 +945,7 @@ function MarketPage() {
                         </div>
                         <button
                           type="button"
-                          className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                          className="app-button-secondary rounded-2xl px-3 py-1 text-xs"
                           onClick={async (event) => {
                             event.stopPropagation();
                             await removeWatchlistItem.mutateAsync(item.symbol);
@@ -1159,7 +1159,7 @@ function MarketPage() {
                           name="research_note_type"
                           value={noteType}
                           onChange={(event) => setNoteType(event.target.value)}
-                          className="app-field rounded-xl px-3 py-2 text-sm"
+                          className="app-field rounded-2xl px-3 py-2 text-sm"
                         >
                           <option value="note">{copy.market.note}</option>
                           <option value="thesis">{copy.market.thesis}</option>
@@ -1178,7 +1178,7 @@ function MarketPage() {
                           onChange={(event) =>
                             setNotePriority(event.target.value)
                           }
-                          className="app-field rounded-xl px-3 py-2 text-sm"
+                          className="app-field rounded-2xl px-3 py-2 text-sm"
                         >
                           <option value="high">
                             {copy.market.highPriority}
@@ -1200,7 +1200,7 @@ function MarketPage() {
                         value={noteTitle}
                         onChange={(event) => setNoteTitle(event.target.value)}
                         placeholder={copy.market.noteTitlePlaceholder}
-                        className="app-field rounded-xl px-3 py-2 text-sm"
+                        className="app-field rounded-2xl px-3 py-2 text-sm"
                       />
                     </label>
                     <label className="grid gap-2">
@@ -1213,7 +1213,7 @@ function MarketPage() {
                         onChange={(event) => setNoteContent(event.target.value)}
                         placeholder={copy.market.noteContentPlaceholder}
                         rows={5}
-                        className="app-field min-h-32 rounded-xl px-3 py-2 text-sm"
+                        className="app-field min-h-32 rounded-2xl px-3 py-2 text-sm"
                       />
                     </label>
                     <label className="grid gap-2">
@@ -1225,7 +1225,7 @@ function MarketPage() {
                         type="date"
                         value={noteDate}
                         onChange={(event) => setNoteDate(event.target.value)}
-                        className="app-field rounded-xl px-3 py-2 text-sm"
+                        className="app-field rounded-2xl px-3 py-2 text-sm"
                       />
                     </label>
                     <button
@@ -1234,7 +1234,7 @@ function MarketPage() {
                         createResearchNote.isPending ||
                         updateResearchNote.isPending
                       }
-                      className="app-button-primary rounded-xl px-4 py-2 text-sm"
+                      className="app-button-primary rounded-2xl px-4 py-2 text-sm"
                     >
                       {createResearchNote.isPending ||
                       updateResearchNote.isPending
@@ -1265,7 +1265,7 @@ function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterType(event.target.value)
                       }
-                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      className="app-field rounded-2xl px-3 py-2 text-sm"
                     >
                       <option value="">{copy.market.allTypes}</option>
                       <option value="note">{copy.market.note}</option>
@@ -1282,7 +1282,7 @@ function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterPriority(event.target.value)
                       }
-                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      className="app-field rounded-2xl px-3 py-2 text-sm"
                     >
                       <option value="">{copy.market.allPriorities}</option>
                       <option value="high">{copy.market.highPriority}</option>
@@ -1302,7 +1302,7 @@ function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterDateFrom(event.target.value)
                       }
-                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      className="app-field rounded-2xl px-3 py-2 text-sm"
                       aria-label={copy.market.noteDateFrom}
                     />
                   </label>
@@ -1316,7 +1316,7 @@ function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterDateTo(event.target.value)
                       }
-                      className="app-field rounded-xl px-3 py-2 text-sm"
+                      className="app-field rounded-2xl px-3 py-2 text-sm"
                       aria-label={copy.market.noteDateTo}
                     />
                   </label>
@@ -1350,7 +1350,7 @@ function MarketPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                              className="app-button-secondary rounded-2xl px-3 py-1 text-xs"
                               onClick={() => {
                                 setEditingNoteId(note.id);
                                 setNoteType(note.entry_kind);
@@ -1364,7 +1364,7 @@ function MarketPage() {
                             </button>
                             <button
                               type="button"
-                              className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                              className="app-button-secondary rounded-2xl px-3 py-1 text-xs"
                               onClick={async () => {
                                 try {
                                   await deleteResearchNote.mutateAsync(note.id);
@@ -1734,7 +1734,7 @@ function ExplainabilityCard({
   }
 
   return (
-    <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)]">
+    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] shadow-[0_18px_50px_rgba(17,17,27,0.12)]">
       <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 sm:px-5">
         <div className="app-kicker text-[10px] uppercase tracking-[0.18em]">
           {copy.explainability.title}
@@ -2142,7 +2142,7 @@ function ReturnCalendarCard({
             onChange={(event) =>
               setViewMode(event.target.value as 'heatmap' | 'table' | 'curve')
             }
-            className="app-field rounded-xl px-3 py-2 text-sm"
+            className="app-field rounded-2xl px-3 py-2 text-sm"
           >
             <option value="heatmap">{copy.explainability.heatmapView}</option>
             <option value="table">{copy.explainability.tableView}</option>
@@ -2153,7 +2153,7 @@ function ReturnCalendarCard({
             onChange={(event) =>
               setBucket(event.target.value as 'day' | 'week' | 'month' | 'year')
             }
-            className="app-field rounded-xl px-3 py-2 text-sm"
+            className="app-field rounded-2xl px-3 py-2 text-sm"
           >
             <option value="day">{copy.explainability.day}</option>
             <option value="week">{copy.explainability.week}</option>
@@ -2165,7 +2165,7 @@ function ReturnCalendarCard({
             onChange={(event) =>
               setMetric(event.target.value as 'amount' | 'percent')
             }
-            className="app-field rounded-xl px-3 py-2 text-sm"
+            className="app-field rounded-2xl px-3 py-2 text-sm"
           >
             <option value="amount">{copy.explainability.amountMetric}</option>
             <option value="percent">{copy.explainability.percentMetric}</option>
@@ -2617,8 +2617,8 @@ function StatusCard({
     <div
       className={
         tone === 'danger'
-          ? 'app-panel-danger rounded-xl p-4 sm:p-5'
-          : 'rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 sm:p-5'
+          ? 'app-panel-danger rounded-2xl p-4 sm:p-5'
+          : 'rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 shadow-[0_18px_50px_rgba(17,17,27,0.12)] sm:p-5'
       }
     >
       <div className="text-sm font-semibold tracking-[-0.01em]">{title}</div>
@@ -2627,7 +2627,7 @@ function StatusCard({
         <button
           type="button"
           onClick={onAction}
-          className="app-button-secondary mt-4 rounded-xl px-4 py-2 text-sm"
+          className="app-button-secondary mt-4 rounded-2xl px-4 py-2 text-sm"
         >
           {actionLabel}
         </button>
