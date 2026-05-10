@@ -43,6 +43,21 @@ class PercentSlippage(SlippageModel):
             return price - slip
 
 
+class TickSlippage(SlippageModel):
+    """按最小价格变动单位计算滑点。"""
+
+    def __init__(self, ticks: int = 1, tick_size: Decimal = Decimal("0.01")) -> None:
+        self.ticks = ticks
+        self.tick_size = tick_size
+
+    def apply(self, price: Decimal, side: OrderSide, quantity: Decimal) -> Decimal:
+        slip = self.tick_size * Decimal(self.ticks)
+        if side == OrderSide.BUY:
+            return price + slip
+        else:
+            return price - slip
+
+
 class VolumeSlippage(SlippageModel):
     """成交量滑点模型。
 

@@ -15,6 +15,16 @@ _DB_DIR = Path("data/store")
 _DB_PATH = _DB_DIR / "app.db"
 
 
+def _ensure_column(
+    conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str
+) -> None:
+    """Add a column to an existing SQLite table when it is missing."""
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    if any(row[1] == column_name for row in rows):
+        return
+    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+
+
 class AppDatabase:
     """应用数据库。
 
@@ -39,6 +49,8 @@ class AppDatabase:
             if journal_mode and str(journal_mode[0]).lower() != "wal":
                 conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            _ensure_column(conn, "backtest_results", "metrics_json", "TEXT")
+            _ensure_column(conn, "backtest_results", "cost_summary_json", "TEXT")
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
@@ -151,9 +163,7 @@ class AppDatabase:
         self, statuses: list[str] | None = None, limit: int = 20, offset: int = 0
     ) -> list[dict[str, Any]]:
         """列出待执行任务。"""
-        return self.get_action_tasks_sync(
-            statuses=statuses, limit=limit, offset=offset
-        )
+        return self.get_action_tasks_sync(statuses=statuses, limit=limit, offset=offset)
 
     def get_action_tasks_sync(
         self, statuses: list[str] | None = None, limit: int = 20, offset: int = 0
@@ -438,16 +448,17 @@ class AppDatabase:
         sortino: float = 0.0,
         win_rate: float = 0.0,
         duration_days: int = 0,
+        metrics_json: str = "{}",
+        cost_summary_json: str = "{}",
     ) -> int:
         """保存回测结果，返回 ID。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
                 """INSERT INTO backtest_results
                    (created_at, config_json, initial_cash, final_equity, total_return,
-                    sharpe, sortino, max_drawdown, win_rate, duration_days, equity_curve_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    sharpe, sortino, max_drawdown, win_rate, duration_days,
+                    equity_curve_json, metrics_json, cost_summary_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     datetime.now().isoformat(),
                     config_json,
@@ -460,34 +471,30 @@ class AppDatabase:
                     win_rate,
                     duration_days,
                     equity_curve_json,
+                    metrics_json,
+                    cost_summary_json,
                 ),
             )
-            await db.commit()
+            conn.commit()
             return cursor.lastrowid or 0
 
     async def get_backtest_results(self) -> list[dict[str, Any]]:
         """获取所有回测结果摘要。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
                 """SELECT id, created_at, config_json, total_return, sharpe, max_drawdown
                    FROM backtest_results ORDER BY id DESC"""
-            )
-            rows = await cursor.fetchall()
+            ).fetchall()
             return [dict(row) for row in rows]
 
     async def get_backtest_result(self, result_id: int) -> dict[str, Any] | None:
         """获取单个回测结果详情。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
                 "SELECT * FROM backtest_results WHERE id = ?", (result_id,)
-            )
-            row = await cursor.fetchone()
+            ).fetchone()
             return dict(row) if row else None
 
     # ---------- Quote Snapshots ----------
@@ -538,8 +545,7 @@ class AppDatabase:
         """同步获取各标的最新行情快照，供启动恢复使用。"""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
+            rows = conn.execute("""
                 SELECT qs.symbol, qs.asset_class, qs.price, qs.volume, qs.timestamp
                 FROM quote_snapshots qs
                 JOIN (
@@ -549,8 +555,7 @@ class AppDatabase:
                 ) latest
                 ON qs.symbol = latest.symbol AND qs.timestamp = latest.max_timestamp
                 ORDER BY qs.symbol
-                """
-            ).fetchall()
+                """).fetchall()
             return [dict(row) for row in rows]
 
     def get_recent_quote_snapshots_sync(
@@ -806,9 +811,7 @@ class AppDatabase:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def get_trades_sync(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[dict[str, Any]]:
+    def get_trades_sync(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         """同步列出交易记录，最新优先。"""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
@@ -868,7 +871,9 @@ class AppDatabase:
             conn.commit()
             return cursor.lastrowid or 0
 
-    def get_pending_fund_orders_sync(self, status: str = "pending") -> list[dict[str, Any]]:
+    def get_pending_fund_orders_sync(
+        self, status: str = "pending"
+    ) -> list[dict[str, Any]]:
         """同步读取待确认基金申购。"""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
@@ -1185,7 +1190,9 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     max_drawdown REAL DEFAULT 0,
     win_rate REAL DEFAULT 0,
     duration_days INTEGER DEFAULT 0,
-    equity_curve_json TEXT NOT NULL
+    equity_curve_json TEXT NOT NULL,
+    metrics_json TEXT DEFAULT '{}',
+    cost_summary_json TEXT DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (

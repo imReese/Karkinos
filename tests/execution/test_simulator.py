@@ -11,7 +11,7 @@ from core.events import OrderEvent
 from core.types import OrderSide, OrderType, Symbol
 from execution.commission import ETFCommission, StockACommission
 from execution.simulator import SimulatedExecution
-from execution.slippage import FixedSlippage, PercentSlippage
+from execution.slippage import FixedSlippage, PercentSlippage, TickSlippage
 
 
 class TestSimulatedExecution:
@@ -80,3 +80,23 @@ class TestSimulatedExecution:
         fill = exec_engine.execute(order)
         # ETF 佣金 = max(400 * 0.0003, 5) + 过户费 = 5 + 0.004 ≈ 5.004
         assert fill.commission > Decimal("0")
+
+    def test_tick_slippage_adds_for_buy_and_subtracts_for_sell(self):
+        slippage = TickSlippage(ticks=2, tick_size=Decimal("0.01"))
+
+        assert slippage.apply(
+            Decimal("10.00"), OrderSide.BUY, Decimal("100")
+        ) == Decimal("10.02")
+        assert slippage.apply(
+            Decimal("10.00"), OrderSide.SELL, Decimal("100")
+        ) == Decimal("9.98")
+
+    def test_percent_slippage_adds_for_buy_and_subtracts_for_sell(self):
+        slippage = PercentSlippage(Decimal("0.01"))
+
+        assert slippage.apply(Decimal("100"), OrderSide.BUY, Decimal("100")) == Decimal(
+            "101.00"
+        )
+        assert slippage.apply(
+            Decimal("100"), OrderSide.SELL, Decimal("100")
+        ) == Decimal("99.00")

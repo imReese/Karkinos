@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 
 import pandas as pd
 
+from analytics.backtest_metrics import calculate_backtest_metrics, summarize_fill_costs
 from backtest.result import BacktestResult
 from core.clock import SimulatedClock
 from core.event_bus import EventBus
@@ -29,10 +31,19 @@ from execution.commission import (
     StockACommission,
 )
 from execution.simulator import SimulatedExecution
+from execution.slippage import SlippageModel
 from risk.manager import RiskManager
 from strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class BacktestExecutionConfig:
+    """Execution friction settings for backtests."""
+
+    slippage_model: SlippageModel | None = None
+    commission_calc: CommissionCalculator | None = None
 
 
 class BacktestEngine:
@@ -52,6 +63,8 @@ class BacktestEngine:
         data_handlers: dict[Symbol, DataHandler],
         initial_cash: Decimal = Decimal("100000"),
         commission_calc: CommissionCalculator | None = None,
+        slippage_model: SlippageModel | None = None,
+        execution_config: BacktestExecutionConfig | None = None,
     ) -> None:
         self.event_bus = EventBus()
         self.clock = SimulatedClock()
@@ -59,6 +72,7 @@ class BacktestEngine:
         self.instruments = instruments
         self.data_handlers = data_handlers
         self.initial_cash = initial_cash
+        self.fills: list[FillEvent] = []
 
         # 将策略的 event_bus 指向引擎内部总线
         self.strategy.event_bus = self.event_bus
@@ -68,13 +82,26 @@ class BacktestEngine:
         for inst in instruments.values():
             self.portfolio.add_instrument(inst)
 
+        configured_slippage = slippage_model or (
+            execution_config.slippage_model if execution_config is not None else None
+        )
+        configured_commission = commission_calc or (
+            execution_config.commission_calc if execution_config is not None else None
+        )
+
         # 多资产佣金调度
-        if commission_calc is None:
+        if configured_commission is None:
             self._multi_commission = MultiAssetCommission()
-            self.execution = SimulatedExecution(commission_calc=self._multi_commission)
+            self.execution = SimulatedExecution(
+                slippage_model=configured_slippage,
+                commission_calc=self._multi_commission,
+            )
         else:
             self._multi_commission = None
-            self.execution = SimulatedExecution(commission_calc=commission_calc)
+            self.execution = SimulatedExecution(
+                slippage_model=configured_slippage,
+                commission_calc=configured_commission,
+            )
 
         self.risk_manager = RiskManager(self.event_bus)
 
@@ -176,15 +203,15 @@ class BacktestEngine:
         if self._multi_commission is not None:
             inst = self.instruments.get(event.symbol)
             if inst is not None:
-                commission = self._multi_commission.calculate_for(
-                    inst.commission_type,
-                    event.side,
-                    event.price or ZERO,
-                    event.quantity,
-                )
                 fill = self.execution.execute(event)
                 if fill is not None:
-                    # 覆盖佣金为按资产类型计算的值
+                    # 覆盖佣金为按资产类型和最终成交价计算的值。
+                    commission = self._multi_commission.calculate_for(
+                        inst.commission_type,
+                        event.side,
+                        fill.fill_price,
+                        fill.fill_quantity,
+                    )
                     fill = FillEvent(
                         timestamp=fill.timestamp,
                         fill_id=fill.fill_id,
@@ -196,11 +223,13 @@ class BacktestEngine:
                         commission=commission,
                         slippage=fill.slippage,
                     )
+                    self.fills.append(fill)
                     self.event_bus.publish(fill)
                     return
 
         fill = self.execution.execute(event)
         if fill is not None:
+            self.fills.append(fill)
             self.event_bus.publish(fill)
 
     def _merge_streams(self) -> list[MarketEvent]:
@@ -221,9 +250,20 @@ class BacktestEngine:
 
     def _build_result(self) -> BacktestResult:
         """构建回测结果。"""
+        cost_summary = summarize_fill_costs(self.fills)
+        final_equity = self._calculate_equity()
+        metrics = calculate_backtest_metrics(
+            self.portfolio.equity_curve,
+            initial_cash=self.initial_cash,
+            final_equity=final_equity,
+            cost_summary=cost_summary,
+        )
         return BacktestResult(
             equity_curve=self.portfolio.equity_curve,
             positions=self.portfolio.positions,
             initial_cash=self.initial_cash,
-            final_equity=self._calculate_equity(),
+            final_equity=final_equity,
+            metrics=metrics,
+            fills=list(self.fills),
+            cost_summary=cost_summary,
         )

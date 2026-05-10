@@ -27,6 +27,7 @@ from server.models import (
 
 logger = logging.getLogger(__name__)
 
+
 class StrategyInfoResponse(BaseModel):
     name: str
     description: str
@@ -37,13 +38,6 @@ def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any
     """同步运行单次回测（在线程池中执行），供 run 和 compare 共用。"""
     from datetime import datetime
 
-    from analytics.metrics import (
-        AnnualizedReturn,
-        MaxDrawdown,
-        SharpeRatio,
-        SortinoRatio,
-        WinRate,
-    )
     from backtest.engine import BacktestEngine
     from data.manager import DataManager, build_sources
     from data.store import DataStore
@@ -98,36 +92,25 @@ def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any
 
     result = engine.run()
 
-    # 计算指标
-    equities = [float(e) for _, e in result.equity_curve]
-    returns = [
-        Decimal(str((equities[i] - equities[i - 1]) / equities[i - 1]))
-        for i in range(1, len(equities))
-        if equities[i - 1] != 0
-    ]
-
-    sharpe = SharpeRatio.calculate(returns)
-    sortino = SortinoRatio.calculate(returns)
-    max_dd = MaxDrawdown.calculate(equities)
-    win_rate = WinRate.calculate(returns)
-    annual_return = AnnualizedReturn.calculate(equities)
-
     equity_curve = [
         {"timestamp": ts.isoformat(), "equity": float(eq)}
         for ts, eq in result.equity_curve
     ]
+    metrics = result.metrics
 
     return {
         "initial_cash": float(result.initial_cash),
         "final_equity": float(result.final_equity),
         "total_return": float(result.total_return),
-        "annual_return": annual_return,
-        "sharpe": sharpe,
-        "sortino": sortino,
-        "max_drawdown": max_dd,
-        "win_rate": win_rate,
+        "annual_return": metrics.annual_return,
+        "sharpe": metrics.sharpe,
+        "sortino": metrics.sortino,
+        "max_drawdown": metrics.max_drawdown,
+        "win_rate": metrics.win_rate,
         "duration_days": result.duration_days,
         "equity_curve": equity_curve,
+        "metrics_json": metrics.to_json_dict(),
+        "cost_summary_json": result.cost_summary.to_json_dict(),
     }
 
 
@@ -171,6 +154,10 @@ def create_router() -> APIRouter:
             sortino=bt_result["sortino"],
             win_rate=bt_result["win_rate"],
             duration_days=bt_result["duration_days"],
+            metrics_json=json.dumps(bt_result["metrics_json"], ensure_ascii=False),
+            cost_summary_json=json.dumps(
+                bt_result["cost_summary_json"], ensure_ascii=False
+            ),
         )
 
         return BacktestResponse(
@@ -306,6 +293,10 @@ def create_router() -> APIRouter:
                 sortino=bt_result["sortino"],
                 win_rate=bt_result["win_rate"],
                 duration_days=bt_result["duration_days"],
+                metrics_json=json.dumps(bt_result["metrics_json"], ensure_ascii=False),
+                cost_summary_json=json.dumps(
+                    bt_result["cost_summary_json"], ensure_ascii=False
+                ),
             )
 
             results.append(
