@@ -1,11 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from "../../lib/api/client";
+import { apiClient } from '../../lib/api/client';
 
 const CONTROL_REFETCH_MS = 5_000;
 
 function liveRefetchInterval() {
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+  if (
+    typeof document !== 'undefined' &&
+    document.visibilityState !== 'visible'
+  ) {
     return false;
   }
   return CONTROL_REFETCH_MS;
@@ -17,15 +20,15 @@ async function requestJson<T>(
     method,
     body,
   }: {
-    method: "POST" | "PUT";
+    method: 'POST' | 'PUT';
     body?: unknown;
   },
 ): Promise<T> {
   const response = await fetch(path, {
     method,
     headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -35,7 +38,7 @@ async function requestJson<T>(
     let message = detail || `Request failed: ${response.status}`;
     try {
       const parsed = JSON.parse(detail) as { detail?: unknown };
-      if (typeof parsed.detail === "string") {
+      if (typeof parsed.detail === 'string') {
         message = parsed.detail;
       }
     } catch {
@@ -74,8 +77,8 @@ export type ManualOrder = {
 
 export function useKillSwitchQuery() {
   return useQuery({
-    queryKey: ["trading-kill-switch"],
-    queryFn: () => apiClient<KillSwitchSnapshot>("/api/trading/kill-switch"),
+    queryKey: ['trading-kill-switch'],
+    queryFn: () => apiClient<KillSwitchSnapshot>('/api/trading/kill-switch'),
     staleTime: 2_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -87,58 +90,57 @@ export function useSetKillSwitchMutation() {
 
   return useMutation({
     mutationFn: (payload: { enabled: boolean; reason: string }) =>
-      requestJson<KillSwitchSnapshot>("/api/trading/kill-switch", {
-        method: "PUT",
+      requestJson<KillSwitchSnapshot>('/api/trading/kill-switch', {
+        method: 'PUT',
         body: payload,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["trading-kill-switch"] });
+      await queryClient.invalidateQueries({
+        queryKey: ['trading-kill-switch'],
+      });
     },
   });
 }
 
 export function usePendingManualOrdersQuery() {
   return useQuery({
-    queryKey: ["trading-manual-orders", "pending_confirm"],
+    queryKey: ['trading-manual-orders', 'pending_confirm'],
     queryFn: () =>
-      apiClient<ManualOrder[]>("/api/trading/orders?status=pending_confirm"),
+      apiClient<ManualOrder[]>('/api/trading/orders?status=pending_confirm'),
     staleTime: 2_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-function useManualOrderStatusMutation(action: "confirm" | "reject") {
+function useManualOrderStatusMutation(action: 'confirm' | 'reject') {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      orderId,
-      reason,
-    }: {
-      orderId: string;
-      reason?: string;
-    }) =>
-      requestJson<ManualOrder>(`/api/trading/orders/${encodeURIComponent(orderId)}/${action}`, {
-        method: "POST",
-        body: action === "reject" ? { reason: reason ?? "" } : undefined,
-      }),
+    mutationFn: ({ orderId, reason }: { orderId: string; reason?: string }) =>
+      requestJson<ManualOrder>(
+        `/api/trading/orders/${encodeURIComponent(orderId)}/${action}`,
+        {
+          method: 'POST',
+          body: action === 'reject' ? { reason: reason ?? '' } : undefined,
+        },
+      ),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["trading-manual-orders", "pending_confirm"],
+          queryKey: ['trading-manual-orders', 'pending_confirm'],
         }),
-        queryClient.invalidateQueries({ queryKey: ["portfolio-risk-summary"] }),
-        queryClient.invalidateQueries({ queryKey: ["account-state"] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-risk-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-state'] }),
       ]);
     },
   });
 }
 
 export function useConfirmManualOrderMutation() {
-  return useManualOrderStatusMutation("confirm");
+  return useManualOrderStatusMutation('confirm');
 }
 
 export function useRejectManualOrderMutation() {
-  return useManualOrderStatusMutation("reject");
+  return useManualOrderStatusMutation('reject');
 }

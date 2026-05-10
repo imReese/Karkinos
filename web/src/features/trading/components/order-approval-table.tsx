@@ -1,12 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState } from 'react';
 
-import { useCopy } from "../../../app/copy";
+import { useCopy } from '../../../app/copy';
 import {
   useConfirmManualOrderMutation,
   usePendingManualOrdersQuery,
   useRejectManualOrderMutation,
   type ManualOrder,
-} from "../api";
+} from '../api';
 
 export function OrderApprovalTable() {
   const copy = useCopy();
@@ -14,7 +14,9 @@ export function OrderApprovalTable() {
   const orders = usePendingManualOrdersQuery();
   const confirmOrder = useConfirmManualOrderMutation();
   const rejectOrder = useRejectManualOrderMutation();
-  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
+  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>(
+    {},
+  );
   const [rowError, setRowError] = useState<string | null>(null);
 
   const pendingOrders = useMemo(() => orders.data ?? [], [orders.data]);
@@ -25,7 +27,7 @@ export function OrderApprovalTable() {
   };
 
   const handleReject = async (orderId: string) => {
-    const reason = (rejectReasons[orderId] ?? "").trim();
+    const reason = (rejectReasons[orderId] ?? '').trim();
     if (!reason) {
       setRowError(labels.rejectReasonRequired);
       return;
@@ -78,9 +80,7 @@ export function OrderApprovalTable() {
             </thead>
             <tbody>
               {pendingOrders.map((order) => {
-                const busy =
-                  confirmOrder.isPending ||
-                  rejectOrder.isPending;
+                const busy = confirmOrder.isPending || rejectOrder.isPending;
                 return (
                   <tr
                     key={order.order_id}
@@ -88,19 +88,25 @@ export function OrderApprovalTable() {
                   >
                     <td className="px-3 py-4">
                       <div className="font-semibold">{order.symbol}</div>
-                      <div className="app-muted mt-1 text-xs">{formatTimestamp(order.timestamp)}</div>
+                      <div className="app-muted mt-1 text-xs">
+                        {formatTimestamp(order.timestamp)}
+                      </div>
                     </td>
                     <td className="px-3 py-4">
                       <SideBadge side={order.side} />
                     </td>
-                    <td className="px-3 py-4 tabular-nums">{formatNumber(order.quantity)}</td>
-                    <td className="px-3 py-4 tabular-nums">{formatPrice(order.price)}</td>
+                    <td className="px-3 py-4 tabular-nums">
+                      {formatNumber(order.quantity)}
+                    </td>
+                    <td className="px-3 py-4 tabular-nums">
+                      {formatPrice(order.price)}
+                    </td>
                     <td className="px-3 py-4">
                       <RiskHint order={order} />
                     </td>
                     <td className="px-3 py-4">
                       <input
-                        value={rejectReasons[order.order_id] ?? ""}
+                        value={rejectReasons[order.order_id] ?? ''}
                         onChange={(event) =>
                           setRejectReasons((current) => ({
                             ...current,
@@ -140,12 +146,18 @@ export function OrderApprovalTable() {
         </div>
       )}
 
-      {rowError ? <div className="app-error-text mt-3 text-sm">{rowError}</div> : null}
+      {rowError ? (
+        <div className="app-error-text mt-3 text-sm">{rowError}</div>
+      ) : null}
       {confirmOrder.isError ? (
-        <div className="app-error-text mt-3 text-sm">{getErrorMessage(confirmOrder.error)}</div>
+        <div className="app-error-text mt-3 text-sm">
+          {getErrorMessage(confirmOrder.error)}
+        </div>
       ) : null}
       {rejectOrder.isError ? (
-        <div className="app-error-text mt-3 text-sm">{getErrorMessage(rejectOrder.error)}</div>
+        <div className="app-error-text mt-3 text-sm">
+          {getErrorMessage(rejectOrder.error)}
+        </div>
       ) : null}
     </section>
   );
@@ -155,17 +167,17 @@ function SideBadge({ side }: { side: string }) {
   const copy = useCopy();
   const labels = copy.trading.orders;
   const normalized = side.toLowerCase();
-  const isBuy = normalized === "buy";
+  const isBuy = normalized === 'buy';
 
   return (
     <span
       className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
         isBuy
-          ? "bg-red-500/15 text-red-300 ring-1 ring-red-500/35"
-          : "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35"
+          ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
+          : 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
       }`}
     >
-      {isBuy ? labels.buy : normalized === "sell" ? labels.sell : side}
+      {isBuy ? labels.buy : normalized === 'sell' ? labels.sell : side}
     </span>
   );
 }
@@ -174,19 +186,22 @@ function RiskHint({ order }: { order: ManualOrder }) {
   const copy = useCopy();
   const labels = copy.trading.orders;
   const orderPayload = parsePayload(order.payload_json);
-  const decisionId = order.risk_decision_id ?? orderPayload?.risk_decision_id ?? null;
+  const decisionId =
+    order.risk_decision_id ?? orderPayload?.risk_decision_id ?? null;
   const intentId = order.intent_id ?? orderPayload?.intent_id ?? null;
 
   return (
     <div className="space-y-1">
       <div className="font-medium">{labels.riskApproved}</div>
       <div className="app-muted break-all text-xs">
-        {labels.decisionId}: {decisionId ?? "--"}
+        {labels.decisionId}: {decisionId ?? '--'}
       </div>
       <div className="app-muted break-all text-xs">
-        {labels.intentId}: {intentId ?? "--"}
+        {labels.intentId}: {intentId ?? '--'}
       </div>
-      {order.note ? <div className="app-muted text-xs">{order.note}</div> : null}
+      {order.note ? (
+        <div className="app-muted text-xs">{order.note}</div>
+      ) : null}
     </div>
   );
 }
@@ -194,7 +209,7 @@ function RiskHint({ order }: { order: ManualOrder }) {
 function parsePayload(value: string): Record<string, string | null> | null {
   try {
     const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object"
+    return parsed && typeof parsed === 'object'
       ? (parsed as Record<string, string | null>)
       : null;
   } catch {
@@ -207,25 +222,25 @@ function formatTimestamp(value: string) {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(date);
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("zh-CN", {
+  return new Intl.NumberFormat('zh-CN', {
     maximumFractionDigits: 4,
   }).format(value);
 }
 
 function formatPrice(value: number | null) {
   if (value === null) {
-    return "--";
+    return '--';
   }
-  return new Intl.NumberFormat("zh-CN", {
+  return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   }).format(value);
