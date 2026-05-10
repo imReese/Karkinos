@@ -1,5 +1,5 @@
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -19,9 +19,7 @@ from server.bootstrap import (
 
 def test_load_runtime_config_prefers_json_file(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
-    config_path.write_text(
-        '{"initial_cash": 321000, "strategy": "dual_ma"}'
-    )
+    config_path.write_text('{"initial_cash": 321000, "strategy": "dual_ma"}')
     monkeypatch.chdir(tmp_path)
 
     config = load_runtime_config()
@@ -202,6 +200,8 @@ def test_create_app_accepts_config_overrides():
 def test_create_app_serves_spa_index_for_client_routes(monkeypatch, tmp_path):
     from server import app as app_module
 
+    _run_staticfile_threadpool_inline(monkeypatch)
+
     dist_dir = tmp_path / "web" / "dist"
     dist_dir.mkdir(parents=True)
     (dist_dir / "index.html").write_text("<html><body>karkinos-spa</body></html>")
@@ -233,8 +233,12 @@ def test_create_app_serves_spa_index_for_client_routes(monkeypatch, tmp_path):
         assert response.path.endswith("index.html")
 
 
-def test_create_app_does_not_fallback_reserved_backend_namespaces(monkeypatch, tmp_path):
+def test_create_app_does_not_fallback_reserved_backend_namespaces(
+    monkeypatch, tmp_path
+):
     from server import app as app_module
+
+    _run_staticfile_threadpool_inline(monkeypatch)
 
     dist_dir = tmp_path / "web" / "dist"
     dist_dir.mkdir(parents=True)
@@ -270,6 +274,8 @@ def test_create_app_does_not_fallback_reserved_backend_namespaces(monkeypatch, t
 def test_create_app_keeps_missing_static_assets_as_404(monkeypatch, tmp_path):
     from server import app as app_module
 
+    _run_staticfile_threadpool_inline(monkeypatch)
+
     dist_dir = tmp_path / "web" / "dist"
     dist_dir.mkdir(parents=True)
     (dist_dir / "index.html").write_text("<html><body>karkinos-spa</body></html>")
@@ -298,3 +304,12 @@ def test_create_app_keeps_missing_static_assets_as_404(monkeypatch, tmp_path):
         )
 
     assert exc_info.value.status_code == 404
+
+
+def _run_staticfile_threadpool_inline(monkeypatch):
+    import starlette.staticfiles as staticfiles
+
+    async def run_sync_inline(func, *args, **kwargs):
+        return func(*args)
+
+    monkeypatch.setattr(staticfiles.anyio.to_thread, "run_sync", run_sync_inline)
