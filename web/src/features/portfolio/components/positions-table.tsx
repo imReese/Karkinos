@@ -1,16 +1,36 @@
 import { useCopy } from '../../../app/copy';
-import { formatCurrency, formatQuantity } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatPrice,
+  formatQuantity,
+} from '../../../shared/format';
 import type { Position } from '../api';
 
 export function PositionsTable({
   positions,
   assetClassBySymbol = {},
+  latestPriceBySymbol = {},
+  variant = 'full',
 }: {
   positions: Position[];
   assetClassBySymbol?: Record<string, string>;
+  latestPriceBySymbol?: Record<string, number | null | undefined>;
+  variant?: 'full' | 'dashboard';
 }) {
   const copy = useCopy();
   const labels = copy.portfolio.table;
+  const showFullColumns = variant === 'full';
+
+  const resolveLatestPrice = (position: Position) => {
+    const livePrice = latestPriceBySymbol[position.symbol];
+    if (typeof livePrice === 'number' && Number.isFinite(livePrice)) {
+      return livePrice;
+    }
+    if (position.quantity > 0) {
+      return position.market_value / position.quantity;
+    }
+    return null;
+  };
 
   return (
     <div className="space-y-4">
@@ -37,13 +57,19 @@ export function PositionsTable({
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {[
                 [labels.quantity, formatQuantity(position.quantity)],
-                [
-                  labels.availFrozen,
-                  `${formatQuantity(position.available_qty)} / ${formatQuantity(position.frozen_qty)}`,
-                ],
                 [labels.avgCost, formatCurrency(position.avg_cost)],
+                [labels.latestPrice, formatPrice(resolveLatestPrice(position))],
+                [labels.marketValue, formatCurrency(position.market_value)],
                 [labels.unrealized, formatCurrency(position.unrealized_pnl)],
-                [labels.realized, formatCurrency(position.realized_pnl)],
+                ...(showFullColumns
+                  ? ([
+                      [
+                        labels.availFrozen,
+                        `${formatQuantity(position.available_qty)} / ${formatQuantity(position.frozen_qty)}`,
+                      ],
+                      [labels.realized, formatCurrency(position.realized_pnl)],
+                    ] as Array<[string, string]>)
+                  : []),
               ].map(([label, value]) => (
                 <div
                   key={label}
@@ -67,11 +93,16 @@ export function PositionsTable({
               <th className="px-4 py-3">{labels.symbol}</th>
               <th className="px-4 py-3">{labels.assetClass}</th>
               <th className="px-4 py-3">{labels.quantity}</th>
-              <th className="px-4 py-3">{labels.availFrozen}</th>
               <th className="px-4 py-3">{labels.avgCost}</th>
+              <th className="px-4 py-3">{labels.latestPrice}</th>
               <th className="px-4 py-3">{labels.marketValue}</th>
               <th className="px-4 py-3">{labels.unrealized}</th>
-              <th className="px-4 py-3">{labels.realized}</th>
+              {showFullColumns ? (
+                <>
+                  <th className="px-4 py-3">{labels.availFrozen}</th>
+                  <th className="px-4 py-3">{labels.realized}</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -88,12 +119,11 @@ export function PositionsTable({
                 <td className="px-4 py-3 tabular-nums">
                   {formatQuantity(position.quantity)}
                 </td>
-                <td className="px-4 py-3">
-                  {formatQuantity(position.available_qty)} /{' '}
-                  {formatQuantity(position.frozen_qty)}
-                </td>
                 <td className="px-4 py-3 tabular-nums">
                   {formatCurrency(position.avg_cost)}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {formatPrice(resolveLatestPrice(position))}
                 </td>
                 <td className="px-4 py-3 tabular-nums">
                   {formatCurrency(position.market_value)}
@@ -101,9 +131,17 @@ export function PositionsTable({
                 <td className="px-4 py-3 tabular-nums">
                   {formatCurrency(position.unrealized_pnl)}
                 </td>
-                <td className="px-4 py-3 tabular-nums">
-                  {formatCurrency(position.realized_pnl)}
-                </td>
+                {showFullColumns ? (
+                  <>
+                    <td className="px-4 py-3">
+                      {formatQuantity(position.available_qty)} /{' '}
+                      {formatQuantity(position.frozen_qty)}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {formatCurrency(position.realized_pnl)}
+                    </td>
+                  </>
+                ) : null}
               </tr>
             ))}
           </tbody>

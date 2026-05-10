@@ -1,11 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query';
 
-import { apiClient } from "../../lib/api/client";
+import { apiClient } from '../../lib/api/client';
 
-const LIVE_REFETCH_MS = 30_000;
+const LIVE_REFETCH_MS = 5_000;
 
 function liveRefetchInterval() {
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+  if (
+    typeof document !== 'undefined' &&
+    document.visibilityState !== 'visible'
+  ) {
     return false;
   }
   return LIVE_REFETCH_MS;
@@ -33,7 +36,10 @@ export type EquitySeriesPoint = {
   funds: number;
   others: number;
   cash: number;
+  unrealized_pnl?: number | null;
 };
+
+export type EquityCurveRange = '1d' | '5d' | '1m' | '6m' | '1y' | 'all';
 
 export type RiskSummaryItem = {
   kind: string;
@@ -179,8 +185,8 @@ export type RiskWorkspaceResponse = {
 
 export function useAccountOverviewQuery() {
   return useQuery({
-    queryKey: ["account-overview"],
-    queryFn: () => apiClient<AccountOverview>("/api/portfolio/overview"),
+    queryKey: ['account-overview'],
+    queryFn: () => apiClient<AccountOverview>('/api/portfolio/overview'),
     staleTime: 10_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -189,18 +195,21 @@ export function useAccountOverviewQuery() {
 
 export function useEquityCurveQuery() {
   return useQuery({
-    queryKey: ["account-equity-curve"],
-    queryFn: () => apiClient<EquityPoint[]>("/api/portfolio/equity-curve"),
+    queryKey: ['account-equity-curve'],
+    queryFn: () => apiClient<EquityPoint[]>('/api/portfolio/equity-curve'),
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useEquityCurveSeriesQuery() {
+export function useEquityCurveSeriesQuery(range: EquityCurveRange = '1m') {
   return useQuery({
-    queryKey: ["account-equity-curve-series"],
-    queryFn: () => apiClient<EquitySeriesPoint[]>("/api/portfolio/equity-curve/series"),
+    queryKey: ['account-equity-curve-series', range],
+    queryFn: () =>
+      apiClient<EquitySeriesPoint[]>(
+        `/api/portfolio/equity-curve/series?range=${range}`,
+      ),
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -209,15 +218,15 @@ export function useEquityCurveSeriesQuery() {
 
 export function useAccountStateQuery() {
   return useQuery({
-    queryKey: ["account-state"],
-    queryFn: () => apiClient<AccountStateResponse>("/api/portfolio/state"),
+    queryKey: ['account-state'],
+    queryFn: () => apiClient<AccountStateResponse>('/api/portfolio/state'),
   });
 }
 
 export function useRiskSummaryQuery() {
   return useQuery({
-    queryKey: ["portfolio-risk-summary"],
-    queryFn: () => apiClient<RiskSummaryItem[]>("/api/portfolio/risk-summary"),
+    queryKey: ['portfolio-risk-summary'],
+    queryFn: () => apiClient<RiskSummaryItem[]>('/api/portfolio/risk-summary'),
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -230,14 +239,16 @@ export function useExplainabilityQuery(filters?: {
   event_kind?: string;
 }) {
   return useQuery({
-    queryKey: ["portfolio-explainability", filters],
+    queryKey: ['portfolio-explainability', filters],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (filters?.from_date) params.set("from_date", filters.from_date);
-      if (filters?.to_date) params.set("to_date", filters.to_date);
-      if (filters?.event_kind) params.set("event_kind", filters.event_kind);
-      const suffix = params.size > 0 ? `?${params.toString()}` : "";
-      return apiClient<ExplainabilityResponse>(`/api/portfolio/explainability${suffix}`);
+      if (filters?.from_date) params.set('from_date', filters.from_date);
+      if (filters?.to_date) params.set('to_date', filters.to_date);
+      if (filters?.event_kind) params.set('event_kind', filters.event_kind);
+      const suffix = params.size > 0 ? `?${params.toString()}` : '';
+      return apiClient<ExplainabilityResponse>(
+        `/api/portfolio/explainability${suffix}`,
+      );
     },
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
@@ -247,8 +258,9 @@ export function useExplainabilityQuery(filters?: {
 
 export function useRiskWorkspaceQuery() {
   return useQuery({
-    queryKey: ["portfolio-risk-workspace"],
-    queryFn: () => apiClient<RiskWorkspaceResponse>("/api/portfolio/risk-workspace"),
+    queryKey: ['portfolio-risk-workspace'],
+    queryFn: () =>
+      apiClient<RiskWorkspaceResponse>('/api/portfolio/risk-workspace'),
     staleTime: 15_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,

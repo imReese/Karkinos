@@ -23,7 +23,6 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
-import { LiveHoldingsSummaryCard } from '../features/account/components/live-holdings-summary-card';
 import {
   OverviewCards,
   OverviewCardsSkeleton,
@@ -33,12 +32,17 @@ import { RiskSummaryCard } from '../features/account/components/risk-summary-car
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
 import {
+  usePendingManualOrdersQuery,
+  type ManualOrder,
+} from '../features/trading/api';
+import {
   useCreateAdjustmentMutation,
   useCreateCashFlowMutation,
   useCreateDividendMutation,
   useCreateTradeMutation,
   useLedgerEntriesQuery,
   usePendingFundOrdersQuery,
+  type LedgerEntry,
 } from '../features/activity/api';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
@@ -86,7 +90,9 @@ import {
 import {
   formatCurrency as formatCurrencyValue,
   formatPercent as formatPercentValue,
+  formatPrice,
   formatQuantity,
+  formatTimestamp,
 } from '../shared/format';
 
 type PortfolioSearchState = {
@@ -165,15 +171,40 @@ export const router = createRouter({ routeTree });
 
 function OverviewPage() {
   const copy = useCopy();
-  const navigate = useNavigate();
-  const [mode, setMode] = useState<'account' | 'strategy'>('account');
   const [equityCurveRange, setEquityCurveRange] =
     useState<EquityCurveRange>('1m');
   const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
   const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
-  const explainability = useExplainabilityQuery();
+  const riskWorkspace = useRiskWorkspaceQuery();
+  const ledgerEntries = useLedgerEntriesQuery(8);
+  const pendingOrders = usePendingManualOrdersQuery();
+
+  const liveGroups = liveHoldings.data?.groups ?? [];
+  const liveItems = liveGroups.flatMap((group) => group.items);
+  const todayPnl = liveGroups.reduce(
+    (sum, group) => sum + group.total_today_change,
+    0,
+  );
+  const currentDrawdown = riskWorkspace.data?.drawdown.current_drawdown ?? 0;
+  const enhancedOverview = overview.data
+    ? {
+        ...overview.data,
+        today_pnl: todayPnl,
+        current_drawdown: currentDrawdown,
+      }
+    : null;
+  const latestPriceBySymbol = Object.fromEntries(
+    liveItems.map((item) => [item.symbol, item.latest_price]),
+  );
+  const assetClassBySymbol = Object.fromEntries(
+    (snapshot.data?.allocation ?? []).map((item) => [
+      item.symbol,
+      item.asset_class,
+    ]),
+  );
+  const positions = snapshot.data?.positions ?? [];
 
   return (
     <section className="space-y-3">
@@ -189,9 +220,11 @@ function OverviewPage() {
           <section className="app-surface-section overflow-hidden rounded-2xl">
             <div className="app-surface-section-header">
               <div>
-                <div className="app-product-mark">{copy.overview.kicker}</div>
+                <div className="app-product-mark">
+                  {copy.overview.dashboard.equityPanel}
+                </div>
                 <div className="app-card-title mt-1.5">
-                  {copy.overview.title}
+                  {copy.overview.equityCurve.title}
                 </div>
               </div>
             </div>
@@ -211,51 +244,22 @@ function OverviewPage() {
             void snapshot.refetch();
           }}
         />
-      ) : overview.data && snapshot.data ? (
-        <div className="space-y-3">
-          <OverviewCards overview={overview.data} />
-          {liveHoldings.isLoading ? (
-            <StatusCard
-              title={copy.states.loading}
-              detail={copy.overview.livePulse.loading}
-            />
-          ) : liveHoldings.isError ? (
-            <StatusCard
-              tone="danger"
-              title={copy.states.error}
-              detail={copy.overview.livePulse.error}
-              actionLabel={copy.states.retry}
-              onAction={() => void liveHoldings.refetch()}
-            />
-          ) : (
-            <LiveHoldingsSummaryCard
-              groups={liveHoldings.data?.groups ?? []}
-              onSelectAssetClass={(assetClass) => {
-                void navigate({
-                  to: '/portfolio',
-                  search: {
-                    assetClass,
-                    pnl: 'all',
-                    q: '',
-                  },
-                });
-              }}
-            />
-          )}
-          <ExplainabilityCard
-            drivers={explainability.data?.recent_drivers ?? []}
-            isLoading={explainability.isLoading}
-          />
-          <section className="app-surface-section overflow-hidden rounded-2xl">
-            <div className="app-surface-section-header">
-              <div>
-                <div className="app-product-mark">{copy.overview.kicker}</div>
-                <div className="app-card-title mt-1.5">
-                  {copy.overview.title}
+      ) : enhancedOverview && snapshot.data ? (
+        <div className="space-y-4">
+          <OverviewCards overview={enhancedOverview} />
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(320px,3fr)]">
+            <section className="app-surface-section overflow-hidden rounded-2xl">
+              <div className="app-surface-section-header">
+                <div>
+                  <div className="app-product-mark">
+                    {copy.overview.dashboard.equityPanel}
+                  </div>
+                  <div className="app-card-title mt-1.5">
+                    {copy.overview.equityCurve.title}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="grid gap-0 xl:grid-cols-[minmax(0,1.28fr)_minmax(340px,0.92fr)]">
               <div className="app-surface-pane min-w-0">
                 {equityCurve.isLoading ? (
                   <EquityCurveSkeleton />
@@ -274,23 +278,68 @@ function OverviewPage() {
                   />
                 )}
               </div>
-              <div className="app-surface-pane app-surface-pane-accent min-w-0 xl:border-l">
-                <PerformanceBreakdownCard
-                  overview={overview.data}
-                  snapshot={snapshot.data}
-                  mode={mode}
-                  onModeChange={setMode}
-                  accountLabel={copy.mode.account}
-                  strategyLabel={copy.mode.strategy}
-                />
+            </section>
+
+            <section className="app-panel rounded-2xl p-4 sm:p-5">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <div className="app-product-mark">
+                    {copy.overview.dashboard.opsPanel}
+                  </div>
+                  <div className="app-card-title mt-1.5">
+                    {copy.overview.dashboard.pendingApprovals}
+                  </div>
+                </div>
+                <div className="app-panel-strong rounded-2xl px-3 py-2 text-xs font-semibold tabular-nums">
+                  {copy.overview.dashboard.pendingCount(
+                    pendingOrders.data?.length ?? 0,
+                  )}
+                </div>
+              </div>
+              <DashboardPendingOrders
+                orders={pendingOrders.data ?? []}
+                isLoading={pendingOrders.isLoading}
+                isError={pendingOrders.isError}
+                copy={copy}
+              />
+              <DashboardLedger
+                entries={ledgerEntries.data ?? []}
+                isLoading={ledgerEntries.isLoading}
+                isError={ledgerEntries.isError}
+                copy={copy}
+              />
+            </section>
+          </div>
+
+          <section className="app-surface-section overflow-hidden rounded-2xl">
+            <div className="app-surface-section-header">
+              <div>
+                <div className="app-product-mark">
+                  {copy.overview.dashboard.positionsPanel}
+                </div>
+                <div className="app-card-title mt-1.5">
+                  {copy.overview.dashboard.positionsPanel}
+                </div>
+                <p className="app-muted mt-2 max-w-2xl text-sm">
+                  {copy.overview.dashboard.positionsDetail}
+                </p>
               </div>
             </div>
-          </section>
-          <section className="app-surface-section overflow-hidden rounded-2xl">
-            <RiskSummaryCard
-              overview={overview.data}
-              snapshot={snapshot.data}
-            />
+            <div className="app-surface-pane min-w-0">
+              {positions.length === 0 ? (
+                <StatusCard
+                  title={copy.states.empty}
+                  detail={copy.portfolio.positionsEmpty}
+                />
+              ) : (
+                <PositionsTable
+                  positions={positions}
+                  assetClassBySymbol={assetClassBySymbol}
+                  latestPriceBySymbol={latestPriceBySymbol}
+                  variant="dashboard"
+                />
+              )}
+            </div>
           </section>
         </div>
       ) : (
@@ -298,6 +347,184 @@ function OverviewPage() {
       )}
     </section>
   );
+}
+
+function DashboardPendingOrders({
+  orders,
+  isLoading,
+  isError,
+  copy,
+}: {
+  orders: ManualOrder[];
+  isLoading: boolean;
+  isError: boolean;
+  copy: AppCopy;
+}) {
+  if (isLoading) {
+    return (
+      <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 text-sm">
+        {copy.trading.orders.loading}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="app-error-text rounded-2xl border border-[var(--app-danger-border)] px-4 py-3 text-sm">
+        {copy.trading.orders.loadFailed}
+      </div>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="app-panel-strong rounded-2xl px-4 py-4 text-sm">
+        {copy.overview.dashboard.pendingEmpty}
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+      {orders.map((order) => {
+        const isBuy = order.side.toLowerCase() === 'buy';
+        return (
+          <div
+            key={order.order_id}
+            className="rounded-2xl border border-[color-mix(in_srgb,var(--app-danger-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">
+                  {order.symbol}
+                </div>
+                <div className="app-muted mt-1 text-xs">
+                  {formatTimestamp(order.timestamp)}
+                </div>
+              </div>
+              <div
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  isBuy
+                    ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
+                    : 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
+                }`}
+              >
+                {isBuy ? copy.trading.orders.buy : copy.trading.orders.sell}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs tabular-nums">
+              <MetricLine
+                label={copy.trading.orders.quantity}
+                value={formatQuantity(order.quantity)}
+              />
+              <MetricLine
+                label={copy.trading.orders.price}
+                value={formatPrice(order.price)}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DashboardLedger({
+  entries,
+  isLoading,
+  isError,
+  copy,
+}: {
+  entries: LedgerEntry[];
+  isLoading: boolean;
+  isError: boolean;
+  copy: AppCopy;
+}) {
+  return (
+    <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] pt-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="app-card-title text-base">
+          {copy.overview.dashboard.ledgerPanel}
+        </div>
+        <div className="app-muted text-xs tabular-nums">{entries.length}</div>
+      </div>
+      {isLoading ? (
+        <div className="app-muted text-sm">{copy.states.loading}</div>
+      ) : isError ? (
+        <div className="app-error-text text-sm">{copy.states.error}</div>
+      ) : entries.length === 0 ? (
+        <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 text-sm">
+          {copy.overview.dashboard.ledgerEmpty}
+        </div>
+      ) : (
+        <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+          {entries.map((entry) => (
+            <div
+              key={entry.id}
+              className="app-panel-strong rounded-2xl px-4 py-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">
+                    {formatLedgerEntryTitle(entry, copy)}
+                  </div>
+                  <div className="app-muted mt-1 text-xs">
+                    {formatTimestamp(entry.timestamp)}
+                  </div>
+                </div>
+                <div className="text-right text-sm font-semibold tabular-nums">
+                  {formatLedgerEntryAmount(entry)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetricLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-3 py-2">
+      <div className="app-kicker text-[10px] uppercase tracking-[0.12em]">
+        {label}
+      </div>
+      <div className="mt-1 font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function formatLedgerEntryTitle(entry: LedgerEntry, copy: AppCopy) {
+  if (entry.entry_type === 'trade_buy') {
+    return `${copy.overview.dashboard.tradeBuy} ${entry.symbol ?? ''}`.trim();
+  }
+  if (entry.entry_type === 'trade_sell') {
+    return `${copy.overview.dashboard.tradeSell} ${entry.symbol ?? ''}`.trim();
+  }
+  if (entry.entry_type === 'cash_deposit') {
+    return copy.overview.dashboard.cashDeposit;
+  }
+  if (entry.entry_type === 'cash_withdrawal') {
+    return copy.overview.dashboard.cashWithdrawal;
+  }
+  if (entry.entry_type === 'dividend') {
+    return `${copy.overview.dashboard.dividend} ${entry.symbol ?? ''}`.trim();
+  }
+  if (entry.entry_type === 'manual_adjustment') {
+    return `${copy.overview.dashboard.adjustment} ${entry.symbol ?? ''}`.trim();
+  }
+  return copy.overview.dashboard.unknownActivity;
+}
+
+function formatLedgerEntryAmount(entry: LedgerEntry) {
+  if (typeof entry.amount === 'number') {
+    return formatCurrencyValue(entry.amount);
+  }
+  if (typeof entry.price === 'number' && typeof entry.quantity === 'number') {
+    return formatCurrencyValue(entry.price * entry.quantity);
+  }
+  return '--';
 }
 
 function PortfolioPage() {

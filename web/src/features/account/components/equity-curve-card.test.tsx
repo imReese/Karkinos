@@ -1,14 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from "../../../app/preferences";
-import { EquityCurveCard, EquityCurveSkeleton } from "./equity-curve-card";
-import type { EquitySeriesPoint } from "../api";
+import { PreferencesProvider } from '../../../app/preferences';
+import { EquityCurveCard, EquityCurveSkeleton } from './equity-curve-card';
+import type { EquitySeriesPoint } from '../api';
 
 const points: EquitySeriesPoint[] = [
   {
-    timestamp: "2026-04-18T09:00:00+00:00",
+    timestamp: '2026-04-18T09:00:00+00:00',
     total: 100000,
     stocks: 0,
     funds: 0,
@@ -16,7 +16,7 @@ const points: EquitySeriesPoint[] = [
     cash: 100000,
   },
   {
-    timestamp: "2026-04-18T10:00:00+00:00",
+    timestamp: '2026-04-18T10:00:00+00:00',
     total: 101550,
     stocks: 11000,
     funds: 5300,
@@ -25,26 +25,134 @@ const points: EquitySeriesPoint[] = [
   },
 ];
 
-function renderCard() {
+const historicalPoints: EquitySeriesPoint[] = [
+  {
+    timestamp: '2025-01-01T09:00:00+00:00',
+    total: 82000,
+    stocks: 21000,
+    funds: 12000,
+    others: 4000,
+    cash: 45000,
+  },
+  {
+    timestamp: '2025-02-10T09:00:00+00:00',
+    total: 83500,
+    stocks: 22000,
+    funds: 12500,
+    others: 5000,
+    cash: 44000,
+  },
+];
+
+const timelinePoints: EquitySeriesPoint[] = [
+  {
+    timestamp: '2025-01-01T09:00:00+00:00',
+    total: 82000,
+    stocks: 21000,
+    funds: 12000,
+    others: 4000,
+    cash: 45000,
+  },
+  {
+    timestamp: '2025-03-01T09:00:00+00:00',
+    total: 84000,
+    stocks: 22500,
+    funds: 12200,
+    others: 4200,
+    cash: 45100,
+  },
+  {
+    timestamp: '2025-05-01T09:00:00+00:00',
+    total: 86000,
+    stocks: 23600,
+    funds: 12800,
+    others: 4700,
+    cash: 44900,
+  },
+  {
+    timestamp: '2025-07-01T09:00:00+00:00',
+    total: 87500,
+    stocks: 24100,
+    funds: 13300,
+    others: 5200,
+    cash: 44900,
+  },
+  {
+    timestamp: '2025-09-01T09:00:00+00:00',
+    total: 89200,
+    stocks: 25500,
+    funds: 13600,
+    others: 5800,
+    cash: 44300,
+  },
+  {
+    timestamp: '2025-11-01T09:00:00+00:00',
+    total: 91000,
+    stocks: 26800,
+    funds: 14100,
+    others: 6100,
+    cash: 44000,
+  },
+];
+
+const intradayPoints: EquitySeriesPoint[] = [
+  {
+    timestamp: '2026-04-18T09:30:00+08:00',
+    total: 89000,
+    stocks: 10000,
+    funds: 3000,
+    others: 0,
+    cash: 76000,
+    unrealized_pnl: 0,
+  },
+  {
+    timestamp: '2026-04-18T09:35:00+08:00',
+    total: 89150,
+    stocks: 10050,
+    funds: 3100,
+    others: 0,
+    cash: 76000,
+    unrealized_pnl: 150,
+  },
+  {
+    timestamp: '2026-04-18T09:40:00+08:00',
+    total: 89300,
+    stocks: 10100,
+    funds: 3200,
+    others: 0,
+    cash: 76000,
+    unrealized_pnl: 300,
+  },
+];
+
+function renderCard({
+  cardPoints = points,
+  onRangeChange,
+}: {
+  cardPoints?: EquitySeriesPoint[];
+  onRangeChange?: (range: string) => void;
+} = {}) {
   const originalWarn = console.warn;
-  vi.spyOn(console, "warn").mockImplementation((message?: unknown) => {
+  vi.spyOn(console, 'warn').mockImplementation((message?: unknown) => {
     if (
-      typeof message === "string" &&
-      message.includes("The width(-1) and height(-1) of chart should be greater than 0")
+      typeof message === 'string' &&
+      message.includes(
+        'The width(-1) and height(-1) of chart should be greater than 0',
+      )
     ) {
       return;
     }
     originalWarn(message);
   });
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
     value: 800,
   });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
     configurable: true,
     value: 380,
   });
-  Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+  Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
     configurable: true,
     value: () => ({
       bottom: 380,
@@ -91,7 +199,7 @@ function renderCard() {
 
     disconnect() {}
   };
-  Object.defineProperty(window, "matchMedia", {
+  Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
       matches: false,
@@ -107,38 +215,93 @@ function renderCard() {
 
   render(
     <PreferencesProvider>
-      <EquityCurveCard points={points} />
+      <EquityCurveCard points={cardPoints} onRangeChange={onRangeChange} />
     </PreferencesProvider>,
   );
 }
 
-test("renders premium performance dashboard controls", async () => {
+test('renders premium performance dashboard controls', async () => {
   renderCard();
 
-  expect(await screen.findByText("Performance Analysis")).toBeTruthy();
-  for (const label of ["Total", "Stocks", "Funds", "Others", "Cash"]) {
-    const chip = await screen.findByRole("button", { name: label });
-    expect(chip.className).toContain("rounded-full");
-    expect(chip.getAttribute("aria-pressed")).toBe("true");
+  expect(await screen.findByText('Performance Analysis')).toBeTruthy();
+  for (const label of ['Total', 'Stocks', 'Funds', 'Others', 'Cash']) {
+    const chip = await screen.findByRole('button', { name: label });
+    expect(chip.className).toContain('rounded-full');
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
   }
 
-  for (const label of ["1D", "5D", "1M", "6M", "1Y", "ALL"]) {
-    expect(await screen.findByRole("button", { name: `Range: ${label}` })).toBeTruthy();
+  for (const label of ['1D', '5D', '1M', '6M', '1Y', 'ALL']) {
+    expect(
+      await screen.findByRole('button', { name: `Range: ${label}` }),
+    ).toBeTruthy();
   }
+
+  expect(
+    (await screen.findByRole('button', { name: 'Range: 1M' })).getAttribute(
+      'aria-pressed',
+    ),
+  ).toBe('true');
 });
 
-test("toggles category chips without removing the control", async () => {
+test('toggles category chips without removing the control', async () => {
   renderCard();
   const user = userEvent.setup();
 
-  const stocks = await screen.findByRole("button", { name: "Stocks" });
+  const stocks = await screen.findByRole('button', { name: 'Stocks' });
   await user.click(stocks);
 
-  expect(stocks.getAttribute("aria-pressed")).toBe("false");
+  expect(stocks.getAttribute('aria-pressed')).toBe('false');
 });
 
-test("renders a terminal empty state for periods without chart data", async () => {
-  Object.defineProperty(window, "matchMedia", {
+test('updates the active range and notifies the parent query layer', async () => {
+  const user = userEvent.setup();
+  const onRangeChange = vi.fn();
+
+  renderCard({ onRangeChange });
+
+  const oneYear = await screen.findByRole('button', { name: 'Range: 1Y' });
+  await user.click(oneYear);
+
+  expect(oneYear.getAttribute('aria-pressed')).toBe('true');
+  expect(onRangeChange).toHaveBeenCalledWith('1y');
+});
+
+test('shows the empty state when the selected range has no usable data', async () => {
+  const user = userEvent.setup();
+
+  renderCard({ cardPoints: historicalPoints });
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
+
+  expect(
+    await screen.findByText('No data available for this period.'),
+  ).toBeTruthy();
+});
+
+test('renders multiple intermediate time ticks across the selected range', async () => {
+  const user = userEvent.setup();
+
+  renderCard({ cardPoints: timelinePoints });
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 1Y' }));
+
+  const tickLabels = screen.getAllByText(/\d{2}-\d{2}\s+\d{2}:\d{2}/);
+  expect(tickLabels.length).toBeGreaterThanOrEqual(4);
+});
+
+test('renders the full intraday session axis for the 1d range', async () => {
+  const user = userEvent.setup();
+
+  renderCard({ cardPoints: intradayPoints });
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
+
+  expect(screen.getAllByText(/04-18\s+09:30/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/04-18\s+15:00/).length).toBeGreaterThan(0);
+});
+
+test('renders a terminal empty state for periods without chart data', async () => {
+  Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
       matches: false,
@@ -158,14 +321,16 @@ test("renders a terminal empty state for periods without chart data", async () =
     </PreferencesProvider>,
   );
 
-  const emptyState = await screen.findByText("No data available for this period.");
-  expect(emptyState.className).toContain("text-[var(--app-subtext-0)]");
+  const emptyState = await screen.findByText(
+    'No data available for this period.',
+  );
+  expect(emptyState.className).toContain('text-[var(--app-subtext-0)]');
 });
 
-test("renders chart skeleton with shimmer and terminal surface colors", () => {
+test('renders chart skeleton with shimmer and terminal surface colors', () => {
   render(<EquityCurveSkeleton />);
 
-  const skeleton = screen.getByTestId("equity-curve-skeleton");
-  expect(skeleton.className).toContain("animate-pulse");
-  expect(skeleton.className).toContain("var(--app-surface-0)");
+  const skeleton = screen.getByTestId('equity-curve-skeleton');
+  expect(skeleton.className).toContain('animate-pulse');
+  expect(skeleton.className).toContain('var(--app-surface-0)');
 });

@@ -3,6 +3,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -10,7 +11,11 @@ import {
 } from 'recharts';
 
 import { useCopy } from '../../../app/copy';
-import { formatCompactNumber, formatCurrency } from '../../../shared/format';
+import {
+  formatCompactNumber,
+  formatCurrency,
+  formatDateTime,
+} from '../../../shared/format';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 
 type SeriesKey = 'total' | 'stocks' | 'funds' | 'others' | 'cash';
@@ -51,44 +56,12 @@ const RANGE_DAYS: Record<EquityCurveRange, number> = {
   all: Number.POSITIVE_INFINITY,
 };
 
-function resolveLocale() {
-  return typeof document !== 'undefined' &&
-    document.documentElement.lang.startsWith('zh')
-    ? 'zh-CN'
-    : 'en-US';
-}
-
-function formatCalendarAxisDate(timestampMs: number) {
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Shanghai',
-  }).format(timestampMs);
-}
-
-function formatIntradayAxisDate(timestampMs: number) {
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Shanghai',
-  }).format(timestampMs);
-}
-
-function formatTooltipTimestamp(timestamp: string) {
-  return new Intl.DateTimeFormat(resolveLocale(), {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Shanghai',
-  }).format(new Date(timestamp));
-}
-
 function formatAxisValue(value: number) {
   return formatCompactNumber(value);
+}
+
+function formatChartTimestamp(value: string | number | Date) {
+  return formatDateTime(value);
 }
 
 function formatWholeCurrency(value: number) {
@@ -96,6 +69,29 @@ function formatWholeCurrency(value: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   });
+}
+
+function TimeAxisTick({
+  x = 0,
+  y = 0,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string | number | Date };
+}) {
+  return (
+    <text
+      x={x}
+      y={y}
+      dy={14}
+      textAnchor="middle"
+      fill="var(--app-subtext-0)"
+      fontSize={10}
+    >
+      {formatChartTimestamp(payload?.value ?? '')}
+    </text>
+  );
 }
 
 function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
@@ -197,7 +193,7 @@ function CustomTooltip({
   return (
     <div className="z-[90] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-2.5 text-xs shadow-[0_14px_44px_rgba(17,17,27,0.22)] backdrop-blur-md tabular-nums">
       <div className="mb-2 font-medium text-[var(--app-text)]">
-        {formatTooltipTimestamp(point.timestamp)}
+        {formatChartTimestamp(point.timestamp)}
       </div>
       <div className="space-y-1.5">
         {payload.map((item) => {
@@ -298,8 +294,6 @@ export function EquityCurveCard({
   const hasUsableData = chartPoints.length >= 2;
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
-  const xAxisFormatter =
-    range === '1d' ? formatIntradayAxisDate : formatCalendarAxisDate;
 
   const rangeOptions: Array<[EquityCurveRange, string]> = [
     ['1d', labels.oneDay],
@@ -432,14 +426,13 @@ export function EquityCurveCard({
                 scale="time"
                 domain={xAxisDomain}
                 ticks={xAxisTicks}
-                tickFormatter={xAxisFormatter}
+                tick={<TimeAxisTick />}
                 axisLine={false}
                 tickLine={false}
                 tickCount={6}
                 interval={0}
                 tickMargin={14}
                 minTickGap={range === '1d' ? 18 : 24}
-                tick={{ fontSize: 10, fill: 'var(--app-subtext-0)' }}
                 stroke="var(--app-subtext-0)"
               />
               <YAxis
@@ -448,6 +441,7 @@ export function EquityCurveCard({
                 tickLine={false}
                 tickMargin={12}
                 tickFormatter={formatAxisValue}
+                domain={['auto', 'auto']}
                 tick={{ fontSize: 12 }}
                 stroke="var(--app-muted)"
               />
@@ -463,6 +457,16 @@ export function EquityCurveCard({
                   strokeWidth: 1,
                 }}
                 wrapperStyle={{ zIndex: 90, outline: 'none' }}
+              />
+              <Legend
+                verticalAlign="top"
+                align="right"
+                iconType="circle"
+                wrapperStyle={{
+                  color: 'var(--app-muted)',
+                  fontSize: 11,
+                  paddingBottom: 8,
+                }}
               />
               {SERIES_META.map((series) => {
                 const active = visibleSeries[series.key];
