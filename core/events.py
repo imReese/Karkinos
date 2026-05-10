@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from core.types import AssetClass, BarFrequency, OrderSide, OrderType, Symbol
 
@@ -41,8 +42,48 @@ class SignalEvent(Event):
 
 
 @dataclass(frozen=True)
+class OrderIntentEvent(Event):
+    """交易意图事件。
+
+    由 Portfolio 根据 SignalEvent 生成，表达“想交易什么”。
+    该事件不能直接进入执行层，必须先经过风控闸门转换为 OrderEvent。
+    """
+
+    intent_id: str
+    strategy_id: str
+    symbol: Symbol
+    side: OrderSide
+    target_weight: Decimal
+    quantity: Decimal
+    reference_price: Decimal
+    asset_class: AssetClass | None = None
+    source_signal_id: str | None = None
+    reason: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RiskDecisionEvent(Event):
+    """风控决策事件，用于审计和实时推送。"""
+
+    decision_id: str
+    intent_id: str
+    passed: bool
+    symbol: Symbol
+    side: OrderSide
+    reasons: list[str]
+    resulting_order_id: str | None = None
+    severity: str = "info"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class OrderEvent(Event):
-    """委托单事件。"""
+    """委托单事件。
+
+    兼容旧构造方式：新增字段均有默认值。
+    新链路中，该事件应只由风控闸门或回测兼容胶水生成。
+    """
 
     order_id: str
     symbol: Symbol
@@ -50,6 +91,9 @@ class OrderEvent(Event):
     order_type: OrderType
     quantity: Decimal
     price: Decimal | None = None  # limit/stop 订单需要
+    intent_id: str | None = None
+    risk_decision_id: str | None = None
+    execution_mode: str = "paper"
 
 
 @dataclass(frozen=True)

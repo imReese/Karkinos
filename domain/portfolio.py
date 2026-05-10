@@ -7,8 +7,8 @@ import uuid
 from decimal import Decimal
 
 from core.event_bus import EventBus
-from core.events import FillEvent, OrderEvent, SignalEvent
-from core.types import ZERO, OrderSide, OrderType, Symbol
+from core.events import FillEvent, OrderIntentEvent, SignalEvent
+from core.types import ZERO, OrderSide, Symbol
 from domain.instrument import Instrument
 from domain.position import Position
 
@@ -79,16 +79,13 @@ class Portfolio:
                 instrument, current_price, value_diff
             )
             if quantity > ZERO:
-                self.event_bus.publish(
-                    OrderEvent(
-                        timestamp=event.timestamp,
-                        order_id=f"ORD-{uuid.uuid4().hex[:8]}",
-                        symbol=symbol,
-                        side=OrderSide.BUY,
-                        order_type=OrderType.MARKET,
-                        quantity=quantity,
-                        price=current_price,
-                    )
+                self._publish_order_intent(
+                    event=event,
+                    side=OrderSide.BUY,
+                    quantity=quantity,
+                    reference_price=current_price,
+                    current_weight=current_weight,
+                    value_diff=value_diff,
                 )
         elif value_diff < ZERO:
             # 卖出
@@ -96,17 +93,45 @@ class Portfolio:
                 instrument, current_price, abs(value_diff)
             )
             if quantity > ZERO:
-                self.event_bus.publish(
-                    OrderEvent(
-                        timestamp=event.timestamp,
-                        order_id=f"ORD-{uuid.uuid4().hex[:8]}",
-                        symbol=symbol,
-                        side=OrderSide.SELL,
-                        order_type=OrderType.MARKET,
-                        quantity=quantity,
-                        price=current_price,
-                    )
+                self._publish_order_intent(
+                    event=event,
+                    side=OrderSide.SELL,
+                    quantity=quantity,
+                    reference_price=current_price,
+                    current_weight=current_weight,
+                    value_diff=value_diff,
                 )
+
+    def _publish_order_intent(
+        self,
+        *,
+        event: SignalEvent,
+        side: OrderSide,
+        quantity: Decimal,
+        reference_price: Decimal,
+        current_weight: Decimal,
+        value_diff: Decimal,
+    ) -> None:
+        """发布交易意图，由风控闸门决定是否转换为 OrderEvent。"""
+        instrument = self.instruments.get(event.symbol)
+        self.event_bus.publish(
+            OrderIntentEvent(
+                timestamp=event.timestamp,
+                intent_id=f"INTENT-{uuid.uuid4().hex[:8]}",
+                strategy_id=event.strategy_id,
+                symbol=event.symbol,
+                side=side,
+                target_weight=event.target_weight,
+                quantity=quantity,
+                reference_price=reference_price,
+                asset_class=instrument.asset_class if instrument is not None else None,
+                reason="target_weight_rebalance",
+                metadata={
+                    "current_weight": str(current_weight),
+                    "value_diff": str(value_diff),
+                },
+            )
+        )
 
     def on_fill(self, event: FillEvent) -> None:
         """更新持仓和资金。"""

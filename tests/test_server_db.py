@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
+from decimal import Decimal
 
+from core.events import OrderIntentEvent, RiskDecisionEvent
+from core.types import OrderSide, Symbol
 from server.db import AppDatabase
 
 
@@ -53,3 +57,39 @@ def test_app_database_persists_action_tasks_and_status_updates(tmp_path):
     deferred = asyncio.run(db.get_action_tasks(statuses=["deferred"]))
     assert len(deferred) == 1
     assert deferred[0]["source_signal_id"] == 11
+
+
+def test_app_database_persists_risk_decision_audit(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    intent = OrderIntentEvent(
+        timestamp=datetime(2026, 4, 18, 14, 50),
+        intent_id="INTENT-1",
+        strategy_id="dual_ma",
+        symbol=Symbol("600519"),
+        side=OrderSide.BUY,
+        target_weight=Decimal("0.20"),
+        quantity=Decimal("100"),
+        reference_price=Decimal("123.45"),
+        reason="unit test",
+    )
+    decision = RiskDecisionEvent(
+        timestamp=intent.timestamp,
+        decision_id="RISK-1",
+        intent_id=intent.intent_id,
+        passed=False,
+        symbol=intent.symbol,
+        side=intent.side,
+        reasons=["single-symbol weight exceeded"],
+        severity="warning",
+    )
+
+    db.save_risk_decision_sync(intent=intent, decision=decision)
+    rows = db.get_risk_decisions_sync()
+
+    assert len(rows) == 1
+    assert rows[0]["decision_id"] == "RISK-1"
+    assert rows[0]["intent_id"] == "INTENT-1"
+    assert rows[0]["passed"] == 0
+    assert rows[0]["symbol"] == "600519"

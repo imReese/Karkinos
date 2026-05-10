@@ -14,11 +14,15 @@ from core.types import AssetClass, Symbol
 from data.live import LiveDataFeed
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
+from execution.gateway import ManualConfirmGateway
 from notification.notifier import build_notifier, format_signal_message
+from risk.pre_trade import PreTradePolicy, PreTradeRiskManager
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
+from server.services.live_context import LiveContextProvider
 from server.services.market_hours import is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.trading_controls import TradingControlState
 
 if TYPE_CHECKING:
     from config import ServerConfig
@@ -45,11 +49,13 @@ class TradingScheduler:
         bridge: EventBusBridge,
         notifier=None,
         db=None,
+        trading_controls: TradingControlState | None = None,
     ) -> None:
         self._config = config
         self._bridge = bridge
         self._notifier = notifier
         self._db = db
+        self._trading_controls = trading_controls or TradingControlState(db=db)
         self._running = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -207,6 +213,22 @@ class TradingScheduler:
             for inst in self._instruments.values():
                 self._portfolio.add_instrument(inst)
 
+        # 实盘安全链路：OrderIntentEvent -> PreTradeRiskManager -> OrderEvent
+        # -> ManualConfirmGateway -> SQLite pending confirmation.
+        context_provider = LiveContextProvider(
+            portfolio_getter=lambda: self.portfolio,
+            controls=self._trading_controls,
+            blacklist_getter=self._configured_symbol_set("blacklist", "symbol_blacklist"),
+            st_symbols_getter=self._configured_symbol_set("st_symbols", "st_blacklist"),
+        )
+        PreTradeRiskManager(
+            self._event_bus,
+            context_provider,
+            PreTradePolicy(execution_mode="manual"),
+            db=self._db,
+        )
+        ManualConfirmGateway(self._event_bus, db=self._db)
+
         # 创建策略（使用注册表）
         strategy = build_strategy(self._config, self._event_bus)
         strategy.on_init([sym for sym, _ in self._watchlist])
@@ -325,3 +347,25 @@ class TradingScheduler:
             timestamp=str(event.timestamp),
         )
         self._notifier.send(title=f"Karkinos 信号: {event.symbol}", message=message)
+
+    def _configured_symbol_set(self, *attribute_names: str):
+        """Return a getter for optional symbol lists on runtime config."""
+
+        def getter() -> set[str]:
+            values: set[str] = set()
+            for name in attribute_names:
+                raw = getattr(self._config, name, None)
+                if raw is None:
+                    continue
+                if isinstance(raw, dict):
+                    raw = raw.keys()
+                if isinstance(raw, str):
+                    values.add(raw)
+                    continue
+                try:
+                    values.update(str(item) for item in raw)
+                except TypeError:
+                    values.add(str(raw))
+            return values
+
+        return getter

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from decimal import Decimal
 
 import pandas as pd
@@ -10,8 +11,15 @@ import pandas as pd
 from backtest.result import BacktestResult
 from core.clock import SimulatedClock
 from core.event_bus import EventBus
-from core.events import FillEvent, MarketEvent, OrderEvent, SignalEvent
-from core.types import ZERO, Symbol
+from core.events import (
+    FillEvent,
+    MarketEvent,
+    OrderEvent,
+    OrderIntentEvent,
+    RiskDecisionEvent,
+    SignalEvent,
+)
+from core.types import ZERO, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
@@ -72,6 +80,8 @@ class BacktestEngine:
 
         # 订阅 MarketEvent
         self.event_bus.subscribe(MarketEvent, self._on_market_event)
+        # 订阅 OrderIntentEvent — 回测兼容胶水，默认批准并转换为 OrderEvent
+        self.event_bus.subscribe(OrderIntentEvent, self._on_order_intent_event)
         # 订阅 OrderEvent — 执行
         self.event_bus.subscribe(OrderEvent, self._on_order_event)
 
@@ -124,6 +134,42 @@ class BacktestEngine:
     def _on_market_event(self, event: MarketEvent) -> None:
         """转发给策略。"""
         self.strategy.on_data(event)
+
+    def _on_order_intent_event(self, event: OrderIntentEvent) -> None:
+        """回测中将交易意图转换为已批准订单。
+
+        实盘路径应由 PreTradeRiskManager 生成 OrderEvent；这里仅保持
+        当前回测引擎在阶段 1 改造期间的确定性行为。
+        """
+        decision_id = f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}"
+        order_id = f"ORD-{uuid.uuid4().hex[:8]}"
+        self.event_bus.publish(
+            RiskDecisionEvent(
+                timestamp=event.timestamp,
+                decision_id=decision_id,
+                intent_id=event.intent_id,
+                passed=True,
+                symbol=event.symbol,
+                side=event.side,
+                reasons=["backtest_default_approved"],
+                resulting_order_id=order_id,
+                severity="info",
+            )
+        )
+        self.event_bus.publish(
+            OrderEvent(
+                timestamp=event.timestamp,
+                order_id=order_id,
+                symbol=event.symbol,
+                side=event.side,
+                order_type=OrderType.MARKET,
+                quantity=event.quantity,
+                price=event.reference_price,
+                intent_id=event.intent_id,
+                risk_decision_id=decision_id,
+                execution_mode="paper",
+            )
+        )
 
     def _on_order_event(self, event: OrderEvent) -> None:
         """执行委托单。"""

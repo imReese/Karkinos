@@ -18,6 +18,7 @@ from starlette.staticfiles import StaticFiles
 from server.bridge import EventBusBridge
 from server.db import AppDatabase
 from server.scheduler import TradingScheduler
+from server.services.trading_controls import TradingControlState
 from server.ws.hub import ConnectionHub
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class AppState:
         self.bridge: EventBusBridge | None = None
         self.scheduler: TradingScheduler | None = None
         self.notifier: Any = None
+        self.trading_controls: TradingControlState | None = None
 
 
 _app_state: AppState | None = None
@@ -144,8 +146,18 @@ async def lifespan(app: FastAPI):
     notifier = build_notifier(config.notification)
     state.notifier = notifier
 
+    # 初始化交易运行控制
+    trading_controls = TradingControlState(db=db)
+    state.trading_controls = trading_controls
+
     # 初始化调度器
-    scheduler = TradingScheduler(config, bridge, notifier, db=db)
+    scheduler = TradingScheduler(
+        config,
+        bridge,
+        notifier,
+        db=db,
+        trading_controls=trading_controls,
+    )
     state.scheduler = scheduler
 
     # 存储到 app.state
@@ -155,6 +167,7 @@ async def lifespan(app: FastAPI):
     app.state.bridge = bridge
     app.state.scheduler = scheduler
     app.state.notifier = notifier
+    app.state.trading_controls = trading_controls
 
     # 启动事件转发任务
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
@@ -217,6 +230,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.portfolio import create_router as portfolio_router
     from server.routes.settings import create_router as settings_router
     from server.routes.signals import create_router as signals_router
+    from server.routes.trading import create_router as trading_router
     from server.ws.handlers import router as ws_router
 
     app.include_router(market_router())
@@ -225,6 +239,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(signals_router())
     app.include_router(backtest_router())
     app.include_router(settings_router())
+    app.include_router(trading_router())
     app.include_router(ws_router)
 
     # 挂载前端静态文件（生产构建）
