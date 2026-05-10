@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 
-import { useCopy } from "../../../app/copy";
+import { useCopy } from '../../../app/copy';
 
 export type CashFlowFormValues = {
   occurred_at: string;
@@ -24,8 +24,8 @@ export function CashFlowForm({
   const createDefaultValues = (): CashFlowFormValues => ({
     occurred_at: new Date().toISOString().slice(0, 16),
     amount: 0,
-    flow_type: "deposit",
-    note: "",
+    flow_type: 'deposit',
+    note: '',
   });
   const {
     register,
@@ -51,30 +51,34 @@ export function CashFlowForm({
       })}
       className="app-panel space-y-3 rounded-2xl p-5"
     >
-      <div className="app-kicker text-xs uppercase tracking-[0.18em]">{labels.title}</div>
+      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+        {labels.title}
+      </div>
       <input
-        aria-label="Cash Flow Occurred At"
+        aria-label={labels.occurredAtLabel}
         type="datetime-local"
-        className="app-field w-full rounded-xl px-3 py-2 text-sm"
-        {...register("occurred_at", { required: common.required })}
+        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        {...register('occurred_at', { required: common.required })}
       />
-      {errors.occurred_at ? <FieldError message={errors.occurred_at.message} /> : null}
+      {errors.occurred_at ? (
+        <FieldError message={errors.occurred_at.message} />
+      ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         <input
-          aria-label="Amount"
+          aria-label={labels.amountLabel}
           type="number"
           step="any"
-          className="app-field rounded-xl px-3 py-2 text-sm"
-          {...register("amount", {
+          className="app-field rounded-2xl px-4 py-3 text-sm"
+          {...register('amount', {
             required: common.required,
             valueAsNumber: true,
             min: { value: 0.000001, message: common.mustBePositive },
           })}
         />
         <select
-          aria-label="Flow Type"
-          className="app-field rounded-xl px-3 py-2 text-sm"
-          {...register("flow_type", { required: common.required })}
+          aria-label={labels.flowTypeLabel}
+          className="app-field rounded-2xl px-4 py-3 text-sm"
+          {...register('flow_type', { required: common.required })}
         >
           <option value="deposit">{labels.deposit}</option>
           <option value="withdrawal">{labels.withdrawal}</option>
@@ -82,16 +86,16 @@ export function CashFlowForm({
       </div>
       {errors.amount ? <FieldError message={errors.amount.message} /> : null}
       <input
-        aria-label="Cash Flow Note"
+        aria-label={labels.noteLabel}
         placeholder={labels.notePlaceholder}
-        className="app-field w-full rounded-xl px-3 py-2 text-sm"
-        {...register("note")}
+        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        {...register('note')}
       />
       {submitError ? <FieldError message={submitError} /> : null}
       <button
         type="submit"
         disabled={pending}
-        className="app-button-primary rounded-xl px-4 py-2 text-sm font-medium disabled:opacity-50"
+        className="app-button-primary rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
       >
         {pending ? labels.saving : labels.submit}
       </button>
@@ -100,5 +104,7 @@ export function CashFlowForm({
 }
 
 function FieldError({ message }: { message?: string }) {
-  return message ? <div className="app-error-text text-sm">{message}</div> : null;
+  return message ? (
+    <div className="app-error-text text-sm">{message}</div>
+  ) : null;
 }

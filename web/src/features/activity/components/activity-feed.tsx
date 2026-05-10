@@ -21,7 +21,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
 
       <div className="space-y-3">
         {entries.map((entry) => (
-          <div key={entry.id} className="app-panel-strong rounded-xl px-4 py-3">
+          <div
+            key={entry.id}
+            className="app-panel-strong rounded-2xl px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]"
+          >
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="text-sm font-medium">
@@ -30,7 +33,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 </div>
                 <div className="app-muted mt-1 text-xs">{entry.timestamp}</div>
               </div>
-              <div className="app-soft text-sm">
+              <div className="app-soft text-sm font-semibold tabular-nums">
                 {entry.amount !== null
                   ? formatCurrency(entry.amount)
                   : entry.price !== null && entry.quantity !== null

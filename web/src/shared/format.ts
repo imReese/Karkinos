@@ -37,6 +37,17 @@ export function formatAmount(value: number | null | undefined) {
   }).format(normalized);
 }
 
+export function formatCompactNumber(value: number | null | undefined) {
+  const normalized = finiteNumber(value);
+  if (normalized === null) {
+    return '--';
+  }
+  return new Intl.NumberFormat(resolveLocale(), {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(normalized);
+}
+
 export function formatPrice(value: number | null | undefined) {
   const normalized = finiteNumber(value);
   if (normalized === null) {

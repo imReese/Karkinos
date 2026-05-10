@@ -47,7 +47,7 @@ export function LiveHoldingsSummaryCard({
 
   if (groups.length === 0) {
     return (
-      <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 text-sm app-muted sm:p-5">
+      <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 text-sm app-muted shadow-[0_18px_50px_rgba(17,17,27,0.12)] sm:p-5">
         <div className="app-card-title text-[var(--app-text)]">
           {labels.title}
         </div>
@@ -57,7 +57,7 @@ export function LiveHoldingsSummaryCard({
   }
 
   return (
-    <div className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)]">
+    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] shadow-[0_18px_50px_rgba(17,17,27,0.12)]">
       <div className="flex items-center justify-between border-b border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-4 py-3 sm:px-5">
         <div className="app-card-title">{labels.title}</div>
       </div>

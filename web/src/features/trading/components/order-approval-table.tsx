@@ -56,7 +56,7 @@ export function OrderApprovalTable() {
           <h2 className="mt-2 text-lg font-semibold">{labels.title}</h2>
           <p className="app-muted mt-2 text-sm">{labels.subtitle}</p>
         </div>
-        <div className="app-panel-strong rounded-xl px-3 py-2 text-sm font-semibold">
+        <div className="app-panel-strong rounded-2xl px-3 py-2 text-sm font-semibold tabular-nums shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
           {labels.pendingCount(pendingOrders.length)}
         </div>
       </div>
@@ -66,7 +66,7 @@ export function OrderApprovalTable() {
       ) : orders.isError ? (
         <div className="app-error-text mt-5 text-sm">{labels.loadFailed}</div>
       ) : pendingOrders.length === 0 ? (
-        <div className="app-panel-strong mt-5 rounded-xl px-4 py-4 text-sm">
+        <div className="app-panel-strong mt-5 rounded-2xl px-4 py-4 text-sm shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
           {labels.empty}
         </div>
       ) : (
