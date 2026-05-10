@@ -206,6 +206,223 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row else None
 
+    # ---------- Risk Decisions ----------
+
+    def save_risk_decision_sync(self, *, intent, decision) -> int:
+        """同步写入风控决策审计记录。"""
+        payload = {
+            "intent": {
+                "timestamp": intent.timestamp.isoformat(),
+                "intent_id": intent.intent_id,
+                "strategy_id": intent.strategy_id,
+                "symbol": str(intent.symbol),
+                "side": intent.side.value,
+                "target_weight": str(intent.target_weight),
+                "quantity": str(intent.quantity),
+                "reference_price": str(intent.reference_price),
+                "asset_class": (
+                    intent.asset_class.value if intent.asset_class is not None else None
+                ),
+                "source_signal_id": intent.source_signal_id,
+                "reason": intent.reason,
+                "metadata": intent.metadata,
+            },
+            "decision": {
+                "timestamp": decision.timestamp.isoformat(),
+                "decision_id": decision.decision_id,
+                "intent_id": decision.intent_id,
+                "passed": decision.passed,
+                "symbol": str(decision.symbol),
+                "side": decision.side.value,
+                "reasons": decision.reasons,
+                "resulting_order_id": decision.resulting_order_id,
+                "severity": decision.severity,
+                "metadata": decision.metadata,
+            },
+        }
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO risk_decisions
+                    (decision_id, intent_id, timestamp, passed, symbol, side,
+                     reasons_json, resulting_order_id, severity, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    decision.decision_id,
+                    decision.intent_id,
+                    decision.timestamp.isoformat(),
+                    1 if decision.passed else 0,
+                    str(decision.symbol),
+                    decision.side.value,
+                    json.dumps(decision.reasons, ensure_ascii=False),
+                    decision.resulting_order_id,
+                    decision.severity,
+                    json.dumps(payload, ensure_ascii=False),
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
+    def get_risk_decisions_sync(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """同步读取风控决策审计记录，最新优先。"""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM risk_decisions
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Runtime Controls ----------
+
+    def set_runtime_control_sync(self, key: str, value: dict[str, Any]) -> None:
+        """Persist runtime control state such as kill switch."""
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """
+                INSERT INTO runtime_controls (key, value_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    key,
+                    json.dumps(value, ensure_ascii=False),
+                    datetime.now().isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def get_runtime_control_sync(self, key: str) -> dict[str, Any] | None:
+        """Read persisted runtime control state."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT value_json FROM runtime_controls WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if row is None:
+                return None
+            return json.loads(row["value_json"])
+
+    # ---------- Manual Orders ----------
+
+    def save_manual_order_sync(
+        self,
+        *,
+        order_id: str,
+        timestamp: str,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float | None,
+        intent_id: str | None,
+        risk_decision_id: str | None,
+        execution_mode: str,
+        status: str,
+        payload: dict[str, Any],
+    ) -> int:
+        """Persist an order waiting for manual confirmation."""
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO manual_orders (
+                    order_id, timestamp, symbol, side, order_type, quantity, price,
+                    intent_id, risk_decision_id, execution_mode, status, payload_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(order_id) DO UPDATE SET
+                    timestamp = excluded.timestamp,
+                    symbol = excluded.symbol,
+                    side = excluded.side,
+                    order_type = excluded.order_type,
+                    quantity = excluded.quantity,
+                    price = excluded.price,
+                    intent_id = excluded.intent_id,
+                    risk_decision_id = excluded.risk_decision_id,
+                    execution_mode = excluded.execution_mode,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    order_id,
+                    timestamp,
+                    symbol,
+                    side,
+                    order_type,
+                    quantity,
+                    price,
+                    intent_id,
+                    risk_decision_id,
+                    execution_mode,
+                    status,
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
+    def get_manual_order_sync(self, order_id: str) -> dict[str, Any] | None:
+        """Read one manual order by ID."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM manual_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_manual_orders_sync(
+        self, status: str | None = None, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """List manual orders, latest first."""
+        query = "SELECT * FROM manual_orders"
+        params: list[Any] = []
+        if status is not None:
+            query += " WHERE status = ?"
+            params.append(status)
+        query += " ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, tuple(params)).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_manual_order_status_sync(
+        self, *, order_id: str, status: str, note: str = ""
+    ) -> dict[str, Any] | None:
+        """Update manual order status and return the updated row."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                UPDATE manual_orders
+                SET status = ?, note = ?, updated_at = ?
+                WHERE order_id = ?
+                """,
+                (status, note, datetime.now().isoformat(), order_id),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM manual_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
     # ---------- Backtest Results ----------
 
     async def save_backtest_result(
@@ -1025,6 +1242,58 @@ CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_results(created_at);
 CREATE INDEX IF NOT EXISTS idx_quote_snapshots_symbol_ts ON quote_snapshots(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_daily_close_symbol_trade_date ON daily_close_snapshots(symbol, trade_date DESC);
 CREATE INDEX IF NOT EXISTS idx_action_tasks_status_ts ON action_tasks(status, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS risk_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id TEXT NOT NULL UNIQUE,
+    intent_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    reasons_json TEXT NOT NULL,
+    resulting_order_id TEXT,
+    severity TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_risk_decisions_timestamp
+ON risk_decisions(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_decisions_symbol_ts
+ON risk_decisions(symbol, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_decisions_passed_ts
+ON risk_decisions(passed, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS runtime_controls (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS manual_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL UNIQUE,
+    timestamp TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    order_type TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    price REAL,
+    intent_id TEXT,
+    risk_decision_id TEXT,
+    execution_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_manual_orders_status_ts
+ON manual_orders(status, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_manual_orders_symbol_ts
+ON manual_orders(symbol, timestamp DESC);
 
 CREATE TABLE IF NOT EXISTS cash_flows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
