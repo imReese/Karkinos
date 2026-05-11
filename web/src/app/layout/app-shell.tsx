@@ -31,9 +31,9 @@ type ToolbarStatusIndicator = 'dot' | 'syncing';
 type ToolbarStatusAffordance = 'resync' | 'details';
 
 const STATUS_COLORS: Record<ToolbarStatusTone, string> = {
-  success: '#a6e3a1',
-  warning: '#f9e2af',
-  error: '#f38ba8',
+  success: 'var(--app-success)',
+  warning: 'var(--app-warning)',
+  error: 'var(--app-danger)',
 };
 
 function formatToolbarTimestamp(value: Date, locale: Locale) {
@@ -136,10 +136,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="app-root h-screen w-full overflow-hidden">
-      <div className="app-shell-frame flex h-screen w-full">
+    <div className="app-root min-h-[100dvh] w-full overflow-hidden">
+      <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] w-full">
         <div
-          className={`fixed inset-0 z-30 bg-black/50 transition lg:hidden ${
+          className={`fixed inset-0 z-30 bg-[color-mix(in_srgb,var(--app-mantle)_54%,transparent)] transition lg:hidden ${
             mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
           aria-hidden={!mobileNavOpen}
@@ -147,19 +147,21 @@ export function AppShell({ children }: { children: ReactNode }) {
         />
 
         <aside
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-40 flex w-[min(84vw,320px)] flex-col border-r px-6 py-6 transition-transform duration-200 lg:relative lg:h-full lg:w-[272px] lg:translate-x-0 lg:px-6 lg:py-6 ${
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-40 flex w-[min(84vw,320px)] flex-col border-r px-5 py-6 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:relative lg:h-full lg:w-[252px] lg:translate-x-0 lg:px-5 lg:py-6 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
           aria-label={copy.shell.navigation}
         >
-          <div className="mb-6 flex items-start justify-between gap-4">
+          <div className="mb-8 flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1 space-y-2">
-              <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold">
+              <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold text-[10px]">
                 Karkinos
               </div>
-              <div className="app-shell-section-title">{copy.shell.title}</div>
+              <div className="app-shell-section-title tracking-[-0.035em]">
+                {copy.shell.title}
+              </div>
               <p
-                className={`app-muted max-w-[15rem] text-xs leading-5 ${
+                className={`app-muted max-w-[14rem] text-xs leading-5 ${
                   locale === 'zh' ? 'font-medium' : ''
                 }`}
               >
@@ -176,7 +178,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
 
-          <nav className="grid gap-1">
+          <nav className="grid gap-1.5">
             {navItems.map((item) => {
               const active = pathname === item.to;
               const Icon = item.icon;
@@ -186,7 +188,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   to={item.to}
                   onClick={() => setMobileNavOpen(false)}
                   data-testid={`sidebar-nav-${item.key}`}
-                  className={`app-nav-item rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
+                  className={`app-nav-item rounded-[18px] px-3 py-3 text-sm font-semibold ${
                     active ? 'app-nav-item-active' : ''
                   }`}
                 >
@@ -205,10 +207,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main className="app-shell-main flex min-w-0 flex-1 flex-col overflow-hidden">
           <header className="app-toolbar-shell shrink-0 border-b">
-            <div className="flex h-12 items-center justify-between gap-4 px-4 sm:px-5">
+            <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-5 lg:px-6">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-3.5">
-                  <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold">
+                  <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold text-[10px]">
                     Karkinos
                   </div>
                   <div
@@ -325,7 +327,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {copy.shell.navigation}
                 </button>
 
-                <div className="flex flex-row items-center gap-6">
+                <div className="flex flex-row items-center gap-3">
                   <ThemeSwitcher
                     label={copy.shell.theme}
                     value={theme}
@@ -359,7 +361,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </header>
 
           <div className="app-shell-content min-h-0 flex-1 overflow-y-auto">
-            <div className="w-full px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-5 xl:px-7 2xl:px-8">
+            <div className="mx-auto w-full max-w-[1880px] px-4 py-5 sm:px-5 sm:py-6 lg:px-6 xl:px-7 2xl:px-8">
               {children}
             </div>
           </div>
@@ -412,9 +414,9 @@ function LanguageMenu({
     <div ref={rootRef} className="relative w-auto">
       <button
         type="button"
-        className={`inline-flex h-9 w-auto items-center gap-2 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_46%,transparent)] px-3 text-[11px] font-semibold tracking-[0.08em] text-[var(--app-muted)] backdrop-blur-md transition-colors duration-200 hover:border-[color-mix(in_srgb,var(--app-border)_74%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-1)_34%,transparent)] hover:text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
+        className={`inline-flex h-9 w-auto items-center gap-2 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 text-[11px] font-semibold tracking-[0.08em] text-[var(--app-muted)] backdrop-blur-md transition-[background-color,border-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
           open
-            ? 'border-[color-mix(in_srgb,var(--app-border)_74%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_34%,transparent)] text-[var(--app-text)]'
+            ? 'border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] text-[var(--app-text)]'
             : ''
         }`}
         aria-label={label}
@@ -427,7 +429,7 @@ function LanguageMenu({
       </button>
       {open ? (
         <div
-          className="absolute right-0 top-[calc(100%+6px)] z-[60] min-w-full min-w-max rounded-2xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-panel)_88%,transparent)] p-1.5 shadow-[0_12px_40px_rgba(17,17,27,0.16)] backdrop-blur-lg"
+          className="absolute right-0 top-[calc(100%+6px)] z-[60] min-w-full min-w-max rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_92%,transparent)] p-1.5 shadow-[0_20px_60px_color-mix(in_srgb,var(--app-mantle)_34%,transparent)] backdrop-blur-lg"
           role="menu"
           aria-label={label}
         >
@@ -444,7 +446,7 @@ function LanguageMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
-                className={`flex w-full min-w-max items-center justify-between gap-3 rounded-[10px] bg-transparent px-3 py-2 text-left text-xs font-medium text-[var(--app-muted)] transition-colors duration-200 hover:bg-[var(--app-accent-ghost)] hover:text-[var(--app-text)] ${
+                className={`flex w-full min-w-max items-center justify-between gap-3 rounded-xl bg-transparent px-3 py-2 text-left text-xs font-medium text-[var(--app-muted)] transition-[background-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[var(--app-accent-ghost)] hover:text-[var(--app-text)] active:scale-[0.98] ${
                   active ? 'text-[var(--app-text)]' : ''
                 }`}
                 onClick={() => {
@@ -480,7 +482,7 @@ function ThemeSwitcher({
 }) {
   return (
     <div
-      className="inline-flex flex-row items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_46%,transparent)] p-1 backdrop-blur-md"
+      className="inline-flex flex-row items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] p-1 backdrop-blur-md"
       role="group"
       aria-label={label}
     >
@@ -493,9 +495,9 @@ function ThemeSwitcher({
             type="button"
             aria-label={option.label}
             aria-pressed={active}
-            className={`inline-flex items-center justify-center rounded-full px-2.5 py-1.5 text-[var(--app-muted)] transition-colors duration-200 hover:text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] [&>svg]:h-4 [&>svg]:w-4 ${
+            className={`inline-flex items-center justify-center rounded-full px-2.5 py-1.5 text-[var(--app-muted)] transition-[background-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] [&>svg]:h-4 [&>svg]:w-4 ${
               active
-                ? 'bg-[color-mix(in_srgb,var(--app-accent)_20%,transparent)] text-[var(--app-accent)]'
+                ? 'bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] text-[var(--app-accent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_8%,transparent)]'
                 : ''
             }`}
             onClick={() => onChange(option.value)}
@@ -607,13 +609,13 @@ function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={hoverHint}
         onClick={onClick}
-        className={`inline-flex min-h-10 items-center overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--app-border)_46%,transparent)] bg-transparent text-sm text-[var(--app-soft)] shadow-sm backdrop-blur-md transition-[background-color,transform,color,border-color,box-shadow] duration-200 hover:cursor-pointer hover:border-[color-mix(in_srgb,var(--app-border)_66%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-1)_42%,transparent)] hover:text-[var(--app-text)] hover:shadow-[0_6px_18px_rgba(17,17,27,0.12)] active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
+        className={`inline-flex min-h-10 items-center overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-sm text-[var(--app-soft)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] backdrop-blur-md transition-[background-color,transform,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:cursor-pointer hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] hover:text-[var(--app-text)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_20%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
           expanded
-            ? 'border-[color-mix(in_srgb,var(--app-border)_68%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_38%,transparent)] text-[var(--app-text)] shadow-[0_6px_18px_rgba(17,17,27,0.14)]'
+            ? 'border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] text-[var(--app-text)] shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_22%,transparent)]'
             : ''
         }`}
       >
-        <span className="font-mono inline-flex h-full items-center bg-[color-mix(in_srgb,var(--app-surface-0)_20%,transparent)] px-3 text-xs uppercase tracking-[0.22em] text-[var(--app-subtext-0)] transition-colors duration-200 group-hover:bg-transparent">
+        <span className="font-mono inline-flex h-full items-center bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-3 text-xs uppercase tracking-[0.22em] text-[var(--app-subtext-0)] transition-colors duration-300 group-hover:bg-transparent">
           {label}
         </span>
         <span
@@ -659,7 +661,7 @@ function StatusChip({
         </span>
       </button>
       {hoverHint && !expanded ? (
-        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-[75] -translate-x-1/2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[0_12px_30px_rgba(17,17,27,0.18)] backdrop-blur-md transition-opacity duration-75 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-[75] -translate-x-1/2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[0_12px_30px_color-mix(in_srgb,var(--app-mantle)_18%,transparent)] backdrop-blur-md transition-opacity duration-75 group-hover:opacity-100 group-focus-visible:opacity-100">
           {hoverHint}
         </div>
       ) : null}

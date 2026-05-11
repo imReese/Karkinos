@@ -125,6 +125,25 @@ const intradayPoints: EquitySeriesPoint[] = [
   },
 ];
 
+const updatedPoints: EquitySeriesPoint[] = [
+  {
+    timestamp: '2026-05-10T09:30:00+08:00',
+    total: 103000,
+    stocks: 12000,
+    funds: 6000,
+    others: 9000,
+    cash: 76000,
+  },
+  {
+    timestamp: '2026-05-11T10:00:00+08:00',
+    total: 104200,
+    stocks: 12600,
+    funds: 6100,
+    others: 9500,
+    cash: 76000,
+  },
+];
+
 function renderCard({
   cardPoints = points,
   onRangeChange,
@@ -213,7 +232,7 @@ function renderCard({
     })),
   });
 
-  render(
+  return render(
     <PreferencesProvider>
       <EquityCurveCard points={cardPoints} onRangeChange={onRangeChange} />
     </PreferencesProvider>,
@@ -287,6 +306,20 @@ test('renders multiple intermediate time ticks across the selected range', async
 
   const tickLabels = screen.getAllByText(/\d{2}-\d{2}\s+\d{2}:\d{2}/);
   expect(tickLabels.length).toBeGreaterThanOrEqual(4);
+});
+
+test('updates rendered chart ticks when points change', async () => {
+  const view = renderCard();
+
+  expect(await screen.findByText(/04-18\s+18:00/)).toBeTruthy();
+
+  view.rerender(
+    <PreferencesProvider>
+      <EquityCurveCard points={updatedPoints} />
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByText(/05-11\s+10:00/)).toBeTruthy();
 });
 
 test('renders the full intraday session axis for the 1d range', async () => {

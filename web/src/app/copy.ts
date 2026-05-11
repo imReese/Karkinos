@@ -93,6 +93,8 @@ export const copy = {
         opsPanel: 'Execution queue',
         pendingApprovals: 'Pending approvals',
         pendingEmpty: 'No orders require approval.',
+        pendingEmptyDetail:
+          'Approved orders will appear here before execution.',
         pendingCount: (count: number) => `${count} pending`,
         ledgerPanel: 'Latest ledger',
         ledgerEmpty: 'No ledger entries yet.',
@@ -709,6 +711,7 @@ export const copy = {
         opsPanel: '执行队列',
         pendingApprovals: '待审批订单',
         pendingEmpty: '当前没有需要审批的订单。',
+        pendingEmptyDetail: '通过风控后的订单会先进入这里，确认后才继续执行。',
         pendingCount: (count: number) => `${count} 笔待审批`,
         ledgerPanel: '最新流水',
         ledgerEmpty: '还没有账本流水。',
