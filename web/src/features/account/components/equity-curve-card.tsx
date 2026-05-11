@@ -40,11 +40,15 @@ type CustomTooltipProps = {
 
 const SERIES_META: Array<{ key: SeriesKey; color: string; gradient: string }> =
   [
-    { key: 'total', color: '#cba6f7', gradient: 'totalGradient' },
-    { key: 'stocks', color: '#89b4fa', gradient: 'stocksGradient' },
-    { key: 'funds', color: '#a6e3a1', gradient: 'fundsGradient' },
-    { key: 'others', color: '#f9e2af', gradient: 'othersGradient' },
-    { key: 'cash', color: '#94e2d5', gradient: 'cashGradient' },
+    { key: 'total', color: 'var(--app-accent)', gradient: 'totalGradient' },
+    {
+      key: 'stocks',
+      color: 'var(--app-accent-secondary)',
+      gradient: 'stocksGradient',
+    },
+    { key: 'funds', color: 'var(--app-success)', gradient: 'fundsGradient' },
+    { key: 'others', color: 'var(--app-warning)', gradient: 'othersGradient' },
+    { key: 'cash', color: 'var(--app-teal)', gradient: 'cashGradient' },
   ];
 
 const RANGE_DAYS: Record<EquityCurveRange, number> = {
@@ -191,7 +195,7 @@ function CustomTooltip({
   }
 
   return (
-    <div className="z-[90] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-2.5 text-xs shadow-[0_14px_44px_rgba(17,17,27,0.22)] backdrop-blur-md tabular-nums">
+    <div className="z-[90] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_92%,transparent)] px-3 py-2.5 text-xs shadow-[0_18px_54px_color-mix(in_srgb,var(--app-mantle)_54%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] backdrop-blur-md tabular-nums">
       <div className="mb-2 font-medium text-[var(--app-text)]">
         {formatChartTimestamp(point.timestamp)}
       </div>
@@ -219,7 +223,7 @@ function CustomTooltip({
           );
         })}
         {typeof point.unrealized_pnl === 'number' ? (
-          <div className="mt-2 flex min-w-36 items-center justify-between gap-5 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] pt-2">
+          <div className="mt-2 flex min-w-36 items-center justify-between gap-5 border-t border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] pt-2">
             <span className="text-[var(--app-muted)]">
               {realtimeUnrealizedPnlLabel}
             </span>
@@ -242,12 +246,12 @@ export function EquityCurveSkeleton() {
     >
       <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
-          <div className="h-5 w-44 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_86%,transparent)]" />
+          <div className="h-5 w-44 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_48%,transparent)]" />
           <div className="mt-2 flex flex-wrap gap-1.5">
             {Array.from({ length: 5 }).map((_, index) => (
               <div
                 key={index}
-                className="h-6 w-16 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_72%,transparent)]"
+                className="h-6 w-16 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_38%,transparent)]"
               />
             ))}
           </div>
@@ -264,7 +268,7 @@ export function EquityCurveSkeleton() {
             />
           ))}
         </div>
-        <div className="absolute bottom-12 left-8 right-8 h-36 rounded-[55%_45%_50%_50%/60%_46%_54%_40%] border-t-2 border-[color-mix(in_srgb,var(--app-accent)_38%,transparent)] bg-gradient-to-t from-transparent to-[color-mix(in_srgb,var(--app-accent)_14%,transparent)]" />
+        <div className="absolute bottom-12 left-8 right-8 h-36 rounded-[55%_45%_50%_50%/60%_46%_54%_40%] border-t-2 border-[color-mix(in_srgb,var(--app-accent)_48%,transparent)] bg-gradient-to-t from-transparent to-[color-mix(in_srgb,var(--app-accent)_14%,transparent)]" />
       </div>
     </section>
   );
@@ -272,14 +276,18 @@ export function EquityCurveSkeleton() {
 
 export function EquityCurveCard({
   points,
+  range: controlledRange,
   onRangeChange,
 }: {
   points: EquitySeriesPoint[];
+  range?: EquityCurveRange;
   onRangeChange?: (range: EquityCurveRange) => void;
 }) {
   const copy = useCopy();
   const labels = copy.overview.equityCurve;
-  const [range, setRange] = useState<EquityCurveRange>('1m');
+  const [uncontrolledRange, setUncontrolledRange] =
+    useState<EquityCurveRange>('1m');
+  const range = controlledRange ?? uncontrolledRange;
   const [visibleSeries, setVisibleSeries] = useState<
     Record<SeriesKey, boolean>
   >({
@@ -314,12 +322,15 @@ export function EquityCurveCard({
 
   return (
     <section className="w-full px-0 py-1">
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <div className="app-card-title text-[var(--app-text)]">
+          <div className="app-product-mark">
+            {copy.overview.dashboard.equityPanel}
+          </div>
+          <div className="app-card-title mt-1.5 text-xl text-[var(--app-text)]">
             {labels.title}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {SERIES_META.map((series) => {
               const active = visibleSeries[series.key];
               return (
@@ -334,10 +345,10 @@ export function EquityCurveCard({
                       [series.key]: !current[series.key],
                     }))
                   }
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-200 ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
                     active
-                      ? 'bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] text-[var(--app-text)]'
-                      : 'bg-transparent text-[var(--app-muted)] opacity-55 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_10%,transparent)] hover:opacity-100'
+                      ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
+                      : 'border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:opacity-100'
                   }`}
                 >
                   <span
@@ -351,9 +362,9 @@ export function EquityCurveCard({
           </div>
         </div>
 
-        <div className="relative inline-flex w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_30%,transparent)] p-0.5 backdrop-blur-md">
+        <div className="relative inline-flex w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_30%,transparent)] p-1 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)]">
           <div
-            className="absolute bottom-0.5 top-0.5 w-[calc(100%/6)] rounded-full bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] transition-transform duration-300 ease-out"
+            className="absolute bottom-1 top-1 w-[calc(100%/6)] rounded-full bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_7%,transparent)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
             style={
               {
                 transform: `translateX(${Math.max(activeRangeIndex, 0) * 100}%)`,
@@ -369,11 +380,13 @@ export function EquityCurveCard({
               aria-pressed={range === value}
               onClick={() => {
                 startTransition(() => {
-                  setRange(value);
+                  if (controlledRange === undefined) {
+                    setUncontrolledRange(value);
+                  }
                   onRangeChange?.(value);
                 });
               }}
-              className={`relative z-10 h-7 min-w-10 rounded-full px-2.5 text-[11px] font-semibold transition-colors duration-200 ${
+              className={`relative z-10 h-7 min-w-10 rounded-full px-2.5 font-mono text-[11px] font-semibold transition-colors duration-300 ${
                 range === value
                   ? 'text-[var(--app-accent)]'
                   : 'text-[var(--app-muted)]'
@@ -386,11 +399,11 @@ export function EquityCurveCard({
       </div>
 
       {hasUsableData ? (
-        <div className="h-[320px] w-full overflow-hidden rounded-[20px] border-y border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] sm:h-[380px]">
+        <div className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartPoints}
-              margin={{ left: 10, right: 30, top: 10, bottom: 0 }}
+              margin={{ left: 10, right: 30, top: 18, bottom: 34 }}
             >
               <defs>
                 {SERIES_META.map((series) => (
@@ -417,7 +430,7 @@ export function EquityCurveCard({
               </defs>
               <CartesianGrid
                 stroke="var(--app-border)"
-                strokeOpacity={0.05}
+                strokeOpacity={0.12}
                 vertical={false}
               />
               <XAxis
@@ -431,6 +444,7 @@ export function EquityCurveCard({
                 tickLine={false}
                 tickCount={6}
                 interval={0}
+                height={46}
                 tickMargin={14}
                 minTickGap={range === '1d' ? 18 : 24}
                 stroke="var(--app-subtext-0)"
@@ -452,7 +466,7 @@ export function EquityCurveCard({
                   />
                 }
                 cursor={{
-                  stroke: '#cba6f7',
+                  stroke: 'var(--app-accent)',
                   strokeOpacity: 0.32,
                   strokeWidth: 1,
                 }}
@@ -466,6 +480,7 @@ export function EquityCurveCard({
                   color: 'var(--app-muted)',
                   fontSize: 11,
                   paddingBottom: 8,
+                  fontFamily: 'JetBrains Mono, ui-monospace, monospace',
                 }}
               />
               {SERIES_META.map((series) => {
@@ -486,7 +501,7 @@ export function EquityCurveCard({
                     dot={false}
                     activeDot={{
                       r: series.key === 'total' ? 5 : 4,
-                      stroke: '#1e1e2e',
+                      stroke: 'var(--app-mantle)',
                       strokeWidth: 2,
                       fill: series.color,
                     }}
@@ -498,7 +513,7 @@ export function EquityCurveCard({
           </ResponsiveContainer>
         </div>
       ) : (
-        <div className="flex h-[320px] items-center justify-center border-y border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-6 text-center sm:h-[380px]">
+        <div className="flex h-[340px] items-center justify-center rounded-[26px] border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-6 text-center sm:h-[410px]">
           <div>
             <div className="text-sm font-medium text-[var(--app-subtext-0)]">
               {labels.emptyPeriod}

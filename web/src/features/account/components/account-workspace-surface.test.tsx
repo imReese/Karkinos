@@ -54,10 +54,12 @@ test('renders account metrics as a single integrated terminal rail', () => {
 
   expect(rail.className).toContain('font-mono');
   expect(rail.className).toContain('tabular-nums');
-  expect(rail.className).toContain('divide-y');
-  expect(rail.className).toContain('xl:divide-x');
+  expect(rail.className).toContain('app-terminal-panel');
+  expect(rail.className).toContain(
+    'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
+  );
   expect(totalAssetsLabel.className).toContain('font-bold');
-  expect(totalAssetsLabel.className).toContain('text-[11px]');
+  expect(totalAssetsLabel.className).toContain('text-[10px]');
   expect(totalAssetsLabel.className).toContain('text-[var(--app-subtext-0)]');
   expect(screen.getByText('Total Assets')).toBeTruthy();
   expect(screen.getByText('Cash Ratio')).toBeTruthy();
@@ -69,8 +71,10 @@ test('renders a responsive shimmering metrics rail skeleton', () => {
   const skeleton = screen.getByTestId('account-metrics-skeleton');
 
   expect(skeleton.className).toContain('animate-pulse');
-  expect(skeleton.className).toContain('xl:grid-cols-5');
-  expect(skeleton.className).toContain('var(--app-surface-0)');
+  expect(skeleton.className).toContain('app-terminal-panel');
+  expect(skeleton.className).toContain(
+    'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
+  );
 });
 
 test('keeps the localized perspective switcher in the breakdown header', async () => {

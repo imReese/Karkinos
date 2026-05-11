@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   createRoute,
   createRootRoute,
@@ -11,8 +11,10 @@ import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import { AppShell } from './layout/app-shell';
 import {
+  type AccountOverview,
   useAccountOverviewQuery,
   type EquityCurveRange,
+  type EquitySeriesPoint,
   useAccountStateQuery,
   useExplainabilityQuery,
   useEquityCurveSeriesQuery,
@@ -68,6 +70,9 @@ import {
 import {
   type AllocationGroup,
   type AllocationItem,
+  type LiveHoldingGroup,
+  type LiveHoldingItem,
+  type PortfolioSnapshot,
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
   usePositionsQuery,
@@ -169,6 +174,137 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({ routeTree });
 
+function resolveEquitySeriesBucket(
+  assetClass: string,
+): keyof Pick<EquitySeriesPoint, 'stocks' | 'funds' | 'others'> {
+  const normalized = assetClass.toLowerCase();
+  if (normalized.includes('stock') || normalized.includes('equity')) {
+    return 'stocks';
+  }
+  if (normalized.includes('fund')) {
+    return 'funds';
+  }
+  return 'others';
+}
+
+function resolveLatestQuoteTimestamp(items: LiveHoldingItem[]) {
+  const latestMs = items.reduce((latest, item) => {
+    if (!item.quote_timestamp) {
+      return latest;
+    }
+    const timestampMs = new Date(item.quote_timestamp).getTime();
+    return Number.isFinite(timestampMs)
+      ? Math.max(latest, timestampMs)
+      : latest;
+  }, Number.NEGATIVE_INFINITY);
+
+  return Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : null;
+}
+
+function buildRealtimeEquityPoint({
+  fallbackTimestamp,
+  liveGroups,
+  liveItems,
+  overview,
+  snapshot,
+}: {
+  fallbackTimestamp?: string;
+  liveGroups: LiveHoldingGroup[];
+  liveItems: LiveHoldingItem[];
+  overview: AccountOverview | null;
+  snapshot: PortfolioSnapshot | null;
+}): EquitySeriesPoint | null {
+  if (!snapshot && !overview) {
+    return null;
+  }
+
+  const cash = snapshot?.cash ?? 0;
+  const buckets = {
+    stocks: 0,
+    funds: 0,
+    others: 0,
+  };
+
+  if (liveGroups.length > 0) {
+    for (const group of liveGroups) {
+      buckets[resolveEquitySeriesBucket(group.asset_class)] +=
+        group.total_market_value;
+    }
+  } else {
+    for (const allocation of snapshot?.allocation ?? []) {
+      buckets[resolveEquitySeriesBucket(allocation.asset_class)] +=
+        allocation.value;
+    }
+  }
+
+  const investedTotal = buckets.stocks + buckets.funds + buckets.others;
+  const total =
+    liveGroups.length > 0
+      ? investedTotal + cash
+      : (snapshot?.total_equity ?? overview?.total_equity);
+
+  if (typeof total !== 'number' || !Number.isFinite(total)) {
+    return null;
+  }
+
+  const unrealizedPnl =
+    liveGroups.length > 0
+      ? liveGroups.reduce((sum, group) => sum + group.total_since_buy_pnl, 0)
+      : (snapshot?.positions.reduce(
+          (sum, position) => sum + position.unrealized_pnl,
+          0,
+        ) ?? overview?.unrealized_pnl);
+
+  return {
+    timestamp:
+      resolveLatestQuoteTimestamp(liveItems) ??
+      fallbackTimestamp ??
+      new Date().toISOString(),
+    total,
+    stocks: buckets.stocks,
+    funds: buckets.funds,
+    others: buckets.others,
+    cash,
+    unrealized_pnl: unrealizedPnl,
+  };
+}
+
+function mergeRealtimeEquityPoint(
+  points: EquitySeriesPoint[],
+  realtimePoint: EquitySeriesPoint | null,
+) {
+  if (!realtimePoint) {
+    return points;
+  }
+  if (points.length === 0) {
+    return [realtimePoint];
+  }
+
+  const lastPoint = points[points.length - 1];
+  const lastTimestampMs = new Date(lastPoint.timestamp).getTime();
+  const realtimeTimestampMs = new Date(realtimePoint.timestamp).getTime();
+
+  if (
+    !Number.isFinite(lastTimestampMs) ||
+    !Number.isFinite(realtimeTimestampMs)
+  ) {
+    return points;
+  }
+
+  if (realtimeTimestampMs < lastTimestampMs) {
+    return points;
+  }
+
+  if (realtimeTimestampMs === lastTimestampMs) {
+    return [
+      ...points.slice(0, -1),
+      { ...realtimePoint, timestamp: lastPoint.timestamp },
+    ];
+  }
+
+  return [...points, realtimePoint];
+}
+
 function OverviewPage() {
   const copy = useCopy();
   const [equityCurveRange, setEquityCurveRange] =
@@ -181,33 +317,73 @@ function OverviewPage() {
   const ledgerEntries = useLedgerEntriesQuery(8);
   const pendingOrders = usePendingManualOrdersQuery();
 
-  const liveGroups = liveHoldings.data?.groups ?? [];
-  const liveItems = liveGroups.flatMap((group) => group.items);
-  const todayPnl = liveGroups.reduce(
-    (sum, group) => sum + group.total_today_change,
-    0,
+  const liveGroups = useMemo(
+    () => liveHoldings.data?.groups ?? [],
+    [liveHoldings.data],
+  );
+  const liveItems = useMemo(
+    () => liveGroups.flatMap((group) => group.items),
+    [liveGroups],
+  );
+  const todayPnl = useMemo(
+    () => liveGroups.reduce((sum, group) => sum + group.total_today_change, 0),
+    [liveGroups],
   );
   const currentDrawdown = riskWorkspace.data?.drawdown.current_drawdown ?? 0;
-  const enhancedOverview = overview.data
-    ? {
-        ...overview.data,
-        today_pnl: todayPnl,
-        current_drawdown: currentDrawdown,
-      }
-    : null;
-  const latestPriceBySymbol = Object.fromEntries(
-    liveItems.map((item) => [item.symbol, item.latest_price]),
+  const enhancedOverview = useMemo(
+    () =>
+      overview.data
+        ? {
+            ...overview.data,
+            today_pnl: todayPnl,
+            current_drawdown: currentDrawdown,
+          }
+        : null,
+    [currentDrawdown, overview.data, todayPnl],
   );
-  const assetClassBySymbol = Object.fromEntries(
-    (snapshot.data?.allocation ?? []).map((item) => [
-      item.symbol,
-      item.asset_class,
-    ]),
+  const latestPriceBySymbol = useMemo(
+    () =>
+      Object.fromEntries(
+        liveItems.map((item) => [item.symbol, item.latest_price]),
+      ),
+    [liveItems],
   );
-  const positions = snapshot.data?.positions ?? [];
+  const assetClassBySymbol = useMemo(
+    () =>
+      Object.fromEntries(
+        (snapshot.data?.allocation ?? []).map((item) => [
+          item.symbol,
+          item.asset_class,
+        ]),
+      ),
+    [snapshot.data],
+  );
+  const equityCurvePoints = useMemo(() => {
+    const points = equityCurve.data ?? [];
+    return mergeRealtimeEquityPoint(
+      points,
+      buildRealtimeEquityPoint({
+        fallbackTimestamp: points[points.length - 1]?.timestamp,
+        liveGroups,
+        liveItems,
+        overview: enhancedOverview,
+        snapshot: snapshot.data ?? null,
+      }),
+    );
+  }, [
+    enhancedOverview,
+    equityCurve.data,
+    liveGroups,
+    liveItems,
+    snapshot.data,
+  ]);
+  const positions = useMemo(
+    () => snapshot.data?.positions ?? [],
+    [snapshot.data],
+  );
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-5">
       <PageHeader
         kicker={copy.overview.kicker}
         title={copy.overview.title}
@@ -215,20 +391,10 @@ function OverviewPage() {
       />
 
       {overview.isLoading || snapshot.isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-5">
           <OverviewCardsSkeleton />
-          <section className="app-surface-section overflow-hidden rounded-2xl">
-            <div className="app-surface-section-header">
-              <div>
-                <div className="app-product-mark">
-                  {copy.overview.dashboard.equityPanel}
-                </div>
-                <div className="app-card-title mt-1.5">
-                  {copy.overview.equityCurve.title}
-                </div>
-              </div>
-            </div>
-            <div className="app-surface-pane min-w-0">
+          <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">
+            <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
               <EquityCurveSkeleton />
             </div>
           </section>
@@ -245,22 +411,12 @@ function OverviewPage() {
           }}
         />
       ) : enhancedOverview && snapshot.data ? (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <OverviewCards overview={enhancedOverview} />
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(320px,3fr)]">
-            <section className="app-surface-section overflow-hidden rounded-2xl">
-              <div className="app-surface-section-header">
-                <div>
-                  <div className="app-product-mark">
-                    {copy.overview.dashboard.equityPanel}
-                  </div>
-                  <div className="app-card-title mt-1.5">
-                    {copy.overview.equityCurve.title}
-                  </div>
-                </div>
-              </div>
-              <div className="app-surface-pane min-w-0">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
+            <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">
+              <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
                 {equityCurve.isLoading ? (
                   <EquityCurveSkeleton />
                 ) : equityCurve.isError ? (
@@ -273,72 +429,80 @@ function OverviewPage() {
                   />
                 ) : (
                   <EquityCurveCard
-                    points={equityCurve.data ?? []}
+                    points={equityCurvePoints}
+                    range={equityCurveRange}
                     onRangeChange={setEquityCurveRange}
                   />
                 )}
               </div>
             </section>
 
-            <section className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <div>
-                  <div className="app-product-mark">
-                    {copy.overview.dashboard.opsPanel}
+            <aside className="app-terminal-panel rounded-[2rem] p-1.5">
+              <div className="app-terminal-inner h-full p-4 sm:p-5">
+                <div className="mb-5 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="app-product-mark">
+                      {copy.overview.dashboard.opsPanel}
+                    </div>
+                    <div className="app-card-title mt-1.5 text-xl">
+                      {copy.overview.dashboard.pendingApprovals}
+                    </div>
                   </div>
-                  <div className="app-card-title mt-1.5">
-                    {copy.overview.dashboard.pendingApprovals}
+                  <div className="rounded-full border border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] px-3 py-1.5 text-xs font-semibold text-[var(--app-accent)] tabular-nums">
+                    {copy.overview.dashboard.pendingCount(
+                      pendingOrders.data?.length ?? 0,
+                    )}
                   </div>
                 </div>
-                <div className="app-panel-strong rounded-2xl px-3 py-2 text-xs font-semibold tabular-nums">
-                  {copy.overview.dashboard.pendingCount(
-                    pendingOrders.data?.length ?? 0,
-                  )}
-                </div>
+                <DashboardPendingOrders
+                  orders={pendingOrders.data ?? []}
+                  isLoading={pendingOrders.isLoading}
+                  isError={pendingOrders.isError}
+                  copy={copy}
+                />
+                <DashboardLedger
+                  entries={ledgerEntries.data ?? []}
+                  isLoading={ledgerEntries.isLoading}
+                  isError={ledgerEntries.isError}
+                  copy={copy}
+                />
               </div>
-              <DashboardPendingOrders
-                orders={pendingOrders.data ?? []}
-                isLoading={pendingOrders.isLoading}
-                isError={pendingOrders.isError}
-                copy={copy}
-              />
-              <DashboardLedger
-                entries={ledgerEntries.data ?? []}
-                isLoading={ledgerEntries.isLoading}
-                isError={ledgerEntries.isError}
-                copy={copy}
-              />
-            </section>
+            </aside>
           </div>
 
-          <section className="app-surface-section overflow-hidden rounded-2xl">
-            <div className="app-surface-section-header">
-              <div>
-                <div className="app-product-mark">
-                  {copy.overview.dashboard.positionsPanel}
+          <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">
+            <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <div className="app-product-mark">
+                    {copy.overview.dashboard.positionsPanel}
+                  </div>
+                  <div className="app-card-title mt-1.5 text-xl">
+                    {copy.overview.dashboard.positionsPanel}
+                  </div>
+                  <p className="app-muted mt-2 max-w-2xl text-sm">
+                    {copy.overview.dashboard.positionsDetail}
+                  </p>
                 </div>
-                <div className="app-card-title mt-1.5">
-                  {copy.overview.dashboard.positionsPanel}
+                <div className="app-kicker rounded-full border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-3 py-1.5 text-[10px] tabular-nums">
+                  {positions.length} {copy.overview.risk.positions}
                 </div>
-                <p className="app-muted mt-2 max-w-2xl text-sm">
-                  {copy.overview.dashboard.positionsDetail}
-                </p>
               </div>
-            </div>
-            <div className="app-surface-pane min-w-0">
-              {positions.length === 0 ? (
-                <StatusCard
-                  title={copy.states.empty}
-                  detail={copy.portfolio.positionsEmpty}
-                />
-              ) : (
-                <PositionsTable
-                  positions={positions}
-                  assetClassBySymbol={assetClassBySymbol}
-                  latestPriceBySymbol={latestPriceBySymbol}
-                  variant="dashboard"
-                />
-              )}
+              <div className="min-w-0">
+                {positions.length === 0 ? (
+                  <StatusCard
+                    title={copy.states.empty}
+                    detail={copy.portfolio.positionsEmpty}
+                  />
+                ) : (
+                  <PositionsTable
+                    positions={positions}
+                    assetClassBySymbol={assetClassBySymbol}
+                    latestPriceBySymbol={latestPriceBySymbol}
+                    variant="dashboard"
+                  />
+                )}
+              </div>
             </div>
           </section>
         </div>
@@ -362,7 +526,7 @@ function DashboardPendingOrders({
 }) {
   if (isLoading) {
     return (
-      <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 text-sm">
+      <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-sm">
         {copy.trading.orders.loading}
       </div>
     );
@@ -378,24 +542,29 @@ function DashboardPendingOrders({
 
   if (orders.length === 0) {
     return (
-      <div className="app-panel-strong rounded-2xl px-4 py-4 text-sm">
-        {copy.overview.dashboard.pendingEmpty}
+      <div className="rounded-3xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-5">
+        <div className="text-sm font-semibold text-[var(--app-soft)]">
+          {copy.overview.dashboard.pendingEmpty}
+        </div>
+        <div className="app-muted mt-2 text-xs leading-5">
+          {copy.overview.dashboard.pendingEmptyDetail}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+    <div className="max-h-[270px] space-y-2.5 overflow-y-auto pr-1">
       {orders.map((order) => {
         const isBuy = order.side.toLowerCase() === 'buy';
         return (
           <div
             key={order.order_id}
-            className="rounded-2xl border border-[color-mix(in_srgb,var(--app-danger-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]"
+            className="group rounded-3xl border border-[color-mix(in_srgb,var(--app-danger-border)_48%,transparent)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--app-danger)_13%,transparent),color-mix(in_srgb,var(--app-surface-0)_8%,transparent))] px-4 py-3.5 shadow-[0_18px_44px_color-mix(in_srgb,var(--app-mantle)_36%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_5%,transparent)] transition-[transform,border-color,background-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--app-danger)_58%,transparent)]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">
+                <div className="truncate text-base font-semibold tracking-[-0.02em]">
                   {order.symbol}
                 </div>
                 <div className="app-muted mt-1 text-xs">
@@ -405,8 +574,8 @@ function DashboardPendingOrders({
               <div
                 className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                   isBuy
-                    ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
-                    : 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
+                    ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]'
+                    : 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
                 }`}
               >
                 {isBuy ? copy.trading.orders.buy : copy.trading.orders.sell}
@@ -441,27 +610,29 @@ function DashboardLedger({
   copy: AppCopy;
 }) {
   return (
-    <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] pt-5">
+    <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-5">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="app-card-title text-base">
+        <div className="app-card-title text-base text-[var(--app-soft)]">
           {copy.overview.dashboard.ledgerPanel}
         </div>
-        <div className="app-muted text-xs tabular-nums">{entries.length}</div>
+        <div className="font-mono text-xs text-[var(--app-subtext-0)] tabular-nums">
+          {entries.length}
+        </div>
       </div>
       {isLoading ? (
         <div className="app-muted text-sm">{copy.states.loading}</div>
       ) : isError ? (
         <div className="app-error-text text-sm">{copy.states.error}</div>
       ) : entries.length === 0 ? (
-        <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 text-sm">
+        <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm">
           {copy.overview.dashboard.ledgerEmpty}
         </div>
       ) : (
-        <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+        <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className="app-panel-strong rounded-2xl px-4 py-3"
+              className="group rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 transition-[background-color,transform,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -472,7 +643,7 @@ function DashboardLedger({
                     {formatTimestamp(entry.timestamp)}
                   </div>
                 </div>
-                <div className="text-right text-sm font-semibold tabular-nums">
+                <div className="text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
                   {formatLedgerEntryAmount(entry)}
                 </div>
               </div>
@@ -486,11 +657,11 @@ function DashboardLedger({
 
 function MetricLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-3 py-2">
-      <div className="app-kicker text-[10px] uppercase tracking-[0.12em]">
+    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] px-3 py-2">
+      <div className="app-kicker text-[10px] uppercase tracking-[0.12em] text-[var(--app-subtext-0)]">
         {label}
       </div>
-      <div className="mt-1 font-semibold">{value}</div>
+      <div className="mt-1 font-mono font-semibold">{value}</div>
     </div>
   );
 }
@@ -2844,8 +3015,8 @@ function StatusCard({
     <div
       className={
         tone === 'danger'
-          ? 'app-panel-danger rounded-2xl p-4 sm:p-5'
-          : 'rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4 shadow-[0_18px_50px_rgba(17,17,27,0.12)] sm:p-5'
+          ? 'app-panel-danger rounded-3xl p-4 sm:p-5'
+          : 'app-terminal-panel rounded-3xl p-4 sm:p-5'
       }
     >
       <div className="text-sm font-semibold tracking-[-0.01em]">{title}</div>
@@ -2874,9 +3045,15 @@ function PageHeader({
 }) {
   return (
     <header className="app-page-header pb-1">
-      <div className="app-product-mark">{kicker}</div>
-      <h1 className="app-page-title">{title}</h1>
-      <p className="app-page-subtitle">{subtitle}</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">{kicker}</div>
+          <h1 className="app-page-title mt-2">{title}</h1>
+        </div>
+        <p className="app-page-subtitle sm:max-w-md sm:text-right">
+          {subtitle}
+        </p>
+      </div>
     </header>
   );
 }
