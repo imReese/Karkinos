@@ -3,6 +3,7 @@ import {
   formatCurrency,
   formatPrice,
   formatQuantity,
+  formatTimestamp,
 } from '../../../shared/format';
 import type { Position } from '../api';
 
@@ -20,6 +21,9 @@ export function PositionsTable({
   const copy = useCopy();
   const labels = copy.portfolio.table;
   const showFullColumns = variant === 'full';
+  const hasStaleQuotes = positions.some(
+    (position) => position.quote_status === 'stale',
+  );
 
   const resolveLatestPrice = (position: Position) => {
     const livePrice = latestPriceBySymbol[position.symbol];
@@ -34,9 +38,16 @@ export function PositionsTable({
 
   return (
     <div className="space-y-4">
+      {hasStaleQuotes ? (
+        <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
+          <span className="truncate">行情缓存 · 持仓估值基于缓存行情</span>
+        </div>
+      ) : null}
       <div className="grid gap-4 md:hidden">
         {positions.map((position) => {
           const pnlPositive = position.unrealized_pnl >= 0;
+          const isStale = position.quote_status === 'stale';
           return (
             <div key={position.symbol} className="app-panel rounded-3xl p-4">
               <div className="flex items-start justify-between gap-3">
@@ -47,6 +58,11 @@ export function PositionsTable({
                   <div className="app-muted mt-1 text-sm">
                     {assetClassBySymbol[position.symbol] ?? '--'}
                   </div>
+                  {isStale ? (
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]">
+                      缓存 {formatTimestamp(position.quote_timestamp)}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="text-right">
                   <div className="font-mono text-sm font-semibold tabular-nums">
@@ -129,12 +145,18 @@ export function PositionsTable({
           <tbody>
             {positions.map((position) => {
               const pnlPositive = position.unrealized_pnl >= 0;
+              const isStale = position.quote_status === 'stale';
               return (
                 <tr key={position.symbol} className="group">
                   <td className="px-4 py-3.5 font-mono font-semibold tracking-[-0.01em] text-[var(--app-text)]">
                     <span className="inline-flex items-center gap-2">
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-accent)] opacity-70 transition-opacity group-hover:opacity-100" />
                       {position.symbol}
+                      {isStale ? (
+                        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]">
+                          缓存 {formatTimestamp(position.quote_timestamp)}
+                        </span>
+                      ) : null}
                     </span>
                   </td>
                   <td className="px-4 py-3.5 text-[var(--app-muted)]">

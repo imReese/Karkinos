@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 import json
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 
-from core.types import ZERO, Symbol
+from core.types import AssetClass, BarFrequency, ZERO, Symbol
 from server.models import (
     AccountStateResponse,
     AccountOverview,
@@ -49,12 +51,25 @@ from server.projections.service import (
     build_portfolio_projection_from_db,
 )
 from server.services.account_state import build_account_state_projection
+from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
 
 logger = logging.getLogger(__name__)
 _FUND_SUBSCRIPTION_CUTOFF = time(15, 0)
+_CN_MORNING_OPEN = time(9, 30)
+_CN_MORNING_CLOSE = time(11, 30)
+_CN_AFTERNOON_OPEN = time(13, 0)
+_CN_AFTERNOON_CLOSE = time(15, 0)
+_INTRADAY_STEP_MINUTES = 5
+_SH_TZ = ZoneInfo("Asia/Shanghai")
+
+_INTRADAY_ASSET_CLASS_MAP = {
+    "stock": AssetClass.STOCK,
+    "fund": AssetClass.FUND,
+    "etf": AssetClass.FUND,
+}
 
 _ASSET_CLASS_LABELS = {
     "stock": "A股",
@@ -519,7 +534,9 @@ def _build_position_drivers(
             by_symbol[symbol] = entry
 
     asset_class_by_symbol = {
-        item.symbol: item.asset_class for item in snapshot.allocation if item.asset_class != "cash"
+        item.symbol: item.asset_class
+        for item in snapshot.allocation
+        if item.asset_class != "cash"
     }
     drivers: list[ExplainabilityPositionDriver] = []
     for position in snapshot.positions:
@@ -620,6 +637,121 @@ def _collect_latest_quotes(state) -> dict[str, dict]:
     return latest
 
 
+def _parse_quote_timestamp(timestamp: object) -> datetime | None:
+    if isinstance(timestamp, datetime):
+        parsed = timestamp
+    elif isinstance(timestamp, str) and timestamp.strip():
+        value = timestamp.strip()
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = datetime.fromisoformat(f"{value}T00:00:00")
+            except ValueError:
+                return None
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=_SH_TZ)
+    return parsed.astimezone(_SH_TZ)
+
+
+def _previous_weekday(day):
+    current = day - timedelta(days=1)
+    while current.weekday() >= 5:
+        current -= timedelta(days=1)
+    return current
+
+
+def _expected_quote_date(now: datetime | None = None):
+    current = get_shanghai_now(now)
+    if current.weekday() >= 5:
+        return _previous_weekday(current.date())
+    if current.time() < _CN_MORNING_OPEN:
+        return _previous_weekday(current.date())
+    return current.date()
+
+
+def _quote_is_stale(
+    quote: dict | None,
+    *,
+    now: datetime | None = None,
+    live_poll_interval: int | None = None,
+) -> bool:
+    if not quote or quote.get("price") in {None, ""}:
+        return True
+
+    timestamp = _parse_quote_timestamp(quote.get("timestamp"))
+    if timestamp is None:
+        return True
+
+    current = get_shanghai_now(now)
+    if timestamp.date() < _expected_quote_date(current):
+        return True
+
+    if is_cn_trading_session(current):
+        ttl_seconds = max(int(live_poll_interval or 60), 15) * 3
+        return (current - timestamp).total_seconds() > ttl_seconds
+
+    return False
+
+
+def _quote_status(
+    state,
+    quote: dict | None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    return (
+        "stale"
+        if _quote_is_stale(
+            quote,
+            now=now,
+            live_poll_interval=getattr(state.config, "live_poll_interval", 60),
+        )
+        else "live"
+    )
+
+
+def _can_refresh_quotes(state, now: datetime | None = None) -> bool:
+    return bool(hasattr(state.config, "data_source") and is_cn_trading_session(now))
+
+
+def _asset_class_for_position(
+    symbol: str, quote: dict | None, instruments: dict
+) -> AssetClass | None:
+    raw_asset_class = (quote or {}).get("asset_class")
+    if not raw_asset_class and instruments:
+        instrument = instruments.get(Symbol(symbol)) or instruments.get(symbol)
+        raw_asset_class = getattr(
+            getattr(instrument, "asset_class", None), "value", None
+        )
+
+    normalized = _normalize_asset_class_value(raw_asset_class)
+    if normalized == "etf":
+        normalized = AssetClass.FUND.value
+
+    try:
+        return AssetClass(normalized)
+    except ValueError:
+        return None
+
+
+def _store_runtime_quote(state, symbol: str, quote: dict) -> None:
+    scheduler = state.scheduler
+    if scheduler is None:
+        return
+
+    if hasattr(scheduler, "_latest_quotes"):
+        scheduler._latest_quotes[symbol] = quote
+        return
+
+    latest_quotes = getattr(scheduler, "latest_quotes", None)
+    if isinstance(latest_quotes, dict):
+        latest_quotes[symbol] = quote
+
+
 def _hydrate_missing_position_quotes(
     state,
     portfolio,
@@ -629,27 +761,42 @@ def _hydrate_missing_position_quotes(
         return portfolio, instruments, False
 
     latest_quotes = _collect_latest_quotes(state)
-    missing: list[tuple[str, object]] = []
+    refresh_needed: list[tuple[str, AssetClass]] = []
+    now = get_shanghai_now()
+    can_refresh = _can_refresh_quotes(state, now)
     for sym in portfolio.positions:
         symbol = str(sym)
-        if symbol in latest_quotes:
-            continue
-        instrument = instruments.get(Symbol(symbol)) if instruments else None
-        asset_class = getattr(instrument, "asset_class", None)
+        quote = latest_quotes.get(symbol)
+        if quote:
+            is_stale = _quote_is_stale(
+                quote,
+                now=now,
+                live_poll_interval=getattr(state.config, "live_poll_interval", 60),
+            )
+            if not is_stale or not can_refresh:
+                continue
+        asset_class = _asset_class_for_position(symbol, quote, instruments)
         if asset_class is None:
             continue
-        missing.append((symbol, asset_class))
+        refresh_needed.append((symbol, asset_class))
 
-    if not missing:
+    if not refresh_needed:
         return portfolio, instruments, False
 
     from server.routes.market import _fetch_latest_snapshot
 
     hydrated = False
-    for symbol, asset_class in missing:
-        snapshot = _fetch_latest_snapshot(state, symbol, asset_class)
+    for symbol, asset_class in refresh_needed:
+        try:
+            snapshot = _fetch_latest_snapshot(state, symbol, asset_class)
+        except Exception:
+            logger.warning(
+                "Failed to refresh stale quote for %s", symbol, exc_info=True
+            )
+            continue
         if snapshot:
             latest_quotes[symbol] = snapshot
+            _store_runtime_quote(state, symbol, snapshot)
             hydrated = True
 
     if not hydrated or state.db is None:
@@ -664,10 +811,7 @@ def _hydrate_missing_position_quotes(
 
 
 def _get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict]:
-    if (
-        state.db is None
-        or not hasattr(state.db, "get_recent_quote_snapshots_sync")
-    ):
+    if state.db is None or not hasattr(state.db, "get_recent_quote_snapshots_sync"):
         return []
     rows = state.db.get_recent_quote_snapshots_sync(symbol, limit=limit)
     return rows if isinstance(rows, list) else []
@@ -751,11 +895,15 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
             or getattr(getattr(instrument, "asset_class", None), "value", None)
         )
         latest_price = latest_quote.get("price")
-        latest_price_value = float(latest_price) if latest_price not in {None, ""} else None
-        baseline_price, baseline_timestamp, baseline_source = _resolve_live_holding_baseline(
-            state,
-            symbol,
-            latest_quote if latest_quote else None,
+        latest_price_value = (
+            float(latest_price) if latest_price not in {None, ""} else None
+        )
+        baseline_price, baseline_timestamp, baseline_source = (
+            _resolve_live_holding_baseline(
+                state,
+                symbol,
+                latest_quote if latest_quote else None,
+            )
         )
         avg_cost = float(pos.avg_cost)
         market_value = float(pos.market_value)
@@ -765,7 +913,9 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         today_change = None
         today_change_pct = None
         if baseline_price not in {None, 0}:
-            reference_price = latest_price_value if latest_price_value is not None else avg_cost
+            reference_price = (
+                latest_price_value if latest_price_value is not None else avg_cost
+            )
             today_change = quantity * (reference_price - baseline_price)
             today_change_pct = (reference_price / baseline_price) - 1
 
@@ -790,7 +940,7 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
                 baseline_price=baseline_price,
                 baseline_timestamp=baseline_timestamp,
                 baseline_source=baseline_source,
-                quote_status="live" if latest_price_value is not None else "stale",
+                quote_status=_quote_status(state, latest_quote),
             )
         )
 
@@ -862,6 +1012,383 @@ def _resolve_projection_sources(state) -> tuple[object | None, dict]:
     return None, {}
 
 
+def _normalize_asset_class_value(value) -> str:
+    if hasattr(value, "value"):
+        return _normalize_asset_class(getattr(value, "value", None))
+    return _normalize_asset_class(str(value) if value is not None else None)
+
+
+def _combine_session_time(trade_day, session_time: time, tzinfo) -> datetime:
+    return datetime.combine(trade_day, session_time, tzinfo=tzinfo)
+
+
+def _floor_session_timestamp(timestamp: datetime, step_minutes: int) -> datetime:
+    return timestamp.replace(
+        minute=timestamp.minute - (timestamp.minute % step_minutes),
+        second=0,
+        microsecond=0,
+    )
+
+
+def _build_cn_session_ticks(
+    trade_day,
+    tzinfo,
+    *,
+    full_session: bool = False,
+    now: datetime | None = None,
+) -> list[datetime]:
+    morning_open = _combine_session_time(trade_day, _CN_MORNING_OPEN, tzinfo)
+    morning_close = _combine_session_time(trade_day, _CN_MORNING_CLOSE, tzinfo)
+    afternoon_open = _combine_session_time(trade_day, _CN_AFTERNOON_OPEN, tzinfo)
+    afternoon_close = _combine_session_time(trade_day, _CN_AFTERNOON_CLOSE, tzinfo)
+    if full_session:
+        effective_end = afternoon_close
+    else:
+        current = get_shanghai_now(now)
+        effective_end = min(
+            _floor_session_timestamp(current, _INTRADAY_STEP_MINUTES),
+            afternoon_close,
+        )
+    if effective_end <= morning_open:
+        return [morning_open]
+
+    ticks: list[datetime] = []
+    for start, end in (
+        (morning_open, morning_close),
+        (afternoon_open, afternoon_close),
+    ):
+        if effective_end < start:
+            continue
+        segment_end = end if full_session else min(end, effective_end)
+        current = start
+        while current <= segment_end:
+            ticks.append(current)
+            current += timedelta(minutes=_INTRADAY_STEP_MINUTES)
+
+    return ticks or [morning_open]
+
+
+def _normalize_intraday_timestamp(timestamp, tzinfo) -> datetime | None:
+    if timestamp is None:
+        return None
+    if hasattr(timestamp, "to_pydatetime"):
+        timestamp = timestamp.to_pydatetime()
+    elif isinstance(timestamp, str):
+        try:
+            timestamp = datetime.fromisoformat(timestamp)
+        except ValueError:
+            return None
+    if not isinstance(timestamp, datetime):
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=tzinfo)
+    return timestamp.astimezone(tzinfo)
+
+
+def _load_intraday_price_points(
+    source,
+    *,
+    symbol: str,
+    asset_class: str,
+    start: datetime,
+    end: datetime,
+    latest_quote: dict | None,
+) -> list[tuple[datetime, float]]:
+    mapped_asset_class = _INTRADAY_ASSET_CLASS_MAP.get(asset_class)
+    if source is None or mapped_asset_class is None:
+        return []
+
+    try:
+        bars = source.fetch_bars(
+            Symbol(symbol),
+            start,
+            end,
+            frequency=BarFrequency.MIN_5,
+            asset_class=mapped_asset_class,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to load intraday bars for %s (%s)",
+            symbol,
+            asset_class,
+            exc_info=True,
+        )
+        bars = None
+
+    points: list[tuple[datetime, float]] = []
+    if (
+        bars is not None
+        and len(bars) > 0
+        and {"timestamp", "close"}.issubset(bars.columns)
+    ):
+        for row in bars.itertuples(index=False):
+            timestamp = _normalize_intraday_timestamp(
+                getattr(row, "timestamp", None),
+                start.tzinfo,
+            )
+            close = getattr(row, "close", None)
+            if timestamp is None or close in {None, ""}:
+                continue
+            points.append((timestamp, float(close)))
+
+    latest_price = latest_quote.get("price") if latest_quote else None
+    latest_timestamp = _normalize_intraday_timestamp(
+        latest_quote.get("timestamp") if latest_quote else None,
+        start.tzinfo,
+    )
+    if (
+        latest_price not in {None, ""}
+        and latest_timestamp is not None
+        and latest_timestamp.date() == start.date()
+        and start <= latest_timestamp <= end
+    ):
+        points.append((latest_timestamp, float(latest_price)))
+
+    points.sort(key=lambda item: item[0])
+    deduped: list[tuple[datetime, float]] = []
+    for timestamp, close in points:
+        if deduped and deduped[-1][0] == timestamp:
+            deduped[-1] = (timestamp, close)
+            continue
+        deduped.append((timestamp, close))
+    return deduped
+
+
+def _build_intraday_equity_curve_series(
+    state,
+    portfolio,
+    instruments: dict,
+) -> list[dict]:
+    session_now = get_shanghai_now()
+    tzinfo = session_now.tzinfo
+    trade_day = session_now.date()
+    session_start = _combine_session_time(trade_day, _CN_MORNING_OPEN, tzinfo)
+    session_close = _combine_session_time(trade_day, _CN_AFTERNOON_CLOSE, tzinfo)
+    live_ticks = _build_cn_session_ticks(trade_day, tzinfo, now=session_now)
+    full_session_ticks = _build_cn_session_ticks(trade_day, tzinfo, full_session=True)
+    latest_quotes = _collect_latest_quotes(state)
+
+    from data.manager import build_sources
+
+    sources = build_sources(
+        data_source=getattr(state.config, "data_source", "akshare"),
+        tushare_token=getattr(state.config, "tushare_token", ""),
+    )
+    intraday_source = sources.get("akshare")
+
+    positions = getattr(portfolio, "positions", {}) if portfolio else {}
+    holdings: list[dict] = []
+    has_intraday_prices = False
+
+    for sym, position in positions.items():
+        quantity = float(getattr(position, "quantity", 0.0) or 0.0)
+        if quantity == 0:
+            continue
+
+        symbol = str(sym)
+        instrument = instruments.get(Symbol(symbol)) if instruments else None
+        latest_quote = latest_quotes.get(symbol, {})
+        asset_class = _normalize_asset_class_value(
+            latest_quote.get("asset_class")
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+        )
+        baseline_price, _, _ = _resolve_live_holding_baseline(
+            state,
+            symbol,
+            latest_quote if latest_quote else None,
+        )
+        if baseline_price is None:
+            latest_price = latest_quote.get("price")
+            if latest_price not in {None, ""}:
+                baseline_price = float(latest_price)
+            else:
+                baseline_price = float(getattr(position, "avg_cost", 0.0) or 0.0)
+
+        price_points = _load_intraday_price_points(
+            intraday_source,
+            symbol=symbol,
+            asset_class=asset_class,
+            start=session_start,
+            end=session_close,
+            latest_quote=latest_quote if latest_quote else None,
+        )
+        has_intraday_prices = has_intraday_prices or len(price_points) > 0
+        holdings.append(
+            {
+                "asset_class": asset_class,
+                "quantity": quantity,
+                "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
+                "baseline_price": float(baseline_price),
+                "price_points": price_points,
+            }
+        )
+
+    ticks = live_ticks if has_intraday_prices else full_session_ticks
+    cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
+    series: list[dict] = []
+
+    for tick in ticks:
+        stocks_value = 0.0
+        funds_value = 0.0
+        others_value = 0.0
+        unrealized_pnl = 0.0
+
+        for holding in holdings:
+            price = holding["baseline_price"]
+            for point_timestamp, point_price in holding["price_points"]:
+                if point_timestamp <= tick:
+                    price = point_price
+                    continue
+                break
+
+            position_value = holding["quantity"] * price
+            cost_basis = holding["quantity"] * holding["avg_cost"]
+            unrealized_pnl += position_value - cost_basis
+
+            if holding["asset_class"] == "stock":
+                stocks_value += position_value
+            elif holding["asset_class"] in {"fund", "etf"}:
+                funds_value += position_value
+            else:
+                others_value += position_value
+
+        total = cash + stocks_value + funds_value + others_value
+        series.append(
+            {
+                "timestamp": tick,
+                "total": total,
+                "stocks": stocks_value,
+                "funds": funds_value,
+                "others": others_value,
+                "cash": cash,
+                "unrealized_pnl": unrealized_pnl,
+            }
+        )
+
+    if series:
+        return series
+
+    return [
+        {
+            "timestamp": tick,
+            "total": cash,
+            "stocks": 0.0,
+            "funds": 0.0,
+            "others": 0.0,
+            "cash": cash,
+            "unrealized_pnl": 0.0,
+        }
+        for tick in full_session_ticks
+    ]
+
+
+def _current_equity_series_point(
+    state, portfolio, instruments: dict
+) -> EquitySeriesPoint | None:
+    if portfolio is None:
+        return None
+
+    latest_quotes = _collect_latest_quotes(state)
+    cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
+    buckets = {"stocks": 0.0, "funds": 0.0, "others": 0.0}
+    unrealized_pnl = 0.0
+    quote_status = "live"
+
+    for sym, position in getattr(portfolio, "positions", {}).items():
+        symbol = str(sym)
+        quote = latest_quotes.get(symbol)
+        asset_class = _normalize_asset_class_value(
+            (quote or {}).get("asset_class")
+            or getattr(
+                getattr(
+                    (instruments or {}).get(Symbol(symbol))
+                    or (instruments or {}).get(symbol),
+                    "asset_class",
+                    None,
+                ),
+                "value",
+                None,
+            )
+        )
+        bucket = "others"
+        if asset_class == "stock":
+            bucket = "stocks"
+        elif asset_class in {"fund", "etf"}:
+            bucket = "funds"
+
+        market_value = float(getattr(position, "market_value", 0.0) or 0.0)
+        buckets[bucket] += market_value
+        unrealized_pnl += float(getattr(position, "unrealized_pnl", 0.0) or 0.0)
+        if _quote_status(state, quote) == "stale":
+            quote_status = "stale"
+
+    return EquitySeriesPoint(
+        timestamp=get_shanghai_now().isoformat(),
+        total=cash + buckets["stocks"] + buckets["funds"] + buckets["others"],
+        stocks=buckets["stocks"],
+        funds=buckets["funds"],
+        others=buckets["others"],
+        cash=cash,
+        unrealized_pnl=unrealized_pnl,
+        quote_status=quote_status,
+    )
+
+
+def _append_current_equity_series_point(
+    points: list[EquitySeriesPoint],
+    current: EquitySeriesPoint | None,
+) -> list[EquitySeriesPoint]:
+    if current is None:
+        return points
+    if not points:
+        return [current]
+
+    last_timestamp = _parse_quote_timestamp(points[-1].timestamp)
+    current_timestamp = _parse_quote_timestamp(current.timestamp)
+    if last_timestamp is None or current_timestamp is None:
+        return points + [current]
+    if current_timestamp < last_timestamp:
+        return points
+    if current_timestamp == last_timestamp:
+        return [*points[:-1], current]
+    return [*points, current]
+
+
+def _series_point_from_intraday(
+    point: dict, quote_status: str = "live"
+) -> EquitySeriesPoint:
+    return EquitySeriesPoint(
+        timestamp=str(point["timestamp"].isoformat()),
+        total=float(point["total"]),
+        stocks=float(point["stocks"]),
+        funds=float(point["funds"]),
+        others=float(point["others"]),
+        cash=float(point["cash"]),
+        unrealized_pnl=float(point["unrealized_pnl"]),
+        quote_status=quote_status,
+    )
+
+
+def _snapshot_quote_status(snapshot: PortfolioSnapshot) -> str:
+    return (
+        "stale"
+        if any(position.quote_status == "stale" for position in snapshot.positions)
+        else "live"
+    )
+
+
+def _with_overview_quote_metadata(
+    overview: AccountOverview,
+    snapshot: PortfolioSnapshot,
+) -> AccountOverview:
+    return overview.model_copy(
+        update={
+            "valuation_timestamp": get_shanghai_now().isoformat(),
+            "quote_status": _snapshot_quote_status(snapshot),
+        }
+    )
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -889,11 +1416,14 @@ def create_router() -> APIRouter:
                 allocation_grouped=[],
             )
 
+        latest_quotes = _collect_latest_quotes(state)
         positions: list[PositionResponse] = []
         for sym, pos in portfolio.positions.items():
+            symbol = str(sym)
+            quote = latest_quotes.get(symbol)
             positions.append(
                 PositionResponse(
-                    symbol=str(sym),
+                    symbol=symbol,
                     quantity=float(pos.quantity),
                     available_qty=float(pos.available_qty),
                     frozen_qty=float(pos.frozen_qty),
@@ -902,6 +1432,8 @@ def create_router() -> APIRouter:
                     unrealized_pnl=float(pos.unrealized_pnl),
                     realized_pnl=float(pos.realized_pnl),
                     commission_paid=float(pos.commission_paid),
+                    quote_timestamp=None if quote is None else quote.get("timestamp"),
+                    quote_status=_quote_status(state, quote),
                 )
             )
 
@@ -932,7 +1464,8 @@ def create_router() -> APIRouter:
                             ac = asset_class.value
                             break
                 if pos.symbol in {
-                    str(symbol) for symbol, instrument in instruments.items()
+                    str(symbol)
+                    for symbol, instrument in instruments.items()
                     if getattr(instrument, "asset_class", None) is not None
                 }:
                     instrument = instruments.get(Symbol(pos.symbol))
@@ -1002,7 +1535,7 @@ def create_router() -> APIRouter:
             snapshot,
             build_risk_summary(snapshot, _collect_latest_quote_timestamps(state)),
         )
-        return projection.summary
+        return _with_overview_quote_metadata(projection.summary, snapshot)
 
     @r.get("/state", response_model=AccountStateResponse)
     async def get_account_state() -> AccountStateResponse:
@@ -1014,7 +1547,7 @@ def create_router() -> APIRouter:
         risks = build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
         projection = build_account_state_projection(snapshot, risks)
         return AccountStateResponse(
-            summary=projection.summary,
+            summary=_with_overview_quote_metadata(projection.summary, snapshot),
             snapshot=projection.snapshot,
             risks=projection.risks,
             next_step=projection.next_step,
@@ -1057,7 +1590,9 @@ def create_router() -> APIRouter:
                 if hasattr(state.db, "get_ledger_entries_sync")
                 else []
             )
-            if (_has_rows(legacy_cash_flows) or _has_rows(legacy_trades)) or not _has_rows(ledger_entries):
+            if (
+                _has_rows(legacy_cash_flows) or _has_rows(legacy_trades)
+            ) or not _has_rows(ledger_entries):
                 return []
 
             points = build_equity_curve_from_db(
@@ -1076,11 +1611,54 @@ def create_router() -> APIRouter:
         ]
 
     @r.get("/equity-curve/series", response_model=list[EquitySeriesPoint])
-    async def get_equity_curve_series() -> list[EquitySeriesPoint]:
+    async def get_equity_curve_series(range: str = "1m") -> list[EquitySeriesPoint]:
         """获取按资产类别拆分的权益曲线。"""
         from server.app import get_app_state
 
         state = get_app_state()
+        selected_range = str(range).lower()
+        if selected_range == "1d":
+            portfolio, instruments = _resolve_projection_sources(state)
+            portfolio, instruments, _ = _hydrate_missing_position_quotes(
+                state,
+                portfolio,
+                instruments,
+            )
+            if portfolio is None:
+                return []
+
+            current_point = _current_equity_series_point(state, portfolio, instruments)
+            quote_status = (
+                "live" if current_point is None else current_point.quote_status
+            )
+            timeout_seconds = float(
+                getattr(state.config, "intraday_curve_timeout_seconds", 4.0) or 4.0
+            )
+            try:
+                intraday_points = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _build_intraday_equity_curve_series,
+                        state,
+                        portfolio,
+                        instruments,
+                    ),
+                    timeout=timeout_seconds,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Timed out building intraday equity curve after %.2fs",
+                    timeout_seconds,
+                )
+                return [] if current_point is None else [current_point]
+            except Exception:
+                logger.warning("Failed to build intraday equity curve", exc_info=True)
+                return [] if current_point is None else [current_point]
+
+            return [
+                _series_point_from_intraday(point, quote_status=quote_status)
+                for point in intraday_points
+            ]
+
         if state.db is None or not hasattr(state.db, "get_ledger_entries_sync"):
             return []
 
@@ -1088,12 +1666,18 @@ def create_router() -> APIRouter:
         if not _has_rows(sample_entries):
             return []
 
+        portfolio, instruments = _resolve_projection_sources(state)
+        portfolio, instruments, _ = _hydrate_missing_position_quotes(
+            state,
+            portfolio,
+            instruments,
+        )
         points = build_equity_series_from_db(
             state.db,
             initial_cash=state.config.initial_cash,
             latest_quotes=_collect_latest_quotes(state),
         )
-        return [
+        series_points = [
             EquitySeriesPoint(
                 timestamp=str(point["timestamp"].isoformat()),
                 total=float(point["total"]),
@@ -1101,9 +1685,15 @@ def create_router() -> APIRouter:
                 funds=float(point["funds"]),
                 others=float(point["others"]),
                 cash=float(point["cash"]),
+                unrealized_pnl=None,
+                quote_status="live",
             )
             for point in points
         ]
+        return _append_current_equity_series_point(
+            series_points,
+            _current_equity_series_point(state, portfolio, instruments),
+        )
 
     @r.get("/activity", response_model=list[ActivityItem])
     async def get_activity(limit: int = 10) -> list[ActivityItem]:
@@ -1225,7 +1815,11 @@ def create_router() -> APIRouter:
         price = body.price
         note = body.note
 
-        if body.asset_class == "fund" and body.direction == "buy" and body.amount is not None:
+        if (
+            body.asset_class == "fund"
+            and body.direction == "buy"
+            and body.amount is not None
+        ):
             try:
                 resolved = _resolve_fund_buy_fill(
                     state,

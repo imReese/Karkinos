@@ -302,6 +302,8 @@ export function EquityCurveCard({
   const hasUsableData = chartPoints.length >= 2;
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
+  const latestPoint = chartPoints[chartPoints.length - 1];
+  const isStale = latestPoint?.quote_status === 'stale';
 
   const rangeOptions: Array<[EquityCurveRange, string]> = [
     ['1d', labels.oneDay],
@@ -330,6 +332,12 @@ export function EquityCurveCard({
           <div className="app-card-title mt-1.5 text-xl text-[var(--app-text)]">
             {labels.title}
           </div>
+          {isStale ? (
+            <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-warning)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
+              <span className="truncate">估值基于缓存行情</span>
+            </div>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {SERIES_META.map((series) => {
               const active = visibleSeries[series.key];
