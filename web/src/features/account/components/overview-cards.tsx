@@ -1,5 +1,9 @@
 import { useCopy } from '../../../app/copy';
-import { formatCurrency, formatPercent } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatDateTime,
+  formatPercent,
+} from '../../../shared/format';
 import type { AccountOverview } from '../api';
 
 type OverviewCardMetrics = AccountOverview & {
@@ -9,6 +13,7 @@ type OverviewCardMetrics = AccountOverview & {
 
 export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
   const copy = useCopy();
+  const isStale = overview.quote_status === 'stale';
   const items = [
     {
       label: copy.overview.cards.totalAssets,
@@ -75,7 +80,18 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
             {item.value}
           </div>
           {index === 0 ? (
-            <div className="mt-3 h-px w-28 bg-gradient-to-r from-[var(--app-accent)] to-transparent opacity-60" />
+            <>
+              <div className="mt-3 h-px w-28 bg-gradient-to-r from-[var(--app-accent)] to-transparent opacity-60" />
+              {isStale ? (
+                <div className="mt-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
+                  <span className="truncate">
+                    行情缓存 · 估值{' '}
+                    {formatDateTime(overview.valuation_timestamp)}
+                  </span>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
       ))}

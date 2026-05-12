@@ -22,6 +22,8 @@ export type AccountOverview = {
   unrealized_pnl: number;
   realized_pnl: number;
   cash_ratio: number;
+  valuation_timestamp?: string | null;
+  quote_status?: string;
 };
 
 export type EquityPoint = {
@@ -37,6 +39,7 @@ export type EquitySeriesPoint = {
   others: number;
   cash: number;
   unrealized_pnl?: number | null;
+  quote_status?: string;
 };
 
 export type EquityCurveRange = '1d' | '5d' | '1m' | '6m' | '1y' | 'all';

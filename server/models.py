@@ -131,6 +131,8 @@ class PositionResponse(BaseModel):
     unrealized_pnl: float
     realized_pnl: float
     commission_paid: float
+    quote_timestamp: str | None = None
+    quote_status: str = "stale"
 
 
 class AllocationItem(BaseModel):
@@ -200,6 +202,8 @@ class AccountOverview(BaseModel):
     unrealized_pnl: float
     realized_pnl: float
     cash_ratio: float
+    valuation_timestamp: str | None = None
+    quote_status: str = "live"
 
 
 class AccountStateResponse(BaseModel):
@@ -411,6 +415,8 @@ class EquitySeriesPoint(BaseModel):
     funds: float
     others: float
     cash: float
+    unrealized_pnl: float | None = None
+    quote_status: str = "live"
 
 
 class ActivityItem(BaseModel):

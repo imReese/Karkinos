@@ -24,6 +24,8 @@ export type Position = {
   unrealized_pnl: number;
   realized_pnl: number;
   commission_paid: number;
+  quote_timestamp?: string | null;
+  quote_status?: string;
 };
 
 export type AllocationItem = {
