@@ -335,7 +335,7 @@ export function EquityCurveCard({
           {isStale ? (
             <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-warning)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
-              <span className="truncate">估值基于缓存行情</span>
+              <span className="truncate">{labels.cachedValuation}</span>
             </div>
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-1.5">

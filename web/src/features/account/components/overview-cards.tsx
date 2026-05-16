@@ -86,7 +86,7 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
                 <div className="mt-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
                   <span className="truncate">
-                    行情缓存 · 估值{' '}
+                    {copy.overview.cards.cachedValuation}{' '}
                     {formatDateTime(overview.valuation_timestamp)}
                   </span>
                 </div>

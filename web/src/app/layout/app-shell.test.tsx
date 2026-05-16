@@ -337,6 +337,9 @@ test('shows cached quote status and valuation time from account overview', async
 
   expect((await screen.findAllByText('缓存行情')).length).toBeGreaterThan(0);
   expect(await screen.findByText('估值 22:40')).toBeTruthy();
+  expect(screen.queryByText('行情实时')).toBeNull();
+  expect(screen.queryByText('估值已启用')).toBeNull();
+  expect(screen.queryByText('账本已同步')).toBeNull();
 });
 
 test('shows cache-only market state from data health', async () => {
@@ -352,6 +355,20 @@ test('shows cache-only market state from data health', async () => {
   expect(await screen.findByText('市场休市')).toBeTruthy();
 });
 
+test('shows cache-only open-market state without claiming live quotes', async () => {
+  renderShell({
+    locale: 'zh',
+    marketHealth: {
+      quotes: [],
+      market_open: true,
+      refresh_policy: 'cache_only',
+    },
+  });
+
+  expect(await screen.findByText('缓存行情')).toBeTruthy();
+  expect(screen.queryByText('行情实时')).toBeNull();
+});
+
 test('does not report ready states while status queries are loading', async () => {
   renderShell({
     locale: 'zh',
@@ -359,8 +376,9 @@ test('does not report ready states while status queries are loading', async () =
   });
 
   expect((await screen.findAllByText('检查中')).length).toBeGreaterThan(0);
-  expect(screen.queryByText('券商接口就绪')).toBeNull();
-  expect(screen.queryByText('估值已启用')).toBeNull();
+  expect(screen.queryByText('券商接口可用')).toBeNull();
+  expect(screen.queryByText('估值可用')).toBeNull();
+  expect(screen.queryByText('行情可用')).toBeNull();
 });
 
 test('shows degraded states when status APIs fail', async () => {
@@ -375,7 +393,7 @@ test('shows degraded states when status APIs fail', async () => {
   expect(await screen.findByText('接口异常')).toBeTruthy();
   expect(await screen.findByText('估值异常')).toBeTruthy();
   expect(await screen.findByText('行情异常')).toBeTruthy();
-  expect(screen.queryByText('券商接口就绪')).toBeNull();
+  expect(screen.queryByText('券商接口可用')).toBeNull();
 });
 
 test('shows broker status details without simulated latency', async () => {
@@ -388,7 +406,7 @@ test('shows broker status details without simulated latency', async () => {
     name: 'API',
   });
   expect(dialog).toBeTruthy();
-  expect(within(dialog).getByText('Broker API ready')).toBeTruthy();
+  expect(within(dialog).getByText('Broker API available')).toBeTruthy();
   expect(screen.queryByText('42ms')).toBeNull();
 });
 

@@ -41,7 +41,7 @@ export function PositionsTable({
       {hasStaleQuotes ? (
         <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
-          <span className="truncate">行情缓存 · 持仓估值基于缓存行情</span>
+          <span className="truncate">{labels.cachedQuoteNotice}</span>
         </div>
       ) : null}
       <div className="grid gap-4 md:hidden">
@@ -60,7 +60,9 @@ export function PositionsTable({
                   </div>
                   {isStale ? (
                     <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]">
-                      缓存 {formatTimestamp(position.quote_timestamp)}
+                      {labels.cachedQuoteAt(
+                        formatTimestamp(position.quote_timestamp),
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -154,7 +156,9 @@ export function PositionsTable({
                       {position.symbol}
                       {isStale ? (
                         <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]">
-                          缓存 {formatTimestamp(position.quote_timestamp)}
+                          {labels.cachedQuoteAt(
+                            formatTimestamp(position.quote_timestamp),
+                          )}
                         </span>
                       ) : null}
                     </span>

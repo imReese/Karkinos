@@ -77,6 +77,20 @@ test('renders a responsive shimmering metrics rail skeleton', () => {
   );
 });
 
+test('shows cached quote copy on stale overview metrics', () => {
+  renderWithPreferences(
+    <OverviewCards
+      overview={{
+        ...overview,
+        valuation_timestamp: '2026-05-16T22:40:00+08:00',
+        quote_status: 'stale',
+      }}
+    />,
+  );
+
+  expect(screen.getByText(/Cached quotes · valuation time/)).toBeTruthy();
+});
+
 test('keeps the localized perspective switcher in the breakdown header', async () => {
   const user = userEvent.setup();
   const onModeChange = vi.fn();
