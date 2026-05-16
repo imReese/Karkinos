@@ -1,14 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { render, screen } from '@testing-library/react';
+import { expect, test } from 'vitest';
 
-import { PositionsTable } from "./components/positions-table";
+import { PositionsTable } from './components/positions-table';
 
-test("renders active positions", () => {
+test('renders active positions', () => {
   render(
     <PositionsTable
       positions={[
         {
-          symbol: "600519",
+          symbol: '600519',
           quantity: 60,
           available_qty: 60,
           frozen_qty: 0,
@@ -22,7 +22,34 @@ test("renders active positions", () => {
     />,
   );
 
-  expect(screen.getAllByText("600519").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("60").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Market Value").length).toBeGreaterThan(0);
+  expect(screen.getAllByText('600519').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('60').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Market Value').length).toBeGreaterThan(0);
+});
+
+test('shows cached quote copy for stale positions', () => {
+  render(
+    <PositionsTable
+      positions={[
+        {
+          symbol: '600519',
+          quantity: 60,
+          available_qty: 60,
+          frozen_qty: 0,
+          avg_cost: 1500,
+          market_value: 96000,
+          unrealized_pnl: 6000,
+          realized_pnl: 0,
+          commission_paid: 5,
+          quote_status: 'stale',
+          quote_timestamp: '2026-04-21T14:30:00+08:00',
+        },
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getByText('Cached quotes · positions valued from cached quotes'),
+  ).toBeTruthy();
+  expect(screen.getAllByText(/^Cached /).length).toBeGreaterThan(0);
 });

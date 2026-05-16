@@ -328,14 +328,14 @@ test('notifies the parent query layer for every long-range switch', async () => 
 test('renders the backend current stale point without adding a synthetic point', async () => {
   renderCard({ cardPoints: backendCurrentPoints });
 
-  expect(await screen.findByText('估值基于缓存行情')).toBeTruthy();
+  expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
   expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
 });
 
 test('refreshes stale status when backend points prop changes', async () => {
   const view = renderCard();
 
-  expect(screen.queryByText('估值基于缓存行情')).toBeNull();
+  expect(screen.queryByText('Valuation uses cached quotes')).toBeNull();
 
   view.rerender(
     <PreferencesProvider>
@@ -343,7 +343,7 @@ test('refreshes stale status when backend points prop changes', async () => {
     </PreferencesProvider>,
   );
 
-  expect(await screen.findByText('估值基于缓存行情')).toBeTruthy();
+  expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
   expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
 });
 
