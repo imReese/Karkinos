@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-router';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { AppShell } from './app-shell';
 import { PreferencesProvider } from '../preferences';
@@ -17,6 +17,79 @@ import { PreferencesProvider } from '../preferences';
 type MatchMediaMock = {
   setDarkMode: (matches: boolean) => void;
 };
+
+const defaultOverview = {
+  total_equity: 4101.16,
+  available_cash: 2301.2,
+  total_deposits: 4000,
+  positions_count: 3,
+  unrealized_pnl: 101.16,
+  realized_pnl: 0,
+  cash_ratio: 0.561,
+  valuation_timestamp: '2026-05-16T22:40:00+08:00',
+  quote_status: 'live',
+};
+
+const defaultLiveStatus = {
+  running: true,
+  market_open: true,
+};
+
+const defaultMarketHealth = {
+  quotes: [],
+  market_open: true,
+  refresh_policy: 'live',
+};
+
+type ShellStatusMockOptions = {
+  overview?: typeof defaultOverview;
+  liveStatus?: typeof defaultLiveStatus;
+  marketHealth?: typeof defaultMarketHealth;
+  fetchImpl?: typeof fetch;
+  locale?: 'en' | 'zh';
+};
+
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function installShellStatusFetchMock({
+  overview = defaultOverview,
+  liveStatus = defaultLiveStatus,
+  marketHealth = defaultMarketHealth,
+  fetchImpl,
+}: ShellStatusMockOptions = {}) {
+  const statusFetch =
+    fetchImpl ??
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+      if (url.includes('/api/portfolio/overview')) {
+        return jsonResponse(overview);
+      }
+      if (url.includes('/api/settings/live/status')) {
+        return jsonResponse(liveStatus);
+      }
+      if (url.includes('/api/market/data-health')) {
+        return jsonResponse(marketHealth);
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+  vi.stubGlobal('fetch', statusFetch);
+  return statusFetch;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function installMatchMediaMock(initialDark = false): MatchMediaMock {
   let darkMode = initialDark;
@@ -62,9 +135,13 @@ function installMatchMediaMock(initialDark = false): MatchMediaMock {
   };
 }
 
-function renderShell() {
+function renderShell(options: ShellStatusMockOptions = {}) {
   window.scrollTo = () => {};
   window.localStorage.clear();
+  if (options.locale) {
+    window.localStorage.setItem('karkinos.locale', options.locale);
+  }
+  installShellStatusFetchMock(options);
   const matchMedia = installMatchMediaMock();
 
   const rootRoute = createRootRoute({
@@ -86,7 +163,13 @@ function renderShell() {
     routeTree,
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
-  const queryClient = new QueryClient();
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
 
   render(
     <PreferencesProvider>
@@ -242,41 +325,71 @@ test('uses full language names and fluid menu width', async () => {
   ).toBeTruthy();
 });
 
-test('allows manual toolbar resync and returns to ready state', async () => {
-  renderShell();
-  const user = userEvent.setup();
-
-  const ledgerButton = await screen.findByTestId('status-pill-ledger');
-  expect(ledgerButton.getAttribute('title')).toBe('Click to resync ledger');
-
-  await user.click(ledgerButton);
-
-  expect(await screen.findByText('Syncing')).toBeTruthy();
-  expect(
-    (await screen.findByTestId('status-pill-ledger-indicator')).tagName,
-  ).toBe('svg');
-
-  await act(async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 1450));
+test('shows cached quote status and valuation time from account overview', async () => {
+  renderShell({
+    locale: 'zh',
+    overview: {
+      ...defaultOverview,
+      quote_status: 'stale',
+      valuation_timestamp: '2026-05-16T22:40:00+08:00',
+    },
   });
 
-  expect(await screen.findByText('Ledger synced')).toBeTruthy();
-  expect(
-    (await screen.findByTestId('status-pill-ledger-indicator')).tagName,
-  ).toBe('SPAN');
-}, 7000);
+  expect((await screen.findAllByText('缓存行情')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('估值 22:40')).toBeTruthy();
+});
 
-test('shows broker latency details in a popover', async () => {
+test('shows cache-only market state from data health', async () => {
+  renderShell({
+    locale: 'zh',
+    marketHealth: {
+      quotes: [],
+      market_open: false,
+      refresh_policy: 'cache_only',
+    },
+  });
+
+  expect(await screen.findByText('市场休市')).toBeTruthy();
+});
+
+test('does not report ready states while status queries are loading', async () => {
+  renderShell({
+    locale: 'zh',
+    fetchImpl: vi.fn(() => new Promise<Response>(() => {})),
+  });
+
+  expect((await screen.findAllByText('检查中')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('券商接口就绪')).toBeNull();
+  expect(screen.queryByText('估值已启用')).toBeNull();
+});
+
+test('shows degraded states when status APIs fail', async () => {
+  renderShell({
+    locale: 'zh',
+    fetchImpl: vi.fn(async () => {
+      throw new Error('offline');
+    }),
+  });
+
+  expect(await screen.findByText('账本异常')).toBeTruthy();
+  expect(await screen.findByText('接口异常')).toBeTruthy();
+  expect(await screen.findByText('估值异常')).toBeTruthy();
+  expect(await screen.findByText('行情异常')).toBeTruthy();
+  expect(screen.queryByText('券商接口就绪')).toBeNull();
+});
+
+test('shows broker status details without simulated latency', async () => {
   renderShell();
   const user = userEvent.setup();
 
   await user.click(await screen.findByTestId('status-pill-broker'));
 
   const dialog = await screen.findByRole('dialog', {
-    name: 'Broker API ready',
+    name: 'API',
   });
   expect(dialog).toBeTruthy();
-  expect(within(dialog).getByText('42ms')).toBeTruthy();
+  expect(within(dialog).getByText('Broker API ready')).toBeTruthy();
+  expect(screen.queryByText('42ms')).toBeNull();
 });
 
 test('toggles mobile navigation from the global toolbar', async () => {

@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from "../../lib/api/client";
+import { apiClient } from '../../lib/api/client';
 
 export type MarketHealthQuote = {
   symbol: string;
@@ -65,10 +65,10 @@ export type KlineBar = {
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify(body),
   });
@@ -83,10 +83,10 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 async function putJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
-    method: "PUT",
+    method: 'PUT',
     headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify(body),
   });
@@ -101,9 +101,9 @@ async function putJson<T>(path: string, body: unknown): Promise<T> {
 
 async function deleteJson<T>(path: string): Promise<T> {
   const response = await fetch(path, {
-    method: "DELETE",
+    method: 'DELETE',
     headers: {
-      Accept: "application/json",
+      Accept: 'application/json',
     },
   });
 
@@ -117,16 +117,37 @@ async function deleteJson<T>(path: string): Promise<T> {
 
 export function useResearchBoardQuery() {
   return useQuery({
-    queryKey: ["market-research-board"],
-    queryFn: () => apiClient<ResearchBoardResponse>("/api/market/research-board"),
+    queryKey: ['market-research-board'],
+    queryFn: () =>
+      apiClient<ResearchBoardResponse>('/api/market/research-board'),
+  });
+}
+
+export function useMarketDataHealthQuery() {
+  return useQuery({
+    queryKey: ['market-data-health'],
+    queryFn: () =>
+      apiClient<MarketDataHealthResponse>('/api/market/data-health'),
+    staleTime: 10_000,
+    refetchInterval: () => {
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState !== 'visible'
+      ) {
+        return false;
+      }
+      return 10_000;
+    },
+    refetchOnWindowFocus: true,
   });
 }
 
 export function useKlineQuery(symbol: string) {
   return useQuery({
-    queryKey: ["market-kline", symbol],
+    queryKey: ['market-kline', symbol],
     enabled: symbol.length > 0,
-    queryFn: () => apiClient<KlineBar[]>(`/api/market/kline/${encodeURIComponent(symbol)}`),
+    queryFn: () =>
+      apiClient<KlineBar[]>(`/api/market/kline/${encodeURIComponent(symbol)}`),
   });
 }
 
@@ -140,15 +161,19 @@ export function useResearchNotesQuery(
   },
 ) {
   return useQuery({
-    queryKey: ["market-research-notes", symbol, filters],
+    queryKey: ['market-research-notes', symbol, filters],
     enabled: symbol.length > 0,
     queryFn: () => {
       const params = new URLSearchParams({ symbol });
-      if (filters?.entry_kind) params.set("entry_kind", filters.entry_kind);
-      if (filters?.priority) params.set("priority", filters.priority);
-      if (filters?.event_date_from) params.set("event_date_from", filters.event_date_from);
-      if (filters?.event_date_to) params.set("event_date_to", filters.event_date_to);
-      return apiClient<ResearchNoteListResponse>(`/api/market/research-notes?${params.toString()}`);
+      if (filters?.entry_kind) params.set('entry_kind', filters.entry_kind);
+      if (filters?.priority) params.set('priority', filters.priority);
+      if (filters?.event_date_from)
+        params.set('event_date_from', filters.event_date_from);
+      if (filters?.event_date_to)
+        params.set('event_date_to', filters.event_date_to);
+      return apiClient<ResearchNoteListResponse>(
+        `/api/market/research-notes?${params.toString()}`,
+      );
     },
   });
 }
@@ -157,9 +182,11 @@ export function useAddWatchlistItemMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: { symbol: string; asset_class: string }) =>
-      postJson("/api/market/watchlist", payload),
+      postJson('/api/market/watchlist', payload),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["market-research-board"] });
+      await queryClient.invalidateQueries({
+        queryKey: ['market-research-board'],
+      });
     },
   });
 }
@@ -175,13 +202,13 @@ export function useCreateResearchNoteMutation() {
       content: string;
       priority: string;
       event_date: string | null;
-    }) => postJson<ResearchNoteResponse>("/api/market/research-notes", payload),
+    }) => postJson<ResearchNoteResponse>('/api/market/research-notes', payload),
     onSuccess: async (note) => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["market-research-notes", note.symbol],
+          queryKey: ['market-research-notes', note.symbol],
         }),
-        queryClient.invalidateQueries({ queryKey: ["market-research-board"] }),
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
       ]);
     },
   });
@@ -198,11 +225,16 @@ export function useUpdateResearchNoteMutation(symbol: string) {
       priority: string;
       event_date: string | null;
     }) =>
-      putJson<ResearchNoteResponse>(`/api/market/research-notes/${payload.noteId}`, payload),
+      putJson<ResearchNoteResponse>(
+        `/api/market/research-notes/${payload.noteId}`,
+        payload,
+      ),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["market-research-notes", symbol] }),
-        queryClient.invalidateQueries({ queryKey: ["market-research-board"] }),
+        queryClient.invalidateQueries({
+          queryKey: ['market-research-notes', symbol],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
       ]);
     },
   });
@@ -216,9 +248,9 @@ export function useDeleteResearchNoteMutation(symbol: string) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["market-research-notes", symbol],
+          queryKey: ['market-research-notes', symbol],
         }),
-        queryClient.invalidateQueries({ queryKey: ["market-research-board"] }),
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
       ]);
     },
   });
@@ -230,7 +262,9 @@ export function useRemoveWatchlistItemMutation() {
     mutationFn: (symbol: string) =>
       deleteJson(`/api/market/watchlist/${encodeURIComponent(symbol)}`),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["market-research-board"] });
+      await queryClient.invalidateQueries({
+        queryKey: ['market-research-board'],
+      });
     },
   });
 }

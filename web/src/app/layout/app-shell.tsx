@@ -9,6 +9,9 @@ import {
 
 import { Link, useRouterState } from '@tanstack/react-router';
 
+import { useAccountOverviewQuery } from '../../features/account/api';
+import { useMarketDataHealthQuery } from '../../features/market/api';
+import { useLiveStatusQuery } from '../../features/settings/api';
 import { useCopy } from '../copy';
 import {
   usePreferences,
@@ -26,7 +29,7 @@ const navItems = [
 ] as const;
 
 type ToolbarStatusTone = 'success' | 'warning' | 'error';
-type ToolbarPopoverKey = 'broker' | 'valuation' | null;
+type ToolbarPopoverKey = 'ledger' | 'broker' | 'valuation' | 'market' | null;
 type ToolbarStatusIndicator = 'dot' | 'syncing';
 type ToolbarStatusAffordance = 'resync' | 'details';
 
@@ -36,11 +39,25 @@ const STATUS_COLORS: Record<ToolbarStatusTone, string> = {
   error: 'var(--app-danger)',
 };
 
-function formatToolbarTimestamp(value: Date, locale: Locale) {
+function formatToolbarTimestamp(
+  value: Date | string | null | undefined,
+  locale: Locale,
+) {
+  if (!value) {
+    return null;
+  }
+  const timestamp = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return null;
+  }
   return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
     hour: '2-digit',
     minute: '2-digit',
-  }).format(value);
+  }).format(timestamp);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -49,19 +66,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
   const { locale, setLocale, theme, setTheme } = usePreferences();
   const copy = useCopy();
+  const accountOverview = useAccountOverviewQuery();
+  const liveStatus = useLiveStatusQuery();
+  const marketHealth = useMarketDataHealthQuery();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
-  const [ledgerState, setLedgerState] = useState<'ready' | 'syncing'>('ready');
-  const [ledgerJustSynced, setLedgerJustSynced] = useState(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState(() => new Date());
-  const [brokerLatencyMs, setBrokerLatencyMs] = useState(42);
-  const [valuationUpdatedAt, setValuationUpdatedAt] = useState(
-    () => new Date(),
-  );
   const statusRailRef = useRef<HTMLDivElement | null>(null);
-  const syncTimeoutRef = useRef<number | null>(null);
-  const syncFeedbackTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!openStatusPanel) {
@@ -89,51 +100,141 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [openStatusPanel]);
 
-  useEffect(() => {
-    return () => {
-      if (syncTimeoutRef.current !== null) {
-        window.clearTimeout(syncTimeoutRef.current);
-      }
-      if (syncFeedbackTimeoutRef.current !== null) {
-        window.clearTimeout(syncFeedbackTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handleLedgerResync = () => {
-    if (syncTimeoutRef.current !== null) {
-      window.clearTimeout(syncTimeoutRef.current);
-    }
-    if (syncFeedbackTimeoutRef.current !== null) {
-      window.clearTimeout(syncFeedbackTimeoutRef.current);
-      syncFeedbackTimeoutRef.current = null;
-    }
-
-    setOpenStatusPanel(null);
-    setLedgerJustSynced(false);
-    setLedgerState('syncing');
-
-    syncTimeoutRef.current = window.setTimeout(() => {
-      const nextTimestamp = new Date();
-      setLedgerState('ready');
-      setLedgerJustSynced(true);
-      setLastSyncedAt(nextTimestamp);
-      setValuationUpdatedAt(nextTimestamp);
-      setBrokerLatencyMs((current) => (current >= 58 ? 36 : current + 7));
-      syncTimeoutRef.current = null;
-
-      syncFeedbackTimeoutRef.current = window.setTimeout(() => {
-        setLedgerJustSynced(false);
-        syncFeedbackTimeoutRef.current = null;
-      }, 700);
-    }, 1400);
-  };
-
-  const toolbarLastSync = formatToolbarTimestamp(lastSyncedAt, locale);
-  const toolbarValuationUpdate = formatToolbarTimestamp(
-    valuationUpdatedAt,
+  const overview = accountOverview.data;
+  const valuationTimestamp = formatToolbarTimestamp(
+    overview?.valuation_timestamp,
     locale,
   );
+  const isQuoteStale = overview?.quote_status === 'stale';
+  const quoteStatus = overview?.quote_status ?? copy.shell.statusUnknown;
+  const refreshPolicy =
+    marketHealth.data?.refresh_policy ?? copy.shell.statusUnknown;
+  const marketOpenText =
+    marketHealth.data?.market_open === undefined
+      ? copy.shell.statusUnknown
+      : marketHealth.data.market_open
+        ? copy.shell.marketOpen
+        : copy.shell.marketClosed;
+
+  const ledgerStatus = accountOverview.isLoading
+    ? {
+        value: copy.shell.checking,
+        tone: 'warning' as ToolbarStatusTone,
+        indicator: 'syncing' as ToolbarStatusIndicator,
+      }
+    : accountOverview.isError
+      ? {
+          value: copy.shell.ledgerUnavailable,
+          tone: 'error' as ToolbarStatusTone,
+          indicator: 'dot' as ToolbarStatusIndicator,
+        }
+      : overview
+        ? {
+            value: copy.shell.ledgerMode,
+            tone: 'success' as ToolbarStatusTone,
+            indicator: 'dot' as ToolbarStatusIndicator,
+          }
+        : {
+            value: copy.shell.statusUnknown,
+            tone: 'warning' as ToolbarStatusTone,
+            indicator: 'dot' as ToolbarStatusIndicator,
+          };
+
+  const brokerStatus = liveStatus.isLoading
+    ? {
+        value: copy.shell.checking,
+        tone: 'warning' as ToolbarStatusTone,
+        indicator: 'syncing' as ToolbarStatusIndicator,
+      }
+    : liveStatus.isError
+      ? {
+          value: copy.shell.brokerError,
+          tone: 'error' as ToolbarStatusTone,
+          indicator: 'dot' as ToolbarStatusIndicator,
+        }
+      : liveStatus.data?.running
+        ? {
+            value: copy.shell.brokerMode,
+            tone: 'success' as ToolbarStatusTone,
+            indicator: 'dot' as ToolbarStatusIndicator,
+          }
+        : {
+            value: copy.shell.brokerStopped,
+            tone: 'warning' as ToolbarStatusTone,
+            indicator: 'dot' as ToolbarStatusIndicator,
+          };
+
+  const valuationStatus = accountOverview.isLoading
+    ? {
+        value: copy.shell.checking,
+        tone: 'warning' as ToolbarStatusTone,
+        indicator: 'syncing' as ToolbarStatusIndicator,
+      }
+    : accountOverview.isError
+      ? {
+          value: copy.shell.valuationError,
+          tone: 'error' as ToolbarStatusTone,
+          indicator: 'dot' as ToolbarStatusIndicator,
+        }
+      : isQuoteStale
+        ? {
+            value: copy.shell.valuationStale,
+            tone: 'warning' as ToolbarStatusTone,
+            indicator: 'dot' as ToolbarStatusIndicator,
+          }
+        : overview
+          ? {
+              value: copy.shell.valuationMode,
+              tone: 'success' as ToolbarStatusTone,
+              indicator: 'dot' as ToolbarStatusIndicator,
+            }
+          : {
+              value: copy.shell.statusUnknown,
+              tone: 'warning' as ToolbarStatusTone,
+              indicator: 'dot' as ToolbarStatusIndicator,
+            };
+
+  const marketStatus = marketHealth.isLoading
+    ? {
+        value: copy.shell.checking,
+        tone: 'warning' as ToolbarStatusTone,
+        indicator: 'syncing' as ToolbarStatusIndicator,
+      }
+    : marketHealth.isError
+      ? {
+          value: copy.shell.marketError,
+          tone: 'error' as ToolbarStatusTone,
+          indicator: 'dot' as ToolbarStatusIndicator,
+        }
+      : isQuoteStale
+        ? {
+            value: copy.shell.cachedQuotes,
+            tone: 'warning' as ToolbarStatusTone,
+            indicator: 'dot' as ToolbarStatusIndicator,
+          }
+        : marketHealth.data?.refresh_policy === 'cache_only'
+          ? {
+              value: marketHealth.data.market_open
+                ? copy.shell.marketCacheOnly
+                : copy.shell.marketClosed,
+              tone: 'warning' as ToolbarStatusTone,
+              indicator: 'dot' as ToolbarStatusIndicator,
+            }
+          : marketHealth.data
+            ? {
+                value: copy.shell.marketLive,
+                tone: 'success' as ToolbarStatusTone,
+                indicator: 'dot' as ToolbarStatusIndicator,
+              }
+            : {
+                value: copy.shell.statusUnknown,
+                tone: 'warning' as ToolbarStatusTone,
+                indicator: 'dot' as ToolbarStatusIndicator,
+              };
+
+  const valuationMeta = valuationTimestamp
+    ? copy.shell.valuationAt(valuationTimestamp)
+    : undefined;
 
   return (
     <div className="app-root min-h-[100dvh] w-full overflow-hidden">
@@ -232,40 +333,69 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <StatusChip
                     testId="status-pill-ledger"
                     label={copy.shell.accountStatus}
-                    value={
-                      ledgerState === 'syncing'
-                        ? copy.shell.syncing
-                        : copy.shell.ledgerMode
+                    value={ledgerStatus.value}
+                    tone={ledgerStatus.tone}
+                    indicator={ledgerStatus.indicator}
+                    hoverHint={copy.shell.viewStatusDetails}
+                    affordance="details"
+                    expanded={openStatusPanel === 'ledger'}
+                    title={`${copy.shell.accountStatus}: ${ledgerStatus.value}`}
+                    popup={
+                      <StatusPopover
+                        title={copy.shell.accountStatus}
+                        rows={[
+                          {
+                            label: copy.shell.details,
+                            value: ledgerStatus.value,
+                          },
+                          {
+                            label: copy.shell.valuationUpdated,
+                            value: valuationMeta ?? copy.shell.statusUnknown,
+                          },
+                        ]}
+                      />
                     }
-                    tone={ledgerState === 'syncing' ? 'warning' : 'success'}
-                    indicator={ledgerState === 'syncing' ? 'syncing' : 'dot'}
-                    celebrate={ledgerJustSynced}
-                    actionLabel={copy.shell.resync}
-                    hoverHint={copy.shell.clickToResync}
-                    affordance="resync"
-                    onClick={handleLedgerResync}
+                    onClick={() =>
+                      setOpenStatusPanel((current) =>
+                        current === 'ledger' ? null : 'ledger',
+                      )
+                    }
                   />
                   <StatusChip
                     testId="status-pill-broker"
                     label={copy.shell.apiStatus}
-                    value={copy.shell.brokerMode}
-                    meta={`${brokerLatencyMs}ms`}
-                    tone="success"
-                    indicator="dot"
-                    hoverHint={copy.shell.viewLatencyDetails}
+                    value={brokerStatus.value}
+                    tone={brokerStatus.tone}
+                    indicator={brokerStatus.indicator}
+                    hoverHint={copy.shell.viewStatusDetails}
                     affordance="details"
                     expanded={openStatusPanel === 'broker'}
+                    title={`${copy.shell.apiStatus}: ${brokerStatus.value}`}
                     popup={
                       <StatusPopover
-                        title={copy.shell.brokerMode}
+                        title={copy.shell.apiStatus}
                         rows={[
                           {
-                            label: copy.shell.latency,
-                            value: `${brokerLatencyMs}ms`,
+                            label: copy.shell.details,
+                            value: brokerStatus.value,
+                          },
+                          {
+                            label: copy.shell.marketSession,
+                            value:
+                              liveStatus.data?.market_open === undefined
+                                ? copy.shell.statusUnknown
+                                : liveStatus.data.market_open
+                                  ? copy.shell.marketOpen
+                                  : copy.shell.marketClosed,
                           },
                           {
                             label: copy.shell.details,
-                            value: copy.shell.apiStatus,
+                            value: liveStatus.isError
+                              ? getErrorMessage(
+                                  liveStatus.error,
+                                  copy.shell.brokerError,
+                                )
+                              : copy.shell.statusUnknown,
                           },
                         ]}
                       />
@@ -279,23 +409,27 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <StatusChip
                     testId="status-pill-valuation"
                     label={copy.shell.navStatus}
-                    value={copy.shell.valuationMode}
-                    tone="success"
-                    indicator="dot"
+                    value={valuationStatus.value}
+                    meta={valuationMeta}
+                    tone={valuationStatus.tone}
+                    indicator={valuationStatus.indicator}
                     hoverHint={copy.shell.viewValuationDetails}
                     affordance="details"
                     expanded={openStatusPanel === 'valuation'}
+                    title={`${copy.shell.navStatus}: ${valuationStatus.value}${
+                      valuationMeta ? ` · ${valuationMeta}` : ''
+                    }`}
                     popup={
                       <StatusPopover
-                        title={copy.shell.valuationMode}
+                        title={copy.shell.navStatus}
                         rows={[
                           {
                             label: copy.shell.valuationUpdated,
-                            value: toolbarValuationUpdate,
+                            value: valuationMeta ?? copy.shell.statusUnknown,
                           },
                           {
-                            label: copy.shell.lastSync,
-                            value: toolbarLastSync,
+                            label: copy.shell.quoteStatus,
+                            value: quoteStatus,
                           },
                         ]}
                       />
@@ -303,6 +437,41 @@ export function AppShell({ children }: { children: ReactNode }) {
                     onClick={() =>
                       setOpenStatusPanel((current) =>
                         current === 'valuation' ? null : 'valuation',
+                      )
+                    }
+                  />
+                  <StatusChip
+                    testId="status-pill-market"
+                    label={copy.shell.marketStatus}
+                    value={marketStatus.value}
+                    tone={marketStatus.tone}
+                    indicator={marketStatus.indicator}
+                    hoverHint={copy.shell.viewStatusDetails}
+                    affordance="details"
+                    expanded={openStatusPanel === 'market'}
+                    title={`${copy.shell.marketStatus}: ${marketStatus.value}`}
+                    popup={
+                      <StatusPopover
+                        title={copy.shell.marketStatus}
+                        rows={[
+                          {
+                            label: copy.shell.marketSession,
+                            value: marketOpenText,
+                          },
+                          {
+                            label: copy.shell.refreshPolicy,
+                            value: refreshPolicy,
+                          },
+                          {
+                            label: copy.shell.quoteStatus,
+                            value: quoteStatus,
+                          },
+                        ]}
+                      />
+                    }
+                    onClick={() =>
+                      setOpenStatusPanel((current) =>
+                        current === 'market' ? null : 'market',
                       )
                     }
                   />
@@ -576,6 +745,7 @@ function StatusChip({
   onClick,
   actionLabel,
   hoverHint,
+  title,
   affordance,
   meta,
   popup,
@@ -590,6 +760,7 @@ function StatusChip({
   onClick: () => void;
   actionLabel?: string;
   hoverHint?: string;
+  title?: string;
   affordance: ToolbarStatusAffordance;
   meta?: string;
   popup?: ReactNode;
@@ -607,7 +778,7 @@ function StatusChip({
         }
         aria-expanded={popup ? expanded : undefined}
         aria-haspopup={popup ? 'dialog' : undefined}
-        title={hoverHint}
+        title={title ?? hoverHint}
         onClick={onClick}
         className={`inline-flex min-h-10 items-center overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-sm text-[var(--app-soft)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] backdrop-blur-md transition-[background-color,transform,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:cursor-pointer hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] hover:text-[var(--app-text)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_20%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
           expanded
@@ -693,7 +864,7 @@ function StatusPopover({
       <div className="grid gap-2">
         {rows.map((row) => (
           <div
-            key={row.label}
+            key={`${row.label}-${row.value}`}
             className="flex items-center justify-between gap-4 text-xs"
           >
             <span className="font-mono uppercase tracking-[0.18em] text-[var(--app-muted)]">
