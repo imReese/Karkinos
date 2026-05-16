@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -187,6 +188,254 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     assert response.quotes[0].price == 123.45
     assert response.market_open is False
     assert response.refresh_policy == "cache_only"
+
+
+def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=fake_scheduler,
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+    )
+    monkeypatch.setattr(
+        market_routes,
+        "_fetch_latest_snapshot",
+        lambda state, symbol, asset_class: {
+            "symbol": symbol,
+            "asset_class": asset_class.value,
+            "price": 12.5,
+            "volume": 1000.0,
+            "timestamp": "2026-05-12T10:05:00+08:00",
+        },
+    )
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
+    )
+
+    assert response.requested_symbols == ["600519"]
+    assert response.quote_status == "live"
+    assert response.refresh_policy == "live"
+    assert response.refreshed[0].symbol == "600519"
+    assert response.refreshed[0].quote_timestamp == "2026-05-12T10:05:00+08:00"
+    assert fake_scheduler.latest_quotes["600519"]["price"] == 12.5
+
+
+def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "示例基金", "asset_class": "fund"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            latest_quotes={},
+            portfolio=SimpleNamespace(positions={"018125": SimpleNamespace()}),
+            instruments={},
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(
+        market_routes,
+        "_fetch_latest_snapshot",
+        lambda state, symbol, asset_class: {
+            "symbol": symbol,
+            "asset_class": asset_class.value,
+            "price": 2.25,
+            "volume": 1000.0,
+            "timestamp": "2026-05-12T10:05:00+08:00",
+        },
+    )
+
+    response = asyncio.run(endpoint(market_routes.QuoteRefreshRequest()))
+
+    assert response.requested_symbols == ["018125"]
+
+
+def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {"symbol": "600519", "asset_class": "stock"},
+                {"symbol": "000001", "asset_class": "stock"},
+            ],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(is_running=True, latest_quotes={}),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+
+    def fake_fetch(state, symbol, asset_class):
+        if symbol == "000001":
+            raise RuntimeError("provider unavailable")
+        return {
+            "symbol": symbol,
+            "asset_class": asset_class.value,
+            "price": 12.5,
+            "volume": 1000.0,
+            "timestamp": "2026-05-12T10:05:00+08:00",
+        }
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(market_routes, "_fetch_latest_snapshot", fake_fetch)
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519", "000001"]))
+    )
+
+    assert response.quote_status == "partial"
+    assert [item.symbol for item in response.refreshed] == ["600519"]
+    assert [item.symbol for item in response.failed] == ["000001"]
+    assert response.failed[0].reason == "行情源刷新失败，已保留缓存行情"
+
+
+def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(is_running=True, latest_quotes={}),
+        db=SimpleNamespace(
+            get_latest_quotes_sync=lambda: [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 10.0,
+                    "volume": 1000.0,
+                    "timestamp": "2026-04-22T15:00:00",
+                }
+            ]
+        ),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr(
+        market_routes, "_fetch_latest_snapshot", lambda state, symbol, asset_class: None
+    )
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
+    )
+
+    assert response.market_open is False
+    assert response.refresh_policy == "cache_only"
+    assert response.quote_status == "stale"
+    assert response.skipped[0].status == "stale"
+    assert response.skipped[0].quote_timestamp == "2026-04-22T15:00:00"
+
+
+def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(is_running=True, latest_quotes={}),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+
+    def slow_fetch(state, symbol, asset_class):
+        time.sleep(0.05)
+        return {
+            "symbol": symbol,
+            "asset_class": asset_class.value,
+            "price": 12.5,
+            "timestamp": "2026-05-12T10:05:00+08:00",
+        }
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_fetch_latest_snapshot", slow_fetch)
+    monkeypatch.setattr(market_routes, "_MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
+
+    started_at = time.monotonic()
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert elapsed < 0.5
+    assert response.quote_status == "error"
+    assert response.failed[0].error == "provider_timeout"
 
 
 def test_market_research_board_merges_watchlist_and_health(monkeypatch):

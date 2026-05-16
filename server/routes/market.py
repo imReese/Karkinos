@@ -8,6 +8,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel, Field
 
 from core.types import AssetClass, BarFrequency, Symbol
 from server.models import (
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 _QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
+_MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -41,6 +43,33 @@ _ASSET_CLASS_MAP = {
     "gold": AssetClass.GOLD,
     "bond": AssetClass.BOND,
 }
+
+
+class QuoteRefreshRequest(BaseModel):
+    symbols: list[str] | None = None
+    force: bool = False
+
+
+class QuoteRefreshSymbolResult(BaseModel):
+    symbol: str
+    status: str
+    quote_timestamp: str | None = None
+    error: str | None = None
+    reason: str | None = None
+
+
+class QuoteRefreshResponse(BaseModel):
+    requested_symbols: list[str]
+    refreshed: list[QuoteRefreshSymbolResult] = Field(default_factory=list)
+    failed: list[QuoteRefreshSymbolResult] = Field(default_factory=list)
+    skipped: list[QuoteRefreshSymbolResult] = Field(default_factory=list)
+    refresh_policy: str
+    market_open: bool
+    started_at: str
+    completed_at: str
+    duration_ms: int
+    quote_status: str
+    message: str
 
 
 def _find_asset_config(assets: list[dict[str, str]], symbol: str) -> dict[str, str] | None:
@@ -137,6 +166,66 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
     return merged
 
 
+def _normalize_refresh_symbols(symbols: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_symbol in symbols or []:
+        symbol = str(raw_symbol).strip()
+        if not symbol or symbol in seen:
+            continue
+        normalized.append(symbol)
+        seen.add(symbol)
+    return normalized
+
+
+def _default_refresh_symbols(state) -> list[str]:
+    _, positions, _, _ = _extract_runtime_portfolio(state)
+    holding_symbols = _normalize_refresh_symbols(
+        [str(raw_symbol) for raw_symbol in positions]
+    )
+    if holding_symbols:
+        return holding_symbols
+    return _normalize_refresh_symbols(
+        [asset_cfg["symbol"] for asset_cfg in _merged_watchlist_assets(state)]
+    )
+
+
+def _latest_cached_quote(state, symbol: str) -> dict | None:
+    scheduler = state.scheduler
+    if scheduler and getattr(scheduler, "latest_quotes", None):
+        quote = scheduler.latest_quotes.get(symbol)
+        if quote:
+            return quote
+
+    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
+        for row in state.db.get_latest_quotes_sync():
+            if row.get("symbol") == symbol:
+                return row
+    return None
+
+
+def _store_runtime_quote(state, symbol: str, quote: dict) -> None:
+    scheduler = state.scheduler
+    if scheduler is None:
+        return
+    if hasattr(scheduler, "_latest_quotes"):
+        scheduler._latest_quotes[symbol] = quote
+        return
+    latest_quotes = getattr(scheduler, "latest_quotes", None)
+    if isinstance(latest_quotes, dict):
+        latest_quotes[symbol] = quote
+
+
+def _resolve_quote_status(state, quote: dict | None) -> str:
+    try:
+        from server.routes.portfolio import _quote_status
+
+        return _quote_status(state, quote)
+    except Exception:
+        logger.warning("Failed to resolve quote status", exc_info=True)
+        return "live" if quote and quote.get("timestamp") else "stale"
+
+
 def _persist_config(config) -> None:
     data = {
         "host": config.host,
@@ -224,6 +313,62 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         payload["previous_close"] = previous_close
         payload["previous_close_date"] = previous_close_date
     return payload
+
+
+async def _refresh_one_quote(
+    state,
+    symbol: str,
+    asset_class: AssetClass,
+    timeout_seconds: float | None = None,
+) -> QuoteRefreshSymbolResult:
+    timeout = (
+        _MANUAL_REFRESH_TIMEOUT_SECONDS
+        if timeout_seconds is None
+        else timeout_seconds
+    )
+    try:
+        snapshot = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        cached_quote = _latest_cached_quote(state, symbol)
+        return QuoteRefreshSymbolResult(
+            symbol=symbol,
+            status="failed",
+            quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            error="provider_timeout",
+            reason="行情源刷新超时，已保留缓存行情",
+        )
+    except Exception as exc:
+        cached_quote = _latest_cached_quote(state, symbol)
+        logger.warning("Manual quote refresh failed for %s", symbol, exc_info=True)
+        return QuoteRefreshSymbolResult(
+            symbol=symbol,
+            status="failed",
+            quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            error=str(exc),
+            reason="行情源刷新失败，已保留缓存行情",
+        )
+
+    if not snapshot:
+        cached_quote = _latest_cached_quote(state, symbol)
+        return QuoteRefreshSymbolResult(
+            symbol=symbol,
+            status="stale" if cached_quote else "failed",
+            quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            error=None if cached_quote else "quote_unavailable",
+            reason="行情源没有返回新报价，当前仍基于缓存行情",
+        )
+
+    _store_runtime_quote(state, symbol, snapshot)
+    quote_status = _resolve_quote_status(state, snapshot)
+    return QuoteRefreshSymbolResult(
+        symbol=symbol,
+        status="refreshed" if quote_status == "live" else "stale",
+        quote_timestamp=snapshot.get("timestamp"),
+        reason=None if quote_status == "live" else "行情源返回的报价仍为缓存行情",
+    )
 
 
 async def _refresh_quote_snapshot(state, symbol: str, asset_class: AssetClass) -> None:
@@ -495,6 +640,91 @@ def create_router() -> APIRouter:
             ],
             market_open=market_open,
             refresh_policy=refresh_policy,
+        )
+
+    @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
+    async def refresh_quotes(request: QuoteRefreshRequest) -> QuoteRefreshResponse:
+        """手动刷新行情快照，逐标的返回刷新结果。"""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        started_at_dt = datetime.now()
+        started_at = started_at_dt.isoformat()
+        market_open = is_cn_trading_session()
+        refresh_policy = "live" if market_open else "cache_only"
+
+        requested_symbols = _normalize_refresh_symbols(request.symbols)
+        if not requested_symbols:
+            requested_symbols = _default_refresh_symbols(state)
+
+        if not requested_symbols:
+            completed_at_dt = datetime.now()
+            return QuoteRefreshResponse(
+                requested_symbols=[],
+                refresh_policy=refresh_policy,
+                market_open=market_open,
+                started_at=started_at,
+                completed_at=completed_at_dt.isoformat(),
+                duration_ms=int(
+                    (completed_at_dt - started_at_dt).total_seconds() * 1000
+                ),
+                quote_status="error",
+                message="没有可刷新的行情标的",
+            )
+
+        watchlist_assets = _merged_watchlist_assets(state)
+        asset_class_by_symbol = {
+            asset_cfg["symbol"]: _ASSET_CLASS_MAP.get(
+                asset_cfg["asset_class"], AssetClass.STOCK
+            )
+            for asset_cfg in watchlist_assets
+        }
+
+        results = await asyncio.gather(
+            *[
+                _refresh_one_quote(
+                    state,
+                    symbol,
+                    asset_class_by_symbol.get(symbol, AssetClass.STOCK),
+                )
+                for symbol in requested_symbols
+            ]
+        )
+
+        refreshed = [result for result in results if result.status == "refreshed"]
+        failed = [result for result in results if result.status == "failed"]
+        skipped = [
+            result
+            for result in results
+            if result.status not in {"refreshed", "failed"}
+        ]
+
+        if refreshed and not failed and not skipped:
+            quote_status = "live"
+            message = "行情刷新完成"
+        elif refreshed:
+            quote_status = "partial"
+            message = "部分行情刷新完成"
+        elif failed and not skipped:
+            quote_status = "error"
+            message = "行情刷新失败"
+        else:
+            quote_status = "stale"
+            message = "行情源返回缓存行情"
+
+        completed_at_dt = datetime.now()
+        return QuoteRefreshResponse(
+            requested_symbols=requested_symbols,
+            refreshed=refreshed,
+            failed=failed,
+            skipped=skipped,
+            refresh_policy=refresh_policy,
+            market_open=market_open,
+            started_at=started_at,
+            completed_at=completed_at_dt.isoformat(),
+            duration_ms=int((completed_at_dt - started_at_dt).total_seconds() * 1000),
+            quote_status=quote_status,
+            message=message,
         )
 
     @r.get("/research-board", response_model=ResearchBoardResponse)

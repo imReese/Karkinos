@@ -87,6 +87,7 @@ import {
   useResearchNotesQuery,
   useRemoveWatchlistItemMutation,
 } from '../features/market/api';
+import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
 import {
   formatCurrency as formatCurrencyValue,
   formatPercent as formatPercentValue,
@@ -1235,8 +1236,36 @@ function MarketPage() {
 
               <div className="space-y-5">
                 <div className="app-panel rounded-2xl p-4 sm:p-5">
-                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                    {copy.market.health}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                      {copy.market.health}
+                    </div>
+                    <MarketRefreshButton
+                      onComplete={(response) => {
+                        const title =
+                          response.quote_status === 'live'
+                            ? copy.market.quoteRefreshComplete
+                            : response.quote_status === 'partial'
+                              ? copy.market.quoteRefreshPartial
+                              : response.quote_status === 'stale'
+                                ? copy.market.quoteRefreshStale
+                                : copy.market.quoteRefreshFailed;
+                        pushToast(
+                          response.quote_status === 'error'
+                            ? 'error'
+                            : 'success',
+                          title,
+                          response.message,
+                        );
+                      }}
+                      onError={(error) => {
+                        pushToast(
+                          'error',
+                          copy.market.quoteRefreshFailed,
+                          error.message,
+                        );
+                      }}
+                    />
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <MetricBlock
