@@ -11,10 +11,8 @@ import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import { AppShell } from './layout/app-shell';
 import {
-  type AccountOverview,
   useAccountOverviewQuery,
   type EquityCurveRange,
-  type EquitySeriesPoint,
   useAccountStateQuery,
   useExplainabilityQuery,
   useEquityCurveSeriesQuery,
@@ -70,9 +68,6 @@ import {
 import {
   type AllocationGroup,
   type AllocationItem,
-  type LiveHoldingGroup,
-  type LiveHoldingItem,
-  type PortfolioSnapshot,
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
   usePositionsQuery,
@@ -174,137 +169,6 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({ routeTree });
 
-function resolveEquitySeriesBucket(
-  assetClass: string,
-): keyof Pick<EquitySeriesPoint, 'stocks' | 'funds' | 'others'> {
-  const normalized = assetClass.toLowerCase();
-  if (normalized.includes('stock') || normalized.includes('equity')) {
-    return 'stocks';
-  }
-  if (normalized.includes('fund')) {
-    return 'funds';
-  }
-  return 'others';
-}
-
-function resolveLatestQuoteTimestamp(items: LiveHoldingItem[]) {
-  const latestMs = items.reduce((latest, item) => {
-    if (!item.quote_timestamp) {
-      return latest;
-    }
-    const timestampMs = new Date(item.quote_timestamp).getTime();
-    return Number.isFinite(timestampMs)
-      ? Math.max(latest, timestampMs)
-      : latest;
-  }, Number.NEGATIVE_INFINITY);
-
-  return Number.isFinite(latestMs) ? new Date(latestMs).toISOString() : null;
-}
-
-function buildRealtimeEquityPoint({
-  fallbackTimestamp,
-  liveGroups,
-  liveItems,
-  overview,
-  snapshot,
-}: {
-  fallbackTimestamp?: string;
-  liveGroups: LiveHoldingGroup[];
-  liveItems: LiveHoldingItem[];
-  overview: AccountOverview | null;
-  snapshot: PortfolioSnapshot | null;
-}): EquitySeriesPoint | null {
-  if (!snapshot && !overview) {
-    return null;
-  }
-
-  const cash = snapshot?.cash ?? 0;
-  const buckets = {
-    stocks: 0,
-    funds: 0,
-    others: 0,
-  };
-
-  if (liveGroups.length > 0) {
-    for (const group of liveGroups) {
-      buckets[resolveEquitySeriesBucket(group.asset_class)] +=
-        group.total_market_value;
-    }
-  } else {
-    for (const allocation of snapshot?.allocation ?? []) {
-      buckets[resolveEquitySeriesBucket(allocation.asset_class)] +=
-        allocation.value;
-    }
-  }
-
-  const investedTotal = buckets.stocks + buckets.funds + buckets.others;
-  const total =
-    liveGroups.length > 0
-      ? investedTotal + cash
-      : (snapshot?.total_equity ?? overview?.total_equity);
-
-  if (typeof total !== 'number' || !Number.isFinite(total)) {
-    return null;
-  }
-
-  const unrealizedPnl =
-    liveGroups.length > 0
-      ? liveGroups.reduce((sum, group) => sum + group.total_since_buy_pnl, 0)
-      : (snapshot?.positions.reduce(
-          (sum, position) => sum + position.unrealized_pnl,
-          0,
-        ) ?? overview?.unrealized_pnl);
-
-  return {
-    timestamp:
-      resolveLatestQuoteTimestamp(liveItems) ??
-      fallbackTimestamp ??
-      new Date().toISOString(),
-    total,
-    stocks: buckets.stocks,
-    funds: buckets.funds,
-    others: buckets.others,
-    cash,
-    unrealized_pnl: unrealizedPnl,
-  };
-}
-
-function mergeRealtimeEquityPoint(
-  points: EquitySeriesPoint[],
-  realtimePoint: EquitySeriesPoint | null,
-) {
-  if (!realtimePoint) {
-    return points;
-  }
-  if (points.length === 0) {
-    return [realtimePoint];
-  }
-
-  const lastPoint = points[points.length - 1];
-  const lastTimestampMs = new Date(lastPoint.timestamp).getTime();
-  const realtimeTimestampMs = new Date(realtimePoint.timestamp).getTime();
-
-  if (
-    !Number.isFinite(lastTimestampMs) ||
-    !Number.isFinite(realtimeTimestampMs)
-  ) {
-    return points;
-  }
-
-  if (realtimeTimestampMs < lastTimestampMs) {
-    return points;
-  }
-
-  if (realtimeTimestampMs === lastTimestampMs) {
-    return [
-      ...points.slice(0, -1),
-      { ...realtimePoint, timestamp: lastPoint.timestamp },
-    ];
-  }
-
-  return [...points, realtimePoint];
-}
-
 function OverviewPage() {
   const copy = useCopy();
   const [equityCurveRange, setEquityCurveRange] =
@@ -358,25 +222,6 @@ function OverviewPage() {
       ),
     [snapshot.data],
   );
-  const equityCurvePoints = useMemo(() => {
-    const points = equityCurve.data ?? [];
-    return mergeRealtimeEquityPoint(
-      points,
-      buildRealtimeEquityPoint({
-        fallbackTimestamp: points[points.length - 1]?.timestamp,
-        liveGroups,
-        liveItems,
-        overview: enhancedOverview,
-        snapshot: snapshot.data ?? null,
-      }),
-    );
-  }, [
-    enhancedOverview,
-    equityCurve.data,
-    liveGroups,
-    liveItems,
-    snapshot.data,
-  ]);
   const positions = useMemo(
     () => snapshot.data?.positions ?? [],
     [snapshot.data],
@@ -429,7 +274,7 @@ function OverviewPage() {
                   />
                 ) : (
                   <EquityCurveCard
-                    points={equityCurvePoints}
+                    points={equityCurve.data ?? []}
                     range={equityCurveRange}
                     onRangeChange={setEquityCurveRange}
                   />

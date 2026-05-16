@@ -144,6 +144,28 @@ const updatedPoints: EquitySeriesPoint[] = [
   },
 ];
 
+const backendCurrentPoints: EquitySeriesPoint[] = [
+  {
+    timestamp: '2026-05-16T09:30:00+08:00',
+    total: 102800,
+    stocks: 12200,
+    funds: 6100,
+    others: 9500,
+    cash: 75000,
+    unrealized_pnl: 1800,
+  },
+  {
+    timestamp: '2026-05-17T14:30:00+08:00',
+    total: 104600,
+    stocks: 13000,
+    funds: 6200,
+    others: 9800,
+    cash: 75600,
+    unrealized_pnl: 2600,
+    quote_status: 'stale',
+  },
+];
+
 function renderCard({
   cardPoints = points,
   onRangeChange,
@@ -283,6 +305,46 @@ test('updates the active range and notifies the parent query layer', async () =>
 
   expect(oneYear.getAttribute('aria-pressed')).toBe('true');
   expect(onRangeChange).toHaveBeenCalledWith('1y');
+});
+
+test('notifies the parent query layer for every long-range switch', async () => {
+  const user = userEvent.setup();
+  const onRangeChange = vi.fn();
+
+  renderCard({ cardPoints: timelinePoints, onRangeChange });
+
+  for (const [label, value] of [
+    ['6M', '6m'],
+    ['1Y', '1y'],
+    ['ALL', 'all'],
+  ] as const) {
+    await user.click(
+      await screen.findByRole('button', { name: `Range: ${label}` }),
+    );
+    expect(onRangeChange).toHaveBeenLastCalledWith(value);
+  }
+});
+
+test('renders the backend current stale point without adding a synthetic point', async () => {
+  renderCard({ cardPoints: backendCurrentPoints });
+
+  expect(await screen.findByText('估值基于缓存行情')).toBeTruthy();
+  expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
+});
+
+test('refreshes stale status when backend points prop changes', async () => {
+  const view = renderCard();
+
+  expect(screen.queryByText('估值基于缓存行情')).toBeNull();
+
+  view.rerender(
+    <PreferencesProvider>
+      <EquityCurveCard points={backendCurrentPoints} />
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByText('估值基于缓存行情')).toBeTruthy();
+  expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
 });
 
 test('shows the empty state when the selected range has no usable data', async () => {
