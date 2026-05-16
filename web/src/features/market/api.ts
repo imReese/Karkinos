@@ -63,6 +63,28 @@ export type KlineBar = {
   volume: number;
 };
 
+export type MarketQuoteRefreshResult = {
+  symbol: string;
+  status: 'refreshed' | 'stale' | 'failed' | 'skipped';
+  quote_timestamp: string | null;
+  error: string | null;
+  reason: string | null;
+};
+
+export type MarketQuoteRefreshResponse = {
+  requested_symbols: string[];
+  refreshed: MarketQuoteRefreshResult[];
+  failed: MarketQuoteRefreshResult[];
+  skipped: MarketQuoteRefreshResult[];
+  refresh_policy: string;
+  market_open: boolean;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  quote_status: 'live' | 'stale' | 'partial' | 'error';
+  message: string;
+};
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -139,6 +161,34 @@ export function useMarketDataHealthQuery() {
       return 10_000;
     },
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useRefreshMarketQuotesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload?: { symbols?: string[]; force?: boolean }) =>
+      postJson<MarketQuoteRefreshResponse>(
+        '/api/market/quotes/refresh',
+        payload ?? {},
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-snapshot'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-positions'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-allocation'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['portfolio-live-holdings'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['account-overview'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['account-equity-curve-series'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['account-state'] }),
+      ]);
+    },
   });
 }
 
