@@ -14,6 +14,134 @@ from fastapi.routing import APIRoute
 from core.types import Symbol
 
 
+def _backtest_route(router, path: str, method: str = "GET"):
+    return next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == path
+        and method in route.methods
+    )
+
+
+def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/run", "POST").endpoint
+    saved_payload: dict[str, object] = {}
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            saved_payload.update(kwargs)
+            return 42
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    fake_result = {
+        "initial_cash": 100000.0,
+        "final_equity": 112000.0,
+        "total_return": 0.12,
+        "annual_return": 0.18,
+        "sharpe": 1.4,
+        "sortino": 1.9,
+        "max_drawdown": 0.08,
+        "win_rate": 0.56,
+        "duration_days": 252,
+        "equity_curve": [
+            {"timestamp": "2026-01-01T00:00:00", "equity": 100000.0},
+            {"timestamp": "2026-01-02T00:00:00", "equity": 112000.0},
+        ],
+        "metrics_json": {
+            "calmar": 2.25,
+            "volatility": 0.21,
+            "total_commission": 12.5,
+            "total_slippage": 3.5,
+            "total_trades": 2,
+            "gross_turnover": 24000.0,
+        },
+        "cost_summary_json": {
+            "total_commission": 12.5,
+            "total_slippage": 3.5,
+            "total_trades": 2,
+            "gross_turnover": 24000.0,
+        },
+        "fills": [
+            {
+                "fill_id": "FILL-1",
+                "order_id": "ORD-1",
+                "timestamp": "2026-01-02T10:00:00",
+                "symbol": "600519",
+                "side": "buy",
+                "fill_price": 120.0,
+                "fill_quantity": 100.0,
+                "commission": 12.5,
+                "slippage": 3.5,
+            }
+        ],
+    }
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(backtest_routes, "_run_backtest", lambda request, config: fake_result)
+
+    response = asyncio.run(endpoint(backtest_routes.BacktestRequest()))
+
+    assert response.id == 42
+    assert response.metrics.calmar == 2.25
+    assert response.metrics.volatility == 0.21
+    assert response.metrics.total_commission == 12.5
+    assert response.metrics_json["gross_turnover"] == 24000.0
+    assert response.cost_summary_json["total_trades"] == 2
+    assert response.fills[0].fill_id == "FILL-1"
+    assert response.fills[0].symbol == "600519"
+    assert '"calmar": 2.25' in str(saved_payload["metrics_json"])
+    assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
+
+
+def test_backtest_result_returns_json_contract_and_empty_fills(monkeypatch):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(
+        router, "/api/backtest/results/{result_id}", "GET"
+    ).endpoint
+
+    class FakeDb:
+        async def get_backtest_result(self, result_id: int):
+            assert result_id == 7
+            return {
+                "id": 7,
+                "created_at": "2026-01-03T09:00:00",
+                "config_json": backtest_routes.BacktestRequest().model_dump_json(),
+                "initial_cash": 100000.0,
+                "final_equity": 112000.0,
+                "total_return": 0.12,
+                "annual_return": 0.18,
+                "sharpe": 1.4,
+                "sortino": 1.9,
+                "max_drawdown": 0.08,
+                "win_rate": 0.56,
+                "duration_days": 252,
+                "equity_curve_json": '[{"timestamp":"2026-01-02T00:00:00","equity":112000.0}]',
+                "metrics_json": '{"calmar":2.25,"volatility":0.21,"total_trades":2}',
+                "cost_summary_json": '{"total_commission":12.5,"total_slippage":3.5}',
+            }
+
+    fake_state = SimpleNamespace(db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint(7))
+
+    assert response.metrics.calmar == 2.25
+    assert response.metrics.volatility == 0.21
+    assert response.metrics.total_trades == 2
+    assert response.metrics_json["calmar"] == 2.25
+    assert response.cost_summary_json["total_commission"] == 12.5
+    assert response.fills == []
+
+
 def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch):
     from server.routes import market as market_routes
 
