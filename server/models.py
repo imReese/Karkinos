@@ -534,8 +534,26 @@ class BacktestMetrics(BaseModel):
     sharpe: float
     sortino: float
     max_drawdown: float
+    calmar: float | str = 0.0
+    volatility: float = 0.0
     win_rate: float
     duration_days: int
+    total_commission: float = 0.0
+    total_slippage: float = 0.0
+    total_trades: int = 0
+    gross_turnover: float = 0.0
+
+
+class BacktestFill(BaseModel):
+    fill_id: str | None = None
+    order_id: str | None = None
+    timestamp: str | None = None
+    symbol: str
+    side: str
+    fill_price: float
+    fill_quantity: float
+    commission: float
+    slippage: float
 
 
 class BacktestResponse(BaseModel):
@@ -544,6 +562,9 @@ class BacktestResponse(BaseModel):
     config: BacktestRequest
     metrics: BacktestMetrics
     equity_curve: list[EquityPoint]
+    metrics_json: dict[str, Any] = Field(default_factory=dict)
+    cost_summary_json: dict[str, Any] = Field(default_factory=dict)
+    fills: list[BacktestFill] = Field(default_factory=list)
 
 
 class CompareRequest(BaseModel):
