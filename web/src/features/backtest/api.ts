@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
 
@@ -53,6 +53,16 @@ export type BacktestSummary = {
   max_drawdown: number;
 };
 
+export type BacktestRunRequest = {
+  start_date: string;
+  end_date: string;
+  initial_cash: number;
+  strategy: string;
+  short_period: number;
+  long_period: number;
+  assets?: Array<{ symbol: string; asset_class: string }>;
+};
+
 export type BacktestReport = {
   id: number;
   created_at: string;
@@ -72,11 +82,45 @@ export type BacktestReport = {
   equity_curve: BacktestEquityPoint[];
 };
 
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 export function useBacktestResultsQuery() {
   return useQuery({
     queryKey: ['backtest-results'],
     queryFn: () => apiClient<BacktestSummary[]>('/api/backtest/results'),
     staleTime: 10_000,
+  });
+}
+
+export function useRunBacktestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BacktestRunRequest) =>
+      postJson<BacktestReport>('/api/backtest/run', payload),
+    onSuccess: async (report) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['backtest-results'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['backtest-result', report.id],
+        }),
+      ]);
+    },
   });
 }
 
