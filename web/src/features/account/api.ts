@@ -24,6 +24,9 @@ export type AccountOverview = {
   cash_ratio: number;
   valuation_timestamp?: string | null;
   quote_status?: string;
+  quote_age_seconds?: number | null;
+  stale_reason?: string | null;
+  refresh_policy?: string | null;
 };
 
 export type EquityPoint = {

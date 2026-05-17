@@ -26,6 +26,10 @@ function createRefreshResponse(
               symbol: '600519',
               status: 'refreshed',
               quote_timestamp: '2026-05-12T10:05:00+08:00',
+              quote_source: 'akshare',
+              quote_age_seconds: 30,
+              last_refresh_attempt: '2026-05-12T10:05:00',
+              last_refresh_error: null,
               error: null,
               reason: null,
             },
@@ -38,6 +42,10 @@ function createRefreshResponse(
               symbol: '600519',
               status: 'failed',
               quote_timestamp: null,
+              quote_source: 'akshare',
+              quote_age_seconds: null,
+              last_refresh_attempt: '2026-05-12T10:05:00',
+              last_refresh_error: 'provider_timeout',
               error: 'provider_timeout',
               reason: '行情源刷新超时，已保留缓存行情',
             },
@@ -50,6 +58,10 @@ function createRefreshResponse(
               symbol: '600519',
               status: 'stale',
               quote_timestamp: '2026-04-22T15:00:00',
+              quote_source: 'akshare',
+              quote_age_seconds: 1_728_000,
+              last_refresh_attempt: '2026-05-12T10:05:00',
+              last_refresh_error: null,
               error: null,
               reason: '行情源没有返回新报价，当前仍基于缓存行情',
             },
@@ -61,6 +73,8 @@ function createRefreshResponse(
     completed_at: '2026-05-12T10:05:01',
     duration_ms: 1000,
     quote_status: quoteStatus,
+    last_refresh_attempt: '2026-05-12T10:05:00',
+    last_refresh_error: quoteStatus === 'error' ? 'provider_timeout' : null,
     message:
       quoteStatus === 'stale'
         ? '行情源返回缓存行情'
@@ -180,6 +194,7 @@ test('shows cached quote result without claiming real-time success', async () =>
   await user.click(screen.getByRole('button', { name: 'Refresh quotes' }));
 
   await screen.findByText('Quote source returned cached quotes');
+  await screen.findByText(/行情源没有返回新报价，当前仍基于缓存行情/);
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 

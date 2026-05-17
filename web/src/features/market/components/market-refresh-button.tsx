@@ -86,6 +86,28 @@ export function MarketRefreshButton({
             ? `${copy.market.quoteRefreshFailed}: ${errorMessage}`
             : summary}
       </div>
+      {lastResponse ? (
+        <div className="grid max-w-[22rem] gap-1 text-left text-xs">
+          {[
+            ...lastResponse.refreshed,
+            ...lastResponse.skipped,
+            ...lastResponse.failed,
+          ]
+            .slice(0, 5)
+            .map((item) => (
+              <div
+                key={`${item.symbol}-${item.status}`}
+                className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-2 text-[var(--app-muted)]"
+              >
+                <span className="font-mono font-semibold text-[var(--app-text)]">
+                  {item.symbol}
+                </span>{' '}
+                {item.status}
+                {item.reason ? ` · ${item.reason}` : ''}
+              </div>
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 }

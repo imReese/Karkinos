@@ -295,6 +295,7 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
         ),
         scheduler=SimpleNamespace(
             watchlist=[("600519", "stock")],
@@ -314,6 +315,17 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
 
     assert response.quotes[0].symbol == "600519"
     assert response.quotes[0].price == 123.45
+    assert response.quotes[0].quote_status == "stale"
+    assert response.quotes[0].quote_source == "akshare"
+    assert response.quotes[0].quote_age_seconds is not None
+    assert response.quotes[0].stale_reason == "market_closed_cache_only"
+    assert response.provider_name == "akshare"
+    assert response.provider_status == "stale"
+    assert response.source_health == "stale"
+    assert response.cache_age_seconds is not None
+    assert response.latest_quote_timestamp is not None
+    assert response.stale_symbols_count == 1
+    assert response.stale_symbols_sample == ["600519"]
     assert response.market_open is False
     assert response.refresh_policy == "cache_only"
 
@@ -367,6 +379,11 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     assert response.refresh_policy == "live"
     assert response.refreshed[0].symbol == "600519"
     assert response.refreshed[0].quote_timestamp == "2026-05-12T10:05:00+08:00"
+    assert response.refreshed[0].quote_source == "akshare"
+    assert response.refreshed[0].quote_age_seconds is not None
+    assert response.refreshed[0].last_refresh_attempt is not None
+    assert response.last_refresh_attempt == response.started_at
+    assert response.last_refresh_error is None
     assert fake_scheduler.latest_quotes["600519"]["price"] == 12.5
 
 
@@ -466,6 +483,8 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
     assert [item.symbol for item in response.refreshed] == ["600519"]
     assert [item.symbol for item in response.failed] == ["000001"]
     assert response.failed[0].reason == "行情源刷新失败，已保留缓存行情"
+    assert response.failed[0].last_refresh_error == "provider unavailable"
+    assert response.last_refresh_error == "provider unavailable"
 
 
 def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
@@ -517,6 +536,10 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
     assert response.quote_status == "stale"
     assert response.skipped[0].status == "stale"
     assert response.skipped[0].quote_timestamp == "2026-04-22T15:00:00"
+    assert response.skipped[0].quote_source == "akshare"
+    assert response.skipped[0].quote_age_seconds is not None
+    assert response.skipped[0].reason == "行情源没有返回新报价，当前仍基于缓存行情"
+    assert response.last_refresh_error is None
 
 
 def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
@@ -564,6 +587,9 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
     assert elapsed < 0.5
     assert response.quote_status == "error"
     assert response.failed[0].error == "provider_timeout"
+    assert response.failed[0].reason == "行情源刷新超时，已保留缓存行情"
+    assert response.failed[0].last_refresh_error == "provider_timeout"
+    assert response.last_refresh_error == "provider_timeout"
 
 
 def test_market_research_board_merges_watchlist_and_health(monkeypatch):
@@ -2566,7 +2592,7 @@ def test_portfolio_equity_curve_uses_ledger_projection_when_scheduler_missing(
             ]
 
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0),
+        config=SimpleNamespace(initial_cash=0, data_source="akshare"),
         scheduler=SimpleNamespace(
             portfolio=None, latest_quotes={}, watchlist=[], instruments={}
         ),
@@ -2704,7 +2730,7 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
             ]
 
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0),
+        config=SimpleNamespace(initial_cash=0, data_source="akshare"),
         scheduler=SimpleNamespace(
             portfolio=None, latest_quotes={}, watchlist=[], instruments={}
         ),
@@ -3405,7 +3431,7 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
             return 0.0
 
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0),
+        config=SimpleNamespace(initial_cash=0, data_source="akshare"),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(cash=0.0, positions={"600519": fake_position}),
             instruments={
@@ -3436,7 +3462,14 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
 
     assert response.groups[0].items[0].quote_status == "stale"
     assert response.groups[0].items[0].quote_timestamp == "2026-04-22T15:00:00"
+    assert response.groups[0].items[0].quote_source == "akshare"
+    assert response.groups[0].items[0].quote_age_seconds is not None
+    assert response.groups[0].items[0].stale_reason == "market_closed_cache_only"
+    assert response.groups[0].items[0].refresh_policy == "cache_only"
     assert overview.quote_status == "stale"
+    assert overview.quote_age_seconds is not None
+    assert overview.stale_reason == "market_closed_cache_only"
+    assert overview.refresh_policy == "cache_only"
 
 
 def test_portfolio_equity_curve_series_appends_current_valuation_point(

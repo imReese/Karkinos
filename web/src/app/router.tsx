@@ -1075,10 +1075,18 @@ function MarketPage() {
   const [noteDate, setNoteDate] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const items = board.data?.items ?? [];
+  const health = board.data?.health;
+  const healthBySymbol = useMemo(
+    () => new Map((health?.quotes ?? []).map((quote) => [quote.symbol, quote])),
+    [health?.quotes],
+  );
   const activeSymbol = selectedSymbol || items[0]?.symbol || '';
   const updateResearchNote = useUpdateResearchNoteMutation(activeSymbol);
   const selectedItem =
     items.find((item) => item.symbol === activeSymbol) ?? null;
+  const selectedHealthQuote = selectedItem
+    ? (healthBySymbol.get(selectedItem.symbol) ?? null)
+    : null;
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -1137,7 +1145,7 @@ function MarketPage() {
                     {copy.market.watchlist}
                   </div>
                   <div className="app-muted text-sm">
-                    {board.data?.health.market_open
+                    {health?.market_open
                       ? copy.market.marketOpen
                       : copy.market.marketClosed}
                   </div>
@@ -1299,16 +1307,58 @@ function MarketPage() {
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <MetricBlock
+                      label={copy.market.sourceHealth}
+                      value={health?.source_health ?? copy.market.unknown}
+                    />
+                    <MetricBlock
+                      label={copy.market.provider}
+                      value={health?.provider_name ?? copy.market.unknown}
+                    />
+                    <MetricBlock
+                      label={copy.market.providerStatus}
+                      value={health?.provider_status ?? copy.market.unknown}
+                    />
+                    <MetricBlock
                       label={copy.market.marketOpen}
                       value={
-                        board.data?.health.market_open
-                          ? copy.market.marketOpen
-                          : copy.market.marketClosed
+                        health
+                          ? health.market_open
+                            ? copy.market.marketOpen
+                            : copy.market.marketClosed
+                          : copy.market.unknown
                       }
                     />
                     <MetricBlock
                       label={copy.market.refreshPolicy}
-                      value={board.data?.health.refresh_policy ?? '--'}
+                      value={health?.refresh_policy ?? '--'}
+                    />
+                    <MetricBlock
+                      label={copy.market.latestQuote}
+                      value={formatTimestamp(health?.latest_quote_timestamp)}
+                    />
+                    <MetricBlock
+                      label={copy.market.cacheAge}
+                      value={formatAge(health?.cache_age_seconds)}
+                    />
+                    <MetricBlock
+                      label={copy.market.staleSymbols}
+                      value={
+                        health
+                          ? `${health.stale_symbols_count} ${
+                              health.stale_symbols_sample.length
+                                ? `· ${health.stale_symbols_sample.join(', ')}`
+                                : ''
+                            }`
+                          : '--'
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.lastRefreshAttempt}
+                      value={formatTimestamp(health?.last_refresh_attempt)}
+                    />
+                    <MetricBlock
+                      label={copy.market.lastRefreshError}
+                      value={health?.last_refresh_error ?? '--'}
                     />
                   </div>
                 </div>
@@ -1377,6 +1427,20 @@ function MarketPage() {
                     <MetricBlock
                       label={copy.market.snapshotLabel}
                       value={selectedItem.last_snapshot_at ?? '--'}
+                    />
+                    <MetricBlock
+                      label={copy.market.quoteSource}
+                      value={
+                        selectedHealthQuote?.quote_source ?? copy.market.unknown
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.quoteAge}
+                      value={formatAge(selectedHealthQuote?.quote_age_seconds)}
+                    />
+                    <MetricBlock
+                      label={copy.market.staleReason}
+                      value={selectedHealthQuote?.stale_reason ?? '--'}
                     />
                     <MetricBlock
                       label={copy.market.lastResearch}
@@ -2325,6 +2389,22 @@ function MetricBlock({ label, value }: { label: string; value: string }) {
       <div className="mt-2 text-sm font-medium">{value}</div>
     </div>
   );
+}
+
+function formatAge(seconds: number | null | undefined) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
+    return '--';
+  }
+  if (seconds < 60) {
+    return `${Math.max(Math.round(seconds), 0)}s`;
+  }
+  if (seconds < 3600) {
+    return `${Math.round(seconds / 60)}m`;
+  }
+  if (seconds < 86400) {
+    return `${Math.round(seconds / 3600)}h`;
+  }
+  return `${Math.round(seconds / 86400)}d`;
 }
 
 function PriceStructureChart({

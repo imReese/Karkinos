@@ -49,6 +49,24 @@ function resolveQuotePrice(position: Position, livePrice: number | null) {
   return null;
 }
 
+function formatAge(seconds: number | null | undefined) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
+    return '--';
+  }
+  if (seconds < 60) {
+    return `${Math.max(0, Math.round(seconds))}s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h`;
+  }
+  return `${Math.round(hours / 24)}d`;
+}
+
 function entryAmount(entry: LedgerEntry) {
   if (typeof entry.amount === 'number' && Number.isFinite(entry.amount)) {
     return entry.amount;
@@ -155,6 +173,20 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     position.quote_timestamp ??
     liveItem?.quote_timestamp ??
     healthQuote?.timestamp;
+  const quoteSource =
+    position.quote_source ??
+    liveItem?.quote_source ??
+    healthQuote?.quote_source ??
+    null;
+  const quoteAgeSeconds =
+    position.quote_age_seconds ??
+    liveItem?.quote_age_seconds ??
+    healthQuote?.quote_age_seconds ??
+    null;
+  const staleReason =
+    position.stale_reason ??
+    liveItem?.stale_reason ??
+    healthQuote?.stale_reason;
   const isStale = quoteStatus === 'stale';
   const quotePrice = resolveQuotePrice(
     position,
@@ -309,6 +341,19 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 <InfoRow
                   label={labels.quoteTimestamp}
                   value={formatTimestamp(quoteTimestamp)}
+                />
+                <InfoRow
+                  label={labels.quoteSource}
+                  value={quoteSource ?? '--'}
+                />
+                <InfoRow
+                  label={labels.quoteAge}
+                  value={formatAge(quoteAgeSeconds)}
+                />
+                <InfoRow
+                  label={labels.staleReason}
+                  value={staleReason ?? '--'}
+                  tone={staleReason ? 'warning' : undefined}
                 />
                 <InfoRow
                   label={labels.valuationTimestamp}

@@ -53,12 +53,27 @@ class MarketHealthQuote(BaseModel):
     asset_class: str
     timestamp: str | None = None
     price: float | None = None
+    quote_status: str = "unknown"
+    quote_source: str | None = None
+    quote_age_seconds: int | None = None
+    stale_reason: str | None = None
+    last_refresh_attempt: str | None = None
+    last_refresh_error: str | None = None
 
 
 class MarketDataHealthResponse(BaseModel):
     quotes: list[MarketHealthQuote]
     market_open: bool = False
     refresh_policy: str = "cache_only"
+    provider_status: str = "unknown"
+    provider_name: str = "unknown"
+    source_health: str = "unknown"
+    cache_age_seconds: int | None = None
+    latest_quote_timestamp: str | None = None
+    last_refresh_attempt: str | None = None
+    last_refresh_error: str | None = None
+    stale_symbols_count: int = 0
+    stale_symbols_sample: list[str] = Field(default_factory=list)
 
 
 class ResearchBoardItem(BaseModel):
@@ -133,6 +148,10 @@ class PositionResponse(BaseModel):
     commission_paid: float
     quote_timestamp: str | None = None
     quote_status: str = "stale"
+    quote_source: str | None = None
+    quote_age_seconds: int | None = None
+    stale_reason: str | None = None
+    refresh_policy: str | None = None
 
 
 class AllocationItem(BaseModel):
@@ -179,6 +198,10 @@ class LiveHoldingItemResponse(BaseModel):
     baseline_timestamp: str | None = None
     baseline_source: str = "unavailable"
     quote_status: str = "stale"
+    quote_source: str | None = None
+    quote_age_seconds: int | None = None
+    stale_reason: str | None = None
+    refresh_policy: str | None = None
 
 
 class LiveHoldingGroupResponse(BaseModel):
@@ -204,6 +227,9 @@ class AccountOverview(BaseModel):
     cash_ratio: float
     valuation_timestamp: str | None = None
     quote_status: str = "live"
+    quote_age_seconds: int | None = None
+    stale_reason: str | None = None
+    refresh_policy: str | None = None
 
 
 class AccountStateResponse(BaseModel):
