@@ -7,12 +7,27 @@ export type MarketHealthQuote = {
   asset_class: string;
   timestamp: string | null;
   price: number | null;
+  quote_status: 'live' | 'stale' | 'missing' | 'error' | 'unknown';
+  quote_source: string | null;
+  quote_age_seconds: number | null;
+  stale_reason: string | null;
+  last_refresh_attempt: string | null;
+  last_refresh_error: string | null;
 };
 
 export type MarketDataHealthResponse = {
   quotes: MarketHealthQuote[];
   market_open: boolean;
   refresh_policy: string;
+  provider_status: string;
+  provider_name: string;
+  source_health: string;
+  cache_age_seconds: number | null;
+  latest_quote_timestamp: string | null;
+  last_refresh_attempt: string | null;
+  last_refresh_error: string | null;
+  stale_symbols_count: number;
+  stale_symbols_sample: string[];
 };
 
 export type ResearchBoardItem = {
@@ -67,8 +82,12 @@ export type MarketQuoteRefreshResult = {
   symbol: string;
   status: 'refreshed' | 'stale' | 'failed' | 'skipped';
   quote_timestamp: string | null;
+  quote_source: string | null;
+  quote_age_seconds: number | null;
   error: string | null;
   reason: string | null;
+  last_refresh_attempt: string | null;
+  last_refresh_error: string | null;
 };
 
 export type MarketQuoteRefreshResponse = {
@@ -82,6 +101,8 @@ export type MarketQuoteRefreshResponse = {
   completed_at: string;
   duration_ms: number;
   quote_status: 'live' | 'stale' | 'partial' | 'error';
+  last_refresh_attempt: string | null;
+  last_refresh_error: string | null;
   message: string;
 };
 

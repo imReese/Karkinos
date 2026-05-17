@@ -17,6 +17,10 @@ const position = {
   commission_paid: 30,
   quote_status: 'stale',
   quote_timestamp: '2026-04-21T14:30:00+08:00',
+  quote_source: 'akshare',
+  quote_age_seconds: 2_246_400,
+  stale_reason: 'market_closed_cache_only',
+  refresh_policy: 'cache_only',
 };
 
 const ledgerEntry = {
@@ -95,6 +99,10 @@ function installHoldingFetchMock({
                     baseline_timestamp: null,
                     baseline_source: 'unavailable',
                     quote_status: 'stale',
+                    quote_source: 'akshare',
+                    quote_age_seconds: 2_246_400,
+                    stale_reason: 'market_closed_cache_only',
+                    refresh_policy: 'cache_only',
                   },
                 ]
               : [],
@@ -135,6 +143,9 @@ function installHoldingFetchMock({
         cash_ratio: 0.0103,
         valuation_timestamp: '2026-05-16T22:40:00+08:00',
         quote_status: 'stale',
+        quote_age_seconds: 2_246_400,
+        stale_reason: 'market_closed_cache_only',
+        refresh_policy: 'cache_only',
       });
     }
     if (url.includes('/api/ledger/entries')) {
@@ -150,8 +161,23 @@ function installHoldingFetchMock({
             asset_class: 'stock',
             timestamp: '2026-04-21T14:30:00+08:00',
             price: 1600,
+            quote_status: 'stale',
+            quote_source: 'akshare',
+            quote_age_seconds: 2_246_400,
+            stale_reason: 'market_closed_cache_only',
+            last_refresh_attempt: null,
+            last_refresh_error: null,
           },
         ],
+        provider_status: 'stale',
+        provider_name: 'akshare',
+        source_health: 'stale',
+        cache_age_seconds: 2_246_400,
+        latest_quote_timestamp: '2026-04-21T14:30:00+08:00',
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        stale_symbols_count: includePosition ? 1 : 0,
+        stale_symbols_sample: includePosition ? ['600519'] : [],
       });
     }
     return new Response('Not found', { status: 404 });
@@ -205,6 +231,9 @@ test('renders holding detail with cached quote status and ledger trace', async (
   ).toBeTruthy();
   expect(await screen.findByText('trade_buy')).toBeTruthy();
   expect(await screen.findByText('initial allocation')).toBeTruthy();
+  expect(await screen.findByText('akshare')).toBeTruthy();
+  expect(await screen.findByText('26d')).toBeTruthy();
+  expect(await screen.findByText('market_closed_cache_only')).toBeTruthy();
   expect(document.body.textContent).not.toMatch(/real-time|latest price|NaN/i);
 });
 

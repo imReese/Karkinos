@@ -714,6 +714,51 @@ def _quote_status(
     )
 
 
+def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int | None:
+    timestamp = _parse_quote_timestamp(None if quote is None else quote.get("timestamp"))
+    if timestamp is None:
+        return None
+    current = get_shanghai_now(now)
+    return max(int((current - timestamp).total_seconds()), 0)
+
+
+def _quote_source(state, quote: dict | None) -> str | None:
+    if not quote:
+        return None
+    source = quote.get("source") or quote.get("provider")
+    if source:
+        return str(source)
+    configured = getattr(state.config, "data_source", None)
+    return str(configured) if configured else None
+
+
+def _refresh_policy(now: datetime | None = None) -> str:
+    return "live" if is_cn_trading_session(now) else "cache_only"
+
+
+def _quote_stale_reason(
+    state,
+    quote: dict | None,
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    if not quote or quote.get("price") in {None, ""}:
+        return "quote_missing"
+
+    timestamp = _parse_quote_timestamp(quote.get("timestamp"))
+    if timestamp is None:
+        return "quote_timestamp_missing"
+
+    if _quote_status(state, quote, now=now) != "stale":
+        return None
+
+    policy = _refresh_policy(now)
+    if policy == "cache_only":
+        return "market_closed_cache_only"
+
+    return "quote_older_than_expected_session"
+
+
 def _can_refresh_quotes(state, now: datetime | None = None) -> bool:
     return bool(hasattr(state.config, "data_source") and is_cn_trading_session(now))
 
@@ -941,6 +986,10 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
                 baseline_timestamp=baseline_timestamp,
                 baseline_source=baseline_source,
                 quote_status=_quote_status(state, latest_quote),
+                quote_source=_quote_source(state, latest_quote),
+                quote_age_seconds=_quote_age_seconds(latest_quote),
+                stale_reason=_quote_stale_reason(state, latest_quote),
+                refresh_policy=_refresh_policy(),
             )
         )
 
@@ -1377,6 +1426,22 @@ def _snapshot_quote_status(snapshot: PortfolioSnapshot) -> str:
     )
 
 
+def _snapshot_quote_age_seconds(snapshot: PortfolioSnapshot) -> int | None:
+    ages = [
+        position.quote_age_seconds
+        for position in snapshot.positions
+        if position.quote_age_seconds is not None
+    ]
+    return max(ages) if ages else None
+
+
+def _snapshot_stale_reason(snapshot: PortfolioSnapshot) -> str | None:
+    for position in snapshot.positions:
+        if position.quote_status == "stale" and position.stale_reason:
+            return position.stale_reason
+    return None
+
+
 def _with_overview_quote_metadata(
     overview: AccountOverview,
     snapshot: PortfolioSnapshot,
@@ -1385,6 +1450,9 @@ def _with_overview_quote_metadata(
         update={
             "valuation_timestamp": get_shanghai_now().isoformat(),
             "quote_status": _snapshot_quote_status(snapshot),
+            "quote_age_seconds": _snapshot_quote_age_seconds(snapshot),
+            "stale_reason": _snapshot_stale_reason(snapshot),
+            "refresh_policy": _refresh_policy(),
         }
     )
 
@@ -1434,6 +1502,10 @@ def create_router() -> APIRouter:
                     commission_paid=float(pos.commission_paid),
                     quote_timestamp=None if quote is None else quote.get("timestamp"),
                     quote_status=_quote_status(state, quote),
+                    quote_source=_quote_source(state, quote),
+                    quote_age_seconds=_quote_age_seconds(quote),
+                    stale_reason=_quote_stale_reason(state, quote),
+                    refresh_policy=_refresh_policy(),
                 )
             )
 

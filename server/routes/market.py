@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
@@ -34,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 _QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
+_QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
 _MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
+_SH_TZ = ZoneInfo("Asia/Shanghai")
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -54,8 +57,12 @@ class QuoteRefreshSymbolResult(BaseModel):
     symbol: str
     status: str
     quote_timestamp: str | None = None
+    quote_source: str | None = None
+    quote_age_seconds: int | None = None
     error: str | None = None
     reason: str | None = None
+    last_refresh_attempt: str | None = None
+    last_refresh_error: str | None = None
 
 
 class QuoteRefreshResponse(BaseModel):
@@ -69,7 +76,115 @@ class QuoteRefreshResponse(BaseModel):
     completed_at: str
     duration_ms: int
     quote_status: str
+    last_refresh_attempt: str | None = None
+    last_refresh_error: str | None = None
     message: str
+
+
+def _shanghai_now() -> datetime:
+    return datetime.now(_SH_TZ)
+
+
+def _parse_quote_timestamp(timestamp: object) -> datetime | None:
+    if isinstance(timestamp, datetime):
+        parsed = timestamp
+    elif isinstance(timestamp, str) and timestamp.strip():
+        value = timestamp.strip()
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                parsed = datetime.fromisoformat(f"{value}T00:00:00")
+            except ValueError:
+                return None
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=_SH_TZ)
+    return parsed.astimezone(_SH_TZ)
+
+
+def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int | None:
+    timestamp = _parse_quote_timestamp(None if quote is None else quote.get("timestamp"))
+    if timestamp is None:
+        return None
+    current = now or _shanghai_now()
+    return max(int((current - timestamp).total_seconds()), 0)
+
+
+def _latest_refresh_attempt(symbol: str, asset_class: str) -> str | None:
+    attempt = _QUOTE_REFRESH_ATTEMPTS.get((symbol, asset_class))
+    return None if attempt is None else attempt.isoformat()
+
+
+def _latest_refresh_error(symbol: str, asset_class: str) -> str | None:
+    return _QUOTE_REFRESH_ERRORS.get((symbol, asset_class))
+
+
+def _quote_source(state, quote: dict | None) -> str | None:
+    if not quote:
+        return None
+    source = quote.get("source") or quote.get("provider")
+    if source:
+        return str(source)
+    configured = getattr(state.config, "data_source", None)
+    return str(configured) if configured else None
+
+
+def _stale_reason(
+    state,
+    quote: dict | None,
+    *,
+    market_open: bool,
+    refresh_policy: str,
+    now: datetime | None = None,
+) -> str | None:
+    if not quote or quote.get("price") in {None, ""}:
+        return "quote_missing"
+
+    timestamp = _parse_quote_timestamp(quote.get("timestamp"))
+    if timestamp is None:
+        return "quote_timestamp_missing"
+
+    if _resolve_quote_status(state, quote) != "stale":
+        return None
+
+    if refresh_policy == "cache_only":
+        return "market_closed_cache_only" if not market_open else "refresh_policy_cache_only"
+
+    age = _quote_age_seconds(quote, now=now)
+    ttl_seconds = max(int(getattr(state.config, "live_poll_interval", 60) or 60), 15) * 3
+    if age is not None and age > ttl_seconds:
+        return "quote_older_than_expected_session"
+
+    return "quote_older_than_expected_session"
+
+
+def _quote_metadata(
+    state,
+    symbol: str,
+    asset_class: str,
+    quote: dict | None,
+    *,
+    market_open: bool,
+    refresh_policy: str,
+    now: datetime | None = None,
+) -> dict:
+    return {
+        "quote_status": _resolve_quote_status(state, quote),
+        "quote_source": _quote_source(state, quote),
+        "quote_age_seconds": _quote_age_seconds(quote, now=now),
+        "stale_reason": _stale_reason(
+            state,
+            quote,
+            market_open=market_open,
+            refresh_policy=refresh_policy,
+            now=now,
+        ),
+        "last_refresh_attempt": _latest_refresh_attempt(symbol, asset_class),
+        "last_refresh_error": _latest_refresh_error(symbol, asset_class),
+    }
 
 
 def _find_asset_config(assets: list[dict[str, str]], symbol: str) -> dict[str, str] | None:
@@ -275,9 +390,12 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
             source_chain.append(akshare)
 
     snapshot = None
+    selected_source_name = data_source
     for source in source_chain:
         snapshot = source.fetch_latest(Symbol(symbol), asset_class)
         if snapshot:
+            if source is not preferred:
+                selected_source_name = "akshare"
             break
     if not snapshot:
         return None
@@ -287,6 +405,7 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         "price": snapshot["price"],
         "volume": snapshot.get("volume"),
         "timestamp": snapshot.get("timestamp"),
+        "source": selected_source_name,
     }
     if state.db is not None and payload["timestamp"]:
         state.db.save_quote_snapshot_sync(
@@ -326,6 +445,12 @@ async def _refresh_one_quote(
         if timeout_seconds is None
         else timeout_seconds
     )
+    key = (symbol, asset_class.value)
+    attempted_at = datetime.now()
+    _QUOTE_REFRESH_ATTEMPTS[key] = attempted_at
+    _QUOTE_REFRESH_ERRORS[key] = None
+    market_open = is_cn_trading_session()
+    refresh_policy = "live" if market_open else "cache_only"
     try:
         snapshot = await asyncio.wait_for(
             asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
@@ -333,41 +458,94 @@ async def _refresh_one_quote(
         )
     except asyncio.TimeoutError:
         cached_quote = _latest_cached_quote(state, symbol)
+        _QUOTE_REFRESH_ERRORS[key] = "provider_timeout"
+        metadata = _quote_metadata(
+            state,
+            symbol,
+            asset_class.value,
+            cached_quote,
+            market_open=market_open,
+            refresh_policy=refresh_policy,
+        )
         return QuoteRefreshSymbolResult(
             symbol=symbol,
             status="failed",
             quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            quote_source=metadata["quote_source"],
+            quote_age_seconds=metadata["quote_age_seconds"],
             error="provider_timeout",
             reason="行情源刷新超时，已保留缓存行情",
+            last_refresh_attempt=attempted_at.isoformat(),
+            last_refresh_error="provider_timeout",
         )
     except Exception as exc:
         cached_quote = _latest_cached_quote(state, symbol)
         logger.warning("Manual quote refresh failed for %s", symbol, exc_info=True)
+        error_message = str(exc)
+        _QUOTE_REFRESH_ERRORS[key] = error_message
+        metadata = _quote_metadata(
+            state,
+            symbol,
+            asset_class.value,
+            cached_quote,
+            market_open=market_open,
+            refresh_policy=refresh_policy,
+        )
         return QuoteRefreshSymbolResult(
             symbol=symbol,
             status="failed",
             quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
-            error=str(exc),
+            quote_source=metadata["quote_source"],
+            quote_age_seconds=metadata["quote_age_seconds"],
+            error=error_message,
             reason="行情源刷新失败，已保留缓存行情",
+            last_refresh_attempt=attempted_at.isoformat(),
+            last_refresh_error=error_message,
         )
 
     if not snapshot:
         cached_quote = _latest_cached_quote(state, symbol)
+        error_message = None if cached_quote else "quote_unavailable"
+        _QUOTE_REFRESH_ERRORS[key] = error_message
+        metadata = _quote_metadata(
+            state,
+            symbol,
+            asset_class.value,
+            cached_quote,
+            market_open=market_open,
+            refresh_policy=refresh_policy,
+        )
         return QuoteRefreshSymbolResult(
             symbol=symbol,
             status="stale" if cached_quote else "failed",
             quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
-            error=None if cached_quote else "quote_unavailable",
+            quote_source=metadata["quote_source"],
+            quote_age_seconds=metadata["quote_age_seconds"],
+            error=error_message,
             reason="行情源没有返回新报价，当前仍基于缓存行情",
+            last_refresh_attempt=attempted_at.isoformat(),
+            last_refresh_error=error_message,
         )
 
     _store_runtime_quote(state, symbol, snapshot)
     quote_status = _resolve_quote_status(state, snapshot)
+    metadata = _quote_metadata(
+        state,
+        symbol,
+        asset_class.value,
+        snapshot,
+        market_open=market_open,
+        refresh_policy=refresh_policy,
+    )
     return QuoteRefreshSymbolResult(
         symbol=symbol,
         status="refreshed" if quote_status == "live" else "stale",
         quote_timestamp=snapshot.get("timestamp"),
+        quote_source=metadata["quote_source"],
+        quote_age_seconds=metadata["quote_age_seconds"],
         reason=None if quote_status == "live" else "行情源返回的报价仍为缓存行情",
+        last_refresh_attempt=attempted_at.isoformat(),
+        last_refresh_error=None,
     )
 
 
@@ -628,18 +806,89 @@ def create_router() -> APIRouter:
             if market_open
             else "cache_only"
         )
-        return MarketDataHealthResponse(
-            quotes=[
+        now = _shanghai_now()
+        health_quotes: list[MarketHealthQuote] = []
+        for item in payload["quotes"]:
+            symbol = item["symbol"]
+            asset_class = item["asset_class"]
+            quote = latest_quotes.get(symbol)
+            metadata = _quote_metadata(
+                state,
+                symbol,
+                asset_class,
+                quote,
+                market_open=market_open,
+                refresh_policy=refresh_policy,
+                now=now,
+            )
+            health_quotes.append(
                 MarketHealthQuote(
-                    symbol=item["symbol"],
-                    asset_class=item["asset_class"],
+                    symbol=symbol,
+                    asset_class=asset_class,
                     timestamp=item["timestamp"],
                     price=item["price"],
+                    **metadata,
                 )
-                for item in payload["quotes"]
-            ],
+            )
+
+        quote_timestamps = [
+            _parse_quote_timestamp(item.timestamp) for item in health_quotes
+        ]
+        quote_timestamps = [item for item in quote_timestamps if item is not None]
+        latest_quote_timestamp = (
+            max(quote_timestamps).isoformat() if quote_timestamps else None
+        )
+        cache_age_seconds = None
+        if quote_timestamps:
+            cache_age_seconds = max(
+                int((now - max(quote_timestamps)).total_seconds()), 0
+            )
+        stale_symbols = [
+            item.symbol
+            for item in health_quotes
+            if item.quote_status != "live"
+        ]
+        latest_attempts = [
+            _parse_quote_timestamp(item.last_refresh_attempt)
+            for item in health_quotes
+            if item.last_refresh_attempt
+        ]
+        latest_attempts = [item for item in latest_attempts if item is not None]
+        latest_refresh_attempt = (
+            max(latest_attempts).isoformat() if latest_attempts else None
+        )
+        latest_refresh_error = next(
+            (item.last_refresh_error for item in health_quotes if item.last_refresh_error),
+            None,
+        )
+        provider_name = str(getattr(state.config, "data_source", "unknown") or "unknown")
+        source_health = (
+            "unknown"
+            if not health_quotes
+            else "live"
+            if not stale_symbols
+            else "stale"
+            if len(stale_symbols) == len(health_quotes)
+            else "partial"
+        )
+        provider_status = (
+            "error"
+            if latest_refresh_error and not any(item.quote_status == "live" for item in health_quotes)
+            else source_health
+        )
+        return MarketDataHealthResponse(
+            quotes=health_quotes,
             market_open=market_open,
             refresh_policy=refresh_policy,
+            provider_status=provider_status,
+            provider_name=provider_name,
+            source_health=source_health,
+            cache_age_seconds=cache_age_seconds,
+            latest_quote_timestamp=latest_quote_timestamp,
+            last_refresh_attempt=latest_refresh_attempt,
+            last_refresh_error=latest_refresh_error,
+            stale_symbols_count=len(stale_symbols),
+            stale_symbols_sample=stale_symbols[:5],
         )
 
     @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
@@ -669,6 +918,8 @@ def create_router() -> APIRouter:
                     (completed_at_dt - started_at_dt).total_seconds() * 1000
                 ),
                 quote_status="error",
+                last_refresh_attempt=started_at,
+                last_refresh_error="no_refresh_symbols",
                 message="没有可刷新的行情标的",
             )
 
@@ -713,6 +964,10 @@ def create_router() -> APIRouter:
             message = "行情源返回缓存行情"
 
         completed_at_dt = datetime.now()
+        last_refresh_error = next(
+            (result.last_refresh_error or result.error for result in results if result.error),
+            None,
+        )
         return QuoteRefreshResponse(
             requested_symbols=requested_symbols,
             refreshed=refreshed,
@@ -724,6 +979,8 @@ def create_router() -> APIRouter:
             completed_at=completed_at_dt.isoformat(),
             duration_ms=int((completed_at_dt - started_at_dt).total_seconds() * 1000),
             quote_status=quote_status,
+            last_refresh_attempt=started_at,
+            last_refresh_error=last_refresh_error,
             message=message,
         )
 
