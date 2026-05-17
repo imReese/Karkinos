@@ -23,6 +23,7 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
+import { BacktestPage } from '../features/backtest/components/backtest-page';
 import {
   OverviewCards,
   OverviewCardsSkeleton,
@@ -154,6 +155,12 @@ const marketRoute = createRoute({
   component: MarketPage,
 });
 
+const backtestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/backtest',
+  component: BacktestPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -166,6 +173,7 @@ const routeTree = rootRoute.addChildren([
   activityRoute,
   riskRoute,
   marketRoute,
+  backtestRoute,
   settingsRoute,
 ]);
 
