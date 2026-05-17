@@ -150,6 +150,8 @@ secret.py
 .codex
 .codex/
 .superpowers/
+.agents/
+skills-lock.json
 
 # Docs
 docs/*
