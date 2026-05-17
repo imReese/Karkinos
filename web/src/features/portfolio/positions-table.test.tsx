@@ -23,6 +23,11 @@ test('renders active positions', () => {
   );
 
   expect(screen.getAllByText('600519').length).toBeGreaterThan(0);
+  expect(
+    screen
+      .getAllByRole('link', { name: 'Holding Details: 600519' })[0]
+      .getAttribute('href'),
+  ).toBe('/portfolio/600519');
   expect(screen.getAllByText('60').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Market Value').length).toBeGreaterThan(0);
 });

@@ -77,6 +77,7 @@ import {
 import { AllocationCard } from '../features/portfolio/components/allocation-card';
 import { AllocationGroupsCard } from '../features/portfolio/components/allocation-groups-card';
 import { LiveHoldingsBoard } from '../features/portfolio/components/live-holdings-board';
+import { HoldingDetailPage } from '../features/portfolio/components/holding-detail-page';
 import { PositionsTable } from '../features/portfolio/components/positions-table';
 import { WorkspaceToolbar } from '../features/portfolio/components/workspace-toolbar';
 import {
@@ -138,6 +139,12 @@ const portfolioRoute = createRoute({
   component: PortfolioPage,
 });
 
+const holdingDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/portfolio/$symbol',
+  component: HoldingDetailRoutePage,
+});
+
 const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activity',
@@ -177,6 +184,7 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   portfolioRoute,
+  holdingDetailRoute,
   activityRoute,
   riskRoute,
   marketRoute,
@@ -186,6 +194,11 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 export const router = createRouter({ routeTree });
+
+function HoldingDetailRoutePage() {
+  const { symbol } = holdingDetailRoute.useParams();
+  return <HoldingDetailPage symbol={symbol} />;
+}
 
 function OverviewPage() {
   const copy = useCopy();

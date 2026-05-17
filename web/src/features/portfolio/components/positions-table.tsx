@@ -7,6 +7,10 @@ import {
 } from '../../../shared/format';
 import type { Position } from '../api';
 
+function holdingDetailHref(symbol: string) {
+  return `/portfolio/${encodeURIComponent(symbol)}`;
+}
+
 export function PositionsTable({
   positions,
   assetClassBySymbol = {},
@@ -52,9 +56,13 @@ export function PositionsTable({
             <div key={position.symbol} className="app-panel rounded-3xl p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-mono text-base font-semibold">
+                  <a
+                    href={holdingDetailHref(position.symbol)}
+                    className="font-mono text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                    aria-label={`${labels.detailsTitle}: ${position.symbol}`}
+                  >
                     {position.symbol}
-                  </div>
+                  </a>
                   <div className="app-muted mt-1 text-sm">
                     {assetClassBySymbol[position.symbol] ?? '--'}
                   </div>
@@ -153,7 +161,13 @@ export function PositionsTable({
                   <td className="px-4 py-3.5 font-mono font-semibold tracking-[-0.01em] text-[var(--app-text)]">
                     <span className="inline-flex items-center gap-2">
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-accent)] opacity-70 transition-opacity group-hover:opacity-100" />
-                      {position.symbol}
+                      <a
+                        href={holdingDetailHref(position.symbol)}
+                        className="underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                        aria-label={`${labels.detailsTitle}: ${position.symbol}`}
+                      >
+                        {position.symbol}
+                      </a>
                       {isStale ? (
                         <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]">
                           {labels.cachedQuoteAt(
