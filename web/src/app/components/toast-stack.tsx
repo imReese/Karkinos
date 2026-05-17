@@ -2,14 +2,14 @@ export type ToastItem = {
   id: number;
   title: string;
   message: string;
-  tone: "success" | "error";
+  tone: 'success' | 'error';
 };
 
-const toneClassName: Record<ToastItem["tone"], string> = {
+const toneClassName: Record<ToastItem['tone'], string> = {
   success:
-    "border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]",
+    'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]',
   error:
-    "border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]",
+    'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]',
 };
 
 export function ToastStack({ toasts }: { toasts: ToastItem[] }) {
