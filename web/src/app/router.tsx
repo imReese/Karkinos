@@ -88,6 +88,7 @@ import {
   useRemoveWatchlistItemMutation,
 } from '../features/market/api';
 import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
+import { SettingsPage } from '../features/settings/components/settings-page';
 import {
   formatCurrency as formatCurrencyValue,
   formatPercent as formatPercentValue,
@@ -156,7 +157,7 @@ const marketRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: PlaceholderPage,
+  component: SettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -1983,11 +1984,6 @@ function PendingFundOrdersCard({
       </div>
     </div>
   );
-}
-
-function PlaceholderPage() {
-  const copy = useCopy();
-  return <StatusCard title={copy.states.empty} detail={copy.placeholder} />;
 }
 
 function ExplainabilityCard({
