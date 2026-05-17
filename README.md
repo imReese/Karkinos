@@ -9,6 +9,18 @@ Karkinos: Investing is a chronic condition. Here is your scalpel.
 
 ---
 
+**Disclaimer**
+
+Karkinos is research and portfolio tooling, not investment advice. Market data,
+portfolio valuation, backtest results, and trading outcomes are not guaranteed
+to be accurate or complete. Do not use this project as the sole basis for
+investment decisions.
+
+Do not commit real account data, brokerage credentials, transaction exports,
+personal financial data, runtime databases, logs, or screenshots containing
+private information. Use example configuration and fake or sanitized data for
+public demos and development.
+
 **Highlights**
 
 - Event-driven architecture with deterministic backtesting
@@ -51,6 +63,9 @@ docker compose up -d                   # build & start → http://localhost:8000
 ```
 
 Uses `./config.json` as runtime config and persists market cache / SQLite data in the `karkinos-data` Docker volume.
+
+Runtime databases, local logs, exported files, screenshots, and local secret
+files should stay on your machine and are not intended to be committed.
 
 **Tech Stack**
 
