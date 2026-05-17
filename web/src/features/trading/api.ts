@@ -75,6 +75,13 @@ export type ManualOrder = {
   updated_at: string;
 };
 
+export type ManualOrderStatus =
+  | 'all'
+  | 'pending_confirm'
+  | 'confirmed'
+  | 'rejected'
+  | 'canceled';
+
 export function useKillSwitchQuery() {
   return useQuery({
     queryKey: ['trading-kill-switch'],
@@ -103,10 +110,18 @@ export function useSetKillSwitchMutation() {
 }
 
 export function usePendingManualOrdersQuery() {
+  return useManualOrdersQuery('pending_confirm');
+}
+
+export function useManualOrdersQuery(status: ManualOrderStatus = 'all') {
+  const normalizedStatus = status || 'all';
+  const suffix =
+    normalizedStatus === 'all'
+      ? ''
+      : `?status=${encodeURIComponent(normalizedStatus)}`;
   return useQuery({
-    queryKey: ['trading-manual-orders', 'pending_confirm'],
-    queryFn: () =>
-      apiClient<ManualOrder[]>('/api/trading/orders?status=pending_confirm'),
+    queryKey: ['trading-manual-orders', normalizedStatus],
+    queryFn: () => apiClient<ManualOrder[]>(`/api/trading/orders${suffix}`),
     staleTime: 2_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -128,7 +143,7 @@ function useManualOrderStatusMutation(action: 'confirm' | 'reject') {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ['trading-manual-orders', 'pending_confirm'],
+          queryKey: ['trading-manual-orders'],
         }),
         queryClient.invalidateQueries({ queryKey: ['portfolio-risk-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['account-state'] }),

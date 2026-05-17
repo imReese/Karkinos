@@ -25,6 +25,7 @@ const navItems = [
   { to: '/activity', key: 'activity', icon: ActivityNavIcon },
   { to: '/risk', key: 'risk', icon: RiskNavIcon },
   { to: '/market', key: 'market', icon: MarketNavIcon },
+  { to: '/trading', key: 'trading', icon: TradingNavIcon },
   { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
   { to: '/settings', key: 'settings', icon: SettingsNavIcon },
 ] as const;
@@ -1043,6 +1044,25 @@ function MarketNavIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M12 16V6" />
       <path d="M17 16v-8" />
       <path d="m6 10 4-4 4 3 4-5" />
+    </svg>
+  );
+}
+
+function TradingNavIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M5 7h14" />
+      <path d="M5 12h9" />
+      <path d="M5 17h6" />
+      <path d="m15.5 16.5 2 2 3.5-4" />
     </svg>
   );
 }

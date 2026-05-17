@@ -32,6 +32,7 @@ import { PerformanceBreakdownCard } from '../features/account/components/perform
 import { RiskSummaryCard } from '../features/account/components/risk-summary-card';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
+import { TradingPage } from '../features/trading/components/trading-page';
 import {
   usePendingManualOrdersQuery,
   type ManualOrder,
@@ -155,6 +156,12 @@ const marketRoute = createRoute({
   component: MarketPage,
 });
 
+const tradingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/trading',
+  component: TradingPage,
+});
+
 const backtestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest',
@@ -173,6 +180,7 @@ const routeTree = rootRoute.addChildren([
   activityRoute,
   riskRoute,
   marketRoute,
+  tradingRoute,
   backtestRoute,
   settingsRoute,
 ]);
