@@ -1,0 +1,273 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+
+import { PreferencesProvider } from '../../../app/preferences';
+import { SettingsPage } from './settings-page';
+
+const defaultSettings = {
+  host: '0.0.0.0',
+  port: 8000,
+  live_auto_start: true,
+  initial_cash: 100000,
+  start_date: '2025-01-02',
+  end_date: '2026-05-16',
+  assets: [
+    { symbol: '600519', asset_class: 'stock' },
+    { symbol: '018125', asset_class: 'fund' },
+  ],
+  strategy: 'dual_ma',
+  short_period: 5,
+  long_period: 20,
+  data_source: 'akshare',
+  tushare_token: '****1234',
+  notification: { type: 'console' },
+  live_poll_interval: 60,
+};
+
+const defaultLiveStatus = {
+  running: true,
+  market_open: true,
+};
+
+const defaultMarketHealth = {
+  quotes: [],
+  market_open: true,
+  refresh_policy: 'live',
+};
+
+const defaultOverview = {
+  total_equity: 4101.16,
+  available_cash: 2301.2,
+  total_deposits: 4000,
+  positions_count: 3,
+  unrealized_pnl: 101.16,
+  realized_pnl: 0,
+  cash_ratio: 0.561,
+  valuation_timestamp: '2026-05-16T22:40:00+08:00',
+  quote_status: 'live',
+};
+
+type MockSettings = Omit<typeof defaultSettings, 'notification'> & {
+  notification?: Record<string, unknown>;
+};
+
+type MockOverview = Omit<
+  typeof defaultOverview,
+  'quote_status' | 'valuation_timestamp'
+> & {
+  quote_status?: string;
+  valuation_timestamp?: string | null;
+};
+
+type MockOptions = {
+  settings?: Partial<MockSettings> & Record<string, unknown>;
+  liveStatus?: typeof defaultLiveStatus;
+  marketHealth?: typeof defaultMarketHealth;
+  overview?: Partial<MockOverview> & Record<string, unknown>;
+  failLiveStatus?: boolean;
+};
+
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  });
+}
+
+function installFetchMock({
+  settings = defaultSettings,
+  liveStatus = defaultLiveStatus,
+  marketHealth = defaultMarketHealth,
+  overview = defaultOverview,
+  failLiveStatus = false,
+}: MockOptions = {}) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : input.toString();
+
+    if (url.includes('/api/settings/data-source')) {
+      return jsonResponse({
+        ...settings,
+        ...(JSON.parse(String(init?.body ?? '{}')) as object),
+      });
+    }
+    if (url.includes('/api/settings/live/start')) {
+      return jsonResponse({ running: true, market_open: true });
+    }
+    if (url.includes('/api/settings/live/stop')) {
+      return jsonResponse({ running: false, market_open: false });
+    }
+    if (url.includes('/api/settings/notification/test')) {
+      return jsonResponse({ status: 'ok', message: 'sent' });
+    }
+    if (url.endsWith('/api/settings')) {
+      return jsonResponse(settings);
+    }
+    if (url.includes('/api/settings/live/status')) {
+      return failLiveStatus
+        ? jsonResponse({ detail: 'live unavailable' }, { status: 503 })
+        : jsonResponse(liveStatus);
+    }
+    if (url.includes('/api/market/data-health')) {
+      return jsonResponse(marketHealth);
+    }
+    if (url.includes('/api/portfolio/overview')) {
+      return jsonResponse(overview);
+    }
+    return new Response('Not found', { status: 404 });
+  });
+}
+
+function renderSettingsPage(options: MockOptions = {}) {
+  window.localStorage.clear();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  const fetchMock = installFetchMock(options);
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <SettingsPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  return { fetchMock };
+}
+
+beforeEach(() => {
+  vi.useRealTimers();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+test('renders backend data status and service state', async () => {
+  renderSettingsPage();
+
+  expect(await screen.findByText('Control center')).toBeTruthy();
+  expect(await screen.findByText('Data status')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Market state: Market open'),
+  ).toBeTruthy();
+  expect(await screen.findByLabelText('Refresh policy: live')).toBeTruthy();
+  expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect(await screen.findByDisplayValue('akshare')).toBeTruthy();
+  expect(await screen.findByText('2 tracked assets')).toBeTruthy();
+});
+
+test('shows cached quote guidance for cache-only and stale valuation states', async () => {
+  renderSettingsPage({
+    marketHealth: {
+      ...defaultMarketHealth,
+      market_open: false,
+      refresh_policy: 'cache_only',
+    },
+    overview: {
+      ...defaultOverview,
+      quote_status: 'stale',
+    },
+  });
+
+  expect(
+    await screen.findByLabelText('Quote state: Cached quotes'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Current valuation is based on cached market data.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('does not claim live interface availability when live status fails', async () => {
+  renderSettingsPage({ failLiveStatus: true });
+
+  expect(
+    await screen.findByText('Failed to load settings state.'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Interface not running')).toBeTruthy();
+  expect(screen.queryByText('Interface status available')).toBeNull();
+});
+
+test('updates local theme and language preferences', async () => {
+  const user = userEvent.setup();
+  renderSettingsPage();
+
+  await screen.findByText('Control center');
+  await user.click(screen.getByRole('button', { name: 'Latte' }));
+  expect(window.localStorage.getItem('karkinos.theme')).toBe('light');
+
+  await user.click(screen.getByRole('button', { name: '中文' }));
+  expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
+  expect(await screen.findByText('控制中心')).toBeTruthy();
+});
+
+test('saves data source settings through the settings endpoint', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage();
+
+  const intervalInput = (await screen.findByRole('spinbutton', {
+    name: 'Poll interval',
+  })) as HTMLInputElement;
+  await waitFor(() => expect(intervalInput.disabled).toBe(false));
+  await user.clear(intervalInput);
+  await user.type(intervalInput, '90');
+  await user.click(screen.getByRole('button', { name: 'Save data settings' }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/settings/data-source',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          data_source: 'akshare',
+          tushare_token: '****1234',
+          live_poll_interval: 90,
+        }),
+      }),
+    );
+  });
+  expect(await screen.findByText('Data settings saved')).toBeTruthy();
+});
+
+test('handles missing backend status without crashing', async () => {
+  renderSettingsPage({
+    settings: {
+      ...defaultSettings,
+      assets: [],
+      notification: {},
+    },
+    overview: {
+      ...defaultOverview,
+      valuation_timestamp: null,
+      quote_status: undefined,
+    },
+  });
+
+  expect(await screen.findByText('No valuation timestamp')).toBeTruthy();
+  expect(await screen.findByText('0 tracked assets')).toBeTruthy();
+  expect(
+    await screen.findByText('No notification channel configured'),
+  ).toBeTruthy();
+});
