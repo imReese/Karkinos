@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Install backend dependencies
+        run: uv sync --extra server --extra dev --frozen
+
+      - name: Run server route tests
+        run: uv run python -m pytest tests/test_server_routes.py
+
+      - name: Run backend test suite
+        run: uv run python -m pytest
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix web
+
+      - name: Check frontend formatting
+        run: |
+          npm --prefix web run format
+          git diff --exit-code
+
+      - name: Build frontend
+        run: npm --prefix web run build
+
+      - name: Run frontend tests
+        run: npm --prefix web run test
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan git history with Gitleaks
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/repo" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            detect --source /repo --redact --verbose
+
+      - name: Scan working tree with Gitleaks
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/repo" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            detect --source /repo --no-git --redact --verbose
+
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check tracked private artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          forbidden_pattern='(^|/)(\.env$|\.env\.local$|\.env\.production$|.*\.(db|sqlite|duckdb)$|data/store/|logs/|exports/|screenshots/|\.agents/|skills-lock\.json$)'
+          tracked_forbidden="$(git ls-files | grep -E "${forbidden_pattern}" || true)"
+
+          if [[ -n "${tracked_forbidden}" ]]; then
+            echo "Forbidden files are tracked:"
+            echo "${tracked_forbidden}"
+            exit 1
+          fi
+
+          echo "No tracked private artifacts found."
