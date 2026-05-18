@@ -733,7 +733,8 @@ def _quote_source(state, quote: dict | None) -> str | None:
 
 
 def _refresh_policy(now: datetime | None = None) -> str:
-    return "live" if is_cn_trading_session(now) else "cache_only"
+    current = get_shanghai_now(now)
+    return "live" if is_cn_trading_session(current) else "cache_only"
 
 
 def _quote_stale_reason(
