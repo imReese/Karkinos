@@ -1,4 +1,9 @@
-"""API key 模板 — 复制为 secret.py 并填入真实 key。"""
+"""API key template.
+
+Copy this file to secret.py for local development only. Never commit real
+provider tokens, broker credentials, account IDs, cookies, or exported account
+data.
+"""
 
 # Tushare API Token
 # 注册 https://tushare.pro 获取
