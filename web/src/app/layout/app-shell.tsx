@@ -48,6 +48,12 @@ function formatToolbarTimestamp(
   if (!value) {
     return null;
   }
+  if (typeof value === 'string') {
+    const localClockTime = value.match(/T(\d{2}:\d{2})(?::\d{2})?/);
+    if (localClockTime?.[1]) {
+      return localClockTime[1];
+    }
+  }
   const timestamp = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(timestamp.getTime())) {
     return null;
