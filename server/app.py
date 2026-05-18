@@ -23,6 +23,10 @@ from server.ws.hub import ConnectionHub
 
 logger = logging.getLogger(__name__)
 _SPA_RESERVED_PREFIXES = {"api", "ws"}
+_DEFAULT_CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 
 def _env_flag(name: str) -> bool | None:
@@ -30,6 +34,40 @@ def _env_flag(name: str) -> bool | None:
     if value is None:
         return None
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_cors_allowed_origins(value: object) -> list[str]:
+    if value is None:
+        return list(_DEFAULT_CORS_ALLOWED_ORIGINS)
+    if isinstance(value, str):
+        origins = [origin.strip() for origin in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        origins = [str(origin).strip() for origin in value]
+    else:
+        origins = [str(value).strip()]
+    origins = [origin for origin in origins if origin]
+    return origins or list(_DEFAULT_CORS_ALLOWED_ORIGINS)
+
+
+def _resolve_cors_allowed_origins(
+    overrides: dict[str, Any],
+    configured_default: object,
+) -> list[str]:
+    configured = (
+        overrides["cors_allowed_origins"]
+        if "cors_allowed_origins" in overrides
+        else os.environ.get("KARKINOS_CORS_ALLOWED_ORIGINS")
+    )
+    if configured is None:
+        configured = configured_default
+    return _normalize_cors_allowed_origins(configured)
+
+
+def _cors_allow_credentials(allowed_origins: list[str]) -> bool:
+    # A wildcard origin is allowed only when explicitly configured. Disable
+    # credentials in that mode so public examples do not ship a permissive
+    # wildcard-plus-credentials CORS policy.
+    return "*" not in allowed_origins
 
 
 class AppState:
@@ -205,6 +243,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     env_live_auto_start = _env_flag("KARKINOS_LIVE_AUTO_START")
     if env_live_auto_start is not None:
         effective_overrides.setdefault("live_auto_start", env_live_auto_start)
+    from config import ServerConfig
+    from server.bootstrap import load_runtime_config
+
+    cors_config = load_runtime_config(ServerConfig, **effective_overrides)
 
     app = FastAPI(
         title="Karkinos Server",
@@ -213,12 +255,20 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.config_overrides = effective_overrides
+    cors_allowed_origins = _resolve_cors_allowed_origins(
+        effective_overrides,
+        getattr(cors_config, "cors_allowed_origins", None),
+    )
+    cors_allow_credentials = _cors_allow_credentials(cors_allowed_origins)
+    app.state.cors_allowed_origins = cors_allowed_origins
+    app.state.cors_allow_credentials = cors_allow_credentials
 
-    # CORS — 开发环境允许所有来源
+    # CORS defaults are local-dev only. Use KARKINOS_CORS_ALLOWED_ORIGINS or
+    # config_overrides["cors_allowed_origins"] for additional trusted origins.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=cors_allowed_origins,
+        allow_credentials=cors_allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

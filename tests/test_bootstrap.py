@@ -197,6 +197,76 @@ def test_create_app_accepts_config_overrides():
     assert app.state.config_overrides == {"live_auto_start": False}
 
 
+def _cors_middleware_options(app):
+    middleware = next(
+        item for item in app.user_middleware if item.cls.__name__ == "CORSMiddleware"
+    )
+    return middleware.kwargs
+
+
+def test_create_app_uses_local_dev_cors_defaults(monkeypatch):
+    from server.app import create_app
+
+    monkeypatch.delenv("KARKINOS_CORS_ALLOWED_ORIGINS", raising=False)
+
+    app = create_app()
+    cors_options = _cors_middleware_options(app)
+
+    assert cors_options["allow_origins"] == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    assert cors_options["allow_credentials"] is True
+
+
+def test_create_app_accepts_cors_origins_from_config_file(
+    tmp_path,
+    monkeypatch,
+):
+    from server.app import create_app
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"cors_allowed_origins": ["https://karkinos.example.com"]}'
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KARKINOS_CORS_ALLOWED_ORIGINS", raising=False)
+
+    app = create_app()
+    cors_options = _cors_middleware_options(app)
+
+    assert cors_options["allow_origins"] == ["https://karkinos.example.com"]
+    assert cors_options["allow_credentials"] is True
+
+
+def test_create_app_accepts_cors_origins_from_env(monkeypatch):
+    from server.app import create_app
+
+    monkeypatch.setenv(
+        "KARKINOS_CORS_ALLOWED_ORIGINS",
+        "https://karkinos.example.com, http://localhost:5173",
+    )
+
+    app = create_app()
+    cors_options = _cors_middleware_options(app)
+
+    assert cors_options["allow_origins"] == [
+        "https://karkinos.example.com",
+        "http://localhost:5173",
+    ]
+    assert cors_options["allow_credentials"] is True
+
+
+def test_create_app_disables_cors_credentials_for_explicit_wildcard():
+    from server.app import create_app
+
+    app = create_app({"cors_allowed_origins": ["*"]})
+    cors_options = _cors_middleware_options(app)
+
+    assert cors_options["allow_origins"] == ["*"]
+    assert cors_options["allow_credentials"] is False
+
+
 def test_create_app_serves_spa_index_for_client_routes(monkeypatch, tmp_path):
     from server import app as app_module
 

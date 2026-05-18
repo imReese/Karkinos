@@ -17,6 +17,12 @@ test data. You should not need real brokerage credentials, real account
 balances, real transaction exports, or personal financial data to run tests or
 work on the UI.
 
+The default API CORS policy is scoped to local Vite development origins
+(`http://localhost:5173` and `http://127.0.0.1:5173`). If you deploy the API,
+configure exact trusted origins through `KARKINOS_CORS_ALLOWED_ORIGINS` or a
+private runtime config. Do not use wildcard CORS for public or credentialed
+deployments.
+
 Do not commit:
 
 - `.env*`

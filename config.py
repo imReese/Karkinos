@@ -63,3 +63,9 @@ class ServerConfig(BacktestConfig):
     host: str = "0.0.0.0"
     port: int = 8000
     live_auto_start: bool = True
+    cors_allowed_origins: list[str] = field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    )

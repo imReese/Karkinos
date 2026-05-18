@@ -56,6 +56,12 @@ cd web && npm install && cd ..
 
 In `dev` mode the script also starts Vite at `http://localhost:5173` for hot-reload frontend editing. Treat `5173` as a developer-only URL; use `8000` for product-like demos and customer flow checks.
 
+The API only trusts local Vite origins by default:
+`http://localhost:5173` and `http://127.0.0.1:5173`. For a real deployment,
+set `KARKINOS_CORS_ALLOWED_ORIGINS` or `cors_allowed_origins` in your private
+runtime config to the exact browser origins you operate. Avoid `*` for public
+or credentialed deployments.
+
 **Docker**
 
 ```bash

@@ -32,6 +32,7 @@ _NON_STRATEGY_FIELDS = {
     "host",
     "port",
     "live_auto_start",
+    "cors_allowed_origins",
 }
 
 
