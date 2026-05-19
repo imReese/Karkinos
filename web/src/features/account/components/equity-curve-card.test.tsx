@@ -347,7 +347,7 @@ test('refreshes stale status when backend points prop changes', async () => {
   expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
 });
 
-test('shows the empty state when the selected range has no usable data', async () => {
+test('shows the insufficient data state when a selected range has only one point', async () => {
   const user = userEvent.setup();
 
   renderCard({ cardPoints: historicalPoints });
@@ -355,8 +355,38 @@ test('shows the empty state when the selected range has no usable data', async (
   await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
 
   expect(
-    await screen.findByText('No data available for this period.'),
+    await screen.findByText('Insufficient data for this range.'),
   ).toBeTruthy();
+});
+
+test('shows an insufficient data state for flat two-point ranges', async () => {
+  renderCard({
+    cardPoints: [
+      {
+        timestamp: '2026-05-17T14:30:00+08:00',
+        total: 104600,
+        stocks: 13000,
+        funds: 6200,
+        others: 9800,
+        cash: 75600,
+      },
+      {
+        timestamp: '2026-05-18T10:00:00+08:00',
+        total: 104600,
+        stocks: 13000,
+        funds: 6200,
+        others: 9800,
+        cash: 75600,
+        quote_status: 'stale',
+      },
+    ],
+  });
+
+  expect(
+    await screen.findByText('Insufficient data for this range.'),
+  ).toBeTruthy();
+  expect(screen.getByText('Current valuation point')).toBeTruthy();
+  expect(screen.getByText('stale')).toBeTruthy();
 });
 
 test('renders multiple intermediate time ticks across the selected range', async () => {

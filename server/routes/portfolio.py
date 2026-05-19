@@ -1490,9 +1490,22 @@ def create_router() -> APIRouter:
         for sym, pos in portfolio.positions.items():
             symbol = str(sym)
             quote = latest_quotes.get(symbol)
+            instrument = instruments.get(Symbol(symbol)) if instruments else None
+            asset_class = _normalize_asset_class(
+                (quote or {}).get("asset_class")
+                or getattr(getattr(instrument, "asset_class", None), "value", None)
+            )
+            display_name = _resolve_display_name(
+                state,
+                symbol,
+                getattr(instrument, "name", None) or symbol,
+            )
             positions.append(
                 PositionResponse(
                     symbol=symbol,
+                    name=display_name,
+                    display_name=display_name,
+                    asset_class=asset_class,
                     quantity=float(pos.quantity),
                     available_qty=float(pos.available_qty),
                     frozen_qty=float(pos.frozen_qty),

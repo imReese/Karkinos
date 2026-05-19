@@ -23,6 +23,7 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
+import { DashboardQuickActions } from '../features/account/components/dashboard-quick-actions';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
 import {
   OverviewCards,
@@ -86,6 +87,7 @@ import {
   useUpdateResearchNoteMutation,
   useDeleteResearchNoteMutation,
   useKlineQuery,
+  useMarketDataHealthQuery,
   useResearchBoardQuery,
   useResearchNotesQuery,
   useRemoveWatchlistItemMutation,
@@ -211,6 +213,7 @@ function OverviewPage() {
   const riskWorkspace = useRiskWorkspaceQuery();
   const ledgerEntries = useLedgerEntriesQuery(8);
   const pendingOrders = usePendingManualOrdersQuery();
+  const marketHealth = useMarketDataHealthQuery();
 
   const liveGroups = useMemo(
     () => liveHoldings.data?.groups ?? [],
@@ -246,9 +249,13 @@ function OverviewPage() {
   const assetClassBySymbol = useMemo(
     () =>
       Object.fromEntries(
-        (snapshot.data?.allocation ?? []).map((item) => [
-          item.symbol,
-          item.asset_class,
+        (snapshot.data?.positions ?? []).map((position) => [
+          position.symbol,
+          position.asset_class ??
+            snapshot.data?.allocation.find(
+              (item) => item.symbol === position.symbol,
+            )?.asset_class ??
+            '--',
         ]),
       ),
     [snapshot.data],
@@ -289,6 +296,12 @@ function OverviewPage() {
       ) : enhancedOverview && snapshot.data ? (
         <div className="space-y-5">
           <OverviewCards overview={enhancedOverview} />
+
+          <DashboardQuickActions
+            overview={enhancedOverview}
+            marketHealth={marketHealth.data}
+            symbols={positions.map((position) => position.symbol)}
+          />
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
             <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">

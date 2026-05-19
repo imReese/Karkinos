@@ -1458,6 +1458,10 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
 
     response = asyncio.run(endpoint())
 
+    assert response.positions[0].symbol == "018125"
+    assert response.positions[0].name == "永赢先进制造智选混合发起C"
+    assert response.positions[0].display_name == "永赢先进制造智选混合发起C"
+    assert response.positions[0].asset_class == "fund"
     assert response.allocation[1].symbol == "018125"
     assert response.allocation[1].name == "永赢先进制造智选混合发起C"
 
