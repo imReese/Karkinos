@@ -16,6 +16,9 @@ function liveRefetchInterval() {
 
 export type Position = {
   symbol: string;
+  name?: string | null;
+  display_name?: string | null;
+  asset_class?: string | null;
   quantity: number;
   available_qty: number;
   frozen_qty: number;

@@ -194,8 +194,17 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   );
   const costBasis = position.avg_cost * position.quantity;
   const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : null;
-  const displayName = liveItem?.name ?? allocation?.name ?? position.symbol;
-  const assetClass = liveItem?.asset_class ?? allocation?.asset_class ?? '--';
+  const displayName =
+    liveItem?.name ??
+    allocation?.name ??
+    position.display_name ??
+    position.name ??
+    position.symbol;
+  const assetClass =
+    liveItem?.asset_class ??
+    allocation?.asset_class ??
+    position.asset_class ??
+    '--';
   const portfolioWeight = allocation?.weight ?? null;
   const marketOpen = marketHealth.data?.market_open;
   const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';

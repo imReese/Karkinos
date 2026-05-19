@@ -1,0 +1,142 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
+import { afterEach, expect, test, vi } from 'vitest';
+
+import { PreferencesProvider } from '../../../app/preferences';
+import { DashboardQuickActions } from './dashboard-quick-actions';
+
+function renderWithProviders(ui: ReactElement) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <PreferencesProvider>{ui}</PreferencesProvider>
+    </QueryClientProvider>,
+  );
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+test('surfaces cached quote status and homepage action paths', () => {
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 3,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        valuation_timestamp: '2026-05-18T00:18:00+08:00',
+        quote_status: 'stale',
+        quote_age_seconds: 900,
+        stale_reason: 'quote_older_than_expected_session',
+        refresh_policy: 'cache_only',
+      }}
+      marketHealth={{
+        quotes: [],
+        market_open: false,
+        refresh_policy: 'cache_only',
+        provider_status: 'degraded',
+        provider_name: 'akshare',
+        source_health: 'stale',
+        cache_age_seconds: 900,
+        latest_quote_timestamp: '2026-05-18T00:18:00+08:00',
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        stale_symbols_count: 3,
+        stale_symbols_sample: ['018125'],
+      }}
+      symbols={['018125']}
+    />,
+  );
+
+  expect(screen.getByText('Cached quotes')).toBeTruthy();
+  expect(screen.getByText(/quote_older_than_expected_session/)).toBeTruthy();
+  expect(
+    screen.getByRole('link', { name: 'Add ledger entry' }).getAttribute('href'),
+  ).toBe('/activity');
+  expect(
+    screen.getByRole('link', { name: 'Trading desk' }).getAttribute('href'),
+  ).toBe('/trading');
+});
+
+test('refresh action calls the market refresh endpoint with dashboard symbols', async () => {
+  const user = userEvent.setup();
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      requested_symbols: ['018125'],
+      refreshed: [],
+      failed: [],
+      skipped: [
+        {
+          symbol: '018125',
+          status: 'stale',
+          quote_timestamp: null,
+          quote_source: null,
+          quote_age_seconds: null,
+          error: null,
+          reason: 'provider_timeout',
+          last_refresh_attempt: '2026-05-18T00:18:00+08:00',
+          last_refresh_error: 'provider_timeout',
+        },
+      ],
+      refresh_policy: 'cache_only',
+      market_open: false,
+      started_at: '2026-05-18T00:18:00+08:00',
+      completed_at: '2026-05-18T00:18:01+08:00',
+      duration_ms: 1000,
+      quote_status: 'stale',
+      last_refresh_attempt: '2026-05-18T00:18:00+08:00',
+      last_refresh_error: 'provider_timeout',
+      message: 'Quote source returned cached quotes',
+    }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 1,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        quote_status: 'stale',
+      }}
+      symbols={['018125']}
+    />,
+  );
+
+  await user.click(screen.getByRole('button', { name: 'Refresh quotes' }));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  expect(fetchMock.mock.calls[0][0]).toBe('/api/market/quotes/refresh');
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+    symbols: ['018125'],
+    force: true,
+  });
+});

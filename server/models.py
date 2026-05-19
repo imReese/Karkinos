@@ -138,6 +138,9 @@ class ResearchNoteListResponse(BaseModel):
 
 class PositionResponse(BaseModel):
     symbol: str
+    name: str | None = None
+    display_name: str | None = None
+    asset_class: str | None = None
     quantity: float
     available_qty: float
     frozen_qty: float

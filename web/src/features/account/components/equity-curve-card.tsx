@@ -34,6 +34,7 @@ type TooltipPayload = {
 
 type CustomTooltipProps = {
   active?: boolean;
+  quoteStatusLabel: string;
   realtimeUnrealizedPnlLabel: string;
   payload?: TooltipPayload[];
 };
@@ -183,6 +184,7 @@ function resolveXAxisDomain(
 function CustomTooltip({
   active,
   payload,
+  quoteStatusLabel,
   realtimeUnrealizedPnlLabel,
 }: CustomTooltipProps) {
   if (!active || !payload?.length) {
@@ -229,6 +231,14 @@ function CustomTooltip({
             </span>
             <span className="font-medium tabular-nums text-[var(--app-text)]">
               {formatWholeCurrency(point.unrealized_pnl)}
+            </span>
+          </div>
+        ) : null}
+        {point.quote_status ? (
+          <div className="mt-2 flex min-w-36 items-center justify-between gap-5 border-t border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] pt-2">
+            <span className="text-[var(--app-muted)]">{quoteStatusLabel}</span>
+            <span className="font-mono text-[var(--app-text)]">
+              {point.quote_status}
             </span>
           </div>
         ) : null}
@@ -299,7 +309,12 @@ export function EquityCurveCard({
   });
 
   const chartPoints = filterByRange(toChartPoints(points), range);
-  const hasUsableData = chartPoints.length >= 2;
+  const uniqueTotals = new Set(
+    chartPoints.map((point) => point.total.toFixed(4)),
+  );
+  const hasUsableData =
+    chartPoints.length >= 2 &&
+    (chartPoints.length >= 3 || uniqueTotals.size > 1);
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
   const latestPoint = chartPoints[chartPoints.length - 1];
@@ -470,6 +485,7 @@ export function EquityCurveCard({
               <Tooltip
                 content={
                   <CustomTooltip
+                    quoteStatusLabel={labels.quoteStatus}
                     realtimeUnrealizedPnlLabel={labels.realtimeUnrealizedPnl}
                   />
                 }
@@ -524,11 +540,24 @@ export function EquityCurveCard({
         <div className="flex h-[340px] items-center justify-center rounded-[26px] border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-6 text-center sm:h-[410px]">
           <div>
             <div className="text-sm font-medium text-[var(--app-subtext-0)]">
-              {labels.emptyPeriod}
+              {chartPoints.length > 0
+                ? labels.insufficientData
+                : labels.emptyPeriod}
             </div>
             <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
               {labels.emptyHint}
             </div>
+            {latestPoint ? (
+              <div className="mt-4 inline-flex flex-wrap items-center justify-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] px-3 py-1.5 text-xs text-[var(--app-soft)]">
+                <span>{labels.currentPoint}</span>
+                <span className="font-mono tabular-nums">
+                  {formatChartTimestamp(latestPoint.timestamp)}
+                </span>
+                {latestPoint.quote_status ? (
+                  <span className="font-mono">{latestPoint.quote_status}</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       )}
