@@ -65,6 +65,7 @@ test('surfaces cached quote status and homepage action paths', () => {
         provider_last_error: null,
         provider_timeout_seconds: 8,
         next_action: 'refresh_quotes_or_check_source',
+        metadata_configured_count: 1,
         source_health: 'stale',
         cache_age_seconds: 900,
         latest_quote_timestamp: '2026-05-18T00:18:00+08:00',
@@ -146,4 +147,46 @@ test('refresh action calls the market refresh endpoint with dashboard symbols', 
     symbols: ['018125'],
     force: true,
   });
+});
+
+test('labels demo market data without claiming real quotes', () => {
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 1,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        quote_status: 'live',
+      }}
+      marketHealth={{
+        quotes: [],
+        market_open: true,
+        refresh_policy: 'live',
+        provider_status: 'demo',
+        provider_name: 'demo',
+        provider_configured: true,
+        provider_requires_token: false,
+        provider_supports_funds: true,
+        provider_last_error: null,
+        provider_timeout_seconds: 8,
+        next_action: 'configure_real_provider',
+        metadata_configured_count: 1,
+        source_health: 'demo',
+        cache_age_seconds: 5,
+        latest_quote_timestamp: '2026-05-18T00:18:00+08:00',
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        stale_symbols_count: 0,
+        stale_symbols_sample: [],
+      }}
+      symbols={['018125']}
+    />,
+  );
+
+  expect(screen.getAllByText('Demo quotes').length).toBeGreaterThan(0);
+  expect(screen.queryByText('Market data available')).toBeNull();
 });

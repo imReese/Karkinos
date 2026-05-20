@@ -41,6 +41,9 @@ export function DashboardQuickActions({
   const labels = copy.overview.dashboard;
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const quoteStatus = overview.quote_status ?? 'unknown';
+  const isDemoSource =
+    marketHealth?.source_health === 'demo' ||
+    marketHealth?.provider_name === 'demo';
   const isStale =
     quoteStatus === 'stale' ||
     marketHealth?.source_health === 'stale' ||
@@ -72,7 +75,9 @@ export function DashboardQuickActions({
     },
     {
       label: labels.quoteSource,
-      value: normalizeStatus(marketHealth?.provider_name),
+      value: isDemoSource
+        ? copy.market.demoQuotes
+        : normalizeStatus(marketHealth?.provider_name),
     },
     {
       label: copy.market.providerNextAction,
@@ -108,7 +113,11 @@ export function DashboardQuickActions({
                 title={`${labels.staleReason}: ${staleReason}`}
               >
                 <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                {isStale ? copy.shell.cachedQuotes : copy.shell.valuationMode}
+                {isDemoSource
+                  ? copy.market.demoQuotes
+                  : isStale
+                    ? copy.shell.cachedQuotes
+                    : copy.shell.valuationMode}
               </span>
               <span className="app-muted text-xs">
                 {labels.staleReason}: {staleReason}

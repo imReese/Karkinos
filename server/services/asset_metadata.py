@@ -14,6 +14,7 @@ class AssetMetadata:
     display_name: str
     asset_class: str
     market: str | None = None
+    provider: str | None = None
     provider_symbol: str | None = None
     source: str = "fallback"
 
@@ -43,6 +44,25 @@ def _asset_symbols(asset_cfg: dict[str, Any]) -> set[str]:
     return {str(value).strip() for value in values if str(value or "").strip()}
 
 
+def metadata_configured_count(state: Any) -> int:
+    """Count configured asset identities that carry useful display metadata."""
+    count = 0
+    for asset_cfg in getattr(state.config, "assets", []):
+        if any(
+            str(asset_cfg.get(key) or "").strip()
+            for key in (
+                "display_name",
+                "name",
+                "provider_symbol",
+                "provider_code",
+                "provider",
+                "code",
+            )
+        ):
+            count += 1
+    return count
+
+
 def _metadata_from_config(
     state: Any,
     symbol: str,
@@ -63,6 +83,7 @@ def _metadata_from_config(
             asset_class=_normalize_asset_class(asset_cfg.get("asset_class"))
             or asset_class,
             market=asset_cfg.get("market"),
+            provider=asset_cfg.get("provider"),
             provider_symbol=asset_cfg.get("provider_symbol")
             or asset_cfg.get("provider_code")
             or asset_cfg.get("code"),
@@ -112,6 +133,7 @@ def _metadata_from_quote(
         display_name=display_name,
         asset_class=_normalize_asset_class(quote.get("asset_class")) or asset_class,
         market=quote.get("market"),
+        provider=quote.get("provider") or quote.get("source"),
         provider_symbol=quote.get("provider_symbol"),
         source="quote",
     )

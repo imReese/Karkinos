@@ -12,12 +12,14 @@
             "symbol": "510300",
             "asset_class": "etf",
             "display_name": "沪深300ETF",
+            "provider": "demo",
             "provider_symbol": "510300"
         },
         {
             "symbol": "示例基金C",
             "asset_class": "fund",
             "display_name": "示例基金C",
+            "provider": "demo",
             "provider_symbol": "000000",
             "aliases": ["000000"]
         },
@@ -35,7 +37,7 @@
     "strategy": "dual_ma",
     "short_period": 5,
     "long_period": 20,
-    "data_source": "akshare",
+    "data_source": "demo",
     "tushare_token": "",
     "notification": {
         "type": "console",

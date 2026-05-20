@@ -27,7 +27,10 @@ from server.models import (
     WatchlistItem,
 )
 from server.bootstrap import resolve_config_path
-from server.services.asset_metadata import resolve_asset_metadata
+from server.services.asset_metadata import (
+    metadata_configured_count,
+    resolve_asset_metadata,
+)
 from server.services.market_hours import is_cn_trading_session
 from server.services.data_health import build_data_health
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
@@ -218,11 +221,11 @@ def _provider_requires_token(provider_name: str) -> bool:
 def _provider_configured(state, provider_name: str) -> bool:
     if _provider_requires_token(provider_name):
         return bool(getattr(state.config, "tushare_token", ""))
-    return provider_name in {"akshare", "tushare"}
+    return provider_name in {"akshare", "demo", "tushare"}
 
 
 def _provider_supports_funds(provider_name: str) -> bool | None:
-    if provider_name == "akshare":
+    if provider_name in {"akshare", "demo"}:
         return True
     if provider_name == "tushare":
         return False
@@ -237,6 +240,8 @@ def _provider_next_action(
     latest_refresh_error: str | None,
     source_health: str,
 ) -> str | None:
+    if source_health == "demo":
+        return "configure_real_provider"
     if not provider_configured:
         return "configure_data_source_token"
     if has_funds and provider_supports_funds is False:
@@ -446,19 +451,18 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         tushare_token=tushare_token,
     )
     preferred = sources.get(data_source, sources["akshare"])
-    source_chain = [preferred]
+    source_chain = [(data_source if data_source in sources else "akshare", preferred)]
     if asset_class == AssetClass.FUND and data_source != "akshare":
         akshare = sources.get("akshare")
         if akshare is not None and akshare is not preferred:
-            source_chain.append(akshare)
+            source_chain.append(("akshare", akshare))
 
     snapshot = None
     selected_source_name = data_source
-    for source in source_chain:
+    for source_name, source in source_chain:
         snapshot = source.fetch_latest(Symbol(symbol), asset_class)
         if snapshot:
-            if source is not preferred:
-                selected_source_name = "akshare"
+            selected_source_name = source_name
             break
     if not snapshot:
         return None
@@ -468,7 +472,7 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         "price": snapshot["price"],
         "volume": snapshot.get("volume"),
         "timestamp": snapshot.get("timestamp"),
-        "source": selected_source_name,
+        "source": snapshot.get("source") or selected_source_name,
     }
     display_name = snapshot.get("display_name") or snapshot.get("name")
     if display_name:
@@ -941,11 +945,16 @@ def create_router() -> APIRouter:
             if len(stale_symbols) == len(health_quotes)
             else "partial"
         )
-        provider_status = (
-            "error"
-            if latest_refresh_error and not any(item.quote_status == "live" for item in health_quotes)
-            else source_health
-        )
+        if provider_name == "demo":
+            source_health = "demo"
+            provider_status = "demo"
+        else:
+            provider_status = (
+                "error"
+                if latest_refresh_error
+                and not any(item.quote_status == "live" for item in health_quotes)
+                else source_health
+            )
         has_funds = any(
             asset_class in {"fund", "etf"} for _, asset_class in watchlist
         )
@@ -968,6 +977,7 @@ def create_router() -> APIRouter:
             provider_last_error=latest_refresh_error,
             provider_timeout_seconds=_MANUAL_REFRESH_TIMEOUT_SECONDS,
             next_action=next_action,
+            metadata_configured_count=metadata_configured_count(state),
             source_health=source_health,
             cache_age_seconds=cache_age_seconds,
             latest_quote_timestamp=latest_quote_timestamp,
