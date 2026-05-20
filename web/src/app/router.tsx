@@ -1106,6 +1106,21 @@ function MarketPage() {
           health.next_action as keyof typeof copy.market.providerActions
         ]
       : (health?.next_action ?? null);
+  const sourceHealthLabel =
+    health?.source_health === 'demo'
+      ? copy.market.demoQuotes
+      : (health?.source_health ?? copy.market.unknown);
+  const providerConfiguredLabel = health
+    ? health.provider_configured
+      ? copy.market.configured
+      : copy.market.notConfigured
+    : copy.market.unknown;
+  const providerFundsLabel =
+    health?.provider_supports_funds == null
+      ? copy.market.unknown
+      : health.provider_supports_funds
+        ? copy.market.fundSupported
+        : copy.market.fundUnsupported;
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -1327,7 +1342,7 @@ function MarketPage() {
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <MetricBlock
                       label={copy.market.sourceHealth}
-                      value={health?.source_health ?? copy.market.unknown}
+                      value={sourceHealthLabel}
                     />
                     <MetricBlock
                       label={copy.market.provider}
@@ -1339,22 +1354,18 @@ function MarketPage() {
                     />
                     <MetricBlock
                       label={copy.market.providerConfigured}
-                      value={
-                        health
-                          ? health.provider_configured
-                            ? copy.shell.valuationMode
-                            : copy.shell.statusUnknown
-                          : copy.market.unknown
-                      }
+                      value={providerConfiguredLabel}
                     />
                     <MetricBlock
                       label={copy.market.providerSupportsFunds}
+                      value={providerFundsLabel}
+                    />
+                    <MetricBlock
+                      label={copy.market.metadataConfiguredCount}
                       value={
-                        health?.provider_supports_funds == null
-                          ? copy.market.unknown
-                          : health.provider_supports_funds
-                            ? copy.shell.valuationMode
-                            : copy.shell.statusUnknown
+                        health == null
+                          ? '--'
+                          : String(health.metadata_configured_count)
                       }
                     />
                     <MetricBlock
@@ -1486,7 +1497,10 @@ function MarketPage() {
                     <MetricBlock
                       label={copy.market.quoteSource}
                       value={
-                        selectedHealthQuote?.quote_source ?? copy.market.unknown
+                        selectedHealthQuote?.quote_source === 'demo'
+                          ? copy.market.demoQuotes
+                          : (selectedHealthQuote?.quote_source ??
+                            copy.market.unknown)
                       }
                     />
                     <MetricBlock

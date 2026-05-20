@@ -177,6 +177,7 @@ function installHoldingFetchMock({
         provider_last_error: null,
         provider_timeout_seconds: 8,
         next_action: 'refresh_quotes_or_check_source',
+        metadata_configured_count: 1,
         source_health: 'stale',
         cache_age_seconds: 2_246_400,
         latest_quote_timestamp: '2026-04-21T14:30:00+08:00',

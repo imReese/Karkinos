@@ -178,6 +178,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     liveItem?.quote_source ??
     healthQuote?.quote_source ??
     null;
+  const quoteSourceLabel =
+    quoteSource === 'demo' ? copy.market.demoQuotes : (quoteSource ?? '--');
   const quoteAgeSeconds =
     position.quote_age_seconds ??
     liveItem?.quote_age_seconds ??
@@ -351,10 +353,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   label={labels.quoteTimestamp}
                   value={formatTimestamp(quoteTimestamp)}
                 />
-                <InfoRow
-                  label={labels.quoteSource}
-                  value={quoteSource ?? '--'}
-                />
+                <InfoRow label={labels.quoteSource} value={quoteSourceLabel} />
                 <InfoRow
                   label={labels.quoteAge}
                   value={formatAge(quoteAgeSeconds)}

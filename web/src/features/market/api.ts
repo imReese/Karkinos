@@ -27,6 +27,7 @@ export type MarketDataHealthResponse = {
   provider_last_error: string | null;
   provider_timeout_seconds: number | null;
   next_action: string | null;
+  metadata_configured_count: number;
   source_health: string;
   cache_age_seconds: number | null;
   latest_quote_timestamp: string | null;

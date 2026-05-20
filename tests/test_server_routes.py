@@ -429,6 +429,113 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
     assert response.next_action == "configure_data_source_token"
 
 
+def test_market_data_health_reports_demo_provider_and_metadata_count(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {
+                    "symbol": "示例基金C",
+                    "asset_class": "fund",
+                    "display_name": "示例基金C",
+                    "provider_symbol": "000000",
+                    "aliases": ["000000"],
+                }
+            ],
+            data_source="demo",
+            tushare_token="",
+        ),
+        scheduler=SimpleNamespace(
+            watchlist=[("000000", "fund")],
+            latest_quotes={},
+            portfolio=None,
+            instruments={},
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.provider_name == "demo"
+    assert response.provider_configured is True
+    assert response.provider_requires_token is False
+    assert response.provider_supports_funds is True
+    assert response.provider_status == "demo"
+    assert response.source_health == "demo"
+    assert response.next_action == "configure_real_provider"
+    assert response.metadata_configured_count == 1
+
+
+def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    saved_quotes: list[dict] = []
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return []
+
+        def save_quote_snapshot_sync(self, **payload):
+            saved_quotes.append(payload)
+
+    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {
+                    "symbol": "示例基金C",
+                    "asset_class": "fund",
+                    "display_name": "示例基金C",
+                    "provider_symbol": "000000",
+                    "aliases": ["000000"],
+                }
+            ],
+            data_source="demo",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=fake_scheduler,
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        market_routes,
+        "_resolve_quote_status",
+        lambda state, quote: "live",
+    )
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["000000"], force=True))
+    )
+
+    assert response.quote_status == "live"
+    assert response.refreshed[0].symbol == "000000"
+    assert response.refreshed[0].quote_source == "demo"
+    assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
+    assert fake_scheduler.latest_quotes["000000"]["price"] > 0
+    assert saved_quotes[0]["symbol"] == "000000"
+
+
 def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
     from server.routes import market as market_routes
 

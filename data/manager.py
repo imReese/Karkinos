@@ -29,9 +29,10 @@ def build_sources(
 ) -> dict[str, DataSource]:
     """集中构建数据源字典，消除四处重复代码。"""
     from data.providers.akshare_source import AKShareSource
+    from data.providers.demo_source import DemoSource
     from data.providers.tushare_source import TushareSource
 
-    sources: dict[str, DataSource] = {"akshare": AKShareSource()}
+    sources: dict[str, DataSource] = {"akshare": AKShareSource(), "demo": DemoSource()}
     if tushare_token:
         sources["tushare"] = TushareSource(token=tushare_token)
     return sources

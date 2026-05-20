@@ -73,6 +73,7 @@ class MarketDataHealthResponse(BaseModel):
     provider_last_error: str | None = None
     provider_timeout_seconds: float | None = None
     next_action: str | None = None
+    metadata_configured_count: int = 0
     source_health: str = "unknown"
     cache_age_seconds: int | None = None
     latest_quote_timestamp: str | None = None
