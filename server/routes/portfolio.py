@@ -52,6 +52,7 @@ from server.projections.service import (
 )
 from server.services.account_state import build_account_state_projection
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
+from server.services.asset_metadata import resolve_asset_metadata
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
@@ -91,10 +92,11 @@ def _normalize_asset_class(value: str | None) -> str:
 
 
 def _resolve_display_name(state, symbol: str, fallback: str | None = None) -> str:
-    for asset_cfg in getattr(state.config, "assets", []):
-        if asset_cfg.get("symbol") == symbol:
-            return str(asset_cfg.get("display_name") or asset_cfg["symbol"])
-    return fallback or symbol
+    return resolve_asset_metadata(
+        state,
+        symbol,
+        fallback_name=fallback,
+    ).display_name
 
 
 def _persist_runtime_config(config) -> None:
@@ -940,6 +942,13 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
             latest_quote.get("asset_class")
             or getattr(getattr(instrument, "asset_class", None), "value", None)
         )
+        metadata = resolve_asset_metadata(
+            state,
+            symbol,
+            asset_class=asset_class,
+            quote=latest_quote,
+            fallback_name=getattr(instrument, "name", symbol),
+        )
         latest_price = latest_quote.get("price")
         latest_price_value = (
             float(latest_price) if latest_price not in {None, ""} else None
@@ -968,12 +977,9 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         groups[asset_class].append(
             LiveHoldingItemResponse(
                 symbol=symbol,
-                name=_resolve_display_name(
-                    state,
-                    symbol,
-                    getattr(instrument, "name", symbol),
-                ),
-                asset_class=asset_class,
+                name=metadata.display_name,
+                display_name=metadata.display_name,
+                asset_class=metadata.asset_class,
                 quantity=quantity,
                 avg_cost=avg_cost,
                 market_value=market_value,
@@ -1495,17 +1501,19 @@ def create_router() -> APIRouter:
                 (quote or {}).get("asset_class")
                 or getattr(getattr(instrument, "asset_class", None), "value", None)
             )
-            display_name = _resolve_display_name(
+            metadata = resolve_asset_metadata(
                 state,
                 symbol,
-                getattr(instrument, "name", None) or symbol,
+                asset_class=asset_class,
+                quote=quote,
+                fallback_name=getattr(instrument, "name", None) or symbol,
             )
             positions.append(
                 PositionResponse(
                     symbol=symbol,
-                    name=display_name,
-                    display_name=display_name,
-                    asset_class=asset_class,
+                    name=metadata.display_name,
+                    display_name=metadata.display_name,
+                    asset_class=metadata.asset_class,
                     quantity=float(pos.quantity),
                     available_qty=float(pos.available_qty),
                     frozen_qty=float(pos.frozen_qty),
@@ -1557,10 +1565,7 @@ def create_router() -> APIRouter:
                     instrument = instruments.get(Symbol(pos.symbol))
                     if instrument is not None:
                         ac = instrument.asset_class.value
-                name = pos.symbol
-                if Symbol(pos.symbol) in instruments:
-                    name = instruments[Symbol(pos.symbol)].name
-                name = _resolve_display_name(state, pos.symbol, name)
+                name = pos.display_name or pos.name or pos.symbol
 
                 allocation.append(
                     AllocationItem(

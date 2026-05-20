@@ -74,7 +74,23 @@ export function DashboardQuickActions({
       label: labels.quoteSource,
       value: normalizeStatus(marketHealth?.provider_name),
     },
+    {
+      label: copy.market.providerNextAction,
+      value: normalizeStatus(
+        marketHealth?.next_action &&
+          marketHealth.next_action in copy.market.providerActions
+          ? copy.market.providerActions[
+              marketHealth.next_action as keyof typeof copy.market.providerActions
+            ]
+          : marketHealth?.next_action,
+      ),
+    },
   ];
+  const staleReason = normalizeStatus(
+    overview.stale_reason ??
+      marketHealth?.provider_last_error ??
+      marketHealth?.last_refresh_error,
+  );
 
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
@@ -89,18 +105,13 @@ export function DashboardQuickActions({
                     ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
                     : 'border-[color-mix(in_srgb,var(--app-success)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] text-[var(--app-success)]'
                 }`}
-                title={`${labels.staleReason}: ${normalizeStatus(
-                  overview.stale_reason ?? marketHealth?.last_refresh_error,
-                )}`}
+                title={`${labels.staleReason}: ${staleReason}`}
               >
                 <span className="h-1.5 w-1.5 rounded-full bg-current" />
                 {isStale ? copy.shell.cachedQuotes : copy.shell.valuationMode}
               </span>
               <span className="app-muted text-xs">
-                {labels.staleReason}:{' '}
-                {normalizeStatus(
-                  overview.stale_reason ?? marketHealth?.last_refresh_error,
-                )}
+                {labels.staleReason}: {staleReason}
               </span>
             </div>
           </div>

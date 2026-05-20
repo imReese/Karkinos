@@ -212,6 +212,9 @@ class AKShareSource(DataSource):
             "volume": None,
             "timestamp": trade_day,
         }
+        if canonical_name:
+            payload["name"] = canonical_name
+            payload["display_name"] = canonical_name
         if len(nav_columns) > 1:
             previous_nav_column = nav_columns[1]
             previous_close = pd.to_numeric(row[previous_nav_column], errors="coerce")

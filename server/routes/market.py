@@ -27,6 +27,7 @@ from server.models import (
     WatchlistItem,
 )
 from server.bootstrap import resolve_config_path
+from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_hours import is_cn_trading_session
 from server.services.data_health import build_data_health
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
@@ -206,6 +207,49 @@ def _resolve_asset_display_name(assets: list[dict[str, str]], symbol: str) -> st
     return symbol
 
 
+def _configured_provider_name(state) -> str:
+    return str(getattr(state.config, "data_source", "unknown") or "unknown")
+
+
+def _provider_requires_token(provider_name: str) -> bool:
+    return provider_name == "tushare"
+
+
+def _provider_configured(state, provider_name: str) -> bool:
+    if _provider_requires_token(provider_name):
+        return bool(getattr(state.config, "tushare_token", ""))
+    return provider_name in {"akshare", "tushare"}
+
+
+def _provider_supports_funds(provider_name: str) -> bool | None:
+    if provider_name == "akshare":
+        return True
+    if provider_name == "tushare":
+        return False
+    return None
+
+
+def _provider_next_action(
+    *,
+    provider_configured: bool,
+    provider_supports_funds: bool | None,
+    has_funds: bool,
+    latest_refresh_error: str | None,
+    source_health: str,
+) -> str | None:
+    if not provider_configured:
+        return "configure_data_source_token"
+    if has_funds and provider_supports_funds is False:
+        return "switch_to_fund_supported_provider"
+    if latest_refresh_error == "provider_timeout":
+        return "check_provider_network_or_use_cache"
+    if latest_refresh_error:
+        return "check_data_source_settings"
+    if source_health in {"stale", "partial"}:
+        return "refresh_quotes_or_check_source"
+    return None
+
+
 def _normalize_asset_class(asset_class: AssetClass | str | None) -> str:
     if isinstance(asset_class, AssetClass):
         return asset_class.value
@@ -253,14 +297,20 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
     seen: set[str] = set()
 
     for asset_cfg in state.config.assets:
-        symbol = asset_cfg["symbol"]
+        symbol = str(
+            asset_cfg.get("provider_symbol")
+            or asset_cfg.get("provider_code")
+            or asset_cfg.get("code")
+            or asset_cfg["symbol"]
+        )
         if symbol in seen:
             continue
         merged.append(
             {
                 "symbol": symbol,
                 "asset_class": asset_cfg["asset_class"],
-                "display_name": asset_cfg.get("display_name", symbol),
+                "display_name": asset_cfg.get("display_name")
+                or asset_cfg.get("symbol", symbol),
             }
         )
         seen.add(symbol)
@@ -275,7 +325,20 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
             or latest_quotes.get(symbol, {}).get("asset_class")
             or AssetClass.STOCK.value
         )
-        merged.append({"symbol": symbol, "asset_class": asset_class})
+        metadata = resolve_asset_metadata(
+            state,
+            symbol,
+            asset_class=asset_class,
+            quote=latest_quotes.get(symbol),
+            fallback_name=getattr(instrument, "name", None) or symbol,
+        )
+        merged.append(
+            {
+                "symbol": symbol,
+                "asset_class": metadata.asset_class,
+                "display_name": metadata.display_name,
+            }
+        )
         seen.add(symbol)
 
     return merged
@@ -407,6 +470,10 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         "timestamp": snapshot.get("timestamp"),
         "source": selected_source_name,
     }
+    display_name = snapshot.get("display_name") or snapshot.get("name")
+    if display_name:
+        payload["display_name"] = str(display_name)
+        payload["name"] = str(display_name)
     if state.db is not None and payload["timestamp"]:
         state.db.save_quote_snapshot_sync(
             symbol=symbol,
@@ -861,7 +928,10 @@ def create_router() -> APIRouter:
             (item.last_refresh_error for item in health_quotes if item.last_refresh_error),
             None,
         )
-        provider_name = str(getattr(state.config, "data_source", "unknown") or "unknown")
+        provider_name = _configured_provider_name(state)
+        provider_requires_token = _provider_requires_token(provider_name)
+        provider_configured = _provider_configured(state, provider_name)
+        provider_supports_funds = _provider_supports_funds(provider_name)
         source_health = (
             "unknown"
             if not health_quotes
@@ -876,12 +946,28 @@ def create_router() -> APIRouter:
             if latest_refresh_error and not any(item.quote_status == "live" for item in health_quotes)
             else source_health
         )
+        has_funds = any(
+            asset_class in {"fund", "etf"} for _, asset_class in watchlist
+        )
+        next_action = _provider_next_action(
+            provider_configured=provider_configured,
+            provider_supports_funds=provider_supports_funds,
+            has_funds=has_funds,
+            latest_refresh_error=latest_refresh_error,
+            source_health=source_health,
+        )
         return MarketDataHealthResponse(
             quotes=health_quotes,
             market_open=market_open,
             refresh_policy=refresh_policy,
             provider_status=provider_status,
             provider_name=provider_name,
+            provider_configured=provider_configured,
+            provider_requires_token=provider_requires_token,
+            provider_supports_funds=provider_supports_funds,
+            provider_last_error=latest_refresh_error,
+            provider_timeout_seconds=_MANUAL_REFRESH_TIMEOUT_SECONDS,
+            next_action=next_action,
             source_health=source_health,
             cache_age_seconds=cache_age_seconds,
             latest_quote_timestamp=latest_quote_timestamp,

@@ -59,6 +59,12 @@ test('surfaces cached quote status and homepage action paths', () => {
         refresh_policy: 'cache_only',
         provider_status: 'degraded',
         provider_name: 'akshare',
+        provider_configured: true,
+        provider_requires_token: false,
+        provider_supports_funds: true,
+        provider_last_error: null,
+        provider_timeout_seconds: 8,
+        next_action: 'refresh_quotes_or_check_source',
         source_health: 'stale',
         cache_age_seconds: 900,
         latest_quote_timestamp: '2026-05-18T00:18:00+08:00',
@@ -73,6 +79,7 @@ test('surfaces cached quote status and homepage action paths', () => {
 
   expect(screen.getByText('Cached quotes')).toBeTruthy();
   expect(screen.getByText(/quote_older_than_expected_session/)).toBeTruthy();
+  expect(screen.getByText('Refresh quotes or check source')).toBeTruthy();
   expect(
     screen.getByRole('link', { name: 'Add ledger entry' }).getAttribute('href'),
   ).toBe('/activity');

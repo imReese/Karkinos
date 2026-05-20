@@ -1100,6 +1100,12 @@ function MarketPage() {
   const selectedHealthQuote = selectedItem
     ? (healthBySymbol.get(selectedItem.symbol) ?? null)
     : null;
+  const providerAction =
+    health?.next_action && health.next_action in copy.market.providerActions
+      ? copy.market.providerActions[
+          health.next_action as keyof typeof copy.market.providerActions
+        ]
+      : (health?.next_action ?? null);
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -1332,6 +1338,34 @@ function MarketPage() {
                       value={health?.provider_status ?? copy.market.unknown}
                     />
                     <MetricBlock
+                      label={copy.market.providerConfigured}
+                      value={
+                        health
+                          ? health.provider_configured
+                            ? copy.shell.valuationMode
+                            : copy.shell.statusUnknown
+                          : copy.market.unknown
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.providerSupportsFunds}
+                      value={
+                        health?.provider_supports_funds == null
+                          ? copy.market.unknown
+                          : health.provider_supports_funds
+                            ? copy.shell.valuationMode
+                            : copy.shell.statusUnknown
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.providerTimeout}
+                      value={
+                        health?.provider_timeout_seconds == null
+                          ? '--'
+                          : `${health.provider_timeout_seconds}s`
+                      }
+                    />
+                    <MetricBlock
                       label={copy.market.marketOpen}
                       value={
                         health
@@ -1371,7 +1405,15 @@ function MarketPage() {
                     />
                     <MetricBlock
                       label={copy.market.lastRefreshError}
-                      value={health?.last_refresh_error ?? '--'}
+                      value={
+                        health?.provider_last_error ??
+                        health?.last_refresh_error ??
+                        '--'
+                      }
+                    />
+                    <MetricBlock
+                      label={copy.market.providerNextAction}
+                      value={providerAction ?? '--'}
                     />
                   </div>
                 </div>
