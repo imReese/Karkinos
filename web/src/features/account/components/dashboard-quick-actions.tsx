@@ -48,6 +48,11 @@ export function DashboardQuickActions({
     quoteStatus === 'stale' ||
     marketHealth?.source_health === 'stale' ||
     marketHealth?.source_health === 'degraded';
+  const shouldSuggestDemo =
+    !isDemoSource &&
+    (marketHealth?.provider_last_error === 'provider_timeout' ||
+      marketHealth?.last_refresh_error === 'provider_timeout' ||
+      marketHealth?.provider_supports_funds === false);
   const refreshMessage = refreshQuotes.isPending
     ? labels.refreshingQuotes
     : refreshQuotes.isError
@@ -194,7 +199,9 @@ export function DashboardQuickActions({
               href="/settings"
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
             >
-              {labels.dataSettings}
+              {shouldSuggestDemo
+                ? copy.settings.enableDemoQuotes
+                : labels.dataSettings}
             </a>
           </div>
         </div>

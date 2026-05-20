@@ -46,6 +46,18 @@ export type DataSourceSettingsPayload = {
   live_poll_interval: number;
 };
 
+export type DataSourceStatusResponse = {
+  data_source: string;
+  provider_name: string;
+  provider_configured: boolean;
+  provider_supports_funds: boolean | null;
+  provider_requires_token: boolean;
+  requires_restart: boolean;
+  next_action: string | null;
+  metadata_configured_count: number;
+  available_providers: string[];
+};
+
 export type NotificationTestResponse = {
   status: 'ok' | 'error';
   message: string;
@@ -106,6 +118,16 @@ export function useLiveStatusQuery() {
   });
 }
 
+export function useDataSourceStatusQuery() {
+  return useQuery({
+    queryKey: ['settings-data-source'],
+    queryFn: () =>
+      apiClient<DataSourceStatusResponse>('/api/settings/data-source'),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useUpdateDataSourceSettingsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -114,9 +136,20 @@ export function useUpdateDataSourceSettingsMutation() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        queryClient.invalidateQueries({ queryKey: ['settings-data-source'] }),
         queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
         queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-snapshot'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-positions'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-allocation'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['portfolio-live-holdings'],
+        }),
         queryClient.invalidateQueries({ queryKey: ['account-overview'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['account-equity-curve-series'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['account-state'] }),
       ]);
     },
   });

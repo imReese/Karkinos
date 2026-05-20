@@ -9,10 +9,12 @@ from fastapi import APIRouter
 
 from server.models import (
     DataSourceSettingsUpdate,
+    DataSourceStatusResponse,
     LiveStatusResponse,
     SettingsResponse,
 )
 from server.bootstrap import resolve_config_path
+from server.services.asset_metadata import metadata_configured_count
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,74 @@ def _mask_token(token: str) -> str:
     if not token:
         return ""
     return f"{_MASK}{token[-4:]}" if len(token) > 4 else _MASK
+
+
+def _provider_requires_token(provider_name: str) -> bool:
+    return provider_name == "tushare"
+
+
+def _provider_configured(config, provider_name: str) -> bool:
+    if _provider_requires_token(provider_name):
+        return bool(getattr(config, "tushare_token", ""))
+    return provider_name in {"demo", "akshare", "tushare"}
+
+
+def _provider_supports_funds(provider_name: str) -> bool | None:
+    if provider_name in {"demo", "akshare"}:
+        return True
+    if provider_name == "tushare":
+        return False
+    return None
+
+
+def _has_fund_assets(config) -> bool:
+    return any(
+        str(asset.get("asset_class", "")).lower() in {"fund", "etf"}
+        for asset in getattr(config, "assets", [])
+    )
+
+
+def _data_source_next_action(
+    *,
+    provider_name: str,
+    provider_configured: bool,
+    provider_supports_funds: bool | None,
+    has_funds: bool,
+    metadata_count: int,
+) -> str | None:
+    if provider_name == "demo":
+        return "configure_real_provider"
+    if not provider_configured:
+        return "configure_data_source_token"
+    if has_funds and provider_supports_funds is False:
+        return "switch_to_fund_supported_provider"
+    if metadata_count == 0:
+        return "configure_asset_metadata"
+    return None
+
+
+def _build_data_source_status(state) -> DataSourceStatusResponse:
+    config = state.config
+    provider_name = str(getattr(config, "data_source", "akshare") or "akshare")
+    provider_configured = _provider_configured(config, provider_name)
+    provider_supports_funds = _provider_supports_funds(provider_name)
+    metadata_count = metadata_configured_count(state)
+    return DataSourceStatusResponse(
+        data_source=provider_name,
+        provider_name=provider_name,
+        provider_configured=provider_configured,
+        provider_supports_funds=provider_supports_funds,
+        provider_requires_token=_provider_requires_token(provider_name),
+        requires_restart=False,
+        next_action=_data_source_next_action(
+            provider_name=provider_name,
+            provider_configured=provider_configured,
+            provider_supports_funds=provider_supports_funds,
+            has_funds=_has_fund_assets(config),
+            metadata_count=metadata_count,
+        ),
+        metadata_configured_count=metadata_count,
+    )
 
 
 def create_router() -> APIRouter:
@@ -114,6 +184,13 @@ def create_router() -> APIRouter:
             notification=config.notification,
             live_poll_interval=config.live_poll_interval,
         )
+
+    @r.get("/data-source", response_model=DataSourceStatusResponse)
+    async def get_data_source_settings() -> DataSourceStatusResponse:
+        """读取当前数据源能力与本地切换状态。"""
+        from server.app import get_app_state
+
+        return _build_data_source_status(get_app_state())
 
     @r.put("/data-source", response_model=SettingsResponse)
     async def update_data_source_settings(

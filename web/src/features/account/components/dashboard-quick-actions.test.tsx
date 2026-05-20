@@ -190,3 +190,48 @@ test('labels demo market data without claiming real quotes', () => {
   expect(screen.getAllByText('Demo quotes').length).toBeGreaterThan(0);
   expect(screen.queryByText('Market data available')).toBeNull();
 });
+
+test('points provider timeouts to demo quote setup', () => {
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 1,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        quote_status: 'stale',
+      }}
+      marketHealth={{
+        quotes: [],
+        market_open: true,
+        refresh_policy: 'live',
+        provider_status: 'degraded',
+        provider_name: 'akshare',
+        provider_configured: true,
+        provider_requires_token: false,
+        provider_supports_funds: false,
+        provider_last_error: 'provider_timeout',
+        provider_timeout_seconds: 8,
+        next_action: 'check_provider_network_or_use_cache',
+        metadata_configured_count: 1,
+        source_health: 'degraded',
+        cache_age_seconds: 5,
+        latest_quote_timestamp: '2026-05-18T00:18:00+08:00',
+        last_refresh_attempt: '2026-05-18T00:18:00+08:00',
+        last_refresh_error: 'provider_timeout',
+        stale_symbols_count: 1,
+        stale_symbols_sample: ['018125'],
+      }}
+      symbols={['018125']}
+    />,
+  );
+
+  expect(
+    screen
+      .getByRole('link', { name: 'Enable Demo quotes' })
+      .getAttribute('href'),
+  ).toBe('/settings');
+});
