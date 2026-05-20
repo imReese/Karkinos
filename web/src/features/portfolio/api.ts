@@ -63,6 +63,7 @@ export type PortfolioSnapshot = {
 export type LiveHoldingItem = {
   symbol: string;
   name: string;
+  display_name?: string | null;
   asset_class: string;
   quantity: number;
   avg_cost: number;

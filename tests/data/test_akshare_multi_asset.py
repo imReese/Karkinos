@@ -288,6 +288,7 @@ class TestAKShareFetchLatest:
         assert result is not None
         assert result["price"] == 1.023
         assert result["timestamp"] == "2026-04-18"
+        assert result["display_name"] == "永赢先进制造智选混合C"
 
     @patch("akshare.fund_etf_spot_em")
     @patch("akshare.fund_open_fund_daily_em")
@@ -315,6 +316,7 @@ class TestAKShareFetchLatest:
         assert result is not None
         assert result["price"] == 2.2503
         assert result["timestamp"] == "2026-04-22"
+        assert result["display_name"] == "永赢先进制造智选混合发起C"
         assert result["previous_close"] == 2.2606
         assert result["previous_close_date"] == "2026-04-21"
         assert result["day_change_value"] == pytest.approx(-0.0103)

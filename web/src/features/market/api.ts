@@ -21,6 +21,12 @@ export type MarketDataHealthResponse = {
   refresh_policy: string;
   provider_status: string;
   provider_name: string;
+  provider_configured: boolean;
+  provider_requires_token: boolean;
+  provider_supports_funds: boolean | null;
+  provider_last_error: string | null;
+  provider_timeout_seconds: number | null;
+  next_action: string | null;
   source_health: string;
   cache_age_seconds: number | null;
   latest_quote_timestamp: string | null;

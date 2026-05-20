@@ -67,6 +67,12 @@ class MarketDataHealthResponse(BaseModel):
     refresh_policy: str = "cache_only"
     provider_status: str = "unknown"
     provider_name: str = "unknown"
+    provider_configured: bool = False
+    provider_requires_token: bool = False
+    provider_supports_funds: bool | None = None
+    provider_last_error: str | None = None
+    provider_timeout_seconds: float | None = None
+    next_action: str | None = None
     source_health: str = "unknown"
     cache_age_seconds: int | None = None
     latest_quote_timestamp: str | None = None
@@ -187,6 +193,7 @@ class PortfolioSnapshot(BaseModel):
 class LiveHoldingItemResponse(BaseModel):
     symbol: str
     name: str
+    display_name: str | None = None
     asset_class: str
     quantity: float
     avg_cost: float

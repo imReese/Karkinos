@@ -320,6 +320,12 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     assert response.quotes[0].quote_age_seconds is not None
     assert response.quotes[0].stale_reason == "market_closed_cache_only"
     assert response.provider_name == "akshare"
+    assert response.provider_configured is True
+    assert response.provider_requires_token is False
+    assert response.provider_supports_funds is True
+    assert response.provider_timeout_seconds is not None
+    assert response.provider_last_error is None
+    assert response.next_action == "refresh_quotes_or_check_source"
     assert response.provider_status == "stale"
     assert response.source_health == "stale"
     assert response.cache_age_seconds is not None
@@ -385,6 +391,42 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     assert response.last_refresh_attempt == response.started_at
     assert response.last_refresh_error is None
     assert fake_scheduler.latest_quotes["600519"]["price"] == 12.5
+
+
+def test_market_data_health_reports_provider_configuration_next_action(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            data_source="tushare",
+            tushare_token="",
+        ),
+        scheduler=SimpleNamespace(
+            watchlist=[("018125", "fund")],
+            latest_quotes={},
+            portfolio=None,
+            instruments={},
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.provider_name == "tushare"
+    assert response.provider_configured is False
+    assert response.provider_requires_token is True
+    assert response.provider_supports_funds is False
+    assert response.next_action == "configure_data_source_token"
 
 
 def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
@@ -1083,6 +1125,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
                 "price": 1.126,
                 "volume": None,
                 "timestamp": "2026-04-21",
+                "display_name": "永赢先进制造智选混合发起C",
                 "previous_close": 1.103,
                 "previous_close_date": "2026-04-18",
             }
@@ -1103,6 +1146,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
     assert response["asset_class"] == "fund"
     assert response["price"] == 1.126
     assert response["timestamp"] == "2026-04-21"
+    assert response["display_name"] == "永赢先进制造智选混合发起C"
     assert response["previous_close"] == 1.103
     assert response["previous_close_date"] == "2026-04-18"
 
@@ -1435,9 +1479,10 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
             tushare_token="",
             assets=[
                 {
-                    "symbol": "018125",
+                    "symbol": "永赢先进制造智选混合C",
                     "asset_class": "fund",
                     "display_name": "永赢先进制造智选混合发起C",
+                    "provider_symbol": "018125",
                 }
             ],
         ),
@@ -2596,7 +2641,7 @@ def test_portfolio_equity_curve_uses_ledger_projection_when_scheduler_missing(
             ]
 
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0, data_source="akshare"),
+        config=SimpleNamespace(initial_cash=0, data_source="akshare", assets=[]),
         scheduler=SimpleNamespace(
             portfolio=None, latest_quotes={}, watchlist=[], instruments={}
         ),
@@ -2734,7 +2779,7 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
             ]
 
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0, data_source="akshare"),
+        config=SimpleNamespace(initial_cash=0, data_source="akshare", assets=[]),
         scheduler=SimpleNamespace(
             portfolio=None, latest_quotes={}, watchlist=[], instruments={}
         ),
@@ -3435,7 +3480,17 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
             return 0.0
 
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=0, data_source="akshare"),
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            assets=[
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "display_name": "贵州茅台",
+                }
+            ],
+        ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(cash=0.0, positions={"600519": fake_position}),
             instruments={
@@ -3465,6 +3520,8 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     overview = asyncio.run(overview_route.endpoint())
 
     assert response.groups[0].items[0].quote_status == "stale"
+    assert response.groups[0].items[0].name == "贵州茅台"
+    assert response.groups[0].items[0].display_name == "贵州茅台"
     assert response.groups[0].items[0].quote_timestamp == "2026-04-22T15:00:00"
     assert response.groups[0].items[0].quote_source == "akshare"
     assert response.groups[0].items[0].quote_age_seconds is not None

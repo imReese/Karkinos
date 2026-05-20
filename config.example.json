@@ -3,10 +3,34 @@
     "start_date": "2025-01-02",
     "end_date": "",
     "assets": [
-        {"symbol": "600519", "asset_class": "stock"},
-        {"symbol": "510300", "asset_class": "etf"},
-        {"symbol": "Au99.99", "asset_class": "gold"},
-        {"symbol": "sh010107", "asset_class": "bond"}
+        {
+            "symbol": "600519",
+            "asset_class": "stock",
+            "display_name": "贵州茅台"
+        },
+        {
+            "symbol": "510300",
+            "asset_class": "etf",
+            "display_name": "沪深300ETF",
+            "provider_symbol": "510300"
+        },
+        {
+            "symbol": "示例基金C",
+            "asset_class": "fund",
+            "display_name": "示例基金C",
+            "provider_symbol": "000000",
+            "aliases": ["000000"]
+        },
+        {
+            "symbol": "Au99.99",
+            "asset_class": "gold",
+            "display_name": "上海金 Au99.99"
+        },
+        {
+            "symbol": "sh010107",
+            "asset_class": "bond",
+            "display_name": "示例国债"
+        }
     ],
     "strategy": "dual_ma",
     "short_period": 5,
