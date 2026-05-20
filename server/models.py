@@ -664,6 +664,20 @@ class DataSourceSettingsUpdate(BaseModel):
     live_poll_interval: int = 60
 
 
+class DataSourceStatusResponse(BaseModel):
+    data_source: str = "akshare"
+    provider_name: str = "akshare"
+    provider_configured: bool = True
+    provider_supports_funds: bool | None = None
+    provider_requires_token: bool = False
+    requires_restart: bool = False
+    next_action: str | None = None
+    metadata_configured_count: int = 0
+    available_providers: list[str] = Field(
+        default_factory=lambda: ["demo", "akshare", "tushare"]
+    )
+
+
 class LiveStatusResponse(BaseModel):
     running: bool
     market_open: bool = False

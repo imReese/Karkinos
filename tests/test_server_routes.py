@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -1503,6 +1504,100 @@ def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeyp
         {"symbol": "永赢先进制造智选混合C", "asset_class": "fund"},
         {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
     ]
+
+
+def test_get_data_source_settings_reports_demo_capabilities(monkeypatch):
+    from server.routes import settings as settings_routes
+
+    router = settings_routes.create_router()
+    status_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/settings/data-source"
+        and "GET" in route.methods
+    )
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {
+                    "symbol": "000000",
+                    "asset_class": "fund",
+                    "display_name": "示例基金",
+                    "provider_symbol": "000000",
+                }
+            ],
+            data_source="demo",
+            tushare_token="",
+        )
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(status_route.endpoint())
+
+    assert response.data_source == "demo"
+    assert response.provider_name == "demo"
+    assert response.provider_configured is True
+    assert response.provider_supports_funds is True
+    assert response.provider_requires_token is False
+    assert response.requires_restart is False
+    assert response.next_action == "configure_real_provider"
+    assert response.metadata_configured_count == 1
+    assert "demo" in response.available_providers
+
+
+def test_update_data_source_settings_can_enable_demo_without_token(
+    monkeypatch, tmp_path
+):
+    from server.routes import settings as settings_routes
+
+    router = settings_routes.create_router()
+    update_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/settings/data-source"
+        and "PUT" in route.methods
+    )
+
+    config_path = tmp_path / "config.json"
+    config = SimpleNamespace(
+        host="0.0.0.0",
+        port=8000,
+        live_auto_start=False,
+        initial_cash=Decimal("4000"),
+        start_date="2025-01-02",
+        end_date="2026-04-18",
+        assets=[{"symbol": "000000", "asset_class": "fund"}],
+        strategy="dual_ma",
+        short_period=5,
+        long_period=20,
+        data_source="tushare",
+        tushare_token="",
+        notification={"type": "console"},
+        live_poll_interval=60,
+    )
+    fake_state = SimpleNamespace(config=config)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(settings_routes, "resolve_config_path", lambda: config_path)
+
+    response = asyncio.run(
+        update_route.endpoint(
+            settings_routes.DataSourceSettingsUpdate(
+                data_source="demo",
+                tushare_token="",
+                live_poll_interval=90,
+            )
+        )
+    )
+
+    saved = json.loads(config_path.read_text())
+    assert response.data_source == "demo"
+    assert response.tushare_token == ""
+    assert response.live_poll_interval == 90
+    assert saved["data_source"] == "demo"
+    assert saved["tushare_token"] == ""
 
 
 def test_portfolio_overview_summarizes_account_state(monkeypatch):

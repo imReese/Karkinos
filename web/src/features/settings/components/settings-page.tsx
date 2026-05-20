@@ -17,6 +17,7 @@ import {
 } from '../../../app/preferences';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import {
+  useDataSourceStatusQuery,
   useLiveStatusQuery,
   useSettingsQuery,
   useStartLiveMutation,
@@ -51,6 +52,7 @@ function isMaskedToken(value: string) {
 export function SettingsPage() {
   const copy = useCopy();
   const settings = useSettingsQuery();
+  const dataSourceStatus = useDataSourceStatusQuery();
   const liveStatus = useLiveStatusQuery();
   const marketHealth = useMarketDataHealthQuery();
   const overview = useAccountOverviewQuery();
@@ -85,9 +87,41 @@ export function SettingsPage() {
   const trackedAssets = settings.data?.assets.length ?? 0;
   const statusLoadFailed =
     settings.isError ||
+    dataSourceStatus.isError ||
     liveStatus.isError ||
     marketHealth.isError ||
     overview.isError;
+  const providerName =
+    dataSourceStatus.data?.provider_name ?? settings.data?.data_source ?? '--';
+  const providerSupportsFunds =
+    dataSourceStatus.data?.provider_supports_funds ??
+    marketHealth.data?.provider_supports_funds;
+  const metadataConfiguredCount =
+    dataSourceStatus.data?.metadata_configured_count ??
+    marketHealth.data?.metadata_configured_count ??
+    0;
+  const providerNextAction =
+    dataSourceStatus.data?.next_action ?? marketHealth.data?.next_action;
+  const providerActionLabel =
+    providerNextAction && providerNextAction in copy.market.providerActions
+      ? copy.market.providerActions[
+          providerNextAction as keyof typeof copy.market.providerActions
+        ]
+      : providerNextAction;
+  const providerTimedOut =
+    marketHealth.data?.provider_last_error === 'provider_timeout' ||
+    marketHealth.data?.last_refresh_error === 'provider_timeout';
+  const shouldOfferDemo =
+    providerName !== 'demo' &&
+    (providerTimedOut ||
+      providerSupportsFunds === false ||
+      marketHealth.data?.provider_configured === false ||
+      dataSourceStatus.data?.provider_configured === false);
+  const availableProviders = dataSourceStatus.data?.available_providers ?? [];
+  const dataSourceOptions =
+    availableProviders.length > 0
+      ? availableProviders
+      : ['demo', 'akshare', 'tushare'];
 
   const dataSourceChanged = useMemo(() => {
     if (!settings.data) {
@@ -105,6 +139,17 @@ export function SettingsPage() {
     const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
     await updateDataSource.mutateAsync({
       data_source: dataSource.trim() || settings.data?.data_source || 'akshare',
+      tushare_token: providerToken,
+      live_poll_interval: normalizedInterval,
+    });
+    setPollInterval(String(normalizedInterval));
+  };
+
+  const enableDemoQuotes = async () => {
+    const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
+    setDataSource('demo');
+    await updateDataSource.mutateAsync({
+      data_source: 'demo',
       tushare_token: providerToken,
       live_poll_interval: normalizedInterval,
     });
@@ -131,6 +176,7 @@ export function SettingsPage() {
           title={copy.settings.error}
           detail={[
             settings.error,
+            dataSourceStatus.error,
             liveStatus.error,
             marketHealth.error,
             overview.error,
@@ -344,19 +390,122 @@ export function SettingsPage() {
             title={copy.settings.backendSettings}
             detail={copy.settings.liveServicesDetail}
           >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <StatusMetric
+                label={copy.settings.currentProvider}
+                value={
+                  dataSourceStatus.isLoading
+                    ? copy.shell.checking
+                    : providerName === 'demo'
+                      ? copy.market.demoQuotes
+                      : providerName
+                }
+                tone={providerName === 'demo' ? 'warning' : 'neutral'}
+              />
+              <StatusMetric
+                label={copy.settings.providerConfigured}
+                value={
+                  dataSourceStatus.isLoading
+                    ? copy.shell.checking
+                    : dataSourceStatus.data?.provider_configured
+                      ? copy.market.configured
+                      : copy.market.notConfigured
+                }
+                tone={
+                  dataSourceStatus.data?.provider_configured
+                    ? 'success'
+                    : 'warning'
+                }
+              />
+              <StatusMetric
+                label={copy.settings.providerSupportsFunds}
+                value={
+                  providerSupportsFunds == null
+                    ? copy.market.unknown
+                    : providerSupportsFunds
+                      ? copy.market.fundSupported
+                      : copy.market.fundUnsupported
+                }
+                tone={
+                  providerSupportsFunds == null
+                    ? 'neutral'
+                    : providerSupportsFunds
+                      ? 'success'
+                      : 'warning'
+                }
+              />
+              <StatusMetric
+                label={copy.settings.metadataConfigured}
+                value={metadataConfiguredCount}
+                tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
+              />
+            </div>
+
+            {providerName === 'demo' ? (
+              <InlineNotice
+                tone="warning"
+                title={copy.market.demoQuotes}
+                detail={copy.settings.demoQuotesDetail}
+              />
+            ) : null}
+            {shouldOfferDemo ? (
+              <InlineNotice
+                tone="warning"
+                title={copy.settings.enableDemoQuotes}
+                detail={copy.settings.providerTimeoutNotice}
+              />
+            ) : null}
+            {metadataConfiguredCount === 0 ? (
+              <InlineNotice
+                tone="warning"
+                title={copy.settings.assetMetadataMissing}
+                detail={copy.settings.assetMetadataMissingDetail}
+              />
+            ) : null}
+            {providerActionLabel ? (
+              <InlineNotice
+                tone="neutral"
+                title={copy.settings.providerNextAction}
+                detail={providerActionLabel}
+              />
+            ) : null}
+
             <form className="grid gap-4" onSubmit={submitDataSource}>
-              <label className="grid gap-2">
+              <div className="grid gap-2">
                 <span className="text-sm font-medium">
-                  {copy.settings.dataSource}
+                  {copy.settings.selectDataSource}
                 </span>
-                <input
-                  aria-label={copy.settings.dataSource}
-                  className="app-field rounded-2xl px-3 py-2 text-sm"
-                  value={dataSource}
-                  onChange={(event) => setDataSource(event.target.value)}
-                  disabled={settings.isLoading}
-                />
-              </label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {dataSourceOptions.map((option) => {
+                    const selected = dataSource === option;
+                    const label =
+                      option === 'demo'
+                        ? copy.settings.providerDemo
+                        : option === 'akshare'
+                          ? copy.settings.providerAkshare
+                          : option === 'tushare'
+                            ? copy.settings.providerTushare
+                            : option;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`rounded-2xl border px-3 py-2 text-sm font-semibold transition-[transform,border-color,background-color] duration-200 active:scale-[0.98] ${
+                          selected
+                            ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
+                            : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
+                        }`}
+                        aria-pressed={selected}
+                        aria-label={`${copy.settings.dataSource}: ${label}`}
+                        onClick={() => setDataSource(option)}
+                        disabled={settings.isLoading}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <label className="grid gap-2">
                 <span className="text-sm font-medium">
                   {copy.settings.pollInterval}
@@ -385,7 +534,7 @@ export function SettingsPage() {
                   className="app-field rounded-2xl px-3 py-2 text-sm"
                   value={providerToken}
                   onChange={(event) => setProviderToken(event.target.value)}
-                  disabled={settings.isLoading}
+                  disabled={settings.isLoading || dataSource !== 'tushare'}
                 />
                 {isMaskedToken(providerToken) ? (
                   <span className="app-muted text-xs">
@@ -407,13 +556,34 @@ export function SettingsPage() {
                   ? copy.settings.savingDataSource
                   : copy.settings.saveDataSource}
               </button>
+              {shouldOfferDemo ? (
+                <button
+                  type="button"
+                  className="app-button-secondary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={updateDataSource.isPending}
+                  aria-busy={updateDataSource.isPending}
+                  onClick={() => void enableDemoQuotes()}
+                >
+                  {updateDataSource.isPending
+                    ? copy.settings.enablingDemoQuotes
+                    : copy.settings.enableDemoQuotes}
+                </button>
+              ) : null}
             </form>
 
             {updateDataSource.isSuccess ? (
               <InlineNotice
                 tone="success"
-                title={copy.settings.dataSourceSaved}
-                detail={copy.settings.dataStatusDetail}
+                title={
+                  dataSource === 'demo'
+                    ? copy.settings.demoQuotesEnabled
+                    : copy.settings.dataSourceSaved
+                }
+                detail={
+                  dataSourceStatus.data?.requires_restart
+                    ? copy.settings.requiresRestart
+                    : copy.settings.hotSwitchAvailable
+                }
               />
             ) : null}
             {updateDataSource.isError ? (

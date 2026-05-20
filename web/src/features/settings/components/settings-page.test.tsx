@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
+import type { MarketDataHealthResponse } from '../../market/api';
+import type { DataSourceStatusResponse } from '../api';
 import { SettingsPage } from './settings-page';
 
 const defaultSettings = {
@@ -31,10 +33,38 @@ const defaultLiveStatus = {
   market_open: true,
 };
 
-const defaultMarketHealth = {
+const defaultMarketHealth: MarketDataHealthResponse = {
   quotes: [],
   market_open: true,
   refresh_policy: 'live',
+  provider_status: 'healthy',
+  provider_name: 'akshare',
+  provider_configured: true,
+  provider_requires_token: false,
+  provider_supports_funds: true,
+  provider_last_error: null,
+  provider_timeout_seconds: 8,
+  next_action: null,
+  metadata_configured_count: 2,
+  source_health: 'live',
+  cache_age_seconds: null,
+  latest_quote_timestamp: '2026-05-16T22:40:00+08:00',
+  last_refresh_attempt: null,
+  last_refresh_error: null,
+  stale_symbols_count: 0,
+  stale_symbols_sample: [],
+};
+
+const defaultDataSourceStatus: DataSourceStatusResponse = {
+  data_source: 'akshare',
+  provider_name: 'akshare',
+  provider_configured: true,
+  provider_supports_funds: true,
+  provider_requires_token: false,
+  requires_restart: false,
+  next_action: null,
+  metadata_configured_count: 2,
+  available_providers: ['demo', 'akshare', 'tushare'],
 };
 
 const defaultOverview = {
@@ -64,7 +94,8 @@ type MockOverview = Omit<
 type MockOptions = {
   settings?: Partial<MockSettings> & Record<string, unknown>;
   liveStatus?: typeof defaultLiveStatus;
-  marketHealth?: typeof defaultMarketHealth;
+  marketHealth?: MarketDataHealthResponse;
+  dataSourceStatus?: DataSourceStatusResponse;
   overview?: Partial<MockOverview> & Record<string, unknown>;
   failLiveStatus?: boolean;
 };
@@ -81,6 +112,7 @@ function installFetchMock({
   settings = defaultSettings,
   liveStatus = defaultLiveStatus,
   marketHealth = defaultMarketHealth,
+  dataSourceStatus = defaultDataSourceStatus,
   overview = defaultOverview,
   failLiveStatus = false,
 }: MockOptions = {}) {
@@ -93,10 +125,13 @@ function installFetchMock({
           : input.toString();
 
     if (url.includes('/api/settings/data-source')) {
-      return jsonResponse({
-        ...settings,
-        ...(JSON.parse(String(init?.body ?? '{}')) as object),
-      });
+      if (init?.method === 'PUT') {
+        return jsonResponse({
+          ...settings,
+          ...(JSON.parse(String(init?.body ?? '{}')) as object),
+        });
+      }
+      return jsonResponse(dataSourceStatus);
     }
     if (url.includes('/api/settings/live/start')) {
       return jsonResponse({ running: true, market_open: true });
@@ -172,7 +207,12 @@ test('renders backend data status and service state', async () => {
   ).toBeTruthy();
   expect(await screen.findByLabelText('Refresh policy: live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
-  expect(await screen.findByDisplayValue('akshare')).toBeTruthy();
+  expect(
+    await screen.findByRole('button', { name: 'Data source: AKShare' }),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Current provider: akshare'),
+  ).toBeTruthy();
   expect(await screen.findByText('2 tracked assets')).toBeTruthy();
 });
 
@@ -249,6 +289,106 @@ test('saves data source settings through the settings endpoint', async () => {
     );
   });
   expect(await screen.findByText('Data settings saved')).toBeTruthy();
+});
+
+test('enables demo provider from degraded provider guidance', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage({
+    marketHealth: {
+      ...defaultMarketHealth,
+      provider_last_error: 'provider_timeout',
+      last_refresh_error: 'provider_timeout',
+      source_health: 'degraded',
+      next_action: 'check_provider_network_or_use_cache',
+    },
+    dataSourceStatus: {
+      ...defaultDataSourceStatus,
+      provider_supports_funds: false,
+      next_action: 'switch_to_fund_supported_provider',
+    },
+  });
+
+  expect(
+    await screen.findByRole('button', { name: 'Enable Demo quotes' }),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'The configured quote source is timing out. Switch to Demo quotes for local development or check provider settings.',
+    ),
+  ).toBeTruthy();
+
+  await user.click(screen.getByRole('button', { name: 'Enable Demo quotes' }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/settings/data-source',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          data_source: 'demo',
+          tushare_token: '****1234',
+          live_poll_interval: 60,
+        }),
+      }),
+    );
+  });
+  expect(await screen.findByText('Demo quotes enabled')).toBeTruthy();
+  expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('shows demo provider status without claiming real-time quotes', async () => {
+  renderSettingsPage({
+    settings: {
+      ...defaultSettings,
+      data_source: 'demo',
+    },
+    marketHealth: {
+      ...defaultMarketHealth,
+      provider_name: 'demo',
+      provider_status: 'demo',
+      source_health: 'demo',
+      next_action: 'configure_real_provider',
+    },
+    dataSourceStatus: {
+      ...defaultDataSourceStatus,
+      data_source: 'demo',
+      provider_name: 'demo',
+      next_action: 'configure_real_provider',
+    },
+  });
+
+  expect(
+    await screen.findByLabelText('Current provider: Demo quotes'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Demo quotes use deterministic local prices for development and are not market data.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('guides users to configure asset metadata when none is available', async () => {
+  renderSettingsPage({
+    marketHealth: {
+      ...defaultMarketHealth,
+      metadata_configured_count: 0,
+    },
+    dataSourceStatus: {
+      ...defaultDataSourceStatus,
+      metadata_configured_count: 0,
+      next_action: 'configure_asset_metadata',
+    },
+  });
+
+  expect(
+    await screen.findByText('Asset metadata is not configured'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
+    ),
+  ).toBeTruthy();
 });
 
 test('handles missing backend status without crashing', async () => {
