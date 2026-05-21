@@ -642,7 +642,7 @@ class SettingsResponse(BaseModel):
     initial_cash: float = 100_000
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
-    assets: list[dict[str, str]] = Field(
+    assets: list[dict[str, Any]] = Field(
         default_factory=lambda: [
             {"symbol": "600519", "asset_class": "stock"},
             {"symbol": "510300", "asset_class": "etf"},

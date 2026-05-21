@@ -452,7 +452,7 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
     )
     preferred = sources.get(data_source, sources["akshare"])
     source_chain = [(data_source if data_source in sources else "akshare", preferred)]
-    if asset_class == AssetClass.FUND and data_source != "akshare":
+    if asset_class == AssetClass.FUND and data_source not in {"akshare", "demo"}:
         akshare = sources.get("akshare")
         if akshare is not None and akshare is not preferred:
             source_chain.append(("akshare", akshare))
@@ -523,10 +523,13 @@ async def _refresh_one_quote(
     market_open = is_cn_trading_session()
     refresh_policy = "live" if market_open else "cache_only"
     try:
-        snapshot = await asyncio.wait_for(
-            asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
-            timeout=timeout,
-        )
+        if _configured_provider_name(state) == "demo":
+            snapshot = _fetch_latest_snapshot(state, symbol, asset_class)
+        else:
+            snapshot = await asyncio.wait_for(
+                asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
+                timeout=timeout,
+            )
     except asyncio.TimeoutError:
         cached_quote = _latest_cached_quote(state, symbol)
         _QUOTE_REFRESH_ERRORS[key] = "provider_timeout"

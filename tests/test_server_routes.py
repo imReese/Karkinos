@@ -537,6 +537,57 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
     assert saved_quotes[0]["symbol"] == "000000"
 
 
+def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
+    from server.routes import market as market_routes
+
+    saved_quotes: list[dict] = []
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return []
+
+        def save_quote_snapshot_sync(self, **payload):
+            saved_quotes.append(payload)
+
+    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "000000", "asset_class": "fund"}],
+            data_source="demo",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=fake_scheduler,
+        db=FakeDb(),
+    )
+
+    async def fail_to_thread(*args, **kwargs):
+        raise AssertionError("demo refresh should not enter the remote timeout path")
+
+    monkeypatch.setattr(market_routes.asyncio, "to_thread", fail_to_thread)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        market_routes,
+        "_resolve_quote_status",
+        lambda state, quote: "live",
+    )
+
+    response = asyncio.run(
+        market_routes._refresh_one_quote(
+            fake_state,
+            "000000",
+            market_routes.AssetClass.FUND,
+            timeout_seconds=0.001,
+        )
+    )
+
+    assert response.status == "refreshed"
+    assert response.quote_source == "demo"
+    assert response.error is None
+    assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
+    assert saved_quotes[0]["symbol"] == "000000"
+
+
 def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
     from server.routes import market as market_routes
 
@@ -1259,6 +1310,46 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
     assert response["previous_close_date"] == "2026-04-18"
 
 
+def test_fetch_latest_snapshot_demo_provider_does_not_fall_back_to_akshare(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="demo",
+            tushare_token="",
+            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            live_poll_interval=120,
+        ),
+        db=SimpleNamespace(
+            save_quote_snapshot_sync=lambda **kwargs: None,
+        ),
+    )
+
+    class EmptyDemoSource:
+        def fetch_latest(self, symbol, asset_class):
+            return None
+
+    class BlockingAkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            raise AssertionError("demo mode must not call remote akshare fallback")
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "demo": EmptyDemoSource(),
+            "akshare": BlockingAkshareSource(),
+        },
+    )
+
+    response = market_routes._fetch_latest_snapshot(
+        fake_state, "018125", market_routes.AssetClass.FUND
+    )
+
+    assert response is None
+
+
 def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     from server.routes import market as market_routes
 
@@ -1473,7 +1564,13 @@ def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeyp
         start_date="2025-01-02",
         end_date="2026-04-18",
         assets=[
-            {"symbol": "永赢先进制造智选混合C", "asset_class": "fund"},
+            {
+                "symbol": "永赢先进制造智选混合C",
+                "asset_class": "fund",
+                "display_name": "永赢先进制造智选混合C",
+                "provider_symbol": "018125",
+                "aliases": ["018125"],
+            },
             {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
         ],
         strategy="dual_ma",
@@ -1501,7 +1598,13 @@ def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeyp
     assert response.live_poll_interval == 120
     assert response.initial_cash == 4000.0
     assert response.assets == [
-        {"symbol": "永赢先进制造智选混合C", "asset_class": "fund"},
+        {
+            "symbol": "永赢先进制造智选混合C",
+            "asset_class": "fund",
+            "display_name": "永赢先进制造智选混合C",
+            "provider_symbol": "018125",
+            "aliases": ["018125"],
+        },
         {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
     ]
 
@@ -2036,6 +2139,62 @@ def test_portfolio_risk_summary_flags_stale_quote_data(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert any(item.kind == "data" for item in response)
+
+
+def test_portfolio_risk_summary_accepts_timezone_aware_quote_timestamps(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    risk_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/risk-summary"
+    )
+    endpoint = risk_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=500,
+        unrealized_pnl=20,
+        realized_pnl=0,
+        commission_paid=1,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_latest_quotes_sync=lambda: [
+                {
+                    "symbol": "600519",
+                    "timestamp": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+                }
+            ],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=Decimal("1000"),
+                positions={"600519": fake_position},
+                equity_curve=[],
+            ),
+            watchlist=[],
+            instruments={},
+            latest_quotes={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert all(item.kind != "data" for item in response)
 
 
 def test_portfolio_activity_merges_trades_and_cash_flows(monkeypatch):
