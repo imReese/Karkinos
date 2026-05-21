@@ -30,6 +30,7 @@ export type SettingsResponse = {
     symbol: string;
     asset_class: string;
     display_name?: string;
+    [key: string]: unknown;
   }>;
   strategy: string;
   short_period: number;

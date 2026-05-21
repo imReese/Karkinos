@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from server.models import PortfolioSnapshot, RiskSummaryItem
+
+_SH_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _parse_quote_time(timestamp: str) -> datetime | None:
+    try:
+        quote_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if quote_time.tzinfo is None:
+        return quote_time.replace(tzinfo=_SH_TZ)
+    return quote_time.astimezone(_SH_TZ)
 
 
 def build_risk_summary(
@@ -34,11 +47,10 @@ def build_risk_summary(
                 )
             )
 
-    threshold = datetime.now() - timedelta(days=1)
+    threshold = datetime.now(_SH_TZ) - timedelta(days=1)
     for symbol, timestamp in latest_quote_timestamps.items():
-        try:
-            quote_time = datetime.fromisoformat(timestamp)
-        except (TypeError, ValueError):
+        quote_time = _parse_quote_time(timestamp)
+        if quote_time is None:
             continue
         if quote_time < threshold:
             items.append(
