@@ -59,6 +59,8 @@ class MarketHealthQuote(BaseModel):
     stale_reason: str | None = None
     last_refresh_attempt: str | None = None
     last_refresh_error: str | None = None
+    using_persistent_cache: bool = False
+    nav_date: str | None = None
 
 
 class MarketDataHealthResponse(BaseModel):
@@ -81,6 +83,11 @@ class MarketDataHealthResponse(BaseModel):
     last_refresh_error: str | None = None
     stale_symbols_count: int = 0
     stale_symbols_sample: list[str] = Field(default_factory=list)
+    real_data_available: bool = False
+    has_persistent_cache: bool = False
+    latest_persistent_quote_timestamp: str | None = None
+    persistent_cache_status: str = "unknown"
+    demo_mode: bool = False
 
 
 class ResearchBoardItem(BaseModel):
@@ -162,6 +169,8 @@ class PositionResponse(BaseModel):
     quote_age_seconds: int | None = None
     stale_reason: str | None = None
     refresh_policy: str | None = None
+    using_persistent_cache: bool = False
+    nav_date: str | None = None
 
 
 class AllocationItem(BaseModel):
@@ -213,6 +222,8 @@ class LiveHoldingItemResponse(BaseModel):
     quote_age_seconds: int | None = None
     stale_reason: str | None = None
     refresh_policy: str | None = None
+    using_persistent_cache: bool = False
+    nav_date: str | None = None
 
 
 class LiveHoldingGroupResponse(BaseModel):
@@ -239,8 +250,10 @@ class AccountOverview(BaseModel):
     valuation_timestamp: str | None = None
     quote_status: str = "live"
     quote_age_seconds: int | None = None
+    quote_source: str | None = None
     stale_reason: str | None = None
     refresh_policy: str | None = None
+    using_persistent_cache: bool = False
 
 
 class AccountStateResponse(BaseModel):
@@ -673,6 +686,10 @@ class DataSourceStatusResponse(BaseModel):
     requires_restart: bool = False
     next_action: str | None = None
     metadata_configured_count: int = 0
+    has_persistent_cache: bool = False
+    latest_persistent_quote_timestamp: str | None = None
+    persistent_cache_status: str = "unknown"
+    demo_mode: bool = False
     available_providers: list[str] = Field(
         default_factory=lambda: ["demo", "akshare", "tushare"]
     )

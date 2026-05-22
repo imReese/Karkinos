@@ -609,12 +609,16 @@ def _collect_latest_quote_timestamps(state) -> dict[str, str]:
     scheduler = state.scheduler
     if scheduler and getattr(scheduler, "latest_quotes", None):
         for symbol, quote in scheduler.latest_quotes.items():
+            if _is_demo_quote(quote) and not _is_demo_mode(state):
+                continue
             timestamp = quote.get("timestamp")
             if timestamp:
                 latest[str(symbol)] = timestamp
 
     if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
         for row in state.db.get_latest_quotes_sync():
+            if _is_demo_quote(row) and not _is_demo_mode(state):
+                continue
             timestamp = row.get("timestamp")
             symbol = row.get("symbol")
             if symbol and timestamp and str(symbol) not in latest:
@@ -628,10 +632,14 @@ def _collect_latest_quotes(state) -> dict[str, dict]:
     scheduler = state.scheduler
     if scheduler and getattr(scheduler, "latest_quotes", None):
         for symbol, quote in scheduler.latest_quotes.items():
+            if _is_demo_quote(quote) and not _is_demo_mode(state):
+                continue
             latest[str(symbol)] = quote
 
     if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
         for row in state.db.get_latest_quotes_sync():
+            if _is_demo_quote(row) and not _is_demo_mode(state):
+                continue
             symbol = row.get("symbol")
             if symbol and str(symbol) not in latest:
                 latest[str(symbol)] = row
@@ -705,6 +713,10 @@ def _quote_status(
     *,
     now: datetime | None = None,
 ) -> str:
+    if quote and quote.get("quote_status") in {"missing", "error"}:
+        return str(quote["quote_status"])
+    if quote and quote.get("quote_status") == "stale":
+        return "stale"
     return (
         "stale"
         if _quote_is_stale(
@@ -727,11 +739,34 @@ def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int |
 def _quote_source(state, quote: dict | None) -> str | None:
     if not quote:
         return None
-    source = quote.get("source") or quote.get("provider")
+    source = (
+        quote.get("quote_source")
+        or quote.get("source")
+        or quote.get("provider_name")
+        or quote.get("provider")
+    )
     if source:
         return str(source)
     configured = getattr(state.config, "data_source", None)
-    return str(configured) if configured else None
+    if configured and str(configured) != "demo":
+        return str(configured)
+    return None
+
+
+def _is_demo_mode(state) -> bool:
+    return str(getattr(state.config, "data_source", "") or "") == "demo"
+
+
+def _is_demo_quote(quote: dict | None) -> bool:
+    if not quote:
+        return False
+    source = (
+        quote.get("quote_source")
+        or quote.get("source")
+        or quote.get("provider_name")
+        or quote.get("provider")
+    )
+    return str(source).lower() == "demo"
 
 
 def _refresh_policy(now: datetime | None = None) -> str:
@@ -746,7 +781,13 @@ def _quote_stale_reason(
     now: datetime | None = None,
 ) -> str | None:
     if not quote or quote.get("price") in {None, ""}:
-        return "quote_missing"
+        return (
+            str(quote.get("stale_reason"))
+            if quote and quote.get("stale_reason")
+            else "no_real_data_available"
+        )
+    if quote.get("stale_reason"):
+        return str(quote["stale_reason"])
 
     timestamp = _parse_quote_timestamp(quote.get("timestamp"))
     if timestamp is None:
@@ -760,6 +801,23 @@ def _quote_stale_reason(
         return "market_closed_cache_only"
 
     return "quote_older_than_expected_session"
+
+
+def _response_quote_status(state, quote: dict | None) -> str:
+    if not quote or quote.get("price") in {None, ""}:
+        return "missing"
+    return _quote_status(state, quote)
+
+
+def _using_persistent_cache(quote: dict | None) -> bool:
+    return bool(
+        quote
+        and (
+            quote.get("using_persistent_cache")
+            or quote.get("captured_reason") == "persistent_cache"
+            or quote.get("quote_status") == "stale"
+        )
+    )
 
 
 def _can_refresh_quotes(state, now: datetime | None = None) -> bool:
@@ -992,11 +1050,13 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
                 baseline_price=baseline_price,
                 baseline_timestamp=baseline_timestamp,
                 baseline_source=baseline_source,
-                quote_status=_quote_status(state, latest_quote),
+                quote_status=_response_quote_status(state, latest_quote),
                 quote_source=_quote_source(state, latest_quote),
                 quote_age_seconds=_quote_age_seconds(latest_quote),
                 stale_reason=_quote_stale_reason(state, latest_quote),
                 refresh_policy=_refresh_policy(),
+                using_persistent_cache=_using_persistent_cache(latest_quote),
+                nav_date=latest_quote.get("nav_date"),
             )
         )
 
@@ -1426,11 +1486,11 @@ def _series_point_from_intraday(
 
 
 def _snapshot_quote_status(snapshot: PortfolioSnapshot) -> str:
-    return (
-        "stale"
-        if any(position.quote_status == "stale" for position in snapshot.positions)
-        else "live"
-    )
+    if any(position.quote_status == "missing" for position in snapshot.positions):
+        return "missing"
+    if any(position.quote_status == "stale" for position in snapshot.positions):
+        return "stale"
+    return "live"
 
 
 def _snapshot_quote_age_seconds(snapshot: PortfolioSnapshot) -> int | None:
@@ -1446,7 +1506,20 @@ def _snapshot_stale_reason(snapshot: PortfolioSnapshot) -> str | None:
     for position in snapshot.positions:
         if position.quote_status == "stale" and position.stale_reason:
             return position.stale_reason
+        if position.quote_status == "missing" and position.stale_reason:
+            return position.stale_reason
     return None
+
+
+def _snapshot_quote_source(snapshot: PortfolioSnapshot) -> str | None:
+    for position in snapshot.positions:
+        if position.quote_source:
+            return position.quote_source
+    return None
+
+
+def _snapshot_uses_persistent_cache(snapshot: PortfolioSnapshot) -> bool:
+    return any(position.using_persistent_cache for position in snapshot.positions)
 
 
 def _with_overview_quote_metadata(
@@ -1458,8 +1531,10 @@ def _with_overview_quote_metadata(
             "valuation_timestamp": get_shanghai_now().isoformat(),
             "quote_status": _snapshot_quote_status(snapshot),
             "quote_age_seconds": _snapshot_quote_age_seconds(snapshot),
+            "quote_source": _snapshot_quote_source(snapshot),
             "stale_reason": _snapshot_stale_reason(snapshot),
             "refresh_policy": _refresh_policy(),
+            "using_persistent_cache": _snapshot_uses_persistent_cache(snapshot),
         }
     )
 
@@ -1523,11 +1598,13 @@ def create_router() -> APIRouter:
                     realized_pnl=float(pos.realized_pnl),
                     commission_paid=float(pos.commission_paid),
                     quote_timestamp=None if quote is None else quote.get("timestamp"),
-                    quote_status=_quote_status(state, quote),
+                    quote_status=_response_quote_status(state, quote),
                     quote_source=_quote_source(state, quote),
                     quote_age_seconds=_quote_age_seconds(quote),
                     stale_reason=_quote_stale_reason(state, quote),
                     refresh_policy=_refresh_policy(),
+                    using_persistent_cache=_using_persistent_cache(quote),
+                    nav_date=None if quote is None else quote.get("nav_date"),
                 )
             )
 

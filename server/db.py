@@ -51,6 +51,13 @@ class AppDatabase:
             conn.executescript(_SCHEMA)
             _ensure_column(conn, "backtest_results", "metrics_json", "TEXT")
             _ensure_column(conn, "backtest_results", "cost_summary_json", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "quote_source", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "provider_name", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "quote_status", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "stale_reason", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "provider_status", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "captured_reason", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "nav_date", "TEXT")
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
@@ -506,13 +513,24 @@ class AppDatabase:
         price: float,
         volume: float | None,
         timestamp: str,
+        quote_source: str | None = None,
+        provider_name: str | None = None,
+        quote_status: str | None = None,
+        stale_reason: str | None = None,
+        provider_status: str | None = None,
+        captured_reason: str | None = None,
+        nav_date: str | None = None,
     ) -> None:
         """同步写入实时行情快照（后台线程调用）。"""
         with sqlite3.connect(self._path) as conn:
             conn.execute(
                 """INSERT INTO quote_snapshots
-                   (symbol, asset_class, price, volume, timestamp, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (
+                       symbol, asset_class, price, volume, timestamp, created_at,
+                       quote_source, provider_name, quote_status, stale_reason,
+                       provider_status, captured_reason, nav_date
+                   )
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     symbol,
                     asset_class,
@@ -520,6 +538,13 @@ class AppDatabase:
                     volume,
                     timestamp,
                     datetime.now().isoformat(),
+                    quote_source,
+                    provider_name,
+                    quote_status,
+                    stale_reason,
+                    provider_status,
+                    captured_reason,
+                    nav_date,
                 ),
             )
             conn.commit()
@@ -531,7 +556,10 @@ class AppDatabase:
         async with aiosqlite.connect(self._path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                """SELECT symbol, asset_class, price, volume, timestamp
+                """SELECT
+                        symbol, asset_class, price, volume, timestamp,
+                        quote_source, provider_name, quote_status, stale_reason,
+                        provider_status, captured_reason, nav_date
                    FROM quote_snapshots
                    WHERE symbol = ?
                    ORDER BY timestamp DESC, id DESC
@@ -546,7 +574,10 @@ class AppDatabase:
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
-                SELECT qs.symbol, qs.asset_class, qs.price, qs.volume, qs.timestamp
+                SELECT
+                    qs.symbol, qs.asset_class, qs.price, qs.volume, qs.timestamp,
+                    qs.quote_source, qs.provider_name, qs.quote_status, qs.stale_reason,
+                    qs.provider_status, qs.captured_reason, qs.nav_date
                 FROM quote_snapshots qs
                 JOIN (
                     SELECT symbol, MAX(timestamp) AS max_timestamp
@@ -566,7 +597,10 @@ class AppDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
-                SELECT symbol, asset_class, price, volume, timestamp
+                SELECT
+                    symbol, asset_class, price, volume, timestamp,
+                    quote_source, provider_name, quote_status, stale_reason,
+                    provider_status, captured_reason, nav_date
                 FROM quote_snapshots
                 WHERE symbol = ?
                 ORDER BY timestamp DESC, id DESC
@@ -635,7 +669,10 @@ class AppDatabase:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
-                SELECT symbol, asset_class, price, volume, timestamp
+                SELECT
+                    symbol, asset_class, price, volume, timestamp,
+                    quote_source, provider_name, quote_status, stale_reason,
+                    provider_status, captured_reason, nav_date
                 FROM quote_snapshots
                 WHERE symbol = ? AND substr(timestamp, 1, 10) < ?
                 ORDER BY timestamp DESC, id DESC
@@ -1211,7 +1248,14 @@ CREATE TABLE IF NOT EXISTS quote_snapshots (
     price REAL NOT NULL,
     volume REAL,
     timestamp TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    quote_source TEXT,
+    provider_name TEXT,
+    quote_status TEXT,
+    stale_reason TEXT,
+    provider_status TEXT,
+    captured_reason TEXT,
+    nav_date TEXT
 );
 
 CREATE TABLE IF NOT EXISTS daily_close_snapshots (

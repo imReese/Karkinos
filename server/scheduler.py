@@ -180,11 +180,29 @@ class TradingScheduler:
                 persisted_quotes = self._db.get_latest_quotes_sync()
                 with self._lock:
                     for quote in persisted_quotes:
+                        quote_source = (
+                            quote.get("quote_source")
+                            or quote.get("source")
+                            or quote.get("provider_name")
+                            or quote.get("provider")
+                        )
+                        if (
+                            self._config.data_source != "demo"
+                            and str(quote_source).lower() == "demo"
+                        ):
+                            continue
                         self._latest_quotes[quote["symbol"]] = {
                             "price": float(quote["price"]),
                             "volume": float(quote["volume"]) if quote["volume"] is not None else None,
                             "timestamp": quote["timestamp"],
                             "asset_class": quote["asset_class"],
+                            "quote_source": quote_source,
+                            "provider_name": quote.get("provider_name"),
+                            "quote_status": quote.get("quote_status"),
+                            "stale_reason": quote.get("stale_reason"),
+                            "provider_status": quote.get("provider_status"),
+                            "captured_reason": quote.get("captured_reason"),
+                            "nav_date": quote.get("nav_date"),
                         }
             except Exception:
                 logger.warning("恢复实时行情快照失败，将忽略", exc_info=True)
@@ -284,6 +302,22 @@ class TradingScheduler:
                                 price=float(market_event.close),
                                 volume=float(market_event.volume),
                                 timestamp=snapshot_timestamp,
+                                quote_source=str(
+                                    snapshot.get("quote_source")
+                                    or snapshot.get("source")
+                                    or snapshot.get("provider")
+                                    or self._config.data_source
+                                ),
+                                provider_name=str(
+                                    snapshot.get("provider_name")
+                                    or snapshot.get("provider")
+                                    or snapshot.get("source")
+                                    or self._config.data_source
+                                ),
+                                quote_status="live",
+                                provider_status="live",
+                                captured_reason="scheduler_poll",
+                                nav_date=snapshot.get("nav_date"),
                             )
                             previous_close = snapshot.get("previous_close")
                             previous_close_date = snapshot.get("previous_close_date")

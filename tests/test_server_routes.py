@@ -656,6 +656,116 @@ def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
     assert saved_quotes[0]["symbol"] == "000000"
 
 
+def test_refresh_one_quote_real_provider_does_not_fallback_to_demo(monkeypatch):
+    from server.routes import market as market_routes
+
+    class BrokenAkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return None
+
+    class DemoShouldNotRun:
+        def fetch_latest(self, symbol, asset_class):
+            raise AssertionError("real provider mode must not call demo fallback")
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "000000", "asset_class": "fund"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(is_running=True, latest_quotes={}),
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "akshare": BrokenAkshareSource(),
+            "demo": DemoShouldNotRun(),
+        },
+    )
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(
+        market_routes._refresh_one_quote(
+            fake_state,
+            "000000",
+            market_routes.AssetClass.FUND,
+            timeout_seconds=0.01,
+        )
+    )
+
+    assert response.status == "failed"
+    assert response.quote_source is None
+    assert response.error == "no_real_data_available"
+    assert response.reason == "暂无真实行情数据，请配置数据源或执行首次同步"
+    assert response.demo_mode is False
+    assert response.using_persistent_cache is False
+
+
+def test_refresh_one_quote_uses_persistent_real_cache_when_provider_fails(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    class BrokenAkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return None
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "000000",
+                    "asset_class": "fund",
+                    "price": 1.2345,
+                    "volume": None,
+                    "timestamp": "2026-05-20",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "quote_status": "live",
+                }
+            ]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "000000", "asset_class": "fund"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(is_running=True, latest_quotes={}),
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": BrokenAkshareSource()},
+    )
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(
+        market_routes._refresh_one_quote(
+            fake_state,
+            "000000",
+            market_routes.AssetClass.FUND,
+            timeout_seconds=0.01,
+        )
+    )
+
+    assert response.status == "stale"
+    assert response.quote_source == "akshare"
+    assert response.error is None
+    assert response.using_persistent_cache is True
+    assert response.demo_mode is False
+    assert response.reason == "行情源没有返回新报价，继续使用本地缓存"
+
+
 def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
     from server.routes import market as market_routes
 
@@ -751,7 +861,7 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
     assert response.quote_status == "partial"
     assert [item.symbol for item in response.refreshed] == ["600519"]
     assert [item.symbol for item in response.failed] == ["000001"]
-    assert response.failed[0].reason == "行情源刷新失败，已保留缓存行情"
+    assert response.failed[0].reason == "行情源刷新失败，暂无真实行情数据"
     assert response.failed[0].last_refresh_error == "provider unavailable"
     assert response.last_refresh_error == "provider unavailable"
 
@@ -807,7 +917,8 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
     assert response.skipped[0].quote_timestamp == "2026-04-22T15:00:00"
     assert response.skipped[0].quote_source == "akshare"
     assert response.skipped[0].quote_age_seconds is not None
-    assert response.skipped[0].reason == "行情源没有返回新报价，当前仍基于缓存行情"
+    assert response.skipped[0].reason == "行情源没有返回新报价，继续使用本地缓存"
+    assert response.skipped[0].using_persistent_cache is True
     assert response.last_refresh_error is None
 
 
@@ -856,7 +967,7 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
     assert elapsed < 0.5
     assert response.quote_status == "error"
     assert response.failed[0].error == "provider_timeout"
-    assert response.failed[0].reason == "行情源刷新超时，已保留缓存行情"
+    assert response.failed[0].reason == "行情源刷新超时，暂无真实行情数据"
     assert response.failed[0].last_refresh_error == "provider_timeout"
     assert response.last_refresh_error == "provider_timeout"
 
