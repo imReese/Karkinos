@@ -678,6 +678,15 @@ class DataSourceStatusResponse(BaseModel):
     )
 
 
+class AssetMetadataStatusResponse(BaseModel):
+    configured_count: int = 0
+    missing_symbols: list[str] = Field(default_factory=list)
+    configured_assets: list[dict[str, Any]] = Field(default_factory=list)
+    suggested_config: dict[str, Any] = Field(default_factory=dict)
+    metadata_source: str = "config"
+    has_missing_metadata: bool = False
+
+
 class LiveStatusResponse(BaseModel):
     running: bool
     market_open: bool = False

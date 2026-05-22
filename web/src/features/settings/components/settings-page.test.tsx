@@ -5,7 +5,10 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
 import type { MarketDataHealthResponse } from '../../market/api';
-import type { DataSourceStatusResponse } from '../api';
+import type {
+  AssetMetadataStatusResponse,
+  DataSourceStatusResponse,
+} from '../api';
 import { SettingsPage } from './settings-page';
 
 const defaultSettings = {
@@ -67,6 +70,32 @@ const defaultDataSourceStatus: DataSourceStatusResponse = {
   available_providers: ['demo', 'akshare', 'tushare'],
 };
 
+const defaultAssetMetadataStatus: AssetMetadataStatusResponse = {
+  configured_count: 2,
+  missing_symbols: [],
+  configured_assets: [
+    {
+      symbol: '600519',
+      display_name: '贵州茅台',
+      asset_class: 'stock',
+      provider_symbol: '600519',
+      aliases: [],
+      source: 'assets',
+    },
+    {
+      symbol: '018125',
+      display_name: '示例基金',
+      asset_class: 'fund',
+      provider_symbol: '018125',
+      aliases: [],
+      source: 'assets',
+    },
+  ],
+  suggested_config: { assets: [] },
+  metadata_source: 'config',
+  has_missing_metadata: false,
+};
+
 const defaultOverview = {
   total_equity: 4101.16,
   available_cash: 2301.2,
@@ -96,6 +125,7 @@ type MockOptions = {
   liveStatus?: typeof defaultLiveStatus;
   marketHealth?: MarketDataHealthResponse;
   dataSourceStatus?: DataSourceStatusResponse;
+  assetMetadataStatus?: AssetMetadataStatusResponse;
   overview?: Partial<MockOverview> & Record<string, unknown>;
   failLiveStatus?: boolean;
 };
@@ -113,6 +143,7 @@ function installFetchMock({
   liveStatus = defaultLiveStatus,
   marketHealth = defaultMarketHealth,
   dataSourceStatus = defaultDataSourceStatus,
+  assetMetadataStatus = defaultAssetMetadataStatus,
   overview = defaultOverview,
   failLiveStatus = false,
 }: MockOptions = {}) {
@@ -132,6 +163,9 @@ function installFetchMock({
         });
       }
       return jsonResponse(dataSourceStatus);
+    }
+    if (url.includes('/api/settings/asset-metadata')) {
+      return jsonResponse(assetMetadataStatus);
     }
     if (url.includes('/api/settings/live/start')) {
       return jsonResponse({ running: true, market_open: true });
@@ -379,6 +413,24 @@ test('guides users to configure asset metadata when none is available', async ()
       metadata_configured_count: 0,
       next_action: 'configure_asset_metadata',
     },
+    assetMetadataStatus: {
+      ...defaultAssetMetadataStatus,
+      configured_count: 0,
+      missing_symbols: ['026539', '012710'],
+      configured_assets: [],
+      suggested_config: {
+        assets: [
+          {
+            symbol: '026539',
+            asset_class: 'fund',
+            display_name: '<填入资产名称>',
+            provider_symbol: '026539',
+            aliases: ['026539'],
+          },
+        ],
+      },
+      has_missing_metadata: true,
+    },
   });
 
   expect(
@@ -389,6 +441,24 @@ test('guides users to configure asset metadata when none is available', async ()
       'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
     ),
   ).toBeTruthy();
+  expect(await screen.findByText('Assets missing metadata')).toBeTruthy();
+  expect(await screen.findByText('026539, 012710')).toBeTruthy();
+  const snippet = (await screen.findByLabelText(
+    'Suggested config snippet',
+  )) as HTMLTextAreaElement;
+  expect(snippet.value).toContain('"symbol": "026539"');
+});
+
+test('shows configured asset metadata state when no symbols are missing', async () => {
+  renderSettingsPage();
+
+  expect(await screen.findByText('Asset metadata configured')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Current holdings have configured asset identities or safe fallbacks.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('undefined')).toBeNull();
 });
 
 test('handles missing backend status without crashing', async () => {

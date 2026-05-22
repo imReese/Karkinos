@@ -25,6 +25,7 @@ _NON_STRATEGY_FIELDS = {
     "start_date",
     "end_date",
     "assets",
+    "instruments",
     "data_source",
     "notification",
     "live_poll_interval",
@@ -75,7 +76,15 @@ def build_watchlist(
 ) -> list[tuple[Symbol, AssetClass]]:
     """Convert config assets into normalized symbol/asset-class tuples."""
     watchlist: list[tuple[Symbol, AssetClass]] = []
-    for asset_cfg in config.assets:
+    assets = config.assets.items() if isinstance(config.assets, dict) else enumerate(config.assets)
+    for key, asset_cfg in assets:
+        if isinstance(asset_cfg, str):
+            asset_cfg = {
+                "symbol": str(key) if not isinstance(key, int) else asset_cfg,
+                "asset_class": "stock",
+            }
+        elif isinstance(asset_cfg, dict) and not asset_cfg.get("symbol") and not isinstance(key, int):
+            asset_cfg = {**asset_cfg, "symbol": str(key)}
         sym = Symbol(asset_cfg["symbol"])
         asset_class = _ASSET_CLASS_MAP.get(
             asset_cfg["asset_class"], AssetClass.STOCK

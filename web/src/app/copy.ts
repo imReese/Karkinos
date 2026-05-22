@@ -889,6 +889,17 @@ export const copy = {
       assetMetadataMissing: 'Asset metadata is not configured',
       assetMetadataMissingDetail:
         'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
+      assetMetadataDetail:
+        'Configure display names and provider symbols in ignored local config.json.',
+      assetMetadataMissingCount: 'Missing metadata',
+      assetMetadataSource: 'Metadata source',
+      assetMetadataMissingSymbols: 'Assets missing metadata',
+      assetMetadataSnippet: 'Suggested config snippet',
+      assetMetadataSnippetDetail:
+        'Copy this template into local config.json and replace placeholder names. Do not commit private config files.',
+      assetMetadataComplete: 'Asset metadata configured',
+      assetMetadataCompleteDetail:
+        'Current holdings have configured asset identities or safe fallbacks.',
       requiresRestart: 'Restart required',
       hotSwitchAvailable:
         'Quote refresh uses the selected source immediately. Broader data-manager tasks may still use startup configuration.',
@@ -1793,6 +1804,16 @@ export const copy = {
       assetMetadataMissing: '尚未配置资产元数据',
       assetMetadataMissingDetail:
         '请在 config.json 中配置 display_name 和 provider_symbol，可参考 config.example.json。',
+      assetMetadataDetail:
+        '在已忽略的本地 config.json 中配置资产名称和 provider_symbol。',
+      assetMetadataMissingCount: '缺失元数据',
+      assetMetadataSource: '元数据来源',
+      assetMetadataMissingSymbols: '缺少元数据的资产',
+      assetMetadataSnippet: '建议配置片段',
+      assetMetadataSnippetDetail:
+        '将这个模板复制到本地 config.json，并替换占位名称。不要提交私有配置文件。',
+      assetMetadataComplete: '资产元数据已配置',
+      assetMetadataCompleteDetail: '当前持仓已有资产身份配置或安全 fallback。',
       requiresRestart: '需要重启',
       hotSwitchAvailable:
         '行情刷新会立即使用所选数据源；更广泛的数据管理任务可能仍使用启动时配置。',

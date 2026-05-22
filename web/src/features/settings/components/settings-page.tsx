@@ -18,6 +18,7 @@ import {
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import {
   useDataSourceStatusQuery,
+  useAssetMetadataStatusQuery,
   useLiveStatusQuery,
   useSettingsQuery,
   useStartLiveMutation,
@@ -53,6 +54,7 @@ export function SettingsPage() {
   const copy = useCopy();
   const settings = useSettingsQuery();
   const dataSourceStatus = useDataSourceStatusQuery();
+  const assetMetadataStatus = useAssetMetadataStatusQuery();
   const liveStatus = useLiveStatusQuery();
   const marketHealth = useMarketDataHealthQuery();
   const overview = useAccountOverviewQuery();
@@ -88,6 +90,7 @@ export function SettingsPage() {
   const statusLoadFailed =
     settings.isError ||
     dataSourceStatus.isError ||
+    assetMetadataStatus.isError ||
     liveStatus.isError ||
     marketHealth.isError ||
     overview.isError;
@@ -97,9 +100,15 @@ export function SettingsPage() {
     dataSourceStatus.data?.provider_supports_funds ??
     marketHealth.data?.provider_supports_funds;
   const metadataConfiguredCount =
+    assetMetadataStatus.data?.configured_count ??
     dataSourceStatus.data?.metadata_configured_count ??
     marketHealth.data?.metadata_configured_count ??
     0;
+  const missingMetadataSymbols =
+    assetMetadataStatus.data?.missing_symbols ?? [];
+  const metadataSnippet = assetMetadataStatus.data?.suggested_config
+    ? JSON.stringify(assetMetadataStatus.data.suggested_config, null, 2)
+    : '';
   const providerNextAction =
     dataSourceStatus.data?.next_action ?? marketHealth.data?.next_action;
   const providerActionLabel =
@@ -177,6 +186,7 @@ export function SettingsPage() {
           detail={[
             settings.error,
             dataSourceStatus.error,
+            assetMetadataStatus.error,
             liveStatus.error,
             marketHealth.error,
             overview.error,
@@ -596,6 +606,74 @@ export function SettingsPage() {
                 )}
               />
             ) : null}
+
+            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <StatusMetric
+                  label={copy.settings.metadataConfigured}
+                  value={
+                    assetMetadataStatus.isLoading
+                      ? copy.shell.checking
+                      : metadataConfiguredCount
+                  }
+                  tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
+                />
+                <StatusMetric
+                  label={copy.settings.assetMetadataMissingCount}
+                  value={
+                    assetMetadataStatus.isLoading
+                      ? copy.shell.checking
+                      : missingMetadataSymbols.length
+                  }
+                  tone={
+                    missingMetadataSymbols.length > 0 ? 'warning' : 'success'
+                  }
+                />
+                <StatusMetric
+                  label={copy.settings.assetMetadataSource}
+                  value={
+                    assetMetadataStatus.data?.metadata_source ??
+                    copy.shell.statusUnknown
+                  }
+                  tone="neutral"
+                />
+              </div>
+              {assetMetadataStatus.isLoading ? (
+                <InlineNotice
+                  tone="neutral"
+                  title={copy.shell.checking}
+                  detail={copy.settings.assetMetadataDetail}
+                />
+              ) : assetMetadataStatus.data?.has_missing_metadata ? (
+                <div className="grid gap-3">
+                  <InlineNotice
+                    tone="warning"
+                    title={copy.settings.assetMetadataMissingSymbols}
+                    detail={missingMetadataSymbols.join(', ')}
+                  />
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold">
+                      {copy.settings.assetMetadataSnippet}
+                    </span>
+                    <textarea
+                      className="app-field min-h-44 resize-y rounded-2xl px-3 py-3 font-mono text-xs leading-5"
+                      readOnly
+                      aria-label={copy.settings.assetMetadataSnippet}
+                      value={metadataSnippet}
+                    />
+                    <span className="app-muted text-xs leading-5">
+                      {copy.settings.assetMetadataSnippetDetail}
+                    </span>
+                  </label>
+                </div>
+              ) : (
+                <InlineNotice
+                  tone="success"
+                  title={copy.settings.assetMetadataComplete}
+                  detail={copy.settings.assetMetadataCompleteDetail}
+                />
+              )}
+            </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <StatusMetric
