@@ -18,13 +18,14 @@ class BacktestConfig:
     initial_cash: Decimal = Decimal("100000")
     start_date: str = "2025-01-02"
     end_date: str = field(default_factory=lambda: _DEFAULT_END_DATE)
-    assets: list[dict] = field(
+    assets: list[dict] | dict = field(
         default_factory=lambda: [
             {"symbol": "600519", "asset_class": "stock"},
             {"symbol": "510300", "asset_class": "etf"},
             {"symbol": "Au99.99", "asset_class": "gold"},
         ]
     )
+    instruments: list[dict] | dict = field(default_factory=list)
     strategy: str = "dual_ma"
     short_period: int = 5
     long_period: int = 20

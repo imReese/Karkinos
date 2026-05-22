@@ -25,6 +25,74 @@ def _backtest_route(router, path: str, method: str = "GET"):
     )
 
 
+def test_asset_metadata_resolver_accepts_supported_config_shapes():
+    from server.services.asset_metadata import (
+        build_asset_metadata_status,
+        resolve_asset_metadata,
+    )
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            instruments=[
+                {
+                    "symbol": "018125",
+                    "asset_class": "fund",
+                    "display_name": "示例基金A",
+                    "provider_symbol": "018125.OF",
+                    "aliases": ["018125"],
+                }
+            ],
+            assets={
+                "026539": {
+                    "asset_class": "fund",
+                    "display_name": "示例基金B",
+                    "provider_symbol": "026539",
+                },
+                "012710": "示例基金C",
+            },
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(positions={"018125": object(), "026539": object()}),
+            watchlist=[("012710", SimpleNamespace(value="fund"))],
+            latest_quotes={},
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+
+    assert resolve_asset_metadata(state, "018125").display_name == "示例基金A"
+    assert resolve_asset_metadata(state, "026539").display_name == "示例基金B"
+    assert resolve_asset_metadata(state, "012710").display_name == "示例基金C"
+
+    status = build_asset_metadata_status(state)
+    assert status["configured_count"] == 3
+    assert status["missing_symbols"] == []
+    assert status["has_missing_metadata"] is False
+
+
+def test_asset_metadata_status_reports_missing_symbols_and_template():
+    from server.services.asset_metadata import build_asset_metadata_status
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            instruments=[],
+            assets={"018125": {"display_name": "示例基金A", "asset_class": "fund"}},
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(positions={"018125": object(), "026539": object()}),
+            watchlist=[("012710", SimpleNamespace(value="fund"))],
+            latest_quotes={},
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+
+    status = build_asset_metadata_status(state)
+
+    assert status["configured_count"] == 1
+    assert status["missing_symbols"] == ["012710", "026539"]
+    assert status["has_missing_metadata"] is True
+    assert status["suggested_config"]["assets"][0]["display_name"] == "<填入资产名称>"
+
+
 def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     from server.routes import backtest as backtest_routes
 
@@ -1650,6 +1718,40 @@ def test_get_data_source_settings_reports_demo_capabilities(monkeypatch):
     assert "demo" in response.available_providers
 
 
+def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
+    from server.routes import settings as settings_routes
+
+    router = settings_routes.create_router()
+    status_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/settings/asset-metadata"
+        and "GET" in route.methods
+    )
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets={"018125": "示例基金A"},
+            instruments=[],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(positions={"018125": object(), "026539": object()}),
+            watchlist=[("012710", SimpleNamespace(value="fund"))],
+            latest_quotes={},
+        ),
+        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(status_route.endpoint())
+
+    assert response.configured_count == 1
+    assert response.missing_symbols == ["012710", "026539"]
+    assert response.has_missing_metadata is True
+    assert response.suggested_config["assets"][0]["provider_symbol"] == "012710"
+
+
 def test_update_data_source_settings_can_enable_demo_without_token(
     monkeypatch, tmp_path
 ):
@@ -1814,6 +1916,53 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
     assert response.positions[0].asset_class == "fund"
     assert response.allocation[1].symbol == "018125"
     assert response.allocation[1].name == "永赢先进制造智选混合发起C"
+
+
+def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=1000,
+        available_qty=1000,
+        frozen_qty=0,
+        avg_cost=1.0,
+        market_value=1200.0,
+        unrealized_pnl=200.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=4000,
+            data_source="demo",
+            tushare_token="",
+            instruments=[],
+            assets={"026539": "示例基金B"},
+        ),
+        db=SimpleNamespace(get_total_deposits=AsyncMock(return_value=0.0)),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"026539": fake_position}),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.positions[0].display_name == "示例基金B"
+    allocation_item = next(
+        item for item in response.allocation if item.symbol == "026539"
+    )
+    assert allocation_item.name == "示例基金B"
 
 
 def test_portfolio_snapshot_hydrates_missing_fund_quotes_outside_trading_hours(
@@ -3892,6 +4041,74 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     assert overview.quote_age_seconds is not None
     assert overview.stale_reason == "market_closed_cache_only"
     assert overview.refresh_policy == "cache_only"
+
+
+def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        available_qty=100.0,
+        frozen_qty=0.0,
+        avg_cost=1.0,
+        market_value=120.0,
+        unrealized_pnl=20.0,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "012710",
+                    "asset_class": "fund",
+                    "price": 1.2,
+                    "timestamp": "2026-05-22T09:30:00+08:00",
+                    "source": "demo",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="demo",
+            instruments=[],
+            assets={
+                "012710": {
+                    "display_name": "示例基金C",
+                    "asset_class": "fund",
+                    "provider_symbol": "012710",
+                }
+            },
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"012710": fake_position}),
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.groups[0].items[0].name == "示例基金C"
+    assert response.groups[0].items[0].display_name == "示例基金C"
 
 
 def test_portfolio_equity_curve_series_appends_current_valuation_point(

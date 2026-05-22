@@ -59,6 +59,22 @@ export type DataSourceStatusResponse = {
   available_providers: string[];
 };
 
+export type AssetMetadataStatusResponse = {
+  configured_count: number;
+  missing_symbols: string[];
+  configured_assets: Array<{
+    symbol: string;
+    display_name: string;
+    asset_class?: string;
+    provider_symbol?: string | null;
+    aliases?: string[];
+    source?: string;
+  }>;
+  suggested_config: Record<string, unknown>;
+  metadata_source: string;
+  has_missing_metadata: boolean;
+};
+
 export type NotificationTestResponse = {
   status: 'ok' | 'error';
   message: string;
@@ -129,6 +145,16 @@ export function useDataSourceStatusQuery() {
   });
 }
 
+export function useAssetMetadataStatusQuery() {
+  return useQuery({
+    queryKey: ['settings-asset-metadata'],
+    queryFn: () =>
+      apiClient<AssetMetadataStatusResponse>('/api/settings/asset-metadata'),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useUpdateDataSourceSettingsMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -138,6 +164,9 @@ export function useUpdateDataSourceSettingsMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['settings'] }),
         queryClient.invalidateQueries({ queryKey: ['settings-data-source'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['settings-asset-metadata'],
+        }),
         queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
         queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
         queryClient.invalidateQueries({ queryKey: ['portfolio-snapshot'] }),
