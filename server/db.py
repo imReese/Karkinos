@@ -504,6 +504,146 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row else None
 
+    # ---------- Quote Fetch Runs ----------
+
+    def create_quote_fetch_run(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        trigger: str,
+        status: str,
+        provider: str | None = None,
+        asset_type: str | None = None,
+        symbol_count: int = 0,
+        success_count: int = 0,
+        failure_count: int = 0,
+        cache_hit_count: int = 0,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | str | None = None,
+    ) -> int:
+        """Create one quote fetch run audit row."""
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO quote_fetch_runs (
+                    run_id, started_at, trigger, provider, asset_type, symbol_count,
+                    success_count, failure_count, cache_hit_count, status,
+                    error_message, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    started_at,
+                    trigger,
+                    provider,
+                    asset_type,
+                    symbol_count,
+                    success_count,
+                    failure_count,
+                    cache_hit_count,
+                    status,
+                    error_message,
+                    _serialize_metadata_json(metadata),
+                ),
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
+    def finish_quote_fetch_run(
+        self,
+        *,
+        run_id: str,
+        finished_at: str,
+        status: str,
+        success_count: int = 0,
+        failure_count: int = 0,
+        cache_hit_count: int = 0,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | str | None = None,
+    ) -> dict[str, Any] | None:
+        """Mark a quote fetch run as finished and return the updated row."""
+        metadata_json = _serialize_metadata_json(metadata)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            if metadata_json is None:
+                conn.execute(
+                    """
+                    UPDATE quote_fetch_runs
+                    SET finished_at = ?,
+                        status = ?,
+                        success_count = ?,
+                        failure_count = ?,
+                        cache_hit_count = ?,
+                        error_message = ?
+                    WHERE run_id = ?
+                    """,
+                    (
+                        finished_at,
+                        status,
+                        success_count,
+                        failure_count,
+                        cache_hit_count,
+                        error_message,
+                        run_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE quote_fetch_runs
+                    SET finished_at = ?,
+                        status = ?,
+                        success_count = ?,
+                        failure_count = ?,
+                        cache_hit_count = ?,
+                        error_message = ?,
+                        metadata_json = ?
+                    WHERE run_id = ?
+                    """,
+                    (
+                        finished_at,
+                        status,
+                        success_count,
+                        failure_count,
+                        cache_hit_count,
+                        error_message,
+                        metadata_json,
+                        run_id,
+                    ),
+                )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM quote_fetch_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_quote_fetch_run(self, run_id: str) -> dict[str, Any] | None:
+        """Read one quote fetch run by run_id."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM quote_fetch_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_quote_fetch_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        """List quote fetch runs, newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM quote_fetch_runs
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Quote Snapshots ----------
 
     def save_quote_snapshot_sync(
@@ -1294,6 +1434,30 @@ CREATE INDEX IF NOT EXISTS idx_quote_snapshots_symbol_ts ON quote_snapshots(symb
 CREATE INDEX IF NOT EXISTS idx_daily_close_symbol_trade_date ON daily_close_snapshots(symbol, trade_date DESC);
 CREATE INDEX IF NOT EXISTS idx_action_tasks_status_ts ON action_tasks(status, timestamp DESC);
 
+CREATE TABLE IF NOT EXISTS quote_fetch_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    trigger TEXT NOT NULL,
+    provider TEXT,
+    asset_type TEXT,
+    symbol_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    cache_hit_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_quote_fetch_runs_started_at
+ON quote_fetch_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quote_fetch_runs_status
+ON quote_fetch_runs(status);
+CREATE INDEX IF NOT EXISTS idx_quote_fetch_runs_provider
+ON quote_fetch_runs(provider);
+
 CREATE TABLE IF NOT EXISTS risk_decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     decision_id TEXT NOT NULL UNIQUE,
@@ -1443,3 +1607,12 @@ def _normalize_timestamp(value: str) -> str:
     else:
         dt = dt.astimezone(timezone.utc)
     return dt.isoformat(timespec="seconds")
+
+
+def _serialize_metadata_json(value: dict[str, Any] | str | None) -> str | None:
+    """Serialize optional metadata to stable JSON text."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))

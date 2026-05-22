@@ -1,12 +1,136 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from datetime import datetime
 from decimal import Decimal
 
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
 from server.db import AppDatabase
+
+
+def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        table = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'quote_fetch_runs'
+            """
+        ).fetchone()
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'quote_fetch_runs'
+                """
+            ).fetchall()
+        }
+
+    assert table is not None
+    assert "idx_quote_fetch_runs_started_at" in indexes
+    assert "idx_quote_fetch_runs_status" in indexes
+    assert "idx_quote_fetch_runs_provider" in indexes
+
+
+def test_app_database_records_quote_fetch_run_lifecycle(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    row_id = db.create_quote_fetch_run(
+        run_id="quote-run-1",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="manual_refresh",
+        provider="akshare",
+        asset_type="stock",
+        symbol_count=3,
+        status="running",
+        metadata={"symbols": ["600519", "510300"]},
+    )
+
+    created = db.get_quote_fetch_run("quote-run-1")
+    assert row_id > 0
+    assert created is not None
+    assert created["run_id"] == "quote-run-1"
+    assert created["finished_at"] is None
+    assert created["status"] == "running"
+    assert created["provider"] == "akshare"
+    assert created["metadata_json"] == '{"symbols":["600519","510300"]}'
+
+    db.finish_quote_fetch_run(
+        run_id="quote-run-1",
+        finished_at="2026-05-23T09:30:03+08:00",
+        status="completed",
+        success_count=2,
+        failure_count=1,
+        cache_hit_count=1,
+        error_message="1 symbol timed out",
+        metadata={"elapsed_ms": 3000},
+    )
+
+    finished = db.get_quote_fetch_run("quote-run-1")
+    assert finished is not None
+    assert finished["finished_at"] == "2026-05-23T09:30:03+08:00"
+    assert finished["success_count"] == 2
+    assert finished["failure_count"] == 1
+    assert finished["cache_hit_count"] == 1
+    assert finished["status"] == "completed"
+    assert finished["error_message"] == "1 symbol timed out"
+    assert finished["metadata_json"] == '{"elapsed_ms":3000}'
+
+
+def test_app_database_lists_recent_quote_fetch_runs(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    db.create_quote_fetch_run(
+        run_id="quote-run-older",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="scheduler",
+        status="completed",
+    )
+    db.create_quote_fetch_run(
+        run_id="quote-run-newer",
+        started_at="2026-05-23T09:31:00+08:00",
+        trigger="manual_refresh",
+        status="running",
+    )
+
+    rows = db.list_quote_fetch_runs()
+    limited = db.list_quote_fetch_runs(limit=1)
+
+    assert [row["run_id"] for row in rows] == ["quote-run-newer", "quote-run-older"]
+    assert [row["run_id"] for row in limited] == ["quote-run-newer"]
+
+
+def test_app_database_rejects_duplicate_quote_fetch_run_id(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    db.create_quote_fetch_run(
+        run_id="quote-run-1",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="manual_refresh",
+        status="running",
+    )
+
+    try:
+        db.create_quote_fetch_run(
+            run_id="quote-run-1",
+            started_at="2026-05-23T09:31:00+08:00",
+            trigger="manual_refresh",
+            status="running",
+        )
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError("duplicate quote fetch run_id should be rejected")
 
 
 def test_app_database_persists_latest_quote_snapshot(tmp_path):
