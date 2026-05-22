@@ -46,13 +46,10 @@ export function DashboardQuickActions({
     marketHealth?.provider_name === 'demo';
   const isStale =
     quoteStatus === 'stale' ||
+    quoteStatus === 'missing' ||
     marketHealth?.source_health === 'stale' ||
-    marketHealth?.source_health === 'degraded';
-  const shouldSuggestDemo =
-    !isDemoSource &&
-    (marketHealth?.provider_last_error === 'provider_timeout' ||
-      marketHealth?.last_refresh_error === 'provider_timeout' ||
-      marketHealth?.provider_supports_funds === false);
+    marketHealth?.source_health === 'degraded' ||
+    marketHealth?.persistent_cache_status === 'missing';
   const refreshMessage = refreshQuotes.isPending
     ? labels.refreshingQuotes
     : refreshQuotes.isError
@@ -120,9 +117,12 @@ export function DashboardQuickActions({
                 <span className="h-1.5 w-1.5 rounded-full bg-current" />
                 {isDemoSource
                   ? copy.market.demoQuotes
-                  : isStale
-                    ? copy.shell.cachedQuotes
-                    : copy.shell.valuationMode}
+                  : quoteStatus === 'missing' ||
+                      marketHealth?.persistent_cache_status === 'missing'
+                    ? copy.market.providerActions.run_first_sync
+                    : isStale
+                      ? copy.shell.cachedQuotes
+                      : copy.shell.valuationMode}
               </span>
               <span className="app-muted text-xs">
                 {labels.staleReason}: {staleReason}
@@ -199,9 +199,7 @@ export function DashboardQuickActions({
               href="/settings"
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
             >
-              {shouldSuggestDemo
-                ? copy.settings.enableDemoQuotes
-                : labels.dataSettings}
+              {labels.dataSettings}
             </a>
           </div>
         </div>

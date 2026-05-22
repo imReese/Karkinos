@@ -449,6 +449,31 @@ export function SettingsPage() {
                 value={metadataConfiguredCount}
                 tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
               />
+              <StatusMetric
+                label={copy.settings.persistentCache}
+                value={
+                  dataSourceStatus.data?.has_persistent_cache
+                    ? copy.market.configured
+                    : copy.market.notConfigured
+                }
+                tone={
+                  dataSourceStatus.data?.has_persistent_cache
+                    ? 'success'
+                    : 'warning'
+                }
+              />
+              <StatusMetric
+                label={copy.settings.lastSuccessfulSync}
+                value={
+                  dataSourceStatus.data?.latest_persistent_quote_timestamp ??
+                  copy.settings.noValuationTime
+                }
+                tone={
+                  dataSourceStatus.data?.latest_persistent_quote_timestamp
+                    ? 'neutral'
+                    : 'warning'
+                }
+              />
             </div>
 
             {providerName === 'demo' ? (

@@ -33,6 +33,8 @@ export type Position = {
   quote_age_seconds?: number | null;
   stale_reason?: string | null;
   refresh_policy?: string | null;
+  using_persistent_cache?: boolean;
+  nav_date?: string | null;
 };
 
 export type AllocationItem = {
@@ -82,6 +84,8 @@ export type LiveHoldingItem = {
   quote_age_seconds?: number | null;
   stale_reason?: string | null;
   refresh_policy?: string | null;
+  using_persistent_cache?: boolean;
+  nav_date?: string | null;
 };
 
 export type LiveHoldingGroup = {

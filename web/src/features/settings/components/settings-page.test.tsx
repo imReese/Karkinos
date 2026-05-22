@@ -56,6 +56,11 @@ const defaultMarketHealth: MarketDataHealthResponse = {
   last_refresh_error: null,
   stale_symbols_count: 0,
   stale_symbols_sample: [],
+  real_data_available: true,
+  has_persistent_cache: true,
+  latest_persistent_quote_timestamp: '2026-05-16T22:40:00+08:00',
+  persistent_cache_status: 'available',
+  demo_mode: false,
 };
 
 const defaultDataSourceStatus: DataSourceStatusResponse = {
@@ -67,6 +72,10 @@ const defaultDataSourceStatus: DataSourceStatusResponse = {
   requires_restart: false,
   next_action: null,
   metadata_configured_count: 2,
+  has_persistent_cache: true,
+  latest_persistent_quote_timestamp: '2026-05-16T22:40:00+08:00',
+  persistent_cache_status: 'available',
+  demo_mode: false,
   available_providers: ['demo', 'akshare', 'tushare'],
 };
 
@@ -343,15 +352,15 @@ test('enables demo provider from degraded provider guidance', async () => {
   });
 
   expect(
-    await screen.findByRole('button', { name: 'Enable Demo quotes' }),
+    await screen.findByRole('button', { name: 'Enter demo mode' }),
   ).toBeTruthy();
   expect(
     await screen.findByText(
-      'The configured quote source is timing out. Switch to Demo quotes for local development or check provider settings.',
+      'The configured quote source is timing out. Karkinos will prefer local real-data cache; enter Demo mode only for development.',
     ),
   ).toBeTruthy();
 
-  await user.click(screen.getByRole('button', { name: 'Enable Demo quotes' }));
+  await user.click(screen.getByRole('button', { name: 'Enter demo mode' }));
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
@@ -366,7 +375,7 @@ test('enables demo provider from degraded provider guidance', async () => {
       }),
     );
   });
-  expect(await screen.findByText('Demo quotes enabled')).toBeTruthy();
+  expect(await screen.findByText('Demo mode enabled')).toBeTruthy();
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 
