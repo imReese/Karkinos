@@ -22,10 +22,14 @@ Key Features:
 ## Architecture
 
 ```
-DataHandler → EventBus → Strategy → Portfolio → RiskManager(-10) → Execution(0)
-                        ↑                                              |
-                        └──────────── FillEvent ──────────────────────┘
+DataHandler → EventBus → Strategy → Portfolio → OrderIntent → Risk Gate → Order/Gateway
+                        ↑                                                     |
+                        └──────────────── FillEvent ──────────────────────────┘
 ```
+
+Backtests use deterministic OrderIntent approval wiring. Live mode uses
+`PreTradeRiskManager` before `ManualConfirmGateway`; the legacy `RiskManager`
+subscribes by priority but EventBus handlers do not consume or stop propagation.
 
 **Core Principles:**
 
@@ -75,7 +79,7 @@ Karkinos/
 │   ├── slippage.py         # Slippage models (fixed/percent/volume)
 │   └── commission.py       # Commission models (A-share/ETF/gold/bond)
 ├── risk/                   # Risk management layer
-│   ├── manager.py          # RiskManager (priority=-10 intercept)
+│   ├── manager.py          # RiskManager (legacy OrderEvent checks; cannot consume EventBus events)
 │   ├── rules.py            # RiskRule ABC + RiskCheckResult
 │   └── limits.py           # Position limit / max drawdown / concentration rules
 ├── backtest/               # Backtest engine
@@ -90,7 +94,7 @@ Karkinos/
 │   ├── app.py              # FastAPI app factory + lifecycle management
 │   ├── __main__.py         # CLI entry point (--host/--port/--reload/--no-live)
 │   ├── bridge.py           # EventBusBridge (sync → async event bridging)
-│   ├── db.py               # SQLite persistence (signals/backtest/portfolio snapshots)
+│   ├── db.py               # SQLite persistence (signals/backtests/quote snapshots/ledger)
 │   ├── models.py           # Pydantic v2 request/response models
 │   ├── scheduler.py        # TradingScheduler (live trading loop)
 │   ├── dependencies.py     # FastAPI dependency injection
@@ -325,7 +329,7 @@ uv run python -m server [options]
 uv run python live.py
 ```
 
-Standalone live monitoring entry point, independent of the Web server. Reads `config.json`, polls market data, runs strategy, and pushes signals via notification channels. Press `Ctrl+C` to exit.
+Standalone live monitoring entry point, independent of the Web server. Reads `config.json`, polls market data, runs strategy, and pushes signals via notification channels. The Web service live path uses `TradingScheduler`, `PreTradeRiskManager`, and `ManualConfirmGateway`. Press `Ctrl+C` to exit.
 
 ## API Reference
 
@@ -389,7 +393,7 @@ Streams EventBus events in real-time after connection. Each message includes an 
 
 ### Dockerfile (Multi-Stage Build)
 
-- **Stage 1** (`node:20-alpine`): Builds Vue frontend with `npm ci && npm run build`, output to `web/dist/`
+- **Stage 1** (`node:20-alpine`): Builds React frontend with `npm ci && npm run build`, output to `web/dist/`
 - **Stage 2** (`python:3.12-slim`): Copies source + frontend dist, installs server dependencies, sets `KARKINOS_CONFIG_PATH=/app/config.json` and `KARKINOS_DATA_DIR=/app/data/store`, then starts with `python -m server`
 
 ### docker-compose.yml
@@ -445,7 +449,7 @@ KARKINOS_PORT=9000 docker compose up -d
 
 ### Tech Stack
 
-Vue 3 + TypeScript + Pinia + Vue Router + ECharts + Axios + Vite
+React 19 + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 
 ### Views
 
@@ -562,7 +566,9 @@ df_with_features = engine.add_all_features(df)
 
 ## Risk Management
 
-`RiskManager` subscribes to `OrderEvent` at `priority=-10`, intercepting orders before Execution (priority=0).
+The legacy `RiskManager` subscribes to `OrderEvent` at `priority=-10`, so it can audit orders and publish risk alerts before Execution (priority=0). The synchronous EventBus does not let one handler consume an event, so this class cannot stop later handlers by itself.
+
+The current Live safety path is `OrderIntentEvent` → `PreTradeRiskManager` → `RiskDecisionEvent`/`OrderEvent` → `ManualConfirmGateway`. Backtests use deterministic compatibility wiring inside `BacktestEngine` to approve `OrderIntentEvent` without depending on Live state.
 
 Three built-in rules:
 
@@ -585,7 +591,7 @@ risk_mgr.add_rule(MaxDrawdownRule(max_drawdown_pct=Decimal("0.15")))
 risk_mgr.add_rule(ConcentrationRule(max_concentration=Decimal("0.30")))
 ```
 
-When an order is rejected, RiskManager publishes a `RiskAlertEvent` and blocks the order from proceeding.
+In the `PreTradeRiskManager` path, rejected orders publish `RiskDecisionEvent` / `RiskAlertEvent` and do not produce an `OrderEvent`. The legacy `RiskManager` requires cooperation from the execution layer to block an order.
 
 ## Commission Models
 
