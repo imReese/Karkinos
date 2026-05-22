@@ -191,7 +191,7 @@ test('labels demo market data without claiming real quotes', () => {
   expect(screen.queryByText('Market data available')).toBeNull();
 });
 
-test('points provider timeouts to demo quote setup', () => {
+test('points provider timeouts to data source settings without demo fallback', () => {
   renderWithProviders(
     <DashboardQuickActions
       overview={{
@@ -215,7 +215,7 @@ test('points provider timeouts to demo quote setup', () => {
         provider_supports_funds: false,
         provider_last_error: 'provider_timeout',
         provider_timeout_seconds: 8,
-        next_action: 'check_provider_network_or_use_cache',
+        next_action: 'use_cached_data',
         metadata_configured_count: 1,
         source_health: 'degraded',
         cache_age_seconds: 5,
@@ -224,14 +224,20 @@ test('points provider timeouts to demo quote setup', () => {
         last_refresh_error: 'provider_timeout',
         stale_symbols_count: 1,
         stale_symbols_sample: ['018125'],
+        has_persistent_cache: true,
+        latest_persistent_quote_timestamp: '2026-05-18T00:18:00+08:00',
+        persistent_cache_status: 'available',
+        demo_mode: false,
       }}
       symbols={['018125']}
     />,
   );
 
   expect(
-    screen
-      .getByRole('link', { name: 'Enable Demo quotes' })
-      .getAttribute('href'),
+    screen.getByText('Continue with local cached market data'),
+  ).toBeTruthy();
+  expect(screen.queryByText('Demo quotes')).toBeNull();
+  expect(
+    screen.getByRole('link', { name: 'Data settings' }).getAttribute('href'),
   ).toBe('/settings');
 });

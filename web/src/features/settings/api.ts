@@ -56,6 +56,10 @@ export type DataSourceStatusResponse = {
   requires_restart: boolean;
   next_action: string | null;
   metadata_configured_count: number;
+  has_persistent_cache?: boolean;
+  latest_persistent_quote_timestamp?: string | null;
+  persistent_cache_status?: string;
+  demo_mode?: boolean;
   available_providers: string[];
 };
 

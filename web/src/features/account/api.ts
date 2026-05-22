@@ -25,8 +25,10 @@ export type AccountOverview = {
   valuation_timestamp?: string | null;
   quote_status?: string;
   quote_age_seconds?: number | null;
+  quote_source?: string | null;
   stale_reason?: string | null;
   refresh_policy?: string | null;
+  using_persistent_cache?: boolean;
 };
 
 export type EquityPoint = {
@@ -43,6 +45,11 @@ export type EquitySeriesPoint = {
   cash: number;
   unrealized_pnl?: number | null;
   quote_status?: string;
+  quote_source?: string | null;
+  quote_age_seconds?: number | null;
+  stale_reason?: string | null;
+  using_persistent_cache?: boolean;
+  nav_date?: string | null;
 };
 
 export type EquityCurveRange = '1d' | '5d' | '1m' | '6m' | '1y' | 'all';
