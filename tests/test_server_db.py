@@ -18,6 +18,12 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
         price=123.45,
         volume=6789.0,
         timestamp="2026-04-18T09:35:00",
+        quote_source="akshare",
+        provider_name="akshare",
+        quote_status="live",
+        provider_status="live",
+        captured_reason="test_refresh",
+        nav_date="2026-04-18",
     )
     quote = db.get_latest_quotes_sync()[0]
 
@@ -25,6 +31,11 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
     assert quote["symbol"] == "600519"
     assert quote["price"] == 123.45
     assert quote["asset_class"] == "stock"
+    assert quote["quote_source"] == "akshare"
+    assert quote["provider_name"] == "akshare"
+    assert quote["quote_status"] == "live"
+    assert quote["captured_reason"] == "test_refresh"
+    assert quote["nav_date"] == "2026-04-18"
 
 
 def test_app_database_persists_action_tasks_and_status_updates(tmp_path):

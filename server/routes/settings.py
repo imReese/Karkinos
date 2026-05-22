@@ -113,6 +113,22 @@ def _build_data_source_status(state) -> DataSourceStatusResponse:
     provider_configured = _provider_configured(config, provider_name)
     provider_supports_funds = _provider_supports_funds(provider_name)
     metadata_count = metadata_configured_count(state)
+    persistent_timestamps: list[str] = []
+    db = getattr(state, "db", None)
+    if db is not None and hasattr(db, "get_latest_quotes_sync"):
+        for row in db.get_latest_quotes_sync():
+            source = (
+                row.get("quote_source")
+                or row.get("source")
+                or row.get("provider_name")
+                or row.get("provider")
+            )
+            if str(source).lower() == "demo":
+                continue
+            timestamp = row.get("timestamp")
+            if timestamp:
+                persistent_timestamps.append(str(timestamp))
+    has_persistent_cache = bool(persistent_timestamps)
     return DataSourceStatusResponse(
         data_source=provider_name,
         provider_name=provider_name,
@@ -128,6 +144,12 @@ def _build_data_source_status(state) -> DataSourceStatusResponse:
             metadata_count=metadata_count,
         ),
         metadata_configured_count=metadata_count,
+        has_persistent_cache=has_persistent_cache,
+        latest_persistent_quote_timestamp=max(persistent_timestamps)
+        if persistent_timestamps
+        else None,
+        persistent_cache_status="available" if has_persistent_cache else "missing",
+        demo_mode=provider_name == "demo",
     )
 
 
