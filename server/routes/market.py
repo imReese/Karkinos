@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -448,6 +449,147 @@ def _default_refresh_symbols(state) -> list[str]:
     return _normalize_refresh_symbols(
         [asset_cfg["symbol"] for asset_cfg in _merged_watchlist_assets(state)]
     )
+
+
+def _quote_fetch_run_asset_type(
+    requested_symbols: list[str],
+    asset_class_by_symbol: dict[str, AssetClass],
+) -> str | None:
+    asset_types = {
+        asset_class_by_symbol.get(symbol, AssetClass.STOCK).value
+        for symbol in requested_symbols
+    }
+    if not asset_types:
+        return None
+    if len(asset_types) == 1:
+        return next(iter(asset_types))
+    return "mixed"
+
+
+def _create_manual_quote_fetch_run(
+    state,
+    *,
+    run_id: str,
+    started_at: str,
+    requested_symbols: list[str],
+    asset_type: str | None,
+) -> None:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "create_quote_fetch_run"):
+        return
+    try:
+        db.create_quote_fetch_run(
+            run_id=run_id,
+            started_at=started_at,
+            trigger="manual_refresh",
+            provider=_configured_provider_name(state),
+            asset_type=asset_type,
+            symbol_count=len(requested_symbols),
+            status="running",
+            metadata={
+                "requested_symbols": requested_symbols,
+                "demo_mode": _is_demo_mode(state),
+            },
+        )
+    except Exception:
+        logger.warning("Failed to create quote fetch run audit row", exc_info=True)
+
+
+def _manual_quote_fetch_run_status(
+    *,
+    quote_status: str,
+    success_count: int,
+    failure_count: int,
+    cache_hit_count: int,
+) -> str:
+    if quote_status == "live":
+        return "success"
+    if cache_hit_count > 0 and success_count == 0:
+        return "cache_only"
+    if success_count > 0 or cache_hit_count > 0:
+        return "partial_success"
+    if failure_count > 0:
+        return "failed"
+    return "failed"
+
+
+def _manual_quote_fetch_provider_status(
+    state,
+    *,
+    quote_status: str,
+    last_refresh_error: str | None,
+) -> str:
+    if _is_demo_mode(state):
+        return "demo"
+    if last_refresh_error:
+        return "failed"
+    if quote_status == "live":
+        return "live"
+    if quote_status == "partial":
+        return "partial"
+    if quote_status == "stale":
+        return "cache"
+    return "failed"
+
+
+def _finish_manual_quote_fetch_run(
+    state,
+    *,
+    run_id: str,
+    finished_at: str,
+    requested_symbols: list[str],
+    refreshed: list[QuoteRefreshSymbolResult],
+    failed: list[QuoteRefreshSymbolResult],
+    skipped: list[QuoteRefreshSymbolResult],
+    quote_status: str,
+    refresh_policy: str,
+    market_open: bool,
+    last_refresh_error: str | None,
+) -> None:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "finish_quote_fetch_run"):
+        return
+    success_count = len(refreshed)
+    failure_count = len(failed)
+    cache_hit_count = sum(
+        1 for result in [*refreshed, *failed, *skipped] if result.using_persistent_cache
+    )
+    status = _manual_quote_fetch_run_status(
+        quote_status=quote_status,
+        success_count=success_count,
+        failure_count=failure_count,
+        cache_hit_count=cache_hit_count,
+    )
+    metadata = {
+        "provider": _configured_provider_name(state),
+        "provider_status": _manual_quote_fetch_provider_status(
+            state,
+            quote_status=quote_status,
+            last_refresh_error=last_refresh_error,
+        ),
+        "quote_status": quote_status,
+        "refresh_policy": refresh_policy,
+        "market_open": market_open,
+        "using_persistent_cache": cache_hit_count > 0,
+        "demo_mode": _is_demo_mode(state),
+        "requested_symbols": requested_symbols,
+        "refreshed_symbols": [result.symbol for result in refreshed],
+        "failed_symbols": [result.symbol for result in failed],
+        "skipped_symbols": [result.symbol for result in skipped],
+    }
+    try:
+        db.finish_quote_fetch_run(
+            run_id=run_id,
+            finished_at=finished_at,
+            status=status,
+            success_count=success_count,
+            failure_count=failure_count,
+            cache_hit_count=cache_hit_count,
+            error_message=last_refresh_error,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.warning("Failed to finish quote fetch run audit row", exc_info=True)
 
 
 def _latest_cached_quote(state, symbol: str) -> dict | None:
@@ -1183,15 +1325,37 @@ def create_router() -> APIRouter:
         requested_symbols = _normalize_refresh_symbols(request.symbols)
         if not requested_symbols:
             requested_symbols = _default_refresh_symbols(state)
+        run_id = f"manual_refresh:{started_at_dt.isoformat()}:{uuid.uuid4().hex}"
 
         if not requested_symbols:
             completed_at_dt = datetime.now()
+            completed_at = completed_at_dt.isoformat()
+            _create_manual_quote_fetch_run(
+                state,
+                run_id=run_id,
+                started_at=started_at,
+                requested_symbols=[],
+                asset_type=None,
+            )
+            _finish_manual_quote_fetch_run(
+                state,
+                run_id=run_id,
+                finished_at=completed_at,
+                requested_symbols=[],
+                refreshed=[],
+                failed=[],
+                skipped=[],
+                quote_status="error",
+                refresh_policy=refresh_policy,
+                market_open=market_open,
+                last_refresh_error="no_refresh_symbols",
+            )
             return QuoteRefreshResponse(
                 requested_symbols=[],
                 refresh_policy=refresh_policy,
                 market_open=market_open,
                 started_at=started_at,
-                completed_at=completed_at_dt.isoformat(),
+                completed_at=completed_at,
                 duration_ms=int(
                     (completed_at_dt - started_at_dt).total_seconds() * 1000
                 ),
@@ -1209,6 +1373,16 @@ def create_router() -> APIRouter:
             )
             for asset_cfg in watchlist_assets
         }
+        _create_manual_quote_fetch_run(
+            state,
+            run_id=run_id,
+            started_at=started_at,
+            requested_symbols=requested_symbols,
+            asset_type=_quote_fetch_run_asset_type(
+                requested_symbols,
+                asset_class_by_symbol,
+            ),
+        )
 
         results = await asyncio.gather(
             *[
@@ -1248,6 +1422,20 @@ def create_router() -> APIRouter:
             None,
         )
         has_persistent_cache = any(result.using_persistent_cache for result in results)
+        completed_at = completed_at_dt.isoformat()
+        _finish_manual_quote_fetch_run(
+            state,
+            run_id=run_id,
+            finished_at=completed_at,
+            requested_symbols=requested_symbols,
+            refreshed=refreshed,
+            failed=failed,
+            skipped=skipped,
+            quote_status=quote_status,
+            refresh_policy=refresh_policy,
+            market_open=market_open,
+            last_refresh_error=last_refresh_error,
+        )
         return QuoteRefreshResponse(
             requested_symbols=requested_symbols,
             refreshed=refreshed,
@@ -1256,7 +1444,7 @@ def create_router() -> APIRouter:
             refresh_policy=refresh_policy,
             market_open=market_open,
             started_at=started_at,
-            completed_at=completed_at_dt.isoformat(),
+            completed_at=completed_at,
             duration_ms=int((completed_at_dt - started_at_dt).total_seconds() * 1000),
             quote_status=quote_status,
             last_refresh_attempt=started_at,

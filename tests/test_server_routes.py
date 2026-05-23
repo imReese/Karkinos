@@ -462,6 +462,219 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     assert fake_scheduler.latest_quotes["600519"]["price"] == 12.5
 
 
+def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            latest_quotes={},
+            portfolio=SimpleNamespace(positions={}),
+            instruments={},
+        ),
+        db=db,
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(
+        market_routes,
+        "_fetch_latest_snapshot",
+        lambda state, symbol, asset_class: {
+            "symbol": symbol,
+            "asset_class": asset_class.value,
+            "price": 12.5,
+            "volume": 1000.0,
+            "timestamp": "2026-05-12T10:05:00+08:00",
+            "quote_source": "akshare",
+            "provider_name": "akshare",
+            "quote_status": "live",
+            "provider_status": "live",
+        },
+    )
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
+    )
+
+    runs = db.list_quote_fetch_runs()
+    assert response.quote_status == "live"
+    assert len(runs) == 1
+    assert runs[0]["trigger"] == "manual_refresh"
+    assert runs[0]["provider"] == "akshare"
+    assert runs[0]["asset_type"] == "stock"
+    assert runs[0]["symbol_count"] == 1
+    assert runs[0]["success_count"] == 1
+    assert runs[0]["failure_count"] == 0
+    assert runs[0]["cache_hit_count"] == 0
+    assert runs[0]["status"] == "success"
+    metadata = json.loads(runs[0]["metadata_json"])
+    assert metadata["provider_status"] == "live"
+    assert metadata["quote_status"] == "live"
+    assert metadata["using_persistent_cache"] is False
+    assert metadata["demo_mode"] is False
+
+
+def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_path):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="600519",
+        asset_class="stock",
+        price=10.0,
+        volume=1000.0,
+        timestamp="2026-05-12T09:30:00+08:00",
+        quote_source="akshare",
+        provider_name="akshare",
+        quote_status="live",
+        provider_status="live",
+        captured_reason="test_cache",
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            latest_quotes={},
+            portfolio=SimpleNamespace(positions={}),
+            instruments={},
+        ),
+        db=db,
+    )
+
+    def fail_fetch(state, symbol, asset_class):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_fetch_latest_snapshot", fail_fetch)
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
+    )
+
+    runs = db.list_quote_fetch_runs()
+    assert response.failed[0].using_persistent_cache is True
+    assert len(runs) == 1
+    assert runs[0]["status"] == "cache_only"
+    assert runs[0]["success_count"] == 0
+    assert runs[0]["failure_count"] == 1
+    assert runs[0]["cache_hit_count"] == 1
+    assert runs[0]["error_message"] == "provider unavailable"
+    metadata = json.loads(runs[0]["metadata_json"])
+    assert metadata["provider_status"] == "failed"
+    assert metadata["quote_status"] == "error"
+    assert metadata["using_persistent_cache"] is True
+    assert metadata["demo_mode"] is False
+
+
+def test_market_quote_refresh_records_failed_run_without_demo_fallback(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    class BrokenAkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            raise RuntimeError("provider unavailable")
+
+    class DemoShouldNotRun:
+        def fetch_latest(self, symbol, asset_class):
+            raise AssertionError("real provider mode must not call demo fallback")
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "000000", "asset_class": "fund"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            latest_quotes={},
+            portfolio=SimpleNamespace(positions={}),
+            instruments={},
+        ),
+        db=db,
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "akshare": BrokenAkshareSource(),
+            "demo": DemoShouldNotRun(),
+        },
+    )
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["000000"]))
+    )
+
+    runs = db.list_quote_fetch_runs()
+    assert response.quote_status == "error"
+    assert response.failed[0].using_persistent_cache is False
+    assert response.failed[0].demo_mode is False
+    assert len(runs) == 1
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["provider"] == "akshare"
+    assert runs[0]["asset_type"] == "fund"
+    assert runs[0]["symbol_count"] == 1
+    assert runs[0]["success_count"] == 0
+    assert runs[0]["failure_count"] == 1
+    assert runs[0]["cache_hit_count"] == 0
+    assert runs[0]["error_message"] == "provider unavailable"
+    metadata = json.loads(runs[0]["metadata_json"])
+    assert metadata["provider_status"] == "failed"
+    assert metadata["using_persistent_cache"] is False
+    assert metadata["demo_mode"] is False
+
+
 def test_market_data_health_reports_provider_configuration_next_action(monkeypatch):
     from server.routes import market as market_routes
 
@@ -557,6 +770,8 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
     endpoint = refresh_route.endpoint
 
     saved_quotes: list[dict] = []
+    created_runs: list[dict] = []
+    finished_runs: list[dict] = []
 
     class FakeDb:
         def get_latest_quotes_sync(self):
@@ -564,6 +779,14 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
 
         def save_quote_snapshot_sync(self, **payload):
             saved_quotes.append(payload)
+
+        def create_quote_fetch_run(self, **payload):
+            created_runs.append(payload)
+            return 1
+
+        def finish_quote_fetch_run(self, **payload):
+            finished_runs.append(payload)
+            return payload
 
     fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
     fake_state = SimpleNamespace(
@@ -603,6 +826,11 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
     assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
     assert fake_scheduler.latest_quotes["000000"]["price"] > 0
     assert saved_quotes[0]["symbol"] == "000000"
+    assert created_runs[0]["trigger"] == "manual_refresh"
+    assert created_runs[0]["provider"] == "demo"
+    assert finished_runs[0]["status"] == "success"
+    assert finished_runs[0]["metadata"]["provider_status"] == "demo"
+    assert finished_runs[0]["metadata"]["demo_mode"] is True
 
 
 def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
