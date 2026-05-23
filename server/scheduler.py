@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import uuid
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -150,6 +151,181 @@ class TradingScheduler:
         except Exception:
             logger.warning("策略预热整体失败，将跳过", exc_info=True)
 
+    def _scheduler_quote_fetch_asset_type(self) -> str | None:
+        asset_types = {asset_class.value for _, asset_class in self._watchlist}
+        if not asset_types:
+            return None
+        if len(asset_types) == 1:
+            return next(iter(asset_types))
+        return "mixed"
+
+    def _scheduler_quote_fetch_metadata(
+        self,
+        *,
+        provider_status: str,
+        success_symbols: list[str],
+        failed_symbols: list[str],
+        error_message: str | None = None,
+    ) -> dict:
+        success_count = len(success_symbols)
+        failure_count = len(failed_symbols)
+        return {
+            "trigger": "scheduler_poll",
+            "provider": self._config.data_source,
+            "provider_status": provider_status,
+            "demo_mode": self._config.data_source == "demo",
+            "market_open": True,
+            "poll_interval_seconds": self._config.live_poll_interval,
+            "symbols": [str(symbol) for symbol, _ in self._watchlist],
+            "asset_types": [asset_class.value for _, asset_class in self._watchlist],
+            "success_symbols": success_symbols,
+            "failed_symbols": failed_symbols,
+            "symbol_count": len(self._watchlist),
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "cache_hit_count": 0,
+            "quote_status_counts": {"live": success_count} if success_count else {},
+            "stale_reason_counts": {},
+            "error_message": error_message,
+        }
+
+    def _scheduler_quote_fetch_status(
+        self, *, success_count: int, failure_count: int
+    ) -> str:
+        if success_count == len(self._watchlist) and failure_count == 0:
+            return "success"
+        if success_count > 0:
+            return "partial_success"
+        return "failed"
+
+    def _provider_status_for_scheduler_run(
+        self, *, success_count: int, failure_count: int
+    ) -> str:
+        if self._config.data_source == "demo":
+            return "demo"
+        if success_count == len(self._watchlist) and failure_count == 0:
+            return "live"
+        if success_count > 0:
+            return "partial"
+        return "failed"
+
+    def _create_scheduler_quote_fetch_run(
+        self, *, run_id: str, started_at: str
+    ) -> None:
+        if self._db is None or not hasattr(self._db, "create_quote_fetch_run"):
+            return
+        try:
+            self._db.create_quote_fetch_run(
+                run_id=run_id,
+                started_at=started_at,
+                trigger="scheduler_poll",
+                provider=self._config.data_source,
+                asset_type=self._scheduler_quote_fetch_asset_type(),
+                symbol_count=len(self._watchlist),
+                status="running",
+                metadata={
+                    "trigger": "scheduler_poll",
+                    "provider": self._config.data_source,
+                    "demo_mode": self._config.data_source == "demo",
+                    "market_open": True,
+                    "poll_interval_seconds": self._config.live_poll_interval,
+                    "symbols": [str(symbol) for symbol, _ in self._watchlist],
+                    "asset_types": [
+                        asset_class.value for _, asset_class in self._watchlist
+                    ],
+                },
+            )
+        except Exception:
+            logger.warning("Failed to create scheduler quote fetch run", exc_info=True)
+
+    def _finish_scheduler_quote_fetch_run(
+        self,
+        *,
+        run_id: str,
+        finished_at: str,
+        status: str,
+        success_count: int,
+        failure_count: int,
+        metadata: dict,
+        error_message: str | None = None,
+    ) -> None:
+        if self._db is None or not hasattr(self._db, "finish_quote_fetch_run"):
+            return
+        try:
+            self._db.finish_quote_fetch_run(
+                run_id=run_id,
+                finished_at=finished_at,
+                status=status,
+                success_count=success_count,
+                failure_count=failure_count,
+                cache_hit_count=0,
+                error_message=error_message,
+                metadata=metadata,
+            )
+        except Exception:
+            logger.warning("Failed to finish scheduler quote fetch run", exc_info=True)
+
+    def _poll_watchlist_quotes(self, feed: LiveDataFeed) -> list:
+        """Poll live quotes once and audit only the fetch phase."""
+        started_at_dt = datetime.now()
+        run_id = f"scheduler_poll:{started_at_dt.isoformat()}:{uuid.uuid4().hex}"
+        self._create_scheduler_quote_fetch_run(
+            run_id=run_id,
+            started_at=started_at_dt.isoformat(),
+        )
+        try:
+            events = feed.poll_all(self._watchlist)
+        except Exception as exc:
+            failed_symbols = [str(symbol) for symbol, _ in self._watchlist]
+            metadata = self._scheduler_quote_fetch_metadata(
+                provider_status="failed",
+                success_symbols=[],
+                failed_symbols=failed_symbols,
+                error_message=str(exc),
+            )
+            self._finish_scheduler_quote_fetch_run(
+                run_id=run_id,
+                finished_at=datetime.now().isoformat(),
+                status="failed",
+                success_count=0,
+                failure_count=len(self._watchlist),
+                metadata=metadata,
+                error_message=str(exc),
+            )
+            raise
+
+        success_symbols = [str(event.symbol) for event in events]
+        success_symbol_set = set(success_symbols)
+        failed_symbols = [
+            str(symbol)
+            for symbol, _ in self._watchlist
+            if str(symbol) not in success_symbol_set
+        ]
+        success_count = len(events)
+        failure_count = len(self._watchlist) - success_count
+        status = self._scheduler_quote_fetch_status(
+            success_count=success_count,
+            failure_count=failure_count,
+        )
+        provider_status = self._provider_status_for_scheduler_run(
+            success_count=success_count,
+            failure_count=failure_count,
+        )
+        metadata = self._scheduler_quote_fetch_metadata(
+            provider_status=provider_status,
+            success_symbols=success_symbols,
+            failed_symbols=failed_symbols,
+        )
+        self._finish_scheduler_quote_fetch_run(
+            run_id=run_id,
+            finished_at=datetime.now().isoformat(),
+            status=status,
+            success_count=success_count,
+            failure_count=failure_count,
+            metadata=metadata,
+        )
+        return events
+
     def _run_loop(self) -> None:
         """后台线程主循环。"""
         # 初始化组件
@@ -275,7 +451,7 @@ class TradingScheduler:
                 continue
 
             try:
-                events = feed.poll_all(self._watchlist)
+                events = self._poll_watchlist_quotes(feed)
                 if events:
                     for market_event in events:
                         snapshot = feed.get_last_snapshot(
