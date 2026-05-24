@@ -667,6 +667,62 @@ def _store_runtime_quote(state, symbol: str, quote: dict) -> None:
         latest_quotes[symbol] = quote
 
 
+def _optional_float(value) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)
+
+
+def _upsert_latest_quote_snapshot(
+    state,
+    *,
+    symbol: str,
+    asset_type: str,
+    snapshot: dict,
+    quote_source: str | None,
+    provider_name: str | None,
+    provider_status: str | None,
+    quote_status: str,
+    captured_reason: str,
+    nav_date: str | None = None,
+) -> None:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "upsert_latest_quote_sync"):
+        return
+    timestamp = snapshot.get("timestamp")
+    if not timestamp:
+        return
+    try:
+        db.upsert_latest_quote_sync(
+            symbol=symbol,
+            asset_type=asset_type,
+            price=float(snapshot["price"]),
+            previous_close=_optional_float(snapshot.get("previous_close")),
+            change=_optional_float(snapshot.get("change")),
+            change_percent=_optional_float(
+                snapshot.get("change_percent") or snapshot.get("pct_chg")
+            ),
+            volume=_optional_float(snapshot.get("volume")),
+            turnover=_optional_float(snapshot.get("turnover") or snapshot.get("amount")),
+            quote_timestamp=str(timestamp),
+            quote_source=quote_source,
+            provider_name=provider_name,
+            provider_status=provider_status,
+            quote_status=quote_status,
+            stale_reason=snapshot.get("stale_reason"),
+            captured_at=datetime.now().isoformat(),
+            captured_reason=captured_reason,
+            nav_date=nav_date,
+            is_demo=str(provider_name or quote_source or "").lower() == "demo",
+            metadata={
+                "source": snapshot.get("source"),
+                "display_name": snapshot.get("display_name") or snapshot.get("name"),
+            },
+        )
+    except Exception:
+        logger.warning("Failed to upsert latest quote for %s", symbol, exc_info=True)
+
+
 def _resolve_quote_status(state, quote: dict | None) -> str:
     try:
         from server.routes.portfolio import _quote_status
@@ -755,6 +811,7 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         payload["display_name"] = str(display_name)
         payload["name"] = str(display_name)
     if state.db is not None and payload["timestamp"]:
+        captured_reason = "manual_or_route_refresh"
         state.db.save_quote_snapshot_sync(
             symbol=symbol,
             asset_class=payload["asset_class"],
@@ -765,7 +822,19 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
             provider_name=payload["provider_name"],
             quote_status=payload["quote_status"],
             provider_status=payload["provider_status"],
-            captured_reason="manual_or_route_refresh",
+            captured_reason=captured_reason,
+            nav_date=payload.get("nav_date"),
+        )
+        _upsert_latest_quote_snapshot(
+            state,
+            symbol=symbol,
+            asset_type=payload["asset_class"],
+            snapshot=snapshot,
+            quote_source=payload["quote_source"],
+            provider_name=payload["provider_name"],
+            provider_status=payload["provider_status"],
+            quote_status=payload["quote_status"],
+            captured_reason=captured_reason,
             nav_date=payload.get("nav_date"),
         )
         previous_close = snapshot.get("previous_close")

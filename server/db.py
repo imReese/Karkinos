@@ -665,6 +665,143 @@ class AppDatabase:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    # ---------- Latest Quotes ----------
+
+    def upsert_latest_quote_sync(
+        self,
+        *,
+        symbol: str,
+        asset_type: str = "stock",
+        price: float,
+        quote_timestamp: str,
+        captured_at: str | None = None,
+        previous_close: float | None = None,
+        change: float | None = None,
+        change_percent: float | None = None,
+        volume: float | None = None,
+        turnover: float | None = None,
+        quote_source: str | None = None,
+        provider_name: str | None = None,
+        provider_status: str | None = None,
+        quote_status: str = "live",
+        stale_reason: str | None = None,
+        captured_reason: str | None = None,
+        nav_date: str | None = None,
+        is_demo: bool = False,
+        metadata: dict[str, Any] | str | None = None,
+    ) -> dict[str, Any] | None:
+        """Upsert the current materialized quote for one instrument."""
+        now = datetime.now().isoformat()
+        captured_at_value = captured_at or now
+        metadata_json = _serialize_metadata_json(metadata)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT INTO latest_quotes (
+                    symbol, asset_type, price, previous_close, change,
+                    change_percent, volume, turnover, quote_timestamp,
+                    quote_source, provider_name, provider_status, quote_status,
+                    stale_reason, captured_at, captured_reason, nav_date, is_demo,
+                    metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, asset_type) DO UPDATE SET
+                    price = excluded.price,
+                    previous_close = excluded.previous_close,
+                    change = excluded.change,
+                    change_percent = excluded.change_percent,
+                    volume = excluded.volume,
+                    turnover = excluded.turnover,
+                    quote_timestamp = excluded.quote_timestamp,
+                    quote_source = excluded.quote_source,
+                    provider_name = excluded.provider_name,
+                    provider_status = excluded.provider_status,
+                    quote_status = excluded.quote_status,
+                    stale_reason = excluded.stale_reason,
+                    captured_at = excluded.captured_at,
+                    captured_reason = excluded.captured_reason,
+                    nav_date = excluded.nav_date,
+                    is_demo = excluded.is_demo,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    symbol,
+                    asset_type,
+                    price,
+                    previous_close,
+                    change,
+                    change_percent,
+                    volume,
+                    turnover,
+                    quote_timestamp,
+                    quote_source,
+                    provider_name,
+                    provider_status,
+                    quote_status,
+                    stale_reason,
+                    captured_at_value,
+                    captured_reason,
+                    nav_date,
+                    1 if is_demo else 0,
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT *
+                FROM latest_quotes
+                WHERE symbol = ? AND asset_type = ?
+                """,
+                (symbol, asset_type),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_latest_quote_sync(
+        self, symbol: str, asset_type: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read the materialized latest quote for one symbol."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            if asset_type is None:
+                row = conn.execute(
+                    """
+                    SELECT *
+                    FROM latest_quotes
+                    WHERE symbol = ?
+                    ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (symbol,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT *
+                    FROM latest_quotes
+                    WHERE symbol = ? AND asset_type = ?
+                    LIMIT 1
+                    """,
+                    (symbol, asset_type),
+                ).fetchone()
+            return dict(row) if row else None
+
+    def list_latest_quotes_sync(self) -> list[dict[str, Any]]:
+        """List materialized latest quotes newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM latest_quotes
+                ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Quote Snapshots ----------
 
     def save_quote_snapshot_sync(
@@ -1430,6 +1567,32 @@ CREATE TABLE IF NOT EXISTS daily_close_snapshots (
     UNIQUE(symbol, trade_date)
 );
 
+CREATE TABLE IF NOT EXISTS latest_quotes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    asset_type TEXT NOT NULL DEFAULT 'stock',
+    price REAL NOT NULL,
+    previous_close REAL,
+    change REAL,
+    change_percent REAL,
+    volume REAL,
+    turnover REAL,
+    quote_timestamp TEXT NOT NULL,
+    quote_source TEXT,
+    provider_name TEXT,
+    provider_status TEXT,
+    quote_status TEXT NOT NULL DEFAULT 'live',
+    stale_reason TEXT,
+    captured_at TEXT NOT NULL,
+    captured_reason TEXT,
+    nav_date TEXT,
+    is_demo INTEGER NOT NULL DEFAULT 0,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(symbol, asset_type)
+);
+
 CREATE TABLE IF NOT EXISTS action_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_signal_id INTEGER NOT NULL UNIQUE,
@@ -1453,6 +1616,10 @@ CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_results(created_at);
 CREATE INDEX IF NOT EXISTS idx_quote_snapshots_symbol_ts ON quote_snapshots(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_daily_close_symbol_trade_date ON daily_close_snapshots(symbol, trade_date DESC);
+CREATE INDEX IF NOT EXISTS idx_latest_quotes_symbol_asset_type ON latest_quotes(symbol, asset_type);
+CREATE INDEX IF NOT EXISTS idx_latest_quotes_quote_timestamp ON latest_quotes(quote_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_latest_quotes_provider_status ON latest_quotes(provider_status);
+CREATE INDEX IF NOT EXISTS idx_latest_quotes_quote_status ON latest_quotes(quote_status);
 CREATE INDEX IF NOT EXISTS idx_action_tasks_status_ts ON action_tasks(status, timestamp DESC);
 
 CREATE TABLE IF NOT EXISTS quote_fetch_runs (

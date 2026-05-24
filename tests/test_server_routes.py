@@ -534,6 +534,76 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     assert metadata["demo_mode"] is False
 
 
+def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    class AkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 12.5,
+                "volume": 1000.0,
+                "timestamp": "2026-05-12T10:05:00+08:00",
+                "source": "akshare",
+                "previous_close": 12.0,
+                "previous_close_date": "2026-05-11",
+            }
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+    endpoint = refresh_route.endpoint
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            latest_quotes={},
+            portfolio=SimpleNamespace(positions={}),
+            instruments={},
+        ),
+        db=db,
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": AkshareSource()},
+    )
+
+    response = asyncio.run(
+        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
+    )
+
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    snapshots = db.get_recent_quote_snapshots_sync("600519", limit=10)
+    assert response.quote_status == "live"
+    assert len(snapshots) == 1
+    assert latest is not None
+    assert latest["symbol"] == "600519"
+    assert latest["asset_type"] == "stock"
+    assert latest["price"] == 12.5
+    assert latest["previous_close"] == 12.0
+    assert latest["quote_source"] == "akshare"
+    assert latest["provider_name"] == "akshare"
+    assert latest["provider_status"] == "live"
+    assert latest["quote_status"] == "live"
+    assert latest["captured_reason"] == "manual_or_route_refresh"
+    assert latest["is_demo"] == 0
+
+
 def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_path):
     from server.db import AppDatabase
     from server.routes import market as market_routes
@@ -588,7 +658,9 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
     )
 
     runs = db.list_quote_fetch_runs()
+    latest = db.list_latest_quotes_sync()
     assert response.failed[0].using_persistent_cache is True
+    assert latest == []
     assert len(runs) == 1
     assert runs[0]["status"] == "cache_only"
     assert runs[0]["success_count"] == 0
@@ -658,9 +730,11 @@ def test_market_quote_refresh_records_failed_run_without_demo_fallback(
     )
 
     runs = db.list_quote_fetch_runs()
+    latest = db.list_latest_quotes_sync()
     assert response.quote_status == "error"
     assert response.failed[0].using_persistent_cache is False
     assert response.failed[0].demo_mode is False
+    assert latest == []
     assert len(runs) == 1
     assert runs[0]["status"] == "failed"
     assert runs[0]["provider"] == "akshare"
@@ -911,6 +985,7 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
     endpoint = refresh_route.endpoint
 
     saved_quotes: list[dict] = []
+    latest_quotes: list[dict] = []
     created_runs: list[dict] = []
     finished_runs: list[dict] = []
 
@@ -920,6 +995,9 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
 
         def save_quote_snapshot_sync(self, **payload):
             saved_quotes.append(payload)
+
+        def upsert_latest_quote_sync(self, **payload):
+            latest_quotes.append(payload)
 
         def create_quote_fetch_run(self, **payload):
             created_runs.append(payload)
@@ -967,6 +1045,10 @@ def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
     assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
     assert fake_scheduler.latest_quotes["000000"]["price"] > 0
     assert saved_quotes[0]["symbol"] == "000000"
+    assert latest_quotes[0]["symbol"] == "000000"
+    assert latest_quotes[0]["asset_type"] == "fund"
+    assert latest_quotes[0]["provider_status"] == "demo"
+    assert latest_quotes[0]["is_demo"] is True
     assert created_runs[0]["trigger"] == "manual_refresh"
     assert created_runs[0]["provider"] == "demo"
     assert finished_runs[0]["status"] == "success"
@@ -978,6 +1060,7 @@ def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
     from server.routes import market as market_routes
 
     saved_quotes: list[dict] = []
+    latest_quotes: list[dict] = []
 
     class FakeDb:
         def get_latest_quotes_sync(self):
@@ -985,6 +1068,9 @@ def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
 
         def save_quote_snapshot_sync(self, **payload):
             saved_quotes.append(payload)
+
+        def upsert_latest_quote_sync(self, **payload):
+            latest_quotes.append(payload)
 
     fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
     fake_state = SimpleNamespace(
@@ -1023,6 +1109,8 @@ def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
     assert response.error is None
     assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
     assert saved_quotes[0]["symbol"] == "000000"
+    assert latest_quotes[0]["provider_status"] == "demo"
+    assert latest_quotes[0]["is_demo"] is True
 
 
 def test_refresh_one_quote_real_provider_does_not_fallback_to_demo(monkeypatch):
