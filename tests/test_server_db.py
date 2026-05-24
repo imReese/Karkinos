@@ -109,6 +109,52 @@ def test_app_database_lists_recent_quote_fetch_runs(tmp_path):
     assert [row["run_id"] for row in limited] == ["quote-run-newer"]
 
 
+def test_app_database_filters_quote_fetch_runs(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    db.create_quote_fetch_run(
+        run_id="manual-akshare-success",
+        started_at="2026-05-23T09:32:00+08:00",
+        trigger="manual_refresh",
+        provider="akshare",
+        status="success",
+    )
+    db.create_quote_fetch_run(
+        run_id="scheduler-akshare-failed",
+        started_at="2026-05-23T09:31:00+08:00",
+        trigger="scheduler_poll",
+        provider="akshare",
+        status="failed",
+    )
+    db.create_quote_fetch_run(
+        run_id="manual-demo-success",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="manual_refresh",
+        provider="demo",
+        status="success",
+    )
+
+    assert [
+        row["run_id"]
+        for row in db.list_quote_fetch_runs(trigger="manual_refresh")
+    ] == ["manual-akshare-success", "manual-demo-success"]
+    assert [
+        row["run_id"] for row in db.list_quote_fetch_runs(status="failed")
+    ] == ["scheduler-akshare-failed"]
+    assert [
+        row["run_id"] for row in db.list_quote_fetch_runs(provider="demo")
+    ] == ["manual-demo-success"]
+    assert [
+        row["run_id"]
+        for row in db.list_quote_fetch_runs(
+            trigger="manual_refresh",
+            status="success",
+            provider="akshare",
+        )
+    ] == ["manual-akshare-success"]
+
+
 def test_app_database_rejects_duplicate_quote_fetch_run_id(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

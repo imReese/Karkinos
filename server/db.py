@@ -629,18 +629,39 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row else None
 
-    def list_quote_fetch_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_quote_fetch_runs(
+        self,
+        limit: int = 50,
+        trigger: str | None = None,
+        status: str | None = None,
+        provider: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List quote fetch runs, newest first."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if trigger is not None:
+            conditions.append("trigger = ?")
+            params.append(trigger)
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        if provider is not None:
+            conditions.append("provider = ?")
+            params.append(provider)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(limit)
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """
+                f"""
                 SELECT *
                 FROM quote_fetch_runs
+                {where_clause}
                 ORDER BY started_at DESC, id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                params,
             ).fetchall()
             return [dict(row) for row in rows]
 

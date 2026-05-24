@@ -18,6 +18,7 @@ from server.models import (
     MarketDataHealthResponse,
     MarketHealthQuote,
     MarketQuote,
+    QuoteFetchRunResponse,
     ResearchNoteCreate,
     ResearchNoteListResponse,
     ResearchNoteResponse,
@@ -590,6 +591,43 @@ def _finish_manual_quote_fetch_run(
         )
     except Exception:
         logger.warning("Failed to finish quote fetch run audit row", exc_info=True)
+
+
+def _quote_fetch_run_metadata(row: dict) -> dict | None:
+    metadata_json = row.get("metadata_json")
+    if not metadata_json:
+        return None
+    try:
+        parsed = json.loads(str(metadata_json))
+    except (TypeError, ValueError):
+        return {
+            "raw_metadata": str(metadata_json),
+            "parse_error": "invalid_json",
+        }
+    if isinstance(parsed, dict):
+        return parsed
+    return {
+        "raw_metadata": str(metadata_json),
+        "parse_error": "metadata_not_object",
+    }
+
+
+def _quote_fetch_run_response(row: dict) -> QuoteFetchRunResponse:
+    return QuoteFetchRunResponse(
+        run_id=str(row["run_id"]),
+        trigger=str(row["trigger"]),
+        provider=row.get("provider"),
+        asset_type=row.get("asset_type"),
+        status=str(row["status"]),
+        started_at=str(row["started_at"]),
+        finished_at=row.get("finished_at"),
+        symbol_count=int(row.get("symbol_count") or 0),
+        success_count=int(row.get("success_count") or 0),
+        failure_count=int(row.get("failure_count") or 0),
+        cache_hit_count=int(row.get("cache_hit_count") or 0),
+        error_message=row.get("error_message"),
+        metadata=_quote_fetch_run_metadata(row),
+    )
 
 
 def _latest_cached_quote(state, symbol: str) -> dict | None:
@@ -1310,6 +1348,33 @@ def create_router() -> APIRouter:
             persistent_cache_status=persistent_cache_status,
             demo_mode=_is_demo_mode(state),
         )
+
+    @r.get("/quote-fetch-runs", response_model=list[QuoteFetchRunResponse])
+    async def get_quote_fetch_runs(
+        limit: int = 20,
+        trigger: str | None = None,
+        status: str | None = None,
+        provider: str | None = None,
+    ) -> list[QuoteFetchRunResponse]:
+        """List recent quote fetch audit runs for backend diagnostics."""
+        from server.app import get_app_state
+
+        if limit < 1:
+            raise HTTPException(status_code=422, detail="limit must be at least 1")
+        if limit > 100:
+            raise HTTPException(status_code=422, detail="limit must be at most 100")
+
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        if db is None or not hasattr(db, "list_quote_fetch_runs"):
+            return []
+        rows = db.list_quote_fetch_runs(
+            limit=limit,
+            trigger=trigger,
+            status=status,
+            provider=provider,
+        )
+        return [_quote_fetch_run_response(row) for row in rows]
 
     @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
     async def refresh_quotes(request: QuoteRefreshRequest) -> QuoteRefreshResponse:

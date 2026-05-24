@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -673,6 +674,146 @@ def test_market_quote_refresh_records_failed_run_without_demo_fallback(
     assert metadata["provider_status"] == "failed"
     assert metadata["using_persistent_cache"] is False
     assert metadata["demo_mode"] is False
+
+
+def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_path):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/quote-fetch-runs"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.create_quote_fetch_run(
+        run_id="older",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="scheduler_poll",
+        provider="akshare",
+        status="success",
+        metadata={"provider_status": "live"},
+    )
+    db.create_quote_fetch_run(
+        run_id="newer",
+        started_at="2026-05-23T09:31:00+08:00",
+        trigger="manual_refresh",
+        provider="akshare",
+        status="failed",
+        error_message="provider unavailable",
+        metadata={"provider_status": "failed", "demo_mode": False},
+    )
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(route.endpoint())
+    limited = asyncio.run(route.endpoint(limit=1))
+
+    assert [item.run_id for item in response] == ["newer", "older"]
+    assert [item.run_id for item in limited] == ["newer"]
+    assert response[0].trigger == "manual_refresh"
+    assert response[0].status == "failed"
+    assert response[0].error_message == "provider unavailable"
+    assert response[0].metadata == {
+        "provider_status": "failed",
+        "demo_mode": False,
+    }
+    assert not hasattr(response[0], "metadata_json")
+
+
+def test_market_quote_fetch_runs_endpoint_filters_runs(monkeypatch, tmp_path):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/quote-fetch-runs"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.create_quote_fetch_run(
+        run_id="manual-akshare-success",
+        started_at="2026-05-23T09:32:00+08:00",
+        trigger="manual_refresh",
+        provider="akshare",
+        status="success",
+    )
+    db.create_quote_fetch_run(
+        run_id="scheduler-akshare-failed",
+        started_at="2026-05-23T09:31:00+08:00",
+        trigger="scheduler_poll",
+        provider="akshare",
+        status="failed",
+    )
+    db.create_quote_fetch_run(
+        run_id="manual-demo-success",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="manual_refresh",
+        provider="demo",
+        status="success",
+    )
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(
+        route.endpoint(
+            limit=1,
+            trigger="manual_refresh",
+            status="success",
+            provider="demo",
+        )
+    )
+
+    assert [item.run_id for item in response] == ["manual-demo-success"]
+
+
+def test_market_quote_fetch_runs_endpoint_tolerates_malformed_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/quote-fetch-runs"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.create_quote_fetch_run(
+        run_id="bad-metadata",
+        started_at="2026-05-23T09:30:00+08:00",
+        trigger="manual_refresh",
+        provider="akshare",
+        status="failed",
+    )
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        conn.execute(
+            "UPDATE quote_fetch_runs SET metadata_json = ? WHERE run_id = ?",
+            ("{bad json", "bad-metadata"),
+        )
+        conn.commit()
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(route.endpoint())
+
+    assert response[0].metadata == {
+        "raw_metadata": "{bad json",
+        "parse_error": "invalid_json",
+    }
 
 
 def test_market_data_health_reports_provider_configuration_next_action(monkeypatch):
