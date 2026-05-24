@@ -472,24 +472,26 @@ class TradingScheduler:
                                 "previous_close_date": snapshot.get("previous_close_date"),
                             }
                         if self._db is not None:
+                            quote_source = str(
+                                snapshot.get("quote_source")
+                                or snapshot.get("source")
+                                or snapshot.get("provider")
+                                or self._config.data_source
+                            )
+                            provider_name = str(
+                                snapshot.get("provider_name")
+                                or snapshot.get("provider")
+                                or snapshot.get("source")
+                                or self._config.data_source
+                            )
                             self._db.save_quote_snapshot_sync(
                                 symbol=sym_str,
                                 asset_class=market_event.asset_class.value,
                                 price=float(market_event.close),
                                 volume=float(market_event.volume),
                                 timestamp=snapshot_timestamp,
-                                quote_source=str(
-                                    snapshot.get("quote_source")
-                                    or snapshot.get("source")
-                                    or snapshot.get("provider")
-                                    or self._config.data_source
-                                ),
-                                provider_name=str(
-                                    snapshot.get("provider_name")
-                                    or snapshot.get("provider")
-                                    or snapshot.get("source")
-                                    or self._config.data_source
-                                ),
+                                quote_source=quote_source,
+                                provider_name=provider_name,
                                 quote_status="live",
                                 provider_status="live",
                                 captured_reason="scheduler_poll",
@@ -516,6 +518,40 @@ class TradingScheduler:
                                     close_price=float(market_event.close),
                                     source="scheduler_close",
                                 )
+                            if hasattr(self._db, "upsert_latest_quote_sync"):
+                                try:
+                                    self._db.upsert_latest_quote_sync(
+                                        symbol=sym_str,
+                                        asset_type=market_event.asset_class.value,
+                                        price=float(market_event.close),
+                                        previous_close=None
+                                        if previous_close in {None, ""}
+                                        else float(previous_close),
+                                        volume=float(market_event.volume),
+                                        quote_timestamp=snapshot_timestamp,
+                                        quote_source=quote_source,
+                                        provider_name=provider_name,
+                                        provider_status=(
+                                            "demo"
+                                            if self._config.data_source == "demo"
+                                            else "live"
+                                        ),
+                                        quote_status="live",
+                                        captured_at=datetime.now().isoformat(),
+                                        captured_reason="scheduler_poll",
+                                        nav_date=snapshot.get("nav_date"),
+                                        is_demo=self._config.data_source == "demo",
+                                        metadata={
+                                            "source": snapshot.get("source"),
+                                            "previous_close_date": previous_close_date,
+                                        },
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        "Failed to upsert latest quote for %s",
+                                        sym_str,
+                                        exc_info=True,
+                                    )
                         strategy.on_data(market_event)
                     self._event_bus.drain()
 

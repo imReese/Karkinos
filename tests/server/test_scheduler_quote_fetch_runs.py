@@ -149,6 +149,7 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
 
     runs = db.list_quote_fetch_runs()
     quotes = db.get_latest_quotes_sync()
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
 
     assert len(runs) == 1
     assert runs[0]["trigger"] == "scheduler_poll"
@@ -164,6 +165,15 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert metadata["demo_mode"] is False
     assert quotes[0]["symbol"] == "600519"
     assert quotes[0]["captured_reason"] == "scheduler_poll"
+    assert latest is not None
+    assert latest["symbol"] == "600519"
+    assert latest["asset_type"] == "stock"
+    assert latest["price"] == 12.5
+    assert latest["provider_name"] == "akshare"
+    assert latest["provider_status"] == "live"
+    assert latest["quote_status"] == "live"
+    assert latest["captured_reason"] == "scheduler_poll"
+    assert latest["is_demo"] == 0
 
 
 def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp_path):
@@ -198,6 +208,7 @@ def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(monkeypatch, t
     )
 
     run = db.list_quote_fetch_runs()[0]
+    latest = db.list_latest_quotes_sync()
     metadata = json.loads(run["metadata_json"])
 
     assert run["status"] == "failed"
@@ -206,6 +217,7 @@ def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(monkeypatch, t
     assert run["failure_count"] == 1
     assert run["error_message"] == "provider exploded"
     assert metadata["provider_status"] == "failed"
+    assert latest == []
 
 
 def test_scheduler_poll_demo_mode_metadata(monkeypatch, tmp_path):
@@ -218,9 +230,14 @@ def test_scheduler_poll_demo_mode_metadata(monkeypatch, tmp_path):
     )
 
     run = db.list_quote_fetch_runs()[0]
+    latest = db.get_latest_quote_sync("000000", asset_type="fund")
     metadata = json.loads(run["metadata_json"])
 
     assert run["status"] == "success"
     assert run["provider"] == "demo"
     assert metadata["demo_mode"] is True
     assert metadata["provider_status"] == "demo"
+    assert latest is not None
+    assert latest["provider_name"] == "demo"
+    assert latest["provider_status"] == "demo"
+    assert latest["is_demo"] == 1
