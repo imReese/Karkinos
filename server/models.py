@@ -90,6 +90,22 @@ class MarketDataHealthResponse(BaseModel):
     demo_mode: bool = False
 
 
+class QuoteFetchRunResponse(BaseModel):
+    run_id: str
+    trigger: str
+    provider: str | None = None
+    asset_type: str | None = None
+    status: str
+    started_at: str
+    finished_at: str | None = None
+    symbol_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    cache_hit_count: int = 0
+    error_message: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
 class ResearchBoardItem(BaseModel):
     symbol: str
     asset_class: str
