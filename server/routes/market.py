@@ -70,7 +70,6 @@ class QuoteRefreshSymbolResult(BaseModel):
     last_refresh_attempt: str | None = None
     last_refresh_error: str | None = None
     using_persistent_cache: bool = False
-    demo_mode: bool = False
 
 
 class QuoteRefreshResponse(BaseModel):
@@ -89,7 +88,6 @@ class QuoteRefreshResponse(BaseModel):
     message: str
     real_data_available: bool = False
     has_persistent_cache: bool = False
-    demo_mode: bool = False
 
 
 def _shanghai_now() -> datetime:
@@ -145,31 +143,13 @@ def _quote_source(state, quote: dict | None) -> str | None:
     if source:
         return str(source)
     configured = getattr(state.config, "data_source", None)
-    if configured and str(configured) != "demo":
+    if configured:
         return str(configured)
     return None
 
 
-def _is_demo_mode(state) -> bool:
-    return _configured_provider_name(state) == "demo"
-
-
-def _is_demo_quote(quote: dict | None) -> bool:
-    if not quote:
-        return False
-    source = (
-        quote.get("quote_source")
-        or quote.get("source")
-        or quote.get("provider_name")
-        or quote.get("provider")
-    )
-    return str(source).lower() == "demo"
-
-
 def _is_real_persistent_quote(quote: dict | None) -> bool:
-    if not quote or quote.get("price") in {None, ""}:
-        return False
-    return not _is_demo_quote(quote)
+    return bool(quote and quote.get("price") not in {None, ""})
 
 
 def _adapt_latest_quote_for_health(row: dict) -> dict:
@@ -310,11 +290,11 @@ def _provider_requires_token(provider_name: str) -> bool:
 def _provider_configured(state, provider_name: str) -> bool:
     if _provider_requires_token(provider_name):
         return bool(getattr(state.config, "tushare_token", ""))
-    return provider_name in {"akshare", "demo", "tushare"}
+    return provider_name in {"akshare", "tushare"}
 
 
 def _provider_supports_funds(provider_name: str) -> bool | None:
-    if provider_name in {"akshare", "demo"}:
+    if provider_name == "akshare":
         return True
     if provider_name == "tushare":
         return False
@@ -329,8 +309,6 @@ def _provider_next_action(
     latest_refresh_error: str | None,
     source_health: str,
 ) -> str | None:
-    if source_health == "demo":
-        return "configure_real_provider"
     if not provider_configured:
         return "configure_data_source_token"
     if has_funds and provider_supports_funds is False:
@@ -359,13 +337,9 @@ def _extract_runtime_portfolio(state):
     latest_quotes: dict[str, dict] = {}
     if scheduler and getattr(scheduler, "latest_quotes", None):
         for symbol, quote in scheduler.latest_quotes.items():
-            if _is_demo_quote(quote) and not _is_demo_mode(state):
-                continue
             latest_quotes[symbol] = quote
     if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
         for row in state.db.get_latest_quotes_sync():
-            if _is_demo_quote(row) and not _is_demo_mode(state):
-                continue
             latest_quotes.setdefault(row["symbol"], row)
 
     if (
@@ -504,7 +478,6 @@ def _create_manual_quote_fetch_run(
             status="running",
             metadata={
                 "requested_symbols": requested_symbols,
-                "demo_mode": _is_demo_mode(state),
             },
         )
     except Exception:
@@ -535,8 +508,6 @@ def _manual_quote_fetch_provider_status(
     quote_status: str,
     last_refresh_error: str | None,
 ) -> str:
-    if _is_demo_mode(state):
-        return "demo"
     if last_refresh_error:
         return "failed"
     if quote_status == "live":
@@ -587,7 +558,6 @@ def _finish_manual_quote_fetch_run(
         "refresh_policy": refresh_policy,
         "market_open": market_open,
         "using_persistent_cache": cache_hit_count > 0,
-        "demo_mode": _is_demo_mode(state),
         "requested_symbols": requested_symbols,
         "refreshed_symbols": [result.symbol for result in refreshed],
         "failed_symbols": [result.symbol for result in failed],
@@ -649,14 +619,12 @@ def _latest_cached_quote(state, symbol: str) -> dict | None:
     scheduler = state.scheduler
     if scheduler and getattr(scheduler, "latest_quotes", None):
         quote = scheduler.latest_quotes.get(symbol)
-        if quote and (_is_demo_mode(state) or not _is_demo_quote(quote)):
+        if quote:
             return quote
 
     if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
         for row in state.db.get_latest_quotes_sync():
-            if row.get("symbol") == symbol and (
-                _is_demo_mode(state) or not _is_demo_quote(row)
-            ):
+            if row.get("symbol") == symbol:
                 return row
     return None
 
@@ -728,7 +696,6 @@ def _upsert_latest_quote_snapshot(
             captured_at=datetime.now().isoformat(),
             captured_reason=captured_reason,
             nav_date=nav_date,
-            is_demo=str(provider_name or quote_source or "").lower() == "demo",
             metadata={
                 "source": snapshot.get("source"),
                 "display_name": snapshot.get("display_name") or snapshot.get("name"),
@@ -791,7 +758,7 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
     )
     preferred = sources.get(data_source, sources["akshare"])
     source_chain = [(data_source if data_source in sources else "akshare", preferred)]
-    if asset_class == AssetClass.FUND and data_source not in {"akshare", "demo"}:
+    if asset_class == AssetClass.FUND and data_source != "akshare":
         akshare = sources.get("akshare")
         if akshare is not None and akshare is not preferred:
             source_chain.append(("akshare", akshare))
@@ -817,7 +784,7 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
         or selected_source_name,
         "provider_name": selected_source_name,
         "quote_status": "live",
-        "provider_status": "demo" if selected_source_name == "demo" else "live",
+        "provider_status": "live",
         "nav_date": snapshot.get("nav_date")
         or (snapshot.get("timestamp") if asset_class == AssetClass.FUND else None),
     }
@@ -889,19 +856,12 @@ async def _refresh_one_quote(
     market_open = is_cn_trading_session()
     refresh_policy = "live" if market_open else "cache_only"
     try:
-        if _configured_provider_name(state) == "demo":
-            snapshot = _fetch_latest_snapshot(state, symbol, asset_class)
-        else:
-            snapshot = await asyncio.wait_for(
-                asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
-                timeout=timeout,
-            )
-    except asyncio.TimeoutError:
-        cached_quote = (
-            _latest_cached_quote(state, symbol)
-            if _is_demo_mode(state)
-            else _latest_persistent_real_quote(state, symbol)
+        snapshot = await asyncio.wait_for(
+            asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
+            timeout=timeout,
         )
+    except asyncio.TimeoutError:
+        cached_quote = _latest_persistent_real_quote(state, symbol)
         cached_quote = _mark_persistent_cache_quote(
             cached_quote, stale_reason="provider_timeout"
         )
@@ -929,14 +889,9 @@ async def _refresh_one_quote(
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error="provider_timeout",
             using_persistent_cache=bool(cached_quote),
-            demo_mode=_is_demo_mode(state),
         )
     except Exception as exc:
-        cached_quote = (
-            _latest_cached_quote(state, symbol)
-            if _is_demo_mode(state)
-            else _latest_persistent_real_quote(state, symbol)
-        )
+        cached_quote = _latest_persistent_real_quote(state, symbol)
         logger.warning("Manual quote refresh failed for %s", symbol, exc_info=True)
         error_message = str(exc)
         _QUOTE_REFRESH_ERRORS[key] = error_message
@@ -966,15 +921,10 @@ async def _refresh_one_quote(
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error=error_message,
             using_persistent_cache=bool(cached_quote),
-            demo_mode=_is_demo_mode(state),
         )
 
     if not snapshot:
-        cached_quote = (
-            _latest_cached_quote(state, symbol)
-            if _is_demo_mode(state)
-            else _latest_persistent_real_quote(state, symbol)
-        )
+        cached_quote = _latest_persistent_real_quote(state, symbol)
         cached_quote = _mark_persistent_cache_quote(
             cached_quote, stale_reason="source_unavailable"
         )
@@ -1003,7 +953,6 @@ async def _refresh_one_quote(
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error=error_message,
             using_persistent_cache=bool(cached_quote),
-            demo_mode=_is_demo_mode(state),
         )
 
     _store_runtime_quote(state, symbol, snapshot)
@@ -1026,7 +975,6 @@ async def _refresh_one_quote(
         last_refresh_attempt=attempted_at.isoformat(),
         last_refresh_error=None,
         using_persistent_cache=False,
-        demo_mode=_is_demo_mode(state),
     )
 
 
@@ -1158,7 +1106,7 @@ def create_router() -> APIRouter:
 
         if scheduler and scheduler.is_running:
             q = scheduler.latest_quotes.get(symbol)
-            if q and (_is_demo_mode(state) or not _is_demo_quote(q)):
+            if q:
                 _maybe_schedule_quote_refresh(
                     state, background_tasks, symbol, asset_class
                 )
@@ -1166,7 +1114,7 @@ def create_router() -> APIRouter:
 
         if state.db is not None:
             cached = await state.db.get_latest_quote(symbol)
-            if cached and (_is_demo_mode(state) or not _is_demo_quote(cached)):
+            if cached:
                 _maybe_schedule_quote_refresh(
                     state, background_tasks, symbol, asset_class
                 )
@@ -1377,28 +1325,18 @@ def create_router() -> APIRouter:
             if len(stale_symbols) == len(health_quotes)
             else "partial"
         )
-        if provider_name == "demo":
-            source_health = "demo"
-            provider_status = "demo"
-        else:
-            provider_status = (
-                "error"
-                if latest_refresh_error
-                and not any(item.quote_status == "live" for item in health_quotes)
-                else source_health
-            )
+        provider_status = (
+            "error"
+            if latest_refresh_error
+            and not any(item.quote_status == "live" for item in health_quotes)
+            else source_health
+        )
         has_funds = any(
             asset_class in {"fund", "etf"} for _, asset_class in watchlist
         )
         has_persistent_cache = bool(persistent_quotes)
-        real_data_available = has_persistent_cache and not _is_demo_mode(state)
-        persistent_cache_status = (
-            "demo"
-            if _is_demo_mode(state)
-            else "available"
-            if has_persistent_cache
-            else "missing"
-        )
+        real_data_available = has_persistent_cache
+        persistent_cache_status = "available" if has_persistent_cache else "missing"
         next_action = _provider_next_action(
             provider_configured=provider_configured,
             provider_supports_funds=provider_supports_funds,
@@ -1406,9 +1344,9 @@ def create_router() -> APIRouter:
             latest_refresh_error=latest_refresh_error,
             source_health=source_health,
         )
-        if provider_name != "demo" and latest_refresh_error and has_persistent_cache:
+        if latest_refresh_error and has_persistent_cache:
             next_action = "use_cached_data"
-        elif provider_name != "demo" and latest_refresh_error and not has_persistent_cache:
+        elif latest_refresh_error and not has_persistent_cache:
             next_action = "run_first_sync"
         return MarketDataHealthResponse(
             quotes=health_quotes,
@@ -1434,7 +1372,6 @@ def create_router() -> APIRouter:
             has_persistent_cache=has_persistent_cache,
             latest_persistent_quote_timestamp=latest_persistent_quote_timestamp,
             persistent_cache_status=persistent_cache_status,
-            demo_mode=_is_demo_mode(state),
         )
 
     @r.get("/quote-fetch-runs", response_model=list[QuoteFetchRunResponse])
@@ -1516,7 +1453,6 @@ def create_router() -> APIRouter:
                 last_refresh_attempt=started_at,
                 last_refresh_error="no_refresh_symbols",
                 message="没有可刷新的行情标的",
-                demo_mode=_is_demo_mode(state),
             )
 
         watchlist_assets = _merged_watchlist_assets(state)
@@ -1605,7 +1541,6 @@ def create_router() -> APIRouter:
             message=message,
             real_data_available=bool(refreshed) or has_persistent_cache,
             has_persistent_cache=has_persistent_cache,
-            demo_mode=_is_demo_mode(state),
         )
 
     @r.get("/research-board", response_model=ResearchBoardResponse)

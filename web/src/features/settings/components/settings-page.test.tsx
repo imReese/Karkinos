@@ -60,7 +60,6 @@ const defaultMarketHealth: MarketDataHealthResponse = {
   has_persistent_cache: true,
   latest_persistent_quote_timestamp: '2026-05-16T22:40:00+08:00',
   persistent_cache_status: 'available',
-  demo_mode: false,
 };
 
 const defaultDataSourceStatus: DataSourceStatusResponse = {
@@ -75,8 +74,7 @@ const defaultDataSourceStatus: DataSourceStatusResponse = {
   has_persistent_cache: true,
   latest_persistent_quote_timestamp: '2026-05-16T22:40:00+08:00',
   persistent_cache_status: 'available',
-  demo_mode: false,
-  available_providers: ['demo', 'akshare', 'tushare'],
+  available_providers: ['akshare', 'tushare'],
 };
 
 const defaultAssetMetadataStatus: AssetMetadataStatusResponse = {
@@ -334,9 +332,8 @@ test('saves data source settings through the settings endpoint', async () => {
   expect(await screen.findByText('Data settings saved')).toBeTruthy();
 });
 
-test('enables demo provider from degraded provider guidance', async () => {
-  const user = userEvent.setup();
-  const { fetchMock } = renderSettingsPage({
+test('shows provider timeout guidance without alternate local provider action', async () => {
+  renderSettingsPage({
     marketHealth: {
       ...defaultMarketHealth,
       provider_last_error: 'provider_timeout',
@@ -352,63 +349,8 @@ test('enables demo provider from degraded provider guidance', async () => {
   });
 
   expect(
-    await screen.findByRole('button', { name: 'Enter demo mode' }),
+    await screen.findByText('The configured quote source is timing out.'),
   ).toBeTruthy();
-  expect(
-    await screen.findByText(
-      'The configured quote source is timing out. Karkinos will prefer local real-data cache; enter Demo mode only for development.',
-    ),
-  ).toBeTruthy();
-
-  await user.click(screen.getByRole('button', { name: 'Enter demo mode' }));
-
-  await waitFor(() => {
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/settings/data-source',
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({
-          data_source: 'demo',
-          tushare_token: '****1234',
-          live_poll_interval: 60,
-        }),
-      }),
-    );
-  });
-  expect(await screen.findByText('Demo mode enabled')).toBeTruthy();
-  expect(screen.queryByText(/real-time/i)).toBeNull();
-});
-
-test('shows demo provider status without claiming real-time quotes', async () => {
-  renderSettingsPage({
-    settings: {
-      ...defaultSettings,
-      data_source: 'demo',
-    },
-    marketHealth: {
-      ...defaultMarketHealth,
-      provider_name: 'demo',
-      provider_status: 'demo',
-      source_health: 'demo',
-      next_action: 'configure_real_provider',
-    },
-    dataSourceStatus: {
-      ...defaultDataSourceStatus,
-      data_source: 'demo',
-      provider_name: 'demo',
-      next_action: 'configure_real_provider',
-    },
-  });
-
-  expect(
-    await screen.findByLabelText('Current provider: Demo quotes'),
-  ).toBeTruthy();
-  expect(
-    await screen.findByText(
-      'Demo quotes use deterministic local prices for development and are not market data.',
-    ),
-  ).toBeTruthy();
-  expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 
 test('guides users to configure asset metadata when none is available', async () => {

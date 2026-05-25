@@ -87,7 +87,6 @@ class MarketDataHealthResponse(BaseModel):
     has_persistent_cache: bool = False
     latest_persistent_quote_timestamp: str | None = None
     persistent_cache_status: str = "unknown"
-    demo_mode: bool = False
 
 
 class QuoteFetchRunResponse(BaseModel):
@@ -705,9 +704,8 @@ class DataSourceStatusResponse(BaseModel):
     has_persistent_cache: bool = False
     latest_persistent_quote_timestamp: str | None = None
     persistent_cache_status: str = "unknown"
-    demo_mode: bool = False
     available_providers: list[str] = Field(
-        default_factory=lambda: ["demo", "akshare", "tushare"]
+        default_factory=lambda: ["akshare", "tushare"]
     )
 
 

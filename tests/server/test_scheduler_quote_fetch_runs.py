@@ -162,7 +162,6 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     metadata = json.loads(runs[0]["metadata_json"])
     assert metadata["provider"] == "akshare"
     assert metadata["provider_status"] == "live"
-    assert metadata["demo_mode"] is False
     assert quotes[0]["symbol"] == "600519"
     assert quotes[0]["captured_reason"] == "scheduler_poll"
     assert latest is not None
@@ -173,7 +172,6 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert latest["provider_status"] == "live"
     assert latest["quote_status"] == "live"
     assert latest["captured_reason"] == "scheduler_poll"
-    assert latest["is_demo"] == 0
 
 
 def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp_path):
@@ -218,26 +216,3 @@ def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(monkeypatch, t
     assert run["error_message"] == "provider exploded"
     assert metadata["provider_status"] == "failed"
     assert latest == []
-
-
-def test_scheduler_poll_demo_mode_metadata(monkeypatch, tmp_path):
-    db = _run_scheduler_once(
-        monkeypatch,
-        tmp_path,
-        data_source="demo",
-        events=[_market_event("000000", AssetClass.FUND, Decimal("1.1"))],
-        watchlist=[(Symbol("000000"), AssetClass.FUND)],
-    )
-
-    run = db.list_quote_fetch_runs()[0]
-    latest = db.get_latest_quote_sync("000000", asset_type="fund")
-    metadata = json.loads(run["metadata_json"])
-
-    assert run["status"] == "success"
-    assert run["provider"] == "demo"
-    assert metadata["demo_mode"] is True
-    assert metadata["provider_status"] == "demo"
-    assert latest is not None
-    assert latest["provider_name"] == "demo"
-    assert latest["provider_status"] == "demo"
-    assert latest["is_demo"] == 1

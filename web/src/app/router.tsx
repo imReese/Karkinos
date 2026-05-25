@@ -1106,10 +1106,7 @@ function MarketPage() {
           health.next_action as keyof typeof copy.market.providerActions
         ]
       : (health?.next_action ?? null);
-  const sourceHealthLabel =
-    health?.source_health === 'demo'
-      ? copy.market.demoQuotes
-      : (health?.source_health ?? copy.market.unknown);
+  const sourceHealthLabel = health?.source_health ?? copy.market.unknown;
   const providerConfiguredLabel = health
     ? health.provider_configured
       ? copy.market.configured
@@ -1497,10 +1494,7 @@ function MarketPage() {
                     <MetricBlock
                       label={copy.market.quoteSource}
                       value={
-                        selectedHealthQuote?.quote_source === 'demo'
-                          ? copy.market.demoQuotes
-                          : (selectedHealthQuote?.quote_source ??
-                            copy.market.unknown)
+                        selectedHealthQuote?.quote_source ?? copy.market.unknown
                       }
                     />
                     <MetricBlock

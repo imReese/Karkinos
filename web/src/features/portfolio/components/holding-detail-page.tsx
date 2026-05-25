@@ -178,8 +178,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     liveItem?.quote_source ??
     healthQuote?.quote_source ??
     null;
-  const quoteSourceLabel =
-    quoteSource === 'demo' ? copy.market.demoQuotes : (quoteSource ?? '--');
+  const quoteSourceLabel = quoteSource ?? '--';
   const quoteAgeSeconds =
     position.quote_age_seconds ??
     liveItem?.quote_age_seconds ??

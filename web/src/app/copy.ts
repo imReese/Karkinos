@@ -599,7 +599,6 @@ export const copy = {
       notConfigured: 'Not configured',
       fundSupported: 'Fund-capable',
       fundUnsupported: 'Not fund-capable',
-      demoQuotes: 'Demo quotes',
       unknown: 'Unknown',
       refreshQuotes: 'Refresh quotes',
       refreshingQuotes: 'Refreshing quotes',
@@ -879,17 +878,11 @@ export const copy = {
       persistentCache: 'Persistent cache',
       lastSuccessfulSync: 'Last successful sync',
       providerNextAction: 'Next action',
-      providerDemo: 'Demo',
       providerAkshare: 'AKShare',
       providerTushare: 'Tushare',
       selectDataSource: 'Select data source',
-      enableDemoQuotes: 'Enter demo mode',
-      enablingDemoQuotes: 'Enabling Demo quotes',
-      demoQuotesEnabled: 'Demo mode enabled',
-      demoQuotesDetail:
-        'Demo quotes use deterministic local prices for development and are not market data.',
       providerTimeoutNotice:
-        'The configured quote source is timing out. Karkinos will prefer local real-data cache; enter Demo mode only for development.',
+        'The configured quote source is timing out.',
       assetMetadataMissing: 'Asset metadata is not configured',
       assetMetadataMissingDetail:
         'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
@@ -1527,7 +1520,6 @@ export const copy = {
       notConfigured: '未配置',
       fundSupported: '支持基金',
       fundUnsupported: '不支持基金',
-      demoQuotes: 'Demo行情',
       unknown: '未知',
       refreshQuotes: '刷新行情',
       refreshingQuotes: '刷新中',
@@ -1798,17 +1790,11 @@ export const copy = {
       persistentCache: '持久化缓存',
       lastSuccessfulSync: '最近成功同步',
       providerNextAction: '下一步',
-      providerDemo: 'Demo',
       providerAkshare: 'AKShare',
       providerTushare: 'Tushare',
       selectDataSource: '选择数据源',
-      enableDemoQuotes: '进入演示模式',
-      enablingDemoQuotes: '启用中',
-      demoQuotesEnabled: '演示模式已启用',
-      demoQuotesDetail:
-        'Demo 行情使用本地确定性价格，仅用于开发验证，不是市场数据。',
       providerTimeoutNotice:
-        '当前行情源请求超时。系统会优先使用本地真实缓存；如需演示，可手动进入 Demo 模式。',
+        '当前行情源请求超时。',
       assetMetadataMissing: '尚未配置资产元数据',
       assetMetadataMissingDetail:
         '请在 config.json 中配置 display_name 和 provider_symbol，可参考 config.example.json。',

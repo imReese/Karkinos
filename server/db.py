@@ -687,7 +687,6 @@ class AppDatabase:
         stale_reason: str | None = None,
         captured_reason: str | None = None,
         nav_date: str | None = None,
-        is_demo: bool = False,
         metadata: dict[str, Any] | str | None = None,
     ) -> dict[str, Any] | None:
         """Upsert the current materialized quote for one instrument."""
@@ -702,9 +701,9 @@ class AppDatabase:
                     symbol, asset_type, price, previous_close, change,
                     change_percent, volume, turnover, quote_timestamp,
                     quote_source, provider_name, provider_status, quote_status,
-                    stale_reason, captured_at, captured_reason, nav_date, is_demo,
+                    stale_reason, captured_at, captured_reason, nav_date,
                     metadata_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, asset_type) DO UPDATE SET
                     price = excluded.price,
                     previous_close = excluded.previous_close,
@@ -721,7 +720,6 @@ class AppDatabase:
                     captured_at = excluded.captured_at,
                     captured_reason = excluded.captured_reason,
                     nav_date = excluded.nav_date,
-                    is_demo = excluded.is_demo,
                     metadata_json = excluded.metadata_json,
                     updated_at = excluded.updated_at
                 """,
@@ -743,7 +741,6 @@ class AppDatabase:
                     captured_at_value,
                     captured_reason,
                     nav_date,
-                    1 if is_demo else 0,
                     metadata_json,
                     now,
                     now,
@@ -1586,7 +1583,6 @@ CREATE TABLE IF NOT EXISTS latest_quotes (
     captured_at TEXT NOT NULL,
     captured_reason TEXT,
     nav_date TEXT,
-    is_demo INTEGER NOT NULL DEFAULT 0,
     metadata_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

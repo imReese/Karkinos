@@ -106,7 +106,6 @@ def test_app_database_upserts_and_reads_latest_quote(tmp_path):
         captured_at="2026-05-23T09:31:01+08:00",
         captured_reason="scheduler_poll",
         nav_date="2026-05-23",
-        is_demo=False,
         metadata={"provider_status": "live", "sequence": 2},
     )
     updated = db.get_latest_quote_sync("600519", asset_type="stock")
@@ -172,13 +171,11 @@ def test_app_database_lists_latest_quotes_by_quote_timestamp(tmp_path):
         price=4.0,
         quote_timestamp="2026-05-23T09:31:00+08:00",
         captured_at="2026-05-23T09:31:01+08:00",
-        is_demo=True,
     )
 
     rows = db.list_latest_quotes_sync()
 
     assert [row["symbol"] for row in rows] == ["510300", "600519"]
-    assert rows[0]["is_demo"] == 1
 
 
 def test_app_database_records_quote_fetch_run_lifecycle(tmp_path):
@@ -270,23 +267,23 @@ def test_app_database_filters_quote_fetch_runs(tmp_path):
         status="failed",
     )
     db.create_quote_fetch_run(
-        run_id="manual-demo-success",
+        run_id="manual-tushare-success",
         started_at="2026-05-23T09:30:00+08:00",
         trigger="manual_refresh",
-        provider="demo",
+        provider="tushare",
         status="success",
     )
 
     assert [
         row["run_id"]
         for row in db.list_quote_fetch_runs(trigger="manual_refresh")
-    ] == ["manual-akshare-success", "manual-demo-success"]
+    ] == ["manual-akshare-success", "manual-tushare-success"]
     assert [
         row["run_id"] for row in db.list_quote_fetch_runs(status="failed")
     ] == ["scheduler-akshare-failed"]
     assert [
-        row["run_id"] for row in db.list_quote_fetch_runs(provider="demo")
-    ] == ["manual-demo-success"]
+        row["run_id"] for row in db.list_quote_fetch_runs(provider="tushare")
+    ] == ["manual-tushare-success"]
     assert [
         row["run_id"]
         for row in db.list_quote_fetch_runs(

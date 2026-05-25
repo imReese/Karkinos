@@ -513,50 +513,6 @@ def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
     assert response.latest_persistent_quote_timestamp == "2026-05-25T15:00:00+08:00"
 
 
-def test_market_data_health_does_not_filter_demo_rows_in_read_path(monkeypatch):
-    from server.routes import market as market_routes
-
-    router = market_routes.create_router()
-    health_route = next(
-        route
-        for route in router.routes
-        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
-    )
-
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            assets=[{"symbol": "000000", "asset_class": "fund"}],
-            data_source="akshare",
-        ),
-        scheduler=SimpleNamespace(watchlist=[("000000", "fund")], latest_quotes={}),
-        db=SimpleNamespace(
-            list_latest_quotes_sync=lambda: [
-                {
-                    "symbol": "000000",
-                    "asset_type": "fund",
-                    "price": 1.0,
-                    "quote_timestamp": "2026-05-26T09:31:00+08:00",
-                    "quote_source": "demo",
-                    "provider_name": "demo",
-                    "quote_status": "live",
-                    "is_demo": 1,
-                }
-            ],
-            get_latest_quotes_sync=lambda: [],
-        ),
-    )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-
-    response = asyncio.run(health_route.endpoint())
-
-    assert response.quotes[0].symbol == "000000"
-    assert response.quotes[0].asset_class == "fund"
-    assert response.quotes[0].price == 1.0
-    assert response.quotes[0].timestamp == "2026-05-26T09:31:00+08:00"
-    assert response.quotes[0].quote_source == "demo"
-
-
 def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     from server.routes import market as market_routes
 
@@ -682,7 +638,6 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     assert metadata["provider_status"] == "live"
     assert metadata["quote_status"] == "live"
     assert metadata["using_persistent_cache"] is False
-    assert metadata["demo_mode"] is False
 
 
 def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path):
@@ -752,7 +707,6 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
     assert latest["provider_status"] == "live"
     assert latest["quote_status"] == "live"
     assert latest["captured_reason"] == "manual_or_route_refresh"
-    assert latest["is_demo"] == 0
 
 
 def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_path):
@@ -822,10 +776,9 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
     assert metadata["provider_status"] == "failed"
     assert metadata["quote_status"] == "error"
     assert metadata["using_persistent_cache"] is True
-    assert metadata["demo_mode"] is False
 
 
-def test_market_quote_refresh_records_failed_run_without_demo_fallback(
+def test_market_quote_refresh_records_failed_run_without_provider_fallback(
     monkeypatch,
     tmp_path,
 ):
@@ -835,10 +788,6 @@ def test_market_quote_refresh_records_failed_run_without_demo_fallback(
     class BrokenAkshareSource:
         def fetch_latest(self, symbol, asset_class):
             raise RuntimeError("provider unavailable")
-
-    class DemoShouldNotRun:
-        def fetch_latest(self, symbol, asset_class):
-            raise AssertionError("real provider mode must not call demo fallback")
 
     router = market_routes.create_router()
     refresh_route = next(
@@ -872,7 +821,6 @@ def test_market_quote_refresh_records_failed_run_without_demo_fallback(
         "data.manager.build_sources",
         lambda **kwargs: {
             "akshare": BrokenAkshareSource(),
-            "demo": DemoShouldNotRun(),
         },
     )
 
@@ -884,7 +832,6 @@ def test_market_quote_refresh_records_failed_run_without_demo_fallback(
     latest = db.list_latest_quotes_sync()
     assert response.quote_status == "error"
     assert response.failed[0].using_persistent_cache is False
-    assert response.failed[0].demo_mode is False
     assert latest == []
     assert len(runs) == 1
     assert runs[0]["status"] == "failed"
@@ -898,7 +845,6 @@ def test_market_quote_refresh_records_failed_run_without_demo_fallback(
     metadata = json.loads(runs[0]["metadata_json"])
     assert metadata["provider_status"] == "failed"
     assert metadata["using_persistent_cache"] is False
-    assert metadata["demo_mode"] is False
 
 
 def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_path):
@@ -930,7 +876,7 @@ def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_pat
         provider="akshare",
         status="failed",
         error_message="provider unavailable",
-        metadata={"provider_status": "failed", "demo_mode": False},
+        metadata={"provider_status": "failed"},
     )
     fake_state = SimpleNamespace(db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
@@ -943,10 +889,7 @@ def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_pat
     assert response[0].trigger == "manual_refresh"
     assert response[0].status == "failed"
     assert response[0].error_message == "provider unavailable"
-    assert response[0].metadata == {
-        "provider_status": "failed",
-        "demo_mode": False,
-    }
+    assert response[0].metadata == {"provider_status": "failed"}
     assert not hasattr(response[0], "metadata_json")
 
 
@@ -979,10 +922,10 @@ def test_market_quote_fetch_runs_endpoint_filters_runs(monkeypatch, tmp_path):
         status="failed",
     )
     db.create_quote_fetch_run(
-        run_id="manual-demo-success",
+        run_id="manual-tushare-success",
         started_at="2026-05-23T09:30:00+08:00",
         trigger="manual_refresh",
-        provider="demo",
+        provider="tushare",
         status="success",
     )
     fake_state = SimpleNamespace(db=db)
@@ -993,11 +936,11 @@ def test_market_quote_fetch_runs_endpoint_filters_runs(monkeypatch, tmp_path):
             limit=1,
             trigger="manual_refresh",
             status="success",
-            provider="demo",
+            provider="tushare",
         )
     )
 
-    assert [item.run_id for item in response] == ["manual-demo-success"]
+    assert [item.run_id for item in response] == ["manual-tushare-success"]
 
 
 def test_market_quote_fetch_runs_endpoint_tolerates_malformed_metadata(
@@ -1077,203 +1020,12 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
     assert response.next_action == "configure_data_source_token"
 
 
-def test_market_data_health_reports_demo_provider_and_metadata_count(monkeypatch):
-    from server.routes import market as market_routes
-
-    router = market_routes.create_router()
-    health_route = next(
-        route
-        for route in router.routes
-        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
-    )
-
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            assets=[
-                {
-                    "symbol": "示例基金C",
-                    "asset_class": "fund",
-                    "display_name": "示例基金C",
-                    "provider_symbol": "000000",
-                    "aliases": ["000000"],
-                }
-            ],
-            data_source="demo",
-            tushare_token="",
-        ),
-        scheduler=SimpleNamespace(
-            watchlist=[("000000", "fund")],
-            latest_quotes={},
-            portfolio=None,
-            instruments={},
-        ),
-        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
-    )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-
-    response = asyncio.run(health_route.endpoint())
-
-    assert response.provider_name == "demo"
-    assert response.provider_configured is True
-    assert response.provider_requires_token is False
-    assert response.provider_supports_funds is True
-    assert response.provider_status == "demo"
-    assert response.source_health == "demo"
-    assert response.next_action == "configure_real_provider"
-    assert response.metadata_configured_count == 1
-
-
-def test_market_quote_refresh_demo_provider_updates_runtime_cache(monkeypatch):
-    from server.routes import market as market_routes
-
-    router = market_routes.create_router()
-    refresh_route = next(
-        route
-        for route in router.routes
-        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
-    )
-    endpoint = refresh_route.endpoint
-
-    saved_quotes: list[dict] = []
-    latest_quotes: list[dict] = []
-    created_runs: list[dict] = []
-    finished_runs: list[dict] = []
-
-    class FakeDb:
-        def get_latest_quotes_sync(self):
-            return []
-
-        def save_quote_snapshot_sync(self, **payload):
-            saved_quotes.append(payload)
-
-        def upsert_latest_quote_sync(self, **payload):
-            latest_quotes.append(payload)
-
-        def create_quote_fetch_run(self, **payload):
-            created_runs.append(payload)
-            return 1
-
-        def finish_quote_fetch_run(self, **payload):
-            finished_runs.append(payload)
-            return payload
-
-    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            assets=[
-                {
-                    "symbol": "示例基金C",
-                    "asset_class": "fund",
-                    "display_name": "示例基金C",
-                    "provider_symbol": "000000",
-                    "aliases": ["000000"],
-                }
-            ],
-            data_source="demo",
-            tushare_token="",
-            live_poll_interval=60,
-        ),
-        scheduler=fake_scheduler,
-        db=FakeDb(),
-    )
-
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(
-        market_routes,
-        "_resolve_quote_status",
-        lambda state, quote: "live",
-    )
-
-    response = asyncio.run(
-        endpoint(market_routes.QuoteRefreshRequest(symbols=["000000"], force=True))
-    )
-
-    assert response.quote_status == "live"
-    assert response.refreshed[0].symbol == "000000"
-    assert response.refreshed[0].quote_source == "demo"
-    assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
-    assert fake_scheduler.latest_quotes["000000"]["price"] > 0
-    assert saved_quotes[0]["symbol"] == "000000"
-    assert latest_quotes[0]["symbol"] == "000000"
-    assert latest_quotes[0]["asset_type"] == "fund"
-    assert latest_quotes[0]["provider_status"] == "demo"
-    assert latest_quotes[0]["is_demo"] is True
-    assert created_runs[0]["trigger"] == "manual_refresh"
-    assert created_runs[0]["provider"] == "demo"
-    assert finished_runs[0]["status"] == "success"
-    assert finished_runs[0]["metadata"]["provider_status"] == "demo"
-    assert finished_runs[0]["metadata"]["demo_mode"] is True
-
-
-def test_refresh_one_quote_demo_provider_uses_local_refresh_path(monkeypatch):
-    from server.routes import market as market_routes
-
-    saved_quotes: list[dict] = []
-    latest_quotes: list[dict] = []
-
-    class FakeDb:
-        def get_latest_quotes_sync(self):
-            return []
-
-        def save_quote_snapshot_sync(self, **payload):
-            saved_quotes.append(payload)
-
-        def upsert_latest_quote_sync(self, **payload):
-            latest_quotes.append(payload)
-
-    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            assets=[{"symbol": "000000", "asset_class": "fund"}],
-            data_source="demo",
-            tushare_token="",
-            live_poll_interval=60,
-        ),
-        scheduler=fake_scheduler,
-        db=FakeDb(),
-    )
-
-    async def fail_to_thread(*args, **kwargs):
-        raise AssertionError("demo refresh should not enter the remote timeout path")
-
-    monkeypatch.setattr(market_routes.asyncio, "to_thread", fail_to_thread)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(
-        market_routes,
-        "_resolve_quote_status",
-        lambda state, quote: "live",
-    )
-
-    response = asyncio.run(
-        market_routes._refresh_one_quote(
-            fake_state,
-            "000000",
-            market_routes.AssetClass.FUND,
-            timeout_seconds=0.001,
-        )
-    )
-
-    assert response.status == "refreshed"
-    assert response.quote_source == "demo"
-    assert response.error is None
-    assert fake_scheduler.latest_quotes["000000"]["source"] == "demo"
-    assert saved_quotes[0]["symbol"] == "000000"
-    assert latest_quotes[0]["provider_status"] == "demo"
-    assert latest_quotes[0]["is_demo"] is True
-
-
-def test_refresh_one_quote_real_provider_does_not_fallback_to_demo(monkeypatch):
+def test_refresh_one_quote_real_provider_does_not_fallback_to_unregistered_provider(monkeypatch):
     from server.routes import market as market_routes
 
     class BrokenAkshareSource:
         def fetch_latest(self, symbol, asset_class):
             return None
-
-    class DemoShouldNotRun:
-        def fetch_latest(self, symbol, asset_class):
-            raise AssertionError("real provider mode must not call demo fallback")
 
     class FakeDb:
         def get_latest_quotes_sync(self):
@@ -1294,7 +1046,6 @@ def test_refresh_one_quote_real_provider_does_not_fallback_to_demo(monkeypatch):
         "data.manager.build_sources",
         lambda **kwargs: {
             "akshare": BrokenAkshareSource(),
-            "demo": DemoShouldNotRun(),
         },
     )
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
@@ -1312,7 +1063,6 @@ def test_refresh_one_quote_real_provider_does_not_fallback_to_demo(monkeypatch):
     assert response.quote_source is None
     assert response.error == "no_real_data_available"
     assert response.reason == "暂无真实行情数据，请配置数据源或执行首次同步"
-    assert response.demo_mode is False
     assert response.using_persistent_cache is False
 
 
@@ -1370,7 +1120,6 @@ def test_refresh_one_quote_uses_persistent_real_cache_when_provider_fails(
     assert response.quote_source == "akshare"
     assert response.error is None
     assert response.using_persistent_cache is True
-    assert response.demo_mode is False
     assert response.reason == "行情源没有返回新报价，继续使用本地缓存"
 
 
@@ -2097,46 +1846,6 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
     assert response["previous_close_date"] == "2026-04-18"
 
 
-def test_fetch_latest_snapshot_demo_provider_does_not_fall_back_to_akshare(
-    monkeypatch,
-):
-    from server.routes import market as market_routes
-
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            data_source="demo",
-            tushare_token="",
-            assets=[{"symbol": "018125", "asset_class": "fund"}],
-            live_poll_interval=120,
-        ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: None,
-        ),
-    )
-
-    class EmptyDemoSource:
-        def fetch_latest(self, symbol, asset_class):
-            return None
-
-    class BlockingAkshareSource:
-        def fetch_latest(self, symbol, asset_class):
-            raise AssertionError("demo mode must not call remote akshare fallback")
-
-    monkeypatch.setattr(
-        "data.manager.build_sources",
-        lambda **kwargs: {
-            "demo": EmptyDemoSource(),
-            "akshare": BlockingAkshareSource(),
-        },
-    )
-
-    response = market_routes._fetch_latest_snapshot(
-        fake_state, "018125", market_routes.AssetClass.FUND
-    )
-
-    assert response is None
-
-
 def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     from server.routes import market as market_routes
 
@@ -2396,47 +2105,6 @@ def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeyp
     ]
 
 
-def test_get_data_source_settings_reports_demo_capabilities(monkeypatch):
-    from server.routes import settings as settings_routes
-
-    router = settings_routes.create_router()
-    status_route = next(
-        route
-        for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/settings/data-source"
-        and "GET" in route.methods
-    )
-
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            assets=[
-                {
-                    "symbol": "000000",
-                    "asset_class": "fund",
-                    "display_name": "示例基金",
-                    "provider_symbol": "000000",
-                }
-            ],
-            data_source="demo",
-            tushare_token="",
-        )
-    )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-
-    response = asyncio.run(status_route.endpoint())
-
-    assert response.data_source == "demo"
-    assert response.provider_name == "demo"
-    assert response.provider_configured is True
-    assert response.provider_supports_funds is True
-    assert response.provider_requires_token is False
-    assert response.requires_restart is False
-    assert response.next_action == "configure_real_provider"
-    assert response.metadata_configured_count == 1
-    assert "demo" in response.available_providers
-
-
 def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
     from server.routes import settings as settings_routes
 
@@ -2469,59 +2137,6 @@ def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
     assert response.missing_symbols == ["012710", "026539"]
     assert response.has_missing_metadata is True
     assert response.suggested_config["assets"][0]["provider_symbol"] == "012710"
-
-
-def test_update_data_source_settings_can_enable_demo_without_token(
-    monkeypatch, tmp_path
-):
-    from server.routes import settings as settings_routes
-
-    router = settings_routes.create_router()
-    update_route = next(
-        route
-        for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/settings/data-source"
-        and "PUT" in route.methods
-    )
-
-    config_path = tmp_path / "config.json"
-    config = SimpleNamespace(
-        host="0.0.0.0",
-        port=8000,
-        live_auto_start=False,
-        initial_cash=Decimal("4000"),
-        start_date="2025-01-02",
-        end_date="2026-04-18",
-        assets=[{"symbol": "000000", "asset_class": "fund"}],
-        strategy="dual_ma",
-        short_period=5,
-        long_period=20,
-        data_source="tushare",
-        tushare_token="",
-        notification={"type": "console"},
-        live_poll_interval=60,
-    )
-    fake_state = SimpleNamespace(config=config)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(settings_routes, "resolve_config_path", lambda: config_path)
-
-    response = asyncio.run(
-        update_route.endpoint(
-            settings_routes.DataSourceSettingsUpdate(
-                data_source="demo",
-                tushare_token="",
-                live_poll_interval=90,
-            )
-        )
-    )
-
-    saved = json.loads(config_path.read_text())
-    assert response.data_source == "demo"
-    assert response.tushare_token == ""
-    assert response.live_poll_interval == 90
-    assert saved["data_source"] == "demo"
-    assert saved["tushare_token"] == ""
 
 
 def test_portfolio_overview_summarizes_account_state(monkeypatch):
@@ -2660,7 +2275,7 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             initial_cash=4000,
-            data_source="demo",
+            data_source="akshare",
             tushare_token="",
             instruments=[],
             assets={"026539": "示例基金B"},
@@ -4791,7 +4406,7 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
                     "asset_class": "fund",
                     "price": 1.2,
                     "timestamp": "2026-05-22T09:30:00+08:00",
-                    "source": "demo",
+                    "source": "akshare",
                 }
             ]
 
@@ -4804,7 +4419,7 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             initial_cash=0,
-            data_source="demo",
+            data_source="akshare",
             instruments=[],
             assets={
                 "012710": {

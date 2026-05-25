@@ -609,16 +609,12 @@ def _collect_latest_quote_timestamps(state) -> dict[str, str]:
     scheduler = state.scheduler
     if scheduler and getattr(scheduler, "latest_quotes", None):
         for symbol, quote in scheduler.latest_quotes.items():
-            if _is_demo_quote(quote) and not _is_demo_mode(state):
-                continue
             timestamp = quote.get("timestamp")
             if timestamp:
                 latest[str(symbol)] = timestamp
 
     if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
         for row in state.db.get_latest_quotes_sync():
-            if _is_demo_quote(row) and not _is_demo_mode(state):
-                continue
             timestamp = row.get("timestamp")
             symbol = row.get("symbol")
             if symbol and timestamp and str(symbol) not in latest:
@@ -632,14 +628,10 @@ def _collect_latest_quotes(state) -> dict[str, dict]:
     scheduler = state.scheduler
     if scheduler and getattr(scheduler, "latest_quotes", None):
         for symbol, quote in scheduler.latest_quotes.items():
-            if _is_demo_quote(quote) and not _is_demo_mode(state):
-                continue
             latest[str(symbol)] = quote
 
     if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
         for row in state.db.get_latest_quotes_sync():
-            if _is_demo_quote(row) and not _is_demo_mode(state):
-                continue
             symbol = row.get("symbol")
             if symbol and str(symbol) not in latest:
                 latest[str(symbol)] = row
@@ -748,25 +740,9 @@ def _quote_source(state, quote: dict | None) -> str | None:
     if source:
         return str(source)
     configured = getattr(state.config, "data_source", None)
-    if configured and str(configured) != "demo":
+    if configured:
         return str(configured)
     return None
-
-
-def _is_demo_mode(state) -> bool:
-    return str(getattr(state.config, "data_source", "") or "") == "demo"
-
-
-def _is_demo_quote(quote: dict | None) -> bool:
-    if not quote:
-        return False
-    source = (
-        quote.get("quote_source")
-        or quote.get("source")
-        or quote.get("provider_name")
-        or quote.get("provider")
-    )
-    return str(source).lower() == "demo"
 
 
 def _refresh_policy(now: datetime | None = None) -> str:
