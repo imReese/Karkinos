@@ -173,7 +173,6 @@ class TradingScheduler:
             "trigger": "scheduler_poll",
             "provider": self._config.data_source,
             "provider_status": provider_status,
-            "demo_mode": self._config.data_source == "demo",
             "market_open": True,
             "poll_interval_seconds": self._config.live_poll_interval,
             "symbols": [str(symbol) for symbol, _ in self._watchlist],
@@ -201,8 +200,6 @@ class TradingScheduler:
     def _provider_status_for_scheduler_run(
         self, *, success_count: int, failure_count: int
     ) -> str:
-        if self._config.data_source == "demo":
-            return "demo"
         if success_count == len(self._watchlist) and failure_count == 0:
             return "live"
         if success_count > 0:
@@ -226,7 +223,6 @@ class TradingScheduler:
                 metadata={
                     "trigger": "scheduler_poll",
                     "provider": self._config.data_source,
-                    "demo_mode": self._config.data_source == "demo",
                     "market_open": True,
                     "poll_interval_seconds": self._config.live_poll_interval,
                     "symbols": [str(symbol) for symbol, _ in self._watchlist],
@@ -362,11 +358,6 @@ class TradingScheduler:
                             or quote.get("provider_name")
                             or quote.get("provider")
                         )
-                        if (
-                            self._config.data_source != "demo"
-                            and str(quote_source).lower() == "demo"
-                        ):
-                            continue
                         self._latest_quotes[quote["symbol"]] = {
                             "price": float(quote["price"]),
                             "volume": float(quote["volume"]) if quote["volume"] is not None else None,
@@ -531,16 +522,11 @@ class TradingScheduler:
                                         quote_timestamp=snapshot_timestamp,
                                         quote_source=quote_source,
                                         provider_name=provider_name,
-                                        provider_status=(
-                                            "demo"
-                                            if self._config.data_source == "demo"
-                                            else "live"
-                                        ),
+                                        provider_status="live",
                                         quote_status="live",
                                         captured_at=datetime.now().isoformat(),
                                         captured_reason="scheduler_poll",
                                         nav_date=snapshot.get("nav_date"),
-                                        is_demo=self._config.data_source == "demo",
                                         metadata={
                                             "source": snapshot.get("source"),
                                             "previous_close_date": previous_close_date,

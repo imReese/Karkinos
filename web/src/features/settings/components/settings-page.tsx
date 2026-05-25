@@ -120,17 +120,11 @@ export function SettingsPage() {
   const providerTimedOut =
     marketHealth.data?.provider_last_error === 'provider_timeout' ||
     marketHealth.data?.last_refresh_error === 'provider_timeout';
-  const shouldOfferDemo =
-    providerName !== 'demo' &&
-    (providerTimedOut ||
-      providerSupportsFunds === false ||
-      marketHealth.data?.provider_configured === false ||
-      dataSourceStatus.data?.provider_configured === false);
   const availableProviders = dataSourceStatus.data?.available_providers ?? [];
   const dataSourceOptions =
     availableProviders.length > 0
       ? availableProviders
-      : ['demo', 'akshare', 'tushare'];
+      : ['akshare', 'tushare'];
 
   const dataSourceChanged = useMemo(() => {
     if (!settings.data) {
@@ -148,17 +142,6 @@ export function SettingsPage() {
     const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
     await updateDataSource.mutateAsync({
       data_source: dataSource.trim() || settings.data?.data_source || 'akshare',
-      tushare_token: providerToken,
-      live_poll_interval: normalizedInterval,
-    });
-    setPollInterval(String(normalizedInterval));
-  };
-
-  const enableDemoQuotes = async () => {
-    const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
-    setDataSource('demo');
-    await updateDataSource.mutateAsync({
-      data_source: 'demo',
       tushare_token: providerToken,
       live_poll_interval: normalizedInterval,
     });
@@ -406,11 +389,9 @@ export function SettingsPage() {
                 value={
                   dataSourceStatus.isLoading
                     ? copy.shell.checking
-                    : providerName === 'demo'
-                      ? copy.market.demoQuotes
-                      : providerName
+                    : providerName
                 }
-                tone={providerName === 'demo' ? 'warning' : 'neutral'}
+                tone="neutral"
               />
               <StatusMetric
                 label={copy.settings.providerConfigured}
@@ -476,17 +457,10 @@ export function SettingsPage() {
               />
             </div>
 
-            {providerName === 'demo' ? (
+            {providerTimedOut ? (
               <InlineNotice
                 tone="warning"
-                title={copy.market.demoQuotes}
-                detail={copy.settings.demoQuotesDetail}
-              />
-            ) : null}
-            {shouldOfferDemo ? (
-              <InlineNotice
-                tone="warning"
-                title={copy.settings.enableDemoQuotes}
+                title={copy.settings.providerNextAction}
                 detail={copy.settings.providerTimeoutNotice}
               />
             ) : null}
@@ -514,13 +488,11 @@ export function SettingsPage() {
                   {dataSourceOptions.map((option) => {
                     const selected = dataSource === option;
                     const label =
-                      option === 'demo'
-                        ? copy.settings.providerDemo
-                        : option === 'akshare'
-                          ? copy.settings.providerAkshare
-                          : option === 'tushare'
-                            ? copy.settings.providerTushare
-                            : option;
+                      option === 'akshare'
+                        ? copy.settings.providerAkshare
+                        : option === 'tushare'
+                          ? copy.settings.providerTushare
+                          : option;
                     return (
                       <button
                         key={option}
@@ -591,29 +563,12 @@ export function SettingsPage() {
                   ? copy.settings.savingDataSource
                   : copy.settings.saveDataSource}
               </button>
-              {shouldOfferDemo ? (
-                <button
-                  type="button"
-                  className="app-button-secondary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={updateDataSource.isPending}
-                  aria-busy={updateDataSource.isPending}
-                  onClick={() => void enableDemoQuotes()}
-                >
-                  {updateDataSource.isPending
-                    ? copy.settings.enablingDemoQuotes
-                    : copy.settings.enableDemoQuotes}
-                </button>
-              ) : null}
             </form>
 
             {updateDataSource.isSuccess ? (
               <InlineNotice
                 tone="success"
-                title={
-                  dataSource === 'demo'
-                    ? copy.settings.demoQuotesEnabled
-                    : copy.settings.dataSourceSaved
-                }
+                title={copy.settings.dataSourceSaved}
                 detail={
                   dataSourceStatus.data?.requires_restart
                     ? copy.settings.requiresRestart

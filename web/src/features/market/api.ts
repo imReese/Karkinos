@@ -41,7 +41,6 @@ export type MarketDataHealthResponse = {
   has_persistent_cache?: boolean;
   latest_persistent_quote_timestamp?: string | null;
   persistent_cache_status?: string;
-  demo_mode?: boolean;
 };
 
 export type ResearchBoardItem = {
@@ -103,7 +102,6 @@ export type MarketQuoteRefreshResult = {
   last_refresh_attempt: string | null;
   last_refresh_error: string | null;
   using_persistent_cache?: boolean;
-  demo_mode?: boolean;
 };
 
 export type MarketQuoteRefreshResponse = {
@@ -122,7 +120,6 @@ export type MarketQuoteRefreshResponse = {
   message: string;
   real_data_available?: boolean;
   has_persistent_cache?: boolean;
-  demo_mode?: boolean;
 };
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {

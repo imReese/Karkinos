@@ -39,11 +39,11 @@ def _provider_requires_token(provider_name: str) -> bool:
 def _provider_configured(config, provider_name: str) -> bool:
     if _provider_requires_token(provider_name):
         return bool(getattr(config, "tushare_token", ""))
-    return provider_name in {"demo", "akshare", "tushare"}
+    return provider_name in {"akshare", "tushare"}
 
 
 def _provider_supports_funds(provider_name: str) -> bool | None:
-    if provider_name in {"demo", "akshare"}:
+    if provider_name == "akshare":
         return True
     if provider_name == "tushare":
         return False
@@ -96,8 +96,6 @@ def _data_source_next_action(
     has_funds: bool,
     metadata_count: int,
 ) -> str | None:
-    if provider_name == "demo":
-        return "configure_real_provider"
     if not provider_configured:
         return "configure_data_source_token"
     if has_funds and provider_supports_funds is False:
@@ -117,14 +115,6 @@ def _build_data_source_status(state) -> DataSourceStatusResponse:
     db = getattr(state, "db", None)
     if db is not None and hasattr(db, "get_latest_quotes_sync"):
         for row in db.get_latest_quotes_sync():
-            source = (
-                row.get("quote_source")
-                or row.get("source")
-                or row.get("provider_name")
-                or row.get("provider")
-            )
-            if str(source).lower() == "demo":
-                continue
             timestamp = row.get("timestamp")
             if timestamp:
                 persistent_timestamps.append(str(timestamp))
@@ -149,7 +139,6 @@ def _build_data_source_status(state) -> DataSourceStatusResponse:
         if persistent_timestamps
         else None,
         persistent_cache_status="available" if has_persistent_cache else "missing",
-        demo_mode=provider_name == "demo",
     )
 
 
