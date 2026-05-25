@@ -172,6 +172,21 @@ def _is_real_persistent_quote(quote: dict | None) -> bool:
     return not _is_demo_quote(quote)
 
 
+def _adapt_latest_quote_for_health(row: dict) -> dict:
+    quote = dict(row)
+    if quote.get("asset_class") in {None, ""} and quote.get("asset_type") not in {
+        None,
+        "",
+    }:
+        quote["asset_class"] = quote.get("asset_type")
+    if quote.get("timestamp") in {None, ""} and quote.get("quote_timestamp") not in {
+        None,
+        "",
+    }:
+        quote["timestamp"] = quote.get("quote_timestamp")
+    return quote
+
+
 def _mark_persistent_cache_quote(
     quote: dict | None, *, stale_reason: str = "source_unavailable"
 ) -> dict | None:
@@ -1256,18 +1271,22 @@ def create_router() -> APIRouter:
         latest_quotes: dict[str, dict] = {}
         if scheduler and getattr(scheduler, "latest_quotes", None):
             for symbol, quote in scheduler.latest_quotes.items():
-                if _is_demo_quote(quote) and not _is_demo_mode(state):
-                    continue
                 latest_quotes[symbol] = quote
 
         persistent_quotes: dict[str, dict] = {}
         if state.db is not None:
-            for row in state.db.get_latest_quotes_sync():
-                if _is_real_persistent_quote(row):
-                    persistent_quotes[row["symbol"]] = row
-                if _is_demo_quote(row) and not _is_demo_mode(state):
-                    continue
-                latest_quotes.setdefault(row["symbol"], row)
+            if hasattr(state.db, "list_latest_quotes_sync"):
+                for row in state.db.list_latest_quotes_sync():
+                    quote = _adapt_latest_quote_for_health(row)
+                    if _is_real_persistent_quote(quote):
+                        persistent_quotes[quote["symbol"]] = quote
+                    latest_quotes.setdefault(quote["symbol"], quote)
+            if hasattr(state.db, "get_latest_quotes_sync"):
+                for row in state.db.get_latest_quotes_sync():
+                    quote = _adapt_latest_quote_for_health(row)
+                    if _is_real_persistent_quote(quote):
+                        persistent_quotes.setdefault(quote["symbol"], quote)
+                    latest_quotes.setdefault(quote["symbol"], quote)
 
         payload = build_data_health(
             watchlist=watchlist,
