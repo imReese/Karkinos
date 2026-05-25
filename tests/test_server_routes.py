@@ -406,6 +406,157 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     assert response.refresh_policy == "cache_only"
 
 
+def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_type": "stock",
+                    "price": 125.0,
+                    "quote_timestamp": "2026-05-26T09:31:00+08:00",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "quote_status": "live",
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 100.0,
+                    "timestamp": "2026-05-25T15:00:00+08:00",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "quote_status": "stale",
+                }
+            ]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+        ),
+        scheduler=SimpleNamespace(watchlist=[("600519", "stock")], latest_quotes={}),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.quotes[0].symbol == "600519"
+    assert response.quotes[0].asset_class == "stock"
+    assert response.quotes[0].price == 125.0
+    assert response.quotes[0].timestamp == "2026-05-26T09:31:00+08:00"
+    assert response.quotes[0].quote_source == "akshare"
+    assert response.latest_quote_timestamp == "2026-05-26T09:31:00+08:00"
+    assert response.has_persistent_cache is True
+
+
+def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 100.0,
+                    "timestamp": "2026-05-25T15:00:00+08:00",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "quote_status": "stale",
+                }
+            ]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+        ),
+        scheduler=SimpleNamespace(watchlist=[("600519", "stock")], latest_quotes={}),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.quotes[0].symbol == "600519"
+    assert response.quotes[0].asset_class == "stock"
+    assert response.quotes[0].price == 100.0
+    assert response.quotes[0].timestamp == "2026-05-25T15:00:00+08:00"
+    assert response.has_persistent_cache is True
+    assert response.latest_persistent_quote_timestamp == "2026-05-25T15:00:00+08:00"
+
+
+def test_market_data_health_does_not_filter_demo_rows_in_read_path(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "000000", "asset_class": "fund"}],
+            data_source="akshare",
+        ),
+        scheduler=SimpleNamespace(watchlist=[("000000", "fund")], latest_quotes={}),
+        db=SimpleNamespace(
+            list_latest_quotes_sync=lambda: [
+                {
+                    "symbol": "000000",
+                    "asset_type": "fund",
+                    "price": 1.0,
+                    "quote_timestamp": "2026-05-26T09:31:00+08:00",
+                    "quote_source": "demo",
+                    "provider_name": "demo",
+                    "quote_status": "live",
+                    "is_demo": 1,
+                }
+            ],
+            get_latest_quotes_sync=lambda: [],
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.quotes[0].symbol == "000000"
+    assert response.quotes[0].asset_class == "fund"
+    assert response.quotes[0].price == 1.0
+    assert response.quotes[0].timestamp == "2026-05-26T09:31:00+08:00"
+    assert response.quotes[0].quote_source == "demo"
+
+
 def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     from server.routes import market as market_routes
 
