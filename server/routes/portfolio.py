@@ -613,14 +613,87 @@ def _collect_latest_quote_timestamps(state) -> dict[str, str]:
             if timestamp:
                 latest[str(symbol)] = timestamp
 
-    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
-        for row in state.db.get_latest_quotes_sync():
-            timestamp = row.get("timestamp")
-            symbol = row.get("symbol")
-            if symbol and timestamp and str(symbol) not in latest:
-                latest[str(symbol)] = timestamp
+    if state.db is not None:
+        if hasattr(state.db, "list_latest_quotes_sync"):
+            for row in state.db.list_latest_quotes_sync():
+                quote = _adapt_persistent_quote_for_portfolio(row)
+                timestamp = quote.get("timestamp")
+                symbol = quote.get("symbol")
+                if symbol and timestamp and str(symbol) not in latest:
+                    latest[str(symbol)] = timestamp
+        if hasattr(state.db, "get_latest_quotes_sync"):
+            for row in state.db.get_latest_quotes_sync():
+                quote = _adapt_persistent_quote_for_portfolio(row)
+                timestamp = quote.get("timestamp")
+                symbol = quote.get("symbol")
+                if symbol and timestamp and str(symbol) not in latest:
+                    latest[str(symbol)] = timestamp
 
     return latest
+
+
+def _adapt_persistent_quote_for_portfolio(row: dict) -> dict:
+    quote = dict(row)
+    if quote.get("asset_class") in {None, ""} and quote.get("asset_type") not in {
+        None,
+        "",
+    }:
+        quote["asset_class"] = quote.get("asset_type")
+    if quote.get("timestamp") in {None, ""} and quote.get("quote_timestamp") not in {
+        None,
+        "",
+    }:
+        quote["timestamp"] = quote.get("quote_timestamp")
+    if quote.get("source") in {None, ""} and quote.get("quote_source") not in {
+        None,
+        "",
+    }:
+        quote["source"] = quote.get("quote_source")
+    if quote.get("provider") in {None, ""} and quote.get("provider_name") not in {
+        None,
+        "",
+    }:
+        quote["provider"] = quote.get("provider_name")
+
+    metadata_json = quote.get("metadata_json")
+    if metadata_json:
+        try:
+            metadata = json.loads(str(metadata_json))
+        except (TypeError, ValueError):
+            metadata = None
+        if isinstance(metadata, dict):
+            for key in (
+                "display_name",
+                "name",
+                "asset_name",
+                "market",
+                "provider_symbol",
+            ):
+                value = metadata.get(key)
+                if quote.get(key) in {None, ""} and value not in {None, ""}:
+                    quote[key] = value
+            if quote.get("source") in {None, ""} and metadata.get("source") not in {
+                None,
+                "",
+            }:
+                quote["source"] = metadata.get("source")
+    return quote
+
+
+def _merge_quote_identity(base: dict, candidate: dict) -> dict:
+    merged = dict(base)
+    for key in (
+        "asset_class",
+        "display_name",
+        "name",
+        "asset_name",
+        "market",
+        "provider_symbol",
+        "nav_date",
+    ):
+        if merged.get(key) in {None, ""} and candidate.get(key) not in {None, ""}:
+            merged[key] = candidate[key]
+    return merged
 
 
 def _collect_latest_quotes(state) -> dict[str, dict]:
@@ -630,11 +703,31 @@ def _collect_latest_quotes(state) -> dict[str, dict]:
         for symbol, quote in scheduler.latest_quotes.items():
             latest[str(symbol)] = quote
 
-    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
-        for row in state.db.get_latest_quotes_sync():
-            symbol = row.get("symbol")
-            if symbol and str(symbol) not in latest:
-                latest[str(symbol)] = row
+    if state.db is not None:
+        if hasattr(state.db, "list_latest_quotes_sync"):
+            for row in state.db.list_latest_quotes_sync():
+                quote = _adapt_persistent_quote_for_portfolio(row)
+                symbol = quote.get("symbol")
+                if not symbol:
+                    continue
+                key = str(symbol)
+                latest[key] = (
+                    _merge_quote_identity(latest[key], quote)
+                    if key in latest
+                    else quote
+                )
+        if hasattr(state.db, "get_latest_quotes_sync"):
+            for row in state.db.get_latest_quotes_sync():
+                quote = _adapt_persistent_quote_for_portfolio(row)
+                symbol = quote.get("symbol")
+                if not symbol:
+                    continue
+                key = str(symbol)
+                latest[key] = (
+                    _merge_quote_identity(latest[key], quote)
+                    if key in latest
+                    else quote
+                )
 
     return latest
 

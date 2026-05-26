@@ -79,8 +79,13 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
             className="app-panel-strong rounded-2xl px-4 py-4"
           >
             <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold">
-                {assetClassLabel(group.asset_class, copy.common)}
+              <div>
+                <div className="text-sm font-semibold">
+                  {group.label || assetClassLabel(group.asset_class, copy.common)}
+                </div>
+                <div className="app-muted mt-1 text-xs">
+                  {labels.positionCount(group.items.length)}
+                </div>
               </div>
               <div
                 className={`text-sm font-semibold ${toneClass(group.total_today_change)}`}
@@ -106,8 +111,13 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
         {groups.map((group) => (
           <section key={group.asset_class} className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-base font-semibold">
-                {assetClassLabel(group.asset_class, copy.common)}
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-soft)]">
+                  {group.label || assetClassLabel(group.asset_class, copy.common)}
+                </span>
+                <span className="truncate text-base font-semibold">
+                  {labels.positionCount(group.items.length)}
+                </span>
               </div>
               <div className="app-muted text-sm">
                 {formatCurrency(group.total_market_value)}
@@ -120,10 +130,18 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                   className="app-panel-strong rounded-2xl px-4 py-4"
                 >
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                    <div>
-                      <div className="text-sm font-semibold">{item.name}</div>
-                      <div className="app-muted mt-1 text-xs">
-                        {item.symbol} · {formatQuantity(item.quantity)}
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <div className="truncate text-sm font-semibold">
+                          {item.display_name || item.name || item.symbol}
+                        </div>
+                        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+                          {assetClassLabel(item.asset_class, copy.common)}
+                        </span>
+                      </div>
+                      <div className="app-muted mt-1 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="font-mono">{item.symbol}</span>
+                        <span>{formatQuantity(item.quantity)}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">

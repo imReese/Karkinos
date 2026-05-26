@@ -28,6 +28,35 @@ function renderBoard(locale: 'en' | 'zh' = 'en') {
       <LiveHoldingsBoard
         groups={[
           {
+            asset_class: 'stock',
+            label: locale === 'zh' ? '股票' : 'Stock',
+            total_market_value: 1800,
+            total_today_change: -20,
+            total_since_buy_pnl: 300,
+            items: [
+              {
+                symbol: '600519',
+                name: locale === 'zh' ? '贵州茅台' : 'Kweichow Moutai',
+                display_name:
+                  locale === 'zh' ? '贵州茅台' : 'Kweichow Moutai',
+                asset_class: 'stock',
+                quantity: 1,
+                avg_cost: 1500,
+                market_value: 1800,
+                latest_price: 1800,
+                quote_timestamp: '2026-04-21T14:30:00',
+                since_buy_pnl: 300,
+                since_buy_pnl_pct: 0.2,
+                today_change: -20,
+                today_change_pct: -0.011,
+                baseline_price: 1820,
+                baseline_timestamp: '2026-04-20T15:00:00',
+                baseline_source: 'previous_close',
+                quote_status: 'live',
+              },
+            ],
+          },
+          {
             asset_class: 'fund',
             label: locale === 'zh' ? '基金' : 'Fund',
             total_market_value: 1200,
@@ -66,6 +95,11 @@ test('renders holdings quote board in english', () => {
 
   expect(screen.getByText(copy.portfolio.liveBoard.title)).toBeTruthy();
   expect(screen.getByText('Example Fund')).toBeTruthy();
+  expect(screen.getByText('Kweichow Moutai')).toBeTruthy();
+  expect(screen.getByText('600519')).toBeTruthy();
+  expect(screen.getAllByText('Stock').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Fund').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('1 active holding').length).toBeGreaterThan(0);
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.latestPrice).length,
   ).toBeGreaterThan(0);
@@ -75,7 +109,9 @@ test('renders holdings quote board in english', () => {
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.sinceBuyReturn).length,
   ).toBeGreaterThan(0);
-  expect(screen.getByText(copy.portfolio.liveBoard.quoteLive)).toBeTruthy();
+  expect(
+    screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
+  ).toBeGreaterThan(0);
 });
 
 test('renders localized holdings quote board in chinese', () => {
@@ -84,6 +120,11 @@ test('renders localized holdings quote board in chinese', () => {
 
   expect(screen.getByText(copy.portfolio.liveBoard.title)).toBeTruthy();
   expect(screen.getByText('示例基金')).toBeTruthy();
+  expect(screen.getByText('贵州茅台')).toBeTruthy();
+  expect(screen.getByText('600519')).toBeTruthy();
+  expect(screen.getAllByText('股票').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('基金').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('1 个活跃持仓').length).toBeGreaterThan(0);
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.latestPrice).length,
   ).toBeGreaterThan(0);
@@ -93,5 +134,7 @@ test('renders localized holdings quote board in chinese', () => {
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.sinceBuyReturn).length,
   ).toBeGreaterThan(0);
-  expect(screen.getByText(copy.portfolio.liveBoard.quoteLive)).toBeTruthy();
+  expect(
+    screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
+  ).toBeGreaterThan(0);
 });
