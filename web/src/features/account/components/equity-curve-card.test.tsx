@@ -359,7 +359,7 @@ test('shows the insufficient data state when a selected range has only one point
   ).toBeTruthy();
 });
 
-test('shows an insufficient data state for flat two-point ranges', async () => {
+test('renders flat two-point ranges from backend data', async () => {
   renderCard({
     cardPoints: [
       {
@@ -382,11 +382,9 @@ test('shows an insufficient data state for flat two-point ranges', async () => {
     ],
   });
 
-  expect(
-    await screen.findByText('Insufficient data for this range.'),
-  ).toBeTruthy();
-  expect(screen.getByText('Current valuation point')).toBeTruthy();
-  expect(screen.getByText('stale')).toBeTruthy();
+  expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
+  expect(screen.queryByText('Insufficient data for this range.')).toBeNull();
+  expect(screen.queryByText('Current valuation point')).toBeNull();
 });
 
 test('renders multiple intermediate time ticks across the selected range', async () => {

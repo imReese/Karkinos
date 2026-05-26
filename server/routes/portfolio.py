@@ -1446,6 +1446,26 @@ def _append_current_equity_series_point(
     return [*points, current]
 
 
+def _flat_intraday_equity_series_from_current(
+    current: EquitySeriesPoint | None,
+) -> list[EquitySeriesPoint]:
+    if current is None:
+        return []
+
+    current_timestamp = _parse_quote_timestamp(current.timestamp) or get_shanghai_now()
+    ticks = _build_cn_session_ticks(
+        current_timestamp.date(),
+        current_timestamp.tzinfo or _SH_TZ,
+        full_session=True,
+    )
+    if not ticks:
+        return [current]
+
+    return [
+        current.model_copy(update={"timestamp": tick.isoformat()}) for tick in ticks
+    ]
+
+
 def _series_point_from_intraday(
     point: dict, quote_status: str = "live"
 ) -> EquitySeriesPoint:
@@ -1793,10 +1813,10 @@ def create_router() -> APIRouter:
                     "Timed out building intraday equity curve after %.2fs",
                     timeout_seconds,
                 )
-                return [] if current_point is None else [current_point]
+                return _flat_intraday_equity_series_from_current(current_point)
             except Exception:
                 logger.warning("Failed to build intraday equity curve", exc_info=True)
-                return [] if current_point is None else [current_point]
+                return _flat_intraday_equity_series_from_current(current_point)
 
             return [
                 _series_point_from_intraday(point, quote_status=quote_status)

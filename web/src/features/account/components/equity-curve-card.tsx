@@ -309,12 +309,7 @@ export function EquityCurveCard({
   });
 
   const chartPoints = filterByRange(toChartPoints(points), range);
-  const uniqueTotals = new Set(
-    chartPoints.map((point) => point.total.toFixed(4)),
-  );
-  const hasUsableData =
-    chartPoints.length >= 2 &&
-    (chartPoints.length >= 3 || uniqueTotals.size > 1);
+  const hasUsableData = chartPoints.length >= 2;
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
   const latestPoint = chartPoints[chartPoints.length - 1];
