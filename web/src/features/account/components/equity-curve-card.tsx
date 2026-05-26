@@ -100,10 +100,21 @@ function TimeAxisTick({
 }
 
 function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
-  return points.map((point) => ({
+  return points
+    .map((point) => ({
+      ...point,
+      timestampMs: new Date(point.timestamp).getTime(),
+    }))
+    .filter((point) => Number.isFinite(point.timestampMs))
+    .sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+function clonePointAtTimestamp(point: ChartPoint, timestampMs: number) {
+  return {
     ...point,
-    timestampMs: new Date(point.timestamp).getTime(),
-  }));
+    timestamp: new Date(timestampMs).toISOString(),
+    timestampMs,
+  };
 }
 
 function filterByRange(points: ChartPoint[], range: EquityCurveRange) {
@@ -111,14 +122,29 @@ function filterByRange(points: ChartPoint[], range: EquityCurveRange) {
     return points;
   }
 
-  const latest = new Date(
-    points[points.length - 1]?.timestamp ?? Date.now(),
-  ).getTime();
+  const latest = points[points.length - 1]?.timestampMs ?? Date.now();
+  const rangeStart = latest - RANGE_DAYS[range] * 86_400_000;
   const filtered = points.filter((point) => {
-    const ageInDays =
-      (latest - new Date(point.timestamp).getTime()) / 86_400_000;
-    return ageInDays <= RANGE_DAYS[range];
+    return point.timestampMs >= rangeStart && point.timestampMs <= latest;
   });
+
+  if (range === '1d') {
+    return filtered;
+  }
+
+  const anchor = [...points]
+    .reverse()
+    .find((point) => point.timestampMs < rangeStart);
+  if (anchor && filtered.length > 0) {
+    return [clonePointAtTimestamp(anchor, rangeStart), ...filtered];
+  }
+  if (anchor && filtered.length === 0) {
+    const latestPoint = points[points.length - 1];
+    return [
+      clonePointAtTimestamp(anchor, rangeStart),
+      clonePointAtTimestamp(latestPoint, latest),
+    ];
+  }
   return filtered;
 }
 

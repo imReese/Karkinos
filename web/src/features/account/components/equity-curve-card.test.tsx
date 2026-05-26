@@ -166,6 +166,34 @@ const backendCurrentPoints: EquitySeriesPoint[] = [
   },
 ];
 
+const sparseLedgerPoints: EquitySeriesPoint[] = [
+  {
+    timestamp: '2026-04-13T14:27:00+08:00',
+    total: 103900,
+    stocks: 0,
+    funds: 1780,
+    others: 0,
+    cash: 102120,
+  },
+  {
+    timestamp: '2026-04-23T14:46:00+08:00',
+    total: 104100,
+    stocks: 0,
+    funds: 2050,
+    others: 0,
+    cash: 102050,
+  },
+  {
+    timestamp: '2026-05-26T00:39:00+08:00',
+    total: 104350,
+    stocks: 0,
+    funds: 2110,
+    others: 0,
+    cash: 102240,
+    quote_status: 'stale',
+  },
+];
+
 function renderCard({
   cardPoints = points,
   onRangeChange,
@@ -383,6 +411,21 @@ test('renders flat two-point ranges from backend data', async () => {
   });
 
   expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
+  expect(screen.queryByText('Insufficient data for this range.')).toBeNull();
+  expect(screen.queryByText('Current valuation point')).toBeNull();
+});
+
+test('keeps 1m and 5d ranges usable when ledger history is sparse', async () => {
+  const user = userEvent.setup();
+
+  renderCard({ cardPoints: sparseLedgerPoints });
+
+  expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
+  expect(screen.queryByText('Insufficient data for this range.')).toBeNull();
+  expect(screen.queryByText('Current valuation point')).toBeNull();
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 5D' }));
+
   expect(screen.queryByText('Insufficient data for this range.')).toBeNull();
   expect(screen.queryByText('Current valuation point')).toBeNull();
 });
