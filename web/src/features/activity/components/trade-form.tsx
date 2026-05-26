@@ -15,6 +15,16 @@ export type TradeFormValues = {
   note: string;
 };
 
+function assetClassOptions(copy: ReturnType<typeof useCopy>) {
+  return [
+    { value: 'stock', label: copy.common.assetClassStock },
+    { value: 'etf', label: copy.common.assetClassEtf },
+    { value: 'fund', label: copy.common.assetClassFund },
+    { value: 'gold', label: copy.common.assetClassGold },
+    { value: 'bond', label: copy.common.assetClassBond },
+  ];
+}
+
 export function TradeForm({
   onSubmit,
   pending = false,
@@ -25,6 +35,7 @@ export function TradeForm({
   const copy = useCopy();
   const common = copy.common;
   const labels = copy.activity.forms.trade;
+  const assetOptions = assetClassOptions(copy);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createDefaultValues = (): TradeFormValues => ({
     occurred_at: new Date().toISOString().slice(0, 16),
@@ -95,12 +106,17 @@ export function TradeForm({
           <option value="buy">{labels.buy}</option>
           <option value="sell">{labels.sell}</option>
         </select>
-        <input
+        <select
           aria-label={labels.assetClassLabel}
-          defaultValue="stock"
           className="app-field rounded-2xl px-4 py-3 text-sm"
           {...register('asset_class', { required: common.required })}
-        />
+        >
+          {assetOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
       {errors.asset_class ? (
         <FieldError message={errors.asset_class.message} />

@@ -11,6 +11,16 @@ export type DividendFormValues = {
   note: string;
 };
 
+function assetClassOptions(copy: ReturnType<typeof useCopy>) {
+  return [
+    { value: 'stock', label: copy.common.assetClassStock },
+    { value: 'etf', label: copy.common.assetClassEtf },
+    { value: 'fund', label: copy.common.assetClassFund },
+    { value: 'gold', label: copy.common.assetClassGold },
+    { value: 'bond', label: copy.common.assetClassBond },
+  ];
+}
+
 export function DividendForm({
   onSubmit,
   pending = false,
@@ -21,6 +31,7 @@ export function DividendForm({
   const copy = useCopy();
   const common = copy.common;
   const labels = copy.activity.forms.dividend;
+  const assetOptions = assetClassOptions(copy);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createDefaultValues = (): DividendFormValues => ({
     occurred_at: new Date().toISOString().slice(0, 16),
@@ -73,12 +84,17 @@ export function DividendForm({
       />
       {errors.symbol ? <FieldError message={errors.symbol.message} /> : null}
       <div className="grid gap-3 md:grid-cols-2">
-        <input
+        <select
           aria-label={labels.assetClassLabel}
-          defaultValue="stock"
           className="app-field rounded-2xl px-4 py-3 text-sm"
           {...register('asset_class', { required: common.required })}
-        />
+        >
+          {assetOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <input
           aria-label={labels.amountLabel}
           type="number"
