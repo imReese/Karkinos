@@ -342,6 +342,8 @@ export const copy = {
         error: 'Failed to load holdings quotes.',
         empty:
           'No active holdings yet. Record the first trade to start tracking returns.',
+        positionCount: (count: number) =>
+          `${count} active holding${count === 1 ? '' : 's'}`,
         latestPrice: 'Quote price',
         todayMove: 'Today move',
         sinceBuyReturn: 'Since-buy return',
@@ -1275,6 +1277,7 @@ export const copy = {
         loading: '正在加载持仓行情。',
         error: '持仓行情加载失败。',
         empty: '当前还没有活跃持仓，先录入首笔交易再开始跟踪收益。',
+        positionCount: (count: number) => `${count} 个活跃持仓`,
         latestPrice: '行情价格',
         todayMove: '今日涨跌',
         sinceBuyReturn: '买入以来收益',

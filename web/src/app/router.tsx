@@ -596,7 +596,6 @@ function PortfolioPage() {
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
-  const explainability = useExplainabilityQuery();
   const search = searchState.q;
   const assetClassFilter = searchState.assetClass;
   const pnlFilter = searchState.pnl as 'all' | 'winners' | 'losers';
@@ -726,10 +725,6 @@ function PortfolioPage() {
           ) : (
             <LiveHoldingsBoard groups={filteredLiveGroups} />
           )}
-          <ExplainabilityCard
-            drivers={explainability.data?.recent_drivers ?? []}
-            isLoading={explainability.isLoading}
-          />
           {positions.isLoading ? (
             <StatusCard
               title={copy.states.loading}
@@ -2135,61 +2130,6 @@ function PendingFundOrdersCard({
             <div className="app-muted mt-3 text-xs">
               {copy.activity.pending.waitingFor} {order.target_trade_date}
             </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ExplainabilityCard({
-  drivers,
-  isLoading,
-}: {
-  drivers: Array<{ title: string; detail: string; timestamp: string }>;
-  isLoading: boolean;
-}) {
-  const copy = useCopy();
-
-  if (isLoading) {
-    return (
-      <StatusCard title={copy.states.loading} detail={copy.states.loading} />
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] shadow-[0_18px_50px_rgba(17,17,27,0.12)]">
-      <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3 sm:px-5">
-        <div className="app-kicker text-[10px] uppercase tracking-[0.18em]">
-          {copy.explainability.title}
-        </div>
-      </div>
-      <div className="grid divide-y divide-[color-mix(in_srgb,var(--app-border)_22%,transparent)] md:grid-cols-3 md:divide-x md:divide-y-0">
-        {(drivers.length > 0
-          ? drivers.slice(0, 3)
-          : [{ title: copy.explainability.empty, detail: '', timestamp: '' }]
-        ).map((driver) => (
-          <div
-            key={`${driver.title}-${driver.timestamp}`}
-            className="group relative px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
-          >
-            <span
-              className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-45 transition-opacity duration-200 group-hover:opacity-80"
-              aria-hidden="true"
-            />
-            <div className="text-sm font-medium tracking-[-0.01em]">
-              {driver.title}
-            </div>
-            {driver.detail ? (
-              <div className="app-muted mt-1.5 text-xs leading-5">
-                {driver.detail}
-              </div>
-            ) : null}
-            {driver.timestamp ? (
-              <div className="app-kicker mt-2 text-[10px] uppercase tracking-[0.16em]">
-                {driver.timestamp}
-              </div>
-            ) : null}
           </div>
         ))}
       </div>

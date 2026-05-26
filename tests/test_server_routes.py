@@ -4445,6 +4445,95 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
     assert response.groups[0].items[0].display_name == "示例基金C"
 
 
+def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "012710",
+                    "asset_type": "fund",
+                    "price": 0.9477,
+                    "quote_timestamp": "2026-05-22",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "metadata_json": '{"display_name":"华夏核心成长混合C"}',
+                },
+                {
+                    "symbol": "600519",
+                    "asset_type": "stock",
+                    "price": 1650.0,
+                    "quote_timestamp": "2026-05-22T14:30:00+08:00",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "metadata_json": '{"display_name":"贵州茅台"}',
+                },
+            ]
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "012710",
+                    "asset_class": "stock",
+                    "price": 0.90,
+                    "timestamp": "2026-05-21T15:00:00+08:00",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, assets=[]),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=0.0,
+                positions={
+                    "012710": SimpleNamespace(
+                        quantity=100.0,
+                        avg_cost=1.0,
+                        market_value=94.77,
+                        unrealized_pnl=-5.23,
+                    ),
+                    "600519": SimpleNamespace(
+                        quantity=1.0,
+                        avg_cost=1500.0,
+                        market_value=1650.0,
+                        unrealized_pnl=150.0,
+                    ),
+                },
+            ),
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+    groups = {group.asset_class: group for group in response.groups}
+
+    assert set(groups) == {"fund", "stock"}
+    assert groups["fund"].label == "基金"
+    assert groups["fund"].items[0].name == "华夏核心成长混合C"
+    assert groups["fund"].items[0].display_name == "华夏核心成长混合C"
+    assert groups["fund"].items[0].asset_class == "fund"
+    assert groups["fund"].items[0].quote_timestamp == "2026-05-22"
+    assert groups["stock"].items[0].name == "贵州茅台"
+
+
 def test_portfolio_equity_curve_series_appends_current_valuation_point(
     monkeypatch,
 ):
