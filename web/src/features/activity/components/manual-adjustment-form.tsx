@@ -13,6 +13,16 @@ export type ManualAdjustmentFormValues = {
   note: string;
 };
 
+function assetClassOptions(copy: ReturnType<typeof useCopy>) {
+  return [
+    { value: 'stock', label: copy.common.assetClassStock },
+    { value: 'etf', label: copy.common.assetClassEtf },
+    { value: 'fund', label: copy.common.assetClassFund },
+    { value: 'gold', label: copy.common.assetClassGold },
+    { value: 'bond', label: copy.common.assetClassBond },
+  ];
+}
+
 export function ManualAdjustmentForm({
   onSubmit,
   pending = false,
@@ -23,6 +33,7 @@ export function ManualAdjustmentForm({
   const copy = useCopy();
   const common = copy.common;
   const labels = copy.activity.forms.adjustment;
+  const assetOptions = assetClassOptions(copy);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createDefaultValues = (): ManualAdjustmentFormValues => ({
     occurred_at: new Date().toISOString().slice(0, 16),
@@ -76,12 +87,17 @@ export function ManualAdjustmentForm({
           className="app-field rounded-2xl px-4 py-3 text-sm"
           {...register('symbol')}
         />
-        <input
+        <select
           aria-label={labels.assetClassLabel}
-          defaultValue="stock"
           className="app-field rounded-2xl px-4 py-3 text-sm"
           {...register('asset_class', { required: common.required })}
-        />
+        >
+          {assetOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
       {errors.asset_class ? (
         <FieldError message={errors.asset_class.message} />

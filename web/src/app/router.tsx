@@ -1842,6 +1842,16 @@ function ActivityPage() {
   const createCashFlow = useCreateCashFlowMutation();
   const createDividend = useCreateDividendMutation();
   const createAdjustment = useCreateAdjustmentMutation();
+  const ledgerRows = entries.data ?? [];
+  const latestEntry = ledgerRows[0] ?? null;
+  const netCashImpact = useMemo(
+    () =>
+      ledgerRows.reduce(
+        (total, entry) => total + calculateLedgerCashImpact(entry),
+        0,
+      ),
+    [ledgerRows],
+  );
 
   const pushToast = (
     tone: ToastItem['tone'],
@@ -1994,30 +2004,62 @@ function ActivityPage() {
           </p>
         </header>
 
-        <div className="grid gap-6 xl:grid-cols-[1.05fr_1.05fr_1.4fr]">
-          <div className="space-y-6">
-            <FundBatchForm
-              onSubmit={handleFundBatchSubmit}
-              pending={createTrade.isPending}
-            />
-            <TradeForm
-              onSubmit={handleTradeSubmit}
-              pending={createTrade.isPending}
-            />
-            <DividendForm
-              onSubmit={handleDividendSubmit}
-              pending={createDividend.isPending}
-            />
-          </div>
-          <div className="space-y-6">
-            <CashFlowForm
-              onSubmit={handleCashFlowSubmit}
-              pending={createCashFlow.isPending}
-            />
-            <ManualAdjustmentForm
-              onSubmit={handleAdjustmentSubmit}
-              pending={createAdjustment.isPending}
-            />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <ActivityMetric
+            label={copy.activity.summary.pendingOrders}
+            value={
+              pendingFundOrders.isLoading
+                ? '--'
+                : String(pendingFundOrders.data?.length ?? 0)
+            }
+            detail={copy.activity.summary.pendingOrdersDetail}
+          />
+          <ActivityMetric
+            label={copy.activity.summary.recentEntries}
+            value={entries.isLoading ? '--' : String(ledgerRows.length)}
+            detail={copy.activity.summary.recentEntriesDetail}
+          />
+          <ActivityMetric
+            label={copy.activity.summary.netCashImpact}
+            value={
+              entries.isLoading ? '--' : formatCurrencyValue(netCashImpact)
+            }
+            detail={copy.activity.summary.netCashImpactDetail}
+            tone={netCashImpact >= 0 ? 'success' : 'danger'}
+          />
+          <ActivityMetric
+            label={copy.activity.summary.latestActivity}
+            value={latestEntry ? formatTimestamp(latestEntry.timestamp) : '--'}
+            detail={copy.activity.summary.latestActivityDetail}
+          />
+        </div>
+
+        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.8fr)]">
+          <div className="grid gap-6 xl:grid-cols-2">
+            <div className="space-y-6">
+              <FundBatchForm
+                onSubmit={handleFundBatchSubmit}
+                pending={createTrade.isPending}
+              />
+              <TradeForm
+                onSubmit={handleTradeSubmit}
+                pending={createTrade.isPending}
+              />
+              <DividendForm
+                onSubmit={handleDividendSubmit}
+                pending={createDividend.isPending}
+              />
+            </div>
+            <div className="space-y-6">
+              <CashFlowForm
+                onSubmit={handleCashFlowSubmit}
+                pending={createCashFlow.isPending}
+              />
+              <ManualAdjustmentForm
+                onSubmit={handleAdjustmentSubmit}
+                pending={createAdjustment.isPending}
+              />
+            </div>
           </div>
           <div className="space-y-6">
             <PendingFundOrdersCard
@@ -2047,6 +2089,53 @@ function ActivityPage() {
       </section>
     </>
   );
+}
+
+function ActivityMetric({
+  label,
+  value,
+  detail,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: 'neutral' | 'success' | 'danger';
+}) {
+  const valueClass =
+    tone === 'success'
+      ? 'text-[var(--app-success)]'
+      : tone === 'danger'
+        ? 'text-[var(--app-danger)]'
+        : 'text-[var(--app-soft)]';
+  return (
+    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)]">
+      <div className="app-muted text-xs">{label}</div>
+      <div className={`mt-2 text-lg font-semibold tabular-nums ${valueClass}`}>
+        {value}
+      </div>
+      <div className="app-muted mt-1 text-xs leading-5">{detail}</div>
+    </div>
+  );
+}
+
+function calculateLedgerCashImpact(entry: LedgerEntry) {
+  const amount =
+    entry.amount ??
+    (entry.price !== null && entry.quantity !== null
+      ? entry.price * entry.quantity
+      : 0);
+  const type = entry.entry_type.trim().toLowerCase();
+  if (type === 'trade_buy' || type === 'cash_withdrawal') {
+    return -amount;
+  }
+  if (type === 'trade_sell' || type === 'cash_deposit' || type === 'dividend') {
+    return amount;
+  }
+  if (type === 'manual_adjustment') {
+    return amount;
+  }
+  return 0;
 }
 
 function PendingFundOrdersCard({
@@ -2117,14 +2206,16 @@ function PendingFundOrdersCard({
                 </div>
                 <div className="app-muted mt-1 text-xs">
                   {order.symbol} · {copy.activity.pending.submittedAt}{' '}
-                  {order.submitted_at}
+                  {formatTimestamp(order.submitted_at)}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-sm font-semibold">
                   {formatCurrency(order.amount)}
                 </div>
-                <div className="app-muted mt-1 text-xs">{order.status}</div>
+                <div className="app-muted mt-1 text-xs">
+                  {formatPendingStatus(order.status, copy)}
+                </div>
               </div>
             </div>
             <div className="app-muted mt-3 text-xs">
@@ -2135,6 +2226,20 @@ function PendingFundOrdersCard({
       </div>
     </div>
   );
+}
+
+function formatPendingStatus(status: string, copy: AppCopy) {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === 'pending') {
+    return copy.activity.pending.status.pending;
+  }
+  if (normalized === 'confirmed') {
+    return copy.activity.pending.status.confirmed;
+  }
+  if (normalized === 'rejected') {
+    return copy.activity.pending.status.rejected;
+  }
+  return status;
 }
 
 function ExplainabilityWorkspace({

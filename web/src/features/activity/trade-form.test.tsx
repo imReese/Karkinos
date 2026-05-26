@@ -6,6 +6,7 @@ import { FundBatchForm } from './components/fund-batch-form';
 import { CashFlowForm } from './components/cash-flow-form';
 import { DividendForm } from './components/dividend-form';
 import { ManualAdjustmentForm } from './components/manual-adjustment-form';
+import { ActivityFeed } from './components/activity-feed';
 
 test('submits a manual trade payload', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -162,4 +163,36 @@ test('submits a cash flow payload', async () => {
       flow_type: 'deposit',
     }),
   );
+});
+
+test('renders ledger entries as a user-facing audit table', () => {
+  render(
+    <ActivityFeed
+      entries={[
+        {
+          id: 1,
+          entry_type: 'trade_buy',
+          timestamp: '2026-04-23T14:46:00+00:00',
+          amount: 200,
+          symbol: '012710',
+          direction: 'buy',
+          quantity: 204.102,
+          price: 0.9799,
+          commission: 0,
+          asset_class: 'fund',
+          note: '用户记录：买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
+          source: 'manual',
+          source_ref: 'trade_buy-012710',
+          created_at: null,
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByText('Security buy')).toBeTruthy();
+  expect(screen.getByText('Fund')).toBeTruthy();
+  expect(screen.getByText('Manual entry')).toBeTruthy();
+  expect(screen.getByText('-CN¥200.00')).toBeTruthy();
+  expect(screen.queryByText(/gross_amount/)).toBeNull();
+  expect(screen.queryByText(/Auto-confirmed/)).toBeNull();
 });

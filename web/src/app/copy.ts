@@ -741,10 +741,59 @@ export const copy = {
       adjustmentSaved: 'Adjustment saved',
       adjustmentFailed: 'Adjustment failed',
       feedRefreshed: 'Portfolio projections are refreshing now.',
+      summary: {
+        pendingOrders: 'Pending fund orders',
+        pendingOrdersDetail: 'Subscriptions waiting for NAV confirmation.',
+        recentEntries: 'Recent entries',
+        recentEntriesDetail: 'Visible audit rows in the current timeline.',
+        netCashImpact: 'Net cash impact',
+        netCashImpactDetail: 'Signed view of recent ledger movements.',
+        latestActivity: 'Latest activity',
+        latestActivityDetail: 'Most recent audited ledger timestamp.',
+      },
       feed: {
+        kicker: 'Audit trail',
         title: 'Recent ledger entries',
+        count: (count: number) => `${count} entries`,
         empty:
           'No ledger activity yet. Submit a trade, cash flow, dividend, or adjustment to build the timeline.',
+        noDetail: 'No public note',
+        columns: {
+          time: 'Time',
+          activity: 'Activity',
+          instrument: 'Instrument',
+          amount: 'Cash impact',
+          detail: 'Public note',
+        },
+        entryTypes: {
+          tradeBuy: 'Security buy',
+          tradeSell: 'Security sell',
+          cashDeposit: 'Cash deposit',
+          cashWithdrawal: 'Cash withdrawal',
+          dividend: 'Dividend received',
+          adjustment: 'Manual adjustment',
+          other: 'Ledger entry',
+        },
+        shortTypes: {
+          buy: 'B',
+          sell: 'S',
+          cashIn: '+',
+          cashOut: '-',
+          dividend: 'D',
+          adjustment: 'A',
+          other: 'L',
+        },
+        cashImpact: {
+          credit: 'Adds cash or realized proceeds',
+          debit: 'Consumes cash',
+          adjustment: 'Operator adjustment',
+          neutral: 'Reference ledger movement',
+        },
+        sources: {
+          manual: 'Manual entry',
+          system: 'System entry',
+          unknown: 'Source unknown',
+        },
       },
       pending: {
         kicker: 'Pending',
@@ -753,6 +802,11 @@ export const copy = {
         error: 'Failed to load pending fund subscriptions.',
         submittedAt: 'submitted',
         waitingFor: 'Waiting for NAV confirmation on',
+        status: {
+          pending: 'Pending NAV',
+          confirmed: 'Confirmed',
+          rejected: 'Rejected',
+        },
       },
       forms: {
         trade: {
@@ -883,8 +937,7 @@ export const copy = {
       providerAkshare: 'AKShare',
       providerTushare: 'Tushare',
       selectDataSource: 'Select data source',
-      providerTimeoutNotice:
-        'The configured quote source is timing out.',
+      providerTimeoutNotice: 'The configured quote source is timing out.',
       assetMetadataMissing: 'Asset metadata is not configured',
       assetMetadataMissingDetail:
         'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
@@ -1660,10 +1713,59 @@ export const copy = {
       adjustmentSaved: '调整已保存',
       adjustmentFailed: '调整保存失败',
       feedRefreshed: '组合快照和流水已经开始刷新。',
+      summary: {
+        pendingOrders: '待确认申购',
+        pendingOrdersDetail: '等待净值确认的基金申购。',
+        recentEntries: '近期流水',
+        recentEntriesDetail: '当前时间线可见的审计记录。',
+        netCashImpact: '净现金影响',
+        netCashImpactDetail: '按业务方向折算的近期现金变化。',
+        latestActivity: '最新活动',
+        latestActivityDetail: '最近一条账本审计时间。',
+      },
       feed: {
+        kicker: '审计流水',
         title: '最近账本流水',
+        count: (count: number) => `${count} 条`,
         empty:
           '还没有账本流水。先录入交易、现金流、分红或手工调整，时间线就会开始累计。',
+        noDetail: '无公开备注',
+        columns: {
+          time: '时间',
+          activity: '业务类型',
+          instrument: '标的',
+          amount: '资金影响',
+          detail: '业务备注',
+        },
+        entryTypes: {
+          tradeBuy: '证券买入',
+          tradeSell: '证券卖出',
+          cashDeposit: '现金入金',
+          cashWithdrawal: '现金出金',
+          dividend: '分红入账',
+          adjustment: '手工调整',
+          other: '账本流水',
+        },
+        shortTypes: {
+          buy: '买',
+          sell: '卖',
+          cashIn: '入',
+          cashOut: '出',
+          dividend: '息',
+          adjustment: '调',
+          other: '流',
+        },
+        cashImpact: {
+          credit: '增加现金或确认回款',
+          debit: '占用现金',
+          adjustment: '人工校正',
+          neutral: '参考流水',
+        },
+        sources: {
+          manual: '手工录入',
+          system: '系统生成',
+          unknown: '来源未知',
+        },
       },
       pending: {
         kicker: '待确认',
@@ -1672,6 +1774,11 @@ export const copy = {
         error: '待确认基金申购加载失败。',
         submittedAt: '提交于',
         waitingFor: '等待净值确认日',
+        status: {
+          pending: '待确认净值',
+          confirmed: '已确认',
+          rejected: '已拒绝',
+        },
       },
       forms: {
         trade: {
@@ -1796,8 +1903,7 @@ export const copy = {
       providerAkshare: 'AKShare',
       providerTushare: 'Tushare',
       selectDataSource: '选择数据源',
-      providerTimeoutNotice:
-        '当前行情源请求超时。',
+      providerTimeoutNotice: '当前行情源请求超时。',
       assetMetadataMissing: '尚未配置资产元数据',
       assetMetadataMissingDetail:
         '请在 config.json 中配置 display_name 和 provider_symbol，可参考 config.example.json。',
