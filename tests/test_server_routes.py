@@ -4624,6 +4624,8 @@ def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks
 
     series = asyncio.run(curve_route.endpoint("1d"))
 
-    assert len(series) == 1
-    assert series[0].timestamp.startswith("2026-05-12T10:00:00")
-    assert series[0].total == 100200.0
+    assert len(series) > 1
+    assert series[0].timestamp.startswith("2026-05-12T09:30:00")
+    assert series[-1].timestamp.startswith("2026-05-12T15:00:00")
+    assert {point.total for point in series} == {100200.0}
+    assert {point.quote_status for point in series} == {"live"}
