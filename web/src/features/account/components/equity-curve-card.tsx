@@ -69,6 +69,34 @@ function formatChartTimestamp(value: string | number | Date) {
   return formatDateTime(value);
 }
 
+function formatAxisTimestamp(
+  value: string | number | Date,
+  range: EquityCurveRange,
+) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return new Intl.DateTimeFormat(
+    typeof document !== 'undefined' &&
+      document.documentElement.lang.startsWith('zh')
+      ? 'zh-CN'
+      : 'en-US',
+    range === '1d'
+      ? {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Shanghai',
+        }
+      : {
+          month: '2-digit',
+          day: '2-digit',
+          timeZone: 'Asia/Shanghai',
+        },
+  ).format(date);
+}
+
 function formatWholeCurrency(value: number) {
   return formatCurrency(value, {
     minimumFractionDigits: 0,
@@ -80,10 +108,12 @@ function TimeAxisTick({
   x = 0,
   y = 0,
   payload,
+  range,
 }: {
   x?: number;
   y?: number;
   payload?: { value?: string | number | Date };
+  range: EquityCurveRange;
 }) {
   return (
     <text
@@ -94,7 +124,7 @@ function TimeAxisTick({
       fill="var(--app-subtext-0)"
       fontSize={10}
     >
-      {formatChartTimestamp(payload?.value ?? '')}
+      {formatAxisTimestamp(payload?.value ?? '', range)}
     </text>
   );
 }
@@ -483,7 +513,7 @@ export function EquityCurveCard({
                 scale="time"
                 domain={xAxisDomain}
                 ticks={xAxisTicks}
-                tick={<TimeAxisTick />}
+                tick={<TimeAxisTick range={range} />}
                 axisLine={false}
                 tickLine={false}
                 tickCount={6}

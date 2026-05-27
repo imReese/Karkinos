@@ -65,6 +65,12 @@ _CN_AFTERNOON_OPEN = time(13, 0)
 _CN_AFTERNOON_CLOSE = time(15, 0)
 _INTRADAY_STEP_MINUTES = 5
 _SH_TZ = ZoneInfo("Asia/Shanghai")
+_EQUITY_SERIES_RANGE_DAYS = {
+    "5d": 5,
+    "1m": 31,
+    "6m": 183,
+    "1y": 366,
+}
 
 _INTRADAY_ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -1539,6 +1545,83 @@ def _append_current_equity_series_point(
     return [*points, current]
 
 
+def _daily_equity_series_for_range(
+    points: list[EquitySeriesPoint],
+    selected_range: str,
+) -> list[EquitySeriesPoint]:
+    """Materialize sparse ledger valuation points into day-level chart points."""
+
+    if selected_range == "1d" or len(points) < 2:
+        return points
+
+    parsed_points = [
+        (timestamp, point)
+        for point in points
+        if (timestamp := _parse_quote_timestamp(point.timestamp)) is not None
+    ]
+    if len(parsed_points) < 2:
+        return points
+
+    parsed_points.sort(key=lambda item: item[0])
+    end_timestamp = parsed_points[-1][0]
+    range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
+    if range_days is None:
+        start_timestamp = parsed_points[0][0]
+    else:
+        start_timestamp = end_timestamp - timedelta(days=range_days)
+
+    start_date = start_timestamp.date()
+    end_date = end_timestamp.date()
+    event_index = 0
+    active_point: EquitySeriesPoint | None = None
+
+    while (
+        event_index < len(parsed_points)
+        and parsed_points[event_index][0] <= start_timestamp
+    ):
+        active_point = parsed_points[event_index][1]
+        event_index += 1
+
+    daily_points: list[EquitySeriesPoint] = []
+    current_date = start_date
+    while current_date <= end_date:
+        day_end = datetime.combine(
+            current_date,
+            time(23, 59, 59),
+            tzinfo=end_timestamp.tzinfo or _SH_TZ,
+        )
+        while (
+            event_index < len(parsed_points)
+            and parsed_points[event_index][0] <= day_end
+        ):
+            active_point = parsed_points[event_index][1]
+            event_index += 1
+
+        is_range_start = current_date == start_date
+        is_range_end = current_date == end_date
+        is_trading_day = current_date.weekday() < 5
+        should_emit_day = is_range_start or is_range_end or is_trading_day
+        if active_point is not None and should_emit_day:
+            point_timestamp = (
+                end_timestamp
+                if is_range_end
+                else datetime.combine(
+                    current_date,
+                    _CN_AFTERNOON_CLOSE,
+                    tzinfo=end_timestamp.tzinfo or _SH_TZ,
+                )
+            )
+            daily_points.append(
+                active_point.model_copy(
+                    update={"timestamp": point_timestamp.isoformat()}
+                )
+            )
+
+        current_date += timedelta(days=1)
+
+    return daily_points or points
+
+
 def _flat_intraday_equity_series_from_current(
     current: EquitySeriesPoint | None,
 ) -> list[EquitySeriesPoint]:
@@ -1947,9 +2030,12 @@ def create_router() -> APIRouter:
             )
             for point in points
         ]
-        return _append_current_equity_series_point(
-            series_points,
-            _current_equity_series_point(state, portfolio, instruments),
+        return _daily_equity_series_for_range(
+            _append_current_equity_series_point(
+                series_points,
+                _current_equity_series_point(state, portfolio, instruments),
+            ),
+            selected_range,
         )
 
     @r.get("/activity", response_model=list[ActivityItem])
