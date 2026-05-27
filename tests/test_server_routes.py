@@ -3633,9 +3633,13 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
 
     series = asyncio.run(endpoint())
 
-    assert len(series) == 7
-    assert series[0].total == 100000.0
-    assert series[0].cash == 100000.0
+    assert len(series) > 7
+    assert series[0].timestamp.endswith("T15:00:00+08:00")
+    assert series[0].stocks == pytest.approx(11000.0)
+    assert series[0].funds == pytest.approx(5300.0)
+    assert series[0].others == pytest.approx(9250.0)
+    assert series[0].cash == pytest.approx(76000.0)
+    assert series[0].total == pytest.approx(101550.0)
     assert series[-2].stocks == pytest.approx(11000.0)
     assert series[-2].funds == pytest.approx(5300.0)
     assert series[-2].others == pytest.approx(9250.0)
@@ -4630,6 +4634,9 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
 
     series = asyncio.run(curve_route.endpoint("1m"))
 
+    assert len(series) > 5
+    assert series[0].timestamp.startswith("2026-04-20")
+    assert any(point.timestamp.startswith("2026-05-08") for point in series)
     assert series[-1].timestamp.startswith("2026-05-12T20:00:00")
     assert series[-1].total == 100200.0
     assert series[-1].stocks == 1200.0

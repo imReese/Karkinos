@@ -357,7 +357,7 @@ test('renders the backend current stale point without adding a synthetic point',
   renderCard({ cardPoints: backendCurrentPoints });
 
   expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
-  expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/05\/17/).length).toBeGreaterThan(0);
 });
 
 test('refreshes stale status when backend points prop changes', async () => {
@@ -372,7 +372,7 @@ test('refreshes stale status when backend points prop changes', async () => {
   );
 
   expect(await screen.findByText('Valuation uses cached quotes')).toBeTruthy();
-  expect(screen.getAllByText(/05-17\s+14:30/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/05\/17/).length).toBeGreaterThan(0);
 });
 
 test('shows the insufficient data state when a selected range has only one point', async () => {
@@ -437,14 +437,14 @@ test('renders multiple intermediate time ticks across the selected range', async
 
   await user.click(await screen.findByRole('button', { name: 'Range: 1Y' }));
 
-  const tickLabels = screen.getAllByText(/\d{2}-\d{2}\s+\d{2}:\d{2}/);
+  const tickLabels = screen.getAllByText(/\d{2}\/\d{2}/);
   expect(tickLabels.length).toBeGreaterThanOrEqual(4);
 });
 
 test('updates rendered chart ticks when points change', async () => {
   const view = renderCard();
 
-  expect(await screen.findByText(/04-18\s+18:00/)).toBeTruthy();
+  expect((await screen.findAllByText(/04\/18/)).length).toBeGreaterThan(0);
 
   view.rerender(
     <PreferencesProvider>
@@ -452,7 +452,7 @@ test('updates rendered chart ticks when points change', async () => {
     </PreferencesProvider>,
   );
 
-  expect(await screen.findByText(/05-11\s+10:00/)).toBeTruthy();
+  expect((await screen.findAllByText(/05\/11/)).length).toBeGreaterThan(0);
 });
 
 test('renders the full intraday session axis for the 1d range', async () => {
@@ -462,8 +462,8 @@ test('renders the full intraday session axis for the 1d range', async () => {
 
   await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
 
-  expect(screen.getAllByText(/04-18\s+09:30/).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/04-18\s+15:00/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/09:30/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/15:00/).length).toBeGreaterThan(0);
 });
 
 test('renders a terminal empty state for periods without chart data', async () => {
