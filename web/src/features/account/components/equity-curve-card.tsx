@@ -1,8 +1,8 @@
 import { startTransition, useState, type CSSProperties } from 'react';
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -236,6 +236,33 @@ function resolveXAxisDomain(
   return ['dataMin', 'dataMax'];
 }
 
+function resolveYAxisDomain(
+  points: ChartPoint[],
+  visibleSeries: Record<SeriesKey, boolean>,
+) {
+  const values = points.flatMap((point) =>
+    SERIES_META.flatMap((series) => {
+      if (!visibleSeries[series.key]) {
+        return [];
+      }
+      const value = point[series.key];
+      return typeof value === 'number' && Number.isFinite(value) ? [value] : [];
+    }),
+  );
+  if (values.length === 0) {
+    return ['auto', 'auto'] as const;
+  }
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const spread = maxValue - minValue;
+  const padding = Math.max(spread * 0.18, maxValue * 0.01, 1);
+  return [
+    Math.max(0, Math.floor(minValue - padding)),
+    Math.ceil(maxValue + padding),
+  ] as const;
+}
+
 function CustomTooltip({
   active,
   payload,
@@ -367,6 +394,7 @@ export function EquityCurveCard({
   const hasUsableData = chartPoints.length >= 2;
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
+  const yAxisDomain = resolveYAxisDomain(chartPoints, visibleSeries);
   const latestPoint = chartPoints[chartPoints.length - 1];
   const isStale = latestPoint?.quote_status === 'stale';
 
@@ -474,7 +502,7 @@ export function EquityCurveCard({
       {hasUsableData ? (
         <div className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
+            <LineChart
               data={chartPoints}
               margin={{ left: 10, right: 30, top: 18, bottom: 34 }}
             >
@@ -528,7 +556,7 @@ export function EquityCurveCard({
                 tickLine={false}
                 tickMargin={12}
                 tickFormatter={formatAxisValue}
-                domain={['auto', 'auto']}
+                domain={yAxisDomain}
                 tick={{ fontSize: 12 }}
                 stroke="var(--app-muted)"
               />
@@ -553,7 +581,7 @@ export function EquityCurveCard({
                 }
                 const isPrimarySeries = series.key === 'total';
                 return (
-                  <Area
+                  <Line
                     key={series.key}
                     type="monotone"
                     dataKey={series.key}
@@ -563,12 +591,6 @@ export function EquityCurveCard({
                     strokeOpacity={isPrimarySeries ? 1 : 0.86}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    fill={
-                      isPrimarySeries
-                        ? `url(#${series.gradient})`
-                        : 'transparent'
-                    }
-                    fillOpacity={isPrimarySeries ? 1 : 0}
                     animationDuration={520}
                     animationEasing="ease-out"
                     dot={false}
@@ -582,7 +604,7 @@ export function EquityCurveCard({
                   />
                 );
               })}
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
         </div>
       ) : (
