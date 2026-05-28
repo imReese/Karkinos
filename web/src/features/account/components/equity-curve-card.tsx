@@ -3,7 +3,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -358,10 +357,10 @@ export function EquityCurveCard({
     Record<SeriesKey, boolean>
   >({
     total: true,
-    stocks: true,
-    funds: true,
-    others: true,
-    cash: true,
+    stocks: false,
+    funds: false,
+    others: false,
+    cash: false,
   });
 
   const chartPoints = filterByRange(toChartPoints(points), range);
@@ -492,7 +491,7 @@ export function EquityCurveCard({
                     <stop
                       offset="0%"
                       stopColor={series.color}
-                      stopOpacity={series.key === 'total' ? 0.3 : 0.18}
+                      stopOpacity={series.key === 'total' ? 0.18 : 0}
                     />
                     <stop
                       offset="100%"
@@ -547,19 +546,12 @@ export function EquityCurveCard({
                 }}
                 wrapperStyle={{ zIndex: 90, outline: 'none' }}
               />
-              <Legend
-                verticalAlign="top"
-                align="right"
-                iconType="circle"
-                wrapperStyle={{
-                  color: 'var(--app-muted)',
-                  fontSize: 11,
-                  paddingBottom: 8,
-                  fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-                }}
-              />
               {SERIES_META.map((series) => {
                 const active = visibleSeries[series.key];
+                if (!active) {
+                  return null;
+                }
+                const isPrimarySeries = series.key === 'total';
                 return (
                   <Area
                     key={series.key}
@@ -567,10 +559,16 @@ export function EquityCurveCard({
                     dataKey={series.key}
                     name={seriesLabels[series.key]}
                     stroke={series.color}
-                    strokeWidth={series.key === 'total' ? 3 : 2}
-                    strokeOpacity={active ? 1 : 0}
-                    fill={`url(#${series.gradient})`}
-                    fillOpacity={active ? 1 : 0}
+                    strokeWidth={isPrimarySeries ? 3.5 : 2}
+                    strokeOpacity={isPrimarySeries ? 1 : 0.86}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill={
+                      isPrimarySeries
+                        ? `url(#${series.gradient})`
+                        : 'transparent'
+                    }
+                    fillOpacity={isPrimarySeries ? 1 : 0}
                     animationDuration={520}
                     animationEasing="ease-out"
                     dot={false}

@@ -296,7 +296,9 @@ test('renders premium performance dashboard controls', async () => {
   for (const label of ['Total', 'Stocks', 'Funds', 'Others', 'Cash']) {
     const chip = await screen.findByRole('button', { name: label });
     expect(chip.className).toContain('rounded-full');
-    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    expect(chip.getAttribute('aria-pressed')).toBe(
+      label === 'Total' ? 'true' : 'false',
+    );
   }
 
   for (const label of ['1D', '5D', '1M', '6M', '1Y', 'ALL']) {
@@ -319,7 +321,7 @@ test('toggles category chips without removing the control', async () => {
   const stocks = await screen.findByRole('button', { name: 'Stocks' });
   await user.click(stocks);
 
-  expect(stocks.getAttribute('aria-pressed')).toBe('false');
+  expect(stocks.getAttribute('aria-pressed')).toBe('true');
 });
 
 test('updates the active range and notifies the parent query layer', async () => {
