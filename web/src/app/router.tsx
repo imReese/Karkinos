@@ -1113,6 +1113,26 @@ function MarketPage() {
       : health.provider_supports_funds
         ? copy.market.fundSupported
         : copy.market.fundUnsupported;
+  const holdingItemsCount = items.filter((item) => item.is_holding).length;
+  const staleCount =
+    health?.stale_symbols_count ??
+    (health?.quotes ?? []).filter((quote) => quote.quote_status === 'stale')
+      .length;
+  const latestQuoteLabel = formatTimestamp(health?.latest_quote_timestamp);
+  const marketStateLabel = health
+    ? health.market_open
+      ? copy.market.marketOpen
+      : copy.market.marketClosed
+    : copy.market.unknown;
+  const sourceHealthTone =
+    health?.source_health === 'healthy'
+      ? 'text-[var(--app-success)]'
+      : health?.source_health === 'stale' ||
+          health?.refresh_policy === 'cache_only'
+        ? 'text-[var(--app-warning)]'
+        : health?.source_health === 'degraded'
+          ? 'text-[var(--app-danger)]'
+          : 'text-[var(--app-soft)]';
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -1164,21 +1184,82 @@ function MarketPage() {
           />
         ) : (
           <div className="space-y-5 sm:space-y-6">
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                    {copy.market.watchlist}
-                  </div>
-                  <div className="app-muted text-sm">
-                    {health?.market_open
-                      ? copy.market.marketOpen
-                      : copy.market.marketClosed}
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
+                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                  {copy.market.watchlist}
+                </div>
+                <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--app-text)]">
+                  {items.length}
+                </div>
+                <div className="app-muted mt-1 text-xs">
+                  {holdingItemsCount} {copy.market.holdingsContext}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
+                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                  {copy.market.sourceHealth}
+                </div>
+                <div
+                  className={`mt-2 text-2xl font-semibold tabular-nums ${sourceHealthTone}`}
+                >
+                  {sourceHealthLabel}
+                </div>
+                <div className="app-muted mt-1 text-xs">
+                  {health?.refresh_policy ?? '--'}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
+                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                  {copy.market.latestQuote}
+                </div>
+                <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--app-text)]">
+                  {latestQuoteLabel}
+                </div>
+                <div className="app-muted mt-1 text-xs">
+                  {copy.market.cacheAge} {formatAge(health?.cache_age_seconds)}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
+                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                  {copy.market.marketOpen}
+                </div>
+                <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--app-text)]">
+                  {marketStateLabel}
+                </div>
+                <div className="app-muted mt-1 text-xs">
+                  {staleCount} {copy.market.staleSymbols}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(340px,0.82fr)]">
+              <div className="app-panel rounded-2xl p-0">
+                <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-4 sm:px-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                        {copy.market.watchlist}
+                      </div>
+                      <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
+                        {activeSymbol || copy.market.noSelection}
+                      </div>
+                    </div>
+                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] px-3 py-1.5 text-xs text-[var(--app-soft)]">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          health?.market_open
+                            ? 'bg-[var(--app-success)]'
+                            : 'bg-[var(--app-warning)]'
+                        }`}
+                      />
+                      {marketStateLabel}
+                    </div>
                   </div>
                 </div>
 
                 <form
-                  className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_100px]"
+                  className="grid gap-3 border-b border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_160px_96px] sm:px-5"
                   onSubmit={async (event) => {
                     event.preventDefault();
                     if (!newSymbol.trim()) {
@@ -1230,108 +1311,146 @@ function MarketPage() {
                   </button>
                 </form>
 
-                <div className="grid gap-3">
-                  {items.map((item) => (
-                    <button
-                      key={item.symbol}
-                      type="button"
-                      onClick={() => setSelectedSymbol(item.symbol)}
-                      className={`app-panel-strong rounded-2xl p-4 text-left ${
-                        activeSymbol === item.symbol
-                          ? 'ring-1 ring-[var(--app-border)]'
-                          : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold">
+                <div className="divide-y divide-[color-mix(in_srgb,var(--app-border)_18%,transparent)]">
+                  {items.map((item) => {
+                    const itemHealth = healthBySymbol.get(item.symbol);
+                    const isActive = activeSymbol === item.symbol;
+                    const quoteStatus = itemHealth?.quote_status ?? '--';
+                    return (
+                      <div
+                        key={item.symbol}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedSymbol(item.symbol)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedSymbol(item.symbol);
+                          }
+                        }}
+                        className={`grid w-full gap-3 px-4 py-4 text-left transition-[background-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] active:scale-[0.995] md:grid-cols-[minmax(0,1.35fr)_0.75fr_0.75fr_0.7fr_auto] md:items-center sm:px-5 ${
+                          isActive
+                            ? 'bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)]'
+                            : ''
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm font-semibold text-[var(--app-text)]">
+                              {item.name || item.symbol}
+                            </span>
+                            <span className="rounded-md border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--app-soft)]">
+                              {getAssetClassLabel(copy, item.asset_class)}
+                            </span>
+                          </div>
+                          <div className="app-muted mt-1 font-mono text-xs">
                             {item.symbol}
                           </div>
-                          <div className="app-muted mt-1 text-xs">
-                            {getAssetClassLabel(copy, item.asset_class)}
-                          </div>
                         </div>
-                        <button
-                          type="button"
-                          className="app-button-secondary rounded-2xl px-3 py-1 text-xs"
-                          onClick={async (event) => {
-                            event.stopPropagation();
-                            await removeWatchlistItem.mutateAsync(item.symbol);
-                            if (activeSymbol === item.symbol) {
-                              setSelectedSymbol('');
-                            }
-                          }}
-                        >
-                          {copy.market.remove}
-                        </button>
-                      </div>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         <div>
-                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
                             {copy.market.priceLabel}
                           </div>
-                          <div className="mt-1 text-sm font-medium">
+                          <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
                             {formatCurrency(item.price ?? 0)}
                           </div>
                         </div>
                         <div>
-                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
                             {copy.market.holdingsContext}
                           </div>
-                          <div className="mt-1 text-sm font-medium">
+                          <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
                             {item.is_holding
                               ? formatCurrency(item.market_value ?? 0)
                               : '--'}
                           </div>
                         </div>
                         <div>
-                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                            {copy.market.researchCount}
+                          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                            {copy.market.quoteAge}
                           </div>
-                          <div className="mt-1 text-sm font-medium">
-                            {item.research_count}
+                          <div className="mt-1 flex items-center gap-2 text-xs text-[var(--app-soft)]">
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                quoteStatus === 'live'
+                                  ? 'bg-[var(--app-success)]'
+                                  : quoteStatus === 'stale'
+                                    ? 'bg-[var(--app-warning)]'
+                                    : 'bg-[var(--app-danger)]'
+                              }`}
+                            />
+                            {quoteStatus}
                           </div>
                         </div>
+                        <div className="flex items-center justify-between gap-3 md:justify-end">
+                          <span className="font-mono text-xs text-[var(--app-muted)]">
+                            {item.research_count} {copy.market.notesTitle}
+                          </span>
+                          <button
+                            type="button"
+                            className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                            onClick={async (event) => {
+                              event.stopPropagation();
+                              await removeWatchlistItem.mutateAsync(
+                                item.symbol,
+                              );
+                              if (activeSymbol === item.symbol) {
+                                setSelectedSymbol('');
+                              }
+                            }}
+                          >
+                            {copy.market.remove}
+                          </button>
+                        </div>
                       </div>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="space-y-5">
-                <div className="app-panel rounded-2xl p-4 sm:p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                      {copy.market.health}
+                <div className="app-panel rounded-2xl p-0">
+                  <div className="border-b border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 sm:px-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                          {copy.market.health}
+                        </div>
+                        <div
+                          className={`mt-1 text-lg font-semibold ${sourceHealthTone}`}
+                        >
+                          {sourceHealthLabel}
+                        </div>
+                      </div>
+                      <MarketRefreshButton
+                        onComplete={(response) => {
+                          const title =
+                            response.quote_status === 'live'
+                              ? copy.market.quoteRefreshComplete
+                              : response.quote_status === 'partial'
+                                ? copy.market.quoteRefreshPartial
+                                : response.quote_status === 'stale'
+                                  ? copy.market.quoteRefreshStale
+                                  : copy.market.quoteRefreshFailed;
+                          pushToast(
+                            response.quote_status === 'error'
+                              ? 'error'
+                              : 'success',
+                            title,
+                            response.message,
+                          );
+                        }}
+                        onError={(error) => {
+                          pushToast(
+                            'error',
+                            copy.market.quoteRefreshFailed,
+                            error.message,
+                          );
+                        }}
+                      />
                     </div>
-                    <MarketRefreshButton
-                      onComplete={(response) => {
-                        const title =
-                          response.quote_status === 'live'
-                            ? copy.market.quoteRefreshComplete
-                            : response.quote_status === 'partial'
-                              ? copy.market.quoteRefreshPartial
-                              : response.quote_status === 'stale'
-                                ? copy.market.quoteRefreshStale
-                                : copy.market.quoteRefreshFailed;
-                        pushToast(
-                          response.quote_status === 'error'
-                            ? 'error'
-                            : 'success',
-                          title,
-                          response.message,
-                        );
-                      }}
-                      onError={(error) => {
-                        pushToast(
-                          'error',
-                          copy.market.quoteRefreshFailed,
-                          error.message,
-                        );
-                      }}
-                    />
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-px bg-[color-mix(in_srgb,var(--app-border)_12%,transparent)] sm:grid-cols-2">
                     <MetricBlock
                       label={copy.market.sourceHealth}
                       value={sourceHealthLabel}
@@ -1424,11 +1543,11 @@ function MarketPage() {
                   <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                     {copy.market.promptsTitle}
                   </div>
-                  <div className="mt-4 grid gap-3">
+                  <div className="mt-4 grid gap-2">
                     {copy.market.prompts.map((prompt) => (
                       <div
                         key={prompt}
-                        className="app-panel-strong rounded-2xl px-4 py-3 text-sm"
+                        className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2.5 text-sm text-[var(--app-soft)]"
                       >
                         {prompt}
                       </div>
@@ -2519,35 +2638,84 @@ function PriceStructureChart({
   bars,
   emptyLabel,
 }: {
-  bars: Array<{ close: number }>;
+  bars: Array<{ close: number; timestamp?: string }>;
   emptyLabel: string;
 }) {
+  const copy = useCopy();
+
   if (bars.length === 0) {
-    return <div className="app-muted text-sm">{emptyLabel}</div>;
+    return (
+      <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] text-sm text-[var(--app-muted)]">
+        {emptyLabel}
+      </div>
+    );
   }
   const closes = bars.map((bar) => bar.close);
   const min = Math.min(...closes);
   const max = Math.max(...closes);
   const range = max - min || 1;
+  const latest = closes[closes.length - 1] ?? 0;
+  const first = closes[0] ?? latest;
+  const change = latest - first;
+  const changePercent = first === 0 ? 0 : change / first;
   const points = closes
     .map((close, index) => {
       const x = (index / Math.max(closes.length - 1, 1)) * 640;
-      const y = 220 - ((close - min) / range) * 220;
+      const y = 190 - ((close - min) / range) * 160 + 15;
       return `${x},${y}`;
     })
     .join(' ');
+  const areaPoints = `0,220 ${points} 640,220`;
+  const latestTone =
+    change >= 0 ? 'text-[var(--app-success)]' : 'text-[var(--app-danger)]';
 
   return (
-    <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-        points={points}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
+    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+            {copy.market.priceLabel}
+          </div>
+          <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-[var(--app-text)]">
+            {formatCurrency(latest)}
+          </div>
+        </div>
+        <div className={`font-mono text-sm font-semibold ${latestTone}`}>
+          {change >= 0 ? '+' : ''}
+          {formatCurrency(change)} · {formatPercent(changePercent)}
+        </div>
+      </div>
+      <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
+        {[40, 90, 140, 190].map((y) => (
+          <line
+            key={y}
+            x1="0"
+            x2="640"
+            y1={y}
+            y2={y}
+            stroke="currentColor"
+            strokeOpacity="0.08"
+          />
+        ))}
+        <polygon
+          fill="currentColor"
+          fillOpacity="0.08"
+          points={areaPoints}
+        />
+        <polyline
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          points={points}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="mt-2 flex items-center justify-between font-mono text-[11px] text-[var(--app-muted)]">
+        <span>{formatCurrency(min)}</span>
+        <span>{formatCurrency(max)}</span>
+      </div>
+    </div>
   );
 }
 
