@@ -4644,6 +4644,139 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
     assert series[-1].quote_status == "stale"
 
 
+def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    curve_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+
+    class FakeDb:
+        daily_closes = [
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
+                "trade_date": "2026-04-22",
+                "close_price": 10.5,
+                "source": "test_close",
+            },
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
+                "trade_date": "2026-05-08",
+                "close_price": 11.0,
+                "source": "test_close",
+            },
+        ]
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-18T09:00:00+00:00",
+                    "amount": 100000.0,
+                    "symbol": None,
+                    "direction": None,
+                    "quantity": None,
+                    "price": None,
+                    "commission": 0.0,
+                    "asset_class": "cash",
+                    "note": "",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                    "created_at": "2026-04-18T09:00:01+00:00",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-22T10:00:00+00:00",
+                    "amount": 1000.0,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 10.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "note": "",
+                    "source": "manual",
+                    "source_ref": "stock-1",
+                    "created_at": "2026-04-22T10:00:01+00:00",
+                },
+            ]
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 12.0,
+                    "volume": 1000.0,
+                    "timestamp": "2026-05-12T15:00:00+08:00",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            candidates = [
+                close
+                for close in self.daily_closes
+                if close["symbol"] == symbol and close["trade_date"] < trade_date
+            ]
+            return candidates[-1] if candidates else None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        avg_cost=10.0,
+        market_value=1200.0,
+        unrealized_pnl=200.0,
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=99000.0,
+                positions={"600519": fake_position},
+            ),
+            instruments={
+                Symbol("600519"): SimpleNamespace(
+                    asset_class=SimpleNamespace(value="stock")
+                )
+            },
+            watchlist=[("600519", SimpleNamespace(value="stock"))],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    series = asyncio.run(curve_route.endpoint("1m"))
+
+    apr22 = next(point for point in series if point.timestamp.startswith("2026-04-22"))
+    may8 = next(point for point in series if point.timestamp.startswith("2026-05-08"))
+
+    assert apr22.total == pytest.approx(100050.0)
+    assert apr22.stocks == pytest.approx(1050.0)
+    assert may8.total == pytest.approx(100100.0)
+    assert may8.stocks == pytest.approx(1100.0)
+    assert series[-1].timestamp.startswith("2026-05-12T20:00:00")
+    assert series[-1].total == pytest.approx(100200.0)
+
+
 def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks(
     monkeypatch,
 ):

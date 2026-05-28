@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 import json
 from zoneinfo import ZoneInfo
@@ -45,9 +45,11 @@ from server.models import (
     TradeCreate,
     TradeResponse,
 )
+from server.ledger.models import LedgerEntry
 from server.projections.service import (
     build_equity_curve_from_db,
     build_equity_series_from_db,
+    build_portfolio_projection,
     build_portfolio_projection_from_db,
 )
 from server.services.account_state import build_account_state_projection
@@ -1622,6 +1624,206 @@ def _daily_equity_series_for_range(
     return daily_points or points
 
 
+def _load_ledger_entries_for_equity_series(db, batch_size: int = 500) -> list[LedgerEntry]:
+    entries: list[LedgerEntry] = []
+    offset = 0
+    while True:
+        rows = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not rows:
+            break
+        entries.extend(LedgerEntry.from_row(row) for row in rows)
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+    return sorted(entries, key=lambda entry: (entry.timestamp, entry.id or 0))
+
+
+def _ledger_entry_timestamp(entry: LedgerEntry) -> datetime | None:
+    try:
+        timestamp = datetime.fromisoformat(entry.timestamp)
+    except ValueError:
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=_SH_TZ)
+    return timestamp.astimezone(_SH_TZ)
+
+
+def _equity_series_bucket(asset_class: str | None) -> str | None:
+    normalized = _normalize_asset_class_value(asset_class)
+    if normalized == "stock":
+        return "stocks"
+    if normalized in {"fund", "etf"}:
+        return "funds"
+    if normalized in {"bond", "gold"}:
+        return "others"
+    return None
+
+
+def _historical_quote_for_equity_day(
+    state,
+    *,
+    symbol: str,
+    asset_class: str,
+    trade_date: date,
+    latest_quotes: dict[str, dict],
+    is_current_day: bool,
+) -> dict | None:
+    if is_current_day and symbol in latest_quotes:
+        return latest_quotes[symbol]
+
+    next_date = (trade_date + timedelta(days=1)).isoformat()
+    db = state.db
+    if db is not None and hasattr(db, "get_latest_daily_close_before_sync"):
+        daily_close = db.get_latest_daily_close_before_sync(symbol, next_date)
+        if daily_close:
+            return {
+                "symbol": symbol,
+                "asset_class": daily_close.get("asset_class") or asset_class,
+                "price": daily_close["close_price"],
+                "timestamp": daily_close.get("trade_date"),
+                "quote_status": "historical_close",
+                "source": daily_close.get("source"),
+            }
+
+    if db is not None and hasattr(db, "get_latest_quote_before_date_sync"):
+        quote = db.get_latest_quote_before_date_sync(symbol, next_date)
+        if quote:
+            return quote
+
+    if not (
+        db is not None
+        and (
+            hasattr(db, "get_latest_daily_close_before_sync")
+            or hasattr(db, "get_latest_quote_before_date_sync")
+        )
+    ):
+        return latest_quotes.get(symbol)
+    return None
+
+
+def _daily_equity_series_from_ledger_history(
+    state,
+    *,
+    selected_range: str,
+    current_point: EquitySeriesPoint | None,
+) -> list[EquitySeriesPoint]:
+    if (
+        selected_range == "1d"
+        or state.db is None
+        or not hasattr(state.db, "get_ledger_entries_sync")
+    ):
+        return []
+
+    entries = _load_ledger_entries_for_equity_series(state.db)
+    dated_entries = [
+        (timestamp, entry)
+        for entry in entries
+        if (timestamp := _ledger_entry_timestamp(entry)) is not None
+    ]
+    if not dated_entries:
+        return []
+
+    latest_timestamp = (
+        _parse_quote_timestamp(current_point.timestamp)
+        if current_point is not None
+        else None
+    ) or get_shanghai_now()
+    latest_timestamp = latest_timestamp.astimezone(_SH_TZ)
+    range_days = _EQUITY_SERIES_RANGE_DAYS.get(selected_range)
+    first_entry_date = dated_entries[0][0].date()
+    if range_days is None:
+        start_date = first_entry_date
+    else:
+        start_date = (latest_timestamp - timedelta(days=range_days)).date()
+    end_date = latest_timestamp.date()
+    if start_date > end_date:
+        return []
+
+    latest_quotes = _collect_latest_quotes(state)
+    active_entries: list[LedgerEntry] = []
+    entry_index = 0
+    asset_classes: dict[str, str] = {}
+    points: list[EquitySeriesPoint] = []
+    current_date = start_date
+
+    while current_date <= end_date:
+        day_end = datetime.combine(
+            current_date,
+            time(23, 59, 59),
+            tzinfo=_SH_TZ,
+        )
+        while (
+            entry_index < len(dated_entries)
+            and dated_entries[entry_index][0] <= day_end
+        ):
+            _, entry = dated_entries[entry_index]
+            active_entries.append(entry)
+            if entry.symbol:
+                asset_classes[str(entry.symbol)] = _normalize_asset_class_value(
+                    entry.asset_class
+                )
+            entry_index += 1
+
+        should_emit_day = (
+            current_date == start_date
+            or current_date == end_date
+            or current_date.weekday() < 5
+        )
+        if active_entries and should_emit_day:
+            historical_quotes: dict[str, dict] = {}
+            for symbol, asset_class in asset_classes.items():
+                quote = _historical_quote_for_equity_day(
+                    state,
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    trade_date=current_date,
+                    latest_quotes=latest_quotes,
+                    is_current_day=current_date == end_date,
+                )
+                if quote is not None:
+                    historical_quotes[symbol] = quote
+
+            projection = build_portfolio_projection(
+                active_entries,
+                initial_cash=state.config.initial_cash,
+                latest_quotes=historical_quotes,
+            )
+            buckets = {"stocks": 0.0, "funds": 0.0, "others": 0.0}
+            unrealized_pnl = 0.0
+            for symbol, position in projection.positions.items():
+                bucket = _equity_series_bucket(asset_classes.get(symbol))
+                if bucket is None:
+                    continue
+                market_value = float(position.market_value)
+                buckets[bucket] += market_value
+                unrealized_pnl += float(position.unrealized_pnl)
+
+            timestamp = (
+                latest_timestamp
+                if current_date == end_date
+                else datetime.combine(current_date, _CN_AFTERNOON_CLOSE, tzinfo=_SH_TZ)
+            )
+            points.append(
+                EquitySeriesPoint(
+                    timestamp=timestamp.isoformat(),
+                    total=float(projection.cash)
+                    + buckets["stocks"]
+                    + buckets["funds"]
+                    + buckets["others"],
+                    stocks=buckets["stocks"],
+                    funds=buckets["funds"],
+                    others=buckets["others"],
+                    cash=float(projection.cash),
+                    unrealized_pnl=unrealized_pnl,
+                    quote_status="live",
+                )
+            )
+
+        current_date += timedelta(days=1)
+
+    return points
+
+
 def _flat_intraday_equity_series_from_current(
     current: EquitySeriesPoint | None,
 ) -> list[EquitySeriesPoint]:
@@ -2012,6 +2214,15 @@ def create_router() -> APIRouter:
             portfolio,
             instruments,
         )
+        current_point = _current_equity_series_point(state, portfolio, instruments)
+        daily_points = _daily_equity_series_from_ledger_history(
+            state,
+            selected_range=selected_range,
+            current_point=current_point,
+        )
+        if daily_points:
+            return _append_current_equity_series_point(daily_points, current_point)
+
         points = build_equity_series_from_db(
             state.db,
             initial_cash=state.config.initial_cash,
@@ -2033,7 +2244,7 @@ def create_router() -> APIRouter:
         return _daily_equity_series_for_range(
             _append_current_equity_series_point(
                 series_points,
-                _current_equity_series_point(state, portfolio, instruments),
+                current_point,
             ),
             selected_range,
         )
