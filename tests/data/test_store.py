@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -38,6 +39,36 @@ class TestDataStore:
         store.save_bars(symbol, BarFrequency.DAILY, sample_df)
 
         loaded = store.load_bars(symbol, BarFrequency.DAILY)
+        assert loaded is not None
+        assert len(loaded) == 3
+        assert list(loaded["close"]) == list(sample_df["close"])
+
+    def test_save_bars_persists_rows_to_sqlite(self, store: DataStore, sample_df: pd.DataFrame):
+        symbol = Symbol("600519")
+        store.save_bars(symbol, BarFrequency.DAILY, sample_df)
+
+        with sqlite3.connect(store._meta_path) as conn:
+            count = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM market_bars
+                WHERE symbol = ? AND frequency = ?
+                """,
+                ("600519", BarFrequency.DAILY.value),
+            ).fetchone()[0]
+
+        assert count == 3
+
+    def test_load_bars_can_read_from_sqlite_without_parquet(
+        self, store: DataStore, sample_df: pd.DataFrame
+    ):
+        symbol = Symbol("600519")
+        store.save_bars(symbol, BarFrequency.DAILY, sample_df)
+        parquet_path = store._root / "bars" / BarFrequency.DAILY.value / f"{symbol}.parquet"
+        parquet_path.unlink()
+
+        loaded = store.load_bars(symbol, BarFrequency.DAILY)
+
         assert loaded is not None
         assert len(loaded) == 3
         assert list(loaded["close"]) == list(sample_df["close"])
