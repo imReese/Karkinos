@@ -40,6 +40,30 @@ class DataStore:
                 )
             """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS market_bars (
+                    symbol TEXT NOT NULL,
+                    frequency TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL NOT NULL,
+                    volume REAL,
+                    amount REAL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (symbol, frequency, timestamp)
+                )
+            """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_frequency_ts
+                ON market_bars(symbol, frequency, timestamp)
+            """
+            )
 
     # ---------- 行情数据 ----------
 
@@ -54,6 +78,7 @@ class DataStore:
         freq_dir.mkdir(parents=True, exist_ok=True)
         path = freq_dir / f"{symbol}.parquet"
         df.to_parquet(path, index=False)
+        self._save_bars_to_db(symbol, frequency, df)
 
         # 更新元数据
         if "timestamp" in df.columns and len(df) > 0:
@@ -83,6 +108,10 @@ class DataStore:
         frequency: BarFrequency = BarFrequency.DAILY,
     ) -> pd.DataFrame | None:
         """从 Parquet 加载 K 线数据。"""
+        db_df = self._load_bars_from_db(symbol, frequency)
+        if db_df is not None:
+            return db_df
+
         path = self._root / "bars" / frequency.value / f"{symbol}.parquet"
         if not path.exists():
             return None
@@ -129,7 +158,91 @@ class DataStore:
         self, frequency: BarFrequency = BarFrequency.DAILY
     ) -> list[Symbol]:
         """列出已存储的标的。"""
+        symbols: set[Symbol] = set()
+        with sqlite3.connect(self._meta_path) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT symbol FROM market_bars WHERE frequency = ?",
+                (frequency.value,),
+            ).fetchall()
+            symbols.update(Symbol(str(row[0])) for row in rows)
+
         freq_dir = self._root / "bars" / frequency.value
-        if not freq_dir.exists():
-            return []
-        return [Symbol(p.stem) for p in freq_dir.glob("*.parquet")]
+        if freq_dir.exists():
+            symbols.update(Symbol(p.stem) for p in freq_dir.glob("*.parquet"))
+        return sorted(symbols, key=str)
+
+    def _save_bars_to_db(
+        self,
+        symbol: Symbol,
+        frequency: BarFrequency,
+        df: pd.DataFrame,
+    ) -> None:
+        if df.empty or "timestamp" not in df.columns or "close" not in df.columns:
+            return
+
+        normalized = df.copy()
+        normalized["timestamp"] = pd.to_datetime(normalized["timestamp"])
+        now = datetime.now().isoformat()
+        rows = []
+        for _, row in normalized.iterrows():
+            rows.append(
+                (
+                    str(symbol),
+                    frequency.value,
+                    row["timestamp"].isoformat(),
+                    _nullable_float(row.get("open")),
+                    _nullable_float(row.get("high")),
+                    _nullable_float(row.get("low")),
+                    _nullable_float(row.get("close")),
+                    _nullable_float(row.get("volume")),
+                    _nullable_float(row.get("amount")),
+                    now,
+                    now,
+                )
+            )
+
+        with sqlite3.connect(self._meta_path) as conn:
+            conn.executemany(
+                """
+                INSERT INTO market_bars (
+                    symbol, frequency, timestamp, open, high, low, close,
+                    volume, amount, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, frequency, timestamp) DO UPDATE SET
+                    open = excluded.open,
+                    high = excluded.high,
+                    low = excluded.low,
+                    close = excluded.close,
+                    volume = excluded.volume,
+                    amount = excluded.amount,
+                    updated_at = excluded.updated_at
+                """,
+                rows,
+            )
+
+    def _load_bars_from_db(
+        self,
+        symbol: Symbol,
+        frequency: BarFrequency,
+    ) -> pd.DataFrame | None:
+        with sqlite3.connect(self._meta_path) as conn:
+            df = pd.read_sql_query(
+                """
+                SELECT timestamp, open, high, low, close, volume, amount
+                FROM market_bars
+                WHERE symbol = ? AND frequency = ?
+                ORDER BY timestamp ASC
+                """,
+                conn,
+                params=(str(symbol), frequency.value),
+            )
+        if df.empty:
+            return None
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        return df
+
+
+def _nullable_float(value) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
