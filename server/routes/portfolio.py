@@ -1109,7 +1109,7 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
             today_change = quantity * (reference_price - baseline_price)
             today_change_pct = (reference_price / baseline_price) - 1
 
-        groups[asset_class].append(
+        groups[metadata.asset_class].append(
             LiveHoldingItemResponse(
                 symbol=symbol,
                 name=metadata.display_name,
@@ -1164,10 +1164,27 @@ def _resolve_projection_sources(state) -> tuple[object | None, dict]:
     portfolio = scheduler.portfolio if scheduler else None
     instruments = scheduler.instruments if scheduler else {}
 
-    if portfolio is not None or state.db is None:
+    if state.db is None:
         return portfolio, instruments
 
     latest_quotes = _collect_latest_quotes(state)
+    ledger_entries = (
+        state.db.get_ledger_entries_sync(limit=50, offset=0)
+        if hasattr(state.db, "get_ledger_entries_sync")
+        else []
+    )
+    if _has_rows(ledger_entries) and (
+        portfolio is None or _has_position_ledger_entries(ledger_entries)
+    ):
+        return (
+            build_portfolio_projection_from_db(
+                state.db,
+                initial_cash=state.config.initial_cash,
+                latest_quotes=latest_quotes,
+            ),
+            {},
+        )
+
     legacy_cash_flows = (
         state.db.get_cash_flows_sync(limit=1, offset=0)
         if hasattr(state.db, "get_cash_flows_sync")
@@ -1187,22 +1204,24 @@ def _resolve_projection_sources(state) -> tuple[object | None, dict]:
         )
         return rebuilt.portfolio, rebuilt.instruments
 
-    ledger_entries = (
-        state.db.get_ledger_entries_sync(limit=1, offset=0)
-        if hasattr(state.db, "get_ledger_entries_sync")
-        else []
-    )
-    if _has_rows(ledger_entries):
-        return (
-            build_portfolio_projection_from_db(
-                state.db,
-                initial_cash=state.config.initial_cash,
-                latest_quotes=latest_quotes,
-            ),
-            {},
-        )
+    if portfolio is not None:
+        return portfolio, instruments
 
     return None, {}
+
+
+def _has_position_ledger_entries(entries: object) -> bool:
+    if not isinstance(entries, list):
+        return False
+    trade_types = {"trade_buy", "buy", "trade", "trade_sell", "sell"}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        entry_type = str(entry.get("entry_type") or "").strip().lower()
+        symbol = str(entry.get("symbol") or "").strip()
+        if symbol and entry_type in trade_types:
+            return True
+    return False
 
 
 def _normalize_asset_class_value(value) -> str:

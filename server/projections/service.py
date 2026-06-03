@@ -272,13 +272,13 @@ def _apply_buy(
     commission: Decimal,
 ) -> None:
     projection.cash -= quantity * price + commission
+    added_cost = quantity * price + commission
     if position.quantity == ZERO:
-        position.avg_cost = price
+        position.avg_cost = added_cost / quantity
     else:
         previous_cost = position.quantity * position.avg_cost
-        new_cost = quantity * price
         total_quantity = position.quantity + quantity
-        position.avg_cost = (previous_cost + new_cost) / total_quantity
+        position.avg_cost = (previous_cost + added_cost) / total_quantity
 
     position.quantity += quantity
     position.commission_paid += commission
