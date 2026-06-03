@@ -241,6 +241,7 @@ class TestAKShareFetchLatest:
         mock_ak.return_value = pd.DataFrame(
             {
                 "代码": ["600519", "000001"],
+                "名称": ["贵州茅台", "平安银行"],
                 "最新价": [1850.0, 12.5],
                 "成交额": [5000000.0, 3000000.0],
                 "时间": ["10:30:00", "10:30:00"],
@@ -250,6 +251,7 @@ class TestAKShareFetchLatest:
         result = source.fetch_latest(Symbol("600519"), AssetClass.STOCK)
         assert result is not None
         assert result["price"] == 1850.0
+        assert result["display_name"] == "贵州茅台"
 
     @patch("akshare.fund_etf_spot_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
@@ -259,6 +261,7 @@ class TestAKShareFetchLatest:
         mock_ak.return_value = pd.DataFrame(
             {
                 "代码": ["510300", "510050"],
+                "名称": ["沪深300ETF", "上证50ETF"],
                 "最新价": [4.05, 2.80],
                 "成交额": [1000000.0, 800000.0],
                 "时间": ["10:30:00", "10:30:00"],
@@ -268,6 +271,7 @@ class TestAKShareFetchLatest:
         result = source.fetch_latest(Symbol("510300"), AssetClass.FUND)
         assert result is not None
         assert result["price"] == 4.05
+        assert result["display_name"] == "沪深300ETF"
 
     @patch("akshare.fund_open_fund_daily_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")

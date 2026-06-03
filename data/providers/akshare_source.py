@@ -378,11 +378,15 @@ class AKShareSource(DataSource):
                 if row.empty:
                     return None
                 row = row.iloc[0]
-                return {
+                payload = {
                     "price": float(row["最新价"]),
                     "volume": float(row["成交额"]) if "成交额" in row else None,
                     "timestamp": str(row.get("时间", "")),
                 }
+                if "名称" in row and str(row["名称"]).strip():
+                    payload["name"] = str(row["名称"]).strip()
+                    payload["display_name"] = str(row["名称"]).strip()
+                return payload
 
             elif asset_class == AssetClass.FUND:
                 if open_end_snapshot := self._fetch_open_end_fund_latest(symbol):
@@ -393,11 +397,15 @@ class AKShareSource(DataSource):
                 if row.empty:
                     return None
                 row = row.iloc[0]
-                return {
+                payload = {
                     "price": float(row["最新价"]),
                     "volume": float(row["成交额"]) if "成交额" in row else None,
                     "timestamp": str(row.get("时间", "")),
                 }
+                if "名称" in row and str(row["名称"]).strip():
+                    payload["name"] = str(row["名称"]).strip()
+                    payload["display_name"] = str(row["名称"]).strip()
+                return payload
 
             elif asset_class == AssetClass.GOLD:
                 df = self._call_with_retry(ak.spot_quotations_sge, symbol=str(symbol))

@@ -538,6 +538,37 @@ class TradingScheduler:
                                         sym_str,
                                         exc_info=True,
                                     )
+                            display_name = str(
+                                snapshot.get("display_name")
+                                or snapshot.get("name")
+                                or snapshot.get("asset_name")
+                                or ""
+                            ).strip()
+                            if display_name and hasattr(
+                                self._db, "upsert_instrument_metadata_sync"
+                            ):
+                                try:
+                                    self._db.upsert_instrument_metadata_sync(
+                                        symbol=sym_str,
+                                        asset_type=market_event.asset_class.value,
+                                        display_name=display_name,
+                                        provider_symbol=sym_str,
+                                        exchange=snapshot.get("exchange"),
+                                        market=snapshot.get("market"),
+                                        provider_name=provider_name,
+                                        source="quote",
+                                        fetched_at=snapshot_timestamp,
+                                        metadata={
+                                            "source": snapshot.get("source"),
+                                            "quote_source": quote_source,
+                                        },
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        "Failed to upsert instrument metadata for %s",
+                                        sym_str,
+                                        exc_info=True,
+                                    )
                         strategy.on_data(market_event)
                     self._event_bus.drain()
 

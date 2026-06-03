@@ -150,6 +150,50 @@ def _metadata_from_config(
     return None
 
 
+def _metadata_from_db(
+    state: Any,
+    symbol: str,
+    asset_class: str,
+) -> AssetMetadata | None:
+    db = getattr(state, "db", None)
+    get_metadata = getattr(db, "get_instrument_metadata_sync", None)
+    if not callable(get_metadata):
+        return None
+    try:
+        row = get_metadata(symbol, None if asset_class == "other" else asset_class)
+        if row is None and asset_class != "other":
+            row = get_metadata(symbol)
+    except Exception:
+        return None
+    if not isinstance(row, dict):
+        return None
+    display_name = str(row.get("display_name") or "").strip()
+    if not display_name:
+        return None
+    return AssetMetadata(
+        symbol=symbol,
+        display_name=display_name,
+        asset_class=_normalize_asset_class(row.get("asset_type") or row.get("asset_class"))
+        or asset_class,
+        market=row.get("market"),
+        provider=row.get("provider_name") or row.get("provider"),
+        provider_symbol=row.get("provider_symbol"),
+        source="db",
+    )
+
+
+def _db_metadata_entries(state: Any) -> list[dict[str, Any]]:
+    db = getattr(state, "db", None)
+    list_metadata = getattr(db, "list_instrument_metadata_sync", None)
+    if not callable(list_metadata):
+        return []
+    try:
+        rows = list_metadata() or []
+    except Exception:
+        return []
+    return [dict(row) for row in rows if isinstance(row, dict)]
+
+
 def _watchlist_symbols(state: Any) -> set[tuple[str, str | None]]:
     scheduler = getattr(state, "scheduler", None)
     symbols: set[tuple[str, str | None]] = set()
@@ -195,8 +239,26 @@ def _quote_symbols(state: Any) -> set[tuple[str, str | None]]:
 def build_asset_metadata_status(state: Any) -> dict[str, Any]:
     """Summarize configured and missing asset identities for Settings."""
     configured_entries = iter_configured_asset_metadata(state)
+    db_entries = _db_metadata_entries(state)
     configured_assets: list[dict[str, Any]] = []
     configured_symbols: set[str] = set()
+    for row in db_entries:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        configured_symbols.add(symbol)
+        configured_assets.append(
+            {
+                "symbol": symbol,
+                "display_name": str(row.get("display_name") or symbol),
+                "asset_class": _normalize_asset_class(
+                    row.get("asset_type") or row.get("asset_class")
+                ),
+                "provider_symbol": row.get("provider_symbol"),
+                "aliases": [],
+                "source": row.get("source") or "db",
+            }
+        )
     for cfg in configured_entries:
         symbols = _asset_symbols(cfg)
         configured_symbols.update(symbols)
@@ -242,11 +304,11 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
         for symbol in missing_symbols
     ]
     return {
-        "configured_count": metadata_configured_count(state),
+        "configured_count": len(db_entries) + metadata_configured_count(state),
         "configured_assets": configured_assets,
         "missing_symbols": missing_symbols,
         "suggested_config": {"assets": suggested_assets},
-        "metadata_source": "config",
+        "metadata_source": "db+config",
         "has_missing_metadata": bool(missing_symbols),
     }
 
@@ -309,8 +371,9 @@ def resolve_asset_metadata(
     """Resolve a stable display identity without hardcoding UI names."""
     normalized_asset_class = _normalize_asset_class(asset_class)
     for candidate in (
-        _metadata_from_config(state, symbol, normalized_asset_class),
+        _metadata_from_db(state, symbol, normalized_asset_class),
         _metadata_from_quote(symbol, normalized_asset_class, quote),
+        _metadata_from_config(state, symbol, normalized_asset_class),
         _metadata_from_instrument(state, symbol, normalized_asset_class),
     ):
         if candidate is not None:

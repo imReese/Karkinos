@@ -69,6 +69,88 @@ def test_app_database_initializes_latest_quotes_table(tmp_path):
     assert "idx_latest_quotes_quote_status" in indexes
 
 
+def test_app_database_initializes_instrument_metadata_table(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        table = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'instrument_metadata'
+            """
+        ).fetchone()
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'instrument_metadata'
+                """
+            ).fetchall()
+        }
+
+    assert table is not None
+    assert "idx_instrument_metadata_symbol_asset_type" in indexes
+    assert "idx_instrument_metadata_display_name" in indexes
+    assert "idx_instrument_metadata_provider" in indexes
+
+
+def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    created = db.upsert_instrument_metadata_sync(
+        symbol="601985",
+        asset_type="stock",
+        display_name="中国核电",
+        provider_symbol="601985",
+        exchange="SH",
+        market="cn",
+        provider_name="akshare",
+        source="quote",
+        fetched_at="2026-05-29T09:30:00+08:00",
+        metadata={"provider_status": "live"},
+    )
+    updated = db.upsert_instrument_metadata_sync(
+        symbol="601985",
+        asset_type="stock",
+        display_name="中国核电",
+        provider_symbol="601985",
+        exchange="SH",
+        market="cn",
+        provider_name="akshare",
+        source="quote",
+        fetched_at="2026-05-29T09:31:00+08:00",
+        metadata={"provider_status": "live", "sequence": 2},
+    )
+    row = db.get_instrument_metadata_sync("601985", "stock")
+    rows = db.list_instrument_metadata_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM instrument_metadata
+            WHERE symbol = ? AND asset_type = ?
+            """,
+            ("601985", "stock"),
+        ).fetchone()[0]
+
+    assert created is not None
+    assert updated is not None
+    assert row is not None
+    assert count == 1
+    assert updated["id"] == created["id"]
+    assert updated["created_at"] == created["created_at"]
+    assert updated["updated_at"] != created["updated_at"]
+    assert row["display_name"] == "中国核电"
+    assert row["metadata_json"] == '{"provider_status":"live","sequence":2}'
+    assert [item["symbol"] for item in rows] == ["601985"]
+
+
 def test_app_database_upserts_and_reads_latest_quote(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
