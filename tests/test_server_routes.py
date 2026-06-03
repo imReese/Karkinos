@@ -2061,6 +2061,134 @@ def test_market_kline_timeout_does_not_block_route(monkeypatch):
     assert time.monotonic() - started < 0.08
 
 
+def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
+    import pandas as pd
+
+    from data.store import DataStore as RealStore
+    from server.routes import market as market_routes
+
+    store = RealStore(root=tmp_path / "store")
+    router = market_routes.create_router()
+    backfill_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/bars/backfill"
+    )
+    endpoint = backfill_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="akshare",
+            tushare_token="",
+            start_date="2026-05-01",
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+        ),
+        scheduler=None,
+        db=None,
+    )
+
+    class FakeSource:
+        def fetch_bars(self, symbol, start, end, frequency, asset_class):
+            assert str(symbol) == "601985"
+            assert frequency.value == "1d"
+            assert asset_class.value == "stock"
+            return pd.DataFrame(
+                {
+                    "timestamp": pd.to_datetime(["2026-05-27", "2026-05-28"]),
+                    "open": [8.69, 8.72],
+                    "high": [8.80, 8.85],
+                    "low": [8.60, 8.66],
+                    "close": [8.74, 8.78],
+                    "volume": [100000.0, 120000.0],
+                    "amount": [874000.0, 1053600.0],
+                }
+            )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("data.store.DataStore", lambda: store)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": FakeSource()},
+    )
+
+    response = asyncio.run(
+        endpoint(
+            market_routes.MarketBarsBackfillRequest(
+                symbols=["601985"],
+                start="2026-05-27",
+                end="2026-05-28",
+            )
+        )
+    )
+
+    assert response.provider == "akshare"
+    assert response.updated_count == 1
+    assert response.failed_count == 0
+    assert response.items[0].symbol == "601985"
+    assert response.items[0].row_count == 2
+
+    stored = store.load_bars(Symbol("601985"))
+    assert stored is not None
+    assert list(stored["close"]) == [8.74, 8.78]
+    assert store.get_meta(Symbol("601985"), market_routes.BarFrequency.DAILY)[
+        "row_count"
+    ] == 2
+
+
+def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
+    from data.store import DataStore as RealStore
+    from server.routes import market as market_routes
+
+    store = RealStore(root=tmp_path / "store")
+    router = market_routes.create_router()
+    backfill_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/bars/backfill"
+    )
+    endpoint = backfill_route.endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="akshare",
+            tushare_token="",
+            start_date="2026-05-01",
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+        ),
+        scheduler=None,
+        db=None,
+    )
+
+    class FailingSource:
+        def fetch_bars(self, symbol, start, end, frequency, asset_class):
+            raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("data.store.DataStore", lambda: store)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": FailingSource()},
+    )
+
+    response = asyncio.run(
+        endpoint(
+            market_routes.MarketBarsBackfillRequest(
+                symbols=["601985"],
+                start="2026-05-27",
+                end="2026-05-28",
+            )
+        )
+    )
+
+    assert response.updated_count == 0
+    assert response.failed_count == 1
+    assert response.items[0].status == "failed"
+    assert "provider unavailable" in response.items[0].error
+    assert store.load_bars(Symbol("601985")) is None
+
+
 def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch):
     from server.routes import market as market_routes
 
