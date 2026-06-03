@@ -46,6 +46,7 @@ _QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
 _QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
 _MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
 _KLINE_FETCH_TIMEOUT_SECONDS = 3.0
+_BAR_BACKFILL_TIMEOUT_SECONDS = 60.0
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="market-fetch",
@@ -118,6 +119,37 @@ class InstrumentMetadataBackfillResponse(BaseModel):
     skipped_count: int
     failed_count: int
     items: list[InstrumentMetadataBackfillItem] = Field(default_factory=list)
+
+
+class MarketBarsBackfillRequest(BaseModel):
+    symbols: list[str] | None = None
+    asset_class: str | None = None
+    start: str | None = None
+    end: str | None = None
+    interval: str = "1d"
+    force: bool = False
+
+
+class MarketBarsBackfillItem(BaseModel):
+    symbol: str
+    asset_class: str
+    status: str
+    row_count: int = 0
+    stored_start: str | None = None
+    stored_end: str | None = None
+    error: str | None = None
+
+
+class MarketBarsBackfillResponse(BaseModel):
+    provider: str
+    interval: str
+    start: str
+    end: str
+    requested_count: int
+    updated_count: int
+    cached_count: int
+    failed_count: int
+    items: list[MarketBarsBackfillItem] = Field(default_factory=list)
 
 
 def _shanghai_now() -> datetime:
@@ -686,6 +718,154 @@ def _instrument_metadata_targets(
 
 def _provider_asset_class(asset_class: str) -> AssetClass:
     return _ASSET_CLASS_MAP.get(asset_class, AssetClass.STOCK)
+
+
+def _bar_frequency(interval: str) -> BarFrequency:
+    frequency = {
+        "1m": BarFrequency.MIN_1,
+        "5m": BarFrequency.MIN_5,
+        "1d": BarFrequency.DAILY,
+    }.get(interval)
+    if frequency is None:
+        raise HTTPException(status_code=422, detail="interval must be one of 1d, 1m, 5m")
+    return frequency
+
+
+def _parse_backfill_date(value: str | None, *, field_name: str, default: date) -> datetime:
+    raw = value or default.isoformat()
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name} must use YYYY-MM-DD",
+        ) from exc
+
+
+def _market_bar_backfill_range(state, request: MarketBarsBackfillRequest) -> tuple[datetime, datetime]:
+    config_start = getattr(state.config, "start_date", None)
+    default_start = date.today() - timedelta(days=365)
+    if config_start:
+        try:
+            default_start = date.fromisoformat(str(config_start))
+        except ValueError:
+            pass
+    start = _parse_backfill_date(request.start, field_name="start", default=default_start)
+    end = _parse_backfill_date(
+        request.end,
+        field_name="end",
+        default=_shanghai_now().date(),
+    )
+    if start > end:
+        raise HTTPException(status_code=422, detail="start must be before or equal to end")
+    return start, end
+
+
+def _market_bar_backfill_targets(
+    state,
+    request: MarketBarsBackfillRequest,
+) -> list[dict[str, str]]:
+    targets = _instrument_metadata_targets(state, request.symbols)
+    if request.asset_class:
+        asset_class = _normalize_asset_class(request.asset_class)
+        targets = [{**target, "asset_class": asset_class} for target in targets]
+    return targets
+
+
+def _meta_covers_range(meta: dict | None, start: datetime, end: datetime) -> bool:
+    if not meta or not meta.get("start_date") or not meta.get("end_date"):
+        return False
+    try:
+        meta_start = datetime.fromisoformat(str(meta["start_date"]))
+        meta_end = datetime.fromisoformat(str(meta["end_date"]))
+    except ValueError:
+        return False
+    return meta_start <= start and meta_end >= end
+
+
+async def _backfill_market_bars(
+    state,
+    request: MarketBarsBackfillRequest,
+) -> MarketBarsBackfillResponse:
+    from data.manager import DataManager, build_sources
+    from data.store import DataStore
+
+    provider_name = str(getattr(state.config, "data_source", "akshare") or "akshare")
+    frequency = _bar_frequency(request.interval)
+    start, end = _market_bar_backfill_range(state, request)
+    targets = _market_bar_backfill_targets(state, request)
+    store = DataStore()
+    manager = DataManager(
+        sources=build_sources(
+            data_source=provider_name,
+            tushare_token=getattr(state.config, "tushare_token", ""),
+        ),
+        store=store,
+        default_source=provider_name,
+    )
+
+    def _run_backfill() -> list[MarketBarsBackfillItem]:
+        items: list[MarketBarsBackfillItem] = []
+        for target in targets:
+            symbol = target["symbol"]
+            asset_class = _normalize_asset_class(target.get("asset_class"))
+            provider_asset_class = _provider_asset_class(asset_class)
+            before = store.get_meta(Symbol(symbol), frequency)
+            cached_before = _meta_covers_range(before, start, end)
+            try:
+                handler = manager.get_bars(
+                    Symbol(symbol),
+                    start,
+                    end,
+                    frequency,
+                    provider_asset_class,
+                    allow_remote_refresh=True,
+                    refresh_ttl_seconds=0 if request.force else None,
+                    degrade_to_cache=False,
+                )
+                after = store.get_meta(Symbol(symbol), frequency)
+                status = "cached" if cached_before and not request.force else "updated"
+                items.append(
+                    MarketBarsBackfillItem(
+                        symbol=symbol,
+                        asset_class=asset_class,
+                        status=status,
+                        row_count=int(getattr(handler, "total_bars", 0)),
+                        stored_start=None if after is None else after.get("start_date"),
+                        stored_end=None if after is None else after.get("end_date"),
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Historical bar backfill failed for %s",
+                    symbol,
+                    exc_info=True,
+                )
+                items.append(
+                    MarketBarsBackfillItem(
+                        symbol=symbol,
+                        asset_class=asset_class,
+                        status="failed",
+                        error=str(exc),
+                    )
+                )
+        return items
+
+    items = await asyncio.wait_for(
+        _run_blocking_fetch(_run_backfill),
+        timeout=_BAR_BACKFILL_TIMEOUT_SECONDS,
+    )
+    return MarketBarsBackfillResponse(
+        provider=provider_name,
+        interval=frequency.value,
+        start=start.date().isoformat(),
+        end=end.date().isoformat(),
+        requested_count=len(targets),
+        updated_count=sum(1 for item in items if item.status == "updated"),
+        cached_count=sum(1 for item in items if item.status == "cached"),
+        failed_count=sum(1 for item in items if item.status == "failed"),
+        items=items,
+    )
 
 
 def _extract_provider_display_name(payload: dict | None) -> str | None:
@@ -1714,6 +1894,16 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         return await _backfill_instrument_metadata(state, request)
+
+    @r.post("/bars/backfill", response_model=MarketBarsBackfillResponse)
+    async def backfill_market_bars(
+        request: MarketBarsBackfillRequest,
+    ) -> MarketBarsBackfillResponse:
+        """Backfill historical OHLCV bars into the authoritative local store."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return await _backfill_market_bars(state, request)
 
     @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
     async def refresh_quotes(request: QuoteRefreshRequest) -> QuoteRefreshResponse:
