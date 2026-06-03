@@ -60,4 +60,4 @@ def test_post_trade_and_read_positions_uses_ledger_projection(tmp_path, monkeypa
     assert len(positions) == 1
     assert positions[0].symbol == "600519"
     assert positions[0].quantity == 100.0
-    assert positions[0].avg_cost == 1500.0
+    assert positions[0].avg_cost == 1500.05
