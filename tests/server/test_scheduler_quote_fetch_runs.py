@@ -70,6 +70,7 @@ def _run_scheduler_once(
         data_source=data_source,
         live_poll_interval=0,
         initial_cash=Decimal("100000"),
+        start_date="2026-01-01",
     )
     runtime = SimpleNamespace(
         sources={
@@ -221,3 +222,129 @@ def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(monkeypatch, t
     assert run["error_message"] == "provider exploded"
     assert metadata["provider_status"] == "failed"
     assert latest == []
+
+
+def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
+    from server.scheduler import TradingScheduler
+
+    config = SimpleNamespace(
+        data_source="akshare",
+        live_poll_interval=120,
+        initial_cash=Decimal("100000"),
+        start_date="2026-01-01",
+    )
+    scheduler = TradingScheduler(config, FakeBridge())
+    scheduler._watchlist = [(Symbol("601985"), AssetClass.STOCK)]
+    calls = []
+
+    class FakeManager:
+        def get_bars(self, *args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(total_bars=2)
+
+    manager = FakeManager()
+
+    scheduler._maybe_backfill_historical_bars(
+        manager,
+        now=datetime(2026, 5, 29, 16, 0),
+    )
+    scheduler._maybe_backfill_historical_bars(
+        manager,
+        now=datetime(2026, 5, 29, 16, 5),
+    )
+    scheduler._maybe_backfill_historical_bars(
+        manager,
+        now=datetime(2026, 5, 30, 10, 0),
+    )
+    scheduler._maybe_backfill_historical_bars(
+        manager,
+        now=datetime(2026, 5, 30, 16, 0),
+    )
+
+    assert len(calls) == 2
+    first_args, first_kwargs = calls[0]
+    assert first_args[0] == Symbol("601985")
+    assert first_kwargs["frequency"] == BarFrequency.DAILY
+    assert first_kwargs["asset_class"] == AssetClass.STOCK
+    assert first_kwargs["allow_remote_refresh"] is True
+    assert first_kwargs["refresh_ttl_seconds"] == 0
+    assert first_kwargs["degrade_to_cache"] is True
+    assert first_kwargs["end"].date().isoformat() == "2026-05-29"
+    assert calls[1][1]["end"].date().isoformat() == "2026-05-30"
+
+
+def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
+    from server import scheduler as scheduler_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    config = SimpleNamespace(
+        data_source="akshare",
+        live_poll_interval=0,
+        initial_cash=Decimal("100000"),
+        start_date="2026-01-01",
+    )
+    runtime = SimpleNamespace(
+        sources={"akshare": object()},
+        watchlist=[],
+        instruments={},
+        data_manager=SimpleNamespace(),
+    )
+    holder = {}
+
+    class FakeLiveDataFeed:
+        def __init__(self, source, event_bus, fallback_source=None) -> None:
+            pass
+
+        def poll_all(self, current_watchlist):
+            holder["scheduler"]._running.clear()
+            assert current_watchlist == [(Symbol("601985"), AssetClass.STOCK)]
+            return []
+
+    class FakePortfolio:
+        cash = Decimal("100000")
+        positions = {}
+
+        def add_instrument(self, instrument) -> None:
+            pass
+
+    rebuilt = SimpleNamespace(
+        portfolio=FakePortfolio(),
+        instruments={
+            Symbol("601985"): SimpleNamespace(asset_class=AssetClass.STOCK),
+        },
+    )
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "create_runtime_context",
+        lambda config: runtime,
+    )
+    monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
+    monkeypatch.setattr(
+        scheduler_module,
+        "build_strategy",
+        lambda config, bus: FakeStrategy(),
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_warmup_strategy",
+        lambda self, data_manager, strategy: None,
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_is_market_open",
+        staticmethod(lambda: True),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "rebuild_portfolio_from_ledger",
+        lambda config, db, latest_quotes: rebuilt,
+    )
+
+    scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    holder["scheduler"] = scheduler
+    scheduler._running.set()
+    scheduler._run_loop()
+
+    assert scheduler.watchlist == [(Symbol("601985"), AssetClass.STOCK)]

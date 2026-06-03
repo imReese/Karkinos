@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from core.event_bus import EventBus
 from core.events import SignalEvent
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, BarFrequency, Symbol
 from data.live import LiveDataFeed
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
@@ -66,6 +66,7 @@ class TradingScheduler:
         self._watchlist: list[tuple[Symbol, AssetClass]] = []
         self._instruments: dict[Symbol, Instrument] = {}
         self._latest_quotes: dict[str, dict] = {}  # 报价缓存
+        self._last_historical_bar_backfill_key: str | None = None
 
         # Bug 3: 线程安全锁
         self._lock = threading.Lock()
@@ -150,6 +151,92 @@ class TradingScheduler:
                     logger.warning("策略预热失败: %s，将跳过", sym, exc_info=True)
         except Exception:
             logger.warning("策略预热整体失败，将跳过", exc_info=True)
+
+    def _historical_bar_backfill_range(
+        self, now: datetime
+    ) -> tuple[datetime, datetime]:
+        end_day = now.date()
+        if now.time() < _AFTERNOON_CLOSE:
+            end_day = (now - timedelta(days=1)).date()
+
+        start_day = end_day - timedelta(days=365)
+        configured_start = getattr(self._config, "start_date", None)
+        if configured_start:
+            try:
+                start_day = min(
+                    start_day,
+                    datetime.fromisoformat(str(configured_start)).date(),
+                )
+            except ValueError:
+                logger.warning(
+                    "Invalid start_date for bar backfill: %s",
+                    configured_start,
+                )
+
+        return (
+            datetime.combine(start_day, time.min),
+            datetime.combine(end_day, time.min),
+        )
+
+    def _maybe_backfill_historical_bars(
+        self,
+        data_manager,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        """Backfill daily OHLCV bars once per effective close date."""
+        current = now or datetime.now()
+        start_date, end_date = self._historical_bar_backfill_range(current)
+        run_key = f"{BarFrequency.DAILY.value}:{end_date.date().isoformat()}"
+        if self._last_historical_bar_backfill_key == run_key:
+            return
+
+        with self._lock:
+            targets = list(self._watchlist)
+        if not targets:
+            return
+
+        updated = 0
+        failed = 0
+        for symbol, asset_class in targets:
+            try:
+                handler = data_manager.get_bars(
+                    symbol,
+                    start=start_date,
+                    end=end_date,
+                    frequency=BarFrequency.DAILY,
+                    asset_class=asset_class,
+                    allow_remote_refresh=True,
+                    refresh_ttl_seconds=0,
+                    degrade_to_cache=True,
+                )
+                updated += 1
+                logger.info(
+                    "历史行情补齐完成: %s (%s) %s~%s, bars=%d",
+                    symbol,
+                    asset_class.value,
+                    start_date.date(),
+                    end_date.date(),
+                    getattr(handler, "total_bars", 0),
+                )
+            except Exception:
+                failed += 1
+                logger.warning(
+                    "历史行情补齐失败: %s (%s) %s~%s",
+                    symbol,
+                    asset_class.value,
+                    start_date.date(),
+                    end_date.date(),
+                    exc_info=True,
+                )
+
+        self._last_historical_bar_backfill_key = run_key
+        logger.info(
+            "历史行情补齐批次完成: date=%s, updated=%d, failed=%d",
+            end_date.date(),
+            updated,
+            failed,
+        )
 
     def _scheduler_quote_fetch_asset_type(self) -> str | None:
         asset_types = {asset_class.value for _, asset_class in self._watchlist}
@@ -342,11 +429,6 @@ class TradingScheduler:
             self._instruments = dict(runtime.instruments)
             self._latest_quotes = {}
 
-        if not self._watchlist:
-            logger.warning("No watchlist configured, stopping scheduler")
-            self._running.clear()
-            return
-
         if self._db is not None:
             try:
                 persisted_quotes = self._db.get_latest_quotes_sync()
@@ -395,8 +477,32 @@ class TradingScheduler:
             )
             if rebuilt is not None:
                 self._instruments.update(rebuilt.instruments)
+                watched_symbols = {symbol for symbol, _ in self._watchlist}
+                for symbol, instrument in rebuilt.instruments.items():
+                    if symbol in watched_symbols:
+                        continue
+                    raw_asset_class = getattr(
+                        instrument,
+                        "asset_class",
+                        AssetClass.STOCK,
+                    )
+                    if isinstance(raw_asset_class, AssetClass):
+                        asset_class = raw_asset_class
+                    else:
+                        raw_value = getattr(raw_asset_class, "value", raw_asset_class)
+                        try:
+                            asset_class = AssetClass(str(raw_value))
+                        except ValueError:
+                            asset_class = AssetClass.STOCK
+                    self._watchlist.append((symbol, asset_class))
+                    watched_symbols.add(symbol)
             for inst in self._instruments.values():
                 self._portfolio.add_instrument(inst)
+
+        if not self._watchlist:
+            logger.warning("No watchlist configured, stopping scheduler")
+            self._running.clear()
+            return
 
         # 实盘安全链路：OrderIntentEvent -> PreTradeRiskManager -> OrderEvent
         # -> ManualConfirmGateway -> SQLite pending confirmation.
@@ -438,6 +544,7 @@ class TradingScheduler:
         while self._running.is_set():
             # Bug 7: 非交易时段跳过轮询
             if not self._is_market_open():
+                self._maybe_backfill_historical_bars(data_manager)
                 self._running.wait(timeout=30)
                 continue
 
