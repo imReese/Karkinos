@@ -16,6 +16,41 @@ from fastapi.routing import APIRoute
 from core.types import Symbol
 
 
+@pytest.fixture(autouse=True)
+def _run_market_fetch_inline(monkeypatch, request):
+    """Keep route tests deterministic; timeout cases override this fixture."""
+    test_name = request.node.name
+    if not (
+        test_name.startswith("test_market_")
+        or test_name.startswith("test_refresh_one_quote_")
+    ):
+        return
+
+    from server.routes import market as market_routes
+
+    async def inline_fetch(func, *args):
+        return func(*args)
+
+    monkeypatch.setattr(market_routes, "_run_blocking_fetch", inline_fetch)
+
+
+@pytest.fixture(autouse=True)
+def _run_portfolio_curve_inline(monkeypatch, request):
+    """Avoid thread-pool hangs in deterministic route tests; timeout cases opt out."""
+    test_name = request.node.name
+    if not test_name.startswith("test_portfolio_equity_curve_series_"):
+        return
+    if test_name.endswith("_blocks"):
+        return
+
+    from server.routes import portfolio as portfolio_routes
+
+    async def inline_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(portfolio_routes.asyncio, "to_thread", inline_thread)
+
+
 def _backtest_route(router, path: str, method: str = "GET"):
     return next(
         route
@@ -68,6 +103,61 @@ def test_asset_metadata_resolver_accepts_supported_config_shapes():
     assert status["configured_count"] == 3
     assert status["missing_symbols"] == []
     assert status["has_missing_metadata"] is False
+
+
+def test_asset_metadata_resolver_prefers_local_db_metadata():
+    from server.services.asset_metadata import (
+        build_asset_metadata_status,
+        resolve_asset_metadata,
+    )
+
+    class FakeDb:
+        def get_instrument_metadata_sync(self, symbol, asset_type=None):
+            assert symbol == "601985"
+            return {
+                "symbol": "601985",
+                "asset_type": "stock",
+                "display_name": "中国核电",
+                "provider_symbol": "601985",
+                "provider_name": "akshare",
+                "source": "quote",
+            }
+
+        def list_instrument_metadata_sync(self):
+            return [
+                {
+                    "symbol": "601985",
+                    "asset_type": "stock",
+                    "display_name": "中国核电",
+                    "provider_symbol": "601985",
+                    "provider_name": "akshare",
+                    "source": "quote",
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            instruments=[],
+            assets={"601985": {"display_name": "601985 A股", "asset_class": "stock"}},
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(positions={"601985": object()}),
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    metadata = resolve_asset_metadata(state, "601985", asset_class="stock")
+    status = build_asset_metadata_status(state)
+
+    assert metadata.display_name == "中国核电"
+    assert metadata.source == "db"
+    assert status["missing_symbols"] == []
+    assert status["configured_assets"][0]["display_name"] == "中国核电"
 
 
 def test_asset_metadata_status_reports_missing_symbols_and_template():
@@ -155,6 +245,10 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(backtest_routes, "_run_backtest", lambda request, config: fake_result)
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
 
     response = asyncio.run(endpoint(backtest_routes.BacktestRequest()))
 
@@ -543,7 +637,7 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     )
     monkeypatch.setattr(
         market_routes,
-        "_fetch_latest_snapshot",
+        "_load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -605,7 +699,7 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
     monkeypatch.setattr(
         market_routes,
-        "_fetch_latest_snapshot",
+        "_load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -651,6 +745,7 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
                 "volume": 1000.0,
                 "timestamp": "2026-05-12T10:05:00+08:00",
                 "source": "akshare",
+                "display_name": "贵州茅台",
                 "previous_close": 12.0,
                 "previous_close_date": "2026-05-11",
             }
@@ -694,6 +789,7 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
     )
 
     latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    instrument = db.get_instrument_metadata_sync("600519", "stock")
     snapshots = db.get_recent_quote_snapshots_sync("600519", limit=10)
     assert response.quote_status == "live"
     assert len(snapshots) == 1
@@ -707,6 +803,9 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
     assert latest["provider_status"] == "live"
     assert latest["quote_status"] == "live"
     assert latest["captured_reason"] == "manual_or_route_refresh"
+    assert instrument is not None
+    assert instrument["display_name"] == "贵州茅台"
+    assert instrument["provider_name"] == "akshare"
 
 
 def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_path):
@@ -756,7 +855,7 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_fetch_latest_snapshot", fail_fetch)
+    monkeypatch.setattr(market_routes, "_load_latest_snapshot_from_provider", fail_fetch)
 
     response = asyncio.run(
         endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
@@ -984,6 +1083,176 @@ def test_market_quote_fetch_runs_endpoint_tolerates_malformed_metadata(
     }
 
 
+def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/instrument-metadata/backfill"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    fake_position = SimpleNamespace(quantity=100.0, avg_cost=8.69, market_value=869.0)
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            data_source="akshare",
+            tushare_token="",
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(positions={"601985": fake_position}),
+            instruments={
+                Symbol("601985"): SimpleNamespace(
+                    asset_class=SimpleNamespace(value="stock")
+                )
+            },
+            latest_quotes={},
+        ),
+        db=db,
+    )
+
+    class FakeAkshare:
+        def fetch_latest(self, symbol, asset_class):
+            if str(symbol) == "601985":
+                return {"display_name": "中国核电", "timestamp": "2026-06-01 11:22:00"}
+            if str(symbol) == "018125":
+                return {"display_name": "永赢先进制造智选混合C", "timestamp": "2026-06-01"}
+            raise AssertionError(f"unexpected symbol {symbol}")
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": FakeAkshare()},
+    )
+
+    response = asyncio.run(
+        route.endpoint(market_routes.InstrumentMetadataBackfillRequest())
+    )
+
+    assert response.updated_count == 2
+    assert response.failed_count == 0
+    assert {item.symbol for item in response.items} == {"018125", "601985"}
+    stock = db.get_instrument_metadata_sync("601985", "stock")
+    fund = db.get_instrument_metadata_sync("018125", "fund")
+    assert stock["display_name"] == "中国核电"
+    assert stock["source"] == "backfill"
+    assert stock["provider_name"] == "akshare"
+    assert fund["display_name"] == "永赢先进制造智选混合C"
+
+
+def test_market_instrument_metadata_backfill_skips_existing_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/instrument-metadata/backfill"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_instrument_metadata_sync(
+        symbol="601985",
+        asset_type="stock",
+        display_name="中国核电",
+        provider_name="akshare",
+        source="backfill",
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            initial_cash=0,
+        ),
+        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}),
+        db=db,
+    )
+
+    class UnexpectedAkshare:
+        def fetch_latest(self, symbol, asset_class):
+            raise AssertionError("existing metadata should not be fetched")
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": UnexpectedAkshare()},
+    )
+
+    response = asyncio.run(
+        route.endpoint(market_routes.InstrumentMetadataBackfillRequest())
+    )
+
+    assert response.updated_count == 0
+    assert response.skipped_count == 1
+    assert response.items[0].status == "skipped"
+    assert response.items[0].display_name == "中国核电"
+
+
+def test_market_instrument_metadata_backfill_reports_missing_provider_name(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/instrument-metadata/backfill"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            initial_cash=0,
+        ),
+        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}),
+        db=db,
+    )
+
+    class NamelessAkshare:
+        def fetch_latest(self, symbol, asset_class):
+            return {"price": 8.69, "timestamp": "2026-06-01 11:22:00"}
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": NamelessAkshare()},
+    )
+
+    response = asyncio.run(
+        route.endpoint(market_routes.InstrumentMetadataBackfillRequest())
+    )
+
+    assert response.updated_count == 0
+    assert response.failed_count == 1
+    assert response.items[0].status == "failed"
+    assert response.items[0].error == "metadata_not_available"
+    assert db.get_instrument_metadata_sync("601985", "stock") is None
+
+
 def test_market_data_health_reports_provider_configuration_next_action(monkeypatch):
     from server.routes import market as market_routes
 
@@ -1155,7 +1424,7 @@ def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
     monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
     monkeypatch.setattr(
         market_routes,
-        "_fetch_latest_snapshot",
+        "_load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -1209,7 +1478,7 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
-    monkeypatch.setattr(market_routes, "_fetch_latest_snapshot", fake_fetch)
+    monkeypatch.setattr(market_routes, "_load_latest_snapshot_from_provider", fake_fetch)
 
     response = asyncio.run(
         endpoint(market_routes.QuoteRefreshRequest(symbols=["600519", "000001"]))
@@ -1260,7 +1529,7 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
     monkeypatch.setattr(
-        market_routes, "_fetch_latest_snapshot", lambda state, symbol, asset_class: None
+        market_routes, "_load_latest_snapshot_from_provider", lambda state, symbol, asset_class: None
     )
 
     response = asyncio.run(
@@ -1312,8 +1581,14 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_fetch_latest_snapshot", slow_fetch)
+    monkeypatch.setattr(market_routes, "_load_latest_snapshot_from_provider", slow_fetch)
     monkeypatch.setattr(market_routes, "_MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
+
+    async def slow_blocking_fetch(func, *args):
+        await asyncio.sleep(0.05)
+        return func(*args)
+
+    monkeypatch.setattr(market_routes, "_run_blocking_fetch", slow_blocking_fetch)
 
     started_at = time.monotonic()
     response = asyncio.run(
@@ -1734,6 +2009,56 @@ def test_market_kline_uses_cache_only_when_closed(monkeypatch):
     assert observed["allow_remote_refresh"] is False
     assert observed["degrade_to_cache"] is True
     assert observed["refresh_ttl_seconds"] == 60
+
+
+def test_market_kline_timeout_does_not_block_route(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    kline_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/kline/{symbol}"
+    )
+    endpoint = kline_route.endpoint
+
+    class FakeManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_bars(self, *args, **kwargs):
+            return []
+
+    class FakeStore:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="akshare",
+            tushare_token="",
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            live_poll_interval=60,
+        ),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(market_routes, "_KLINE_FETCH_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr("data.manager.DataManager", FakeManager)
+    monkeypatch.setattr("data.store.DataStore", FakeStore)
+
+    async def slow_blocking_fetch(func, *args, **kwargs):
+        await asyncio.sleep(0.1)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(market_routes, "_run_blocking_fetch", slow_blocking_fetch)
+
+    started = time.monotonic()
+    response = asyncio.run(endpoint("600519"))
+
+    assert response == []
+    assert time.monotonic() - started < 0.08
 
 
 def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch):
@@ -4835,12 +5160,14 @@ def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks
             raise AssertionError("fresh quote should not be required")
 
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
-            import time as time_module
-
-            time_module.sleep(0.2)
             raise AssertionError("slow source should not control response")
 
+    async def slow_intraday_builder(func, *args, **kwargs):
+        await asyncio.sleep(0.2)
+        return func(*args, **kwargs)
+
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(portfolio_routes.asyncio, "to_thread", slow_intraday_builder)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": BlockingSource()},

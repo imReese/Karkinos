@@ -143,6 +143,7 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
             ("600519", AssetClass.STOCK): {
                 "timestamp": "2026-05-23T10:00:00",
                 "source": "akshare",
+                "display_name": "贵州茅台",
             }
         },
     )
@@ -150,6 +151,7 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     runs = db.list_quote_fetch_runs()
     quotes = db.get_latest_quotes_sync()
     latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    instrument = db.get_instrument_metadata_sync("600519", "stock")
 
     assert len(runs) == 1
     assert runs[0]["trigger"] == "scheduler_poll"
@@ -172,6 +174,9 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert latest["provider_status"] == "live"
     assert latest["quote_status"] == "live"
     assert latest["captured_reason"] == "scheduler_poll"
+    assert instrument is not None
+    assert instrument["display_name"] == "贵州茅台"
+    assert instrument["provider_name"] == "akshare"
 
 
 def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp_path):

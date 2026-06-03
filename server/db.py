@@ -61,6 +61,117 @@ class AppDatabase:
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
+    # ---------- Instrument Metadata ----------
+
+    def upsert_instrument_metadata_sync(
+        self,
+        *,
+        symbol: str,
+        asset_type: str = "stock",
+        display_name: str,
+        provider_symbol: str | None = None,
+        exchange: str | None = None,
+        market: str | None = None,
+        provider_name: str | None = None,
+        source: str = "provider",
+        fetched_at: str | None = None,
+        metadata: dict[str, Any] | str | None = None,
+    ) -> dict[str, Any] | None:
+        """Upsert local instrument identity metadata."""
+        clean_symbol = str(symbol).strip()
+        clean_name = str(display_name).strip()
+        if not clean_symbol or not clean_name:
+            return None
+        now = datetime.now().isoformat()
+        fetched_at_value = fetched_at or now
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT INTO instrument_metadata (
+                    symbol, asset_type, display_name, provider_symbol, exchange,
+                    market, provider_name, source, fetched_at, metadata_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol, asset_type) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    provider_symbol = excluded.provider_symbol,
+                    exchange = excluded.exchange,
+                    market = excluded.market,
+                    provider_name = excluded.provider_name,
+                    source = excluded.source,
+                    fetched_at = excluded.fetched_at,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    clean_symbol,
+                    asset_type,
+                    clean_name,
+                    provider_symbol,
+                    exchange,
+                    market,
+                    provider_name,
+                    source,
+                    fetched_at_value,
+                    _serialize_metadata_json(metadata),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT *
+                FROM instrument_metadata
+                WHERE symbol = ? AND asset_type = ?
+                """,
+                (clean_symbol, asset_type),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_instrument_metadata_sync(
+        self, symbol: str, asset_type: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read local instrument identity metadata."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            if asset_type:
+                row = conn.execute(
+                    """
+                    SELECT *
+                    FROM instrument_metadata
+                    WHERE symbol = ? AND asset_type = ?
+                    LIMIT 1
+                    """,
+                    (symbol, asset_type),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT *
+                    FROM instrument_metadata
+                    WHERE symbol = ?
+                    ORDER BY fetched_at DESC, updated_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (symbol,),
+                ).fetchone()
+            return dict(row) if row else None
+
+    def list_instrument_metadata_sync(self) -> list[dict[str, Any]]:
+        """List local instrument identities newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM instrument_metadata
+                ORDER BY fetched_at DESC, updated_at DESC, id DESC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Signals ----------
 
     def save_signal_sync(
@@ -1536,6 +1647,23 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     allocation_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS instrument_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    asset_type TEXT NOT NULL DEFAULT 'stock',
+    display_name TEXT NOT NULL,
+    provider_symbol TEXT,
+    exchange TEXT,
+    market TEXT,
+    provider_name TEXT,
+    source TEXT NOT NULL DEFAULT 'provider',
+    fetched_at TEXT NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(symbol, asset_type)
+);
+
 CREATE TABLE IF NOT EXISTS quote_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL,
@@ -1610,6 +1738,12 @@ CREATE TABLE IF NOT EXISTS action_tasks (
 CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_results(created_at);
+CREATE INDEX IF NOT EXISTS idx_instrument_metadata_symbol_asset_type
+ON instrument_metadata(symbol, asset_type);
+CREATE INDEX IF NOT EXISTS idx_instrument_metadata_display_name
+ON instrument_metadata(display_name);
+CREATE INDEX IF NOT EXISTS idx_instrument_metadata_provider
+ON instrument_metadata(provider_name);
 CREATE INDEX IF NOT EXISTS idx_quote_snapshots_symbol_ts ON quote_snapshots(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_daily_close_symbol_trade_date ON daily_close_snapshots(symbol, trade_date DESC);
 CREATE INDEX IF NOT EXISTS idx_latest_quotes_symbol_asset_type ON latest_quotes(symbol, asset_type);

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import json
 import logging
 import uuid
@@ -43,6 +45,11 @@ _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 _QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
 _QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
 _MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
+_KLINE_FETCH_TIMEOUT_SECONDS = 3.0
+_BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="market-fetch",
+)
 _SH_TZ = ZoneInfo("Asia/Shanghai")
 
 _ASSET_CLASS_MAP = {
@@ -88,6 +95,29 @@ class QuoteRefreshResponse(BaseModel):
     message: str
     real_data_available: bool = False
     has_persistent_cache: bool = False
+
+
+class InstrumentMetadataBackfillRequest(BaseModel):
+    symbols: list[str] | None = None
+    force: bool = False
+
+
+class InstrumentMetadataBackfillItem(BaseModel):
+    symbol: str
+    asset_class: str
+    status: str
+    display_name: str | None = None
+    provider: str | None = None
+    error: str | None = None
+
+
+class InstrumentMetadataBackfillResponse(BaseModel):
+    provider: str
+    requested_count: int
+    updated_count: int
+    skipped_count: int
+    failed_count: int
+    items: list[InstrumentMetadataBackfillItem] = Field(default_factory=list)
 
 
 def _shanghai_now() -> datetime:
@@ -615,6 +645,183 @@ def _quote_fetch_run_response(row: dict) -> QuoteFetchRunResponse:
     )
 
 
+def _metadata_name_is_useful(row: dict | None, symbol: str) -> bool:
+    if not row:
+        return False
+    display_name = str(row.get("display_name") or "").strip()
+    return bool(display_name and display_name != symbol and display_name != f"{symbol} A股")
+
+
+def _instrument_metadata_targets(
+    state,
+    requested_symbols: list[str] | None = None,
+) -> list[dict[str, str]]:
+    by_symbol: dict[str, dict[str, str]] = {}
+    for asset_cfg in _merged_watchlist_assets(state):
+        symbol = str(asset_cfg.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        by_symbol.setdefault(
+            symbol,
+            {
+                "symbol": symbol,
+                "asset_class": _normalize_asset_class(asset_cfg.get("asset_class")),
+            },
+        )
+
+    symbols = _normalize_refresh_symbols(requested_symbols)
+    if symbols:
+        return [
+            by_symbol.get(
+                symbol,
+                {
+                    "symbol": symbol,
+                    "asset_class": AssetClass.STOCK.value,
+                },
+            )
+            for symbol in symbols
+        ]
+    return list(by_symbol.values())
+
+
+def _provider_asset_class(asset_class: str) -> AssetClass:
+    return _ASSET_CLASS_MAP.get(asset_class, AssetClass.STOCK)
+
+
+def _extract_provider_display_name(payload: dict | None) -> str | None:
+    if not payload:
+        return None
+    display_name = str(
+        payload.get("display_name") or payload.get("name") or payload.get("asset_name") or ""
+    ).strip()
+    return display_name or None
+
+
+async def _backfill_instrument_metadata(
+    state,
+    request: InstrumentMetadataBackfillRequest,
+) -> InstrumentMetadataBackfillResponse:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "upsert_instrument_metadata_sync"):
+        raise HTTPException(status_code=503, detail="instrument metadata database is unavailable")
+
+    from data.manager import build_sources
+
+    provider_name = "akshare"
+    sources = build_sources(
+        data_source=getattr(state.config, "data_source", provider_name),
+        tushare_token=getattr(state.config, "tushare_token", ""),
+    )
+    source = sources.get(provider_name)
+    if source is None or not hasattr(source, "fetch_latest"):
+        raise HTTPException(status_code=503, detail="akshare source is unavailable")
+
+    items: list[InstrumentMetadataBackfillItem] = []
+    timeout = float(getattr(state.config, "metadata_backfill_timeout_seconds", 8.0) or 8.0)
+
+    for target in _instrument_metadata_targets(state, request.symbols):
+        symbol = target["symbol"]
+        asset_class = target["asset_class"]
+        existing = (
+            db.get_instrument_metadata_sync(symbol, asset_class)
+            if hasattr(db, "get_instrument_metadata_sync")
+            else None
+        )
+        if _metadata_name_is_useful(existing, symbol) and not request.force:
+            items.append(
+                InstrumentMetadataBackfillItem(
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    status="skipped",
+                    display_name=existing.get("display_name"),
+                    provider=existing.get("provider_name") or existing.get("provider"),
+                )
+            )
+            continue
+
+        try:
+            payload = await asyncio.wait_for(
+                _run_blocking_fetch(
+                    source.fetch_latest,
+                    Symbol(symbol),
+                    _provider_asset_class(asset_class),
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            items.append(
+                InstrumentMetadataBackfillItem(
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    status="failed",
+                    provider=provider_name,
+                    error="provider_timeout",
+                )
+            )
+            continue
+        except Exception as exc:
+            logger.warning("Instrument metadata backfill failed for %s", symbol, exc_info=True)
+            items.append(
+                InstrumentMetadataBackfillItem(
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    status="failed",
+                    provider=provider_name,
+                    error=str(exc),
+                )
+            )
+            continue
+
+        display_name = _extract_provider_display_name(payload)
+        if not display_name:
+            items.append(
+                InstrumentMetadataBackfillItem(
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    status="failed",
+                    provider=provider_name,
+                    error="metadata_not_available",
+                )
+            )
+            continue
+
+        fetched_at = datetime.now().isoformat()
+        db.upsert_instrument_metadata_sync(
+            symbol=symbol,
+            asset_type=asset_class,
+            display_name=display_name,
+            provider_symbol=str(payload.get("provider_symbol") or symbol),
+            exchange=payload.get("exchange"),
+            market=payload.get("market"),
+            provider_name=provider_name,
+            source="backfill",
+            fetched_at=fetched_at,
+            metadata={
+                "quote_timestamp": payload.get("timestamp"),
+                "quote_source": payload.get("source"),
+                "payload_keys": sorted(str(key) for key in payload.keys()),
+            },
+        )
+        items.append(
+            InstrumentMetadataBackfillItem(
+                symbol=symbol,
+                asset_class=asset_class,
+                status="updated",
+                display_name=display_name,
+                provider=provider_name,
+            )
+        )
+
+    return InstrumentMetadataBackfillResponse(
+        provider=provider_name,
+        requested_count=len(items),
+        updated_count=sum(1 for item in items if item.status == "updated"),
+        skipped_count=sum(1 for item in items if item.status == "skipped"),
+        failed_count=sum(1 for item in items if item.status == "failed"),
+        items=items,
+    )
+
+
 def _latest_cached_quote(state, symbol: str) -> dict | None:
     scheduler = state.scheduler
     if scheduler and getattr(scheduler, "latest_quotes", None):
@@ -654,6 +861,51 @@ def _optional_float(value) -> float | None:
     if value in {None, ""}:
         return None
     return float(value)
+
+
+async def _run_blocking_fetch(func, *args):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _BLOCKING_FETCH_EXECUTOR,
+        partial(func, *args),
+    )
+
+
+def _upsert_instrument_metadata_from_quote(
+    state,
+    *,
+    symbol: str,
+    asset_type: str,
+    snapshot: dict,
+    provider_name: str | None,
+    fetched_at: str | None = None,
+) -> None:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "upsert_instrument_metadata_sync"):
+        return
+    display_name = str(
+        snapshot.get("display_name") or snapshot.get("name") or snapshot.get("asset_name") or ""
+    ).strip()
+    if not display_name:
+        return
+    try:
+        db.upsert_instrument_metadata_sync(
+            symbol=symbol,
+            asset_type=asset_type,
+            display_name=display_name,
+            provider_symbol=snapshot.get("provider_symbol") or symbol,
+            exchange=snapshot.get("exchange"),
+            market=snapshot.get("market"),
+            provider_name=provider_name,
+            source="quote",
+            fetched_at=fetched_at,
+            metadata={
+                "source": snapshot.get("source"),
+                "quote_source": snapshot.get("quote_source"),
+            },
+        )
+    except Exception:
+        logger.warning("Failed to upsert instrument metadata for %s", symbol, exc_info=True)
 
 
 def _upsert_latest_quote_snapshot(
@@ -701,6 +953,14 @@ def _upsert_latest_quote_snapshot(
                 "display_name": snapshot.get("display_name") or snapshot.get("name"),
             },
         )
+        _upsert_instrument_metadata_from_quote(
+            state,
+            symbol=symbol,
+            asset_type=asset_type,
+            snapshot=snapshot,
+            provider_name=provider_name,
+            fetched_at=str(timestamp),
+        )
     except Exception:
         logger.warning("Failed to upsert latest quote for %s", symbol, exc_info=True)
 
@@ -747,7 +1007,9 @@ def _build_research_note_stats(rows: list[dict]) -> dict[str, dict[str, int | st
     return stats
 
 
-def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict | None:
+def _load_latest_snapshot_from_provider(
+    state, symbol: str, asset_class: AssetClass
+) -> dict | None:
     from data.manager import build_sources
 
     data_source = getattr(state.config, "data_source", "akshare")
@@ -792,7 +1054,19 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
     if display_name:
         payload["display_name"] = str(display_name)
         payload["name"] = str(display_name)
-    if state.db is not None and payload["timestamp"]:
+    previous_close = snapshot.get("previous_close")
+    previous_close_date = snapshot.get("previous_close_date")
+    payload["previous_close"] = previous_close
+    payload["previous_close_date"] = previous_close_date
+    return payload
+
+
+def _persist_latest_snapshot(state, symbol: str, payload: dict) -> None:
+    if (
+        state.db is not None
+        and hasattr(state.db, "save_quote_snapshot_sync")
+        and payload.get("timestamp")
+    ):
         captured_reason = "manual_or_route_refresh"
         state.db.save_quote_snapshot_sync(
             symbol=symbol,
@@ -807,11 +1081,12 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
             captured_reason=captured_reason,
             nav_date=payload.get("nav_date"),
         )
+        snapshot_metadata = dict(payload)
         _upsert_latest_quote_snapshot(
             state,
             symbol=symbol,
             asset_type=payload["asset_class"],
-            snapshot=snapshot,
+            snapshot=snapshot_metadata,
             quote_source=payload["quote_source"],
             provider_name=payload["provider_name"],
             provider_status=payload["provider_status"],
@@ -819,8 +1094,8 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
             captured_reason=captured_reason,
             nav_date=payload.get("nav_date"),
         )
-        previous_close = snapshot.get("previous_close")
-        previous_close_date = snapshot.get("previous_close_date")
+        previous_close = payload.get("previous_close")
+        previous_close_date = payload.get("previous_close_date")
         if (
             previous_close not in {None, ""}
             and previous_close_date not in {None, ""}
@@ -833,8 +1108,12 @@ def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict 
                 close_price=float(previous_close),
                 source="reported_previous_close",
             )
-        payload["previous_close"] = previous_close
-        payload["previous_close_date"] = previous_close_date
+
+
+def _fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict | None:
+    payload = _load_latest_snapshot_from_provider(state, symbol, asset_class)
+    if payload:
+        _persist_latest_snapshot(state, symbol, payload)
     return payload
 
 
@@ -857,7 +1136,12 @@ async def _refresh_one_quote(
     refresh_policy = "live" if market_open else "cache_only"
     try:
         snapshot = await asyncio.wait_for(
-            asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class),
+            _run_blocking_fetch(
+                _load_latest_snapshot_from_provider,
+                state,
+                symbol,
+                asset_class,
+            ),
             timeout=timeout,
         )
     except asyncio.TimeoutError:
@@ -955,6 +1239,7 @@ async def _refresh_one_quote(
             using_persistent_cache=bool(cached_quote),
         )
 
+    _persist_latest_snapshot(state, symbol, snapshot)
     _store_runtime_quote(state, symbol, snapshot)
     quote_status = _resolve_quote_status(state, snapshot)
     metadata = _quote_metadata(
@@ -980,7 +1265,14 @@ async def _refresh_one_quote(
 
 async def _refresh_quote_snapshot(state, symbol: str, asset_class: AssetClass) -> None:
     try:
-        await asyncio.to_thread(_fetch_latest_snapshot, state, symbol, asset_class)
+        snapshot = await _run_blocking_fetch(
+            _load_latest_snapshot_from_provider,
+            state,
+            symbol,
+            asset_class,
+        )
+        if snapshot:
+            _persist_latest_snapshot(state, symbol, snapshot)
     except Exception:
         logger.warning("Async quote refresh failed for %s", symbol, exc_info=True)
 
@@ -1153,7 +1445,7 @@ def create_router() -> APIRouter:
                 ac = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
                 break
 
-        try:
+        def _load_bars() -> list[KlineBar]:
             from data.manager import DataManager, build_sources
             from data.store import DataStore
 
@@ -1199,6 +1491,15 @@ def create_router() -> APIRouter:
                     )
                 )
             return bars
+
+        try:
+            return await asyncio.wait_for(
+                _run_blocking_fetch(_load_bars),
+                timeout=_KLINE_FETCH_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Timed out fetching kline for %s", symbol)
+            return []
         except Exception:
             logger.warning("Failed to fetch kline for %s", symbol, exc_info=True)
             return []
@@ -1400,6 +1701,19 @@ def create_router() -> APIRouter:
             provider=provider,
         )
         return [_quote_fetch_run_response(row) for row in rows]
+
+    @r.post(
+        "/instrument-metadata/backfill",
+        response_model=InstrumentMetadataBackfillResponse,
+    )
+    async def backfill_instrument_metadata(
+        request: InstrumentMetadataBackfillRequest,
+    ) -> InstrumentMetadataBackfillResponse:
+        """Backfill local instrument names from AKShare into the database."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return await _backfill_instrument_metadata(state, request)
 
     @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
     async def refresh_quotes(request: QuoteRefreshRequest) -> QuoteRefreshResponse:
