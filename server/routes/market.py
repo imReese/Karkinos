@@ -1252,8 +1252,16 @@ def _load_latest_snapshot_from_provider(
         payload["name"] = str(display_name)
     previous_close = snapshot.get("previous_close")
     previous_close_date = snapshot.get("previous_close_date")
+    change = snapshot.get("change") or snapshot.get("day_change_value")
+    change_percent = (
+        snapshot.get("change_percent")
+        or snapshot.get("pct_chg")
+        or snapshot.get("day_change_pct")
+    )
     payload["previous_close"] = previous_close
     payload["previous_close_date"] = previous_close_date
+    payload["change"] = change
+    payload["change_percent"] = change_percent
     return payload
 
 

@@ -2407,6 +2407,55 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
     assert saved_quote["provider_name"] == "akshare"
 
 
+def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
+    from server.routes import market as market_routes
+
+    saved_latest: dict[str, object] = {}
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="akshare",
+            tushare_token="",
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            live_poll_interval=120,
+        ),
+        db=SimpleNamespace(
+            save_quote_snapshot_sync=lambda **kwargs: None,
+            upsert_latest_quote_sync=lambda **kwargs: saved_latest.update(kwargs),
+            upsert_instrument_metadata_sync=lambda **kwargs: None,
+            save_daily_close_snapshot_sync=lambda **kwargs: None,
+        ),
+    )
+
+    class AkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 8.76,
+                "volume": 123456.0,
+                "timestamp": "10:30:00",
+                "display_name": "中国核电",
+                "previous_close": 8.65,
+                "previous_close_date": "2026-06-03",
+                "change": 0.11,
+                "change_percent": 0.0127,
+            }
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": AkshareSource()},
+    )
+
+    response = market_routes._fetch_latest_snapshot(
+        fake_state, "601985", market_routes.AssetClass.STOCK
+    )
+
+    assert response["change"] == 0.11
+    assert response["change_percent"] == pytest.approx(0.0127)
+    assert saved_latest["previous_close"] == 8.65
+    assert saved_latest["change"] == 0.11
+    assert saved_latest["change_percent"] == pytest.approx(0.0127)
+
+
 def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     from server.routes import market as market_routes
 

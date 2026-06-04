@@ -6,7 +6,7 @@ from contextlib import contextmanager
 import logging
 import os
 from functools import lru_cache
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -76,6 +76,23 @@ _PROXY_ENV_KEYS = (
     "all_proxy",
     "ALL_PROXY",
 )
+
+
+def _row_float(row, *columns: str) -> float | None:
+    for column in columns:
+        if column not in row.index:
+            continue
+        value = pd.to_numeric(row.get(column), errors="coerce")
+        if not pd.isna(value):
+            return float(value)
+    return None
+
+
+def _previous_weekday(value: date) -> date:
+    previous = value - timedelta(days=1)
+    while previous.weekday() >= 5:
+        previous -= timedelta(days=1)
+    return previous
 
 
 def _provider_uses_proxy() -> bool:
@@ -421,6 +438,18 @@ class AKShareSource(DataSource):
                     "volume": float(row["成交额"]) if "成交额" in row else None,
                     "timestamp": str(row.get("时间", "")),
                 }
+                previous_close = _row_float(row, "昨收", "昨收价", "昨日收盘")
+                change = _row_float(row, "涨跌额")
+                change_percent = _row_float(row, "涨跌幅")
+                if previous_close is not None:
+                    payload["previous_close"] = previous_close
+                    payload["previous_close_date"] = _previous_weekday(
+                        datetime.now().date()
+                    ).isoformat()
+                if change is not None:
+                    payload["change"] = change
+                if change_percent is not None:
+                    payload["change_percent"] = change_percent / 100
                 if "名称" in row and str(row["名称"]).strip():
                     payload["name"] = str(row["名称"]).strip()
                     payload["display_name"] = str(row["名称"]).strip()
