@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import logging
+import os
 from functools import lru_cache
 from datetime import datetime
 
@@ -66,6 +68,39 @@ _HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
 }
 
 _OPEN_END_FUND_NOISE = ("发起式", "发起", "A类", "C类", "（", "）", "(", ")", " ")
+_PROXY_ENV_KEYS = (
+    "http_proxy",
+    "https_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "all_proxy",
+    "ALL_PROXY",
+)
+
+
+def _provider_uses_proxy() -> bool:
+    value = os.environ.get("KARKINOS_PROVIDER_USE_PROXY", "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+@contextmanager
+def _provider_network_env():
+    """Keep provider calls from inheriting broken local proxy settings by default."""
+    if _provider_uses_proxy():
+        yield
+        return
+
+    original = {key: os.environ.get(key) for key in _PROXY_ENV_KEYS}
+    for key in _PROXY_ENV_KEYS:
+        os.environ.pop(key, None)
+    try:
+        yield
+    finally:
+        for key, value in original.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 class AKShareSource(DataSource):
@@ -82,7 +117,8 @@ class AKShareSource(DataSource):
     def _open_end_fund_name_map() -> dict[str, str]:
         import akshare as ak
 
-        df = ak.fund_name_em()
+        with _provider_network_env():
+            df = ak.fund_name_em()
         mapping: dict[str, str] = {}
         if "基金简称" not in df.columns or "基金代码" not in df.columns:
             return mapping
@@ -238,7 +274,8 @@ class AKShareSource(DataSource):
         last_error = None
         for attempt in range(self._MAX_RETRIES):
             try:
-                return func(**kwargs)
+                with _provider_network_env():
+                    return func(**kwargs)
             except Exception as e:
                 last_error = e
                 if attempt < self._MAX_RETRIES - 1:
@@ -360,7 +397,8 @@ class AKShareSource(DataSource):
     def list_symbols(self) -> list[Symbol]:
         import akshare as ak
 
-        df = ak.stock_zh_a_spot_em()
+        with _provider_network_env():
+            df = ak.stock_zh_a_spot_em()
         return [Symbol(str(code)) for code in df["代码"].tolist()]
 
     def fetch_latest(

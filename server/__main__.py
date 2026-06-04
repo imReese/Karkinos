@@ -42,8 +42,6 @@ def main() -> None:
 
     if args.no_live:
         os.environ["KARKINOS_LIVE_AUTO_START"] = "false"
-    else:
-        os.environ.pop("KARKINOS_LIVE_AUTO_START", None)
 
     if reload:
         uvicorn.run(

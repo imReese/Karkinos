@@ -1,5 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -158,6 +159,33 @@ def test_load_runtime_config_supports_env_config_path(tmp_path, monkeypatch):
 
     assert resolve_config_path() == custom_config
     assert config.initial_cash == Decimal("555000")
+
+
+def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
+    from server import __main__ as server_main
+
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        captured["live_auto_start"] = __import__("os").environ.get(
+            "KARKINOS_LIVE_AUTO_START"
+        )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["python -m server", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+    )
+    monkeypatch.setenv("KARKINOS_LIVE_AUTO_START", "true")
+    monkeypatch.setattr("uvicorn.run", fake_run)
+
+    server_main.main()
+
+    assert captured["args"] == ("server.app:create_app",)
+    assert captured["kwargs"]["reload"] is True
+    assert captured["live_auto_start"] == "true"
 
 
 def test_create_runtime_context_supports_env_data_dir(monkeypatch):
