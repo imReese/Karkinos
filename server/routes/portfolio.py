@@ -901,14 +901,73 @@ def _can_refresh_quotes(state, now: datetime | None = None) -> bool:
     return bool(hasattr(state.config, "data_source") and is_cn_trading_session(now))
 
 
+def _asset_class_from_config(state, symbol: str) -> str | None:
+    for asset in getattr(state.config, "assets", []) or []:
+        if not isinstance(asset, dict):
+            continue
+        if str(asset.get("symbol") or "").strip() != symbol:
+            continue
+        asset_class = asset.get("asset_class") or asset.get("asset_type")
+        if asset_class not in {None, ""}:
+            return str(asset_class)
+    return None
+
+
+def _asset_class_from_metadata(state, symbol: str) -> str | None:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "get_instrument_metadata_sync"):
+        return None
+    try:
+        metadata = db.get_instrument_metadata_sync(symbol)
+    except Exception:
+        logger.warning("Failed to read instrument metadata for %s", symbol, exc_info=True)
+        return None
+    if not metadata:
+        return None
+    asset_class = metadata.get("asset_type") or metadata.get("asset_class")
+    return None if asset_class in {None, ""} else str(asset_class)
+
+
+def _asset_class_from_ledger(state, symbol: str) -> str | None:
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "get_ledger_entries_sync"):
+        return None
+
+    offset = 0
+    batch_size = 500
+    latest_asset_class: str | None = None
+    while True:
+        rows = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not rows:
+            break
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("symbol") or "").strip() != symbol:
+                continue
+            asset_class = row.get("asset_class")
+            if asset_class not in {None, ""}:
+                latest_asset_class = str(asset_class)
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+    return latest_asset_class
+
+
 def _asset_class_for_position(
-    symbol: str, quote: dict | None, instruments: dict
+    symbol: str, quote: dict | None, instruments: dict, state=None
 ) -> AssetClass | None:
     raw_asset_class = (quote or {}).get("asset_class")
     if not raw_asset_class and instruments:
         instrument = instruments.get(Symbol(symbol)) or instruments.get(symbol)
         raw_asset_class = getattr(
             getattr(instrument, "asset_class", None), "value", None
+        )
+    if not raw_asset_class and state is not None:
+        raw_asset_class = (
+            _asset_class_from_config(state, symbol)
+            or _asset_class_from_metadata(state, symbol)
+            or _asset_class_from_ledger(state, symbol)
         )
 
     normalized = _normalize_asset_class_value(raw_asset_class)
@@ -958,7 +1017,7 @@ def _hydrate_missing_position_quotes(
             )
             if not is_stale or not can_refresh:
                 continue
-        asset_class = _asset_class_for_position(symbol, quote, instruments)
+        asset_class = _asset_class_for_position(symbol, quote, instruments, state)
         if asset_class is None:
             continue
         refresh_needed.append((symbol, asset_class))
@@ -984,6 +1043,19 @@ def _hydrate_missing_position_quotes(
 
     if not hydrated or state.db is None:
         return portfolio, instruments, hydrated
+
+    ledger_entries = (
+        state.db.get_ledger_entries_sync(limit=1, offset=0)
+        if hasattr(state.db, "get_ledger_entries_sync")
+        else []
+    )
+    if _has_position_ledger_entries(ledger_entries):
+        rebuilt_projection = build_portfolio_projection_from_db(
+            state.db,
+            initial_cash=state.config.initial_cash,
+            latest_quotes=latest_quotes,
+        )
+        return rebuilt_projection, instruments, True
 
     rebuilt = rebuild_portfolio_from_ledger(
         state.config,
