@@ -17,6 +17,12 @@ from core.types import Symbol
 
 
 @pytest.fixture(autouse=True)
+def _isolate_runtime_config_path(monkeypatch, tmp_path):
+    """Route tests must never read or write the developer's real config.json."""
+    monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(tmp_path / "config-test.json"))
+
+
+@pytest.fixture(autouse=True)
 def _run_market_fetch_inline(monkeypatch, request):
     """Keep route tests deterministic; timeout cases override this fixture."""
     test_name = request.node.name
@@ -2596,10 +2602,10 @@ def test_market_watchlist_prefers_display_name_from_config(monkeypatch):
     assert response[0].name == "永赢先进制造智选混合发起C"
 
 
-def test_market_watchlist_add_and_remove(monkeypatch, tmp_path):
+def test_market_watchlist_add_and_remove(monkeypatch):
     from server.routes import market as market_routes
+    from server.bootstrap import resolve_config_path
 
-    market_routes._CONFIG_PATH = tmp_path / "config.json"
     router = market_routes.create_router()
     add_route = next(
         route
@@ -2638,6 +2644,9 @@ def test_market_watchlist_add_and_remove(monkeypatch, tmp_path):
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    config_path = resolve_config_path()
+    original_config = {"data_source": "akshare", "sentinel": "watchlist-read-only"}
+    config_path.write_text(json.dumps(original_config), encoding="utf-8")
 
     add_response = asyncio.run(
         add_route.endpoint(
@@ -2648,10 +2657,12 @@ def test_market_watchlist_add_and_remove(monkeypatch, tmp_path):
 
     remove_response = asyncio.run(remove_route.endpoint("510300"))
     assert all(item.symbol != "510300" for item in remove_response)
+    assert json.loads(config_path.read_text(encoding="utf-8")) == original_config
 
 
-def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeypatch):
+def test_update_data_source_settings_does_not_persist_business_state(monkeypatch):
     from server.routes import settings as settings_routes
+    from server.bootstrap import resolve_config_path
 
     router = settings_routes.create_router()
     update_route = next(
@@ -2690,6 +2701,10 @@ def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeyp
     fake_state = SimpleNamespace(config=config)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
+    config_path = resolve_config_path()
+    original_config = {"data_source": "akshare", "sentinel": "do-not-overwrite"}
+    config_path.write_text(json.dumps(original_config), encoding="utf-8")
+
     response = asyncio.run(
         update_route.endpoint(
             settings_routes.DataSourceSettingsUpdate(
@@ -2713,6 +2728,7 @@ def test_update_data_source_settings_does_not_overwrite_account_baseline(monkeyp
         },
         {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
     ]
+    assert json.loads(config_path.read_text(encoding="utf-8")) == original_config
 
 
 def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
@@ -3710,10 +3726,6 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeAkshareSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes, "_persist_runtime_config", lambda config: None
-    )
-
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
@@ -3799,10 +3811,6 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeAkshareSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes, "_persist_runtime_config", lambda config: None
-    )
-
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(

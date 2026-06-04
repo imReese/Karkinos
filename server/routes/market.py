@@ -30,7 +30,6 @@ from server.models import (
     WatchlistCreateRequest,
     WatchlistItem,
 )
-from server.bootstrap import resolve_config_path
 from server.services.asset_metadata import (
     metadata_configured_count,
     resolve_asset_metadata,
@@ -1155,26 +1154,6 @@ def _resolve_quote_status(state, quote: dict | None) -> str:
         return "live" if quote and quote.get("timestamp") else "stale"
 
 
-def _persist_config(config) -> None:
-    data = {
-        "host": config.host,
-        "port": config.port,
-        "live_auto_start": config.live_auto_start,
-        "initial_cash": str(config.initial_cash),
-        "start_date": config.start_date,
-        "end_date": config.end_date,
-        "assets": config.assets,
-        "strategy": config.strategy,
-        "short_period": config.short_period,
-        "long_period": config.long_period,
-        "data_source": config.data_source,
-        "tushare_token": config.tushare_token,
-        "notification": config.notification,
-        "live_poll_interval": config.live_poll_interval,
-    }
-    resolve_config_path().write_text(json.dumps(data, indent=2, ensure_ascii=False))
-
-
 def _build_research_note_stats(rows: list[dict]) -> dict[str, dict[str, int | str]]:
     stats: dict[str, dict[str, int | str]] = {}
     for row in rows:
@@ -1561,7 +1540,6 @@ def create_router() -> APIRouter:
                 "display_name": symbol,
             }
         )
-        _persist_config(config)
         return await get_watchlist()
 
     @r.delete("/watchlist/{symbol}", response_model=list[WatchlistItem])
@@ -1578,7 +1556,6 @@ def create_router() -> APIRouter:
         if len(config.assets) == original_len:
             raise HTTPException(status_code=404, detail="symbol not found")
 
-        _persist_config(config)
         return await get_watchlist()
 
     @r.get("/quote/{symbol}", response_model=MarketQuote)
