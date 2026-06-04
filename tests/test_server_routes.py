@@ -4696,6 +4696,91 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
     assert response.groups[0].items[0].baseline_source == "previous_close"
 
 
+def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        available_qty=100.0,
+        frozen_qty=0.0,
+        avg_cost=8.7401,
+        market_value=925.0,
+        unrealized_pnl=50.99,
+        realized_pnl=0.0,
+        commission_paid=5.01,
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "601985",
+                    "asset_type": "stock",
+                    "price": 9.25,
+                    "quote_timestamp": "2026-06-04",
+                    "quote_source": "tushare_daily",
+                    "provider_name": "tushare",
+                    "quote_status": "live",
+                    "previous_close": 9.26,
+                    "change": -0.01,
+                    "change_percent": -0.00108,
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 0.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"601985": fake_position}),
+            instruments={
+                "601985": SimpleNamespace(
+                    name="中国核电",
+                    asset_class=SimpleNamespace(value="stock"),
+                )
+            },
+            watchlist=[],
+            latest_quotes={
+                "601985": {
+                    "symbol": "601985",
+                    "asset_class": "stock",
+                    "price": 9.25,
+                    "timestamp": "2026-06-04",
+                    "quote_source": "tushare_daily",
+                }
+            },
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(live_holdings_route.endpoint())
+
+    item = response.groups[0].items[0]
+    assert item.symbol == "601985"
+    assert item.baseline_price == 9.26
+    assert item.baseline_source == "previous_close"
+    assert item.today_change == pytest.approx(-1.0)
+    assert item.today_change_pct == pytest.approx(9.25 / 9.26 - 1)
+
+
 def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
