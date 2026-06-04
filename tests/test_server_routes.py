@@ -4782,6 +4782,122 @@ def test_portfolio_refreshes_stale_quote_and_revalues_snapshot(monkeypatch):
     assert response.positions[0].quote_timestamp == "2026-05-12T10:05:00+08:00"
 
 
+def test_portfolio_refreshes_missing_ledger_quote_using_db_asset_class(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    snapshot_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio"
+    )
+
+    fetched: list[tuple[str, str]] = []
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return []
+
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            if offset:
+                return []
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-05-29T06:16:00+00:00",
+                    "symbol": "603659",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 29.98,
+                    "commission": 5.03,
+                    "asset_class": "stock",
+                    "note": "manual buy",
+                    "source": "manual",
+                    "source_ref": "manual-603659",
+                    "created_at": "2026-05-29T06:16:01+00:00",
+                }
+            ]
+
+        def get_cash_flows_sync(self, limit=1000, offset=0):
+            return []
+
+        def get_trades_sync(self, limit=1000, offset=0):
+            return []
+
+        def get_instrument_metadata_sync(self, symbol, asset_type=None):
+            assert symbol == "603659"
+            return {
+                "symbol": "603659",
+                "asset_type": "stock",
+                "display_name": "璞泰来",
+            }
+
+        def save_quote_snapshot_sync(self, **kwargs):
+            pass
+
+        async def get_total_deposits(self):
+            return 0.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+            assets=[],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    class FakeSource:
+        def fetch_latest(self, symbol, asset_class):
+            fetched.append((str(symbol), asset_class.value))
+            return {
+                "price": 31.0,
+                "volume": 2000.0,
+                "timestamp": "2026-06-04T10:05:00+08:00",
+                "display_name": "璞泰来",
+                "previous_close": 30.1,
+                "previous_close_date": "2026-06-03",
+            }
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 4, 10, 6, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    monkeypatch.setattr(
+        "server.routes.market.is_cn_trading_session",
+        lambda now=None: True,
+    )
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": FakeSource()},
+    )
+
+    response = asyncio.run(snapshot_route.endpoint())
+
+    assert fetched == [("603659", "stock")]
+    assert response.positions[0].symbol == "603659"
+    assert response.positions[0].display_name == "璞泰来"
+    assert response.positions[0].market_value == 3100.0
+    assert response.positions[0].quote_status == "live"
+    assert response.positions[0].quote_timestamp == "2026-06-04T10:05:00+08:00"
+
+
 def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     monkeypatch,
 ):
