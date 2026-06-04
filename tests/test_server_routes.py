@@ -565,6 +565,90 @@ def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
     assert response.has_persistent_cache is True
 
 
+def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "601985",
+                    "asset_type": "stock",
+                    "price": 9.25,
+                    "quote_timestamp": "2026-06-04",
+                    "quote_source": "tushare_daily",
+                    "provider_name": "tushare",
+                    "provider_status": "live",
+                    "quote_status": "live",
+                    "is_demo": 0,
+                },
+                {
+                    "symbol": "603659",
+                    "asset_type": "stock",
+                    "price": 28.4,
+                    "quote_timestamp": "2026-06-04",
+                    "quote_source": "tushare_daily",
+                    "provider_name": "tushare",
+                    "provider_status": "live",
+                    "quote_status": "live",
+                    "is_demo": 0,
+                },
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            if offset:
+                return []
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-05-29T14:16:00",
+                    "amount": 2998.0,
+                    "symbol": "603659",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 29.98,
+                    "commission": 5.03,
+                    "asset_class": "stock",
+                }
+            ]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[],
+            data_source="tushare",
+            tushare_token="token-1234",
+            live_poll_interval=120,
+        ),
+        scheduler=SimpleNamespace(
+            watchlist=[],
+            portfolio=SimpleNamespace(positions={"601985": object()}),
+            instruments={},
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert {quote.symbol for quote in response.quotes} == {"601985", "603659"}
+    ledger_quote = next(quote for quote in response.quotes if quote.symbol == "603659")
+    assert ledger_quote.price == 28.4
+    assert ledger_quote.quote_source == "tushare_daily"
+
+
 def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
     from server.routes import market as market_routes
 

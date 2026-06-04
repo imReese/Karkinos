@@ -425,6 +425,64 @@ def _position_for_symbol(positions, symbol: str):
     return positions.get(Symbol(symbol)) or positions.get(symbol)
 
 
+def _ledger_position_assets(state) -> list[dict[str, str]]:
+    db = getattr(state, "db", None)
+    get_entries = getattr(db, "get_ledger_entries_sync", None)
+    if not callable(get_entries):
+        return []
+
+    quantities: dict[str, float] = {}
+    asset_classes: dict[str, str] = {}
+    offset = 0
+    batch_size = 500
+    while True:
+        rows = get_entries(limit=batch_size, offset=offset)
+        if not rows:
+            break
+        for row in rows:
+            symbol = str(row.get("symbol") or "").strip()
+            if not symbol:
+                continue
+            quantity = _optional_float(row.get("quantity")) or 0.0
+            if quantity == 0:
+                continue
+            entry_type = str(row.get("entry_type") or "").strip().lower()
+            direction = str(row.get("direction") or "").strip().lower()
+            if entry_type in {"trade_sell", "sell"} or direction == "sell":
+                quantity = -abs(quantity)
+            elif entry_type in {"trade_buy", "buy", "trade"} or direction == "buy":
+                quantity = abs(quantity)
+            else:
+                continue
+            quantities[symbol] = quantities.get(symbol, 0.0) + quantity
+            asset_classes[symbol] = _normalize_asset_class(
+                row.get("asset_class") or AssetClass.STOCK.value
+            )
+        if len(rows) < batch_size:
+            break
+        offset += batch_size
+
+    assets: list[dict[str, str]] = []
+    for symbol, quantity in quantities.items():
+        if quantity <= 0:
+            continue
+        asset_class = asset_classes.get(symbol, AssetClass.STOCK.value)
+        metadata = resolve_asset_metadata(
+            state,
+            symbol,
+            asset_class=asset_class,
+            fallback_name=symbol,
+        )
+        assets.append(
+            {
+                "symbol": symbol,
+                "asset_class": metadata.asset_class,
+                "display_name": metadata.display_name,
+            }
+        )
+    return assets
+
+
 def _merged_watchlist_assets(state) -> list[dict[str, str]]:
     _, positions, instruments, latest_quotes = _extract_runtime_portfolio(state)
     merged: list[dict[str, str]] = []
@@ -473,6 +531,13 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
                 "display_name": metadata.display_name,
             }
         )
+        seen.add(symbol)
+
+    for asset_cfg in _ledger_position_assets(state):
+        symbol = asset_cfg["symbol"]
+        if symbol in seen:
+            continue
+        merged.append(asset_cfg)
         seen.add(symbol)
 
     return merged
