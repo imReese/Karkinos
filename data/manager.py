@@ -112,7 +112,6 @@ class DataManager:
 
                 gaps = self._compute_gaps(ts_min, ts_max, start, end)
                 if gaps:
-                    source = self._get_source(source_name)
                     for gap_start, gap_end in gaps:
                         try:
                             logger.info(
@@ -122,12 +121,13 @@ class DataManager:
                                 gap_start.date(),
                                 gap_end.date(),
                             )
-                            df = source.fetch_bars(
+                            df = self._fetch_bars_remote(
                                 symbol,
                                 gap_start,
                                 gap_end,
                                 frequency,
                                 asset_class,
+                                source_name=source_name,
                             )
                             if not df.empty:
                                 self.store.append_bars(symbol, frequency, df)
@@ -164,7 +164,6 @@ class DataManager:
                 asset_class,
             )
 
-        source = self._get_source(source_name)
         logger.info(
             "拉取数据: %s (%s) from %s",
             symbol,
@@ -172,7 +171,14 @@ class DataManager:
             source_name or self.default_source,
         )
         try:
-            df = source.fetch_bars(symbol, start, end, frequency, asset_class)
+            df = self._fetch_bars_remote(
+                symbol,
+                start,
+                end,
+                frequency,
+                asset_class,
+                source_name=source_name,
+            )
         except Exception:
             logger.warning(
                 "远端拉取失败，%s (%s) 回退为空结果",
@@ -198,6 +204,63 @@ class DataManager:
             self.store.save_bars(symbol, frequency, df)
 
         return DataHandler(df, symbol, frequency, asset_class)
+
+    def _source_candidates(
+        self, source_name: str | None = None
+    ) -> list[tuple[str, DataSource]]:
+        primary_name = source_name or self.default_source
+        primary_source = self._get_source(primary_name)
+        candidates = [(primary_name, primary_source)]
+        fallback = self.sources.get("akshare")
+        if fallback is not None and primary_name != "akshare":
+            candidates.append(("akshare", fallback))
+        return candidates
+
+    def _fetch_bars_remote(
+        self,
+        symbol: Symbol,
+        start: datetime,
+        end: datetime,
+        frequency: BarFrequency,
+        asset_class: AssetClass,
+        *,
+        source_name: str | None = None,
+    ) -> pd.DataFrame:
+        errors: list[Exception] = []
+        empty_sources: list[str] = []
+        for candidate_name, source in self._source_candidates(source_name):
+            try:
+                df = source.fetch_bars(symbol, start, end, frequency, asset_class)
+            except Exception as exc:
+                errors.append(exc)
+                logger.warning(
+                    "远端数据源失败: %s %s (%s) %s~%s",
+                    candidate_name,
+                    symbol,
+                    asset_class.value,
+                    start.date(),
+                    end.date(),
+                    exc_info=True,
+                )
+                continue
+            if df is not None and not df.empty:
+                if candidate_name != (source_name or self.default_source):
+                    logger.info(
+                        "远端数据源 fallback 成功: %s -> %s for %s (%s)",
+                        source_name or self.default_source,
+                        candidate_name,
+                        symbol,
+                        asset_class.value,
+                    )
+                return df
+            empty_sources.append(candidate_name)
+
+        if errors:
+            raise errors[-1]
+        raise ValueError(
+            f"未获取到数据: {symbol} ({asset_class.value}) {start}~{end}; "
+            f"empty_sources={empty_sources}"
+        )
 
     @staticmethod
     def _empty_bars() -> pd.DataFrame:

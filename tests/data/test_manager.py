@@ -59,6 +59,34 @@ class MockSource(DataSource):
         return [Symbol("600519")]
 
 
+class FailingSource(MockSource):
+    def fetch_bars(
+        self,
+        symbol,
+        start,
+        end,
+        frequency=BarFrequency.DAILY,
+        asset_class=AssetClass.STOCK,
+    ):
+        self.fetch_count += 1
+        raise RuntimeError("provider failed")
+
+
+class EmptySource(MockSource):
+    def fetch_bars(
+        self,
+        symbol,
+        start,
+        end,
+        frequency=BarFrequency.DAILY,
+        asset_class=AssetClass.STOCK,
+    ):
+        self.fetch_count += 1
+        return pd.DataFrame(
+            columns=["timestamp", "open", "high", "low", "close", "volume"]
+        )
+
+
 class TestDataManager:
     """DataManager 测试。"""
 
@@ -146,6 +174,53 @@ class TestDataManager:
             source_name="tushare",
         )
         assert source_t.fetch_count == 1
+
+    def test_remote_fetch_falls_back_to_akshare_when_primary_fails(self, tmp_path):
+        """主数据源失败时应 fallback 到 AKShare，并写回本地权威 store。"""
+        from data.store import DataStore
+
+        primary = FailingSource("tushare")
+        fallback = MockSource("akshare")
+        store = DataStore(str(tmp_path / "store"))
+        manager = DataManager(
+            {"tushare": primary, "akshare": fallback},
+            store=store,
+            default_source="tushare",
+        )
+
+        handler = manager.get_bars(
+            Symbol("601985"),
+            start=_TEST_START,
+            end=_TEST_END,
+            asset_class=AssetClass.STOCK,
+        )
+
+        assert handler.total_bars > 0
+        assert primary.fetch_count == 1
+        assert fallback.fetch_count == 1
+        loaded = store.load_bars(Symbol("601985"), BarFrequency.DAILY)
+        assert loaded is not None
+        assert len(loaded) > 0
+
+    def test_remote_fetch_falls_back_to_akshare_when_primary_returns_empty(self):
+        """主数据源返回空结果时也应 fallback 到 AKShare。"""
+        primary = EmptySource("tushare")
+        fallback = MockSource("akshare")
+        manager = DataManager(
+            {"tushare": primary, "akshare": fallback},
+            default_source="tushare",
+        )
+
+        handler = manager.get_bars(
+            Symbol("018125"),
+            start=_TEST_START,
+            end=_TEST_END,
+            asset_class=AssetClass.FUND,
+        )
+
+        assert handler.total_bars > 0
+        assert primary.fetch_count == 1
+        assert fallback.fetch_count == 1
 
     def test_unknown_source_raises(self):
         """未知数据源应抛出 ValueError。"""

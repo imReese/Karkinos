@@ -231,6 +231,61 @@ class TestAKShareMultiAsset:
                 frequency=BarFrequency.WEEKLY,
             )
 
+    def test_call_with_retry_ignores_proxy_env_by_default(self, monkeypatch, source):
+        """行情源默认不应继承本地代理，避免坏代理拖垮补数。"""
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7897")
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:7897")
+        observed: dict[str, str | None] = {}
+
+        def fake_provider():
+            import os
+
+            observed["HTTP_PROXY"] = os.environ.get("HTTP_PROXY")
+            observed["HTTPS_PROXY"] = os.environ.get("HTTPS_PROXY")
+            return "ok"
+
+        assert source._call_with_retry(fake_provider) == "ok"
+        assert observed == {"HTTP_PROXY": None, "HTTPS_PROXY": None}
+
+    def test_call_with_retry_can_keep_proxy_env_when_enabled(self, monkeypatch, source):
+        """显式开启代理时保留 provider 代理环境。"""
+        monkeypatch.setenv("KARKINOS_PROVIDER_USE_PROXY", "true")
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7897")
+        observed: dict[str, str | None] = {}
+
+        def fake_provider():
+            import os
+
+            observed["HTTP_PROXY"] = os.environ.get("HTTP_PROXY")
+            return "ok"
+
+        assert source._call_with_retry(fake_provider) == "ok"
+        assert observed["HTTP_PROXY"] == "http://127.0.0.1:7897"
+
+    def test_open_end_fund_name_map_ignores_proxy_env_by_default(
+        self, monkeypatch, source
+    ):
+        """基金名称表直连 AKShare 时也不应继承坏代理。"""
+        import akshare as ak
+
+        source._open_end_fund_name_map.cache_clear()
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7897")
+        observed: dict[str, str | None] = {}
+
+        def fake_fund_name_em():
+            import os
+
+            observed["HTTP_PROXY"] = os.environ.get("HTTP_PROXY")
+            return pd.DataFrame(
+                [{"基金简称": "永赢先进制造智选混合C", "基金代码": "018125"}]
+            )
+
+        monkeypatch.setattr(ak, "fund_name_em", fake_fund_name_em)
+
+        assert source._open_end_fund_name_map() == {"永赢先进制造智选混合C": "018125"}
+        assert observed["HTTP_PROXY"] is None
+        source._open_end_fund_name_map.cache_clear()
+
 
 class TestAKShareFetchLatest:
     """AKShareSource.fetch_latest 测试。"""
