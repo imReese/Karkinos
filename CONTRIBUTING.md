@@ -30,9 +30,11 @@ Do not commit local secrets, runtime data, or generated artifacts:
 - `.agents/`
 - `skills-lock.json`
 
-Use `.env.example`, `config.example.json`, and `secret.example.py` as templates.
-Keep real tokens, brokerage credentials, account exports, and personal financial
-data out of the repository.
+Use `.env.example` and `config.example.json` as templates. Keep real tokens,
+brokerage credentials, account exports, and personal financial data out of the
+repository. Provider tokens can be supplied through ignored local environment
+variables such as `TUSHARE_TOKEN` or an ignored local `config.json`; never commit
+those values.
 
 ## Test Expectations
 
