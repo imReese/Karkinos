@@ -627,6 +627,12 @@ def _adapt_persistent_quote_for_portfolio(row: dict) -> dict:
         "",
     }:
         quote["timestamp"] = quote.get("quote_timestamp")
+    if (
+        quote.get("previous_close") not in {None, ""}
+        and quote.get("previous_close_date") in {None, ""}
+        and quote.get("timestamp") not in {None, ""}
+    ):
+        quote["previous_close_date"] = quote.get("timestamp")
     if quote.get("source") in {None, ""} and quote.get("quote_source") not in {
         None,
         "",
@@ -673,6 +679,15 @@ def _merge_quote_identity(base: dict, candidate: dict) -> dict:
         "market",
         "provider_symbol",
         "nav_date",
+        "previous_close",
+        "previous_close_date",
+        "change",
+        "change_percent",
+        "day_change_value",
+        "day_change_pct",
+        "quote_status",
+        "provider_status",
+        "stale_reason",
     ):
         if merged.get(key) in {None, ""} and candidate.get(key) not in {None, ""}:
             merged[key] = candidate[key]
