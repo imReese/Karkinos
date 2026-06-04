@@ -90,6 +90,33 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
     assert created["store_path"] == "data/store"
     assert created["store"].__class__ is FakeStore
     assert created["default_source"] == "akshare"
+    assert context.watchlist == []
+
+
+def test_create_runtime_context_builds_watchlist_from_explicit_assets(monkeypatch):
+    class FakeStore:
+        def __init__(self, base_path="data/store"):
+            pass
+
+    class FakeDataManager:
+        def __init__(self, sources, store=None, default_source="akshare"):
+            pass
+
+        @staticmethod
+        def get_instrument(sym, ac):
+            return (sym, ac)
+
+    monkeypatch.setattr("server.bootstrap.DataStore", FakeStore)
+    monkeypatch.setattr("server.bootstrap.DataManager", FakeDataManager)
+    monkeypatch.setattr(
+        "server.bootstrap.build_sources",
+        lambda data_source, tushare_token: {data_source: object()},
+    )
+
+    context = create_runtime_context(
+        BacktestConfig(assets=[{"symbol": "600519", "asset_class": "stock"}])
+    )
+
     assert context.watchlist[0][0] == Symbol("600519")
 
 
