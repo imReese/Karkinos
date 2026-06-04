@@ -24,7 +24,7 @@ class TushareSource(DataSource):
         import tushare as ts
 
         if self._token:
-            ts.set_token(self._token)
+            return ts.pro_api(self._token)
         return ts.pro_api()
 
     def fetch_bars(
@@ -93,12 +93,13 @@ class TushareSource(DataSource):
     def _fetch_realtime_quote(self, ts_code: str) -> dict | None:
         import tushare as ts
 
-        if self._token:
-            ts.set_token(self._token)
         realtime_quote = getattr(ts, "realtime_quote", None)
         if not callable(realtime_quote):
             return None
-        df = realtime_quote(ts_code=ts_code, src="dc")
+        try:
+            df = realtime_quote(ts_code=ts_code, src="dc")
+        except Exception:
+            return None
         if df is None or df.empty:
             return None
 

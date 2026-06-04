@@ -14,7 +14,7 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
     calls: dict[str, object] = {}
 
     def set_token(token):
-        calls["token"] = token
+        raise AssertionError("fetch_latest must not write the token file")
 
     def realtime_quote(ts_code, src="dc"):
         calls["realtime"] = (ts_code, src)
@@ -54,11 +54,12 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
         "change_percent": pytest.approx(0.012716763),
         "previous_close_date": "2026-06-05",
     }
-    assert calls["token"] == "token-1234"
     assert calls["realtime"] == ("601985.SH", "dc")
 
 
 def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
+    calls: dict[str, object] = {}
+
     class FakePro:
         def daily(self, ts_code, start_date, end_date):
             assert ts_code == "603659.SH"
@@ -76,15 +77,21 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
             )
 
     def realtime_quote(ts_code, src="dc"):
-        return pd.DataFrame()
+        raise AttributeError("'dict' object has no attribute 'text'")
+
+    def pro_api(token=None):
+        calls["pro_api_token"] = token
+        return FakePro()
 
     monkeypatch.setitem(
         sys.modules,
         "tushare",
         SimpleNamespace(
-            set_token=lambda token: None,
+            set_token=lambda token: (_ for _ in ()).throw(
+                AssertionError("fetch_latest must not write the token file")
+            ),
             realtime_quote=realtime_quote,
-            pro_api=lambda: FakePro(),
+            pro_api=pro_api,
         ),
     )
 
@@ -99,6 +106,7 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     assert result["change_percent"] == pytest.approx(0.029533)
     assert result["timestamp"] == "2026-06-05"
     assert result["quote_source"] == "tushare_daily"
+    assert calls["pro_api_token"] == "token-1234"
 
 
 def test_tushare_fetch_latest_non_stock_returns_none():
