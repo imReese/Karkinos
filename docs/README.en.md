@@ -227,7 +227,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-By default the container reads `./config.json` as runtime config and persists market cache / SQLite data in the `karkinos-data` volume.
+By default the container reads `./config.json` as runtime config and persists market cache / SQLite data in the `karkinos-data` volume. `config.json` is not market data, holdings, or asset metadata storage; those records belong in local SQLite tables such as `latest_quotes`, `market_bars`, `ledger_entries`, and `instrument_metadata`.
 
 See [Docker Deployment](#docker-deployment) section for details.
 
@@ -237,42 +237,20 @@ See [Docker Deployment](#docker-deployment) section for details.
 
 Copy `config.example.json` to `config.json` and modify as needed.
 
-#### BacktestConfig
+#### Server Runtime Config
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `initial_cash` | number | `1000000` | Initial capital (CNY) |
-| `start_date` | string | `"2025-01-02"` | Backtest start date |
-| `end_date` | string | `"2026-04-11"` | Backtest end date |
-| `assets` | array | `[...]` | Asset list, each item has `symbol` and `asset_class` |
-| `strategy` | string | `"dual_ma"` | Strategy name |
-| `short_period` | int | `5` | Short MA period |
-| `long_period` | int | `20` | Long MA period |
-| `commission_rate` | number | `0.0003` | Commission rate |
+| `host` | string | `"127.0.0.1"` | Server listen address |
+| `port` | int | `8000` | Server listen port |
+| `live_auto_start` | bool | `true` | Auto-start Web built-in live monitoring |
 | `data_source` | string | `"akshare"` | Data source (`akshare` / `tushare`) |
+| `tushare_token` | string | `""` | Local TuShare token; `TUSHARE_TOKEN` can also be used |
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
+| `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 
-#### ServerConfig (extends BacktestConfig)
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `host` | string | `"0.0.0.0"` | Server listen address |
-| `port` | int | `8000` | Server listen port |
-| `live_auto_start` | bool | `true` | Auto-start live monitoring |
-
-#### assets Format
-
-```json
-"assets": [
-    {"symbol": "600519", "asset_class": "stock"},
-    {"symbol": "510300", "asset_class": "etf"},
-    {"symbol": "Au99.99", "asset_class": "gold"},
-    {"symbol": "sh010107", "asset_class": "bond"}
-]
-```
-
-`asset_class` values: `stock`, `etf`, `gold`, `bond`
+Capital, holdings, asset universe, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.
 
 #### notification Format
 

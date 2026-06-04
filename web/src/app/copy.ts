@@ -940,15 +940,15 @@ export const copy = {
       providerTimeoutNotice: 'The configured quote source is timing out.',
       assetMetadataMissing: 'Asset metadata is not configured',
       assetMetadataMissingDetail:
-        'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
+        'Backfill asset names and provider symbols into the local instrument metadata table. Keep config.json for runtime settings and watchlist symbols only.',
       assetMetadataDetail:
-        'Configure display names and provider symbols in ignored local config.json.',
+        'Asset identities should come from local instrument_metadata records, not runtime config.',
       assetMetadataMissingCount: 'Missing metadata',
       assetMetadataSource: 'Metadata source',
       assetMetadataMissingSymbols: 'Assets missing metadata',
       assetMetadataSnippet: 'Suggested config snippet',
       assetMetadataSnippetDetail:
-        'Copy this template into local config.json and replace placeholder names. Do not commit private config files.',
+        'Use this payload as a reference for metadata backfill or manual metadata repair. Do not commit private runtime config.',
       assetMetadataComplete: 'Asset metadata configured',
       assetMetadataCompleteDetail:
         'Current holdings have configured asset identities or safe fallbacks.',
@@ -1906,15 +1906,15 @@ export const copy = {
       providerTimeoutNotice: '当前行情源请求超时。',
       assetMetadataMissing: '尚未配置资产元数据',
       assetMetadataMissingDetail:
-        '请在 config.json 中配置 display_name 和 provider_symbol，可参考 config.example.json。',
+        '请将资产名称和 provider_symbol 补齐到本地 instrument_metadata 表。config.json 只保留运行配置和 watchlist 代码。',
       assetMetadataDetail:
-        '在已忽略的本地 config.json 中配置资产名称和 provider_symbol。',
+        '资产身份应来自本地 instrument_metadata 记录，而不是运行配置。',
       assetMetadataMissingCount: '缺失元数据',
       assetMetadataSource: '元数据来源',
       assetMetadataMissingSymbols: '缺少元数据的资产',
       assetMetadataSnippet: '建议配置片段',
       assetMetadataSnippetDetail:
-        '将这个模板复制到本地 config.json，并替换占位名称。不要提交私有配置文件。',
+        '可将此内容作为元数据补齐或手工修复参考。不要提交私有运行配置。',
       assetMetadataComplete: '资产元数据已配置',
       assetMetadataCompleteDetail: '当前持仓已有资产身份配置或安全 fallback。',
       requiresRestart: '需要重启',

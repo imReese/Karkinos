@@ -239,7 +239,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-默认读取项目根目录的 `config.json` 作为运行配置，并把行情缓存 / SQLite 持久化到 `karkinos-data` 卷。
+默认读取项目根目录的 `config.json` 作为运行配置，并把行情缓存 / SQLite 持久化到 `karkinos-data` 卷。`config.json` 不是行情、持仓或资产元数据存储；这些数据应写入本地 SQLite 表，例如 `latest_quotes`、`market_bars`、`ledger_entries` 和 `instrument_metadata`。
 
 详见 [Docker 部署](#docker-部署) 章节。
 
@@ -249,42 +249,20 @@ docker compose logs -f
 
 复制 `config.example.json` 为 `config.json` 并按需修改。
 
-#### BacktestConfig
+#### 服务运行配置
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `initial_cash` | number | `1000000` | 初始资金（CNY） |
-| `start_date` | string | `"2025-01-02"` | 回测起始日期 |
-| `end_date` | string | `"2026-04-11"` | 回测结束日期 |
-| `assets` | array | `[...]` | 资产列表，每项含 `symbol` 和 `asset_class` |
-| `strategy` | string | `"dual_ma"` | 策略名称 |
-| `short_period` | int | `5` | 短均线周期 |
-| `long_period` | int | `20` | 长均线周期 |
-| `commission_rate` | number | `0.0003` | 佣金费率（万三） |
+| `host` | string | `"127.0.0.1"` | 服务监听地址 |
+| `port` | int | `8000` | 服务监听端口 |
+| `live_auto_start` | bool | `true` | 是否自动启动 Web 内建实时监控 |
 | `data_source` | string | `"akshare"` | 数据源（`akshare` / `tushare`） |
+| `tushare_token` | string | `""` | 本地 TuShare token；也可使用环境变量 `TUSHARE_TOKEN` |
 | `notification` | object | `{"type":"console"}` | 通知配置 |
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
+| `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
 
-#### ServerConfig（继承 BacktestConfig）
-
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `host` | string | `"0.0.0.0"` | 服务监听地址 |
-| `port` | int | `8000` | 服务监听端口 |
-| `live_auto_start` | bool | `true` | 是否自动启动实时监控 |
-
-#### assets 字段格式
-
-```json
-"assets": [
-    {"symbol": "600519", "asset_class": "stock"},
-    {"symbol": "510300", "asset_class": "etf"},
-    {"symbol": "Au99.99", "asset_class": "gold"},
-    {"symbol": "sh010107", "asset_class": "bond"}
-]
-```
-
-`asset_class` 可选值：`stock`、`etf`、`gold`、`bond`
+资金、持仓、资产范围、资产名称、历史行情和当前行情不属于运行配置：资金和交易来自账本，资产身份来自 `instrument_metadata`，当前行情来自 `latest_quotes`，历史行情来自 `market_bars` / 数据缓存。
 
 #### notification 字段格式
 

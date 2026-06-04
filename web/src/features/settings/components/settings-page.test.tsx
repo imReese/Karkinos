@@ -389,7 +389,7 @@ test('guides users to configure asset metadata when none is available', async ()
   ).toBeTruthy();
   expect(
     await screen.findByText(
-      'Add display_name and provider_symbol entries in config.json. Use config.example.json as the local template.',
+      'Backfill asset names and provider symbols into the local instrument metadata table. Keep config.json for runtime settings and watchlist symbols only.',
     ),
   ).toBeTruthy();
   expect(await screen.findByText('Assets missing metadata')).toBeTruthy();
