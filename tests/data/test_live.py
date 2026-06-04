@@ -53,6 +53,18 @@ class SequenceSource(DataSource):
         return self._snapshots.get((str(symbol), asset_class))
 
 
+class RaisingSource(SequenceSource):
+    """Source that records calls and raises for latest quote requests."""
+
+    def __init__(self, error: Exception):
+        super().__init__({})
+        self._error = error
+
+    def fetch_latest(self, symbol, asset_class=AssetClass.STOCK):
+        self.calls.append((str(symbol), asset_class))
+        raise self._error
+
+
 class TestLiveDataFeed:
     """LiveDataFeed 测试。"""
 
@@ -167,5 +179,30 @@ class TestLiveDataFeed:
             "timestamp": "10:30:00",
             "display_name": "中国核电",
         }
+        assert primary.calls == [("601985", AssetClass.STOCK)]
+        assert fallback.calls == [("601985", AssetClass.STOCK)]
+
+    def test_poll_latest_falls_back_when_primary_raises(self):
+        """主源不支持 fetch_latest 时也应回退到备用行情源。"""
+        primary = RaisingSource(
+            NotImplementedError("Tushare fetch_latest is not implemented")
+        )
+        fallback = SequenceSource(
+            {
+                ("601985", AssetClass.STOCK): {
+                    "price": 8.76,
+                    "volume": 123456.0,
+                    "timestamp": "10:30:00",
+                    "display_name": "中国核电",
+                }
+            }
+        )
+        bus = EventBus()
+        feed = LiveDataFeed(primary, bus, fallback_source=fallback)
+
+        event = feed.poll_latest(Symbol("601985"), AssetClass.STOCK)
+
+        assert event is not None
+        assert float(event.close) == pytest.approx(8.76)
         assert primary.calls == [("601985", AssetClass.STOCK)]
         assert fallback.calls == [("601985", AssetClass.STOCK)]

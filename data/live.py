@@ -63,13 +63,31 @@ class LiveDataFeed:
         asset_class: AssetClass = AssetClass.STOCK,
     ) -> MarketEvent | None:
         """拉取最新行情快照，发布 MarketEvent。"""
-        snapshot = self.source.fetch_latest(symbol, asset_class)
+        try:
+            snapshot = self.source.fetch_latest(symbol, asset_class)
+        except Exception:
+            logger.warning(
+                "主行情源获取实时行情失败: %s (%s)",
+                symbol,
+                asset_class.value,
+                exc_info=True,
+            )
+            snapshot = None
         if (
             snapshot is None
             and self.fallback_source is not None
             and self.fallback_source is not self.source
         ):
-            snapshot = self.fallback_source.fetch_latest(symbol, asset_class)
+            try:
+                snapshot = self.fallback_source.fetch_latest(symbol, asset_class)
+            except Exception:
+                logger.warning(
+                    "备用行情源获取实时行情失败: %s (%s)",
+                    symbol,
+                    asset_class.value,
+                    exc_info=True,
+                )
+                snapshot = None
         if snapshot is None:
             logger.warning("获取实时行情失败: %s (%s)", symbol, asset_class.value)
             return None
