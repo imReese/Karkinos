@@ -1200,7 +1200,7 @@ def _load_latest_snapshot_from_provider(
     )
     preferred = sources.get(data_source, sources["akshare"])
     source_chain = [(data_source if data_source in sources else "akshare", preferred)]
-    if asset_class == AssetClass.FUND and data_source != "akshare":
+    if data_source != "akshare":
         akshare = sources.get("akshare")
         if akshare is not None and akshare is not preferred:
             source_chain.append(("akshare", akshare))

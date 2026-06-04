@@ -140,3 +140,32 @@ class TestLiveDataFeed:
         }
         assert primary.calls == [("018125", AssetClass.FUND)]
         assert fallback.calls == [("018125", AssetClass.FUND)]
+
+    def test_poll_latest_falls_back_to_akshare_for_stock_quotes(self):
+        """股票主源失败时也应回退到备用行情源。"""
+        primary = SequenceSource({("601985", AssetClass.STOCK): None})
+        fallback = SequenceSource(
+            {
+                ("601985", AssetClass.STOCK): {
+                    "price": 8.76,
+                    "volume": 123456.0,
+                    "timestamp": "10:30:00",
+                    "display_name": "中国核电",
+                }
+            }
+        )
+        bus = EventBus()
+        feed = LiveDataFeed(primary, bus, fallback_source=fallback)
+
+        event = feed.poll_latest(Symbol("601985"), AssetClass.STOCK)
+
+        assert event is not None
+        assert float(event.close) == pytest.approx(8.76)
+        assert feed.get_last_snapshot(Symbol("601985"), AssetClass.STOCK) == {
+            "price": 8.76,
+            "volume": 123456.0,
+            "timestamp": "10:30:00",
+            "display_name": "中国核电",
+        }
+        assert primary.calls == [("601985", AssetClass.STOCK)]
+        assert fallback.calls == [("601985", AssetClass.STOCK)]

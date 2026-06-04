@@ -66,7 +66,6 @@ class LiveDataFeed:
         snapshot = self.source.fetch_latest(symbol, asset_class)
         if (
             snapshot is None
-            and asset_class == AssetClass.FUND
             and self.fallback_source is not None
             and self.fallback_source is not self.source
         ):
