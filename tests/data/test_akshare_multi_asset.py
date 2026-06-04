@@ -395,6 +395,35 @@ class TestAKShareFetchLatest:
         assert source._resolve_open_end_fund_code(Symbol("融通科技臻选混合C")) == "026539"
 
     @patch("akshare.stock_zh_a_spot_em")
+    def test_fetch_latest_stock_includes_previous_close_and_change(
+        self, mock_ak, source
+    ):
+        """A股最新行情应包含昨收、涨跌额和涨跌幅。"""
+        mock_ak.return_value = pd.DataFrame(
+            {
+                "代码": ["601985"],
+                "名称": ["中国核电"],
+                "最新价": [8.76],
+                "昨收": [8.65],
+                "涨跌额": [0.11],
+                "涨跌幅": [1.27],
+                "成交量": [123456.0],
+                "成交额": [1081488.0],
+                "时间": ["10:30:00"],
+            }
+        )
+
+        result = source.fetch_latest(Symbol("601985"), AssetClass.STOCK)
+
+        assert result is not None
+        assert result["price"] == 8.76
+        assert result["previous_close"] == 8.65
+        assert result["change"] == 0.11
+        assert result["change_percent"] == pytest.approx(0.0127)
+        assert result["previous_close_date"] is not None
+        assert result["display_name"] == "中国核电"
+
+    @patch("akshare.stock_zh_a_spot_em")
     def test_fetch_latest_not_found(self, mock_ak, source):
         """找不到 symbol 时返回 None。"""
         mock_ak.return_value = pd.DataFrame(
