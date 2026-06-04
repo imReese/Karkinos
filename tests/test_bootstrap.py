@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 from pathlib import Path
 import sys
@@ -250,6 +251,94 @@ def test_create_app_accepts_config_overrides():
     app = create_app({"live_auto_start": False})
 
     assert app.state.config_overrides == {"live_auto_start": False}
+
+
+def test_create_app_caches_startup_runtime_config(monkeypatch):
+    from server.app import create_app
+
+    monkeypatch.delenv("KARKINOS_LIVE_AUTO_START", raising=False)
+    runtime_config = ServerConfig(
+        live_auto_start=False,
+        cors_allowed_origins=["https://karkinos.example.com"],
+    )
+    calls = []
+
+    def fake_load_runtime_config(config_cls, **overrides):
+        calls.append((config_cls, overrides))
+        return runtime_config
+
+    monkeypatch.setattr(
+        "server.bootstrap.load_runtime_config", fake_load_runtime_config
+    )
+
+    app = create_app({"live_auto_start": False})
+
+    assert calls == [(ServerConfig, {"live_auto_start": False})]
+    assert app.state.runtime_config is runtime_config
+    assert _cors_middleware_options(app)["allow_origins"] == [
+        "https://karkinos.example.com"
+    ]
+
+
+def test_lifespan_reuses_cached_runtime_config(monkeypatch):
+    from server import app as app_module
+
+    runtime_config = ServerConfig(live_auto_start=False)
+    fake_app = SimpleNamespace(
+        state=SimpleNamespace(config_overrides={}, runtime_config=runtime_config)
+    )
+
+    class FakeDB:
+        async def init(self):
+            pass
+
+    class FakeBridge:
+        def __init__(self, event_bus, loop):
+            pass
+
+        async def get_event(self):
+            await asyncio.Event().wait()
+
+        def stop(self):
+            pass
+
+    class FakeScheduler:
+        def __init__(self, *args, **kwargs):
+            self.started = False
+
+        def start(self):
+            self.started = True
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(
+        "server.bootstrap.load_runtime_config",
+        lambda *args, **kwargs: pytest.fail("config should already be cached"),
+    )
+    monkeypatch.setattr(app_module, "AppDatabase", FakeDB)
+    monkeypatch.setattr(app_module, "EventBusBridge", FakeBridge)
+    monkeypatch.setattr(app_module, "TradingScheduler", FakeScheduler)
+    monkeypatch.setattr(
+        app_module, "TradingControlState", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        "notification.notifier.build_notifier", lambda notification: object()
+    )
+    monkeypatch.setattr(
+        app_module, "_confirm_pending_fund_orders_on_startup", lambda state: None
+    )
+    app_module._app_state = None
+
+    async def run_lifespan():
+        async with app_module.lifespan(fake_app):
+            assert app_module.get_app_state().config is runtime_config
+            assert fake_app.state.config is runtime_config
+
+    try:
+        asyncio.run(run_lifespan())
+    finally:
+        app_module._app_state = None
 
 
 def _cors_middleware_options(app):

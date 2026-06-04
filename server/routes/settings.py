@@ -154,7 +154,7 @@ def create_router() -> APIRouter:
 
     @r.put("", response_model=SettingsResponse)
     async def update_settings(settings: SettingsResponse) -> SettingsResponse:
-        """更新配置（写入 config.json）。"""
+        """Update in-memory runtime settings without writing config.json."""
         from server.app import get_app_state
 
         state = get_app_state()
@@ -199,7 +199,7 @@ def create_router() -> APIRouter:
     async def update_data_source_settings(
         payload: DataSourceSettingsUpdate,
     ) -> SettingsResponse:
-        """仅更新数据源相关配置，避免覆盖账户与持仓基线。"""
+        """Update in-memory data-source settings without writing config.json."""
         from server.app import get_app_state
 
         state = get_app_state()

@@ -160,9 +160,13 @@ async def lifespan(app: FastAPI):
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
 
-    # 加载配置
+    # create_app() loads the runtime config once and lifespan reuses the same
+    # object so config.json remains a startup-only input.
     config_overrides = getattr(app.state, "config_overrides", {})
-    config = load_runtime_config(ServerConfig, **config_overrides)
+    config = getattr(app.state, "runtime_config", None)
+    if config is None:
+        config = load_runtime_config(ServerConfig, **config_overrides)
+        app.state.runtime_config = config
     state.config = config
 
     # 初始化数据库
@@ -246,7 +250,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from config import ServerConfig
     from server.bootstrap import load_runtime_config
 
-    cors_config = load_runtime_config(ServerConfig, **effective_overrides)
+    runtime_config = load_runtime_config(ServerConfig, **effective_overrides)
 
     app = FastAPI(
         title="Karkinos Server",
@@ -255,9 +259,10 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.config_overrides = effective_overrides
+    app.state.runtime_config = runtime_config
     cors_allowed_origins = _resolve_cors_allowed_origins(
         effective_overrides,
-        getattr(cors_config, "cors_allowed_origins", None),
+        getattr(runtime_config, "cors_allowed_origins", None),
     )
     cors_allow_credentials = _cors_allow_credentials(cors_allowed_origins)
     app.state.cors_allowed_origins = cors_allowed_origins
