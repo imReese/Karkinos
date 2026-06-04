@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 
 from fastapi import APIRouter
@@ -14,7 +13,6 @@ from server.models import (
     LiveStatusResponse,
     SettingsResponse,
 )
-from server.bootstrap import resolve_config_path
 from server.services.asset_metadata import (
     build_asset_metadata_status,
     iter_configured_asset_metadata,
@@ -181,25 +179,6 @@ def create_router() -> APIRouter:
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
 
-        # 持久化到 config.json
-        data = {
-            "host": config.host,
-            "port": config.port,
-            "live_auto_start": config.live_auto_start,
-            "initial_cash": str(config.initial_cash),
-            "start_date": config.start_date,
-            "end_date": config.end_date,
-            "assets": config.assets,
-            "strategy": config.strategy,
-            "short_period": config.short_period,
-            "long_period": config.long_period,
-            "data_source": config.data_source,
-            "tushare_token": config.tushare_token,
-            "notification": config.notification,
-            "live_poll_interval": config.live_poll_interval,
-        }
-        resolve_config_path().write_text(json.dumps(data, indent=2, ensure_ascii=False))
-
         return _settings_response(config)
 
     @r.get("/data-source", response_model=DataSourceStatusResponse)
@@ -230,24 +209,6 @@ def create_router() -> APIRouter:
         if not payload.tushare_token.startswith(_MASK):
             config.tushare_token = payload.tushare_token
         config.live_poll_interval = payload.live_poll_interval
-
-        data = {
-            "host": config.host,
-            "port": config.port,
-            "live_auto_start": config.live_auto_start,
-            "initial_cash": str(config.initial_cash),
-            "start_date": config.start_date,
-            "end_date": config.end_date,
-            "assets": config.assets,
-            "strategy": config.strategy,
-            "short_period": config.short_period,
-            "long_period": config.long_period,
-            "data_source": config.data_source,
-            "tushare_token": config.tushare_token,
-            "notification": config.notification,
-            "live_poll_interval": config.live_poll_interval,
-        }
-        resolve_config_path().write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
         return _settings_response(config)
 

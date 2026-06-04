@@ -107,28 +107,6 @@ def _resolve_display_name(state, symbol: str, fallback: str | None = None) -> st
     ).display_name
 
 
-def _persist_runtime_config(config) -> None:
-    from server.bootstrap import resolve_config_path
-
-    payload = {
-        "host": getattr(config, "host", "0.0.0.0"),
-        "port": getattr(config, "port", 8000),
-        "live_auto_start": getattr(config, "live_auto_start", True),
-        "initial_cash": str(getattr(config, "initial_cash", 0)),
-        "start_date": getattr(config, "start_date", ""),
-        "end_date": getattr(config, "end_date", ""),
-        "assets": getattr(config, "assets", []),
-        "strategy": getattr(config, "strategy", "dual_ma"),
-        "short_period": getattr(config, "short_period", 5),
-        "long_period": getattr(config, "long_period", 20),
-        "data_source": getattr(config, "data_source", "akshare"),
-        "tushare_token": getattr(config, "tushare_token", ""),
-        "notification": getattr(config, "notification", {"type": "console"}),
-        "live_poll_interval": getattr(config, "live_poll_interval", 60),
-    }
-    resolve_config_path().write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
 def _ensure_asset_config(
     state,
     *,
@@ -143,8 +121,6 @@ def _ensure_asset_config(
             if display_name:
                 updated = asset.get("display_name") != display_name
                 asset["display_name"] = display_name
-            if updated:
-                _persist_runtime_config(state.config)
             return
 
     assets.append(
@@ -154,7 +130,6 @@ def _ensure_asset_config(
             "display_name": display_name or symbol,
         }
     )
-    _persist_runtime_config(state.config)
 
 
 def _resolve_fund_buy_fill(
