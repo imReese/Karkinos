@@ -1207,12 +1207,28 @@ def _load_latest_snapshot_from_provider(
 
     snapshot = None
     selected_source_name = data_source
+    last_error: Exception | None = None
+    saw_provider_response = False
     for source_name, source in source_chain:
-        snapshot = source.fetch_latest(Symbol(symbol), asset_class)
+        try:
+            snapshot = source.fetch_latest(Symbol(symbol), asset_class)
+            saw_provider_response = True
+        except Exception as exc:
+            logger.warning(
+                "Latest quote provider failed: %s %s (%s)",
+                source_name,
+                symbol,
+                asset_class.value,
+                exc_info=True,
+            )
+            last_error = exc
+            snapshot = None
         if snapshot:
             selected_source_name = source_name
             break
     if not snapshot:
+        if last_error is not None and not saw_provider_response:
+            raise last_error
         return None
     payload = {
         "symbol": symbol,

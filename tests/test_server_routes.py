@@ -2352,6 +2352,61 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
     assert saved_quote["captured_reason"] == "manual_or_route_refresh"
 
 
+def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    saved_quote: dict[str, object] = {}
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="tushare",
+            tushare_token="token-1234",
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            live_poll_interval=120,
+        ),
+        db=SimpleNamespace(
+            save_quote_snapshot_sync=lambda **kwargs: saved_quote.update(kwargs),
+        ),
+    )
+
+    class RaisingTushareSource:
+        def fetch_latest(self, symbol, asset_class):
+            raise NotImplementedError("Tushare fetch_latest is not implemented")
+
+    class AkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 8.76,
+                "volume": 123456.0,
+                "timestamp": "10:30:00",
+                "display_name": "中国核电",
+                "previous_close": 8.65,
+                "previous_close_date": "2026-06-03",
+            }
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "tushare": RaisingTushareSource(),
+            "akshare": AkshareSource(),
+        },
+    )
+
+    response = market_routes._fetch_latest_snapshot(
+        fake_state, "601985", market_routes.AssetClass.STOCK
+    )
+
+    assert response["asset_class"] == "stock"
+    assert response["price"] == 8.76
+    assert response["provider_name"] == "akshare"
+    assert response["display_name"] == "中国核电"
+    assert response["previous_close"] == 8.65
+    assert saved_quote["symbol"] == "601985"
+    assert saved_quote["provider_name"] == "akshare"
+
+
 def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     from server.routes import market as market_routes
 
