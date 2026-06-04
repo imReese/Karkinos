@@ -93,14 +93,14 @@ def test_create_runtime_context_builds_data_manager_with_default_store(monkeypat
     assert context.watchlist[0][0] == Symbol("600519")
 
 
-def test_main_uses_loaded_runtime_config_from_json(tmp_path, monkeypatch):
+def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     config_path.write_text(
         '{"initial_cash": 200000, "start_date": "2025-01-02", "end_date": "2025-01-05", "assets": [{"symbol": "600519", "asset_class": "stock"}], "strategy": "dual_ma"}'
     )
     monkeypatch.chdir(tmp_path)
 
-    import main
+    from tools import run_backtest
 
     captured = {}
 
@@ -130,12 +130,12 @@ def test_main_uses_loaded_runtime_config_from_json(tmp_path, monkeypatch):
         instruments={Symbol("600519"): ("600519", AssetClass.STOCK)},
     )
 
-    monkeypatch.setattr(main, "create_runtime_context", lambda config: runtime)
-    monkeypatch.setattr(main, "build_strategy", lambda config, event_bus: object())
-    monkeypatch.setattr(main, "BacktestEngine", FakeEngine)
-    monkeypatch.setattr(main, "generate_report", lambda result: "ok")
+    monkeypatch.setattr(run_backtest, "create_runtime_context", lambda config: runtime)
+    monkeypatch.setattr(run_backtest, "build_strategy", lambda config, event_bus: object())
+    monkeypatch.setattr(run_backtest, "BacktestEngine", FakeEngine)
+    monkeypatch.setattr(run_backtest, "generate_report", lambda result: "ok")
 
-    main.main()
+    run_backtest.main([])
 
     assert captured["initial_cash"] == Decimal("200000")
 

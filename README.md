@@ -45,7 +45,7 @@ DataHandler → EventBus → Strategy → Portfolio → RiskManager(-10) → Exe
 git clone <repo-url> && cd Karkinos
 cp .env.example .env                   # optional: set tokens / runtime paths
 uv sync                                # install dependencies
-uv run python main.py                  # run backtest
+uv run python -m tools.run_backtest    # run local backtest tool
 uv sync --extra server                 # install server extras
 cd web && npm install && cd ..
 ./scripts/start_server.sh dev --host 127.0.0.1 --port 8000
@@ -68,7 +68,7 @@ or credentialed deployments.
 docker compose up -d                   # build & start → http://localhost:8000
 ```
 
-Uses `./config.json` as runtime config and persists market cache / SQLite data in the `karkinos-data` Docker volume.
+Uses ignored local `./config.json` as runtime configuration and persists market cache / SQLite data in the `karkinos-data` Docker volume. Runtime config is not a market-data store; quote, bar, ledger, and portfolio state should live in the local database.
 
 Runtime databases, local logs, exported files, screenshots, and local secret
 files should stay on your machine and are not intended to be committed.

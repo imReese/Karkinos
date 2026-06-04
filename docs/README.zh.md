@@ -118,9 +118,12 @@ Karkinos/
 │   │   ├── features/       # 账户 / 组合 / 流水模块
 │   │   └── styles/         # 基于 Tailwind 的全局样式
 │   └── package.json
-├── live.py                 # 独立实时监控入口（轻量/旧路径；Web 服务使用 TradingScheduler）
+├── tools/                  # 本地开发 / 运维 CLI 工具
+│   ├── run_backtest.py     # 本地回测工具
+│   └── live_monitor.py     # 兼容独立监控工具（Web 服务使用 TradingScheduler）
+├── live.py                 # 兼容 wrapper；优先使用 tools.live_monitor
 ├── config.py               # 类型化配置加载（BacktestConfig + ServerConfig）
-├── main.py                 # 回测入口
+├── main.py                 # 兼容 wrapper；优先使用 tools.run_backtest
 ├── config.example.json     # 配置模板
 ├── Dockerfile              # 多阶段构建（Node 构建 + Python 运行）
 ├── docker-compose.yml      # 一键部署编排
@@ -153,7 +156,7 @@ uv sync --extra server
 
 ```bash
 # 使用模拟数据运行默认双均线策略回测
-uv run python main.py
+uv run python -m tools.run_backtest
 ```
 
 输出示例：
@@ -314,13 +317,14 @@ CLI 参数 > 环境变量 > config.json > 默认值
 
 ## CLI 参考
 
-### python main.py（回测）
+### python -m tools.run_backtest（本地回测工具）
 
 ```bash
-uv run python main.py
+uv run python -m tools.run_backtest
 ```
 
 读取 `config.json`，运行回测并输出报告。使用 `DataManager` 缓存优先策略获取数据。
+根目录 `main.py` 仅保留为兼容 wrapper，不是 Web 服务入口。
 
 ### python -m server（服务）
 
@@ -335,13 +339,13 @@ uv run python -m server [选项]
 | `--reload` | flag | `False` | 开启热重载开发模式 |
 | `--no-live` | flag | `False` | 禁用自动开启实时监控 |
 
-### python live.py（独立监控）
+### python -m tools.live_monitor（独立监控工具）
 
 ```bash
-uv run python live.py
+uv run python -m tools.live_monitor
 ```
 
-独立的实时监控入口，不依赖 Web 服务。读取 `config.json`，轮询行情数据，运行策略并通过通知通道推送信号。Web 服务内建 Live 路径使用 `TradingScheduler`、`PreTradeRiskManager` 和 `ManualConfirmGateway`。`Ctrl+C` 退出。
+独立的兼容监控工具，不依赖 Web 服务。读取 `config.json`，轮询行情数据，运行策略并通过通知通道推送信号。专业 Web/Live 路径应使用 `python -m server` 或 `./scripts/start_server.sh`，由 `TradingScheduler`、`PreTradeRiskManager` 和 `ManualConfirmGateway` 负责。根目录 `live.py` 仅保留为兼容 wrapper。`Ctrl+C` 退出。
 
 ## API 参考
 

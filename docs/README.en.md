@@ -118,9 +118,12 @@ Karkinos/
 │   │   ├── features/       # Account / portfolio / activity modules
 │   │   └── styles/         # Tailwind-powered global styles
 │   └── package.json
-├── live.py                 # Standalone live monitoring entry point
+├── tools/                  # Local developer / operations CLI tools
+│   ├── run_backtest.py     # Local backtest tool
+│   └── live_monitor.py     # Compatibility standalone monitor (Web service uses TradingScheduler)
+├── live.py                 # Compatibility wrapper; prefer tools.live_monitor
 ├── config.py               # Typed configuration loader (BacktestConfig + ServerConfig)
-├── main.py                 # Backtest entry point
+├── main.py                 # Compatibility wrapper; prefer tools.run_backtest
 ├── config.example.json     # Configuration template
 ├── Dockerfile              # Multi-stage build (Node build + Python runtime)
 ├── docker-compose.yml      # One-click deployment
@@ -153,7 +156,7 @@ uv sync --extra server
 
 ```bash
 # Run default dual moving average strategy with synthetic data
-uv run python main.py
+uv run python -m tools.run_backtest
 ```
 
 Example output:
@@ -302,13 +305,14 @@ Example: `python -m server --port 9000` takes precedence over `KARKINOS_PORT=808
 
 ## CLI Reference
 
-### python main.py (Backtest)
+### python -m tools.run_backtest (Local Backtest Tool)
 
 ```bash
-uv run python main.py
+uv run python -m tools.run_backtest
 ```
 
 Reads `config.json`, runs backtest, and outputs report. Uses `DataManager` cache-first strategy for data fetching.
+The root `main.py` file is only a compatibility wrapper. It is not the Web service entry point.
 
 ### python -m server (Server)
 
@@ -323,13 +327,13 @@ uv run python -m server [options]
 | `--reload` | flag | `False` | Enable hot-reload dev mode |
 | `--no-live` | flag | `False` | Disable auto-start of live monitoring |
 
-### python live.py (Standalone Monitor)
+### python -m tools.live_monitor (Standalone Monitor Tool)
 
 ```bash
-uv run python live.py
+uv run python -m tools.live_monitor
 ```
 
-Standalone live monitoring entry point, independent of the Web server. Reads `config.json`, polls market data, runs strategy, and pushes signals via notification channels. The Web service live path uses `TradingScheduler`, `PreTradeRiskManager`, and `ManualConfirmGateway`. Press `Ctrl+C` to exit.
+Standalone compatibility monitor, independent of the Web server. It reads `config.json`, polls market data, runs strategy, and pushes signals via notification channels. The professional Web/Live path should use `python -m server` or `./scripts/start_server.sh`; that path uses `TradingScheduler`, `PreTradeRiskManager`, and `ManualConfirmGateway`. The root `live.py` file is only a compatibility wrapper. Press `Ctrl+C` to exit.
 
 ## API Reference
 
