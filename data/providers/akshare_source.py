@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from contextlib import contextmanager
 import logging
 import os
@@ -97,6 +99,25 @@ def _previous_weekday(value: date) -> date:
     while previous.weekday() >= 5:
         previous -= timedelta(days=1)
     return previous
+
+
+def _date_from_epoch_ms(value) -> str | None:
+    if value in {None, ""}:
+        return None
+    try:
+        return datetime.fromtimestamp(float(value) / 1000).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def _dict_float(row: dict, key: str) -> float | None:
+    value = row.get(key)
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _provider_uses_proxy() -> bool:
@@ -238,15 +259,40 @@ class AKShareSource(DataSource):
         if not fund_code:
             return None
 
+        if _looks_like_open_end_fund_code(str(symbol).strip()):
+            for loader in (
+                self._fetch_open_end_fund_latest_from_estimate,
+                self._fetch_open_end_fund_latest_from_page,
+            ):
+                try:
+                    snapshot = loader(fund_code)
+                except Exception:
+                    logger.warning(
+                        "AKShare single fund fallback failed for %s",
+                        fund_code,
+                        exc_info=True,
+                    )
+                    continue
+                if snapshot is not None:
+                    return snapshot
+
         canonical_name = None
         if not _looks_like_open_end_fund_code(str(symbol).strip()):
             canonical_name = self._resolve_open_end_fund_name(symbol)
-        df = self._call_with_retry(ak.fund_open_fund_daily_em)
+        try:
+            df = self._call_with_retry(ak.fund_open_fund_daily_em)
+        except Exception:
+            logger.warning(
+                "AKShare open-end fund daily table failed for %s; falling back to single fund page",
+                fund_code,
+                exc_info=True,
+            )
+            return self._fetch_open_end_fund_latest_from_page(fund_code)
         row = df[df["基金代码"].astype(str) == fund_code]
         if row.empty and canonical_name:
             row = df[df["基金简称"].astype(str).str.strip() == canonical_name]
         if row.empty:
-            return None
+            return self._fetch_open_end_fund_latest_from_page(fund_code)
 
         row = row.iloc[0]
         if not canonical_name and "基金简称" in row.index:
@@ -289,6 +335,93 @@ class AKShareSource(DataSource):
             payload["day_change_pct"] = float(growth_rate) / 100
         if not pd.isna(growth_value):
             payload["day_change_value"] = float(growth_value)
+        return payload
+
+    def _fetch_open_end_fund_latest_from_estimate(self, fund_code: str) -> dict | None:
+        import requests
+
+        url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
+        with _provider_network_env():
+            response = requests.get(url, timeout=3)
+        response.raise_for_status()
+        match = re.search(r"jsonpgz\((\{.*\})\);?", response.text, flags=re.S)
+        if match is None:
+            return None
+
+        payload = json.loads(match.group(1))
+        price = _dict_float(payload, "gsz") or _dict_float(payload, "dwjz")
+        if price is None:
+            return None
+
+        previous_close = _dict_float(payload, "dwjz")
+        result = {
+            "price": price,
+            "volume": None,
+            "timestamp": str(payload.get("gztime") or payload.get("jzrq") or ""),
+            "source": "akshare",
+            "quote_source": "eastmoney_fund_estimate",
+        }
+        display_name = str(payload.get("name") or "").strip()
+        if display_name:
+            result["name"] = display_name
+            result["display_name"] = display_name
+        if previous_close is not None:
+            result["previous_close"] = previous_close
+            result["previous_close_date"] = str(payload.get("jzrq") or "")
+            result["day_change_value"] = price - previous_close
+        growth_rate = _dict_float(payload, "gszzl")
+        if growth_rate is not None:
+            result["day_change_pct"] = growth_rate / 100
+        return result
+
+    def _fetch_open_end_fund_latest_from_page(self, fund_code: str) -> dict | None:
+        import requests
+
+        url = f"https://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
+        with _provider_network_env():
+            response = requests.get(url, timeout=3)
+        response.raise_for_status()
+        text = response.text
+
+        name_match = re.search(r'fS_name\s*=\s*"([^"]+)"', text)
+        trend_match = re.search(
+            r"Data_netWorthTrend\s*=\s*(\[.*?\]);",
+            text,
+            flags=re.S,
+        )
+        if trend_match is None:
+            return None
+
+        trend = json.loads(trend_match.group(1))
+        if not trend:
+            return None
+        latest = trend[-1]
+        previous = trend[-2] if len(trend) > 1 else {}
+        price = _dict_float(latest, "y")
+        if price is None:
+            return None
+
+        payload = {
+            "price": price,
+            "volume": None,
+            "timestamp": _date_from_epoch_ms(latest.get("x")),
+            "source": "akshare",
+            "quote_source": "eastmoney_fund_page",
+        }
+        if name_match:
+            display_name = name_match.group(1).strip()
+            if display_name:
+                payload["name"] = display_name
+                payload["display_name"] = display_name
+
+        previous_close = _dict_float(previous, "y")
+        if previous_close is not None:
+            payload["previous_close"] = previous_close
+            payload["previous_close_date"] = _date_from_epoch_ms(previous.get("x"))
+            payload["day_change_value"] = price - previous_close
+        growth_rate = _dict_float(latest, "equityReturn")
+        if growth_rate is not None:
+            payload["day_change_pct"] = growth_rate / 100
         return payload
 
     def _call_with_retry(self, func, **kwargs):

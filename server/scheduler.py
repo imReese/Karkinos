@@ -67,6 +67,7 @@ class TradingScheduler:
         self._instruments: dict[Symbol, Instrument] = {}
         self._latest_quotes: dict[str, dict] = {}  # 报价缓存
         self._last_historical_bar_backfill_key: str | None = None
+        self._stop_requested = threading.Event()
 
         # Bug 3: 线程安全锁
         self._lock = threading.Lock()
@@ -75,6 +76,7 @@ class TradingScheduler:
         """启动后台交易线程。"""
         if self._running.is_set():
             return
+        self._stop_requested.clear()
         self._running.set()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -82,6 +84,7 @@ class TradingScheduler:
 
     def stop(self) -> None:
         """停止后台交易线程。"""
+        self._stop_requested.set()
         self._running.clear()
         if self._thread is not None:
             self._thread.join(timeout=10)
@@ -142,7 +145,12 @@ class TradingScheduler:
             for sym, ac in self._watchlist:
                 try:
                     handler = data_manager.get_bars(
-                        sym, start=start_date, end=end_date, asset_class=ac
+                        sym,
+                        start=start_date,
+                        end=end_date,
+                        asset_class=ac,
+                        allow_remote_refresh=False,
+                        degrade_to_cache=True,
                     )
                     for market_event in handler:
                         strategy.on_data(market_event)
@@ -545,7 +553,7 @@ class TradingScheduler:
             # Bug 7: 非交易时段跳过轮询
             if not self._is_market_open():
                 self._maybe_backfill_historical_bars(data_manager)
-                self._running.wait(timeout=30)
+                self._stop_requested.wait(timeout=30)
                 continue
 
             try:
@@ -696,7 +704,7 @@ class TradingScheduler:
                 logger.exception("Error in trading loop iteration")
 
             # 使用 wait 替代 sleep，允许立即停止
-            self._running.wait(timeout=self._config.live_poll_interval)
+            self._stop_requested.wait(timeout=self._config.live_poll_interval)
 
     def _on_signal(self, event: SignalEvent) -> None:
         """信号回调：推送通知。"""

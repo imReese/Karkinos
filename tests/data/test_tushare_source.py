@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import sys
+import time
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -23,7 +24,7 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
                 "NAME": ["中国核电"],
                 "TS_CODE": ["601985.SH"],
                 "DATE": ["20260605"],
-                "TIME": ["11:22:00"],
+                "TIME": [" 11:22:00"],
                 "PRICE": [8.76],
                 "PRE_CLOSE": [8.65],
                 "VOLUME": [123456.0],
@@ -107,6 +108,38 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     assert result["timestamp"] == "2026-06-05"
     assert result["quote_source"] == "tushare_daily"
     assert calls["pro_api_token"] == "token-1234"
+
+
+def test_tushare_fetch_latest_stock_times_out_realtime_and_falls_back_to_daily(
+    monkeypatch,
+):
+    source = TushareSource(token="token-1234", realtime_timeout_seconds=0.001)
+
+    def slow_realtime(ts_code):
+        time.sleep(0.05)
+        return {
+            "price": 9.25,
+            "timestamp": "2026-06-05T10:00:00",
+            "quote_source": "tushare_realtime_quote",
+        }
+
+    monkeypatch.setattr(source, "_fetch_realtime_quote", slow_realtime)
+    monkeypatch.setattr(
+        source,
+        "_fetch_daily_latest",
+        lambda ts_code: {
+            "price": 8.99,
+            "timestamp": "2026-06-05",
+            "quote_source": "tushare_daily",
+            "previous_close": 9.25,
+        },
+    )
+
+    result = source.fetch_latest(Symbol("601985"), AssetClass.STOCK)
+
+    assert result is not None
+    assert result["price"] == 8.99
+    assert result["quote_source"] == "tushare_daily"
 
 
 def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):

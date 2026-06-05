@@ -13,6 +13,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { AppShell } from './app-shell';
 import { PreferencesProvider } from '../preferences';
+import type { MarketDataHealthResponse } from '../../features/market/api';
 
 type MatchMediaMock = {
   setDarkMode: (matches: boolean) => void;
@@ -35,16 +36,32 @@ const defaultLiveStatus = {
   market_open: true,
 };
 
-const defaultMarketHealth = {
+const defaultMarketHealth: MarketDataHealthResponse = {
   quotes: [],
   market_open: true,
   refresh_policy: 'live',
+  provider_status: 'live',
+  provider_name: 'tushare',
+  provider_configured: true,
+  provider_requires_token: false,
+  provider_supports_funds: true,
+  provider_last_error: null,
+  provider_timeout_seconds: null,
+  next_action: null,
+  metadata_configured_count: 0,
+  source_health: 'live',
+  cache_age_seconds: null,
+  latest_quote_timestamp: null,
+  last_refresh_attempt: null,
+  last_refresh_error: null,
+  stale_symbols_count: 0,
+  stale_symbols_sample: [],
 };
 
 type ShellStatusMockOptions = {
   overview?: typeof defaultOverview;
   liveStatus?: typeof defaultLiveStatus;
-  marketHealth?: typeof defaultMarketHealth;
+  marketHealth?: Partial<MarketDataHealthResponse>;
   fetchImpl?: typeof fetch;
   locale?: 'en' | 'zh';
 };
@@ -62,6 +79,10 @@ function installShellStatusFetchMock({
   marketHealth = defaultMarketHealth,
   fetchImpl,
 }: ShellStatusMockOptions = {}) {
+  const resolvedMarketHealth = {
+    ...defaultMarketHealth,
+    ...marketHealth,
+  };
   const statusFetch =
     fetchImpl ??
     vi.fn(async (input: RequestInfo | URL) => {
@@ -78,7 +99,7 @@ function installShellStatusFetchMock({
         return jsonResponse(liveStatus);
       }
       if (url.includes('/api/market/data-health')) {
-        return jsonResponse(marketHealth);
+        return jsonResponse(resolvedMarketHealth);
       }
       return new Response('Not found', { status: 404 });
     });
@@ -355,6 +376,24 @@ test('shows cache-only market state from data health', async () => {
   });
 
   expect(await screen.findByText('市场休市')).toBeTruthy();
+});
+
+test('shows closed market with healthy cached quotes as available', async () => {
+  renderShell({
+    locale: 'zh',
+    marketHealth: {
+      quotes: [],
+      market_open: false,
+      refresh_policy: 'cache_only',
+      source_health: 'live',
+      stale_symbols_count: 0,
+    },
+  });
+
+  expect(await screen.findByText('市场休市')).toBeTruthy();
+  expect(screen.getByTestId('status-pill-market-indicator').style.backgroundColor).toBe(
+    'var(--app-success)',
+  );
 });
 
 test('shows cache-only open-market state without claiming live quotes', async () => {

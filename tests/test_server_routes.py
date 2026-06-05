@@ -565,6 +565,55 @@ def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
     assert response.has_persistent_cache is True
 
 
+def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "018125",
+                    "asset_type": "fund",
+                    "price": 2.4062,
+                    "quote_timestamp": "2026-06-05 15:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                    "provider_name": "akshare",
+                    "provider_status": "live",
+                    "quote_status": "live",
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            data_source="tushare",
+            tushare_token="token",
+        ),
+        scheduler=SimpleNamespace(watchlist=[("018125", "fund")], latest_quotes={}),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.provider_name == "tushare"
+    assert response.provider_supports_funds is True
+    assert response.source_health == "live"
+    assert response.next_action is None
+    assert response.quotes[0].quote_source == "eastmoney_fund_estimate"
+
+
 def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatch):
     from server.routes import market as market_routes
 
@@ -647,6 +696,70 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
     ledger_quote = next(quote for quote in response.quotes if quote.symbol == "603659")
     assert ledger_quote.price == 28.4
     assert ledger_quote.quote_source == "tushare_daily"
+
+
+def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "601985",
+                    "asset_type": "stock",
+                    "price": 8.99,
+                    "quote_timestamp": "2026-06-05",
+                    "quote_source": "tushare_daily",
+                    "provider_name": "tushare",
+                    "provider_status": "live",
+                    "quote_status": "live",
+                    "captured_at": "2026-06-05T22:23:17+08:00",
+                    "is_demo": 0,
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            data_source="tushare",
+            tushare_token="token-1234",
+            live_poll_interval=120,
+        ),
+        scheduler=SimpleNamespace(
+            watchlist=[("601985", "stock")],
+            portfolio=None,
+            instruments={},
+            latest_quotes={
+                "601985": {
+                    "symbol": "601985",
+                    "asset_class": "stock",
+                    "price": 9.13,
+                    "timestamp": "2026-06-05T 11:01:13",
+                    "quote_source": "tushare_realtime_quote",
+                }
+            },
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.quotes[0].symbol == "601985"
+    assert response.quotes[0].price == 8.99
+    assert response.quotes[0].timestamp == "2026-06-05"
+    assert response.quotes[0].quote_source == "tushare_daily"
 
 
 def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
@@ -2495,6 +2608,68 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
     assert response["previous_close"] == 8.65
     assert saved_quote["symbol"] == "601985"
     assert saved_quote["provider_name"] == "akshare"
+
+
+def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
+    monkeypatch,
+):
+    from server.routes import market as market_routes
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="tushare",
+            tushare_token="token-1234",
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            live_poll_interval=120,
+        ),
+        db=SimpleNamespace(
+            save_quote_snapshot_sync=lambda **kwargs: None,
+        ),
+    )
+
+    class SlowTushareSource:
+        def fetch_latest(self, symbol, asset_class):
+            time.sleep(0.05)
+            return {
+                "price": 8.50,
+                "volume": 1.0,
+                "timestamp": "2026-06-05",
+            }
+
+    class AkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 8.76,
+                "volume": 123456.0,
+                "timestamp": "2026-06-05T10:30:00",
+                "display_name": "中国核电",
+            }
+
+    monkeypatch.setattr(market_routes, "_PROVIDER_REFRESH_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "tushare": SlowTushareSource(),
+            "akshare": AkshareSource(),
+        },
+    )
+
+    response = market_routes._fetch_latest_snapshot(
+        fake_state, "601985", market_routes.AssetClass.STOCK
+    )
+
+    assert response["price"] == 8.76
+    assert response["provider_name"] == "akshare"
+    assert response["quote_source"] == "akshare"
+
+
+def test_parse_quote_timestamp_accepts_legacy_space_after_t():
+    from server.routes import portfolio as portfolio_routes
+
+    parsed = portfolio_routes._parse_quote_timestamp("2026-06-05T 11:01:13")
+
+    assert parsed is not None
+    assert parsed.isoformat() == "2026-06-05T11:01:13+08:00"
 
 
 def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
@@ -5496,6 +5671,47 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
     assert groups["fund"].items[0].asset_class == "fund"
     assert groups["fund"].items[0].quote_timestamp == "2026-05-22"
     assert groups["stock"].items[0].name == "贵州茅台"
+
+
+def test_collect_latest_quotes_prefers_newer_persistent_quote_over_runtime():
+    from server.routes import portfolio as portfolio_routes
+
+    fake_state = SimpleNamespace(
+        scheduler=SimpleNamespace(
+            latest_quotes={
+                "601985": {
+                    "symbol": "601985",
+                    "asset_class": "stock",
+                    "price": 9.13,
+                    "timestamp": "2026-06-05T 11:01:13",
+                    "quote_source": "tushare_realtime_quote",
+                    "display_name": "中国核电",
+                }
+            }
+        ),
+        db=SimpleNamespace(
+            list_latest_quotes_sync=lambda: [
+                {
+                    "symbol": "601985",
+                    "asset_type": "stock",
+                    "price": 8.99,
+                    "quote_timestamp": "2026-06-05",
+                    "quote_source": "tushare_daily",
+                    "provider_name": "tushare",
+                    "display_name": "中国核电",
+                    "captured_at": "2026-06-05T22:23:17+08:00",
+                }
+            ],
+            get_latest_quotes_sync=lambda: [],
+        ),
+    )
+
+    latest = portfolio_routes._collect_latest_quotes(fake_state)
+
+    assert latest["601985"]["price"] == 8.99
+    assert latest["601985"]["timestamp"] == "2026-06-05"
+    assert latest["601985"]["quote_source"] == "tushare_daily"
+    assert latest["601985"]["display_name"] == "中国核电"
 
 
 def test_portfolio_equity_curve_series_appends_current_valuation_point(

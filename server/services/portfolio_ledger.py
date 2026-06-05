@@ -26,6 +26,42 @@ def _sorted_rows(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda row: (row.get("timestamp") or "", row.get("id") or 0))
 
 
+def _trade_rows_from_ledger(db) -> list[dict]:
+    trades = db.get_trades_sync(limit=1000, offset=0)
+    trade_refs = {
+        f"trade:{row.get('id')}" for row in trades if row.get("id") is not None
+    }
+    if not hasattr(db, "get_ledger_entries_sync"):
+        return _sorted_rows(trades)
+
+    ledger_trades = []
+    for row in db.get_ledger_entries_sync(limit=1000, offset=0):
+        entry_type = row.get("entry_type")
+        if entry_type not in {"trade_buy", "trade_sell"}:
+            continue
+        if row.get("source_ref") in trade_refs:
+            continue
+        if row.get("symbol") is None or row.get("quantity") is None or row.get("price") is None:
+            continue
+        direction = row.get("direction") or (
+            "buy" if entry_type == "trade_buy" else "sell"
+        )
+        ledger_trades.append(
+            {
+                "id": row.get("id"),
+                "timestamp": row.get("timestamp"),
+                "symbol": row.get("symbol"),
+                "direction": direction,
+                "quantity": row.get("quantity"),
+                "price": row.get("price"),
+                "commission": row.get("commission") or 0.0,
+                "asset_class": row.get("asset_class") or "stock",
+                "note": row.get("note") or "",
+            }
+        )
+    return _sorted_rows([*trades, *ledger_trades])
+
+
 def rebuild_portfolio_from_ledger(
     config,
     db,
@@ -55,8 +91,7 @@ def rebuild_portfolio_from_ledger(
         else:
             portfolio.withdraw(amount)
 
-    trades = _sorted_rows(db.get_trades_sync(limit=1000, offset=0))
-    for trade in trades:
+    for trade in _trade_rows_from_ledger(db):
         ensure_instrument(trade["symbol"], trade["asset_class"])
         fill = FillEvent(
             timestamp=datetime.fromisoformat(trade["timestamp"]),
