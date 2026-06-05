@@ -3009,7 +3009,7 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
     assert allocation_item.name == "示例基金B"
 
 
-def test_portfolio_snapshot_hydrates_missing_fund_quotes_outside_trading_hours(
+def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
     monkeypatch,
 ):
     from server.routes import portfolio as portfolio_routes
@@ -3094,13 +3094,7 @@ def test_portfolio_snapshot_hydrates_missing_fund_quotes_outside_trading_hours(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.market._fetch_latest_snapshot",
-        lambda state, symbol, asset_class: {
-            "symbol": symbol,
-            "asset_class": "fund",
-            "price": 1.126,
-            "volume": None,
-            "timestamp": "2026-04-22",
-        },
+        lambda *args, **kwargs: pytest.fail("portfolio snapshot must not fetch remotely"),
     )
     monkeypatch.setattr(
         "server.routes.portfolio.rebuild_portfolio_from_ledger",
@@ -3109,9 +3103,9 @@ def test_portfolio_snapshot_hydrates_missing_fund_quotes_outside_trading_hours(
 
     response = asyncio.run(endpoint())
 
-    assert response.total_equity == 3626.0
-    assert response.positions[0].market_value == 1126.0
-    assert response.positions[0].unrealized_pnl == pytest.approx(126.0)
+    assert response.total_equity == 3500.0
+    assert response.positions[0].market_value == 1000.0
+    assert response.positions[0].unrealized_pnl == pytest.approx(0.0)
 
 
 def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
@@ -4781,6 +4775,68 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
     assert item.today_change_pct == pytest.approx(9.25 / 9.26 - 1)
 
 
+def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        available_qty=100.0,
+        frozen_qty=0.0,
+        avg_cost=8.7401,
+        market_value=925.0,
+        unrealized_pnl=50.99,
+        realized_pnl=0.0,
+        commission_paid=5.01,
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, live_poll_interval=1),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"601985": fake_position}),
+            instruments={
+                "601985": SimpleNamespace(
+                    name="中国核电",
+                    asset_class=SimpleNamespace(value="stock"),
+                )
+            },
+            watchlist=[],
+            latest_quotes={
+                "601985": {
+                    "symbol": "601985",
+                    "asset_class": "stock",
+                    "price": 9.25,
+                    "timestamp": "2026-05-01",
+                    "quote_source": "tushare_daily",
+                    "previous_close": 9.26,
+                    "previous_close_date": "2026-05-01",
+                }
+            },
+        ),
+        db=SimpleNamespace(
+            list_latest_quotes_sync=lambda: [],
+            get_latest_quotes_sync=lambda: [],
+            get_latest_daily_close_before_sync=lambda symbol, trade_date: None,
+            get_latest_quote_before_date_sync=lambda symbol, trade_date: None,
+            get_total_deposits=lambda: 0.0,
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.market._fetch_latest_snapshot",
+        lambda *args, **kwargs: pytest.fail("live holdings must not fetch remotely"),
+    )
+
+    response = asyncio.run(live_holdings_route.endpoint())
+
+    assert response.groups[0].items[0].latest_price == 9.25
+
+
 def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
@@ -4923,7 +4979,7 @@ def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
     assert response.groups[0].items[0].baseline_source == "unavailable"
 
 
-def test_portfolio_refreshes_stale_quote_and_revalues_snapshot(monkeypatch):
+def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch):
     from zoneinfo import ZoneInfo
 
     from server.routes import portfolio as portfolio_routes
@@ -5057,13 +5113,14 @@ def test_portfolio_refreshes_stale_quote_and_revalues_snapshot(monkeypatch):
 
     response = asyncio.run(snapshot_route.endpoint())
 
-    assert response.positions[0].market_value == 1250.0
-    assert response.positions[0].unrealized_pnl == 250.0
-    assert response.positions[0].quote_status == "live"
-    assert response.positions[0].quote_timestamp == "2026-05-12T10:05:00+08:00"
+    assert response.positions[0].market_value == 1000.0
+    assert response.positions[0].unrealized_pnl == 0.0
+    assert response.positions[0].quote_status == "stale"
+    assert response.positions[0].quote_timestamp == "2026-04-22T15:00:00"
+    assert fake_state.scheduler.latest_quotes == {}
 
 
-def test_portfolio_refreshes_missing_ledger_quote_using_db_asset_class(monkeypatch):
+def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monkeypatch):
     from zoneinfo import ZoneInfo
 
     from server.routes import portfolio as portfolio_routes
@@ -5171,12 +5228,12 @@ def test_portfolio_refreshes_missing_ledger_quote_using_db_asset_class(monkeypat
 
     response = asyncio.run(snapshot_route.endpoint())
 
-    assert fetched == [("603659", "stock")]
+    assert fetched == []
     assert response.positions[0].symbol == "603659"
     assert response.positions[0].display_name == "璞泰来"
-    assert response.positions[0].market_value == 3100.0
-    assert response.positions[0].quote_status == "live"
-    assert response.positions[0].quote_timestamp == "2026-06-04T10:05:00+08:00"
+    assert response.positions[0].market_value == pytest.approx(3003.03)
+    assert response.positions[0].quote_status == "missing"
+    assert response.positions[0].quote_timestamp is None
 
 
 def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
