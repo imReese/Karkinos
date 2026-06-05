@@ -988,8 +988,12 @@ def _hydrate_missing_position_quotes(
     state,
     portfolio,
     instruments: dict,
+    *,
+    allow_remote_refresh: bool = False,
 ) -> tuple[object, dict, bool]:
     if portfolio is None:
+        return portfolio, instruments, False
+    if not allow_remote_refresh:
         return portfolio, instruments, False
 
     latest_quotes = _collect_latest_quotes(state)
