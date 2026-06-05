@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -10,6 +12,10 @@ import pandas as pd
 from core.types import AssetClass, BarFrequency, Symbol
 from data.source import DataSource
 
+logger = logging.getLogger(__name__)
+
+_DEFAULT_REALTIME_TIMEOUT_SECONDS = 0.8
+
 
 class TushareSource(DataSource):
     """Tushare 数据源适配器。
@@ -17,8 +23,13 @@ class TushareSource(DataSource):
     需要 Tushare token，通过环境变量 TUSHARE_TOKEN 或构造参数传入。
     """
 
-    def __init__(self, token: str | None = None) -> None:
+    def __init__(
+        self,
+        token: str | None = None,
+        realtime_timeout_seconds: float = _DEFAULT_REALTIME_TIMEOUT_SECONDS,
+    ) -> None:
         self._token = token
+        self._realtime_timeout_seconds = max(float(realtime_timeout_seconds), 0.001)
 
     def _get_pro(self):
         import tushare as ts
@@ -78,7 +89,7 @@ class TushareSource(DataSource):
         """
         if asset_class == AssetClass.STOCK:
             ts_code = self._stock_ts_code(symbol)
-            realtime = self._fetch_realtime_quote(ts_code)
+            realtime = self._fetch_realtime_quote_with_timeout(ts_code)
             if realtime is not None:
                 return realtime
             return self._fetch_daily_latest(ts_code)
@@ -93,16 +104,45 @@ class TushareSource(DataSource):
         df = pro.stock_basic(exchange="", list_status="L")
         return [Symbol(str(code)) for code in df["ts_code"].str[:6].tolist()]
 
+    def _fetch_realtime_quote_with_timeout(self, ts_code: str) -> dict | None:
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tushare-rtq")
+        future = executor.submit(self._fetch_realtime_quote, ts_code)
+        try:
+            return future.result(timeout=self._realtime_timeout_seconds)
+        except FutureTimeoutError:
+            future.cancel()
+            logger.warning(
+                "TuShare realtime quote timed out for %s after %.3fs; falling back to daily",
+                ts_code,
+                self._realtime_timeout_seconds,
+            )
+            return None
+        except Exception:
+            logger.warning(
+                "TuShare realtime quote failed for %s; falling back to daily",
+                ts_code,
+                exc_info=True,
+            )
+            return None
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
     def _fetch_realtime_quote(self, ts_code: str) -> dict | None:
         import tushare as ts
 
-        realtime_quote = getattr(ts, "realtime_quote", None)
-        if not callable(realtime_quote):
-            return None
+        df = None
         try:
-            df = realtime_quote(ts_code=ts_code, src="dc")
+            from tushare.stock import rtq
+
+            df = rtq.get_realtime_quotes_dc(ts_code)
         except Exception:
-            return None
+            realtime_quote = getattr(ts, "realtime_quote", None)
+            if not callable(realtime_quote):
+                return None
+            try:
+                df = realtime_quote(ts_code=ts_code, src="dc")
+            except Exception:
+                return None
         if df is None or df.empty:
             return None
 
@@ -273,7 +313,10 @@ class TushareSource(DataSource):
             return None
         if time_value in {None, ""}:
             return trade_date
-        return f"{trade_date}T{time_value}"
+        formatted_time = str(time_value).strip()
+        if not formatted_time:
+            return trade_date
+        return f"{trade_date}T{formatted_time}"
 
     @staticmethod
     def _normalize_bars(df: pd.DataFrame) -> pd.DataFrame:

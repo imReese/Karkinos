@@ -669,8 +669,29 @@ def _adapt_persistent_quote_for_portfolio(row: dict) -> dict:
     return quote
 
 
+def _quote_merge_timestamp(quote: dict) -> datetime | None:
+    timestamps = [
+        _parse_quote_timestamp(quote.get(key))
+        for key in ("captured_at", "updated_at", "timestamp", "quote_timestamp")
+    ]
+    timestamps = [timestamp for timestamp in timestamps if timestamp is not None]
+    return max(timestamps) if timestamps else None
+
+
 def _merge_quote_identity(base: dict, candidate: dict) -> dict:
-    merged = dict(base)
+    base_timestamp = _quote_merge_timestamp(base)
+    candidate_timestamp = _quote_merge_timestamp(candidate)
+    if (
+        candidate_timestamp is not None
+        and (base_timestamp is None or candidate_timestamp > base_timestamp)
+    ):
+        primary = candidate
+        secondary = base
+    else:
+        primary = base
+        secondary = candidate
+
+    merged = dict(primary)
     for key in (
         "asset_class",
         "display_name",
@@ -689,8 +710,8 @@ def _merge_quote_identity(base: dict, candidate: dict) -> dict:
         "provider_status",
         "stale_reason",
     ):
-        if merged.get(key) in {None, ""} and candidate.get(key) not in {None, ""}:
-            merged[key] = candidate[key]
+        if merged.get(key) in {None, ""} and secondary.get(key) not in {None, ""}:
+            merged[key] = secondary[key]
     return merged
 
 
@@ -734,7 +755,7 @@ def _parse_quote_timestamp(timestamp: object) -> datetime | None:
     if isinstance(timestamp, datetime):
         parsed = timestamp
     elif isinstance(timestamp, str) and timestamp.strip():
-        value = timestamp.strip()
+        value = timestamp.strip().replace("T ", "T")
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:

@@ -123,6 +123,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       : marketHealth.data.market_open
         ? copy.shell.marketOpen
         : copy.shell.marketClosed;
+  const marketQuotesHealthy =
+    marketHealth.data?.source_health === 'live' ||
+    marketHealth.data?.source_health === 'healthy';
 
   const ledgerStatus = accountOverview.isLoading
     ? {
@@ -225,7 +228,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               value: marketHealth.data.market_open
                 ? copy.shell.marketCacheOnly
                 : copy.shell.marketClosed,
-              tone: 'warning' as ToolbarStatusTone,
+              tone:
+                !marketHealth.data.market_open && marketQuotesHealthy
+                  ? ('success' as ToolbarStatusTone)
+                  : ('warning' as ToolbarStatusTone),
               indicator: 'dot' as ToolbarStatusIndicator,
             }
           : marketHealth.data

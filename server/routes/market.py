@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from functools import partial
 import json
 import logging
@@ -44,6 +44,7 @@ _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 _QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
 _QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
 _MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
+_PROVIDER_REFRESH_TIMEOUT_SECONDS = 3.0
 _KLINE_FETCH_TIMEOUT_SECONDS = 3.0
 _BAR_BACKFILL_TIMEOUT_SECONDS = 60.0
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
@@ -381,6 +382,18 @@ def _provider_next_action(
     if source_health in {"stale", "partial"}:
         return "refresh_quotes_or_check_source"
     return None
+
+
+def _has_live_fund_quotes(health_quotes: list[MarketHealthQuote]) -> bool:
+    fund_quotes = [
+        item
+        for item in health_quotes
+        if item.asset_class in {"fund", "etf"}
+    ]
+    return bool(fund_quotes) and all(
+        item.quote_status == "live" and item.price is not None
+        for item in fund_quotes
+    )
 
 
 def _normalize_asset_class(asset_class: AssetClass | str | None) -> str:
@@ -1255,7 +1268,12 @@ def _load_latest_snapshot_from_provider(
     saw_provider_response = False
     for source_name, source in source_chain:
         try:
-            snapshot = source.fetch_latest(Symbol(symbol), asset_class)
+            snapshot = _fetch_provider_latest_with_timeout(
+                source,
+                symbol,
+                asset_class,
+                timeout_seconds=_PROVIDER_REFRESH_TIMEOUT_SECONDS,
+            )
             saw_provider_response = True
         except Exception as exc:
             logger.warning(
@@ -1307,6 +1325,26 @@ def _load_latest_snapshot_from_provider(
     payload["change"] = change
     payload["change_percent"] = change_percent
     return payload
+
+
+def _fetch_provider_latest_with_timeout(
+    source,
+    symbol: str,
+    asset_class: AssetClass,
+    *,
+    timeout_seconds: float,
+) -> dict | None:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="quote-provider")
+    future = executor.submit(source.fetch_latest, Symbol(symbol), asset_class)
+    try:
+        return future.result(timeout=max(float(timeout_seconds), 0.001))
+    except FutureTimeoutError as exc:
+        future.cancel()
+        raise TimeoutError(
+            f"provider fetch_latest timed out after {timeout_seconds:.1f}s"
+        ) from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _persist_latest_snapshot(state, symbol: str, payload: dict) -> None:
@@ -1775,7 +1813,7 @@ def create_router() -> APIRouter:
                     quote = _adapt_latest_quote_for_health(row)
                     if _is_real_persistent_quote(quote):
                         persistent_quotes[quote["symbol"]] = quote
-                    latest_quotes.setdefault(quote["symbol"], quote)
+                    latest_quotes[quote["symbol"]] = quote
             if hasattr(state.db, "get_latest_quotes_sync"):
                 for row in state.db.get_latest_quotes_sync():
                     quote = _adapt_latest_quote_for_health(row)
@@ -1881,12 +1919,17 @@ def create_router() -> APIRouter:
         has_funds = any(
             asset_class in {"fund", "etf"} for _, asset_class in watchlist
         )
+        effective_provider_supports_funds = (
+            True
+            if has_funds and _has_live_fund_quotes(health_quotes)
+            else provider_supports_funds
+        )
         has_persistent_cache = bool(persistent_quotes)
         real_data_available = has_persistent_cache
         persistent_cache_status = "available" if has_persistent_cache else "missing"
         next_action = _provider_next_action(
             provider_configured=provider_configured,
-            provider_supports_funds=provider_supports_funds,
+            provider_supports_funds=effective_provider_supports_funds,
             has_funds=has_funds,
             latest_refresh_error=latest_refresh_error,
             source_health=source_health,
@@ -1903,7 +1946,7 @@ def create_router() -> APIRouter:
             provider_name=provider_name,
             provider_configured=provider_configured,
             provider_requires_token=provider_requires_token,
-            provider_supports_funds=provider_supports_funds,
+            provider_supports_funds=effective_provider_supports_funds,
             provider_last_error=latest_refresh_error,
             provider_timeout_seconds=_MANUAL_REFRESH_TIMEOUT_SECONDS,
             next_action=next_action,

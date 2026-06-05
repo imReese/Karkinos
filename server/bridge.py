@@ -19,7 +19,6 @@ from core.events import (
     RiskAlertEvent,
     SignalEvent,
 )
-from core.types import Symbol
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +104,6 @@ class EventBusBridge:
             return float(obj)
         if isinstance(obj, Enum):
             return obj.value
-        if isinstance(obj, Symbol):
-            return str(obj)
         if isinstance(obj, datetime):
             return obj.isoformat()
         return obj

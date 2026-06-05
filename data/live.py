@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from decimal import Decimal
 
@@ -26,10 +27,17 @@ class LiveDataFeed:
         source: DataSource,
         event_bus: EventBus,
         fallback_source: DataSource | None = None,
+        poll_timeout_seconds: float = 8.0,
+        max_workers: int = 8,
     ) -> None:
         self.source = source
         self.fallback_source = fallback_source
         self.event_bus = event_bus
+        self.poll_timeout_seconds = max(float(poll_timeout_seconds), 0.1)
+        self._executor = ThreadPoolExecutor(
+            max_workers=max(int(max_workers), 1),
+            thread_name_prefix="karkinos-live-feed",
+        )
         self._last_prices: dict[tuple[Symbol, AssetClass], float] = {}
         self._last_snapshots: dict[tuple[Symbol, AssetClass], dict] = {}
 
@@ -57,6 +65,42 @@ class LiveDataFeed:
     ) -> dict | None:
         return self._last_snapshots.get((symbol, asset_class))
 
+    @staticmethod
+    def _should_try_fallback_snapshot(
+        snapshot: dict | None,
+        asset_class: AssetClass,
+    ) -> bool:
+        if snapshot is None or asset_class != AssetClass.STOCK:
+            return False
+        quote_source = str(
+            snapshot.get("quote_source")
+            or snapshot.get("source")
+            or snapshot.get("provider")
+            or ""
+        ).strip()
+        if quote_source != "tushare_daily":
+            return False
+        timestamp = LiveDataFeed._snapshot_datetime(snapshot)
+        return timestamp.date() < datetime.now().date()
+
+    def _fetch_fallback_latest(
+        self,
+        symbol: Symbol,
+        asset_class: AssetClass,
+    ) -> dict | None:
+        if self.fallback_source is None or self.fallback_source is self.source:
+            return None
+        try:
+            return self.fallback_source.fetch_latest(symbol, asset_class)
+        except Exception:
+            logger.warning(
+                "备用行情源获取实时行情失败: %s (%s)",
+                symbol,
+                asset_class.value,
+                exc_info=True,
+            )
+            return None
+
     def poll_latest(
         self,
         symbol: Symbol,
@@ -74,20 +118,14 @@ class LiveDataFeed:
             )
             snapshot = None
         if (
-            snapshot is None
-            and self.fallback_source is not None
-            and self.fallback_source is not self.source
+            snapshot is not None
+            and self._should_try_fallback_snapshot(snapshot, asset_class)
         ):
-            try:
-                snapshot = self.fallback_source.fetch_latest(symbol, asset_class)
-            except Exception:
-                logger.warning(
-                    "备用行情源获取实时行情失败: %s (%s)",
-                    symbol,
-                    asset_class.value,
-                    exc_info=True,
-                )
-                snapshot = None
+            fallback_snapshot = self._fetch_fallback_latest(symbol, asset_class)
+            if fallback_snapshot is not None:
+                snapshot = fallback_snapshot
+        if snapshot is None:
+            snapshot = self._fetch_fallback_latest(symbol, asset_class)
         if snapshot is None:
             logger.warning("获取实时行情失败: %s (%s)", symbol, asset_class.value)
             return None
@@ -119,9 +157,42 @@ class LiveDataFeed:
 
     def poll_all(self, watchlist: list[tuple[Symbol, AssetClass]]) -> list[MarketEvent]:
         """轮询所有关注标的最新的行情。"""
+        if not watchlist:
+            return []
+
+        futures: dict[Future, tuple[Symbol, AssetClass]] = {
+            self._executor.submit(self.poll_latest, symbol, asset_class): (
+                symbol,
+                asset_class,
+            )
+            for symbol, asset_class in watchlist
+        }
+        done, pending = wait(futures, timeout=self.poll_timeout_seconds)
+
+        for future in pending:
+            symbol, asset_class = futures[future]
+            future.cancel()
+            logger.warning(
+                "实时行情轮询超时，跳过本轮: %s (%s)",
+                symbol,
+                asset_class.value,
+            )
+
         events: list[MarketEvent] = []
-        for symbol, asset_class in watchlist:
-            event = self.poll_latest(symbol, asset_class)
+        for future, _context in futures.items():
+            if future not in done:
+                continue
+            try:
+                event = future.result()
+            except Exception:
+                symbol, asset_class = futures[future]
+                logger.warning(
+                    "实时行情轮询异常，跳过本轮: %s (%s)",
+                    symbol,
+                    asset_class.value,
+                    exc_info=True,
+                )
+                continue
             if event is not None:
                 events.append(event)
         return events

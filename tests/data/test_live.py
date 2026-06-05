@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -65,6 +66,25 @@ class RaisingSource(SequenceSource):
         raise self._error
 
 
+class SlowMixedSource(DataSource):
+    """One slow fund quote should not block a fast stock quote."""
+
+    def fetch_bars(self, symbol, start, end, frequency=None, asset_class=None):
+        return MagicMock()
+
+    def fetch_ticks(self, symbol, start, end):
+        raise NotImplementedError
+
+    def list_symbols(self):
+        return []
+
+    def fetch_latest(self, symbol, asset_class=AssetClass.STOCK):
+        if asset_class == AssetClass.FUND:
+            time.sleep(0.2)
+            return {"price": 1.1, "volume": None, "timestamp": "2026-06-05"}
+        return {"price": 8.76, "volume": 123456.0, "timestamp": "10:30:00"}
+
+
 class TestLiveDataFeed:
     """LiveDataFeed 测试。"""
 
@@ -120,6 +140,23 @@ class TestLiveDataFeed:
         watchlist = [(Symbol("600519"), AssetClass.STOCK)]
         events = feed.poll_all(watchlist)
         assert len(events) == 0
+
+    def test_poll_all_times_out_slow_symbols_without_blocking_fast_quotes(self):
+        """单个慢标的不应阻塞整轮行情刷新。"""
+        bus = EventBus()
+        feed = LiveDataFeed(SlowMixedSource(), bus, poll_timeout_seconds=0.05)
+
+        started = time.monotonic()
+        events = feed.poll_all(
+            [
+                (Symbol("018125"), AssetClass.FUND),
+                (Symbol("601985"), AssetClass.STOCK),
+            ]
+        )
+        elapsed = time.monotonic() - started
+
+        assert elapsed < 0.15
+        assert [event.symbol for event in events] == [Symbol("601985")]
 
     def test_poll_latest_falls_back_to_akshare_for_fund_quotes(self):
         """基金主源失败时应回退到备用行情源。"""
@@ -177,6 +214,46 @@ class TestLiveDataFeed:
             "price": 8.76,
             "volume": 123456.0,
             "timestamp": "10:30:00",
+            "display_name": "中国核电",
+        }
+        assert primary.calls == [("601985", AssetClass.STOCK)]
+        assert fallback.calls == [("601985", AssetClass.STOCK)]
+
+    def test_poll_latest_falls_back_when_stock_primary_returns_stale_daily_quote(self):
+        """股票主源只有旧日线快照时应继续回退到实时备用源。"""
+        primary = SequenceSource(
+            {
+                ("601985", AssetClass.STOCK): {
+                    "price": 9.25,
+                    "volume": 1000.0,
+                    "timestamp": "2000-01-01",
+                    "quote_source": "tushare_daily",
+                }
+            }
+        )
+        fallback = SequenceSource(
+            {
+                ("601985", AssetClass.STOCK): {
+                    "price": 9.31,
+                    "volume": 123456.0,
+                    "timestamp": "10:30:00",
+                    "quote_source": "akshare",
+                    "display_name": "中国核电",
+                }
+            }
+        )
+        bus = EventBus()
+        feed = LiveDataFeed(primary, bus, fallback_source=fallback)
+
+        event = feed.poll_latest(Symbol("601985"), AssetClass.STOCK)
+
+        assert event is not None
+        assert float(event.close) == pytest.approx(9.31)
+        assert feed.get_last_snapshot(Symbol("601985"), AssetClass.STOCK) == {
+            "price": 9.31,
+            "volume": 123456.0,
+            "timestamp": "10:30:00",
+            "quote_source": "akshare",
             "display_name": "中国核电",
         }
         assert primary.calls == [("601985", AssetClass.STOCK)]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -349,14 +350,16 @@ class TestAKShareFetchLatest:
         assert result["timestamp"] == "2026-04-18"
         assert result["display_name"] == "永赢先进制造智选混合C"
 
+    @patch("requests.get")
     @patch("akshare.fund_etf_spot_em")
     @patch("akshare.fund_open_fund_daily_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_open_end_fund_by_code(
-        self, mock_name_map, mock_daily, mock_etf, source
+        self, mock_name_map, mock_daily, mock_etf, mock_get, source
     ):
-        """开放式基金代码应优先走净值接口，而不是 ETF 行情接口。"""
+        """单基金页失败时，开放式基金代码仍可回退到净值表。"""
         mock_name_map.return_value = {"永赢先进制造智选混合发起C": "018125"}
+        mock_get.side_effect = TimeoutError("single fund page timeout")
         mock_daily.return_value = pd.DataFrame(
             {
                 "基金代码": ["018125"],
@@ -380,27 +383,60 @@ class TestAKShareFetchLatest:
         assert result["previous_close_date"] == "2026-04-21"
         assert result["day_change_value"] == pytest.approx(-0.0103)
         assert result["day_change_pct"] == pytest.approx(-0.0046)
+        mock_get.assert_called()
         mock_daily.assert_called_once()
         mock_etf.assert_not_called()
 
+    @patch("requests.get")
     @patch("akshare.fund_etf_spot_em")
     @patch("akshare.fund_open_fund_daily_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
     def test_fetch_latest_open_end_fund_code_skips_name_map(
-        self, mock_name_map, mock_daily, mock_etf, source
+        self, mock_name_map, mock_daily, mock_etf, mock_get, source
     ):
-        """已知基金代码不应依赖 fund_name_em 全量名称表。"""
+        """已知基金代码应走单基金页，不依赖全量名称表或全市场净值表。"""
         mock_name_map.side_effect = AssertionError("fund_name_em should not be called")
-        mock_daily.return_value = pd.DataFrame(
-            {
-                "基金代码": ["018125"],
-                "基金简称": ["永赢先进制造智选混合发起C"],
-                "2026-06-04-单位净值": [2.5123],
-                "2026-06-03-单位净值": [2.5000],
-                "日增长值": [0.0123],
-                "日增长率": [0.49],
-            }
+        mock_get.return_value = SimpleNamespace(
+            text='jsonpgz({"fundcode":"018125","name":"永赢先进制造智选混合发起C","jzrq":"2026-06-04","dwjz":"2.5000","gsz":"2.5123","gszzl":"0.49","gztime":"2026-06-05 15:00"});',
+            raise_for_status=lambda: None,
         )
+
+        result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
+
+        assert result is not None
+        assert result["price"] == 2.5123
+        assert result["timestamp"] == "2026-06-05 15:00"
+        assert result["display_name"] == "永赢先进制造智选混合发起C"
+        assert result["previous_close"] == 2.5
+        assert result["previous_close_date"] == "2026-06-04"
+        assert result["quote_source"] == "eastmoney_fund_estimate"
+        mock_name_map.assert_not_called()
+        mock_daily.assert_not_called()
+        mock_etf.assert_not_called()
+
+    @patch("requests.get")
+    @patch("akshare.fund_etf_spot_em")
+    @patch("akshare.fund_open_fund_daily_em")
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_fetch_latest_open_end_fund_falls_back_to_single_fund_page(
+        self, mock_name_map, mock_daily, mock_etf, mock_get, source
+    ):
+        """全市场开放式基金表失败时，应回退到单基金净值页。"""
+        mock_name_map.side_effect = AssertionError("fund_name_em should not be called")
+        mock_daily.side_effect = TimeoutError("daily table timeout")
+        mock_get.side_effect = [
+            TimeoutError("fund estimate timeout"),
+            SimpleNamespace(
+                text=(
+                    'var fS_name = "永赢先进制造智选混合发起C";'
+                    'var Data_netWorthTrend = ['
+                    '{"x":1780416000000,"y":2.5000,"equityReturn":0.12},'
+                    '{"x":1780502400000,"y":2.5123,"equityReturn":0.49}'
+                    "];"
+                ),
+                raise_for_status=lambda: None,
+            ),
+        ]
 
         result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
 
@@ -410,8 +446,9 @@ class TestAKShareFetchLatest:
         assert result["display_name"] == "永赢先进制造智选混合发起C"
         assert result["previous_close"] == 2.5
         assert result["previous_close_date"] == "2026-06-03"
-        mock_name_map.assert_not_called()
-        mock_daily.assert_called_once()
+        assert result["day_change_value"] == pytest.approx(0.0123)
+        assert result["day_change_pct"] == pytest.approx(0.0049)
+        assert mock_get.call_count == 2
         mock_etf.assert_not_called()
 
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")

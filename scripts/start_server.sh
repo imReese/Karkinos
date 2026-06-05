@@ -85,6 +85,17 @@ fi
 
 MODE="${1:-dev}"
 ENV_PREFIX=()
+NO_PROXY_ENV=(
+  -u http_proxy
+  -u https_proxy
+  -u HTTP_PROXY
+  -u HTTPS_PROXY
+  -u all_proxy
+  -u ALL_PROXY
+  -u DEFAULT_PROXY_URL
+  NO_PROXY=127.0.0.1,localhost
+  no_proxy=127.0.0.1,localhost
+)
 case "${MODE}" in
   dev)
     shift || true
@@ -176,10 +187,10 @@ else
 fi
 
 if command -v setsid >/dev/null 2>&1; then
-  setsid nohup env "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+  setsid nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
     uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 else
-  nohup env "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+  nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
     uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 fi
 
