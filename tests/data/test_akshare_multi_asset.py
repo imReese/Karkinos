@@ -383,6 +383,37 @@ class TestAKShareFetchLatest:
         mock_daily.assert_called_once()
         mock_etf.assert_not_called()
 
+    @patch("akshare.fund_etf_spot_em")
+    @patch("akshare.fund_open_fund_daily_em")
+    @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
+    def test_fetch_latest_open_end_fund_code_skips_name_map(
+        self, mock_name_map, mock_daily, mock_etf, source
+    ):
+        """已知基金代码不应依赖 fund_name_em 全量名称表。"""
+        mock_name_map.side_effect = AssertionError("fund_name_em should not be called")
+        mock_daily.return_value = pd.DataFrame(
+            {
+                "基金代码": ["018125"],
+                "基金简称": ["永赢先进制造智选混合发起C"],
+                "2026-06-04-单位净值": [2.5123],
+                "2026-06-03-单位净值": [2.5000],
+                "日增长值": [0.0123],
+                "日增长率": [0.49],
+            }
+        )
+
+        result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
+
+        assert result is not None
+        assert result["price"] == 2.5123
+        assert result["timestamp"] == "2026-06-04"
+        assert result["display_name"] == "永赢先进制造智选混合发起C"
+        assert result["previous_close"] == 2.5
+        assert result["previous_close_date"] == "2026-06-03"
+        mock_name_map.assert_not_called()
+        mock_daily.assert_called_once()
+        mock_etf.assert_not_called()
+
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
     def test_resolve_open_end_fund_code_accepts_alias_name(self, mock_name_map, source):
         """缺少“发起/发起式”的输入别名也应解析到标准基金代码。"""

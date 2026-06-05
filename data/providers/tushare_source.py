@@ -76,14 +76,17 @@ class TushareSource(DataSource):
         it returns no row, fall back to the latest daily bar so non-trading
         periods still materialize an authoritative local snapshot.
         """
-        if asset_class != AssetClass.STOCK:
-            return None
+        if asset_class == AssetClass.STOCK:
+            ts_code = self._stock_ts_code(symbol)
+            realtime = self._fetch_realtime_quote(ts_code)
+            if realtime is not None:
+                return realtime
+            return self._fetch_daily_latest(ts_code)
 
-        ts_code = self._stock_ts_code(symbol)
-        realtime = self._fetch_realtime_quote(ts_code)
-        if realtime is not None:
-            return realtime
-        return self._fetch_daily_latest(ts_code)
+        if asset_class == AssetClass.FUND:
+            return self._fetch_fund_nav_latest(self._fund_ts_code(symbol))
+
+        return None
 
     def list_symbols(self) -> list[Symbol]:
         pro = self._get_pro()
@@ -165,6 +168,48 @@ class TushareSource(DataSource):
             "previous_close_date": trade_date,
         }
 
+    def _fetch_fund_nav_latest(self, ts_code: str) -> dict | None:
+        pro = self._get_pro()
+        end = datetime.now()
+        start = end - timedelta(days=30)
+        df = pro.fund_nav(
+            ts_code=ts_code,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+        )
+        if df is None or df.empty:
+            return None
+        df = df.sort_values("nav_date", ascending=False)
+        latest = df.iloc[0].to_dict()
+        previous = df.iloc[1].to_dict() if len(df) > 1 else {}
+        price = self._row_float(latest, "unit_nav", "nav")
+        if price is None:
+            return None
+
+        previous_close = self._row_float(previous, "unit_nav", "nav")
+        day_change_value = (
+            price - previous_close if previous_close not in {None, 0} else None
+        )
+        day_change_pct = (
+            day_change_value / previous_close
+            if day_change_value is not None and previous_close not in {None, 0}
+            else None
+        )
+        return {
+            "price": price,
+            "volume": None,
+            "turnover": None,
+            "timestamp": self._format_trade_date(self._row_value(latest, "nav_date")),
+            "source": "tushare",
+            "quote_source": "tushare_fund_nav",
+            "previous_close": previous_close,
+            "previous_close_date": self._format_trade_date(
+                self._row_value(previous, "nav_date")
+            ),
+            "day_change_value": day_change_value,
+            "day_change_pct": day_change_pct,
+        }
+
     @staticmethod
     def _stock_ts_code(symbol: Symbol) -> str:
         raw = str(symbol)
@@ -175,6 +220,13 @@ class TushareSource(DataSource):
         if raw.startswith(("4", "8")):
             return f"{raw}.BJ"
         return f"{raw}.SZ"
+
+    @staticmethod
+    def _fund_ts_code(symbol: Symbol) -> str:
+        raw = str(symbol)
+        if "." in raw:
+            return raw
+        return f"{raw}.OF"
 
     @staticmethod
     def _row_value(row: dict[str, Any], *names: str) -> Any:

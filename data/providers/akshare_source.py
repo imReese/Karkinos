@@ -78,6 +78,10 @@ _PROXY_ENV_KEYS = (
 )
 
 
+def _looks_like_open_end_fund_code(value: str) -> bool:
+    return value.isdigit() and len(value) == 6 and value.startswith("0")
+
+
 def _row_float(row, *columns: str) -> float | None:
     for column in columns:
         if column not in row.index:
@@ -179,9 +183,7 @@ class AKShareSource(DataSource):
     def _resolve_open_end_fund_code(self, symbol: Symbol) -> str | None:
         symbol_str = str(symbol).strip()
         if symbol_str[:1].isdigit():
-            if symbol_str in set(self._open_end_fund_name_map().values()):
-                return symbol_str
-            return None
+            return symbol_str if _looks_like_open_end_fund_code(symbol_str) else None
         if code := self._open_end_fund_name_map().get(symbol_str):
             return code
         normalized = self._normalize_open_end_fund_name(symbol_str)
@@ -236,7 +238,9 @@ class AKShareSource(DataSource):
         if not fund_code:
             return None
 
-        canonical_name = self._resolve_open_end_fund_name(symbol)
+        canonical_name = None
+        if not _looks_like_open_end_fund_code(str(symbol).strip()):
+            canonical_name = self._resolve_open_end_fund_name(symbol)
         df = self._call_with_retry(ak.fund_open_fund_daily_em)
         row = df[df["基金代码"].astype(str) == fund_code]
         if row.empty and canonical_name:
@@ -245,6 +249,9 @@ class AKShareSource(DataSource):
             return None
 
         row = row.iloc[0]
+        if not canonical_name and "基金简称" in row.index:
+            name_value = str(row["基金简称"]).strip()
+            canonical_name = name_value or None
         nav_columns = sorted(
             (
                 str(column)

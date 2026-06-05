@@ -109,10 +109,51 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     assert calls["pro_api_token"] == "token-1234"
 
 
-def test_tushare_fetch_latest_non_stock_returns_none():
+def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakePro:
+        def fund_nav(self, ts_code, start_date, end_date):
+            calls["fund_nav"] = (ts_code, start_date, end_date)
+            return pd.DataFrame(
+                {
+                    "ts_code": ["018125.OF", "018125.OF"],
+                    "nav_date": ["20260604", "20260603"],
+                    "unit_nav": [2.5123, 2.5],
+                    "accum_nav": [2.5123, 2.5],
+                }
+            )
+
+    def pro_api(token=None):
+        calls["pro_api_token"] = token
+        return FakePro()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "tushare",
+        SimpleNamespace(pro_api=pro_api),
+    )
+
+    result = TushareSource(token="token-1234").fetch_latest(
+        Symbol("018125"), AssetClass.FUND
+    )
+
+    assert result is not None
+    assert result["price"] == 2.5123
+    assert result["timestamp"] == "2026-06-04"
+    assert result["quote_source"] == "tushare_fund_nav"
+    assert result["previous_close"] == 2.5
+    assert result["previous_close_date"] == "2026-06-03"
+    assert result["day_change_value"] == pytest.approx(0.0123)
+    assert result["day_change_pct"] == pytest.approx(0.00492)
+    assert calls["pro_api_token"] == "token-1234"
+    assert calls["fund_nav"][0] == "018125.OF"
+
+
+def test_tushare_fetch_latest_unsupported_asset_returns_none():
     assert (
         TushareSource(token="token-1234").fetch_latest(
-            Symbol("018125"), AssetClass.FUND
+            Symbol("Au99.99"), AssetClass.GOLD
         )
         is None
     )
