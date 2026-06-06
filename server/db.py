@@ -61,6 +61,120 @@ class AppDatabase:
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
+    # ---------- Watchlist Assets ----------
+
+    def upsert_watchlist_asset_sync(
+        self,
+        *,
+        symbol: str,
+        asset_class: str = "stock",
+        display_name: str | None = None,
+        source: str = "manual",
+    ) -> dict[str, Any] | None:
+        """Upsert a user-tracked asset into the persistent watchlist."""
+        clean_symbol = str(symbol).strip()
+        clean_asset_class = str(asset_class or "stock").strip().lower() or "stock"
+        clean_display_name = str(display_name or clean_symbol).strip() or clean_symbol
+        if not clean_symbol:
+            return None
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT INTO watchlist_assets (
+                    symbol, asset_class, display_name, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    asset_class = excluded.asset_class,
+                    display_name = excluded.display_name,
+                    source = excluded.source,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    clean_symbol,
+                    clean_asset_class,
+                    clean_display_name,
+                    source,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT *
+                FROM watchlist_assets
+                WHERE lower(symbol) = lower(?)
+                LIMIT 1
+                """,
+                (clean_symbol,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_watchlist_assets_sync(self) -> list[dict[str, Any]]:
+        """List persistent watchlist assets in user insertion order."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT *
+                FROM watchlist_assets
+                ORDER BY created_at ASC, id ASC
+                """).fetchall()
+            return [dict(row) for row in rows]
+
+    def delete_watchlist_asset_sync(self, symbol: str) -> bool:
+        """Remove a user-tracked asset from the persistent watchlist."""
+        clean_symbol = str(symbol).strip()
+        if not clean_symbol:
+            return False
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM watchlist_assets WHERE lower(symbol) = lower(?)",
+                (clean_symbol,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def seed_watchlist_assets_from_config_sync(self, assets: Any) -> int:
+        """Migrate legacy config assets into the persistent watchlist."""
+        seeded = 0
+        if not assets:
+            return seeded
+        iterable = assets.items() if isinstance(assets, dict) else enumerate(assets)
+        for key, raw_asset in iterable:
+            if isinstance(raw_asset, str):
+                symbol = str(key if not isinstance(key, int) else raw_asset).strip()
+                asset_class = "stock"
+                display_name = raw_asset if not isinstance(key, int) else symbol
+            elif isinstance(raw_asset, dict):
+                symbol = str(
+                    raw_asset.get("provider_symbol")
+                    or raw_asset.get("provider_code")
+                    or raw_asset.get("code")
+                    or raw_asset.get("symbol")
+                    or ("" if isinstance(key, int) else key)
+                ).strip()
+                asset_class = str(raw_asset.get("asset_class") or "stock")
+                display_name = str(
+                    raw_asset.get("display_name")
+                    or raw_asset.get("name")
+                    or raw_asset.get("symbol")
+                    or symbol
+                )
+            else:
+                continue
+            if not symbol:
+                continue
+            if self.upsert_watchlist_asset_sync(
+                symbol=symbol,
+                asset_class=asset_class,
+                display_name=display_name,
+                source="config_migration",
+            ):
+                seeded += 1
+        return seeded
+
     # ---------- Instrument Metadata ----------
 
     def upsert_instrument_metadata_sync(
@@ -163,13 +277,11 @@ class AppDatabase:
         """List local instrument identities newest first."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
+            rows = conn.execute("""
                 SELECT *
                 FROM instrument_metadata
                 ORDER BY fetched_at DESC, updated_at DESC, id DESC
-                """
-            ).fetchall()
+                """).fetchall()
             return [dict(row) for row in rows]
 
     # ---------- Signals ----------
@@ -901,13 +1013,11 @@ class AppDatabase:
         """List materialized latest quotes newest first."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
+            rows = conn.execute("""
                 SELECT *
                 FROM latest_quotes
                 ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
-                """
-            ).fetchall()
+                """).fetchall()
             return [dict(row) for row in rows]
 
     # ---------- Quote Snapshots ----------
@@ -1647,6 +1757,17 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     allocation_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS watchlist_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    display_name TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(symbol)
+);
+
 CREATE TABLE IF NOT EXISTS instrument_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL,
@@ -1738,6 +1859,8 @@ CREATE TABLE IF NOT EXISTS action_tasks (
 CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_backtest_created ON backtest_results(created_at);
+CREATE INDEX IF NOT EXISTS idx_watchlist_assets_symbol ON watchlist_assets(symbol);
+CREATE INDEX IF NOT EXISTS idx_watchlist_assets_asset_class ON watchlist_assets(asset_class);
 CREATE INDEX IF NOT EXISTS idx_instrument_metadata_symbol_asset_type
 ON instrument_metadata(symbol, asset_type);
 CREATE INDEX IF NOT EXISTS idx_instrument_metadata_display_name

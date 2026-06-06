@@ -94,7 +94,9 @@ def test_asset_metadata_resolver_accepts_supported_config_shapes():
             },
         ),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(positions={"018125": object(), "026539": object()}),
+            portfolio=SimpleNamespace(
+                positions={"018125": object(), "026539": object()}
+            ),
             watchlist=[("012710", SimpleNamespace(value="fund"))],
             latest_quotes={},
         ),
@@ -175,7 +177,9 @@ def test_asset_metadata_status_reports_missing_symbols_and_template():
             assets={"018125": {"display_name": "示例基金A", "asset_class": "fund"}},
         ),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(positions={"018125": object(), "026539": object()}),
+            portfolio=SimpleNamespace(
+                positions={"018125": object(), "026539": object()}
+            ),
             watchlist=[("012710", SimpleNamespace(value="fund"))],
             latest_quotes={},
         ),
@@ -187,7 +191,10 @@ def test_asset_metadata_status_reports_missing_symbols_and_template():
     assert status["configured_count"] == 1
     assert status["missing_symbols"] == ["012710", "026539"]
     assert status["has_missing_metadata"] is True
-    assert status["suggested_config"]["assets"][0]["display_name"] == "<填入资产名称>"
+    assert (
+        status["suggested_config"]["watchlist_assets"][0]["display_name"]
+        == "<填入资产名称>"
+    )
 
 
 def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
@@ -250,7 +257,10 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     }
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(backtest_routes, "_run_backtest", lambda request, config: fake_result)
+    monkeypatch.setattr(
+        backtest_routes, "_run_backtest", lambda request, config: fake_result
+    )
+
     async def run_inline(func, *args, **kwargs):
         return func(*args, **kwargs)
 
@@ -899,7 +909,9 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(
+        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+    )
     monkeypatch.setattr(
         market_routes,
         "_load_latest_snapshot_from_provider",
@@ -981,7 +993,9 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(
+        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+    )
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
@@ -1058,7 +1072,9 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_load_latest_snapshot_from_provider", fail_fetch)
+    monkeypatch.setattr(
+        market_routes, "_load_latest_snapshot_from_provider", fail_fetch
+    )
 
     response = asyncio.run(
         endpoint(market_routes.QuoteRefreshRequest(symbols=["600519"]))
@@ -1157,8 +1173,7 @@ def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_pat
     route = next(
         route
         for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/market/quote-fetch-runs"
+        if isinstance(route, APIRoute) and route.path == "/api/market/quote-fetch-runs"
     )
 
     db = AppDatabase(tmp_path / "app.db")
@@ -1203,8 +1218,7 @@ def test_market_quote_fetch_runs_endpoint_filters_runs(monkeypatch, tmp_path):
     route = next(
         route
         for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/market/quote-fetch-runs"
+        if isinstance(route, APIRoute) and route.path == "/api/market/quote-fetch-runs"
     )
 
     db = AppDatabase(tmp_path / "app.db")
@@ -1256,8 +1270,7 @@ def test_market_quote_fetch_runs_endpoint_tolerates_malformed_metadata(
     route = next(
         route
         for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/market/quote-fetch-runs"
+        if isinstance(route, APIRoute) and route.path == "/api/market/quote-fetch-runs"
     )
 
     db = AppDatabase(tmp_path / "app.db")
@@ -1328,7 +1341,10 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
             if str(symbol) == "601985":
                 return {"display_name": "中国核电", "timestamp": "2026-06-01 11:22:00"}
             if str(symbol) == "018125":
-                return {"display_name": "永赢先进制造智选混合C", "timestamp": "2026-06-01"}
+                return {
+                    "display_name": "永赢先进制造智选混合C",
+                    "timestamp": "2026-06-01",
+                }
             raise AssertionError(f"unexpected symbol {symbol}")
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
@@ -1492,7 +1508,9 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
     assert response.next_action == "configure_data_source_token"
 
 
-def test_refresh_one_quote_real_provider_does_not_fallback_to_unregistered_provider(monkeypatch):
+def test_refresh_one_quote_real_provider_does_not_fallback_to_unregistered_provider(
+    monkeypatch,
+):
     from server.routes import market as market_routes
 
     class BrokenAkshareSource:
@@ -1624,7 +1642,9 @@ def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
+    monkeypatch.setattr(
+        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+    )
     monkeypatch.setattr(
         market_routes,
         "_load_latest_snapshot_from_provider",
@@ -1680,8 +1700,12 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_resolve_quote_status", lambda state, quote: "live")
-    monkeypatch.setattr(market_routes, "_load_latest_snapshot_from_provider", fake_fetch)
+    monkeypatch.setattr(
+        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+    )
+    monkeypatch.setattr(
+        market_routes, "_load_latest_snapshot_from_provider", fake_fetch
+    )
 
     response = asyncio.run(
         endpoint(market_routes.QuoteRefreshRequest(symbols=["600519", "000001"]))
@@ -1732,7 +1756,9 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
     monkeypatch.setattr(
-        market_routes, "_load_latest_snapshot_from_provider", lambda state, symbol, asset_class: None
+        market_routes,
+        "_load_latest_snapshot_from_provider",
+        lambda state, symbol, asset_class: None,
     )
 
     response = asyncio.run(
@@ -1784,7 +1810,9 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_load_latest_snapshot_from_provider", slow_fetch)
+    monkeypatch.setattr(
+        market_routes, "_load_latest_snapshot_from_provider", slow_fetch
+    )
     monkeypatch.setattr(market_routes, "_MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
 
     async def slow_blocking_fetch(func, *args):
@@ -2275,8 +2303,7 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     backfill_route = next(
         route
         for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/market/bars/backfill"
+        if isinstance(route, APIRoute) and route.path == "/api/market/bars/backfill"
     )
     endpoint = backfill_route.endpoint
 
@@ -2334,9 +2361,10 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     stored = store.load_bars(Symbol("601985"))
     assert stored is not None
     assert list(stored["close"]) == [8.74, 8.78]
-    assert store.get_meta(Symbol("601985"), market_routes.BarFrequency.DAILY)[
-        "row_count"
-    ] == 2
+    assert (
+        store.get_meta(Symbol("601985"), market_routes.BarFrequency.DAILY)["row_count"]
+        == 2
+    )
 
 
 def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
@@ -2348,8 +2376,7 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
     backfill_route = next(
         route
         for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/market/bars/backfill"
+        if isinstance(route, APIRoute) and route.path == "/api/market/bars/backfill"
     )
     endpoint = backfill_route.endpoint
 
@@ -2897,10 +2924,48 @@ def test_market_watchlist_add_and_remove(monkeypatch):
         notification={"type": "console"},
         live_poll_interval=60,
     )
+
+    class FakeWatchlistDb:
+        def __init__(self):
+            self.assets = [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "display_name": "600519",
+                    "source": "manual",
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def list_watchlist_assets_sync(self):
+            return list(self.assets)
+
+        def upsert_watchlist_asset_sync(self, **payload):
+            row = {
+                "symbol": payload["symbol"],
+                "asset_class": payload["asset_class"],
+                "display_name": payload.get("display_name") or payload["symbol"],
+                "source": payload.get("source") or "manual",
+            }
+            self.assets.append(row)
+            return row
+
+        def delete_watchlist_asset_sync(self, symbol):
+            original_len = len(self.assets)
+            self.assets = [
+                asset
+                for asset in self.assets
+                if asset["symbol"].lower() != symbol.lower()
+            ]
+            return len(self.assets) != original_len
+
+    fake_db = FakeWatchlistDb()
     fake_state = SimpleNamespace(
         config=config,
         scheduler=SimpleNamespace(is_running=False, latest_quotes={}, portfolio=None),
-        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+        db=fake_db,
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     config_path = resolve_config_path()
@@ -2916,6 +2981,8 @@ def test_market_watchlist_add_and_remove(monkeypatch):
 
     remove_response = asyncio.run(remove_route.endpoint("510300"))
     assert all(item.symbol != "510300" for item in remove_response)
+    assert config.assets == [{"symbol": "600519", "asset_class": "stock"}]
+    assert all(asset["symbol"] != "510300" for asset in fake_db.assets)
     assert json.loads(config_path.read_text(encoding="utf-8")) == original_config
 
 
@@ -3008,7 +3075,9 @@ def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
             instruments=[],
         ),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(positions={"018125": object(), "026539": object()}),
+            portfolio=SimpleNamespace(
+                positions={"018125": object(), "026539": object()}
+            ),
             watchlist=[("012710", SimpleNamespace(value="fund"))],
             latest_quotes={},
         ),
@@ -3021,7 +3090,9 @@ def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
     assert response.configured_count == 1
     assert response.missing_symbols == ["012710", "026539"]
     assert response.has_missing_metadata is True
-    assert response.suggested_config["assets"][0]["provider_symbol"] == "012710"
+    assert (
+        response.suggested_config["watchlist_assets"][0]["provider_symbol"] == "012710"
+    )
 
 
 def test_portfolio_overview_summarizes_account_state(monkeypatch):
@@ -3269,7 +3340,9 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.market._fetch_latest_snapshot",
-        lambda *args, **kwargs: pytest.fail("portfolio snapshot must not fetch remotely"),
+        lambda *args, **kwargs: pytest.fail(
+            "portfolio snapshot must not fetch remotely"
+        ),
     )
     monkeypatch.setattr(
         "server.routes.portfolio.rebuild_portfolio_from_ledger",
@@ -3917,6 +3990,8 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
+            self.watchlist_assets: list[dict] = []
+            self.instrument_metadata: list[dict] = []
 
         async def add_trade(self, **payload):
             trade_id = len(self.trades) + 1
@@ -3935,6 +4010,14 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
 
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
+
+        def upsert_watchlist_asset_sync(self, **payload):
+            self.watchlist_assets.append(payload)
+            return payload
+
+        def upsert_instrument_metadata_sync(self, **payload):
+            self.instrument_metadata.append(payload)
+            return payload
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -3995,7 +4078,9 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
     assert response.price == pytest.approx(1.0107)
     assert response.quantity == pytest.approx(200 / 1.0107)
     assert "confirmed_trade_date=2026-04-22" in response.note
-    assert fake_state.config.assets[0]["display_name"] == "华夏核心成长混合C"
+    assert fake_state.config.assets == []
+    assert fake_state.db.watchlist_assets[0]["display_name"] == "华夏核心成长混合C"
+    assert fake_state.db.instrument_metadata[0]["display_name"] == "华夏核心成长混合C"
 
 
 def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
@@ -4015,11 +4100,21 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
     class FakeDb:
         def __init__(self):
             self.pending_orders: list[dict] = []
+            self.watchlist_assets: list[dict] = []
+            self.instrument_metadata: list[dict] = []
 
         def add_pending_fund_order_sync(self, **payload):
             order_id = len(self.pending_orders) + 1
             self.pending_orders.append({"id": order_id, **payload})
             return order_id
+
+        def upsert_watchlist_asset_sync(self, **payload):
+            self.watchlist_assets.append(payload)
+            return payload
+
+        def upsert_instrument_metadata_sync(self, **payload):
+            self.instrument_metadata.append(payload)
+            return payload
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -4081,7 +4176,8 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
     assert payload["status"] == "pending"
     assert payload["target_trade_date"] == "2026-04-23"
     assert "2026-04-23" in payload["detail"]
-    assert fake_state.config.assets[0]["symbol"] == "012710"
+    assert fake_state.config.assets == []
+    assert fake_state.db.watchlist_assets[0]["symbol"] == "012710"
 
 
 def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):

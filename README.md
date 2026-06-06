@@ -68,7 +68,7 @@ or credentialed deployments.
 docker compose up -d                   # build & start → http://localhost:8000
 ```
 
-Uses ignored local `./config.json` as runtime configuration and persists market cache / SQLite data in the `karkinos-data` Docker volume. Runtime config is not a market-data store; quote, bar, ledger, and portfolio state should live in the local database.
+Uses ignored local `./config.json` as runtime configuration and persists market cache / SQLite data in the `karkinos-data` Docker volume. Runtime config is not a market-data store; watchlists, quotes, bars, ledger entries, and portfolio state should live in the local database.
 
 Runtime databases, local logs, exported files, screenshots, and local secret
 files should stay on your machine and are not intended to be committed.
