@@ -21,17 +21,17 @@ from core.events import (
     RiskDecisionEvent,
     SignalEvent,
 )
-from core.types import ZERO, OrderType, Symbol
+from core.types import ZERO, AssetClass, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from execution.commission import (
     CommissionCalculator,
     MultiAssetCommission,
-    StockACommission,
 )
 from execution.simulator import SimulatedExecution
 from execution.slippage import SlippageModel
+from execution.tracker import BrokerFillReport, ExecutionOrderTracker
 from risk.manager import RiskManager
 from strategy.base import Strategy
 
@@ -65,6 +65,7 @@ class BacktestEngine:
         commission_calc: CommissionCalculator | None = None,
         slippage_model: SlippageModel | None = None,
         execution_config: BacktestExecutionConfig | None = None,
+        db=None,
     ) -> None:
         self.event_bus = EventBus()
         self.clock = SimulatedClock()
@@ -73,6 +74,12 @@ class BacktestEngine:
         self.data_handlers = data_handlers
         self.initial_cash = initial_cash
         self.fills: list[FillEvent] = []
+        self.db = db
+        self.execution_tracker = (
+            ExecutionOrderTracker(event_bus=self.event_bus, db=db)
+            if db is not None
+            else None
+        )
 
         # 将策略的 event_bus 指向引擎内部总线
         self.strategy.event_bus = self.event_bus
@@ -200,6 +207,7 @@ class BacktestEngine:
 
     def _on_order_event(self, event: OrderEvent) -> None:
         """执行委托单。"""
+        self._record_order_event(event)
         if self._multi_commission is not None:
             inst = self.instruments.get(event.symbol)
             if inst is not None:
@@ -223,14 +231,73 @@ class BacktestEngine:
                         commission=commission,
                         slippage=fill.slippage,
                     )
-                    self.fills.append(fill)
-                    self.event_bus.publish(fill)
+                    self._record_fill_event(fill, event)
                     return
 
         fill = self.execution.execute(event)
         if fill is not None:
+            self._record_fill_event(fill, event)
+
+    def _record_order_event(self, event: OrderEvent) -> None:
+        """Persist a shared backtest order fact when a DB sink is configured."""
+        if self.db is None or not hasattr(self.db, "record_order_sync"):
+            return
+        self.db.record_order_sync(
+            order_id=event.order_id,
+            timestamp=event.timestamp.isoformat(),
+            symbol=str(event.symbol),
+            side=event.side.value,
+            order_type=event.order_type.value,
+            quantity=float(event.quantity),
+            price=float(event.price) if event.price is not None else None,
+            asset_class=self._asset_class_for_order(event).value,
+            intent_id=event.intent_id,
+            risk_decision_id=event.risk_decision_id,
+            execution_mode="backtest",
+            status="submitted",
+            source="backtest_execution",
+            source_ref=event.order_id,
+            payload={"order_execution_mode": event.execution_mode},
+        )
+
+    def _record_fill_event(self, fill: FillEvent, order: OrderEvent) -> None:
+        """Record a fill locally, optionally persist it, and publish it once."""
+        if self.execution_tracker is None:
             self.fills.append(fill)
             self.event_bus.publish(fill)
+            return
+
+        recorded = self.execution_tracker.record_fill(
+            BrokerFillReport(
+                fill_id=fill.fill_id,
+                order_id=fill.order_id,
+                timestamp=fill.timestamp,
+                symbol=fill.symbol,
+                side=fill.side,
+                fill_price=fill.fill_price,
+                fill_quantity=fill.fill_quantity,
+                commission=fill.commission,
+                slippage=fill.slippage,
+                asset_class=self._asset_class_for_order(order),
+                execution_mode="backtest",
+                provider_name="simulated_backtest",
+                broker_order_id=order.order_id,
+                source="backtest_execution",
+                source_ref=fill.fill_id,
+                metadata={"order_execution_mode": order.execution_mode},
+            )
+        )
+        self.fills.append(recorded)
+        if self.db is not None and hasattr(self.db, "update_order_status_sync"):
+            self.db.update_order_status_sync(
+                order_id=order.order_id,
+                status="filled",
+                note="filled by backtest_execution",
+            )
+
+    def _asset_class_for_order(self, event: OrderEvent) -> AssetClass:
+        inst = self.instruments.get(event.symbol)
+        return inst.asset_class if inst is not None else AssetClass.STOCK
 
     def _merge_streams(self) -> list[MarketEvent]:
         """合并多个 DataHandler 的事件流，按时间排序。"""
