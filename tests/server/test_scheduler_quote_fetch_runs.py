@@ -6,8 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
-from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, Symbol
+from core.events import MarketEvent, OrderEvent
+from core.types import AssetClass, BarFrequency, OrderSide, OrderType, Symbol
 from server.db import AppDatabase
 
 
@@ -58,6 +58,7 @@ def _run_scheduler_once(
     events: list[MarketEvent] | None = None,
     snapshots: dict[tuple[str, AssetClass], dict] | None = None,
     poll_error: Exception | None = None,
+    strategy_factory=None,
 ) -> AppDatabase:
     from server import scheduler as scheduler_module
 
@@ -110,7 +111,9 @@ def _run_scheduler_once(
     monkeypatch.setattr(
         scheduler_module,
         "build_strategy",
-        lambda config, bus: FakeStrategy(),
+        lambda config, bus: (
+            strategy_factory(bus) if strategy_factory is not None else FakeStrategy()
+        ),
     )
     monkeypatch.setattr(
         scheduler_module.TradingScheduler,
@@ -179,6 +182,53 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert instrument is not None
     assert instrument["display_name"] == "贵州茅台"
     assert instrument["provider_name"] == "akshare"
+
+
+def test_scheduler_wires_paper_orders_to_persistent_execution_connector(
+    monkeypatch,
+    tmp_path,
+):
+    class PaperOrderStrategy:
+        def __init__(self, event_bus) -> None:
+            self.event_bus = event_bus
+            self.initialized_symbols = []
+
+        def on_init(self, symbols) -> None:
+            self.initialized_symbols = list(symbols)
+
+        def on_data(self, event) -> None:
+            self.event_bus.publish(
+                OrderEvent(
+                    timestamp=event.timestamp,
+                    order_id="ORD-SCHED-PAPER-1",
+                    symbol=event.symbol,
+                    side=OrderSide.BUY,
+                    order_type=OrderType.MARKET,
+                    quantity=Decimal("100"),
+                    price=event.close,
+                    intent_id="INTENT-SCHED-1",
+                    risk_decision_id="RISK-SCHED-1",
+                    execution_mode="paper",
+                )
+            )
+
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        events=[_market_event("600519", price=Decimal("123.45"))],
+        strategy_factory=PaperOrderStrategy,
+    )
+
+    saved_order = db.get_order_sync("ORD-SCHED-PAPER-1")
+    fills = db.list_fills_sync(order_id="ORD-SCHED-PAPER-1")
+
+    assert saved_order is not None
+    assert saved_order["status"] == "filled"
+    assert saved_order["execution_mode"] == "paper"
+    assert saved_order["source"] == "paper_execution"
+    assert len(fills) == 1
+    assert fills[0]["provider_name"] == "simulated"
+    assert fills[0]["fill_price"] == 123.45
 
 
 def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp_path):

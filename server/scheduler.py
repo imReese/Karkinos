@@ -15,6 +15,7 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.live import LiveDataFeed
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
+from execution.connector import PaperExecutionConnector
 from execution.gateway import ManualConfirmGateway
 from notification.notifier import build_notifier, format_signal_message
 from risk.pre_trade import PreTradePolicy, PreTradeRiskManager
@@ -549,7 +550,7 @@ class TradingScheduler:
             return
 
         # 实盘安全链路：OrderIntentEvent -> PreTradeRiskManager -> OrderEvent
-        # -> ManualConfirmGateway -> SQLite pending confirmation.
+        # -> execution connector/gateway -> SQLite order/fill facts.
         context_provider = LiveContextProvider(
             portfolio_getter=lambda: self.portfolio,
             controls=self._trading_controls,
@@ -565,6 +566,7 @@ class TradingScheduler:
             db=self._db,
         )
         ManualConfirmGateway(self._event_bus, db=self._db)
+        PaperExecutionConnector(event_bus=self._event_bus, db=self._db)
 
         # 创建策略（使用注册表）
         strategy = build_strategy(self._config, self._event_bus)
