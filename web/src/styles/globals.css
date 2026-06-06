@@ -5,14 +5,8 @@
 :root {
   color-scheme: dark;
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'SF Pro Text',
-    'Segoe UI',
-    'PingFang SC',
-    'Microsoft YaHei',
-    'Noto Sans CJK SC',
-    sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   --app-bg: #1e1e2e;
   --app-bg-accent: rgba(203, 166, 247, 0.12);
   --app-panel: #313244;
@@ -127,14 +121,8 @@ body {
   background: var(--app-bg);
   color: var(--app-text);
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'SF Pro Text',
-    'Segoe UI',
-    'PingFang SC',
-    'Microsoft YaHei',
-    'Noto Sans CJK SC',
-    sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

@@ -122,9 +122,7 @@ export function SettingsPage() {
     marketHealth.data?.last_refresh_error === 'provider_timeout';
   const availableProviders = dataSourceStatus.data?.available_providers ?? [];
   const dataSourceOptions =
-    availableProviders.length > 0
-      ? availableProviders
-      : ['akshare', 'tushare'];
+    availableProviders.length > 0 ? availableProviders : ['akshare', 'tushare'];
 
   const dataSourceChanged = useMemo(() => {
     if (!settings.data) {
