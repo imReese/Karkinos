@@ -622,6 +622,137 @@ class AppDatabase:
                 return None
             return json.loads(row["value_json"])
 
+    # ---------- Orders ----------
+
+    def record_order_sync(
+        self,
+        *,
+        order_id: str,
+        timestamp: str,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: float | None = None,
+        asset_class: str = "stock",
+        intent_id: str | None = None,
+        risk_decision_id: str | None = None,
+        execution_mode: str = "paper",
+        status: str = "submitted",
+        source: str = "execution",
+        source_ref: str | None = None,
+        payload: dict[str, Any] | str | None = None,
+    ) -> int:
+        """Persist a shared order fact for manual, paper, and live execution."""
+        now = datetime.now().isoformat()
+        payload_json = _serialize_metadata_json(payload) or "{}"
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT INTO orders (
+                    order_id, timestamp, symbol, side, order_type, quantity, price,
+                    asset_class, intent_id, risk_decision_id, execution_mode, status,
+                    source, source_ref, payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(order_id) DO UPDATE SET
+                    timestamp = excluded.timestamp,
+                    symbol = excluded.symbol,
+                    side = excluded.side,
+                    order_type = excluded.order_type,
+                    quantity = excluded.quantity,
+                    price = excluded.price,
+                    asset_class = excluded.asset_class,
+                    intent_id = excluded.intent_id,
+                    risk_decision_id = excluded.risk_decision_id,
+                    execution_mode = excluded.execution_mode,
+                    status = excluded.status,
+                    source = excluded.source,
+                    source_ref = excluded.source_ref,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    order_id,
+                    timestamp,
+                    symbol,
+                    side,
+                    order_type,
+                    quantity,
+                    price,
+                    asset_class,
+                    intent_id,
+                    risk_decision_id,
+                    execution_mode,
+                    status,
+                    source,
+                    source_ref,
+                    payload_json,
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="order.recorded",
+                    timestamp=row["timestamp"],
+                    entity_type="order",
+                    entity_id=row["order_id"],
+                    source="orders",
+                    source_ref=row["order_id"],
+                    payload=_order_event_payload(row),
+                )
+            conn.commit()
+            return int(row["id"]) if row is not None else 0
+
+    def get_order_sync(self, order_id: str) -> dict[str, Any] | None:
+        """Read one shared order fact by ID."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_orders_sync(
+        self,
+        *,
+        status: str | None = None,
+        symbol: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List shared order facts newest first."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        if symbol is not None:
+            conditions.append("symbol = ?")
+            params.append(symbol)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM orders
+                {where_clause}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Manual Orders ----------
 
     def save_manual_order_sync(
@@ -2395,6 +2526,34 @@ CREATE TABLE IF NOT EXISTS runtime_controls (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL UNIQUE,
+    timestamp TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    order_type TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    price REAL,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    intent_id TEXT,
+    risk_decision_id TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'paper',
+    status TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'execution',
+    source_ref TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_status_ts
+ON orders(status, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_symbol_ts
+ON orders(symbol, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_source
+ON orders(source, source_ref);
+
 CREATE TABLE IF NOT EXISTS manual_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id TEXT NOT NULL UNIQUE,
@@ -2566,6 +2725,28 @@ def _metadata_payload_value(value: dict[str, Any] | str | None) -> Any:
         except json.JSONDecodeError:
             return value
     return value
+
+
+def _order_event_payload(row: sqlite3.Row) -> dict[str, Any]:
+    """Build a stable event payload from a persisted shared order row."""
+    return {
+        "order_row_id": row["id"],
+        "order_id": row["order_id"],
+        "timestamp": row["timestamp"],
+        "symbol": row["symbol"],
+        "side": row["side"],
+        "order_type": row["order_type"],
+        "quantity": row["quantity"],
+        "price": row["price"],
+        "asset_class": row["asset_class"],
+        "intent_id": row["intent_id"],
+        "risk_decision_id": row["risk_decision_id"],
+        "execution_mode": row["execution_mode"],
+        "status": row["status"],
+        "source": row["source"],
+        "source_ref": row["source_ref"],
+        "payload": _metadata_payload_value(row["payload_json"]),
+    }
 
 
 def _manual_order_event_payload(row: sqlite3.Row) -> dict[str, Any]:

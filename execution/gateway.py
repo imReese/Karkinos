@@ -32,6 +32,23 @@ class ManualConfirmGateway:
             logger.warning("Manual order %s has no database sink", order.order_id)
             return
 
+        if hasattr(self.db, "record_order_sync"):
+            self.db.record_order_sync(
+                order_id=order.order_id,
+                timestamp=order.timestamp.isoformat(),
+                symbol=str(order.symbol),
+                side=order.side.value,
+                order_type=order.order_type.value,
+                quantity=float(order.quantity),
+                price=float(order.price) if order.price is not None else None,
+                intent_id=order.intent_id,
+                risk_decision_id=order.risk_decision_id,
+                execution_mode=order.execution_mode,
+                status=self.PENDING_CONFIRM,
+                source="manual_orders",
+                source_ref=order.order_id,
+                payload=self._serialize_order(order),
+            )
         self.db.save_manual_order_sync(
             order_id=order.order_id,
             timestamp=order.timestamp.isoformat(),

@@ -55,6 +55,28 @@ def test_app_database_initializes_event_log_table(tmp_path):
     assert "idx_event_log_source" in indexes
 
 
+def test_app_database_initializes_orders_table(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        table = conn.execute("""
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'orders'
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'orders'
+                """).fetchall()}
+
+    assert table is not None
+    assert "idx_orders_status_ts" in indexes
+    assert "idx_orders_symbol_ts" in indexes
+    assert "idx_orders_source" in indexes
+
+
 def test_app_database_initializes_fills_table(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -966,6 +988,82 @@ def test_app_database_manual_orders_append_order_events(tmp_path):
         "status": "pending_confirm",
         "symbol": "600519",
         "timestamp": "2026-04-18T14:50:00",
+    }
+
+
+def test_app_database_records_order_and_appends_order_event(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    row_id = db.record_order_sync(
+        order_id="ORD-1",
+        timestamp="2026-04-18T14:50:00",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.45,
+        asset_class="stock",
+        intent_id="INTENT-1",
+        risk_decision_id="RISK-1",
+        execution_mode="manual",
+        status="pending_confirm",
+        source="manual_orders",
+        source_ref="ORD-1",
+        payload={"reason": "unit test"},
+    )
+    updated_id = db.record_order_sync(
+        order_id="ORD-1",
+        timestamp="2026-04-18T14:50:01",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.46,
+        asset_class="stock",
+        intent_id="INTENT-1",
+        risk_decision_id="RISK-1",
+        execution_mode="manual",
+        status="submitted",
+        source="manual_orders",
+        source_ref="ORD-1",
+        payload={"reason": "resubmitted"},
+    )
+
+    order = db.get_order_sync("ORD-1")
+    orders = db.list_orders_sync(status="submitted")
+    events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
+
+    assert updated_id == row_id
+    assert len(orders) == 1
+    assert order == orders[0]
+    assert order["order_id"] == "ORD-1"
+    assert order["status"] == "submitted"
+    assert order["price"] == 123.46
+    assert order["source"] == "manual_orders"
+    assert order["source_ref"] == "ORD-1"
+    assert json.loads(order["payload_json"]) == {"reason": "resubmitted"}
+    assert [event["event_type"] for event in events] == [
+        "order.recorded",
+        "order.recorded",
+    ]
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_class": "stock",
+        "execution_mode": "manual",
+        "intent_id": "INTENT-1",
+        "order_id": "ORD-1",
+        "order_row_id": row_id,
+        "order_type": "market",
+        "payload": {"reason": "resubmitted"},
+        "price": 123.46,
+        "quantity": 100.0,
+        "risk_decision_id": "RISK-1",
+        "side": "buy",
+        "source": "manual_orders",
+        "source_ref": "ORD-1",
+        "status": "submitted",
+        "symbol": "600519",
+        "timestamp": "2026-04-18T14:50:01",
     }
 
 
