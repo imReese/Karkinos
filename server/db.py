@@ -746,6 +746,20 @@ class AppDatabase:
         metadata: dict[str, Any] | str | None = None,
     ) -> int:
         """Create one quote fetch run audit row."""
+        payload = {
+            "run_id": run_id,
+            "started_at": started_at,
+            "trigger": trigger,
+            "provider": provider,
+            "asset_type": asset_type,
+            "symbol_count": symbol_count,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "cache_hit_count": cache_hit_count,
+            "status": status,
+            "error_message": error_message,
+            "metadata": _metadata_payload_value(metadata),
+        }
         with sqlite3.connect(self._path) as conn:
             cursor = conn.execute(
                 """
@@ -770,6 +784,16 @@ class AppDatabase:
                     _serialize_metadata_json(metadata),
                 ),
             )
+            _insert_event_sync(
+                conn,
+                event_type="task_run.started",
+                timestamp=started_at,
+                entity_type="task_run",
+                entity_id=run_id,
+                source="quote_fetch_runs",
+                source_ref=run_id,
+                payload=payload,
+            )
             conn.commit()
             return cursor.lastrowid or 0
 
@@ -787,6 +811,7 @@ class AppDatabase:
     ) -> dict[str, Any] | None:
         """Mark a quote fetch run as finished and return the updated row."""
         metadata_json = _serialize_metadata_json(metadata)
+        metadata_payload = _metadata_payload_value(metadata)
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             if metadata_json is None:
@@ -840,6 +865,32 @@ class AppDatabase:
                 "SELECT * FROM quote_fetch_runs WHERE run_id = ?",
                 (run_id,),
             ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="task_run.completed",
+                    timestamp=finished_at,
+                    entity_type="task_run",
+                    entity_id=run_id,
+                    source="quote_fetch_runs",
+                    source_ref=run_id,
+                    payload={
+                        "run_id": row["run_id"],
+                        "started_at": row["started_at"],
+                        "finished_at": row["finished_at"],
+                        "trigger": row["trigger"],
+                        "provider": row["provider"],
+                        "asset_type": row["asset_type"],
+                        "symbol_count": row["symbol_count"],
+                        "success_count": row["success_count"],
+                        "failure_count": row["failure_count"],
+                        "cache_hit_count": row["cache_hit_count"],
+                        "status": row["status"],
+                        "error_message": row["error_message"],
+                        "metadata": metadata_payload,
+                    },
+                )
+                conn.commit()
             return dict(row) if row else None
 
     def get_quote_fetch_run(self, run_id: str) -> dict[str, Any] | None:
@@ -885,6 +936,76 @@ class AppDatabase:
                 LIMIT ?
                 """,
                 params,
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Event Log ----------
+
+    def append_event_sync(
+        self,
+        *,
+        event_type: str,
+        timestamp: str,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        source: str = "app",
+        source_ref: str | None = None,
+        payload: dict[str, Any] | str | None = None,
+    ) -> int:
+        """Append one normalized domain event to the shared event stream."""
+        with sqlite3.connect(self._path) as conn:
+            cursor = _insert_event_sync(
+                conn,
+                event_type=event_type,
+                timestamp=timestamp,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                source=source,
+                source_ref=source_ref,
+                payload=payload,
+            )
+            conn.commit()
+            return cursor.lastrowid or 0
+
+    def list_events_sync(
+        self,
+        *,
+        event_type: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        source: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List normalized domain events newest first."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if event_type is not None:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if entity_type is not None:
+            conditions.append("entity_type = ?")
+            params.append(entity_type)
+        if entity_id is not None:
+            conditions.append("entity_id = ?")
+            params.append(entity_id)
+        if source is not None:
+            conditions.append("source = ?")
+            params.append(source)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM event_log
+                {where_clause}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -1569,11 +1690,9 @@ class AppDatabase:
         event_date: str | None = None,
     ) -> int:
         """新增研究记录，供市场研究工作台持久化使用。"""
-        import aiosqlite
-
         now = datetime.now().isoformat()
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
+        with sqlite3.connect(self._path) as conn:
+            cursor = conn.execute(
                 """INSERT INTO market_research_notes
                    (symbol, asset_class, entry_kind, title, content, priority, event_date, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -1589,8 +1708,28 @@ class AppDatabase:
                     now,
                 ),
             )
-            await db.commit()
-            return cursor.lastrowid or 0
+            note_id = cursor.lastrowid or 0
+            _insert_event_sync(
+                conn,
+                event_type="research.note.created",
+                timestamp=now,
+                entity_type="instrument",
+                entity_id=symbol,
+                source="market_research_notes",
+                source_ref=str(note_id),
+                payload={
+                    "note_id": note_id,
+                    "symbol": symbol,
+                    "asset_class": asset_class,
+                    "entry_kind": entry_kind,
+                    "title": title,
+                    "content": content,
+                    "priority": priority,
+                    "event_date": event_date,
+                },
+            )
+            conn.commit()
+            return note_id
 
     async def get_research_notes(
         self,
@@ -1899,6 +2038,25 @@ ON quote_fetch_runs(status);
 CREATE INDEX IF NOT EXISTS idx_quote_fetch_runs_provider
 ON quote_fetch_runs(provider);
 
+CREATE TABLE IF NOT EXISTS event_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    source TEXT NOT NULL DEFAULT 'app',
+    source_ref TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_log_type_ts
+ON event_log(event_type, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_event_log_entity
+ON event_log(entity_type, entity_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_event_log_source
+ON event_log(source, source_ref);
+
 CREATE TABLE IF NOT EXISTS risk_decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     decision_id TEXT NOT NULL UNIQUE,
@@ -2057,3 +2215,61 @@ def _serialize_metadata_json(value: dict[str, Any] | str | None) -> str | None:
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _metadata_payload_value(value: dict[str, Any] | str | None) -> Any:
+    """Return metadata as a structured event payload value when possible."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def _serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:
+    """Serialize event payloads with Decimal-safe stable JSON."""
+    if value is None:
+        return "{}"
+    if isinstance(value, str):
+        return value
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
+def _insert_event_sync(
+    conn: sqlite3.Connection,
+    *,
+    event_type: str,
+    timestamp: str,
+    entity_type: str | None,
+    entity_id: str | None,
+    source: str,
+    source_ref: str | None,
+    payload: dict[str, Any] | str | None,
+) -> sqlite3.Cursor:
+    now = datetime.now().isoformat()
+    return conn.execute(
+        """
+        INSERT INTO event_log (
+            event_type, timestamp, entity_type, entity_id, source,
+            source_ref, payload_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event_type,
+            timestamp,
+            entity_type,
+            entity_id,
+            source,
+            source_ref,
+            _serialize_event_payload_json(payload),
+            now,
+        ),
+    )
