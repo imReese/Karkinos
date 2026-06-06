@@ -1368,6 +1368,69 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
     assert fund["display_name"] == "永赢先进制造智选混合C"
 
 
+def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/instrument-metadata/backfill"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            data_source="akshare",
+            tushare_token="",
+            initial_cash=0,
+        ),
+        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}),
+        db=db,
+    )
+
+    class FakeAkshare:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "symbol": "601985",
+                "asset_class": "stock",
+                "provider_name": "akshare",
+                "provider_symbol": "601985.SH",
+                "source": "akshare",
+                "quote_source": "akshare_stock_spot",
+                "price": 8.69,
+                "timestamp": "2026-06-01 11:22:00",
+                "display_name": "中国核电",
+                "exchange": "SH",
+                "market": "CN",
+            }
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": FakeAkshare()},
+    )
+
+    response = asyncio.run(
+        route.endpoint(market_routes.InstrumentMetadataBackfillRequest())
+    )
+
+    assert response.updated_count == 1
+    metadata = db.get_instrument_metadata_sync("601985", "stock")
+    assert metadata["provider_name"] == "akshare"
+    assert metadata["provider_symbol"] == "601985.SH"
+    assert metadata["exchange"] == "SH"
+    assert metadata["market"] == "CN"
+    assert json.loads(metadata["metadata_json"])["quote_source"] == "akshare_stock_spot"
+
+
 def test_market_instrument_metadata_backfill_skips_existing_metadata(
     monkeypatch,
     tmp_path,
@@ -2746,6 +2809,67 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
     assert saved_latest["previous_close"] == 8.65
     assert saved_latest["change"] == 0.11
     assert saved_latest["change_percent"] == pytest.approx(0.0127)
+
+
+def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatch):
+    from server.routes import market as market_routes
+
+    saved_latest: dict[str, object] = {}
+    saved_metadata: dict[str, object] = {}
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="akshare",
+            tushare_token="",
+            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            live_poll_interval=120,
+        ),
+        db=SimpleNamespace(
+            save_quote_snapshot_sync=lambda **kwargs: None,
+            upsert_latest_quote_sync=lambda **kwargs: saved_latest.update(kwargs),
+            upsert_instrument_metadata_sync=lambda **kwargs: saved_metadata.update(
+                kwargs
+            ),
+        ),
+    )
+
+    class AkshareSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "symbol": "601985",
+                "asset_class": "stock",
+                "provider_name": "akshare",
+                "provider_symbol": "601985.SH",
+                "source": "akshare",
+                "quote_source": "akshare_stock_spot",
+                "price": 8.76,
+                "volume": 123456.0,
+                "timestamp": "10:30:00",
+                "display_name": "中国核电",
+                "exchange": "SH",
+                "market": "CN",
+            }
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": AkshareSource()},
+    )
+
+    response = market_routes._fetch_latest_snapshot(
+        fake_state, "601985", market_routes.AssetClass.STOCK
+    )
+
+    assert response["quote_source"] == "akshare_stock_spot"
+    assert response["provider_name"] == "akshare"
+    assert response["provider_symbol"] == "601985.SH"
+    assert response["exchange"] == "SH"
+    assert response["market"] == "CN"
+    assert saved_latest["quote_source"] == "akshare_stock_spot"
+    assert saved_latest["provider_name"] == "akshare"
+    assert saved_metadata["provider_symbol"] == "601985.SH"
+    assert saved_metadata["exchange"] == "SH"
+    assert saved_metadata["market"] == "CN"
+    assert saved_metadata["metadata"]["quote_source"] == "akshare_stock_spot"
 
 
 def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
