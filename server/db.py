@@ -502,8 +502,42 @@ class AppDatabase:
                     datetime.now().isoformat(),
                 ),
             )
+            row_id = cursor.lastrowid or 0
+            _insert_event_sync(
+                conn,
+                event_type="risk.signal.recorded",
+                timestamp=decision.timestamp.isoformat(),
+                entity_type="risk_signal",
+                entity_id=decision.decision_id,
+                source="risk_decisions",
+                source_ref=decision.decision_id,
+                payload={
+                    "intent": {
+                        "timestamp": intent.timestamp.isoformat(),
+                        "intent_id": intent.intent_id,
+                        "strategy_id": intent.strategy_id,
+                        "symbol": str(intent.symbol),
+                        "side": intent.side.value,
+                        "target_weight": str(intent.target_weight),
+                        "quantity": str(intent.quantity),
+                        "reference_price": str(intent.reference_price),
+                        "reason": intent.reason,
+                    },
+                    "decision": {
+                        "timestamp": decision.timestamp.isoformat(),
+                        "decision_id": decision.decision_id,
+                        "intent_id": decision.intent_id,
+                        "passed": decision.passed,
+                        "symbol": str(decision.symbol),
+                        "side": decision.side.value,
+                        "reasons": decision.reasons,
+                        "severity": decision.severity,
+                    },
+                    "risk_decision_id": row_id,
+                },
+            )
             conn.commit()
-            return cursor.lastrowid or 0
+            return row_id
 
     def get_risk_decisions_sync(
         self, limit: int = 50, offset: int = 0
@@ -576,6 +610,7 @@ class AppDatabase:
         """Persist an order waiting for manual confirmation."""
         now = datetime.now().isoformat()
         with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
                 INSERT INTO manual_orders (
@@ -613,6 +648,21 @@ class AppDatabase:
                     now,
                 ),
             )
+            row = conn.execute(
+                "SELECT * FROM manual_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="order.submitted",
+                    timestamp=row["timestamp"],
+                    entity_type="order",
+                    entity_id=row["order_id"],
+                    source="manual_orders",
+                    source_ref=row["order_id"],
+                    payload=_manual_order_event_payload(row),
+                )
             conn.commit()
             return cursor.lastrowid or 0
 
@@ -656,11 +706,22 @@ class AppDatabase:
                 """,
                 (status, note, datetime.now().isoformat(), order_id),
             )
-            conn.commit()
             row = conn.execute(
                 "SELECT * FROM manual_orders WHERE order_id = ?",
                 (order_id,),
             ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="order.status_changed",
+                    timestamp=datetime.now().isoformat(),
+                    entity_type="order",
+                    entity_id=row["order_id"],
+                    source="manual_orders",
+                    source_ref=row["order_id"],
+                    payload=_manual_order_event_payload(row),
+                )
+            conn.commit()
             return dict(row) if row else None
 
     # ---------- Backtest Results ----------
@@ -1658,8 +1719,33 @@ class AppDatabase:
                     created_at or datetime.now().isoformat(),
                 ),
             )
+            row_id = cursor.lastrowid or 0
+            _insert_event_sync(
+                conn,
+                event_type="portfolio.ledger_entry.recorded",
+                timestamp=normalized_timestamp,
+                entity_type="portfolio",
+                entity_id="default",
+                source="ledger_entries",
+                source_ref=str(row_id),
+                payload={
+                    "entry_id": row_id,
+                    "entry_type": entry_type,
+                    "timestamp": normalized_timestamp,
+                    "amount": amount,
+                    "symbol": symbol,
+                    "direction": direction,
+                    "quantity": quantity,
+                    "price": price,
+                    "commission": commission,
+                    "asset_class": asset_class,
+                    "note": note,
+                    "source": source,
+                    "source_ref": source_ref,
+                },
+            )
             conn.commit()
-            return cursor.lastrowid or 0
+            return row_id
 
     def get_ledger_entries_sync(
         self, limit: int = 50, offset: int = 0
@@ -2227,6 +2313,26 @@ def _metadata_payload_value(value: dict[str, Any] | str | None) -> Any:
         except json.JSONDecodeError:
             return value
     return value
+
+
+def _manual_order_event_payload(row: sqlite3.Row) -> dict[str, Any]:
+    """Build a stable event payload from a persisted manual order row."""
+    return {
+        "order_row_id": row["id"],
+        "order_id": row["order_id"],
+        "timestamp": row["timestamp"],
+        "symbol": row["symbol"],
+        "side": row["side"],
+        "order_type": row["order_type"],
+        "quantity": row["quantity"],
+        "price": row["price"],
+        "intent_id": row["intent_id"],
+        "risk_decision_id": row["risk_decision_id"],
+        "execution_mode": row["execution_mode"],
+        "status": row["status"],
+        "note": row["note"],
+        "payload": _metadata_payload_value(row["payload_json"]),
+    }
 
 
 def _serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:

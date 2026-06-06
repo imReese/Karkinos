@@ -661,12 +661,152 @@ def test_app_database_persists_risk_decision_audit(tmp_path):
 
     db.save_risk_decision_sync(intent=intent, decision=decision)
     rows = db.get_risk_decisions_sync()
+    events = db.list_events_sync(
+        event_type="risk.signal.recorded",
+        entity_type="risk_signal",
+        entity_id="RISK-1",
+    )
 
     assert len(rows) == 1
     assert rows[0]["decision_id"] == "RISK-1"
     assert rows[0]["intent_id"] == "INTENT-1"
     assert rows[0]["passed"] == 0
     assert rows[0]["symbol"] == "600519"
+    assert len(events) == 1
+    assert events[0]["source"] == "risk_decisions"
+    assert events[0]["source_ref"] == "RISK-1"
+    assert json.loads(events[0]["payload_json"]) == {
+        "decision": {
+            "decision_id": "RISK-1",
+            "intent_id": "INTENT-1",
+            "passed": False,
+            "reasons": ["single-symbol weight exceeded"],
+            "severity": "warning",
+            "side": "buy",
+            "symbol": "600519",
+            "timestamp": "2026-04-18T14:50:00",
+        },
+        "intent": {
+            "intent_id": "INTENT-1",
+            "quantity": "100",
+            "reason": "unit test",
+            "reference_price": "123.45",
+            "side": "buy",
+            "strategy_id": "dual_ma",
+            "symbol": "600519",
+            "target_weight": "0.20",
+            "timestamp": "2026-04-18T14:50:00",
+        },
+        "risk_decision_id": rows[0]["id"],
+    }
+
+
+def test_app_database_ledger_entries_append_portfolio_events(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    entry_id = db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-04-18T09:35:00+08:00",
+        symbol="600519",
+        direction="buy",
+        quantity=10.0,
+        price=123.45,
+        commission=1.23,
+        asset_class="stock",
+        source="manual",
+        source_ref="trade-1",
+        note="unit test trade",
+    )
+    events = db.list_events_sync(
+        event_type="portfolio.ledger_entry.recorded",
+        entity_type="portfolio",
+        entity_id="default",
+    )
+
+    assert len(events) == 1
+    assert events[0]["source"] == "ledger_entries"
+    assert events[0]["source_ref"] == str(entry_id)
+    assert json.loads(events[0]["payload_json"]) == {
+        "amount": None,
+        "asset_class": "stock",
+        "commission": 1.23,
+        "direction": "buy",
+        "entry_id": entry_id,
+        "entry_type": "trade_buy",
+        "note": "unit test trade",
+        "price": 123.45,
+        "quantity": 10.0,
+        "source": "manual",
+        "source_ref": "trade-1",
+        "symbol": "600519",
+        "timestamp": "2026-04-18T01:35:00+00:00",
+    }
+
+
+def test_app_database_manual_orders_append_order_events(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    row_id = db.save_manual_order_sync(
+        order_id="ORD-1",
+        timestamp="2026-04-18T14:50:00",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.45,
+        intent_id="INTENT-1",
+        risk_decision_id="RISK-1",
+        execution_mode="manual",
+        status="pending_confirm",
+        payload={"reason": "unit test"},
+    )
+    db.update_manual_order_status_sync(
+        order_id="ORD-1",
+        status="confirmed",
+        note="operator approved",
+    )
+    events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
+
+    assert [event["event_type"] for event in events] == [
+        "order.status_changed",
+        "order.submitted",
+    ]
+    assert events[0]["source"] == "manual_orders"
+    assert events[0]["source_ref"] == "ORD-1"
+    assert json.loads(events[0]["payload_json"]) == {
+        "execution_mode": "manual",
+        "intent_id": "INTENT-1",
+        "note": "operator approved",
+        "order_id": "ORD-1",
+        "order_row_id": row_id,
+        "order_type": "market",
+        "payload": {"reason": "unit test"},
+        "price": 123.45,
+        "quantity": 100.0,
+        "risk_decision_id": "RISK-1",
+        "side": "buy",
+        "status": "confirmed",
+        "symbol": "600519",
+        "timestamp": "2026-04-18T14:50:00",
+    }
+    assert json.loads(events[1]["payload_json"]) == {
+        "execution_mode": "manual",
+        "intent_id": "INTENT-1",
+        "note": "",
+        "order_id": "ORD-1",
+        "order_row_id": row_id,
+        "order_type": "market",
+        "payload": {"reason": "unit test"},
+        "price": 123.45,
+        "quantity": 100.0,
+        "risk_decision_id": "RISK-1",
+        "side": "buy",
+        "status": "pending_confirm",
+        "symbol": "600519",
+        "timestamp": "2026-04-18T14:50:00",
+    }
 
 
 def test_app_database_persists_backtest_metrics_and_cost_summary_json(tmp_path):
