@@ -86,7 +86,11 @@ def _backtest_metrics_from_payload(payload: dict[str, Any]) -> BacktestMetrics:
     )
 
 
-def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any]:
+def _run_single_backtest(
+    request: BacktestRequest,
+    config: Any,
+    db=None,
+) -> dict[str, Any]:
     """同步运行单次回测（在线程池中执行），供 run 和 compare 共用。"""
     from datetime import datetime
 
@@ -140,6 +144,7 @@ def _run_single_backtest(request: BacktestRequest, config: Any) -> dict[str, Any
         instruments=instruments,
         data_handlers=data_handlers,
         initial_cash=Decimal(str(request.initial_cash)),
+        db=db,
     )
 
     result = engine.run()
@@ -189,7 +194,7 @@ def create_router() -> APIRouter:
         state = get_app_state()
         config = state.config
 
-        bt_result = await asyncio.to_thread(_run_backtest, request, config)
+        bt_result = await asyncio.to_thread(_run_backtest, request, config, state.db)
 
         # 保存到数据库
         config_json = request.model_dump_json()
@@ -321,7 +326,7 @@ def create_router() -> APIRouter:
             )
 
             bt_result = await asyncio.to_thread(
-                _run_single_backtest, bt_request, config
+                _run_single_backtest, bt_request, config, state.db
             )
 
             # 保存到数据库

@@ -213,6 +213,7 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
+    captured_runner_args: dict[str, object] = {}
     fake_result = {
         "initial_cash": 100000.0,
         "final_equity": 112000.0,
@@ -257,9 +258,12 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     }
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        backtest_routes, "_run_backtest", lambda request, config: fake_result
-    )
+
+    def fake_run_backtest(request, config, db=None):
+        captured_runner_args["db"] = db
+        return fake_result
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fake_run_backtest)
 
     async def run_inline(func, *args, **kwargs):
         return func(*args, **kwargs)
@@ -276,6 +280,7 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     assert response.cost_summary_json["total_trades"] == 2
     assert response.fills[0].fill_id == "FILL-1"
     assert response.fills[0].symbol == "600519"
+    assert captured_runner_args["db"] is fake_state.db
     assert '"calmar": 2.25' in str(saved_payload["metrics_json"])
     assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
 
