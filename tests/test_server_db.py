@@ -267,6 +267,11 @@ def test_app_database_upserts_and_reads_latest_quote(tmp_path):
         metadata={"provider_status": "live", "sequence": 2},
     )
     updated = db.get_latest_quote_sync("600519", asset_type="stock")
+    events = db.list_events_sync(
+        event_type="market.quote.refreshed",
+        entity_type="instrument",
+        entity_id="600519",
+    )
 
     with sqlite3.connect(tmp_path / "app.db") as conn:
         count = conn.execute(
@@ -284,6 +289,29 @@ def test_app_database_upserts_and_reads_latest_quote(tmp_path):
     assert updated["previous_close"] == 122.5
     assert updated["captured_reason"] == "scheduler_poll"
     assert updated["metadata_json"] == '{"provider_status":"live","sequence":2}'
+    assert [event["source"] for event in events] == ["latest_quotes", "latest_quotes"]
+    assert events[0]["source_ref"] == str(updated["id"])
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_type": "stock",
+        "captured_at": "2026-05-23T09:31:01+08:00",
+        "captured_reason": "scheduler_poll",
+        "change": 1.5,
+        "change_percent": 0.012245,
+        "metadata": {"provider_status": "live", "sequence": 2},
+        "nav_date": "2026-05-23",
+        "previous_close": 122.5,
+        "price": 124.0,
+        "provider_name": "akshare",
+        "provider_status": "live",
+        "quote_id": updated["id"],
+        "quote_source": "akshare",
+        "quote_status": "live",
+        "quote_timestamp": "2026-05-23T09:31:00+08:00",
+        "stale_reason": None,
+        "symbol": "600519",
+        "turnover": 500000.0,
+        "volume": 1200.0,
+    }
 
 
 def test_app_database_latest_quote_default_read_uses_newest_symbol_row(tmp_path):
@@ -516,6 +544,11 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
         nav_date="2026-04-18",
     )
     quote = db.get_latest_quotes_sync()[0]
+    events = db.list_events_sync(
+        event_type="market.quote.snapshot.recorded",
+        entity_type="instrument",
+        entity_id="600519",
+    )
 
     assert quote is not None
     assert quote["symbol"] == "600519"
@@ -526,6 +559,24 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
     assert quote["quote_status"] == "live"
     assert quote["captured_reason"] == "test_refresh"
     assert quote["nav_date"] == "2026-04-18"
+    assert len(events) == 1
+    assert events[0]["source"] == "quote_snapshots"
+    assert events[0]["source_ref"] == "1"
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_class": "stock",
+        "captured_reason": "test_refresh",
+        "nav_date": "2026-04-18",
+        "price": 123.45,
+        "provider_name": "akshare",
+        "provider_status": "live",
+        "quote_source": "akshare",
+        "quote_status": "live",
+        "snapshot_id": 1,
+        "stale_reason": None,
+        "symbol": "600519",
+        "timestamp": "2026-04-18T09:35:00",
+        "volume": 6789.0,
+    }
 
 
 def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_path):
