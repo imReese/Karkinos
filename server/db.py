@@ -1151,7 +1151,6 @@ class AppDatabase:
                     now,
                 ),
             )
-            conn.commit()
             row = conn.execute(
                 """
                 SELECT *
@@ -1160,6 +1159,18 @@ class AppDatabase:
                 """,
                 (symbol, asset_type),
             ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="market.quote.refreshed",
+                    timestamp=row["quote_timestamp"],
+                    entity_type="instrument",
+                    entity_id=row["symbol"],
+                    source="latest_quotes",
+                    source_ref=str(row["id"]),
+                    payload=_latest_quote_event_payload(row),
+                )
+            conn.commit()
             return dict(row) if row else None
 
     def get_latest_quote_sync(
@@ -1221,7 +1232,7 @@ class AppDatabase:
     ) -> None:
         """同步写入实时行情快照（后台线程调用）。"""
         with sqlite3.connect(self._path) as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT INTO quote_snapshots
                    (
                        symbol, asset_class, price, volume, timestamp, created_at,
@@ -1244,6 +1255,31 @@ class AppDatabase:
                     captured_reason,
                     nav_date,
                 ),
+            )
+            snapshot_id = cursor.lastrowid or 0
+            _insert_event_sync(
+                conn,
+                event_type="market.quote.snapshot.recorded",
+                timestamp=timestamp,
+                entity_type="instrument",
+                entity_id=symbol,
+                source="quote_snapshots",
+                source_ref=str(snapshot_id),
+                payload={
+                    "snapshot_id": snapshot_id,
+                    "symbol": symbol,
+                    "asset_class": asset_class,
+                    "price": price,
+                    "volume": volume,
+                    "timestamp": timestamp,
+                    "quote_source": quote_source,
+                    "provider_name": provider_name,
+                    "quote_status": quote_status,
+                    "stale_reason": stale_reason,
+                    "provider_status": provider_status,
+                    "captured_reason": captured_reason,
+                    "nav_date": nav_date,
+                },
             )
             conn.commit()
 
@@ -2332,6 +2368,31 @@ def _manual_order_event_payload(row: sqlite3.Row) -> dict[str, Any]:
         "status": row["status"],
         "note": row["note"],
         "payload": _metadata_payload_value(row["payload_json"]),
+    }
+
+
+def _latest_quote_event_payload(row: sqlite3.Row) -> dict[str, Any]:
+    """Build a stable event payload from a materialized latest quote row."""
+    return {
+        "quote_id": row["id"],
+        "symbol": row["symbol"],
+        "asset_type": row["asset_type"],
+        "price": row["price"],
+        "previous_close": row["previous_close"],
+        "change": row["change"],
+        "change_percent": row["change_percent"],
+        "volume": row["volume"],
+        "turnover": row["turnover"],
+        "quote_timestamp": row["quote_timestamp"],
+        "quote_source": row["quote_source"],
+        "provider_name": row["provider_name"],
+        "provider_status": row["provider_status"],
+        "quote_status": row["quote_status"],
+        "stale_reason": row["stale_reason"],
+        "captured_at": row["captured_at"],
+        "captured_reason": row["captured_reason"],
+        "nav_date": row["nav_date"],
+        "metadata": _metadata_payload_value(row["metadata_json"]),
     }
 
 
