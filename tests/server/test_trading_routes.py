@@ -141,3 +141,57 @@ def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
     assert db.get_manual_order_sync("ORD-REJECT")["status"] == "rejected"
     assert db.get_order_sync("ORD-CONFIRM")["status"] == "confirmed"
     assert db.get_order_sync("ORD-REJECT")["status"] == "rejected"
+
+
+def test_trading_routes_list_shared_order_and_fill_facts(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.record_order_sync(
+        order_id="ORD-PAPER-1",
+        timestamp="2026-04-18T14:50:00",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.45,
+        execution_mode="paper",
+        status="filled",
+        source="paper_execution",
+        source_ref="ORD-PAPER-1",
+        payload={"order_id": "ORD-PAPER-1"},
+    )
+    db.record_fill_sync(
+        fill_id="FILL-PAPER-1",
+        order_id="ORD-PAPER-1",
+        timestamp="2026-04-18T14:50:03",
+        symbol="600519",
+        side="buy",
+        fill_price=123.45,
+        fill_quantity=100.0,
+        execution_mode="paper",
+        provider_name="simulated",
+        source="paper_execution",
+        source_ref="FILL-PAPER-1",
+    )
+    fake_state = SimpleNamespace(
+        db=db,
+        trading_controls=TradingControlState(),
+        hub=None,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    orders_endpoint = _endpoint("/api/trading/order-facts")
+    fills_endpoint = _endpoint("/api/trading/fills")
+
+    orders = asyncio.run(orders_endpoint(status="filled", symbol=None))
+    fills = asyncio.run(fills_endpoint(order_id="ORD-PAPER-1", symbol=None))
+
+    assert len(orders) == 1
+    assert orders[0]["order_id"] == "ORD-PAPER-1"
+    assert orders[0]["source"] == "paper_execution"
+    assert len(fills) == 1
+    assert fills[0]["fill_id"] == "FILL-PAPER-1"
+    assert fills[0]["provider_name"] == "simulated"

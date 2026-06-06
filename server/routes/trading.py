@@ -57,6 +57,40 @@ def create_router() -> APIRouter:
         state = get_app_state()
         return state.db.list_manual_orders_sync(status=status)
 
+    @r.get("/order-facts")
+    async def list_order_facts(
+        status: str | None = None,
+        symbol: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return state.db.list_orders_sync(
+            status=status,
+            symbol=symbol,
+            limit=limit,
+            offset=offset,
+        )
+
+    @r.get("/fills")
+    async def list_fill_facts(
+        order_id: str | None = None,
+        symbol: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return state.db.list_fills_sync(
+            order_id=order_id,
+            symbol=symbol,
+            limit=limit,
+            offset=offset,
+        )
+
     @r.post("/orders/{order_id}/confirm")
     async def confirm_manual_order(order_id: str) -> dict:
         from server.app import get_app_state
