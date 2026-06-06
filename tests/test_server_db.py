@@ -15,23 +15,16 @@ def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
     db.init_sync()
 
     with sqlite3.connect(tmp_path / "app.db") as conn:
-        table = conn.execute(
-            """
+        table = conn.execute("""
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name = 'quote_fetch_runs'
-            """
-        ).fetchone()
-        indexes = {
-            row[0]
-            for row in conn.execute(
-                """
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'quote_fetch_runs'
-                """
-            ).fetchall()
-        }
+                """).fetchall()}
 
     assert table is not None
     assert "idx_quote_fetch_runs_started_at" in indexes
@@ -44,23 +37,16 @@ def test_app_database_initializes_latest_quotes_table(tmp_path):
     db.init_sync()
 
     with sqlite3.connect(tmp_path / "app.db") as conn:
-        table = conn.execute(
-            """
+        table = conn.execute("""
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name = 'latest_quotes'
-            """
-        ).fetchone()
-        indexes = {
-            row[0]
-            for row in conn.execute(
-                """
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'latest_quotes'
-                """
-            ).fetchall()
-        }
+                """).fetchall()}
 
     assert table is not None
     assert "idx_latest_quotes_symbol_asset_type" in indexes
@@ -74,28 +60,52 @@ def test_app_database_initializes_instrument_metadata_table(tmp_path):
     db.init_sync()
 
     with sqlite3.connect(tmp_path / "app.db") as conn:
-        table = conn.execute(
-            """
+        table = conn.execute("""
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name = 'instrument_metadata'
-            """
-        ).fetchone()
-        indexes = {
-            row[0]
-            for row in conn.execute(
-                """
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'index' AND tbl_name = 'instrument_metadata'
-                """
-            ).fetchall()
-        }
+                """).fetchall()}
 
     assert table is not None
     assert "idx_instrument_metadata_symbol_asset_type" in indexes
     assert "idx_instrument_metadata_display_name" in indexes
     assert "idx_instrument_metadata_provider" in indexes
+
+
+def test_app_database_persists_watchlist_assets(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    created = db.upsert_watchlist_asset_sync(
+        symbol="510300",
+        asset_class="etf",
+        display_name="沪深300ETF",
+    )
+    updated = db.upsert_watchlist_asset_sync(
+        symbol="510300",
+        asset_class="etf",
+        display_name="沪深300 ETF",
+        source="manual",
+    )
+    seeded = db.seed_watchlist_assets_from_config_sync(
+        [{"symbol": "018125", "asset_class": "fund", "display_name": "示例基金"}]
+    )
+    rows = db.list_watchlist_assets_sync()
+    deleted = db.delete_watchlist_asset_sync("510300")
+
+    assert created is not None
+    assert updated is not None
+    assert updated["id"] == created["id"]
+    assert updated["display_name"] == "沪深300 ETF"
+    assert seeded == 1
+    assert [row["symbol"] for row in rows] == ["510300", "018125"]
+    assert deleted is True
+    assert [row["symbol"] for row in db.list_watchlist_assets_sync()] == ["018125"]
 
 
 def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
@@ -357,15 +367,14 @@ def test_app_database_filters_quote_fetch_runs(tmp_path):
     )
 
     assert [
-        row["run_id"]
-        for row in db.list_quote_fetch_runs(trigger="manual_refresh")
+        row["run_id"] for row in db.list_quote_fetch_runs(trigger="manual_refresh")
     ] == ["manual-akshare-success", "manual-tushare-success"]
-    assert [
-        row["run_id"] for row in db.list_quote_fetch_runs(status="failed")
-    ] == ["scheduler-akshare-failed"]
-    assert [
-        row["run_id"] for row in db.list_quote_fetch_runs(provider="tushare")
-    ] == ["manual-tushare-success"]
+    assert [row["run_id"] for row in db.list_quote_fetch_runs(status="failed")] == [
+        "scheduler-akshare-failed"
+    ]
+    assert [row["run_id"] for row in db.list_quote_fetch_runs(provider="tushare")] == [
+        "manual-tushare-success"
+    ]
     assert [
         row["run_id"]
         for row in db.list_quote_fetch_runs(

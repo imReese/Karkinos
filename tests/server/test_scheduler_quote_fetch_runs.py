@@ -205,7 +205,9 @@ def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp
     assert metadata["failed_symbols"] == ["510300"]
 
 
-def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(monkeypatch, tmp_path):
+def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(
+    monkeypatch, tmp_path
+):
     db = _run_scheduler_once(
         monkeypatch,
         tmp_path,
@@ -372,6 +374,79 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
         scheduler.stop()
 
     assert calls == [((Symbol("601985"), AssetClass.STOCK),)]
+
+
+def test_scheduler_prefers_persistent_watchlist_over_config_assets(
+    monkeypatch, tmp_path
+):
+    from server import scheduler as scheduler_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_watchlist_asset_sync(
+        symbol="510300",
+        asset_class="etf",
+        display_name="沪深300ETF",
+    )
+    config = SimpleNamespace(
+        data_source="akshare",
+        live_poll_interval=0,
+        initial_cash=Decimal("100000"),
+        start_date="2026-01-01",
+        assets=[{"symbol": "600519", "asset_class": "stock"}],
+    )
+    runtime = SimpleNamespace(
+        sources={"akshare": object()},
+        watchlist=[(Symbol("600519"), AssetClass.STOCK)],
+        instruments={Symbol("600519"): object()},
+        data_manager=SimpleNamespace(
+            get_instrument=lambda symbol, asset_class: SimpleNamespace(symbol=symbol)
+        ),
+    )
+    holder = {}
+
+    class FakeLiveDataFeed:
+        def __init__(self, source, event_bus, fallback_source=None) -> None:
+            pass
+
+        def poll_all(self, current_watchlist):
+            holder["scheduler"]._running.clear()
+            assert current_watchlist == [(Symbol("510300"), AssetClass.FUND)]
+            return []
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "create_runtime_context",
+        lambda config: runtime,
+    )
+    monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
+    monkeypatch.setattr(
+        scheduler_module,
+        "build_strategy",
+        lambda config, bus: FakeStrategy(),
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_warmup_strategy",
+        lambda self, data_manager, strategy: None,
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_is_market_open",
+        staticmethod(lambda: True),
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "rebuild_portfolio_from_ledger",
+        lambda config, db, latest_quotes: None,
+    )
+
+    scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    holder["scheduler"] = scheduler
+    scheduler._running.set()
+    scheduler._run_loop()
+
+    assert scheduler.watchlist == [(Symbol("510300"), AssetClass.FUND)]
 
 
 def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):

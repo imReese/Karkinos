@@ -117,7 +117,9 @@ def _has_display_metadata(asset_cfg: dict[str, Any]) -> bool:
 def metadata_configured_count(state: Any) -> int:
     """Count configured asset identities that carry useful display metadata."""
     return sum(
-        1 for asset_cfg in iter_configured_asset_metadata(state) if _has_display_metadata(asset_cfg)
+        1
+        for asset_cfg in iter_configured_asset_metadata(state)
+        if _has_display_metadata(asset_cfg)
     )
 
 
@@ -173,7 +175,9 @@ def _metadata_from_db(
     return AssetMetadata(
         symbol=symbol,
         display_name=display_name,
-        asset_class=_normalize_asset_class(row.get("asset_type") or row.get("asset_class"))
+        asset_class=_normalize_asset_class(
+            row.get("asset_type") or row.get("asset_class")
+        )
         or asset_class,
         market=row.get("market"),
         provider=row.get("provider_name") or row.get("provider"),
@@ -194,6 +198,18 @@ def _db_metadata_entries(state: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, dict)]
 
 
+def _db_watchlist_entries(state: Any) -> list[dict[str, Any]]:
+    db = getattr(state, "db", None)
+    list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    if not callable(list_watchlist):
+        return []
+    try:
+        rows = list_watchlist() or []
+    except Exception:
+        return []
+    return [dict(row) for row in rows if isinstance(row, dict)]
+
+
 def _watchlist_symbols(state: Any) -> set[tuple[str, str | None]]:
     scheduler = getattr(state, "scheduler", None)
     symbols: set[tuple[str, str | None]] = set()
@@ -202,6 +218,10 @@ def _watchlist_symbols(state: Any) -> set[tuple[str, str | None]]:
             symbol = str(item[0])
             asset_class = item[1] if len(item) > 1 else None
             symbols.add((symbol, _normalize_asset_class(asset_class)))
+    for row in _db_watchlist_entries(state):
+        symbol = str(row.get("symbol") or "").strip()
+        if symbol:
+            symbols.add((symbol, _normalize_asset_class(row.get("asset_class"))))
     return symbols
 
 
@@ -230,7 +250,9 @@ def _quote_symbols(state: Any) -> set[tuple[str, str | None]]:
                     continue
                 symbol = str(quote.get("symbol") or "").strip()
                 if symbol:
-                    symbols.add((symbol, _normalize_asset_class(quote.get("asset_class"))))
+                    symbols.add(
+                        (symbol, _normalize_asset_class(quote.get("asset_class")))
+                    )
         except Exception:
             pass
     return symbols
@@ -240,6 +262,7 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
     """Summarize configured and missing asset identities for Settings."""
     configured_entries = iter_configured_asset_metadata(state)
     db_entries = _db_metadata_entries(state)
+    watchlist_entries = _db_watchlist_entries(state)
     configured_assets: list[dict[str, Any]] = []
     configured_symbols: set[str] = set()
     for row in db_entries:
@@ -257,6 +280,24 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
                 "provider_symbol": row.get("provider_symbol"),
                 "aliases": [],
                 "source": row.get("source") or "db",
+            }
+        )
+    for row in watchlist_entries:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol or symbol in configured_symbols:
+            continue
+        display_name = str(row.get("display_name") or symbol).strip()
+        if not display_name:
+            continue
+        configured_symbols.add(symbol)
+        configured_assets.append(
+            {
+                "symbol": symbol,
+                "display_name": display_name,
+                "asset_class": _normalize_asset_class(row.get("asset_class")),
+                "provider_symbol": row.get("provider_symbol"),
+                "aliases": [],
+                "source": row.get("source") or "watchlist",
             }
         )
     for cfg in configured_entries:
@@ -280,7 +321,9 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
             }
         )
 
-    observed = _position_symbols(state) | _watchlist_symbols(state) | _quote_symbols(state)
+    observed = (
+        _position_symbols(state) | _watchlist_symbols(state) | _quote_symbols(state)
+    )
     missing_symbols = sorted(
         symbol
         for symbol, _asset_class in observed
@@ -304,13 +347,33 @@ def build_asset_metadata_status(state: Any) -> dict[str, Any]:
         for symbol in missing_symbols
     ]
     return {
-        "configured_count": len(db_entries) + metadata_configured_count(state),
+        "configured_count": len(configured_assets),
         "configured_assets": configured_assets,
         "missing_symbols": missing_symbols,
-        "suggested_config": {"assets": suggested_assets},
-        "metadata_source": "db+config",
+        "suggested_config": {"watchlist_assets": suggested_assets},
+        "metadata_source": "db+watchlist+legacy_config",
         "has_missing_metadata": bool(missing_symbols),
     }
+
+
+def _metadata_from_watchlist(
+    state: Any,
+    symbol: str,
+    asset_class: str,
+) -> AssetMetadata | None:
+    for row in _db_watchlist_entries(state):
+        if str(row.get("symbol") or "").strip() != symbol:
+            continue
+        display_name = str(row.get("display_name") or "").strip()
+        if not display_name:
+            return None
+        return AssetMetadata(
+            symbol=symbol,
+            display_name=display_name,
+            asset_class=_normalize_asset_class(row.get("asset_class")) or asset_class,
+            source=row.get("source") or "watchlist",
+        )
+    return None
 
 
 def _metadata_from_instrument(
@@ -372,6 +435,7 @@ def resolve_asset_metadata(
     normalized_asset_class = _normalize_asset_class(asset_class)
     for candidate in (
         _metadata_from_db(state, symbol, normalized_asset_class),
+        _metadata_from_watchlist(state, symbol, normalized_asset_class),
         _metadata_from_quote(symbol, normalized_asset_class, quote),
         _metadata_from_config(state, symbol, normalized_asset_class),
         _metadata_from_instrument(state, symbol, normalized_asset_class),

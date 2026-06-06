@@ -262,7 +262,7 @@ docker compose logs -f
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
 
-资金、持仓、资产范围、资产名称、历史行情和当前行情不属于运行配置：资金和交易来自账本，资产身份来自 `instrument_metadata`，当前行情来自 `latest_quotes`，历史行情来自 `market_bars` / 数据缓存。
+资金、持仓、关注列表、资产名称、历史行情和当前行情不属于运行配置：资金和交易来自账本，用户关注资产来自 `watchlist_assets`，资产身份来自 `instrument_metadata`，当前行情来自 `latest_quotes`，历史行情来自 `market_bars` / 数据缓存。
 
 #### notification 字段格式
 
@@ -365,7 +365,7 @@ uv run python -m tools.live_monitor
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/settings` | 读取当前配置 |
-| PUT | `/api/settings` | 更新配置（写入 config.json） |
+| PUT | `/api/settings` | 更新内存运行设置；业务状态继续保存在 SQLite |
 | POST | `/api/settings/live/start` | 启动实时监控 |
 | POST | `/api/settings/live/stop` | 停止实时监控 |
 | GET | `/api/settings/live/status` | 查询实时监控状态 |

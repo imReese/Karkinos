@@ -48,10 +48,10 @@ def _provider_supports_funds(provider_name: str) -> bool | None:
     return None
 
 
-def _has_fund_assets(config) -> bool:
+def _has_fund_assets(state) -> bool:
     return any(
         str(asset.get("asset_class", "")).lower() in {"fund", "etf"}
-        for asset in iter_configured_asset_metadata(SimpleState(config))
+        for asset in _settings_assets_payload(state)
     )
 
 
@@ -60,14 +60,31 @@ class SimpleState:
         self.config = config
 
 
-def _settings_assets_payload(config) -> list[dict]:
+def _settings_assets_payload(state) -> list[dict]:
+    db = getattr(state, "db", None)
+    list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    if callable(list_watchlist):
+        rows = list_watchlist() or []
+        return [
+            {
+                "symbol": str(row.get("symbol") or ""),
+                "asset_class": str(row.get("asset_class") or "stock"),
+                "display_name": str(row.get("display_name") or row.get("symbol") or ""),
+                "source": row.get("source") or "db",
+            }
+            for row in rows
+            if str(row.get("symbol") or "").strip()
+        ]
     return [
         {key: value for key, value in asset.items() if key != "source"}
-        for asset in iter_configured_asset_metadata(SimpleState(config))
+        for asset in iter_configured_asset_metadata(
+            SimpleState(getattr(state, "config", None))
+        )
     ]
 
 
-def _settings_response(config) -> SettingsResponse:
+def _settings_response(state) -> SettingsResponse:
+    config = state.config
     return SettingsResponse(
         host=config.host,
         port=config.port,
@@ -75,7 +92,7 @@ def _settings_response(config) -> SettingsResponse:
         initial_cash=float(config.initial_cash),
         start_date=config.start_date,
         end_date=config.end_date,
-        assets=_settings_assets_payload(config),
+        assets=_settings_assets_payload(state),
         strategy=config.strategy,
         short_period=config.short_period,
         long_period=config.long_period,
@@ -128,14 +145,14 @@ def _build_data_source_status(state) -> DataSourceStatusResponse:
             provider_name=provider_name,
             provider_configured=provider_configured,
             provider_supports_funds=provider_supports_funds,
-            has_funds=_has_fund_assets(config),
+            has_funds=_has_fund_assets(state),
             metadata_count=metadata_count,
         ),
         metadata_configured_count=metadata_count,
         has_persistent_cache=has_persistent_cache,
-        latest_persistent_quote_timestamp=max(persistent_timestamps)
-        if persistent_timestamps
-        else None,
+        latest_persistent_quote_timestamp=(
+            max(persistent_timestamps) if persistent_timestamps else None
+        ),
         persistent_cache_status="available" if has_persistent_cache else "missing",
     )
 
@@ -149,8 +166,7 @@ def create_router() -> APIRouter:
         from server.app import get_app_state
 
         state = get_app_state()
-        config = state.config
-        return _settings_response(config)
+        return _settings_response(state)
 
     @r.put("", response_model=SettingsResponse)
     async def update_settings(settings: SettingsResponse) -> SettingsResponse:
@@ -167,7 +183,6 @@ def create_router() -> APIRouter:
         config.initial_cash = __import__("decimal").Decimal(str(settings.initial_cash))
         config.start_date = settings.start_date
         config.end_date = settings.end_date
-        config.assets = settings.assets
         config.strategy = settings.strategy
         config.short_period = settings.short_period
         config.long_period = settings.long_period
@@ -179,7 +194,7 @@ def create_router() -> APIRouter:
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
 
-        return _settings_response(config)
+        return _settings_response(state)
 
     @r.get("/data-source", response_model=DataSourceStatusResponse)
     async def get_data_source_settings() -> DataSourceStatusResponse:
@@ -193,7 +208,9 @@ def create_router() -> APIRouter:
         """读取资产元数据配置覆盖情况与缺失模板。"""
         from server.app import get_app_state
 
-        return AssetMetadataStatusResponse(**build_asset_metadata_status(get_app_state()))
+        return AssetMetadataStatusResponse(
+            **build_asset_metadata_status(get_app_state())
+        )
 
     @r.put("/data-source", response_model=SettingsResponse)
     async def update_data_source_settings(
@@ -210,7 +227,7 @@ def create_router() -> APIRouter:
             config.tushare_token = payload.tushare_token
         config.live_poll_interval = payload.live_poll_interval
 
-        return _settings_response(config)
+        return _settings_response(state)
 
     @r.post("/live/start", response_model=LiveStatusResponse)
     async def start_live() -> LiveStatusResponse:

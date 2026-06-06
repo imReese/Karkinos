@@ -431,11 +431,43 @@ class TradingScheduler:
         feed = LiveDataFeed(source, self._event_bus, fallback_source=fallback_source)
         data_manager = runtime.data_manager
 
+        persisted_watchlist = []
+        if self._db is not None and hasattr(self._db, "list_watchlist_assets_sync"):
+            try:
+                persisted_watchlist = self._db.list_watchlist_assets_sync()
+            except Exception:
+                logger.warning("恢复数据库关注列表失败，将忽略", exc_info=True)
+
         # 构建关注列表
         with self._lock:
-            self._watchlist = list(runtime.watchlist)
-            self._instruments = dict(runtime.instruments)
+            self._watchlist = [] if persisted_watchlist else list(runtime.watchlist)
+            self._instruments = {} if persisted_watchlist else dict(runtime.instruments)
             self._latest_quotes = {}
+
+        if persisted_watchlist:
+            try:
+                with self._lock:
+                    watched_symbols = {symbol for symbol, _ in self._watchlist}
+                    for asset in persisted_watchlist:
+                        symbol = Symbol(str(asset.get("symbol") or "").strip())
+                        if not str(symbol) or symbol in watched_symbols:
+                            continue
+                        raw_asset_class = str(asset.get("asset_class") or "stock")
+                        asset_class = {
+                            "stock": AssetClass.STOCK,
+                            "fund": AssetClass.FUND,
+                            "etf": AssetClass.FUND,
+                            "gold": AssetClass.GOLD,
+                            "bond": AssetClass.BOND,
+                        }.get(raw_asset_class, AssetClass.STOCK)
+                        self._watchlist.append((symbol, asset_class))
+                        self._instruments.setdefault(
+                            symbol,
+                            data_manager.get_instrument(symbol, asset_class),
+                        )
+                        watched_symbols.add(symbol)
+            except Exception:
+                logger.warning("应用数据库关注列表失败，将忽略", exc_info=True)
 
         if self._db is not None:
             try:
@@ -450,7 +482,11 @@ class TradingScheduler:
                         )
                         self._latest_quotes[quote["symbol"]] = {
                             "price": float(quote["price"]),
-                            "volume": float(quote["volume"]) if quote["volume"] is not None else None,
+                            "volume": (
+                                float(quote["volume"])
+                                if quote["volume"] is not None
+                                else None
+                            ),
                             "timestamp": quote["timestamp"],
                             "asset_class": quote["asset_class"],
                             "quote_source": quote_source,
@@ -517,7 +553,9 @@ class TradingScheduler:
         context_provider = LiveContextProvider(
             portfolio_getter=lambda: self.portfolio,
             controls=self._trading_controls,
-            blacklist_getter=self._configured_symbol_set("blacklist", "symbol_blacklist"),
+            blacklist_getter=self._configured_symbol_set(
+                "blacklist", "symbol_blacklist"
+            ),
             st_symbols_getter=self._configured_symbol_set("st_symbols", "st_blacklist"),
         )
         PreTradeRiskManager(
@@ -560,11 +598,15 @@ class TradingScheduler:
                 events = self._poll_watchlist_quotes(feed)
                 if events:
                     for market_event in events:
-                        snapshot = feed.get_last_snapshot(
-                            market_event.symbol, market_event.asset_class
-                        ) or {}
+                        snapshot = (
+                            feed.get_last_snapshot(
+                                market_event.symbol, market_event.asset_class
+                            )
+                            or {}
+                        )
                         snapshot_timestamp = str(
-                            snapshot.get("timestamp") or market_event.timestamp.isoformat()
+                            snapshot.get("timestamp")
+                            or market_event.timestamp.isoformat()
                         )
                         # 更新报价缓存
                         sym_str = str(market_event.symbol)
@@ -575,7 +617,9 @@ class TradingScheduler:
                                 "timestamp": snapshot_timestamp,
                                 "asset_class": market_event.asset_class.value,
                                 "previous_close": snapshot.get("previous_close"),
-                                "previous_close_date": snapshot.get("previous_close_date"),
+                                "previous_close_date": snapshot.get(
+                                    "previous_close_date"
+                                ),
                             }
                         if self._db is not None:
                             quote_source = str(
@@ -605,7 +649,10 @@ class TradingScheduler:
                             )
                             previous_close = snapshot.get("previous_close")
                             previous_close_date = snapshot.get("previous_close_date")
-                            if previous_close not in {None, ""} and previous_close_date not in {
+                            if previous_close not in {
+                                None,
+                                "",
+                            } and previous_close_date not in {
                                 None,
                                 "",
                             }:
@@ -630,9 +677,11 @@ class TradingScheduler:
                                         symbol=sym_str,
                                         asset_type=market_event.asset_class.value,
                                         price=float(market_event.close),
-                                        previous_close=None
-                                        if previous_close in {None, ""}
-                                        else float(previous_close),
+                                        previous_close=(
+                                            None
+                                            if previous_close in {None, ""}
+                                            else float(previous_close)
+                                        ),
                                         volume=float(market_event.volume),
                                         quote_timestamp=snapshot_timestamp,
                                         quote_source=quote_source,

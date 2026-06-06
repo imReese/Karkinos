@@ -18,6 +18,8 @@ class BacktestConfig:
     initial_cash: Decimal = Decimal("100000")
     start_date: str = "2025-01-02"
     end_date: str = field(default_factory=lambda: _DEFAULT_END_DATE)
+    # Backtest-only and legacy migration inputs. Live watchlists and asset
+    # identities belong in SQLite (`watchlist_assets`, `instrument_metadata`).
     assets: list[dict] | dict = field(default_factory=list)
     instruments: list[dict] | dict = field(default_factory=list)
     strategy: str = "dual_ma"

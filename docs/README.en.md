@@ -250,7 +250,7 @@ Copy `config.example.json` to `config.json` and modify as needed.
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 
-Capital, holdings, asset universe, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.
+Capital, holdings, watchlists, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, user-tracked assets come from `watchlist_assets`, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.
 
 #### notification Format
 
@@ -353,7 +353,7 @@ Standalone compatibility monitor, independent of the Web server. It reads `confi
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/settings` | Read current configuration |
-| PUT | `/api/settings` | Update configuration (writes to config.json) |
+| PUT | `/api/settings` | Update in-memory runtime settings; business state remains in SQLite |
 | POST | `/api/settings/live/start` | Start live monitoring |
 | POST | `/api/settings/live/stop` | Stop live monitoring |
 | GET | `/api/settings/live/status` | Query live monitoring status |

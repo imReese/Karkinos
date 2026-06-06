@@ -116,7 +116,9 @@ def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
         if confirmed_count:
             logger.info("Confirmed %d pending fund orders", confirmed_count)
     except Exception:
-        logger.warning("Failed to confirm pending fund orders during startup", exc_info=True)
+        logger.warning(
+            "Failed to confirm pending fund orders during startup", exc_info=True
+        )
 
 
 def _is_spa_fallback_path(path: str) -> bool:
@@ -172,6 +174,23 @@ async def lifespan(app: FastAPI):
     # 初始化数据库
     db = AppDatabase()
     await db.init()
+    migrated_marker = (
+        db.get_runtime_control_sync("config_assets_migrated")
+        if hasattr(db, "get_runtime_control_sync")
+        else None
+    )
+    if getattr(config, "assets", None) and migrated_marker is None:
+        migrated_count = db.seed_watchlist_assets_from_config_sync(config.assets)
+        if hasattr(db, "set_runtime_control_sync"):
+            db.set_runtime_control_sync(
+                "config_assets_migrated",
+                {"migrated_count": migrated_count},
+            )
+        if migrated_count:
+            logger.info(
+                "Migrated %d legacy config assets into watchlist_assets",
+                migrated_count,
+            )
     state.db = db
 
     # 初始化 WebSocket hub
@@ -300,6 +319,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     # 挂载前端静态文件（生产构建）
     dist_dir = Path("web/dist")
     if dist_dir.exists():
-        app.mount("/", SPAStaticFiles(directory=str(dist_dir), html=True), name="static")
+        app.mount(
+            "/", SPAStaticFiles(directory=str(dist_dir), html=True), name="static"
+        )
 
     return app

@@ -177,7 +177,9 @@ def _parse_quote_timestamp(timestamp: object) -> datetime | None:
 
 
 def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int | None:
-    timestamp = _parse_quote_timestamp(None if quote is None else quote.get("timestamp"))
+    timestamp = _parse_quote_timestamp(
+        None if quote is None else quote.get("timestamp")
+    )
     if timestamp is None:
         return None
     current = now or _shanghai_now()
@@ -266,10 +268,16 @@ def _stale_reason(
         return None
 
     if refresh_policy == "cache_only":
-        return "market_closed_cache_only" if not market_open else "refresh_policy_cache_only"
+        return (
+            "market_closed_cache_only"
+            if not market_open
+            else "refresh_policy_cache_only"
+        )
 
     age = _quote_age_seconds(quote, now=now)
-    ttl_seconds = max(int(getattr(state.config, "live_poll_interval", 60) or 60), 15) * 3
+    ttl_seconds = (
+        max(int(getattr(state.config, "live_poll_interval", 60) or 60), 15) * 3
+    )
     if age is not None and age > ttl_seconds:
         return "quote_older_than_expected_session"
 
@@ -289,9 +297,11 @@ def _quote_metadata(
     quote_status = (
         "missing"
         if not quote or quote.get("price") in {None, ""}
-        else str(quote.get("quote_status"))
-        if quote.get("quote_status")
-        else _resolve_quote_status(state, quote)
+        else (
+            str(quote.get("quote_status"))
+            if quote.get("quote_status")
+            else _resolve_quote_status(state, quote)
+        )
     )
     stale_reason = (
         str(quote.get("stale_reason"))
@@ -322,7 +332,9 @@ def _quote_metadata(
     }
 
 
-def _find_asset_config(assets: list[dict[str, str]], symbol: str) -> dict[str, str] | None:
+def _find_asset_config(
+    assets: list[dict[str, str]], symbol: str
+) -> dict[str, str] | None:
     for asset_cfg in assets:
         if asset_cfg["symbol"] == symbol:
             return asset_cfg
@@ -386,13 +398,10 @@ def _provider_next_action(
 
 def _has_live_fund_quotes(health_quotes: list[MarketHealthQuote]) -> bool:
     fund_quotes = [
-        item
-        for item in health_quotes
-        if item.asset_class in {"fund", "etf"}
+        item for item in health_quotes if item.asset_class in {"fund", "etf"}
     ]
     return bool(fund_quotes) and all(
-        item.quote_status == "live" and item.price is not None
-        for item in fund_quotes
+        item.quote_status == "live" and item.price is not None for item in fund_quotes
     )
 
 
@@ -405,26 +414,27 @@ def _normalize_asset_class(asset_class: AssetClass | str | None) -> str:
 
 
 def _extract_runtime_portfolio(state):
-    scheduler = state.scheduler
+    scheduler = getattr(state, "scheduler", None)
     portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
     instruments = getattr(scheduler, "instruments", {}) if scheduler else {}
     latest_quotes: dict[str, dict] = {}
     if scheduler and getattr(scheduler, "latest_quotes", None):
         for symbol, quote in scheduler.latest_quotes.items():
             latest_quotes[symbol] = quote
-    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
-        for row in state.db.get_latest_quotes_sync():
+    db = getattr(state, "db", None)
+    if db is not None and hasattr(db, "get_latest_quotes_sync"):
+        for row in db.get_latest_quotes_sync():
             latest_quotes.setdefault(row["symbol"], row)
 
     if (
         portfolio is None
-        and state.db is not None
-        and hasattr(state.db, "get_trades_sync")
-        and hasattr(state.db, "get_cash_flows_sync")
+        and db is not None
+        and hasattr(db, "get_trades_sync")
+        and hasattr(db, "get_cash_flows_sync")
     ):
         rebuilt = rebuild_portfolio_from_ledger(
             state.config,
-            state.db,
+            db,
             latest_quotes=latest_quotes,
         )
         portfolio = rebuilt.portfolio
@@ -501,7 +511,33 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
     merged: list[dict[str, str]] = []
     seen: set[str] = set()
 
-    for asset_cfg in state.config.assets:
+    db = getattr(state, "db", None)
+    list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    persisted_assets = list_watchlist() if callable(list_watchlist) else []
+    config_assets = []
+    if not persisted_assets:
+        config_assets = getattr(state.config, "assets", []) or []
+
+    for asset_cfg in persisted_assets:
+        symbol = str(asset_cfg.get("symbol") or "").strip()
+        if not symbol or symbol in seen:
+            continue
+        metadata = resolve_asset_metadata(
+            state,
+            symbol,
+            asset_class=str(asset_cfg.get("asset_class") or "stock"),
+            fallback_name=str(asset_cfg.get("display_name") or symbol),
+        )
+        merged.append(
+            {
+                "symbol": symbol,
+                "asset_class": metadata.asset_class,
+                "display_name": metadata.display_name,
+            }
+        )
+        seen.add(symbol)
+
+    for asset_cfg in config_assets:
         symbol = str(
             asset_cfg.get("provider_symbol")
             or asset_cfg.get("provider_code")
@@ -758,7 +794,9 @@ def _metadata_name_is_useful(row: dict | None, symbol: str) -> bool:
     if not row:
         return False
     display_name = str(row.get("display_name") or "").strip()
-    return bool(display_name and display_name != symbol and display_name != f"{symbol} A股")
+    return bool(
+        display_name and display_name != symbol and display_name != f"{symbol} A股"
+    )
 
 
 def _instrument_metadata_targets(
@@ -804,11 +842,15 @@ def _bar_frequency(interval: str) -> BarFrequency:
         "1d": BarFrequency.DAILY,
     }.get(interval)
     if frequency is None:
-        raise HTTPException(status_code=422, detail="interval must be one of 1d, 1m, 5m")
+        raise HTTPException(
+            status_code=422, detail="interval must be one of 1d, 1m, 5m"
+        )
     return frequency
 
 
-def _parse_backfill_date(value: str | None, *, field_name: str, default: date) -> datetime:
+def _parse_backfill_date(
+    value: str | None, *, field_name: str, default: date
+) -> datetime:
     raw = value or default.isoformat()
     try:
         return datetime.strptime(raw, "%Y-%m-%d")
@@ -819,7 +861,9 @@ def _parse_backfill_date(value: str | None, *, field_name: str, default: date) -
         ) from exc
 
 
-def _market_bar_backfill_range(state, request: MarketBarsBackfillRequest) -> tuple[datetime, datetime]:
+def _market_bar_backfill_range(
+    state, request: MarketBarsBackfillRequest
+) -> tuple[datetime, datetime]:
     config_start = getattr(state.config, "start_date", None)
     default_start = date.today() - timedelta(days=365)
     if config_start:
@@ -827,14 +871,18 @@ def _market_bar_backfill_range(state, request: MarketBarsBackfillRequest) -> tup
             default_start = date.fromisoformat(str(config_start))
         except ValueError:
             pass
-    start = _parse_backfill_date(request.start, field_name="start", default=default_start)
+    start = _parse_backfill_date(
+        request.start, field_name="start", default=default_start
+    )
     end = _parse_backfill_date(
         request.end,
         field_name="end",
         default=_shanghai_now().date(),
     )
     if start > end:
-        raise HTTPException(status_code=422, detail="start must be before or equal to end")
+        raise HTTPException(
+            status_code=422, detail="start must be before or equal to end"
+        )
     return start, end
 
 
@@ -949,7 +997,10 @@ def _extract_provider_display_name(payload: dict | None) -> str | None:
     if not payload:
         return None
     display_name = str(
-        payload.get("display_name") or payload.get("name") or payload.get("asset_name") or ""
+        payload.get("display_name")
+        or payload.get("name")
+        or payload.get("asset_name")
+        or ""
     ).strip()
     return display_name or None
 
@@ -960,7 +1011,9 @@ async def _backfill_instrument_metadata(
 ) -> InstrumentMetadataBackfillResponse:
     db = getattr(state, "db", None)
     if db is None or not hasattr(db, "upsert_instrument_metadata_sync"):
-        raise HTTPException(status_code=503, detail="instrument metadata database is unavailable")
+        raise HTTPException(
+            status_code=503, detail="instrument metadata database is unavailable"
+        )
 
     from data.manager import build_sources
 
@@ -974,7 +1027,9 @@ async def _backfill_instrument_metadata(
         raise HTTPException(status_code=503, detail="akshare source is unavailable")
 
     items: list[InstrumentMetadataBackfillItem] = []
-    timeout = float(getattr(state.config, "metadata_backfill_timeout_seconds", 8.0) or 8.0)
+    timeout = float(
+        getattr(state.config, "metadata_backfill_timeout_seconds", 8.0) or 8.0
+    )
 
     for target in _instrument_metadata_targets(state, request.symbols):
         symbol = target["symbol"]
@@ -1017,7 +1072,9 @@ async def _backfill_instrument_metadata(
             )
             continue
         except Exception as exc:
-            logger.warning("Instrument metadata backfill failed for %s", symbol, exc_info=True)
+            logger.warning(
+                "Instrument metadata backfill failed for %s", symbol, exc_info=True
+            )
             items.append(
                 InstrumentMetadataBackfillItem(
                     symbol=symbol,
@@ -1141,7 +1198,10 @@ def _upsert_instrument_metadata_from_quote(
     if db is None or not hasattr(db, "upsert_instrument_metadata_sync"):
         return
     display_name = str(
-        snapshot.get("display_name") or snapshot.get("name") or snapshot.get("asset_name") or ""
+        snapshot.get("display_name")
+        or snapshot.get("name")
+        or snapshot.get("asset_name")
+        or ""
     ).strip()
     if not display_name:
         return
@@ -1162,7 +1222,9 @@ def _upsert_instrument_metadata_from_quote(
             },
         )
     except Exception:
-        logger.warning("Failed to upsert instrument metadata for %s", symbol, exc_info=True)
+        logger.warning(
+            "Failed to upsert instrument metadata for %s", symbol, exc_info=True
+        )
 
 
 def _upsert_latest_quote_snapshot(
@@ -1195,7 +1257,9 @@ def _upsert_latest_quote_snapshot(
                 snapshot.get("change_percent") or snapshot.get("pct_chg")
             ),
             volume=_optional_float(snapshot.get("volume")),
-            turnover=_optional_float(snapshot.get("turnover") or snapshot.get("amount")),
+            turnover=_optional_float(
+                snapshot.get("turnover") or snapshot.get("amount")
+            ),
             quote_timestamp=str(timestamp),
             quote_source=quote_source,
             provider_name=provider_name,
@@ -1410,9 +1474,7 @@ async def _refresh_one_quote(
     timeout_seconds: float | None = None,
 ) -> QuoteRefreshSymbolResult:
     timeout = (
-        _MANUAL_REFRESH_TIMEOUT_SECONDS
-        if timeout_seconds is None
-        else timeout_seconds
+        _MANUAL_REFRESH_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
     )
     key = (symbol, asset_class.value)
     attempted_at = datetime.now()
@@ -1447,7 +1509,9 @@ async def _refresh_one_quote(
         return QuoteRefreshSymbolResult(
             symbol=symbol,
             status="failed",
-            quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            quote_timestamp=(
+                None if cached_quote is None else cached_quote.get("timestamp")
+            ),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error="provider_timeout",
@@ -1479,7 +1543,9 @@ async def _refresh_one_quote(
         return QuoteRefreshSymbolResult(
             symbol=symbol,
             status="failed",
-            quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            quote_timestamp=(
+                None if cached_quote is None else cached_quote.get("timestamp")
+            ),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
@@ -1511,7 +1577,9 @@ async def _refresh_one_quote(
         return QuoteRefreshSymbolResult(
             symbol=symbol,
             status="stale" if cached_quote else "failed",
-            quote_timestamp=None if cached_quote is None else cached_quote.get("timestamp"),
+            quote_timestamp=(
+                None if cached_quote is None else cached_quote.get("timestamp")
+            ),
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
@@ -1612,11 +1680,15 @@ def create_router() -> APIRouter:
                     is_holding=position is not None,
                     quantity=None if position is None else float(position.quantity),
                     avg_cost=None if position is None else float(position.avg_cost),
-                    market_value=None if position is None else float(position.market_value),
-                    unrealized_pnl=None
-                    if position is None
-                    else float(position.unrealized_pnl),
-                    realized_pnl=None if position is None else float(position.realized_pnl),
+                    market_value=(
+                        None if position is None else float(position.market_value)
+                    ),
+                    unrealized_pnl=(
+                        None if position is None else float(position.unrealized_pnl)
+                    ),
+                    realized_pnl=(
+                        None if position is None else float(position.realized_pnl)
+                    ),
                     last_snapshot_at=None if quote is None else quote.get("timestamp"),
                 )
             )
@@ -1624,39 +1696,45 @@ def create_router() -> APIRouter:
         return items
 
     @r.post("/watchlist", response_model=list[WatchlistItem])
-    async def add_watchlist_item(request: WatchlistCreateRequest) -> list[WatchlistItem]:
-        """新增关注标的并写入配置。"""
+    async def add_watchlist_item(
+        request: WatchlistCreateRequest,
+    ) -> list[WatchlistItem]:
+        """新增关注标的并写入持久数据库。"""
         from server.app import get_app_state
 
         state = get_app_state()
-        config = state.config
         symbol = request.symbol.strip()
         if not symbol:
             raise HTTPException(status_code=400, detail="symbol is required")
-        if any(asset["symbol"].lower() == symbol.lower() for asset in config.assets):
+        if any(
+            asset["symbol"].lower() == symbol.lower()
+            for asset in _merged_watchlist_assets(state)
+        ):
             raise HTTPException(status_code=409, detail="symbol already exists")
 
-        config.assets.append(
-            {
-                "symbol": symbol,
-                "asset_class": request.asset_class,
-                "display_name": symbol,
-            }
+        db = getattr(state, "db", None)
+        upsert_watchlist = getattr(db, "upsert_watchlist_asset_sync", None)
+        if not callable(upsert_watchlist):
+            raise HTTPException(status_code=503, detail="watchlist storage unavailable")
+        upsert_watchlist(
+            symbol=symbol,
+            asset_class=request.asset_class,
+            display_name=symbol,
+            source="manual",
         )
         return await get_watchlist()
 
     @r.delete("/watchlist/{symbol}", response_model=list[WatchlistItem])
     async def remove_watchlist_item(symbol: str) -> list[WatchlistItem]:
-        """移除关注标的并写入配置。"""
+        """从持久数据库移除关注标的。"""
         from server.app import get_app_state
 
         state = get_app_state()
-        config = state.config
-        original_len = len(config.assets)
-        config.assets = [
-            asset for asset in config.assets if asset["symbol"].lower() != symbol.lower()
-        ]
-        if len(config.assets) == original_len:
+        db = getattr(state, "db", None)
+        delete_watchlist = getattr(db, "delete_watchlist_asset_sync", None)
+        if not callable(delete_watchlist):
+            raise HTTPException(status_code=503, detail="watchlist storage unavailable")
+        if not delete_watchlist(symbol):
             raise HTTPException(status_code=404, detail="symbol not found")
 
         return await get_watchlist()
@@ -1724,7 +1802,7 @@ def create_router() -> APIRouter:
         config = state.config
 
         ac = AssetClass.STOCK
-        for asset_cfg in config.assets:
+        for asset_cfg in _merged_watchlist_assets(state):
             if asset_cfg["symbol"] == symbol:
                 ac = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
                 break
@@ -1827,11 +1905,7 @@ def create_router() -> APIRouter:
             bar_coverage={},
         )
         market_open = is_cn_trading_session()
-        refresh_policy = (
-            "live"
-            if market_open
-            else "cache_only"
-        )
+        refresh_policy = "live" if market_open else "cache_only"
         now = _shanghai_now()
         health_quotes: list[MarketHealthQuote] = []
         for item in payload["quotes"]:
@@ -1880,9 +1954,7 @@ def create_router() -> APIRouter:
                 int((now - max(quote_timestamps)).total_seconds()), 0
             )
         stale_symbols = [
-            item.symbol
-            for item in health_quotes
-            if item.quote_status != "live"
+            item.symbol for item in health_quotes if item.quote_status != "live"
         ]
         latest_attempts = [
             _parse_quote_timestamp(item.last_refresh_attempt)
@@ -1894,7 +1966,11 @@ def create_router() -> APIRouter:
             max(latest_attempts).isoformat() if latest_attempts else None
         )
         latest_refresh_error = next(
-            (item.last_refresh_error for item in health_quotes if item.last_refresh_error),
+            (
+                item.last_refresh_error
+                for item in health_quotes
+                if item.last_refresh_error
+            ),
             None,
         )
         provider_name = _configured_provider_name(state)
@@ -1904,11 +1980,11 @@ def create_router() -> APIRouter:
         source_health = (
             "unknown"
             if not health_quotes
-            else "live"
-            if not stale_symbols
-            else "stale"
-            if len(stale_symbols) == len(health_quotes)
-            else "partial"
+            else (
+                "live"
+                if not stale_symbols
+                else "stale" if len(stale_symbols) == len(health_quotes) else "partial"
+            )
         )
         provider_status = (
             "error"
@@ -1916,9 +1992,7 @@ def create_router() -> APIRouter:
             and not any(item.quote_status == "live" for item in health_quotes)
             else source_health
         )
-        has_funds = any(
-            asset_class in {"fund", "etf"} for _, asset_class in watchlist
-        )
+        has_funds = any(asset_class in {"fund", "etf"} for _, asset_class in watchlist)
         effective_provider_supports_funds = (
             True
             if has_funds and _has_live_fund_quotes(health_quotes)
@@ -2100,9 +2174,7 @@ def create_router() -> APIRouter:
         refreshed = [result for result in results if result.status == "refreshed"]
         failed = [result for result in results if result.status == "failed"]
         skipped = [
-            result
-            for result in results
-            if result.status not in {"refreshed", "failed"}
+            result for result in results if result.status not in {"refreshed", "failed"}
         ]
 
         if refreshed and not failed and not skipped:
@@ -2120,7 +2192,11 @@ def create_router() -> APIRouter:
 
         completed_at_dt = datetime.now()
         last_refresh_error = next(
-            (result.last_refresh_error or result.error for result in results if result.error),
+            (
+                result.last_refresh_error or result.error
+                for result in results
+                if result.error
+            ),
             None,
         )
         has_persistent_cache = any(result.using_persistent_cache for result in results)
@@ -2172,9 +2248,7 @@ def create_router() -> APIRouter:
             else {}
         )
 
-        latest_quotes = {
-            item.symbol: item for item in health.quotes
-        }
+        latest_quotes = {item.symbol: item for item in health.quotes}
 
         items = [
             ResearchBoardItem(
@@ -2188,12 +2262,15 @@ def create_router() -> APIRouter:
                 unrealized_pnl=item.unrealized_pnl,
                 realized_pnl=item.realized_pnl,
                 last_snapshot_at=item.last_snapshot_at,
-                price=latest_quotes.get(item.symbol).price
-                if latest_quotes.get(item.symbol)
-                else None,
+                price=(
+                    latest_quotes.get(item.symbol).price
+                    if latest_quotes.get(item.symbol)
+                    else None
+                ),
                 volume=None,
                 research_count=int(note_stats.get(item.symbol, {}).get("count", 0)),
-                last_research_at=str(note_stats.get(item.symbol, {}).get("latest", "")) or None,
+                last_research_at=str(note_stats.get(item.symbol, {}).get("latest", ""))
+                or None,
             )
             for item in watchlist
         ]

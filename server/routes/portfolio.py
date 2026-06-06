@@ -114,22 +114,24 @@ def _ensure_asset_config(
     asset_class: str,
     display_name: str | None = None,
 ) -> None:
-    assets = getattr(state.config, "assets", [])
-    for asset in assets:
-        if asset.get("symbol") == symbol:
-            updated = False
-            if display_name:
-                updated = asset.get("display_name") != display_name
-                asset["display_name"] = display_name
-            return
-
-    assets.append(
-        {
-            "symbol": symbol,
-            "asset_class": asset_class,
-            "display_name": display_name or symbol,
-        }
-    )
+    db = getattr(state, "db", None)
+    upsert_watchlist = getattr(db, "upsert_watchlist_asset_sync", None)
+    if callable(upsert_watchlist):
+        upsert_watchlist(
+            symbol=symbol,
+            asset_class=asset_class,
+            display_name=display_name or symbol,
+            source="trade",
+        )
+    upsert_metadata = getattr(db, "upsert_instrument_metadata_sync", None)
+    if callable(upsert_metadata):
+        upsert_metadata(
+            symbol=symbol,
+            asset_type=asset_class,
+            display_name=display_name or symbol,
+            provider_symbol=symbol,
+            source="trade",
+        )
 
 
 def _resolve_fund_buy_fill(
@@ -681,9 +683,8 @@ def _quote_merge_timestamp(quote: dict) -> datetime | None:
 def _merge_quote_identity(base: dict, candidate: dict) -> dict:
     base_timestamp = _quote_merge_timestamp(base)
     candidate_timestamp = _quote_merge_timestamp(candidate)
-    if (
-        candidate_timestamp is not None
-        and (base_timestamp is None or candidate_timestamp > base_timestamp)
+    if candidate_timestamp is not None and (
+        base_timestamp is None or candidate_timestamp > base_timestamp
     ):
         primary = candidate
         secondary = base
@@ -833,7 +834,9 @@ def _quote_status(
 
 
 def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int | None:
-    timestamp = _parse_quote_timestamp(None if quote is None else quote.get("timestamp"))
+    timestamp = _parse_quote_timestamp(
+        None if quote is None else quote.get("timestamp")
+    )
     if timestamp is None:
         return None
     current = get_shanghai_now(now)
@@ -913,12 +916,34 @@ def _can_refresh_quotes(state, now: datetime | None = None) -> bool:
 
 
 def _asset_class_from_config(state, symbol: str) -> str | None:
+    """Legacy fallback for old config.json assets; DB sources are authoritative."""
     for asset in getattr(state.config, "assets", []) or []:
         if not isinstance(asset, dict):
             continue
         if str(asset.get("symbol") or "").strip() != symbol:
             continue
         asset_class = asset.get("asset_class") or asset.get("asset_type")
+        if asset_class not in {None, ""}:
+            return str(asset_class)
+    return None
+
+
+def _asset_class_from_watchlist(state, symbol: str) -> str | None:
+    db = getattr(state, "db", None)
+    list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    if not callable(list_watchlist):
+        return None
+    try:
+        rows = list_watchlist()
+    except Exception:
+        logger.warning("Failed to read watchlist assets for %s", symbol, exc_info=True)
+        return None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("symbol") or "").strip() != symbol:
+            continue
+        asset_class = row.get("asset_class") or row.get("asset_type")
         if asset_class not in {None, ""}:
             return str(asset_class)
     return None
@@ -931,7 +956,9 @@ def _asset_class_from_metadata(state, symbol: str) -> str | None:
     try:
         metadata = db.get_instrument_metadata_sync(symbol)
     except Exception:
-        logger.warning("Failed to read instrument metadata for %s", symbol, exc_info=True)
+        logger.warning(
+            "Failed to read instrument metadata for %s", symbol, exc_info=True
+        )
         return None
     if not metadata:
         return None
@@ -976,9 +1003,10 @@ def _asset_class_for_position(
         )
     if not raw_asset_class and state is not None:
         raw_asset_class = (
-            _asset_class_from_config(state, symbol)
-            or _asset_class_from_metadata(state, symbol)
+            _asset_class_from_metadata(state, symbol)
+            or _asset_class_from_watchlist(state, symbol)
             or _asset_class_from_ledger(state, symbol)
+            or _asset_class_from_config(state, symbol)
         )
 
     normalized = _normalize_asset_class_value(raw_asset_class)
@@ -1730,7 +1758,9 @@ def _daily_equity_series_for_range(
     return daily_points or points
 
 
-def _load_ledger_entries_for_equity_series(db, batch_size: int = 500) -> list[LedgerEntry]:
+def _load_ledger_entries_for_equity_series(
+    db, batch_size: int = 500
+) -> list[LedgerEntry]:
     entries: list[LedgerEntry] = []
     offset = 0
     while True:
