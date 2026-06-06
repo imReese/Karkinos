@@ -37,8 +37,7 @@ function renderBoard(locale: 'en' | 'zh' = 'en') {
               {
                 symbol: '600519',
                 name: locale === 'zh' ? '贵州茅台' : 'Kweichow Moutai',
-                display_name:
-                  locale === 'zh' ? '贵州茅台' : 'Kweichow Moutai',
+                display_name: locale === 'zh' ? '贵州茅台' : 'Kweichow Moutai',
                 asset_class: 'stock',
                 quantity: 1,
                 avg_cost: 1500,

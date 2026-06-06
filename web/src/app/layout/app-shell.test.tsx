@@ -391,9 +391,9 @@ test('shows closed market with healthy cached quotes as available', async () => 
   });
 
   expect(await screen.findByText('市场休市')).toBeTruthy();
-  expect(screen.getByTestId('status-pill-market-indicator').style.backgroundColor).toBe(
-    'var(--app-success)',
-  );
+  expect(
+    screen.getByTestId('status-pill-market-indicator').style.backgroundColor,
+  ).toBe('var(--app-success)');
 });
 
 test('shows cache-only open-market state without claiming live quotes', async () => {

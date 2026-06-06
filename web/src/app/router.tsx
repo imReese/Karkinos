@@ -2697,11 +2697,7 @@ function PriceStructureChart({
             strokeOpacity="0.08"
           />
         ))}
-        <polygon
-          fill="currentColor"
-          fillOpacity="0.08"
-          points={areaPoints}
-        />
+        <polygon fill="currentColor" fillOpacity="0.08" points={areaPoints} />
         <polyline
           fill="none"
           stroke="currentColor"

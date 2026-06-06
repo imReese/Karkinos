@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import re
-from contextlib import contextmanager
 import logging
 import os
+from contextlib import contextmanager
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
-from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -70,6 +70,7 @@ _HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
 }
 
 _OPEN_END_FUND_NOISE = ("发起式", "发起", "A类", "C类", "（", "）", "(", ")", " ")
+_CHINA_MARKET_TZ = timezone(timedelta(hours=8))
 _PROXY_ENV_KEYS = (
     "http_proxy",
     "https_proxy",
@@ -105,7 +106,11 @@ def _date_from_epoch_ms(value) -> str | None:
     if value in {None, ""}:
         return None
     try:
-        return datetime.fromtimestamp(float(value) / 1000).date().isoformat()
+        return (
+            datetime.fromtimestamp(float(value) / 1000, tz=_CHINA_MARKET_TZ)
+            .date()
+            .isoformat()
+        )
     except (TypeError, ValueError):
         return None
 
@@ -223,7 +228,15 @@ class AKShareSource(DataSource):
         fund_code = self._resolve_open_end_fund_code(symbol)
         if not fund_code:
             return pd.DataFrame(
-                columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+                columns=[
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "amount",
+                ]
             )
         df = self._call_with_retry(
             ak.fund_open_fund_info_em,
@@ -232,7 +245,15 @@ class AKShareSource(DataSource):
         )
         if df.empty:
             return pd.DataFrame(
-                columns=["timestamp", "open", "high", "low", "close", "volume", "amount"]
+                columns=[
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "amount",
+                ]
             )
         df = df.rename(
             columns={
@@ -299,11 +320,7 @@ class AKShareSource(DataSource):
             name_value = str(row["基金简称"]).strip()
             canonical_name = name_value or None
         nav_columns = sorted(
-            (
-                str(column)
-                for column in row.index
-                if str(column).endswith("-单位净值")
-            ),
+            (str(column) for column in row.index if str(column).endswith("-单位净值")),
             reverse=True,
         )
         if not nav_columns:
@@ -477,7 +494,9 @@ class AKShareSource(DataSource):
 
         # A股/ETF 支持日期范围参数；黄金/债券需全量拉取后过滤
         if asset_class in (AssetClass.STOCK, AssetClass.FUND):
-            if asset_class == AssetClass.FUND and self._resolve_open_end_fund_code(symbol):
+            if asset_class == AssetClass.FUND and self._resolve_open_end_fund_code(
+                symbol
+            ):
                 df = self._fetch_open_end_fund_bars(symbol, start, end)
             else:
                 df = self._call_with_retry(
@@ -492,7 +511,9 @@ class AKShareSource(DataSource):
             # 黄金/债券：全量拉取
             df = self._call_with_retry(func, symbol=str(symbol))
 
-        if not {"timestamp", "open", "high", "low", "close", "volume"}.issubset(df.columns):
+        if not {"timestamp", "open", "high", "low", "close", "volume"}.issubset(
+            df.columns
+        ):
             df = self._normalize_bars(df, col_map, has_volume)
 
         # 按日期范围过滤

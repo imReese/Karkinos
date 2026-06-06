@@ -81,7 +81,8 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold">
-                  {group.label || assetClassLabel(group.asset_class, copy.common)}
+                  {group.label ||
+                    assetClassLabel(group.asset_class, copy.common)}
                 </div>
                 <div className="app-muted mt-1 text-xs">
                   {labels.positionCount(group.items.length)}
@@ -113,7 +114,8 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-soft)]">
-                  {group.label || assetClassLabel(group.asset_class, copy.common)}
+                  {group.label ||
+                    assetClassLabel(group.asset_class, copy.common)}
                 </span>
                 <span className="truncate text-base font-semibold">
                   {labels.positionCount(group.items.length)}
