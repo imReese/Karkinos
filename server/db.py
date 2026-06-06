@@ -351,7 +351,9 @@ class AppDatabase:
         asset_class: str,
     ) -> None:
         """同步写入或更新待执行任务，避免重复生成。"""
+        now = datetime.now().isoformat()
         with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
             conn.execute(
                 """
                 INSERT INTO action_tasks (
@@ -383,10 +385,30 @@ class AppDatabase:
                     strategy_id,
                     timestamp,
                     asset_class,
-                    datetime.now().isoformat(),
-                    datetime.now().isoformat(),
+                    now,
+                    now,
                 ),
             )
+            row = conn.execute(
+                """
+                SELECT id, source_signal_id, symbol, title, detail, direction, urgency,
+                       target_weight, price, strategy_id, timestamp, asset_class, status,
+                       created_at, updated_at
+                FROM action_tasks WHERE source_signal_id = ?
+                """,
+                (source_signal_id,),
+            ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="task.action.created",
+                    timestamp=row["timestamp"],
+                    entity_type="action_task",
+                    entity_id=str(row["id"]),
+                    source="action_tasks",
+                    source_ref=str(row["id"]),
+                    payload=_action_task_event_payload(row),
+                )
             conn.commit()
 
     async def get_action_tasks(
@@ -434,7 +456,6 @@ class AppDatabase:
                 "UPDATE action_tasks SET status = ?, updated_at = ? WHERE id = ?",
                 (status, datetime.now().isoformat(), task_id),
             )
-            conn.commit()
             row = conn.execute(
                 """
                 SELECT id, source_signal_id, symbol, title, detail, direction, urgency,
@@ -444,6 +465,18 @@ class AppDatabase:
                 """,
                 (task_id,),
             ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="task.action.status_changed",
+                    timestamp=datetime.now().isoformat(),
+                    entity_type="action_task",
+                    entity_id=str(row["id"]),
+                    source="action_tasks",
+                    source_ref=str(row["id"]),
+                    payload=_action_task_event_payload(row),
+                )
+            conn.commit()
             return dict(row) if row else None
 
     # ---------- Risk Decisions ----------
@@ -2413,6 +2446,25 @@ def _latest_quote_event_payload(row: sqlite3.Row) -> dict[str, Any]:
         "captured_reason": row["captured_reason"],
         "nav_date": row["nav_date"],
         "metadata": _metadata_payload_value(row["metadata_json"]),
+    }
+
+
+def _action_task_event_payload(row: sqlite3.Row) -> dict[str, Any]:
+    """Build a stable event payload from a persisted action task row."""
+    return {
+        "task_id": row["id"],
+        "source_signal_id": row["source_signal_id"],
+        "symbol": row["symbol"],
+        "title": row["title"],
+        "detail": row["detail"],
+        "direction": row["direction"],
+        "urgency": row["urgency"],
+        "target_weight": row["target_weight"],
+        "price": row["price"],
+        "strategy_id": row["strategy_id"],
+        "timestamp": row["timestamp"],
+        "asset_class": row["asset_class"],
+        "status": row["status"],
     }
 
 
