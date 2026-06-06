@@ -1426,18 +1426,38 @@ class AppDatabase:
         allocation_json: str,
     ) -> None:
         """同步写入组合快照（后台线程调用）。"""
+        timestamp = datetime.now().isoformat()
         with sqlite3.connect(self._path) as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT INTO portfolio_snapshots
                    (timestamp, cash, total_equity, positions_json, allocation_json)
                    VALUES (?, ?, ?, ?, ?)""",
                 (
-                    datetime.now().isoformat(),
+                    timestamp,
                     cash,
                     total_equity,
                     positions_json,
                     allocation_json,
                 ),
+            )
+            snapshot_id = cursor.lastrowid or 0
+            _insert_event_sync(
+                conn,
+                event_type="portfolio.snapshot.created",
+                timestamp=timestamp,
+                entity_type="portfolio",
+                entity_id="default",
+                source="portfolio_snapshots",
+                source_ref=str(snapshot_id),
+                payload={
+                    "snapshot_id": snapshot_id,
+                    "portfolio_id": "default",
+                    "timestamp": timestamp,
+                    "cash": cash,
+                    "total_equity": total_equity,
+                    "positions": _metadata_payload_value(positions_json),
+                    "allocation": _metadata_payload_value(allocation_json),
+                },
             )
             conn.commit()
 

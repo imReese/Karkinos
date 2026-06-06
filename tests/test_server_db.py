@@ -614,6 +614,53 @@ def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_p
     assert latest[0]["price"] == 124.0
 
 
+def test_app_database_portfolio_snapshots_append_portfolio_events(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    positions_json = '[{"symbol":"600519","quantity":10,"market_value":1234.5}]'
+    allocation_json = '{"stock":0.8,"cash":0.2}'
+    db.save_portfolio_snapshot_sync(
+        cash=5000.0,
+        total_equity=6234.5,
+        positions_json=positions_json,
+        allocation_json=allocation_json,
+    )
+    events = db.list_events_sync(
+        event_type="portfolio.snapshot.created",
+        entity_type="portfolio",
+        entity_id="default",
+    )
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        conn.row_factory = sqlite3.Row
+        snapshot = conn.execute("SELECT * FROM portfolio_snapshots").fetchone()
+
+    assert snapshot is not None
+    assert snapshot["cash"] == 5000.0
+    assert snapshot["total_equity"] == 6234.5
+    assert snapshot["positions_json"] == positions_json
+    assert snapshot["allocation_json"] == allocation_json
+    assert len(events) == 1
+    assert events[0]["source"] == "portfolio_snapshots"
+    assert events[0]["source_ref"] == str(snapshot["id"])
+    assert json.loads(events[0]["payload_json"]) == {
+        "allocation": {"cash": 0.2, "stock": 0.8},
+        "cash": 5000.0,
+        "portfolio_id": "default",
+        "positions": [
+            {
+                "market_value": 1234.5,
+                "quantity": 10,
+                "symbol": "600519",
+            }
+        ],
+        "snapshot_id": snapshot["id"],
+        "timestamp": snapshot["timestamp"],
+        "total_equity": 6234.5,
+    }
+
+
 def test_app_database_persists_action_tasks_and_status_updates(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
