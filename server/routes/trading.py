@@ -69,6 +69,12 @@ def create_router() -> APIRouter:
         )
         if updated is None:
             raise HTTPException(status_code=404, detail="manual order not found")
+        if hasattr(state.db, "update_order_status_sync"):
+            state.db.update_order_status_sync(
+                order_id=order_id,
+                status="confirmed",
+                note="confirmed by operator; downstream execution simulated",
+            )
         await _broadcast_if_possible(state, "ManualOrderConfirmed", updated)
         return updated
 
@@ -84,6 +90,12 @@ def create_router() -> APIRouter:
         )
         if updated is None:
             raise HTTPException(status_code=404, detail="manual order not found")
+        if hasattr(state.db, "update_order_status_sync"):
+            state.db.update_order_status_sync(
+                order_id=order_id,
+                status="rejected",
+                note=payload.reason,
+            )
         await _broadcast_if_possible(state, "ManualOrderRejected", updated)
         return updated
 

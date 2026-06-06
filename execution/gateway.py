@@ -69,21 +69,35 @@ class ManualConfirmGateway:
         if self.db is None:
             return None
         logger.info("Manual order confirmed, simulated downstream submit: %s", order_id)
-        return self.db.update_manual_order_status_sync(
+        updated = self.db.update_manual_order_status_sync(
             order_id=order_id,
             status="confirmed",
             note="confirmed by operator; downstream execution simulated",
         )
+        if updated is not None and hasattr(self.db, "update_order_status_sync"):
+            self.db.update_order_status_sync(
+                order_id=order_id,
+                status="confirmed",
+                note="confirmed by operator; downstream execution simulated",
+            )
+        return updated
 
     def reject_order(self, order_id: str, reason: str = "") -> dict[str, Any] | None:
         if self.db is None:
             return None
         logger.info("Manual order rejected: %s reason=%s", order_id, reason)
-        return self.db.update_manual_order_status_sync(
+        updated = self.db.update_manual_order_status_sync(
             order_id=order_id,
             status="rejected",
             note=reason,
         )
+        if updated is not None and hasattr(self.db, "update_order_status_sync"):
+            self.db.update_order_status_sync(
+                order_id=order_id,
+                status="rejected",
+                note=reason,
+            )
+        return updated
 
     def _serialize_order(self, order: OrderEvent) -> dict[str, Any]:
         return self._convert(dataclasses.asdict(order))

@@ -51,6 +51,22 @@ def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
 def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    db.record_order_sync(
+        order_id="ORD-CONFIRM",
+        timestamp="2026-04-18T14:50:00",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.45,
+        intent_id="INTENT-1",
+        risk_decision_id="RISK-1",
+        execution_mode="manual",
+        status="pending_confirm",
+        source="manual_orders",
+        source_ref="ORD-CONFIRM",
+        payload={"order_id": "ORD-CONFIRM"},
+    )
     db.save_manual_order_sync(
         order_id="ORD-CONFIRM",
         timestamp="2026-04-18T14:50:00",
@@ -64,6 +80,22 @@ def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
         execution_mode="manual",
         status="pending_confirm",
         payload={"order_id": "ORD-CONFIRM"},
+    )
+    db.record_order_sync(
+        order_id="ORD-REJECT",
+        timestamp="2026-04-18T14:51:00",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.45,
+        intent_id="INTENT-2",
+        risk_decision_id="RISK-2",
+        execution_mode="manual",
+        status="pending_confirm",
+        source="manual_orders",
+        source_ref="ORD-REJECT",
+        payload={"order_id": "ORD-REJECT"},
     )
     db.save_manual_order_sync(
         order_id="ORD-REJECT",
@@ -107,3 +139,5 @@ def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
     assert rejected["status"] == "rejected"
     assert db.get_manual_order_sync("ORD-CONFIRM")["status"] == "confirmed"
     assert db.get_manual_order_sync("ORD-REJECT")["status"] == "rejected"
+    assert db.get_order_sync("ORD-CONFIRM")["status"] == "confirmed"
+    assert db.get_order_sync("ORD-REJECT")["status"] == "rejected"

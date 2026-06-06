@@ -753,6 +753,40 @@ class AppDatabase:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def update_order_status_sync(
+        self, *, order_id: str, status: str, note: str = ""
+    ) -> dict[str, Any] | None:
+        """Update shared order status and append an order status event."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                UPDATE orders
+                SET status = ?, updated_at = ?
+                WHERE order_id = ?
+                """,
+                (status, datetime.now().isoformat(), order_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if row is not None:
+                payload = _order_event_payload(row)
+                payload["note"] = note
+                _insert_event_sync(
+                    conn,
+                    event_type="order.status_changed",
+                    timestamp=datetime.now().isoformat(),
+                    entity_type="order",
+                    entity_id=row["order_id"],
+                    source="orders",
+                    source_ref=row["order_id"],
+                    payload=payload,
+                )
+            conn.commit()
+            return dict(row) if row else None
+
     # ---------- Manual Orders ----------
 
     def save_manual_order_sync(
