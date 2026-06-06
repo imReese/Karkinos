@@ -55,6 +55,28 @@ def test_app_database_initializes_event_log_table(tmp_path):
     assert "idx_event_log_source" in indexes
 
 
+def test_app_database_initializes_fills_table(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        table = conn.execute("""
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'fills'
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'fills'
+                """).fetchall()}
+
+    assert table is not None
+    assert "idx_fills_order_ts" in indexes
+    assert "idx_fills_symbol_ts" in indexes
+    assert "idx_fills_source" in indexes
+
+
 def test_app_database_initializes_latest_quotes_table(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -944,6 +966,85 @@ def test_app_database_manual_orders_append_order_events(tmp_path):
         "status": "pending_confirm",
         "symbol": "600519",
         "timestamp": "2026-04-18T14:50:00",
+    }
+
+
+def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    row_id = db.record_fill_sync(
+        fill_id="FILL-1",
+        order_id="ORD-1",
+        timestamp="2026-04-18T14:50:03",
+        symbol="600519",
+        side="buy",
+        fill_price=123.46,
+        fill_quantity=100.0,
+        commission=5.0,
+        slippage=1.0,
+        asset_class="stock",
+        execution_mode="paper",
+        provider_name="simulated",
+        broker_order_id="SIM-ORD-1",
+        source="simulated_execution",
+        source_ref="SIM-FILL-1",
+        metadata={"latency_ms": 12},
+    )
+    updated_id = db.record_fill_sync(
+        fill_id="FILL-1",
+        order_id="ORD-1",
+        timestamp="2026-04-18T14:50:04",
+        symbol="600519",
+        side="buy",
+        fill_price=123.47,
+        fill_quantity=100.0,
+        commission=5.1,
+        slippage=1.1,
+        asset_class="stock",
+        execution_mode="paper",
+        provider_name="simulated",
+        broker_order_id="SIM-ORD-1",
+        source="simulated_execution",
+        source_ref="SIM-FILL-1",
+        metadata={"latency_ms": 14},
+    )
+
+    fill = db.get_fill_sync("FILL-1")
+    fills = db.list_fills_sync(order_id="ORD-1")
+    events = db.list_events_sync(entity_type="fill", entity_id="FILL-1")
+
+    assert updated_id == row_id
+    assert len(fills) == 1
+    assert fill == fills[0]
+    assert fill["fill_id"] == "FILL-1"
+    assert fill["order_id"] == "ORD-1"
+    assert fill["fill_price"] == 123.47
+    assert fill["source"] == "simulated_execution"
+    assert fill["source_ref"] == "SIM-FILL-1"
+    assert json.loads(fill["metadata_json"]) == {"latency_ms": 14}
+    assert [event["event_type"] for event in events] == [
+        "order.fill.recorded",
+        "order.fill.recorded",
+    ]
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_class": "stock",
+        "broker_order_id": "SIM-ORD-1",
+        "commission": 5.1,
+        "execution_mode": "paper",
+        "fill_id": "FILL-1",
+        "fill_price": 123.47,
+        "fill_quantity": 100.0,
+        "fill_row_id": row_id,
+        "metadata": {"latency_ms": 14},
+        "order_id": "ORD-1",
+        "provider_name": "simulated",
+        "side": "buy",
+        "slippage": 1.1,
+        "source": "simulated_execution",
+        "source_ref": "SIM-FILL-1",
+        "symbol": "600519",
+        "timestamp": "2026-04-18T14:50:04",
     }
 
 

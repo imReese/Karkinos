@@ -14,10 +14,13 @@ from execution.slippage import (
     TickSlippage,
     VolumeSlippage,
 )
+from execution.tracker import BrokerFillReport, ExecutionOrderTracker
 
 __all__ = [
     "ExecutionEngine",
     "SimulatedExecution",
+    "BrokerFillReport",
+    "ExecutionOrderTracker",
     "FixedSlippage",
     "PercentSlippage",
     "TickSlippage",
