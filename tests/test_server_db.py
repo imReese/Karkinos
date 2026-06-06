@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal
@@ -30,6 +31,28 @@ def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
     assert "idx_quote_fetch_runs_started_at" in indexes
     assert "idx_quote_fetch_runs_status" in indexes
     assert "idx_quote_fetch_runs_provider" in indexes
+
+
+def test_app_database_initializes_event_log_table(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        table = conn.execute("""
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'event_log'
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'event_log'
+                """).fetchall()}
+
+    assert table is not None
+    assert "idx_event_log_type_ts" in indexes
+    assert "idx_event_log_entity" in indexes
+    assert "idx_event_log_source" in indexes
 
 
 def test_app_database_initializes_latest_quotes_table(tmp_path):
@@ -159,6 +182,49 @@ def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
     assert row["display_name"] == "中国核电"
     assert row["metadata_json"] == '{"provider_status":"live","sequence":2}'
     assert [item["symbol"] for item in rows] == ["601985"]
+
+
+def test_app_database_appends_and_lists_domain_events(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    event_id = db.append_event_sync(
+        event_type="market.quote.refreshed",
+        timestamp="2026-05-23T09:30:00Z",
+        entity_type="instrument",
+        entity_id="600519",
+        source="test",
+        source_ref="quote-1",
+        payload={"price": Decimal("123.45"), "status": "live"},
+    )
+    db.append_event_sync(
+        event_type="portfolio.snapshot.created",
+        timestamp="2026-05-23T09:31:00+08:00",
+        entity_type="portfolio",
+        entity_id="default",
+        source="test",
+        source_ref="snapshot-1",
+        payload={"cash": 1000},
+    )
+
+    all_events = db.list_events_sync()
+    quote_events = db.list_events_sync(event_type="market.quote.refreshed")
+    instrument_events = db.list_events_sync(
+        entity_type="instrument",
+        entity_id="600519",
+    )
+
+    assert event_id == 1
+    assert [event["event_type"] for event in all_events] == [
+        "portfolio.snapshot.created",
+        "market.quote.refreshed",
+    ]
+    assert quote_events[0]["source_ref"] == "quote-1"
+    assert json.loads(quote_events[0]["payload_json"]) == {
+        "price": "123.45",
+        "status": "live",
+    }
+    assert instrument_events == quote_events
 
 
 def test_app_database_upserts_and_reads_latest_quote(tmp_path):
@@ -314,6 +380,30 @@ def test_app_database_records_quote_fetch_run_lifecycle(tmp_path):
     assert finished["status"] == "completed"
     assert finished["error_message"] == "1 symbol timed out"
     assert finished["metadata_json"] == '{"elapsed_ms":3000}'
+
+    events = db.list_events_sync(entity_type="task_run", entity_id="quote-run-1")
+
+    assert [event["event_type"] for event in events] == [
+        "task_run.completed",
+        "task_run.started",
+    ]
+    assert events[0]["source"] == "quote_fetch_runs"
+    assert events[0]["source_ref"] == "quote-run-1"
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_type": "stock",
+        "cache_hit_count": 1,
+        "error_message": "1 symbol timed out",
+        "failure_count": 1,
+        "finished_at": "2026-05-23T09:30:03+08:00",
+        "metadata": {"elapsed_ms": 3000},
+        "provider": "akshare",
+        "run_id": "quote-run-1",
+        "started_at": "2026-05-23T09:30:00+08:00",
+        "status": "completed",
+        "success_count": 2,
+        "symbol_count": 3,
+        "trigger": "manual_refresh",
+    }
 
 
 def test_app_database_lists_recent_quote_fetch_runs(tmp_path):
@@ -503,6 +593,44 @@ def test_app_database_persists_action_tasks_and_status_updates(tmp_path):
     deferred = asyncio.run(db.get_action_tasks(statuses=["deferred"]))
     assert len(deferred) == 1
     assert deferred[0]["source_signal_id"] == 11
+
+
+def test_app_database_research_notes_append_research_events(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    note_id = asyncio.run(
+        db.add_research_note(
+            symbol="600519",
+            asset_class="stock",
+            entry_kind="note",
+            title="Earnings read-through",
+            content="Margin trend improving.",
+            priority="high",
+            event_date="2026-05-23",
+        )
+    )
+
+    events = db.list_events_sync(
+        event_type="research.note.created",
+        entity_type="instrument",
+        entity_id="600519",
+    )
+
+    assert note_id == 1
+    assert len(events) == 1
+    assert events[0]["source"] == "market_research_notes"
+    assert events[0]["source_ref"] == "1"
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_class": "stock",
+        "content": "Margin trend improving.",
+        "entry_kind": "note",
+        "event_date": "2026-05-23",
+        "note_id": 1,
+        "priority": "high",
+        "symbol": "600519",
+        "title": "Earnings read-through",
+    }
 
 
 def test_app_database_persists_risk_decision_audit(tmp_path):
