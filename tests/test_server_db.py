@@ -1067,6 +1067,67 @@ def test_app_database_records_order_and_appends_order_event(tmp_path):
     }
 
 
+def test_app_database_updates_order_status_and_appends_status_event(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    row_id = db.record_order_sync(
+        order_id="ORD-1",
+        timestamp="2026-04-18T14:50:00",
+        symbol="600519",
+        side="buy",
+        order_type="market",
+        quantity=100.0,
+        price=123.45,
+        asset_class="stock",
+        intent_id="INTENT-1",
+        risk_decision_id="RISK-1",
+        execution_mode="manual",
+        status="pending_confirm",
+        source="manual_orders",
+        source_ref="ORD-1",
+        payload={"reason": "unit test"},
+    )
+
+    updated = db.update_order_status_sync(
+        order_id="ORD-1",
+        status="confirmed",
+        note="operator approved",
+    )
+    missing = db.update_order_status_sync(
+        order_id="MISSING",
+        status="confirmed",
+        note="ignored",
+    )
+    events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
+
+    assert missing is None
+    assert updated is not None
+    assert updated["status"] == "confirmed"
+    assert [event["event_type"] for event in events] == [
+        "order.status_changed",
+        "order.recorded",
+    ]
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_class": "stock",
+        "execution_mode": "manual",
+        "intent_id": "INTENT-1",
+        "note": "operator approved",
+        "order_id": "ORD-1",
+        "order_row_id": row_id,
+        "order_type": "market",
+        "payload": {"reason": "unit test"},
+        "price": 123.45,
+        "quantity": 100.0,
+        "risk_decision_id": "RISK-1",
+        "side": "buy",
+        "source": "manual_orders",
+        "source_ref": "ORD-1",
+        "status": "confirmed",
+        "symbol": "600519",
+        "timestamp": "2026-04-18T14:50:00",
+    }
+
+
 def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
