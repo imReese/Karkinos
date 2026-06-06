@@ -757,6 +757,141 @@ class AppDatabase:
             conn.commit()
             return dict(row) if row else None
 
+    # ---------- Fills ----------
+
+    def record_fill_sync(
+        self,
+        *,
+        fill_id: str,
+        order_id: str,
+        timestamp: str,
+        symbol: str,
+        side: str,
+        fill_price: float,
+        fill_quantity: float,
+        commission: float = 0.0,
+        slippage: float = 0.0,
+        asset_class: str = "stock",
+        execution_mode: str = "paper",
+        provider_name: str | None = None,
+        broker_order_id: str | None = None,
+        source: str = "execution",
+        source_ref: str | None = None,
+        metadata: dict[str, Any] | str | None = None,
+    ) -> int:
+        """Persist a fill from paper/live execution and append an event."""
+        now = datetime.now().isoformat()
+        metadata_json = _serialize_metadata_json(metadata)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT INTO fills (
+                    fill_id, order_id, timestamp, symbol, side, fill_price,
+                    fill_quantity, commission, slippage, asset_class,
+                    execution_mode, provider_name, broker_order_id, source,
+                    source_ref, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(fill_id) DO UPDATE SET
+                    order_id = excluded.order_id,
+                    timestamp = excluded.timestamp,
+                    symbol = excluded.symbol,
+                    side = excluded.side,
+                    fill_price = excluded.fill_price,
+                    fill_quantity = excluded.fill_quantity,
+                    commission = excluded.commission,
+                    slippage = excluded.slippage,
+                    asset_class = excluded.asset_class,
+                    execution_mode = excluded.execution_mode,
+                    provider_name = excluded.provider_name,
+                    broker_order_id = excluded.broker_order_id,
+                    source = excluded.source,
+                    source_ref = excluded.source_ref,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    fill_id,
+                    order_id,
+                    timestamp,
+                    symbol,
+                    side,
+                    fill_price,
+                    fill_quantity,
+                    commission,
+                    slippage,
+                    asset_class,
+                    execution_mode,
+                    provider_name,
+                    broker_order_id,
+                    source,
+                    source_ref,
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM fills WHERE fill_id = ?",
+                (fill_id,),
+            ).fetchone()
+            if row is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="order.fill.recorded",
+                    timestamp=row["timestamp"],
+                    entity_type="fill",
+                    entity_id=row["fill_id"],
+                    source="fills",
+                    source_ref=row["fill_id"],
+                    payload=_fill_event_payload(row),
+                )
+            conn.commit()
+            return int(row["id"]) if row is not None else 0
+
+    def get_fill_sync(self, fill_id: str) -> dict[str, Any] | None:
+        """Read one persisted execution fill by ID."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM fills WHERE fill_id = ?",
+                (fill_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_fills_sync(
+        self,
+        *,
+        order_id: str | None = None,
+        symbol: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List persisted execution fills newest first."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if order_id is not None:
+            conditions.append("order_id = ?")
+            params.append(order_id)
+        if symbol is not None:
+            conditions.append("symbol = ?")
+            params.append(symbol)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM fills
+                {where_clause}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Backtest Results ----------
 
     async def save_backtest_result(
@@ -2284,6 +2419,35 @@ ON manual_orders(status, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_manual_orders_symbol_ts
 ON manual_orders(symbol, timestamp DESC);
 
+CREATE TABLE IF NOT EXISTS fills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fill_id TEXT NOT NULL UNIQUE,
+    order_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    fill_price REAL NOT NULL,
+    fill_quantity REAL NOT NULL,
+    commission REAL DEFAULT 0,
+    slippage REAL DEFAULT 0,
+    asset_class TEXT NOT NULL DEFAULT 'stock',
+    execution_mode TEXT NOT NULL DEFAULT 'paper',
+    provider_name TEXT,
+    broker_order_id TEXT,
+    source TEXT NOT NULL DEFAULT 'execution',
+    source_ref TEXT,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fills_order_ts
+ON fills(order_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_fills_symbol_ts
+ON fills(symbol, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_fills_source
+ON fills(source, source_ref);
+
 CREATE TABLE IF NOT EXISTS cash_flows (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
@@ -2421,6 +2585,29 @@ def _manual_order_event_payload(row: sqlite3.Row) -> dict[str, Any]:
         "status": row["status"],
         "note": row["note"],
         "payload": _metadata_payload_value(row["payload_json"]),
+    }
+
+
+def _fill_event_payload(row: sqlite3.Row) -> dict[str, Any]:
+    """Build a stable event payload from a persisted execution fill row."""
+    return {
+        "fill_row_id": row["id"],
+        "fill_id": row["fill_id"],
+        "order_id": row["order_id"],
+        "timestamp": row["timestamp"],
+        "symbol": row["symbol"],
+        "side": row["side"],
+        "fill_price": row["fill_price"],
+        "fill_quantity": row["fill_quantity"],
+        "commission": row["commission"],
+        "slippage": row["slippage"],
+        "asset_class": row["asset_class"],
+        "execution_mode": row["execution_mode"],
+        "provider_name": row["provider_name"],
+        "broker_order_id": row["broker_order_id"],
+        "source": row["source"],
+        "source_ref": row["source_ref"],
+        "metadata": _metadata_payload_value(row["metadata_json"]),
     }
 
 
