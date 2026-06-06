@@ -1112,7 +1112,9 @@ async def _backfill_instrument_metadata(
             fetched_at=fetched_at,
             metadata={
                 "quote_timestamp": payload.get("timestamp"),
-                "quote_source": payload.get("source"),
+                "quote_source": payload.get("quote_source")
+                or payload.get("source")
+                or provider_name,
                 "payload_keys": sorted(str(key) for key in payload.keys()),
             },
         )
@@ -1366,7 +1368,10 @@ def _load_latest_snapshot_from_provider(
         "quote_source": snapshot.get("quote_source")
         or snapshot.get("source")
         or selected_source_name,
-        "provider_name": selected_source_name,
+        "provider_name": snapshot.get("provider_name") or selected_source_name,
+        "provider_symbol": snapshot.get("provider_symbol") or symbol,
+        "exchange": snapshot.get("exchange"),
+        "market": snapshot.get("market"),
         "quote_status": "live",
         "provider_status": "live",
         "nav_date": snapshot.get("nav_date")
