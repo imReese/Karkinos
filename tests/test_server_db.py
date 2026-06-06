@@ -692,6 +692,46 @@ def test_app_database_persists_action_tasks_and_status_updates(tmp_path):
     assert len(deferred) == 1
     assert deferred[0]["source_signal_id"] == 11
 
+    events = db.list_events_sync(
+        entity_type="action_task", entity_id=str(pending[0]["id"])
+    )
+    assert [event["event_type"] for event in events] == [
+        "task.action.status_changed",
+        "task.action.created",
+    ]
+    assert events[0]["source"] == "action_tasks"
+    assert events[0]["source_ref"] == str(pending[0]["id"])
+    assert json.loads(events[0]["payload_json"]) == {
+        "asset_class": "stock",
+        "detail": "dual_ma 触发，目标仓位 20%",
+        "direction": "buy",
+        "price": 123.45,
+        "source_signal_id": 11,
+        "status": "deferred",
+        "strategy_id": "dual_ma",
+        "symbol": "600519",
+        "target_weight": 0.2,
+        "task_id": pending[0]["id"],
+        "timestamp": "2026-04-18T09:35:00",
+        "title": "建议增持 600519",
+        "urgency": "high",
+    }
+    assert json.loads(events[1]["payload_json"]) == {
+        "asset_class": "stock",
+        "detail": "dual_ma 触发，目标仓位 20%",
+        "direction": "buy",
+        "price": 123.45,
+        "source_signal_id": 11,
+        "status": "pending",
+        "strategy_id": "dual_ma",
+        "symbol": "600519",
+        "target_weight": 0.2,
+        "task_id": pending[0]["id"],
+        "timestamp": "2026-04-18T09:35:00",
+        "title": "建议增持 600519",
+        "urgency": "high",
+    }
+
 
 def test_app_database_research_notes_append_research_events(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
