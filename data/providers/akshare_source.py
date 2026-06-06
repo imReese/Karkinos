@@ -13,7 +13,7 @@ from functools import lru_cache
 import pandas as pd
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.source import DataSource
+from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
 
@@ -598,6 +598,7 @@ class AKShareSource(DataSource):
                     "price": float(row["最新价"]),
                     "volume": float(row["成交额"]) if "成交额" in row else None,
                     "timestamp": str(row.get("时间", "")),
+                    "quote_source": "akshare_stock_spot",
                 }
                 previous_close = _row_float(row, "昨收", "昨收价", "昨日收盘")
                 change = _row_float(row, "涨跌额")
@@ -614,11 +615,16 @@ class AKShareSource(DataSource):
                 if "名称" in row and str(row["名称"]).strip():
                     payload["name"] = str(row["名称"]).strip()
                     payload["display_name"] = str(row["名称"]).strip()
-                return payload
+                return self._normalize_latest_quote(symbol, asset_class, payload)
 
             elif asset_class == AssetClass.FUND:
                 if open_end_snapshot := self._fetch_open_end_fund_latest(symbol):
-                    return open_end_snapshot
+                    return self._normalize_latest_quote(
+                        symbol,
+                        asset_class,
+                        open_end_snapshot,
+                        provider_symbol=self._resolve_open_end_fund_code(symbol),
+                    )
 
                 df = self._call_with_retry(ak.fund_etf_spot_em)
                 row = df[df["代码"] == str(symbol)]
@@ -629,24 +635,32 @@ class AKShareSource(DataSource):
                     "price": float(row["最新价"]),
                     "volume": float(row["成交额"]) if "成交额" in row else None,
                     "timestamp": str(row.get("时间", "")),
+                    "quote_source": "akshare_fund_etf_spot",
                 }
                 if "名称" in row and str(row["名称"]).strip():
                     payload["name"] = str(row["名称"]).strip()
                     payload["display_name"] = str(row["名称"]).strip()
-                return payload
+                return self._normalize_latest_quote(symbol, asset_class, payload)
 
             elif asset_class == AssetClass.GOLD:
                 df = self._call_with_retry(ak.spot_quotations_sge, symbol=str(symbol))
                 if df.empty:
                     return None
                 row = df.iloc[0]
-                return {
-                    "price": (
-                        float(row["最新价"]) if "最新价" in row else float(row.iloc[0])
-                    ),
-                    "volume": None,
-                    "timestamp": str(row.get("时间", "")),
-                }
+                return self._normalize_latest_quote(
+                    symbol,
+                    asset_class,
+                    {
+                        "price": (
+                            float(row["最新价"])
+                            if "最新价" in row
+                            else float(row.iloc[0])
+                        ),
+                        "volume": None,
+                        "timestamp": str(row.get("时间", "")),
+                        "quote_source": "akshare_sge_spot",
+                    },
+                )
 
             elif asset_class == AssetClass.BOND:
                 df = self._call_with_retry(ak.bond_zh_hs_spot)
@@ -654,19 +668,42 @@ class AKShareSource(DataSource):
                 if row.empty:
                     return None
                 row = row.iloc[0]
-                return {
-                    "price": (
-                        float(row["最新价"]) if "最新价" in row else float(row.iloc[0])
-                    ),
-                    "volume": None,
-                    "timestamp": str(row.get("时间", "")),
-                }
+                return self._normalize_latest_quote(
+                    symbol,
+                    asset_class,
+                    {
+                        "price": (
+                            float(row["最新价"])
+                            if "最新价" in row
+                            else float(row.iloc[0])
+                        ),
+                        "volume": None,
+                        "timestamp": str(row.get("时间", "")),
+                        "quote_source": "akshare_bond_spot",
+                    },
+                )
 
         except Exception:
             logger.exception("fetch_latest failed for %s (%s)", symbol, asset_class)
             return None
 
         return None
+
+    @staticmethod
+    def _normalize_latest_quote(
+        symbol: Symbol,
+        asset_class: AssetClass,
+        payload: dict | None,
+        provider_symbol: str | None = None,
+    ) -> dict | None:
+        quote = normalize_provider_quote(
+            symbol,
+            asset_class,
+            payload,
+            provider_name="akshare",
+            provider_symbol=provider_symbol or str(symbol),
+        )
+        return None if quote is None else quote.to_payload()
 
     @staticmethod
     def _normalize_bars(

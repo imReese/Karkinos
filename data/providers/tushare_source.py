@@ -10,7 +10,7 @@ from typing import Any
 import pandas as pd
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.source import DataSource
+from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
 
@@ -91,11 +91,21 @@ class TushareSource(DataSource):
             ts_code = self._stock_ts_code(symbol)
             realtime = self._fetch_realtime_quote_with_timeout(ts_code)
             if realtime is not None:
-                return realtime
-            return self._fetch_daily_latest(ts_code)
+                return self._normalize_latest_quote(
+                    symbol, asset_class, realtime, ts_code
+                )
+            return self._normalize_latest_quote(
+                symbol, asset_class, self._fetch_daily_latest(ts_code), ts_code
+            )
 
         if asset_class == AssetClass.FUND:
-            return self._fetch_fund_nav_latest(self._fund_ts_code(symbol))
+            ts_code = self._fund_ts_code(symbol)
+            return self._normalize_latest_quote(
+                symbol,
+                asset_class,
+                self._fetch_fund_nav_latest(ts_code),
+                ts_code,
+            )
 
         return None
 
@@ -126,6 +136,22 @@ class TushareSource(DataSource):
             return None
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _normalize_latest_quote(
+        symbol: Symbol,
+        asset_class: AssetClass,
+        payload: dict | None,
+        provider_symbol: str,
+    ) -> dict | None:
+        quote = normalize_provider_quote(
+            symbol,
+            asset_class,
+            payload,
+            provider_name="tushare",
+            provider_symbol=provider_symbol,
+        )
+        return None if quote is None else quote.to_payload()
 
     def _fetch_realtime_quote(self, ts_code: str) -> dict | None:
         import tushare as ts

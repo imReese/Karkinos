@@ -43,17 +43,21 @@ def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
     )
 
     assert result == {
-        "price": 8.76,
-        "volume": 123456.0,
-        "turnover": 1081488.0,
-        "timestamp": "2026-06-05T11:22:00",
-        "source": "tushare",
-        "quote_source": "tushare_realtime_quote",
-        "display_name": "中国核电",
-        "previous_close": 8.65,
+        "asset_class": "stock",
         "change": pytest.approx(0.11),
         "change_percent": pytest.approx(0.012716763),
+        "display_name": "中国核电",
+        "previous_close": 8.65,
         "previous_close_date": "2026-06-05",
+        "price": 8.76,
+        "provider_name": "tushare",
+        "provider_symbol": "601985.SH",
+        "quote_source": "tushare_realtime_quote",
+        "source": "tushare",
+        "symbol": "601985",
+        "timestamp": "2026-06-05T11:22:00",
+        "turnover": 1081488.0,
+        "volume": 123456.0,
     }
     assert calls["realtime"] == ("601985.SH", "dc")
 
@@ -107,6 +111,10 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     assert result["change_percent"] == pytest.approx(0.029533)
     assert result["timestamp"] == "2026-06-05"
     assert result["quote_source"] == "tushare_daily"
+    assert result["provider_name"] == "tushare"
+    assert result["provider_symbol"] == "603659.SH"
+    assert result["symbol"] == "603659"
+    assert result["asset_class"] == "stock"
     assert calls["pro_api_token"] == "token-1234"
 
 
@@ -140,6 +148,9 @@ def test_tushare_fetch_latest_stock_times_out_realtime_and_falls_back_to_daily(
     assert result is not None
     assert result["price"] == 8.99
     assert result["quote_source"] == "tushare_daily"
+    assert result["provider_name"] == "tushare"
+    assert result["provider_symbol"] == "601985.SH"
+    assert result["symbol"] == "601985"
 
 
 def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
@@ -175,6 +186,10 @@ def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
     assert result["price"] == 2.5123
     assert result["timestamp"] == "2026-06-04"
     assert result["quote_source"] == "tushare_fund_nav"
+    assert result["provider_name"] == "tushare"
+    assert result["provider_symbol"] == "018125.OF"
+    assert result["symbol"] == "018125"
+    assert result["asset_class"] == "fund"
     assert result["previous_close"] == 2.5
     assert result["previous_close_date"] == "2026-06-03"
     assert result["day_change_value"] == pytest.approx(0.0123)

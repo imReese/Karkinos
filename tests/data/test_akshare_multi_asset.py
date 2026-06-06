@@ -331,7 +331,9 @@ class TestAKShareFetchLatest:
 
     @patch("akshare.fund_open_fund_daily_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
-    def test_fetch_latest_open_end_fund_by_name(self, mock_name_map, mock_daily, source):
+    def test_fetch_latest_open_end_fund_by_name(
+        self, mock_name_map, mock_daily, source
+    ):
         """开放式基金可按基金简称解析净值。"""
         mock_name_map.return_value = {"永赢先进制造智选混合C": "018124"}
         mock_daily.return_value = pd.DataFrame(
@@ -429,7 +431,7 @@ class TestAKShareFetchLatest:
             SimpleNamespace(
                 text=(
                     'var fS_name = "永赢先进制造智选混合发起C";'
-                    'var Data_netWorthTrend = ['
+                    "var Data_netWorthTrend = ["
                     '{"x":1780416000000,"y":2.5000,"equityReturn":0.12},'
                     '{"x":1780502400000,"y":2.5123,"equityReturn":0.49}'
                     "];"
@@ -459,8 +461,13 @@ class TestAKShareFetchLatest:
             "融通科技臻选混合发起式C": "026539",
         }
 
-        assert source._resolve_open_end_fund_code(Symbol("永赢先进制造智选混合C")) == "018125"
-        assert source._resolve_open_end_fund_code(Symbol("融通科技臻选混合C")) == "026539"
+        assert (
+            source._resolve_open_end_fund_code(Symbol("永赢先进制造智选混合C"))
+            == "018125"
+        )
+        assert (
+            source._resolve_open_end_fund_code(Symbol("融通科技臻选混合C")) == "026539"
+        )
 
     @patch("akshare.stock_zh_a_spot_em")
     def test_fetch_latest_stock_includes_previous_close_and_change(
@@ -490,6 +497,12 @@ class TestAKShareFetchLatest:
         assert result["change_percent"] == pytest.approx(0.0127)
         assert result["previous_close_date"] is not None
         assert result["display_name"] == "中国核电"
+        assert result["symbol"] == "601985"
+        assert result["asset_class"] == "stock"
+        assert result["provider_name"] == "akshare"
+        assert result["provider_symbol"] == "601985"
+        assert result["source"] == "akshare"
+        assert result["quote_source"] == "akshare_stock_spot"
 
     @patch("akshare.stock_zh_a_spot_em")
     def test_fetch_latest_not_found(self, mock_ak, source):
