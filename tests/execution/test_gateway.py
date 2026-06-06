@@ -34,9 +34,14 @@ def test_manual_confirm_gateway_persists_pending_manual_order(tmp_path) -> None:
     bus.publish_and_process(order)
 
     pending = db.get_manual_order_sync("ORD-1")
+    recorded = db.get_order_sync("ORD-1")
     assert pending is not None
     assert pending["status"] == gateway.PENDING_CONFIRM
     assert pending["symbol"] == "600519"
+    assert recorded is not None
+    assert recorded["status"] == gateway.PENDING_CONFIRM
+    assert recorded["source"] == "manual_orders"
+    assert recorded["source_ref"] == "ORD-1"
 
 
 def test_manual_confirm_gateway_ignores_non_manual_order(tmp_path) -> None:
@@ -59,3 +64,4 @@ def test_manual_confirm_gateway_ignores_non_manual_order(tmp_path) -> None:
     bus.publish_and_process(order)
 
     assert db.get_manual_order_sync("ORD-1") is None
+    assert db.get_order_sync("ORD-1") is None
