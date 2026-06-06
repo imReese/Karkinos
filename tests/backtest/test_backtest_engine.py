@@ -20,6 +20,7 @@ from execution.commission import ETFCommission
 from execution.slippage import PercentSlippage
 from risk.limits import PositionLimitRule
 from risk.manager import RiskManager
+from server.db import AppDatabase
 from strategy.base import Strategy
 
 
@@ -154,6 +155,48 @@ class TestBacktestEngine:
         assert engine.fills[0].commission == ETFCommission().calculate(
             OrderSide.SELL, Decimal("99.00"), Decimal("100")
         )
+
+    def test_backtest_engine_persists_order_and_fill_when_db_is_supplied(
+        self,
+        tmp_path,
+    ):
+        symbol = Symbol("600519")
+        inst = make_stock("600519", "贵州茅台")
+        db = AppDatabase(tmp_path / "app.db")
+        db.init_sync()
+        engine = BacktestEngine(
+            strategy=SimpleBuyStrategy(EventBus()),
+            instruments={symbol: inst},
+            data_handlers={symbol: DataHandler(make_price_df(), symbol)},
+            db=db,
+        )
+
+        engine._on_order_event(
+            OrderEvent(
+                timestamp=datetime(2024, 1, 1),
+                order_id="ORD-BACKTEST-1",
+                symbol=symbol,
+                side=OrderSide.BUY,
+                order_type=OrderType.MARKET,
+                quantity=Decimal("100"),
+                price=Decimal("100"),
+                intent_id="INTENT-BACKTEST-1",
+                risk_decision_id="RISK-BACKTEST-1",
+                execution_mode="paper",
+            )
+        )
+
+        saved_order = db.get_order_sync("ORD-BACKTEST-1")
+        fills = db.list_fills_sync(order_id="ORD-BACKTEST-1")
+
+        assert saved_order is not None
+        assert saved_order["status"] == "filled"
+        assert saved_order["execution_mode"] == "backtest"
+        assert saved_order["source"] == "backtest_execution"
+        assert len(fills) == 1
+        assert fills[0]["execution_mode"] == "backtest"
+        assert fills[0]["source"] == "backtest_execution"
+        assert fills[0]["fill_price"] == 100.0
 
 
 class TestBacktestResult:
