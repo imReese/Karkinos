@@ -159,6 +159,7 @@ skills-lock.json
 docs/*
 !docs/README.en.md
 !docs/README.zh.md
+!docs/KARKINOS_GOAL.md
 
 # Node.js
 node_modules/

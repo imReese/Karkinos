@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Karkinos** (3629 symbols, 12869 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Karkinos** (3319 symbols, 12892 relationships, 280 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -64,6 +64,7 @@ This project is indexed by GitNexus as **Karkinos** (3629 symbols, 12869 relatio
 ## Self-Check Before Finishing
 
 Before completing any code modification task, verify:
+
 1. `gitnexus_impact` was run for all modified symbols
 2. No HIGH/CRITICAL risk warnings were ignored
 3. `gitnexus_detect_changes()` confirms changes match expected scope
@@ -99,3 +100,32 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+<!-- karkinos:start -->
+# Karkinos Project Goal
+
+This section is maintained by the project owner. GitNexus may refresh its own block above, but this block should remain stable.
+
+Before making Karkinos code changes, read:
+
+- `docs/KARKINOS_GOAL.md`
+- GitHub Issue #1: "Goal: Financial-grade personal quant investment cockpit for China markets"
+- `README.md`
+- `docs/README.zh.md`
+
+Karkinos is a financial-grade China-market personal investment cockpit, not a toy backtester.
+
+When coding, prioritize:
+
+1. Data integrity and reproducible datasets
+2. After-cost backtest credibility
+3. Mandatory pre-trade risk gates
+4. Signal journal and audit trail
+5. Portfolio dashboard action queue
+6. Paper/shadow mode
+7. Strategy promotion pipeline
+
+Do not make real-money automatic trading the default. Manual confirmation must remain the default for live-like workflows.
+
+Every trading-related change should include explicit assumptions, deterministic tests or validation commands, and a short explanation of risk impact.
+<!-- karkinos:end -->
