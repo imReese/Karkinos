@@ -197,7 +197,7 @@ uv sync --extra server
 ./scripts/start_server.sh prod --host 0.0.0.0 --port 8000
 ```
 
-Open http://localhost:8000 for the Web dashboard.
+Open <http://localhost:8000> for the Web dashboard.
 
 In development mode the launcher starts both backend and frontend:
 
@@ -206,6 +206,7 @@ In development mode the launcher starts both backend and frontend:
 ```
 
 This starts:
+
 - backend API on `http://127.0.0.1:8000`
 - Vite frontend on `http://127.0.0.1:5173`
 
@@ -215,7 +216,7 @@ Stop both with:
 ./scripts/stop_server.sh
 ```
 
-Open http://localhost:5173 for the React UI during local development, or use `http://localhost:8000` for the production build served by FastAPI.
+Open <http://localhost:5173> for the React UI during local development, or use `http://localhost:8000` for the production build served by FastAPI.
 
 ### Docker Deployment
 
