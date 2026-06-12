@@ -298,6 +298,99 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
 
 
+def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
+    monkeypatch,
+):
+    import pandas as pd
+
+    from core.types import AssetClass, BarFrequency, Symbol
+    from data.handler import DataHandler
+    from domain.instrument import make_etf
+    from server.routes import backtest as backtest_routes
+
+    class FakeStore:
+        pass
+
+    class FakeDataManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def get_instrument(symbol, asset_class):
+            assert symbol == Symbol("510300")
+            assert asset_class == AssetClass.FUND
+            return make_etf("510300", "沪深300ETF")
+
+        def get_bars(self, symbol, start, end, asset_class):
+            prices = [
+                10,
+                9,
+                8,
+                7,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+            ]
+            dates = pd.bdate_range("2026-01-05", periods=len(prices))
+            df = pd.DataFrame(
+                {
+                    "timestamp": dates,
+                    "open": prices,
+                    "high": [price + 0.2 for price in prices],
+                    "low": [price - 0.2 for price in prices],
+                    "close": prices,
+                    "volume": [1_000_000.0] * len(prices),
+                }
+            )
+            return DataHandler(
+                df,
+                symbol,
+                frequency=BarFrequency.DAILY,
+                asset_class=asset_class,
+            )
+
+    monkeypatch.setattr("data.store.DataStore", FakeStore)
+    monkeypatch.setattr("data.manager.DataManager", FakeDataManager)
+    monkeypatch.setattr(
+        "data.manager.build_sources", lambda **kwargs: {"fixture": object()}
+    )
+
+    result = backtest_routes._run_single_backtest(
+        backtest_routes.BacktestRequest(
+            start_date="2026-01-05",
+            end_date="2026-01-23",
+            initial_cash=100000,
+            strategy="dual_ma",
+            short_period=3,
+            long_period=5,
+            assets=[{"symbol": "510300", "asset_class": "etf"}],
+            oos_split_date="2026-01-14",
+            benchmark_return=0.0,
+        ),
+        SimpleNamespace(
+            assets=[],
+            data_source="fixture",
+            tushare_token="",
+        ),
+    )
+
+    oos = result["metrics_json"]["oos_validation"]
+
+    assert oos["strategy_id"] == "dual_ma"
+    assert oos["benchmark_role"] == "etf_rotation_trend_following"
+    assert oos["benchmark_return"] == 0.0
+    assert oos["out_of_sample"]["fill_count"] >= 1
+    assert oos["validation_status"] in {"benchmark_passed", "benchmark_failed"}
+    assert "not investment advice" in oos["limitations"][0]
+
+
 def test_backtest_result_returns_json_contract_and_empty_fills(monkeypatch):
     from server.routes import backtest as backtest_routes
 
@@ -4097,6 +4190,96 @@ def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch
     assert response.concentration[0].symbol == "600519"
 
 
+def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    cockpit_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/cockpit"
+    )
+    endpoint = cockpit_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=800,
+        unrealized_pnl=100,
+        realized_pnl=0,
+        commission_paid=2,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    async def fake_get_action_tasks(statuses=None, limit=10):
+        assert statuses == ["pending", "deferred"]
+        return [
+            {
+                "id": 7,
+                "source_signal_id": 3,
+                "symbol": "600519",
+                "title": "建议降至目标仓位",
+                "detail": "dual_ma target 50%",
+                "direction": "sell",
+                "urgency": "medium",
+                "target_weight": 0.5,
+                "price": 8.0,
+                "strategy_id": "dual_ma",
+                "timestamp": "2026-04-18T09:40:00",
+                "asset_class": "stock",
+                "status": "pending",
+                "risk_decision_id": "RISK-BLOCKED",
+                "risk_gate_passed": False,
+                "risk_gate_severity": "warning",
+                "risk_gate_reasons": ["max position weight exceeded"],
+                "risk_gate_status": "blocked",
+                "manual_confirmation_required": True,
+                "manual_confirmation_status": "blocked_by_risk_gate",
+                "manual_confirmation_reason": "Risk gate blocked this action; do not execute without review.",
+            }
+        ]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_action_tasks=fake_get_action_tasks,
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=200,
+                positions={"600519": fake_position},
+            ),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.summary.total_equity == 1000.0
+    assert len(response.positions) == 1
+    assert response.positions[0].symbol == "600519"
+    assert response.positions[0].actual_weight == pytest.approx(0.8)
+    assert response.positions[0].target_weight == pytest.approx(0.5)
+    assert response.positions[0].drift == pytest.approx(-0.3)
+    assert response.positions[0].action_task.id == 7
+    assert len(response.action_queue) == 1
+    assert response.action_queue[0].risk_gate_passed is False
+    assert response.action_queue[0].risk_gate_status == "blocked"
+    assert response.action_queue[0].manual_confirmation_required is True
+    assert response.action_queue[0].manual_confirmation_status == "blocked_by_risk_gate"
+    assert response.risk_alerts[0].title == "仓位集中度偏高"
+
+
 def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
@@ -4422,6 +4605,14 @@ def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
                 "detail": "dual_ma 触发，目标仓位 20%",
                 "urgency": "high",
                 "status": "pending",
+                "risk_decision_id": "RISK-BLOCKED",
+                "risk_gate_passed": False,
+                "risk_gate_severity": "warning",
+                "risk_gate_reasons": ["max position weight exceeded"],
+                "risk_gate_status": "blocked",
+                "manual_confirmation_required": True,
+                "manual_confirmation_status": "blocked_by_risk_gate",
+                "manual_confirmation_reason": "Risk gate blocked this action; do not execute without review.",
             },
             {
                 "id": 2,
@@ -4437,6 +4628,14 @@ def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
                 "detail": "dual_ma 触发，目标仓位 0%",
                 "urgency": "medium",
                 "status": "pending",
+                "risk_decision_id": None,
+                "risk_gate_passed": None,
+                "risk_gate_severity": None,
+                "risk_gate_reasons": [],
+                "risk_gate_status": "not_checked",
+                "manual_confirmation_required": True,
+                "manual_confirmation_status": "awaiting_risk_gate",
+                "manual_confirmation_reason": "Risk gate has not produced a decision yet.",
             },
         ]
 
@@ -4454,8 +4653,17 @@ def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
     assert len(response) == 2
     assert response[0].title == "建议增持 600519"
     assert response[0].urgency == "high"
+    assert response[0].risk_decision_id == "RISK-BLOCKED"
+    assert response[0].risk_gate_passed is False
+    assert response[0].risk_gate_severity == "warning"
+    assert response[0].risk_gate_reasons == ["max position weight exceeded"]
+    assert response[0].risk_gate_status == "blocked"
+    assert response[0].manual_confirmation_required is True
+    assert response[0].manual_confirmation_status == "blocked_by_risk_gate"
     assert response[1].title == "建议减仓 510300"
     assert response[1].urgency == "medium"
+    assert response[1].risk_gate_status == "not_checked"
+    assert response[1].manual_confirmation_status == "awaiting_risk_gate"
     assert synced_rows == [1, 2]
 
 
@@ -4601,6 +4809,130 @@ def test_signal_journal_route_returns_auditable_chain(monkeypatch):
     assert response[0].action_task.status == "pending"
     assert response[0].risk_decision.passed is False
     assert response[0].latest_event.event_type == "risk.signal.recorded"
+
+
+def test_backtest_strategies_route_returns_benchmark_metadata():
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    strategies_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/backtest/strategies"
+    )
+    endpoint = strategies_route.endpoint
+
+    response = asyncio.run(endpoint())
+    by_name = {item.name: item for item in response}
+
+    assert by_name["dual_ma"].benchmark_role == "etf_rotation_trend_following"
+    assert by_name["dual_ma"].requires_out_of_sample_validation is True
+    assert by_name["dual_ma"].requires_after_cost_report is True
+    assert by_name["monthly_rebalance"].benchmark_role == "defensive_allocation"
+    assert by_name["bollinger"].benchmark_role == "a_share_or_etf_mean_reversion"
+    assert by_name["rsi"].benchmark_role is None
+
+
+def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch):
+    from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
+    from server.routes import backtest as backtest_routes
+
+    class FakeDb:
+        async def get_backtest_results(self):
+            return build_benchmark_fixture_backtest_rows()
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb()),
+    )
+
+    router = backtest_routes.create_router()
+    validation_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/backtest/strategy-validation"
+    )
+
+    response = asyncio.run(validation_route.endpoint())
+    by_strategy = {row.strategy_id: row for row in response.rows}
+
+    assert response.required_strategy_count == 3
+    assert response.ready_strategy_count == 3
+    assert response.is_complete is True
+    assert set(by_strategy) == {"dual_ma", "monthly_rebalance", "bollinger"}
+    assert by_strategy["dual_ma"].benchmark_role == "etf_rotation_trend_following"
+    assert by_strategy["monthly_rebalance"].has_after_cost_report is True
+    assert by_strategy["bollinger"].has_out_of_sample_validation is True
+    assert all(row.missing_requirements == [] for row in response.rows)
+    assert "not investment advice" in response.limitations[0]
+
+
+def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypatch):
+    from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
+    from server.routes import backtest as backtest_routes
+
+    class FakeDb:
+        async def get_backtest_results(self):
+            return build_benchmark_fixture_backtest_rows()
+
+        def get_risk_decisions_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "decision_id": f"RISK-{strategy_id}",
+                    "passed": 0,
+                    "payload_json": json.dumps(
+                        {
+                            "intent": {"strategy_id": strategy_id},
+                            "decision": {
+                                "passed": False,
+                                "reasons": ["unsafe test condition"],
+                            },
+                        }
+                    ),
+                }
+                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+            ]
+
+        def list_orders_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "order_id": f"SHADOW-{strategy_id}",
+                    "execution_mode": "paper_shadow",
+                    "status": "shadow_recorded",
+                    "payload_json": json.dumps(
+                        {
+                            "strategy_id": strategy_id,
+                            "divergence_status": "within_expectations",
+                        }
+                    ),
+                }
+                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+            ]
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb()),
+    )
+
+    router = backtest_routes.create_router()
+    promotion_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/backtest/strategy-promotion-readiness"
+    )
+
+    response = asyncio.run(promotion_route.endpoint())
+
+    assert response.required_strategy_count == 3
+    assert response.promotable_strategy_count == 3
+    assert response.is_complete is True
+    assert all(row.is_promotable for row in response.rows)
+    assert all(
+        row.promotion_status == "promotable_for_paper_review" for row in response.rows
+    )
+    assert "manual confirmation" in response.limitations[1]
 
 
 def test_signal_action_status_update_returns_updated_task(monkeypatch):

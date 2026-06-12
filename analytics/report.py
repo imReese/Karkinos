@@ -26,6 +26,7 @@ def generate_report(result: BacktestResult) -> str:
         f"最大回撤:   {metrics.max_drawdown * 100:>14.2f}%",
         f"Calmar比率: {metrics.calmar:>14.2f}",
         f"胜率:       {metrics.win_rate * 100:>14.2f}%",
+        f"总成交额:   {result.cost_summary.gross_turnover:>14,.2f} CNY",
         f"总手续费:   {result.cost_summary.total_commission:>14,.2f} CNY",
         f"总滑点成本: {result.cost_summary.total_slippage:>14,.2f} CNY",
         f"回测天数:   {result.duration_days:>14d}",

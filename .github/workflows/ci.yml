@@ -35,6 +35,9 @@ jobs:
       - name: Run server route tests
         run: uv run python -m pytest tests/test_server_routes.py
 
+      - name: Run deterministic Profit Discipline smoke path
+        run: uv run python -m pytest tests/test_profit_discipline_smoke.py
+
       - name: Run backend test suite
         run: uv run python -m pytest
 
@@ -56,9 +59,7 @@ jobs:
         run: npm ci --prefix web
 
       - name: Check frontend formatting
-        run: |
-          npm --prefix web run format
-          git diff --exit-code
+        run: npm --prefix web run format:check
 
       - name: Build frontend
         run: npm --prefix web run build

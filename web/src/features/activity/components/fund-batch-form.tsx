@@ -41,9 +41,7 @@ export function FundBatchForm({
   const labels = copy.activity.forms.fundBatch;
   const candidateKey = useMemo(
     () =>
-      candidates
-        .map((fund) => `${fund.symbol}:${fund.display_name}`)
-        .join('|'),
+      candidates.map((fund) => `${fund.symbol}:${fund.display_name}`).join('|'),
     [candidates],
   );
   const [values, setValues] = useState(() => defaultValues(candidates));
@@ -131,7 +129,9 @@ export function FundBatchForm({
               className="app-panel-strong grid gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_150px]"
             >
               <div>
-                <div className="text-sm font-semibold">{order.display_name}</div>
+                <div className="text-sm font-semibold">
+                  {order.display_name}
+                </div>
                 <div className="app-muted mt-1 text-xs">{order.symbol}</div>
               </div>
               <input

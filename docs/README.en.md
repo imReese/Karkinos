@@ -337,6 +337,10 @@ Standalone compatibility monitor, independent of the Web server. It reads `confi
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/portfolio` | Get portfolio snapshot (cash/equity/positions/allocation) |
+| GET | `/api/portfolio/cockpit` | Get cockpit weights, actual weights, drift, action queue, and risk alerts |
+| GET | `/api/portfolio/state` | Get account overview, snapshot, risk summary, and next step |
+| GET | `/api/portfolio/risk-summary` | Get portfolio risk summary |
+| GET | `/api/portfolio/live-holdings` | Get live holdings grouped by asset class |
 | GET | `/api/portfolio/allocation` | Get asset allocation weights |
 | GET | `/api/portfolio/equity-curve` | Get equity curve |
 
@@ -346,14 +350,71 @@ Standalone compatibility monitor, independent of the Web server. It reads `confi
 |--------|------|-------------|
 | GET | `/api/signals?limit=&offset=` | Get signal history (paginated) |
 | GET | `/api/signals/latest?limit=` | Get latest signals |
+| GET | `/api/signals/actions?limit=` | Get action cards with latest risk-gate summary |
+| GET | `/api/signals/journal?limit=&offset=` | Get signal → action → risk audit chain |
+| POST | `/api/signals/journal/{signal_id}/review` | Record a post-decision signal review/outcome event |
+
+Action cards expose `risk_gate_status` as `not_checked`, `passed`, or `blocked`
+so an actionable signal without a risk decision is never presented as executable.
+They also expose manual-confirmation readiness: `awaiting_risk_gate`,
+`ready_for_manual_confirmation`, or `blocked_by_risk_gate`. Even when the risk
+gate passes, manual confirmation remains required before execution.
+
+`POST /api/signals/journal/{signal_id}/review` records the later outcome and
+review notes for a generated signal as an immutable audit event. It does not
+change an action task, create an order, submit to a broker, or mark a fill.
+
+#### Trading Controls — /api/trading
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/trading/actions/{action_id}/manual-order` | Create a pending manual order only from a risk-passed action card |
+| POST | `/api/trading/shadow-runs/daily` | Record a daily paper/shadow run from risk-passed action cards |
+| GET | `/api/trading/orders?status=` | List manual orders awaiting or past operator confirmation |
+| POST | `/api/trading/orders/{order_id}/confirm` | Mark a manual order as operator-confirmed |
+| POST | `/api/trading/orders/{order_id}/reject` | Mark a manual order as operator-rejected |
+| GET | `/api/trading/order-facts` | List shared order facts for manual, paper, and live-like paths |
+| POST | `/api/trading/order-facts/{order_id}/shadow-divergence-review` | Record paper/shadow divergence review evidence |
+| GET | `/api/trading/fills` | List persisted fill facts |
+| GET | `/api/trading/kill-switch` | Read the runtime kill switch |
+| PUT | `/api/trading/kill-switch` | Update the runtime kill switch |
+
+`POST /api/trading/actions/{action_id}/manual-order` accepts an operator-supplied
+quantity and stores a `pending_confirm` manual order plus shared order fact. It
+rejects `awaiting_risk_gate` and `blocked_by_risk_gate` actions and does not
+submit to a broker or mark the order filled. Confirming or rejecting that manual
+order updates the originating action card decision state (`acted` or `ignored`)
+and is surfaced in the signal journal audit chain.
+
+`POST /api/trading/shadow-runs/daily` records deterministic `paper_shadow`
+order facts for action cards that already passed the risk gate. It skips
+blocked or not-yet-checked actions, does not create manual orders, does not
+submit to a broker, and does not mark fills.
+
+`POST /api/trading/order-facts/{order_id}/shadow-divergence-review` records an
+operator review such as `within_expectations` on an existing `paper_shadow`
+order fact. It does not change order status, submit to a broker, or create a
+fill.
 
 #### Backtest — /api/backtest
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/api/backtest/strategies` | List strategies with v0.2 benchmark / OOS / after-cost requirements |
+| GET | `/api/backtest/strategy-validation` | Get the v0.2 benchmark strategy after-cost / OOS evidence matrix |
+| GET | `/api/backtest/strategy-promotion-readiness` | Get promotion-readiness gates for benchmark strategies |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
 | GET | `/api/backtest/results` | List all backtest result summaries |
 | GET | `/api/backtest/results/{result_id}` | Get single backtest detail + equity curve |
+
+`GET /api/backtest/strategy-validation` reads saved backtest results and reports
+whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.
+It is for audit and promotion checks, not investment advice.
+
+`GET /api/backtest/strategy-promotion-readiness` combines saved after-cost/OOS
+validation, blocked-risk evidence, paper/shadow order facts, and explicit
+paper/shadow divergence review evidence. It never promotes a strategy
+automatically and does not change execution defaults.
 
 #### Settings — /api/settings
 

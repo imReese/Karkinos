@@ -17,6 +17,7 @@ from server.ledger.models import LedgerEntry
 from server.models import (
     AccountOverview,
     AccountStateResponse,
+    ActionCard,
     ActivityItem,
     AllocationGroup,
     AllocationItem,
@@ -34,6 +35,8 @@ from server.models import (
     LiveHoldingItemResponse,
     LiveHoldingsResponse,
     PendingFundOrderResponse,
+    PortfolioCockpitPosition,
+    PortfolioCockpitResponse,
     PortfolioSnapshot,
     PositionResponse,
     RiskConcentrationItem,
@@ -2229,6 +2232,55 @@ def create_router() -> APIRouter:
             snapshot=projection.snapshot,
             risks=projection.risks,
             next_step=projection.next_step,
+        )
+
+    @r.get("/cockpit", response_model=PortfolioCockpitResponse)
+    async def get_portfolio_cockpit() -> PortfolioCockpitResponse:
+        """Return portfolio weights, drift, action queue, and risk alerts."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        snapshot = await get_portfolio()
+        risks = build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
+        projection = build_account_state_projection(snapshot, risks)
+        action_rows = []
+        if state.db is not None and hasattr(state.db, "get_action_tasks"):
+            action_rows = await state.db.get_action_tasks(
+                statuses=["pending", "deferred"],
+                limit=10,
+            )
+        action_queue = [ActionCard(**row) for row in action_rows]
+        actions_by_symbol = {action.symbol: action for action in action_queue}
+
+        positions: list[PortfolioCockpitPosition] = []
+        for position in snapshot.positions:
+            actual_weight = (
+                position.market_value / snapshot.total_equity
+                if snapshot.total_equity > 0
+                else 0.0
+            )
+            action = actions_by_symbol.get(position.symbol)
+            target_weight = (
+                action.target_weight if action is not None else actual_weight
+            )
+            positions.append(
+                PortfolioCockpitPosition(
+                    symbol=position.symbol,
+                    name=position.display_name or position.name,
+                    asset_class=position.asset_class,
+                    market_value=position.market_value,
+                    actual_weight=actual_weight,
+                    target_weight=target_weight,
+                    drift=target_weight - actual_weight,
+                    action_task=action,
+                )
+            )
+
+        return PortfolioCockpitResponse(
+            summary=_with_overview_quote_metadata(projection.summary, snapshot),
+            positions=positions,
+            action_queue=action_queue,
+            risk_alerts=projection.risks,
         )
 
     @r.get("/risk-summary", response_model=list[RiskSummaryItem])

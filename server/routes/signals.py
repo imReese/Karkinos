@@ -5,16 +5,26 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from server.models import (
     ActionCard,
     ActionTaskStatusUpdate,
+    SignalJournalEvent,
     SignalJournalEntry,
     SignalResponse,
 )
 from server.services.recommendation_flow import build_recommendation_cycle
 
 logger = logging.getLogger(__name__)
+
+
+class SignalJournalReviewRequest(BaseModel):
+    reviewed_at: str
+    user_decision: str
+    outcome: str
+    review_notes: str
+    reviewer: str | None = None
 
 
 def create_router() -> APIRouter:
@@ -121,6 +131,30 @@ def create_router() -> APIRouter:
         state = get_app_state()
         rows = await state.db.list_signal_journal(limit=limit, offset=offset)
         return [SignalJournalEntry(**row) for row in rows]
+
+    @r.post(
+        "/journal/{signal_id}/review",
+        response_model=SignalJournalEvent,
+    )
+    async def record_signal_journal_review(
+        signal_id: int,
+        body: SignalJournalReviewRequest,
+    ) -> SignalJournalEvent:
+        """Record a post-decision signal review/outcome audit event."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        event = await state.db.record_signal_review(
+            signal_id=signal_id,
+            reviewed_at=body.reviewed_at,
+            user_decision=body.user_decision,
+            outcome=body.outcome,
+            review_notes=body.review_notes,
+            reviewer=body.reviewer,
+        )
+        if event is None:
+            raise HTTPException(status_code=404, detail="Signal not found")
+        return SignalJournalEvent(**event)
 
     @r.patch("/actions/{action_id}", response_model=ActionCard)
     async def update_action_status(

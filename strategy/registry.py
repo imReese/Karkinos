@@ -10,6 +10,47 @@ from strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_BENCHMARK_METADATA = {
+    "benchmark_role": None,
+    "benchmark_universe": [],
+    "requires_out_of_sample_validation": False,
+    "requires_after_cost_report": False,
+    "validation_notes": [],
+}
+
+_BENCHMARK_METADATA = {
+    "dual_ma": {
+        "benchmark_role": "etf_rotation_trend_following",
+        "benchmark_universe": ["etf"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Requires after-cost, out-of-sample ETF trend-following validation before promotion.",
+            "Intended as a transparent baseline, not a profitability claim.",
+        ],
+    },
+    "monthly_rebalance": {
+        "benchmark_role": "defensive_allocation",
+        "benchmark_universe": ["equity_etf", "bond", "gold", "cash_proxy"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Requires after-cost, out-of-sample validation across equity ETF, bond, gold, and cash proxy allocations.",
+            "Intended to measure defensive allocation discipline against benchmark drift.",
+        ],
+    },
+    "bollinger": {
+        "benchmark_role": "a_share_or_etf_mean_reversion",
+        "benchmark_universe": ["stock", "etf"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.",
+            "Risk gate must be able to block unsafe data or concentration conditions.",
+        ],
+    },
+}
+
 
 class StrategyRegistry:
     """策略注册表。
@@ -58,10 +99,15 @@ class StrategyRegistry:
                     }
                 )
 
+            benchmark_metadata = {
+                **_DEFAULT_BENCHMARK_METADATA,
+                **_BENCHMARK_METADATA.get(name, {}),
+            }
             cls._strategies[name] = {
                 "class": strategy_cls,
                 "params": params,
                 "description": strategy_cls.__doc__ or "",
+                **benchmark_metadata,
             }
             logger.debug("策略 '%s' 注册成功", name)
             return strategy_cls
@@ -113,6 +159,13 @@ class StrategyRegistry:
                     "name": name,
                     "description": entry["description"].strip(),
                     "params": params,
+                    "benchmark_role": entry["benchmark_role"],
+                    "benchmark_universe": list(entry["benchmark_universe"]),
+                    "requires_out_of_sample_validation": entry[
+                        "requires_out_of_sample_validation"
+                    ],
+                    "requires_after_cost_report": entry["requires_after_cost_report"],
+                    "validation_notes": list(entry["validation_notes"]),
                 }
             )
         return result

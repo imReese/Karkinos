@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import date, datetime
 from inspect import isawaitable
+import json
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -18,6 +20,25 @@ class KillSwitchRequest(BaseModel):
 
 class OrderRejectRequest(BaseModel):
     reason: str = ""
+
+
+class ActionManualOrderRequest(BaseModel):
+    quantity: float
+    order_type: str = "market"
+    price: float | None = None
+    note: str = ""
+
+
+class ShadowRunRequest(BaseModel):
+    run_date: str | None = None
+    base_equity: float | None = None
+
+
+class ShadowDivergenceReviewRequest(BaseModel):
+    reviewed_at: str
+    divergence_status: str
+    review_notes: str
+    reviewer: str | None = None
 
 
 def create_router() -> APIRouter:
@@ -57,6 +78,190 @@ def create_router() -> APIRouter:
         state = get_app_state()
         return state.db.list_manual_orders_sync(status=status)
 
+    @r.post("/actions/{action_id}/manual-order")
+    async def create_manual_order_from_action(
+        action_id: int,
+        payload: ActionManualOrderRequest,
+    ) -> dict:
+        from server.app import get_app_state
+
+        if payload.quantity <= 0:
+            raise HTTPException(status_code=400, detail="quantity must be positive")
+        state = get_app_state()
+        action = state.db.get_action_task_sync(action_id)
+        if action is None:
+            raise HTTPException(status_code=404, detail="action task not found")
+        manual_status = action.get("manual_confirmation_status")
+        if manual_status != "ready_for_manual_confirmation":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "action is not ready for manual confirmation: " f"{manual_status}"
+                ),
+            )
+        side = _manual_order_side(action["direction"])
+        if side is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"action direction is not orderable: {action['direction']}",
+            )
+
+        order_id = f"ACTION-{action_id}-MANUAL"
+        timestamp = datetime.now().isoformat()
+        order_type = payload.order_type or "market"
+        price = payload.price if payload.price is not None else action.get("price")
+        order_payload = {
+            "action_id": action_id,
+            "source_signal_id": action.get("source_signal_id"),
+            "strategy_id": action.get("strategy_id"),
+            "target_weight": action.get("target_weight"),
+            "risk_gate_status": action.get("risk_gate_status"),
+            "manual_confirmation_status": manual_status,
+            "note": payload.note,
+        }
+        state.db.save_manual_order_sync(
+            order_id=order_id,
+            timestamp=timestamp,
+            symbol=action["symbol"],
+            side=side,
+            order_type=order_type,
+            quantity=payload.quantity,
+            price=price,
+            intent_id=f"ACTION-{action_id}",
+            risk_decision_id=action.get("risk_decision_id"),
+            execution_mode="manual",
+            status="pending_confirm",
+            payload=order_payload,
+        )
+        state.db.record_order_sync(
+            order_id=order_id,
+            timestamp=timestamp,
+            symbol=action["symbol"],
+            side=side,
+            order_type=order_type,
+            quantity=payload.quantity,
+            price=price,
+            asset_class=action.get("asset_class", "stock"),
+            intent_id=f"ACTION-{action_id}",
+            risk_decision_id=action.get("risk_decision_id"),
+            execution_mode="manual",
+            status="pending_confirm",
+            source="manual_action",
+            source_ref=str(action_id),
+            payload=order_payload,
+        )
+        state.db.update_action_task_status_sync(
+            action_id,
+            "pending_manual_confirmation",
+        )
+        created = state.db.get_manual_order_sync(order_id)
+        if created is None:
+            raise HTTPException(status_code=500, detail="manual order was not saved")
+        await _broadcast_if_possible(state, "ManualOrderPrepared", created)
+        return created
+
+    @r.post("/shadow-runs/daily")
+    async def run_daily_shadow_orders(
+        payload: ShadowRunRequest | None = None,
+    ) -> dict:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        body = payload or ShadowRunRequest()
+        run_date = body.run_date or date.today().isoformat()
+        run_id = f"shadow:{run_date}"
+        base_equity = body.base_equity or _shadow_base_equity(state)
+        action_rows = state.db.get_action_tasks_sync(
+            statuses=["pending", "deferred"],
+            limit=1000,
+        )
+        recorded_orders: list[dict] = []
+        skipped: list[dict] = []
+        timestamp = datetime.now().isoformat()
+        for action in action_rows:
+            if (
+                action.get("manual_confirmation_status")
+                != "ready_for_manual_confirmation"
+            ):
+                skipped.append(
+                    {
+                        "action_id": action.get("id"),
+                        "reason": action.get("manual_confirmation_status"),
+                    }
+                )
+                continue
+            side = _manual_order_side(action["direction"])
+            price = float(action.get("price") or 0)
+            if side is None or price <= 0 or base_equity <= 0:
+                skipped.append(
+                    {
+                        "action_id": action.get("id"),
+                        "reason": "insufficient_shadow_inputs",
+                    }
+                )
+                continue
+            target_weight = float(action.get("target_weight") or 0)
+            quantity = int((base_equity * target_weight) / price)
+            if quantity <= 0:
+                skipped.append(
+                    {
+                        "action_id": action.get("id"),
+                        "reason": "shadow_quantity_zero",
+                    }
+                )
+                continue
+            order_id = f"SHADOW-{run_date}-{action['id']}"
+            order_payload = {
+                "run_id": run_id,
+                "run_date": run_date,
+                "action_id": action["id"],
+                "source_signal_id": action.get("source_signal_id"),
+                "strategy_id": action.get("strategy_id"),
+                "target_weight": action.get("target_weight"),
+                "risk_gate_status": action.get("risk_gate_status"),
+                "manual_confirmation_status": action.get("manual_confirmation_status"),
+                "shadow_base_equity": base_equity,
+            }
+            state.db.record_order_sync(
+                order_id=order_id,
+                timestamp=timestamp,
+                symbol=action["symbol"],
+                side=side,
+                order_type="market",
+                quantity=float(quantity),
+                price=price,
+                asset_class=action.get("asset_class", "stock"),
+                intent_id=f"SHADOW-ACTION-{action['id']}",
+                risk_decision_id=action.get("risk_decision_id"),
+                execution_mode="paper_shadow",
+                status="shadow_recorded",
+                source="paper_shadow_daily",
+                source_ref=run_id,
+                payload=order_payload,
+            )
+            recorded_orders.append(
+                {
+                    "order_id": order_id,
+                    "source_action_id": action["id"],
+                    "symbol": action["symbol"],
+                    "side": side,
+                    "quantity": float(quantity),
+                    "price": price,
+                }
+            )
+        result = {
+            "run_id": run_id,
+            "run_date": run_date,
+            "execution_mode": "paper_shadow",
+            "base_equity": base_equity,
+            "processed_count": len(recorded_orders),
+            "skipped_count": len(skipped),
+            "orders": recorded_orders,
+            "skipped": skipped,
+        }
+        await _broadcast_if_possible(state, "DailyShadowRunRecorded", result)
+        return result
+
     @r.get("/order-facts")
     async def list_order_facts(
         status: str | None = None,
@@ -91,6 +296,34 @@ def create_router() -> APIRouter:
             offset=offset,
         )
 
+    @r.post("/order-facts/{order_id}/shadow-divergence-review")
+    async def record_shadow_divergence_review(
+        order_id: str,
+        payload: ShadowDivergenceReviewRequest,
+    ) -> dict:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        order = state.db.get_order_sync(order_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="order fact not found")
+        if order.get("execution_mode") != "paper_shadow":
+            raise HTTPException(
+                status_code=409,
+                detail="shadow divergence review requires a paper_shadow order fact",
+            )
+        updated = state.db.record_shadow_divergence_review_sync(
+            order_id=order_id,
+            reviewed_at=payload.reviewed_at,
+            divergence_status=payload.divergence_status,
+            review_notes=payload.review_notes,
+            reviewer=payload.reviewer,
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="order fact not found")
+        await _broadcast_if_possible(state, "ShadowDivergenceReviewed", updated)
+        return updated
+
     @r.post("/orders/{order_id}/confirm")
     async def confirm_manual_order(order_id: str) -> dict:
         from server.app import get_app_state
@@ -109,6 +342,11 @@ def create_router() -> APIRouter:
                 status="confirmed",
                 note="confirmed by operator; downstream execution simulated",
             )
+        action_id = _manual_order_action_id(updated)
+        if action_id is not None and hasattr(
+            state.db, "update_action_task_status_sync"
+        ):
+            state.db.update_action_task_status_sync(action_id, "acted")
         await _broadcast_if_possible(state, "ManualOrderConfirmed", updated)
         return updated
 
@@ -130,10 +368,51 @@ def create_router() -> APIRouter:
                 status="rejected",
                 note=payload.reason,
             )
+        action_id = _manual_order_action_id(updated)
+        if action_id is not None and hasattr(
+            state.db, "update_action_task_status_sync"
+        ):
+            state.db.update_action_task_status_sync(action_id, "ignored")
         await _broadcast_if_possible(state, "ManualOrderRejected", updated)
         return updated
 
     return r
+
+
+def _manual_order_side(direction: str) -> str | None:
+    if direction in {"buy", "sell"}:
+        return direction
+    return None
+
+
+def _shadow_base_equity(state) -> float:
+    scheduler = getattr(state, "scheduler", None)
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler is not None else None
+    if portfolio is not None:
+        cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
+        positions_value = sum(
+            float(getattr(position, "market_value", 0.0) or 0.0)
+            for position in getattr(portfolio, "positions", {}).values()
+        )
+        total = cash + positions_value
+        if total > 0:
+            return total
+    config = getattr(state, "config", None)
+    return float(getattr(config, "initial_cash", 0.0) or 0.0)
+
+
+def _manual_order_action_id(order: dict) -> int | None:
+    payload_json = order.get("payload_json")
+    if not payload_json:
+        return None
+    try:
+        payload = json.loads(str(payload_json))
+    except json.JSONDecodeError:
+        return None
+    action_id = payload.get("action_id")
+    if action_id is None:
+        return None
+    return int(action_id)
 
 
 async def _broadcast_if_possible(state, event_type: str, payload: dict) -> None:

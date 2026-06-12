@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import BacktestConfig
 from core.types import Symbol
@@ -33,6 +33,53 @@ class StrategyInfoResponse(BaseModel):
     name: str
     description: str
     params: list[dict[str, Any]]
+    benchmark_role: str | None = None
+    benchmark_universe: list[str] = Field(default_factory=list)
+    requires_out_of_sample_validation: bool = False
+    requires_after_cost_report: bool = False
+    validation_notes: list[str] = Field(default_factory=list)
+
+
+class StrategyValidationRowResponse(BaseModel):
+    strategy_id: str
+    benchmark_role: str
+    requires_out_of_sample_validation: bool
+    requires_after_cost_report: bool
+    has_out_of_sample_validation: bool
+    has_after_cost_report: bool
+    validation_status: str | None = None
+    backtest_result_id: int | None = None
+    missing_requirements: list[str] = Field(default_factory=list)
+    is_ready: bool
+
+
+class StrategyValidationMatrixResponse(BaseModel):
+    required_strategy_count: int
+    ready_strategy_count: int
+    is_complete: bool
+    rows: list[StrategyValidationRowResponse]
+    limitations: list[str] = Field(default_factory=list)
+
+
+class StrategyPromotionReadinessRowResponse(BaseModel):
+    strategy_id: str
+    benchmark_role: str
+    backtest_result_id: int | None = None
+    has_after_cost_and_oos_evidence: bool
+    has_risk_block_evidence: bool
+    has_paper_shadow_evidence: bool
+    has_paper_shadow_divergence_review: bool
+    missing_requirements: list[str] = Field(default_factory=list)
+    promotion_status: str
+    is_promotable: bool
+
+
+class StrategyPromotionReadinessResponse(BaseModel):
+    required_strategy_count: int
+    promotable_strategy_count: int
+    is_complete: bool
+    rows: list[StrategyPromotionReadinessRowResponse]
+    limitations: list[str] = Field(default_factory=list)
 
 
 def _json_object(raw: Any) -> dict[str, Any]:
@@ -92,6 +139,36 @@ def _backtest_evidence_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return evidence_json
     metrics_json = _json_object(payload.get("metrics_json"))
     return _json_object(metrics_json.get("evidence_bundle"))
+
+
+def _build_oos_validation_payload(
+    request: BacktestRequest,
+    result: Any,
+) -> dict[str, Any]:
+    if not request.oos_split_date:
+        return {}
+
+    from datetime import datetime
+
+    import strategy.examples  # noqa: F401
+    from analytics.oos_validation import build_out_of_sample_validation
+    from strategy.registry import StrategyRegistry
+
+    strategy_info = StrategyRegistry.get(request.strategy) or {}
+    benchmark_role = strategy_info.get("benchmark_role") or request.strategy
+    benchmark_return = (
+        Decimal(str(request.benchmark_return))
+        if request.benchmark_return is not None
+        else None
+    )
+    evidence = build_out_of_sample_validation(
+        strategy_id=request.strategy,
+        benchmark_role=benchmark_role,
+        result=result,
+        split_timestamp=datetime.strptime(request.oos_split_date, "%Y-%m-%d"),
+        benchmark_return=benchmark_return,
+    )
+    return evidence.to_json_dict()
 
 
 def _run_single_backtest(
@@ -169,6 +246,9 @@ def _run_single_backtest(
     )
     metrics_json = metrics.to_json_dict()
     metrics_json["evidence_bundle"] = evidence_json
+    oos_validation_json = _build_oos_validation_payload(request, result)
+    if oos_validation_json:
+        metrics_json["oos_validation"] = oos_validation_json
 
     return {
         "initial_cash": float(result.initial_cash),
@@ -184,6 +264,7 @@ def _run_single_backtest(
         "metrics_json": metrics_json,
         "cost_summary_json": result.cost_summary.to_json_dict(),
         "evidence_json": evidence_json,
+        "oos_validation_json": oos_validation_json,
         "fills": [_fill_to_response(fill) for fill in result.fills],
     }
 
@@ -198,9 +279,53 @@ def create_router() -> APIRouter:
     @r.get("/strategies", response_model=list[StrategyInfoResponse])
     async def list_strategies() -> list[StrategyInfoResponse]:
         """获取所有已注册策略及参数信息。"""
+        import strategy.examples  # noqa: F401
         from strategy.registry import StrategyRegistry
 
         return [StrategyInfoResponse(**s) for s in StrategyRegistry.get_info()]
+
+    @r.get(
+        "/strategy-validation",
+        response_model=StrategyValidationMatrixResponse,
+    )
+    async def get_strategy_validation() -> StrategyValidationMatrixResponse:
+        """获取 v0.2 基准策略 after-cost / OOS 证据矩阵。"""
+        import strategy.examples  # noqa: F401
+        from analytics.strategy_validation_matrix import (
+            build_strategy_validation_matrix,
+        )
+        from server.app import get_app_state
+        from strategy.registry import StrategyRegistry
+
+        state = get_app_state()
+        rows = await state.db.get_backtest_results()
+        matrix = build_strategy_validation_matrix(StrategyRegistry.get_info(), rows)
+        return StrategyValidationMatrixResponse(**matrix.to_json_dict())
+
+    @r.get(
+        "/strategy-promotion-readiness",
+        response_model=StrategyPromotionReadinessResponse,
+    )
+    async def get_strategy_promotion_readiness() -> StrategyPromotionReadinessResponse:
+        """获取 v0.2 策略晋级证据闸门，不自动晋级或执行。"""
+        import strategy.examples  # noqa: F401
+        from analytics.strategy_promotion_readiness import (
+            build_strategy_promotion_readiness,
+        )
+        from server.app import get_app_state
+        from strategy.registry import StrategyRegistry
+
+        state = get_app_state()
+        rows = await state.db.get_backtest_results()
+        risk_decisions = state.db.get_risk_decisions_sync(limit=500)
+        order_facts = state.db.list_orders_sync(limit=500)
+        readiness = build_strategy_promotion_readiness(
+            StrategyRegistry.get_info(),
+            rows,
+            risk_decisions,
+            order_facts,
+        )
+        return StrategyPromotionReadinessResponse(**readiness.to_json_dict())
 
     @r.post("/run", response_model=BacktestResponse)
     async def run_backtest(request: BacktestRequest) -> BacktestResponse:
