@@ -12,3 +12,13 @@ def test_start_server_bootstraps_frontend_dependencies_before_build():
     assert "npm install" in script
     assert "It installs missing frontend dependencies before building." in script
     assert script.index("ensure_frontend_dependencies") < script.index("npm run build")
+
+
+def test_start_server_guides_local_data_source_configuration():
+    script = Path("scripts/start_server.sh").read_text()
+
+    assert "guide_data_source_configuration" in script
+    assert "scripts/configure_data_source.py" in script
+    assert script.index("guide_data_source_configuration") < script.index(
+        "Starting Karkinos Web service"
+    )

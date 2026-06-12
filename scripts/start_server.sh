@@ -44,6 +44,7 @@ Notes:
   - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
   - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It installs missing frontend dependencies before building.
+  - Run \`uv run python scripts/configure_data_source.py\` to configure local market data.
 EOF
 }
 
@@ -63,6 +64,20 @@ ensure_frontend_dependencies() {
 	pushd "${web_dir}" >/dev/null
 	npm install
 	popd >/dev/null
+}
+
+guide_data_source_configuration() {
+	local config_path="${KARKINOS_CONFIG_PATH:-config.json}"
+
+	if [[ -f "${config_path}" || -n "${TUSHARE_TOKEN:-}" ]]; then
+		return
+	fi
+
+	cat <<EOF
+Data source: defaulting to AKShare.
+Configure local market data with:
+  uv run python scripts/configure_data_source.py
+EOF
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -175,6 +190,8 @@ Build it with:
   cd web && npm run build
 EOF
 fi
+
+guide_data_source_configuration
 
 if [[ -f "${PID_FILE}" ]]; then
 	EXISTING_PID="$(cat "${PID_FILE}")"

@@ -48,11 +48,14 @@ uv sync                                # install dependencies
 uv run python -m tools.run_backtest    # run local backtest tool
 uv sync --extra server                 # install server extras
 cd web && npm install && cd ..
+uv run python scripts/configure_data_source.py  # optional: choose AKShare or TuShare safely
 ./scripts/start_server.sh dev --host 127.0.0.1 --port 8000
 ./scripts/stop_server.sh
 ```
 
 `http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/market`, and `/settings` can be refreshed without returning home.
+
+The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider.
 
 In `dev` mode the script also starts Vite at `http://localhost:5173` for hot-reload frontend editing. Treat `5173` as a developer-only URL; use `8000` for product-like demos and customer flow checks.
 
