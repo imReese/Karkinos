@@ -368,4 +368,9 @@ automation.
   ETF action candidates into a polling/minute-level cockpit view, keeps open-end
   fund-style actions in the daily lane, returns explicit no-action reasons, and
   preserves manual confirmation as the live-like default.
+* 2026-06-12: Attached persisted strategy validation evidence to decision
+  candidates. Daily and intraday decision responses now read the latest saved
+  backtest result for each action's `strategy_id` and include after-cost,
+  out-of-sample validation, cost summary, limitations, and explicit
+  missing-evidence reasons without running a new backtest or creating orders.
 <!-- codex-progress:end -->

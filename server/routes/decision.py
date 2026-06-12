@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+import json
 from datetime import date, datetime
 from typing import Any
 
@@ -19,8 +21,10 @@ def create_router() -> APIRouter:
         db = state.db
         actions = _read_action_tasks(db)
         journal_by_signal = _journal_by_signal_id(db)
+        validation_by_strategy = await _validation_by_strategy_id(db)
         candidates = [
-            _decision_candidate(action, journal_by_signal, db) for action in actions
+            _decision_candidate(action, journal_by_signal, validation_by_strategy, db)
+            for action in actions
         ]
         no_action_reasons = [] if candidates else ["no_pending_action_tasks"]
         return {
@@ -65,8 +69,9 @@ def create_router() -> APIRouter:
             action for action in actions if not _is_intraday_action(action)
         ]
         journal_by_signal = _journal_by_signal_id(db)
+        validation_by_strategy = await _validation_by_strategy_id(db)
         candidates = [
-            _decision_candidate(action, journal_by_signal, db)
+            _decision_candidate(action, journal_by_signal, validation_by_strategy, db)
             for action in intraday_actions
         ]
         no_action_reasons = (
@@ -133,9 +138,26 @@ def _journal_by_signal_id(db: Any) -> dict[int, dict[str, Any]]:
     return indexed
 
 
+async def _validation_by_strategy_id(db: Any) -> dict[str, dict[str, Any]]:
+    reader = getattr(db, "get_backtest_results", None)
+    if not callable(reader):
+        return {}
+    rows = reader()
+    if inspect.isawaitable(rows):
+        rows = await rows
+    indexed: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        strategy_id = _backtest_strategy_id(row)
+        if not strategy_id or strategy_id in indexed:
+            continue
+        indexed[str(strategy_id)] = _backtest_validation_row(row)
+    return indexed
+
+
 def _decision_candidate(
     action: dict[str, Any],
     journal_by_signal: dict[int, dict[str, Any]],
+    validation_by_strategy: dict[str, dict[str, Any]],
     db: Any,
 ) -> dict[str, Any]:
     signal_id = action.get("source_signal_id")
@@ -161,10 +183,9 @@ def _decision_candidate(
             "strategy": {"strategy_id": action.get("strategy_id")},
             "signal": _signal_evidence(action, journal),
             "risk_gate": _risk_gate_evidence(action),
-            "after_cost_oos_validation": {
-                "status": "not_attached",
-                "reason": "strategy validation evidence is surfaced by /api/backtest/strategy-validation",
-            },
+            "after_cost_oos_validation": _after_cost_oos_validation_evidence(
+                action, validation_by_strategy
+            ),
             "data_freshness": _data_freshness_evidence(action, db),
             "manual_confirmation": _manual_confirmation_evidence(action),
             "journal": _journal_evidence(journal),
@@ -247,6 +268,44 @@ def _risk_gate_evidence(action: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _after_cost_oos_validation_evidence(
+    action: dict[str, Any],
+    validation_by_strategy: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    strategy_id = action.get("strategy_id")
+    if not strategy_id:
+        return {"status": "not_attached", "reason": "missing_strategy_id"}
+    validation = validation_by_strategy.get(str(strategy_id))
+    if validation is None:
+        return {
+            "status": "not_attached",
+            "strategy_id": strategy_id,
+            "reason": "no_matching_backtest_validation_evidence",
+        }
+    after_cost = dict(validation.get("after_cost") or {})
+    oos_validation = dict(validation.get("oos_validation") or {})
+    has_after_cost = bool(after_cost)
+    has_oos = bool(oos_validation)
+    missing = []
+    if not has_after_cost:
+        missing.append("after_cost_report")
+    if not has_oos:
+        missing.append("out_of_sample_validation")
+    return {
+        "status": "attached" if not missing else "incomplete",
+        "strategy_id": strategy_id,
+        "backtest_result_id": validation.get("backtest_result_id"),
+        "backtest_created_at": validation.get("backtest_created_at"),
+        "has_after_cost_report": has_after_cost,
+        "has_out_of_sample_validation": has_oos,
+        "missing_requirements": missing,
+        "after_cost": after_cost,
+        "oos_validation": oos_validation,
+        "cost_summary": dict(validation.get("cost_summary") or {}),
+        "limitations": list(validation.get("limitations") or []),
+    }
+
+
 def _data_freshness_evidence(action: dict[str, Any], db: Any) -> dict[str, Any]:
     reader = getattr(db, "get_latest_quote_sync", None)
     if not callable(reader):
@@ -283,3 +342,51 @@ def _journal_evidence(journal: dict[str, Any] | None) -> dict[str, Any]:
         "latest_event_source": latest_event.get("source"),
         "latest_event_ref": latest_event.get("source_ref"),
     }
+
+
+def _backtest_strategy_id(row: dict[str, Any]) -> str | None:
+    config = _json_object(row.get("config_json"))
+    strategy_id = config.get("strategy")
+    return str(strategy_id) if strategy_id else None
+
+
+def _backtest_validation_row(row: dict[str, Any]) -> dict[str, Any]:
+    metrics = _json_object(row.get("metrics_json"))
+    after_cost = _json_object(metrics.get("evidence_bundle"))
+    oos_validation = _json_object(metrics.get("oos_validation"))
+    return {
+        "backtest_result_id": row.get("id"),
+        "backtest_created_at": row.get("created_at"),
+        "after_cost": after_cost,
+        "oos_validation": oos_validation,
+        "cost_summary": _json_object(row.get("cost_summary_json")),
+        "limitations": _validation_limitations(after_cost, oos_validation),
+    }
+
+
+def _validation_limitations(
+    after_cost: dict[str, Any],
+    oos_validation: dict[str, Any],
+) -> list[str]:
+    limitations: list[str] = []
+    for payload in (after_cost, oos_validation):
+        for limitation in payload.get("limitations") or []:
+            if limitation not in limitations:
+                limitations.append(str(limitation))
+    if not limitations:
+        limitations.append(
+            "Backtest and OOS evidence are historical research artifacts, not a profitability claim."
+        )
+    return limitations
+
+
+def _json_object(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}

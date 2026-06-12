@@ -4906,6 +4906,102 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
     assert "not investment advice" in response["limitations"][0]
 
 
+def test_decision_today_attaches_latest_after_cost_oos_validation(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "strategy_id": "dual_ma",
+                    "asset_class": "stock",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                }
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return []
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "price": 123.45,
+                "quote_status": "live",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+            }
+
+        async def get_backtest_results(self):
+            return [
+                {
+                    "id": 101,
+                    "created_at": "2026-04-17T15:30:00",
+                    "config_json": json.dumps({"strategy": "dual_ma"}),
+                    "total_return": 0.08,
+                    "sharpe": 1.2,
+                    "max_drawdown": 0.05,
+                    "metrics_json": json.dumps(
+                        {
+                            "evidence_bundle": {
+                                "schema_version": 1,
+                                "gross_return": 0.1,
+                                "net_return": 0.08,
+                                "total_commission": 12.3,
+                                "total_slippage": 4.5,
+                                "limitations": [
+                                    "Backtest evidence is not a profitability claim."
+                                ],
+                            },
+                            "oos_validation": {
+                                "schema_version": 1,
+                                "strategy_id": "dual_ma",
+                                "validation_status": "passed",
+                                "out_of_sample": {
+                                    "net_return": 0.03,
+                                    "benchmark_excess_return": 0.01,
+                                },
+                            },
+                        }
+                    ),
+                    "cost_summary_json": json.dumps(
+                        {"commission": 12.3, "slippage": 4.5}
+                    ),
+                }
+            ]
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb()),
+    )
+
+    response = asyncio.run(endpoint())
+
+    validation = response["candidates"][0]["evidence"]["after_cost_oos_validation"]
+    assert validation["status"] == "attached"
+    assert validation["strategy_id"] == "dual_ma"
+    assert validation["backtest_result_id"] == 101
+    assert validation["has_after_cost_report"] is True
+    assert validation["has_out_of_sample_validation"] is True
+    assert validation["after_cost"]["net_return"] == 0.08
+    assert validation["oos_validation"]["validation_status"] == "passed"
+    assert "not a profitability claim" in validation["limitations"][0]
+
+
 def test_decision_today_returns_no_action_reason(monkeypatch):
     from server.routes import decision as decision_routes
 
