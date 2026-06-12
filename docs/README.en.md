@@ -541,6 +541,7 @@ React 19 + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vi
 | DashboardView | `/` | Dashboard, portfolio overview + live indicators |
 | PortfolioView | `/portfolio` | Position details + allocation pie chart |
 | ActivityView | `/activity` | Trades, dividends, cash flows, and manual adjustments |
+| DecisionView | `/decision` | Daily / intraday candidate actions, risk state, evidence, and manual-confirmation entry point |
 | MarketView | `/market` | Market quotes + K-line chart |
 | SignalsView | `/signals` | Signal history + signal badges |
 | BacktestView | `/backtest` | Run backtest + equity curve |

@@ -54,7 +54,7 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 ./scripts/stop_server.sh
 ```
 
-`http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/market`, and `/settings` can be refreshed without returning home.
+`http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/decision`, `/market`, and `/settings` can be refreshed without returning home.
 
 The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider.
 

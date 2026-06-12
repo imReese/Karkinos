@@ -378,4 +378,10 @@ automation.
   latest quote cache health, action-task status counts, and signal / journal /
   risk-gate audit counts so the cockpit can explain action and no-action states
   without adding any execution side effects.
+* 2026-06-12: Added the first frontend Decision Cockpit surface. The React app
+  now exposes `/decision` in the main navigation, fetches the read-only daily
+  and intraday decision APIs, displays candidate actions, risk-gate state,
+  after-cost/OOS evidence, quote freshness, no-action reasons, and links ready
+  candidates to the existing manual Trading approvals workspace without
+  executing orders.
 <!-- codex-progress:end -->
