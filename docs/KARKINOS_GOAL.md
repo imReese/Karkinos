@@ -384,4 +384,10 @@ automation.
   after-cost/OOS evidence, quote freshness, no-action reasons, and links ready
   candidates to the existing manual Trading approvals workspace without
   executing orders.
+* 2026-06-12: Added a deterministic v0.3 Decision Cockpit acceptance path. The
+  new test runs fixture market-cache data through feature calculation,
+  after-cost backtest reporting, strategy signal generation, action-task
+  creation, mandatory pre-trade risk, signal journal audit, and the daily /
+  intraday decision API contract that the dashboard consumes, while preserving
+  manual confirmation as the live-like default.
 <!-- codex-progress:end -->
