@@ -89,6 +89,28 @@ def _seed_action_task_with_risk(
     return db.get_action_tasks_sync()[0]["id"]
 
 
+def _seed_live_quote(
+    db: AppDatabase,
+    *,
+    symbol: str = "510300",
+    asset_type: str = "fund",
+    price: float = 4.56,
+) -> None:
+    db.upsert_latest_quote_sync(
+        symbol=symbol,
+        asset_type=asset_type,
+        price=price,
+        volume=1000.0,
+        quote_timestamp="2026-04-19T14:50:00+08:00",
+        quote_source="fixture",
+        provider_name="fixture",
+        provider_status="ok",
+        quote_status="live",
+        captured_at="2026-04-19T14:50:01+08:00",
+        captured_reason="shadow_quality_fixture",
+    )
+
+
 def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
     controls = TradingControlState()
     hub = SimpleNamespace(broadcast=lambda data: None)
@@ -375,6 +397,7 @@ def test_daily_shadow_run_records_only_risk_passed_actions_without_manual_orders
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     passed_action_id = _seed_action_task_with_risk(db, passed=True)
+    _seed_live_quote(db)
     blocked_action_id = _seed_action_task_with_risk(
         db,
         passed=False,
@@ -413,6 +436,117 @@ def test_daily_shadow_run_records_only_risk_passed_actions_without_manual_orders
     assert actions_by_id[blocked_action_id]["risk_gate_status"] == "blocked"
 
 
+def test_daily_shadow_run_is_idempotent_for_same_date_and_actions(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    action_id = _seed_action_task_with_risk(db, passed=True)
+    _seed_live_quote(db)
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=100000),
+        db=db,
+        trading_controls=TradingControlState(),
+        hub=None,
+        scheduler=None,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
+    request = trading_routes.ShadowRunRequest(run_date="2026-04-19")
+
+    first = asyncio.run(endpoint(request))
+    order_id = f"SHADOW-2026-04-19-{action_id}"
+    first_order = db.get_order_sync(order_id)
+    first_events = db.list_events_sync(entity_type="order", entity_id=order_id)
+
+    second = asyncio.run(endpoint(request))
+    second_order = db.get_order_sync(order_id)
+    second_events = db.list_events_sync(entity_type="order", entity_id=order_id)
+    payload = json.loads(second_order["payload_json"])
+
+    assert first["processed_count"] == 1
+    assert first["reused_count"] == 0
+    assert second["processed_count"] == 0
+    assert second["reused_count"] == 1
+    assert second["reused_orders"][0]["order_id"] == order_id
+    assert payload["shadow_run_schema_version"] == 1
+    assert payload["shadow_run_idempotency_key"] == order_id
+    assert second_order["created_at"] == first_order["created_at"]
+    assert second_order["updated_at"] == first_order["updated_at"]
+    assert len(first_events) == 1
+    assert len(second_events) == 1
+
+
+@pytest.mark.parametrize(
+    ("quote_kwargs", "expected_reason"),
+    [
+        (None, "missing_latest_quote"),
+        (
+            {
+                "price": 4.56,
+                "quote_status": "stale",
+                "stale_reason": "older than trading day",
+            },
+            "quote_status_stale",
+        ),
+        (
+            {
+                "price": 0.0,
+                "quote_status": "live",
+            },
+            "invalid_quote_price",
+        ),
+    ],
+)
+def test_daily_shadow_run_blocks_actions_with_failed_data_quality(
+    monkeypatch,
+    tmp_path,
+    quote_kwargs,
+    expected_reason,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    action_id = _seed_action_task_with_risk(db, passed=True)
+    if quote_kwargs is not None:
+        db.upsert_latest_quote_sync(
+            symbol="510300",
+            asset_type="fund",
+            volume=1000.0,
+            quote_timestamp="2026-04-19T14:50:00+08:00",
+            quote_source="fixture",
+            provider_name="fixture",
+            provider_status="ok",
+            captured_at="2026-04-19T14:50:01+08:00",
+            captured_reason="shadow_quality_fixture",
+            **quote_kwargs,
+        )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=100000),
+        db=db,
+        trading_controls=TradingControlState(),
+        hub=None,
+        scheduler=None,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
+
+    response = asyncio.run(
+        endpoint(trading_routes.ShadowRunRequest(run_date="2026-04-19"))
+    )
+
+    assert response["processed_count"] == 0
+    assert response["reused_count"] == 0
+    assert response["skipped_count"] == 1
+    assert response["data_quality_status"] == "blocked"
+    assert response["data_quality"]["blocked_count"] == 1
+    assert response["data_quality"]["passed_count"] == 0
+    assert response["data_quality"]["issues"][0]["action_id"] == action_id
+    assert response["data_quality"]["issues"][0]["reason"] == expected_reason
+    assert response["skipped"][0]["reason"] == f"data_quality:{expected_reason}"
+    assert db.list_orders_sync() == []
+
+
 def test_shadow_order_divergence_review_updates_order_payload_without_execution(
     monkeypatch,
     tmp_path,
@@ -420,6 +554,7 @@ def test_shadow_order_divergence_review_updates_order_payload_without_execution(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     passed_action_id = _seed_action_task_with_risk(db, passed=True)
+    _seed_live_quote(db)
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=100000),
         db=db,

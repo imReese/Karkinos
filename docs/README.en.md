@@ -364,6 +364,25 @@ gate passes, manual confirmation remains required before execution.
 review notes for a generated signal as an immutable audit event. It does not
 change an action task, create an order, submit to a broker, or mark a fill.
 
+#### Decision Cockpit — /api/decision
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/decision/today` | Get today's read-only decision summary, candidate actions, evidence bundle, and no-action reasons |
+| GET | `/api/decision/intraday` | Get a read-only intraday candidate-action view for stocks and common exchange-traded ETFs |
+
+`GET /api/decision/today` aggregates existing action tasks, risk-gate state,
+signal journal entries, and latest quote freshness into `buy`, `sell`, `hold`,
+`rebalance`, `no_action`, or `review_required`. It reads existing facts only:
+it does not create orders, submit to a broker, or change the manual-confirmation
+default.
+
+`GET /api/decision/intraday` uses the same evidence-bundle shape but only admits
+stock and common exchange-traded ETF candidates. Open-end fund and long-horizon
+allocation actions stay in the daily lane. The endpoint is for polling/minute-
+level cockpit review, not high-frequency or millisecond trading, and it never
+executes automatically.
+
 #### Trading Controls — /api/trading
 
 | Method | Path | Description |
@@ -389,7 +408,14 @@ and is surfaced in the signal journal audit chain.
 `POST /api/trading/shadow-runs/daily` records deterministic `paper_shadow`
 order facts for action cards that already passed the risk gate. It skips
 blocked or not-yet-checked actions, does not create manual orders, does not
-submit to a broker, and does not mark fills.
+submit to a broker, and does not mark fills. Re-running the same `run_date` and
+action reuses the existing order fact; `shadow_run_schema_version`,
+`reused_count`, and `reused_orders` make idempotent reruns auditable without
+writing duplicate orders or order events.
+Before writing, the daily shadow run also checks `latest_quotes` for the action
+symbol. Missing quotes, non-`live` quote status, or non-positive prices are
+reported in `data_quality.issues` and skipped with a `data_quality:*` reason
+without creating a shadow order.
 
 `POST /api/trading/order-facts/{order_id}/shadow-divergence-review` records an
 operator review such as `within_expectations` on an existing `paper_shadow`
