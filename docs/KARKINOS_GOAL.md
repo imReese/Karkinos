@@ -245,17 +245,17 @@ automation.
 * [x] `GET /api/decision/today` returns a daily decision summary.
 * [x] `GET /api/decision/intraday` returns an intraday candidate-action view
   for stocks and exchange-traded ETFs.
-* [ ] Decision summaries aggregate current portfolio state, market/cache
+* [x] Decision summaries aggregate current portfolio state, market/cache
   health, signals, action tasks, risk decisions, and journal evidence.
 * [x] Each summary explicitly returns `buy`, `sell`, `hold`, `rebalance`,
   `no_action`, or `review_required`.
-* [ ] Each candidate action includes an evidence bundle with strategy, signal,
+* [x] Each candidate action includes an evidence bundle with strategy, signal,
   risk gate, after-cost/OOS validation, data freshness, manual-confirmation
   state, and journal references.
 * [x] No-action responses include explicit reasons.
-* [ ] The frontend decision cockpit shows daily and intraday candidate actions,
+* [x] The frontend decision cockpit shows daily and intraday candidate actions,
   risk state, evidence, and manual-confirmation entry points.
-* [ ] Deterministic tests cover data/cache → feature/strategy signal → action
+* [x] Deterministic tests cover data/cache → feature/strategy signal → action
   candidate → risk gate → journal → decision API/dashboard.
 * [x] README/docs describe the behavior boundary: research and investment
   cockpit, not investment advice, and no default automatic real-money trading.
@@ -390,4 +390,10 @@ automation.
   creation, mandatory pre-trade risk, signal journal audit, and the daily /
   intraday decision API contract that the dashboard consumes, while preserving
   manual confirmation as the live-like default.
+* 2026-06-12: Completed the v0.3 checklist audit. Current evidence covers the
+  read-only daily and intraday decision APIs, current-state aggregation,
+  complete candidate evidence bundles, explicit no-action reasons, the frontend
+  `/decision` cockpit, deterministic API/dashboard acceptance coverage,
+  README/docs behavior boundaries, and manual-confirmation-only live-like
+  behavior.
 <!-- codex-progress:end -->
