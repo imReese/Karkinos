@@ -406,6 +406,32 @@ class ActionCard(BaseModel):
     timestamp: str
     asset_class: str = "stock"
     status: str = "pending"
+    risk_decision_id: str | None = None
+    risk_gate_passed: bool | None = None
+    risk_gate_status: str = "not_checked"
+    risk_gate_severity: str | None = None
+    risk_gate_reasons: list[str] = Field(default_factory=list)
+    manual_confirmation_required: bool = True
+    manual_confirmation_status: str = "awaiting_risk_gate"
+    manual_confirmation_reason: str = "Risk gate has not produced a decision yet."
+
+
+class PortfolioCockpitPosition(BaseModel):
+    symbol: str
+    name: str
+    asset_class: str
+    market_value: float
+    actual_weight: float
+    target_weight: float
+    drift: float
+    action_task: ActionCard | None = None
+
+
+class PortfolioCockpitResponse(BaseModel):
+    summary: AccountOverview
+    positions: list[PortfolioCockpitPosition]
+    action_queue: list[ActionCard]
+    risk_alerts: list[RiskSummaryItem]
 
 
 class SignalJournalRiskDecision(BaseModel):
@@ -436,10 +462,20 @@ class SignalJournalEvent(BaseModel):
     created_at: str | None = None
 
 
+class SignalJournalReview(BaseModel):
+    signal_id: int
+    reviewed_at: str
+    user_decision: str
+    outcome: str
+    review_notes: str
+    reviewer: str | None = None
+
+
 class SignalJournalEntry(BaseModel):
     signal: SignalResponse
     action_task: ActionCard | None = None
     risk_decision: SignalJournalRiskDecision | None = None
+    review: SignalJournalReview | None = None
     latest_event: SignalJournalEvent | None = None
 
 
@@ -624,6 +660,8 @@ class BacktestRequest(BaseModel):
     short_period: int = 5
     long_period: int = 20
     assets: list[dict[str, str]] | None = None
+    oos_split_date: str | None = None
+    benchmark_return: float | None = None
 
 
 class BacktestMetrics(BaseModel):

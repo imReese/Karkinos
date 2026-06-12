@@ -74,7 +74,9 @@ test('does not render hard-coded fund candidates in the initial state', () => {
   expect(screen.queryByText('永赢先进制造智选混合C')).toBeNull();
   expect(screen.queryByText('融通科技臻选混合C')).toBeNull();
   expect(screen.queryByText('华夏核心成长混合C')).toBeNull();
-  expect(screen.getByText('No held funds available for batch add.')).toBeTruthy();
+  expect(
+    screen.getByText('No held funds available for batch add.'),
+  ).toBeTruthy();
 });
 
 test('submits a batch fund add payload with positive candidate rows only', async () => {

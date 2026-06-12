@@ -25,6 +25,29 @@ def _ensure_column(
     conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
+def _apply_manual_confirmation_readiness(
+    task: dict[str, Any],
+    *,
+    risk_gate_status: str,
+) -> None:
+    task["manual_confirmation_required"] = True
+    if risk_gate_status == "passed":
+        task["manual_confirmation_status"] = "ready_for_manual_confirmation"
+        task["manual_confirmation_reason"] = (
+            "Risk gate passed; manual confirmation is required before execution."
+        )
+    elif risk_gate_status == "blocked":
+        task["manual_confirmation_status"] = "blocked_by_risk_gate"
+        task["manual_confirmation_reason"] = (
+            "Risk gate blocked this action; do not execute without review."
+        )
+    else:
+        task["manual_confirmation_status"] = "awaiting_risk_gate"
+        task["manual_confirmation_reason"] = (
+            "Risk gate has not produced a decision yet."
+        )
+
+
 class AppDatabase:
     """应用数据库。
 
@@ -370,7 +393,13 @@ class AppDatabase:
             event_rows = conn.execute("""
                 SELECT *
                 FROM event_log
-                WHERE source IN ('action_tasks', 'risk_decisions')
+                WHERE source IN (
+                    'action_tasks',
+                    'risk_decisions',
+                    'manual_orders',
+                    'orders',
+                    'signal_reviews'
+                )
                 ORDER BY timestamp DESC, id DESC
                 """).fetchall()
 
@@ -399,6 +428,18 @@ class AppDatabase:
                 risks_by_signal[signal_id] = risk
 
         latest_events = [_event_log_response(row) for row in event_rows]
+        reviews_by_signal: dict[int, dict[str, Any]] = {}
+        for event in latest_events:
+            if event["source"] != "signal_reviews":
+                continue
+            payload = event.get("payload", {})
+            source_signal_id = payload.get("signal_id")
+            if source_signal_id is None:
+                continue
+            signal_id = int(source_signal_id)
+            if signal_id not in reviews_by_signal:
+                reviews_by_signal[signal_id] = payload
+
         entries: list[dict[str, Any]] = []
         for row in signal_rows:
             signal = dict(row)
@@ -414,6 +455,7 @@ class AppDatabase:
                         if risk is not None
                         else None
                     ),
+                    "review": reviews_by_signal.get(signal_id),
                     "latest_event": _latest_signal_journal_event(
                         signal_id=signal_id,
                         action_task=action,
@@ -529,7 +571,84 @@ class AppDatabase:
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, tuple(params)).fetchall()
-            return [dict(row) for row in rows]
+            return self._enrich_action_tasks_with_risk_decisions(conn, rows)
+
+    def get_action_task_sync(self, task_id: int) -> dict[str, Any] | None:
+        """Read one action task with its latest risk and manual-confirm state."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT id, source_signal_id, symbol, title, detail, direction, urgency,
+                       target_weight, price, strategy_id, timestamp, asset_class, status,
+                       created_at, updated_at
+                FROM action_tasks WHERE id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            tasks = self._enrich_action_tasks_with_risk_decisions(conn, [row])
+            return tasks[0] if tasks else None
+
+    def _enrich_action_tasks_with_risk_decisions(
+        self, conn: sqlite3.Connection, rows: list[sqlite3.Row]
+    ) -> list[dict[str, Any]]:
+        """Attach latest risk-gate outcome for each action task's source signal."""
+        tasks = [dict(row) for row in rows]
+        source_signal_ids = [
+            int(task["source_signal_id"])
+            for task in tasks
+            if task.get("source_signal_id") is not None
+        ]
+        if not source_signal_ids:
+            for task in tasks:
+                _apply_manual_confirmation_readiness(
+                    task,
+                    risk_gate_status="not_checked",
+                )
+            return tasks
+
+        risk_rows = conn.execute("""
+            SELECT *
+            FROM risk_decisions
+            ORDER BY timestamp DESC, id DESC
+            """).fetchall()
+        latest_by_signal: dict[int, dict[str, Any]] = {}
+        source_signal_id_set = set(source_signal_ids)
+        for row in risk_rows:
+            risk = dict(row)
+            payload = _json_dict(risk.get("payload_json"))
+            source_signal_id = payload.get("intent", {}).get("source_signal_id")
+            if source_signal_id is None:
+                continue
+            signal_id = int(source_signal_id)
+            if signal_id in source_signal_id_set and signal_id not in latest_by_signal:
+                latest_by_signal[signal_id] = risk
+
+        for task in tasks:
+            risk = latest_by_signal.get(int(task["source_signal_id"]))
+            if risk is None:
+                task["risk_decision_id"] = None
+                task["risk_gate_passed"] = None
+                task["risk_gate_status"] = "not_checked"
+                task["risk_gate_severity"] = None
+                task["risk_gate_reasons"] = []
+                _apply_manual_confirmation_readiness(
+                    task,
+                    risk_gate_status="not_checked",
+                )
+                continue
+            task["risk_decision_id"] = risk["decision_id"]
+            task["risk_gate_passed"] = bool(risk["passed"])
+            task["risk_gate_status"] = "passed" if bool(risk["passed"]) else "blocked"
+            task["risk_gate_severity"] = risk["severity"]
+            task["risk_gate_reasons"] = _json_list(risk.get("reasons_json"))
+            _apply_manual_confirmation_readiness(
+                task,
+                risk_gate_status=task["risk_gate_status"],
+            )
+        return tasks
 
     async def update_action_task_status(
         self, task_id: int, status: str
@@ -569,6 +688,70 @@ class AppDatabase:
                 )
             conn.commit()
             return dict(row) if row else None
+
+    async def record_signal_review(
+        self,
+        *,
+        signal_id: int,
+        reviewed_at: str,
+        user_decision: str,
+        outcome: str,
+        review_notes: str,
+        reviewer: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Async wrapper for a signal review/outcome audit event."""
+        return self.record_signal_review_sync(
+            signal_id=signal_id,
+            reviewed_at=reviewed_at,
+            user_decision=user_decision,
+            outcome=outcome,
+            review_notes=review_notes,
+            reviewer=reviewer,
+        )
+
+    def record_signal_review_sync(
+        self,
+        *,
+        signal_id: int,
+        reviewed_at: str,
+        user_decision: str,
+        outcome: str,
+        review_notes: str,
+        reviewer: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Persist a post-decision signal review as an immutable audit event."""
+        payload = {
+            "signal_id": signal_id,
+            "reviewed_at": reviewed_at,
+            "user_decision": user_decision,
+            "outcome": outcome,
+            "review_notes": review_notes,
+            "reviewer": reviewer,
+        }
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            signal = conn.execute(
+                "SELECT id FROM signals WHERE id = ?",
+                (signal_id,),
+            ).fetchone()
+            if signal is None:
+                return None
+            cursor = _insert_event_sync(
+                conn,
+                event_type="signal.review.recorded",
+                timestamp=reviewed_at,
+                entity_type="signal",
+                entity_id=str(signal_id),
+                source="signal_reviews",
+                source_ref=str(signal_id),
+                payload=payload,
+            )
+            row = conn.execute(
+                "SELECT * FROM event_log WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+            conn.commit()
+            return _event_log_response(row) if row is not None else None
 
     # ---------- Risk Decisions ----------
 
@@ -810,6 +993,65 @@ class AppDatabase:
                 (order_id,),
             ).fetchone()
             return dict(row) if row else None
+
+    def record_shadow_divergence_review_sync(
+        self,
+        *,
+        order_id: str,
+        reviewed_at: str,
+        divergence_status: str,
+        review_notes: str,
+        reviewer: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Attach an operator divergence review to a paper/shadow order fact."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["execution_mode"] != "paper_shadow":
+                return dict(row)
+            payload = _json_dict(row["payload_json"])
+            payload.update(
+                {
+                    "divergence_status": divergence_status,
+                    "divergence_reviewed_at": reviewed_at,
+                    "divergence_review_notes": review_notes,
+                    "divergence_reviewer": reviewer,
+                }
+            )
+            conn.execute(
+                """
+                UPDATE orders
+                SET payload_json = ?, updated_at = ?
+                WHERE order_id = ?
+                """,
+                (
+                    _serialize_metadata_json(payload),
+                    datetime.now().isoformat(),
+                    order_id,
+                ),
+            )
+            updated = conn.execute(
+                "SELECT * FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            if updated is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="order.shadow_divergence_reviewed",
+                    timestamp=reviewed_at,
+                    entity_type="order",
+                    entity_id=updated["order_id"],
+                    source="shadow_reviews",
+                    source_ref=updated["order_id"],
+                    payload=_order_event_payload(updated),
+                )
+            conn.commit()
+            return dict(updated) if updated is not None else None
 
     def list_orders_sync(
         self,
@@ -1198,7 +1440,8 @@ class AppDatabase:
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """SELECT id, created_at, config_json, total_return, sharpe, max_drawdown
+                """SELECT id, created_at, config_json, total_return, sharpe,
+                          max_drawdown, metrics_json, cost_summary_json
                    FROM backtest_results ORDER BY id DESC"""
             ).fetchall()
             return [dict(row) for row in rows]
@@ -2994,14 +3237,65 @@ def _latest_signal_journal_event(
     action_ref = str(action_task["id"]) if action_task is not None else None
     risk_ref = str(risk_decision["decision_id"]) if risk_decision is not None else None
     for event in events:
+        if event["source"] == "signal_reviews" and event["source_ref"] == str(
+            signal_id
+        ):
+            return event
+    for event in events:
+        if (
+            event["source"] == "manual_orders"
+            and event["event_type"] == "order.status_changed"
+            and _event_matches_signal_journal_entry(
+                event,
+                signal_id=signal_id,
+                action_ref=action_ref,
+            )
+        ):
+            return event
+    for event in events:
+        if (
+            event["source"] == "orders"
+            and event["event_type"] == "order.status_changed"
+            and _event_matches_signal_journal_entry(
+                event,
+                signal_id=signal_id,
+                action_ref=action_ref,
+            )
+        ):
+            return event
+    for event in events:
         if event["source"] == "risk_decisions" and event["source_ref"] == risk_ref:
             return event
         if event["source"] == "action_tasks" and event["source_ref"] == action_ref:
             return event
-        payload = event.get("payload", {})
-        if payload.get("source_signal_id") == signal_id:
+        if _event_matches_signal_journal_entry(
+            event,
+            signal_id=signal_id,
+            action_ref=action_ref,
+        ):
             return event
     return None
+
+
+def _event_matches_signal_journal_entry(
+    event: dict[str, Any],
+    *,
+    signal_id: int,
+    action_ref: str | None,
+) -> bool:
+    payload = event.get("payload", {})
+    if payload.get("source_signal_id") == signal_id:
+        return True
+    nested_payload = payload.get("payload")
+    if not isinstance(nested_payload, dict):
+        return False
+    if nested_payload.get("source_signal_id") == signal_id:
+        return True
+    return (
+        action_ref is not None
+        and nested_payload.get("action_id") is not None
+        and str(nested_payload["action_id"]) == action_ref
+    )
 
 
 def _json_dict(value) -> dict[str, Any]:

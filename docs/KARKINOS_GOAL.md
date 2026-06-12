@@ -199,20 +199,20 @@ Avoid:
 
 ## Acceptance Criteria for v0.2
 
-* [ ] One reproducible end-to-end workflow: data fetch/cache → features → backtest → report → signal → risk gate → dashboard/journal.
-* [ ] At least three benchmarkable strategies:
+* [x] One reproducible end-to-end workflow: data fetch/cache → features → backtest → report → signal → risk gate → dashboard/journal.
+* [x] At least three benchmarkable strategies:
 
-  * [ ] ETF rotation / trend-following baseline
-  * [ ] Defensive allocation baseline: equity ETF + bond/gold/cash proxy
-  * [ ] A-share/ETF mean-reversion or momentum candidate
-* [ ] Each strategy has out-of-sample validation and after-cost report.
-* [ ] Portfolio dashboard exposes target weights, actual weights, drift, action queue, and risk alerts.
-* [ ] Signal journal stores every generated signal, whether acted on or ignored.
-* [ ] Pre-trade risk gate is mandatory for every actionable signal.
-* [ ] Manual-confirm execution path is complete.
-* [ ] Paper/shadow mode can run daily without manual data edits.
-* [ ] CI runs backend tests, frontend checks, and at least one deterministic smoke path.
-* [ ] README and docs make clear that Karkinos is research and portfolio tooling, not investment advice.
+  * [x] ETF rotation / trend-following baseline
+  * [x] Defensive allocation baseline: equity ETF + bond/gold/cash proxy
+  * [x] A-share/ETF mean-reversion or momentum candidate
+* [x] Each strategy has out-of-sample validation and after-cost report.
+* [x] Portfolio dashboard exposes target weights, actual weights, drift, action queue, and risk alerts.
+* [x] Signal journal stores every generated signal, whether acted on or ignored.
+* [x] Pre-trade risk gate is mandatory for every actionable signal.
+* [x] Manual-confirm execution path is complete.
+* [x] Paper/shadow mode can run daily without manual data edits.
+* [x] CI runs backend tests, frontend checks, and at least one deterministic smoke path.
+* [x] README and docs make clear that Karkinos is research and portfolio tooling, not investment advice.
 
 ## North Star Metric
 
@@ -243,4 +243,86 @@ Secondary metrics:
   Batch fund candidates now come from held fund positions, preserving an empty
   initial state until portfolio data exists in the database or explicit private
   runtime configuration.
+* 2026-06-12: Exposed latest risk-gate outcomes on signal action cards.
+  The action queue now carries the linked risk decision id, pass/fail state,
+  severity, and reasons so dashboard consumers can distinguish actionable,
+  blocked, and not-yet-checked signals without bypassing manual confirmation.
+* 2026-06-12: Added a deterministic Profit Discipline smoke path covering
+  fixture data cache metadata, feature calculation, after-cost backtest report,
+  generated signal, mandatory pre-trade risk gate, action queue risk summary,
+  and signal journal audit chain. Backtest reports now print gross turnover as
+  total traded notional alongside commission and slippage.
+* 2026-06-12: Tagged registered strategies with v0.2 benchmark metadata.
+  The backtest strategy API now exposes ETF trend-following, defensive
+  allocation, and A-share/ETF mean-reversion roles plus explicit OOS and
+  after-cost validation requirements, without changing strategy execution.
+* 2026-06-12: Added reusable out-of-sample validation evidence for completed
+  backtests. The analytics helper splits in-sample / OOS equity, attributes
+  recorded commission and slippage to each segment, computes benchmark excess
+  return when supplied, and serializes explicit limitations without making
+  profit guarantees.
+* 2026-06-12: Wired OOS validation evidence into the backtest run path.
+  Backtest requests can now provide an OOS split date and benchmark return;
+  mapped benchmark strategies attach serialized after-cost validation evidence
+  under metrics_json.oos_validation for persistence and API consumers.
+* 2026-06-12: Added a deterministic v0.2 strategy validation matrix.
+  The analytics layer can now inspect persisted-style backtest payloads and
+  report whether the three required benchmark strategies each have both
+  after-cost evidence and out-of-sample validation, including explicit missing
+  requirements for promotion review.
+* 2026-06-12: Added fixture-backed validation backtests for all v0.2 benchmark
+  strategies. The deterministic fixtures run ETF trend-following, defensive
+  allocation, and A-share mean-reversion through the existing BacktestEngine,
+  then emit persisted-style after-cost and OOS evidence rows that satisfy the
+  strategy validation matrix without relying on live market data.
+* 2026-06-12: Exposed the v0.2 strategy validation matrix through the backtest
+  API. Dashboard and CI consumers can now call `/api/backtest/strategy-validation`
+  to inspect whether saved results prove each benchmark strategy has after-cost
+  and OOS evidence before promotion review.
+* 2026-06-12: Added a portfolio cockpit API surface. `/api/portfolio/cockpit`
+  now combines account summary, per-position actual weight, action target
+  weight, drift, pending/deferred action cards, and risk alerts so dashboard
+  consumers can inspect portfolio readiness without bypassing manual execution.
+* 2026-06-12: Made action-card risk gate state explicit. Action queue and
+  cockpit responses now expose `risk_gate_status` as `not_checked`, `passed`,
+  or `blocked`, preserving the existing pass/fail fields while preventing
+  ungated actionable signals from being mistaken for approved work.
+* 2026-06-12: Added manual-confirmation readiness to action cards. Signal action
+  and portfolio cockpit responses now distinguish `awaiting_risk_gate`,
+  `ready_for_manual_confirmation`, and `blocked_by_risk_gate`, while keeping
+  manual confirmation required even after a risk gate passes.
+* 2026-06-12: Added the first action-to-manual-order execution bridge. Trading
+  controls can now create a `pending_confirm` manual order and shared order fact
+  only from a risk-passed action card, while blocked or not-yet-checked actions
+  are rejected before any order record is written.
+* 2026-06-12: Linked manual order decisions back into the signal journal.
+  Confirming a pending manual order now marks the originating action as `acted`;
+  rejecting it marks the action as `ignored`; both decisions surface as
+  manual-order status events in the signal audit chain.
+* 2026-06-12: Added a deterministic daily paper/shadow run endpoint. Trading
+  controls can now record `paper_shadow` order facts from risk-passed action
+  cards without per-action manual data edits, while skipping blocked or
+  not-yet-checked actions and avoiding broker submission or fills.
+* 2026-06-12: Added a signal journal review/outcome endpoint. Generated signals
+  can now receive immutable post-decision review notes and later outcome labels
+  in the audit chain without changing action status, creating orders,
+  submitting to a broker, or recording fills.
+* 2026-06-12: Made the CI contract explicit for Profit Discipline MVP gates.
+  GitHub Actions now runs the deterministic Profit Discipline smoke path as a
+  named backend step, keeps the full backend suite, and uses a non-mutating
+  frontend format check alongside frontend build and tests.
+* 2026-06-12: Added a strategy promotion readiness surface. The backtest API
+  now combines v0.2 after-cost/OOS validation, risk-gate block evidence,
+  paper/shadow order evidence, and explicit paper/shadow divergence review
+  evidence into non-automatic promotion gates that keep live-like execution
+  manual by default.
+* 2026-06-12: Added a paper/shadow divergence review write path. Operators can
+  now attach auditable divergence status and review notes to existing
+  `paper_shadow` order facts without changing order status, submitting to a
+  broker, creating fills, or bypassing manual live-like controls.
+* 2026-06-12: Added a v0.2 acceptance audit manifest and aligned the goal
+  checklist with deterministic evidence. Each completed checkbox now maps to
+  local tests, docs, API surfaces, and validation commands, while preserving
+  manual confirmation as the live-like default and avoiding investment-advice
+  claims.
 <!-- codex-progress:end -->

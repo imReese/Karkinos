@@ -174,6 +174,7 @@ Sharpe比率:          -3.24
 Sortino比率:         -3.55
 最大回撤:             1.98%
 胜率:                 8.40%
+总成交额:        1,000,000.00 CNY
 回测天数:              168
 --------------------------------------------------
 持仓:
@@ -349,6 +350,10 @@ uv run python -m tools.live_monitor
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/portfolio` | 获取组合快照（现金/权益/持仓/配置） |
+| GET | `/api/portfolio/cockpit` | 获取组合驾驶舱：目标权重、实际权重、漂移、action queue、风险提示 |
+| GET | `/api/portfolio/state` | 获取账户总览、组合快照、风险摘要和下一步提示 |
+| GET | `/api/portfolio/risk-summary` | 获取组合风险摘要 |
+| GET | `/api/portfolio/live-holdings` | 获取按资产类别分组的实时持仓 |
 | GET | `/api/portfolio/allocation` | 获取资产配置权重 |
 | GET | `/api/portfolio/equity-curve` | 获取权益曲线 |
 
@@ -358,14 +363,67 @@ uv run python -m tools.live_monitor
 |------|------|------|
 | GET | `/api/signals?limit=&offset=` | 获取信号历史（分页） |
 | GET | `/api/signals/latest?limit=` | 获取最新信号 |
+| GET | `/api/signals/actions?limit=` | 获取待执行动作卡，并附带最近一次风控闸门摘要 |
+| GET | `/api/signals/journal?limit=&offset=` | 获取 signal → action → risk audit chain |
+| POST | `/api/signals/journal/{signal_id}/review` | 记录信号后续 outcome / review 复盘事件 |
+
+Action card 的 `risk_gate_status` 显式区分 `not_checked`、`passed`、`blocked`，
+用于避免把尚未风控的 actionable signal 误读为可执行。它还暴露人工确认就绪状态：
+`awaiting_risk_gate`、`ready_for_manual_confirmation` 或
+`blocked_by_risk_gate`。即使风控通过，也仍然要求人工确认后才能进入执行。
+
+`POST /api/signals/journal/{signal_id}/review` 会把生成信号的后续 outcome 与
+review notes 作为不可变审计事件写入 journal。它不会修改 action task，不会创建订单，
+不会提交到券商，也不会记录成交。
+
+#### 交易控制 — /api/trading
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/trading/actions/{action_id}/manual-order` | 仅从风控通过的 action card 创建待人工确认订单 |
+| POST | `/api/trading/shadow-runs/daily` | 从风控通过的 action card 记录每日 paper/shadow run |
+| GET | `/api/trading/orders?status=` | 获取等待或已完成人工确认的订单 |
+| POST | `/api/trading/orders/{order_id}/confirm` | 将人工订单标记为操作者确认 |
+| POST | `/api/trading/orders/{order_id}/reject` | 将人工订单标记为操作者拒绝 |
+| GET | `/api/trading/order-facts` | 获取 manual / paper / live-like 路径共用订单事实 |
+| POST | `/api/trading/order-facts/{order_id}/shadow-divergence-review` | 记录 paper/shadow divergence review 证据 |
+| GET | `/api/trading/fills` | 获取已持久化成交事实 |
+| GET | `/api/trading/kill-switch` | 读取运行时 kill switch |
+| PUT | `/api/trading/kill-switch` | 更新运行时 kill switch |
+
+`POST /api/trading/actions/{action_id}/manual-order` 接收操作者输入的数量，
+只会写入 `pending_confirm` 人工订单和共享订单事实。它会拒绝
+`awaiting_risk_gate` 与 `blocked_by_risk_gate` action，不会提交到券商，
+也不会把订单标记为已成交。确认或拒绝该人工订单会把来源 action card 的
+决策状态更新为 `acted` 或 `ignored`，并在 signal journal 审计链中显示。
+
+`POST /api/trading/shadow-runs/daily` 会为已经通过风控的 action card 记录
+确定性的 `paper_shadow` 订单事实。它会跳过 blocked / not-yet-checked action，
+不会创建人工订单，不会提交到券商，也不会记录成交。
+
+`POST /api/trading/order-facts/{order_id}/shadow-divergence-review` 会在已有
+`paper_shadow` 订单事实上记录操作者 review，例如 `within_expectations`。
+它不会改变订单状态，不会提交到券商，也不会创建成交。
 
 #### 回测 — /api/backtest
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/backtest/strategies` | 获取可用策略及 v0.2 基准角色 / OOS / after-cost 验证要求 |
+| GET | `/api/backtest/strategy-validation` | 获取 v0.2 基准策略 after-cost / OOS 证据矩阵 |
+| GET | `/api/backtest/strategy-promotion-readiness` | 获取基准策略晋级 readiness 闸门 |
 | POST | `/api/backtest/run` | 运行回测（线程池执行），返回结果 |
 | GET | `/api/backtest/results` | 获取所有回测结果摘要 |
 | GET | `/api/backtest/results/{result_id}` | 获取单个回测详情 + 权益曲线 |
+
+`POST /api/backtest/run` 可选传入 `oos_split_date`（YYYY-MM-DD）和
+`benchmark_return`，用于在回测结果的 `metrics_json.oos_validation` 中附带
+样本外 after-cost 验证证据；该证据用于审计与策略晋级，不构成投资建议或收益承诺。
+`GET /api/backtest/strategy-validation` 读取已保存回测结果，报告三条 v0.2
+基准策略是否具备 after-cost 与样本外验证证据；该矩阵只用于审计与晋级检查。
+`GET /api/backtest/strategy-promotion-readiness` 会组合 after-cost/OOS 证据、
+被风控阻断的证据、paper/shadow 订单事实以及明确的 paper/shadow divergence
+review 证据。它不会自动晋级策略，也不会改变执行默认值。
 
 #### 设置 — /api/settings
 
