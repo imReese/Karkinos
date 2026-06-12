@@ -379,6 +379,11 @@ latest saved after-cost / out-of-sample validation evidence for the same
 explicit missing-evidence reason. It reads existing facts only: it does not
 create orders, submit to a broker, or change the manual-confirmation default.
 
+The decision `summary` also includes portfolio cash / holdings / equity,
+latest quote cache health, action-task status counts, and signal / journal /
+risk-gate audit counts so the cockpit can explain why it is acting or staying
+still.
+
 `GET /api/decision/intraday` uses the same evidence-bundle shape but only admits
 stock and common exchange-traded ETF candidates. Open-end fund and long-horizon
 allocation actions stay in the daily lane. The endpoint is for polling/minute-
