@@ -1,7 +1,7 @@
 import asyncio
+import sys
 from decimal import Decimal
 from pathlib import Path
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +17,11 @@ from server.bootstrap import (
     resolve_config_path,
     resolve_data_dir,
 )
+
+
+def test_runtime_config_defaults_do_not_seed_real_cash():
+    assert BacktestConfig().initial_cash == Decimal("0")
+    assert ServerConfig().initial_cash == Decimal("0")
 
 
 def test_load_runtime_config_prefers_json_file(tmp_path, monkeypatch):
@@ -159,7 +164,9 @@ def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatc
     )
 
     monkeypatch.setattr(run_backtest, "create_runtime_context", lambda config: runtime)
-    monkeypatch.setattr(run_backtest, "build_strategy", lambda config, event_bus: object())
+    monkeypatch.setattr(
+        run_backtest, "build_strategy", lambda config, event_bus: object()
+    )
     monkeypatch.setattr(run_backtest, "BacktestEngine", FakeEngine)
     monkeypatch.setattr(run_backtest, "generate_report", lambda result: "ok")
 
@@ -370,9 +377,7 @@ def test_create_app_accepts_cors_origins_from_config_file(
     from server.app import create_app
 
     config_path = tmp_path / "config.json"
-    config_path.write_text(
-        '{"cors_allowed_origins": ["https://karkinos.example.com"]}'
-    )
+    config_path.write_text('{"cors_allowed_origins": ["https://karkinos.example.com"]}')
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("KARKINOS_CORS_ALLOWED_ORIGINS", raising=False)
 

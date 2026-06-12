@@ -1,11 +1,17 @@
 """Signals routes — /api/signals/*"""
 
 from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter, HTTPException
 
-from server.models import ActionCard, ActionTaskStatusUpdate, SignalResponse
+from server.models import (
+    ActionCard,
+    ActionTaskStatusUpdate,
+    SignalJournalEntry,
+    SignalResponse,
+)
 from server.services.recommendation_flow import build_recommendation_cycle
 
 logger = logging.getLogger(__name__)
@@ -71,7 +77,10 @@ def create_router() -> APIRouter:
         existing_positions = (
             {}
             if portfolio is None
-            else {str(symbol): position for symbol, position in portfolio.positions.items()}
+            else {
+                str(symbol): position
+                for symbol, position in portfolio.positions.items()
+            }
         )
         available_cash = 0.0 if portfolio is None else float(portfolio.cash)
         cycle = build_recommendation_cycle(
@@ -87,7 +96,11 @@ def create_router() -> APIRouter:
                 title=task.title,
                 detail=task.detail,
                 direction=task.direction,
-                urgency="high" if task.direction == "buy" and task.target_weight > 0 else "medium",
+                urgency=(
+                    "high"
+                    if task.direction == "buy" and task.target_weight > 0
+                    else "medium"
+                ),
                 target_weight=task.target_weight,
                 price=task.price,
                 strategy_id=task.strategy_id,
@@ -97,6 +110,17 @@ def create_router() -> APIRouter:
 
         tasks = await db.get_action_tasks(statuses=["pending", "deferred"], limit=limit)
         return [ActionCard(**task) for task in tasks]
+
+    @r.get("/journal", response_model=list[SignalJournalEntry])
+    async def get_signal_journal(
+        limit: int = 20, offset: int = 0
+    ) -> list[SignalJournalEntry]:
+        """Return signal → action → risk audit chain entries."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        rows = await state.db.list_signal_journal(limit=limit, offset=offset)
+        return [SignalJournalEntry(**row) for row in rows]
 
     @r.patch("/actions/{action_id}", response_model=ActionCard)
     async def update_action_status(

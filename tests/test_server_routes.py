@@ -242,6 +242,14 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
             "total_trades": 2,
             "gross_turnover": 24000.0,
         },
+        "evidence_json": {
+            "net_return": 0.12,
+            "gross_return_before_costs": 0.12016,
+            "total_cost": 16.0,
+            "fill_count": 1,
+            "assumptions": ["after-cost metrics include simulated fills"],
+            "limitations": ["paper backtest evidence, not a profit claim"],
+        },
         "fills": [
             {
                 "fill_id": "FILL-1",
@@ -278,10 +286,15 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     assert response.metrics.total_commission == 12.5
     assert response.metrics_json["gross_turnover"] == 24000.0
     assert response.cost_summary_json["total_trades"] == 2
+    assert response.evidence_json["total_cost"] == 16.0
+    assert response.evidence_json["limitations"] == [
+        "paper backtest evidence, not a profit claim"
+    ]
     assert response.fills[0].fill_id == "FILL-1"
     assert response.fills[0].symbol == "600519"
     assert captured_runner_args["db"] is fake_state.db
     assert '"calmar": 2.25' in str(saved_payload["metrics_json"])
+    assert '"evidence_bundle":' in str(saved_payload["metrics_json"])
     assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
 
 
@@ -324,6 +337,7 @@ def test_backtest_result_returns_json_contract_and_empty_fills(monkeypatch):
     assert response.metrics.total_trades == 2
     assert response.metrics_json["calmar"] == 2.25
     assert response.cost_summary_json["total_commission"] == 12.5
+    assert response.evidence_json == {}
     assert response.fills == []
 
 
@@ -3018,8 +3032,8 @@ def test_market_watchlist_prefers_display_name_from_config(monkeypatch):
 
 
 def test_market_watchlist_add_and_remove(monkeypatch):
-    from server.routes import market as market_routes
     from server.bootstrap import resolve_config_path
+    from server.routes import market as market_routes
 
     router = market_routes.create_router()
     add_route = next(
@@ -3116,8 +3130,8 @@ def test_market_watchlist_add_and_remove(monkeypatch):
 
 
 def test_update_data_source_settings_does_not_persist_business_state(monkeypatch):
-    from server.routes import settings as settings_routes
     from server.bootstrap import resolve_config_path
+    from server.routes import settings as settings_routes
 
     router = settings_routes.create_router()
     update_route = next(
@@ -3335,6 +3349,49 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
     assert response.positions[0].asset_class == "fund"
     assert response.allocation[1].symbol == "018125"
     assert response.allocation[1].name == "永赢先进制造智选混合发起C"
+
+
+def test_empty_portfolio_snapshot_does_not_seed_config_initial_cash(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio"
+    )
+
+    class EmptyDb:
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_ledger_entries_sync(self, limit=50, offset=0):
+            return []
+
+        def get_cash_flows_sync(self, limit=1, offset=0):
+            return []
+
+        def get_trades_sync(self, limit=1, offset=0):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=Decimal("100000"),
+            data_source="akshare",
+            tushare_token="",
+        ),
+        db=EmptyDb(),
+        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}, instruments={}),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.cash == 0.0
+    assert response.total_equity == 0.0
+    assert response.total_deposits == 0.0
+    assert response.positions == []
+    assert response.allocation == []
 
 
 def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
@@ -4468,6 +4525,82 @@ def test_signal_actions_return_pending_tasks_after_sync(monkeypatch):
     assert response[0].status == "pending"
     assert ("upsert", 1) in calls
     assert ("get", ("pending", "deferred")) in calls
+
+
+def test_signal_journal_route_returns_auditable_chain(monkeypatch):
+    from server.routes import signals as signal_routes
+
+    router = signal_routes.create_router()
+    journal_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/signals/journal"
+    )
+    endpoint = journal_route.endpoint
+
+    async def fake_list_signal_journal(limit=20, offset=0):
+        assert limit == 20
+        assert offset == 0
+        return [
+            {
+                "signal": {
+                    "id": 1,
+                    "timestamp": "2026-04-18T09:35:00",
+                    "strategy_id": "dual_ma",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "target_weight": 0.2,
+                    "price": 123.45,
+                    "asset_class": "stock",
+                },
+                "action_task": {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "status": "pending",
+                    "title": "建议增持 600519",
+                    "detail": "dual_ma 触发，目标仓位 20%",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "urgency": "high",
+                    "target_weight": 0.2,
+                    "price": 123.45,
+                    "strategy_id": "dual_ma",
+                    "timestamp": "2026-04-18T09:35:00",
+                    "asset_class": "stock",
+                },
+                "risk_decision": {
+                    "decision_id": "RISK-1",
+                    "intent_id": "INTENT-1",
+                    "passed": False,
+                    "symbol": "600519",
+                    "side": "buy",
+                    "reasons": ["max position weight exceeded"],
+                    "severity": "warning",
+                    "timestamp": "2026-04-18T14:50:00",
+                    "payload": {"decision": {"passed": False}},
+                },
+                "latest_event": {
+                    "event_type": "risk.signal.recorded",
+                    "timestamp": "2026-04-18T14:50:00",
+                    "source": "risk_decisions",
+                    "source_ref": "RISK-1",
+                    "payload": {"risk_decision_id": 1},
+                },
+            }
+        ]
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(list_signal_journal=fake_list_signal_journal)
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert len(response) == 1
+    assert response[0].signal.symbol == "600519"
+    assert response[0].action_task.status == "pending"
+    assert response[0].risk_decision.passed is False
+    assert response[0].latest_event.event_type == "risk.signal.recorded"
 
 
 def test_signal_action_status_update_returns_updated_task(monkeypatch):

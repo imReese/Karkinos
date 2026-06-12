@@ -883,6 +883,67 @@ def test_app_database_persists_risk_decision_audit(tmp_path):
     }
 
 
+def test_app_database_lists_signal_journal_entries(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_signal_sync(
+        timestamp="2026-04-18T09:30:00",
+        strategy_id="dual_ma",
+        symbol="600519",
+        direction="buy",
+        target_weight=0.2,
+        price=123.45,
+        asset_class="stock",
+    )
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="600519",
+        title="建议增持 600519",
+        detail="dual_ma 触发，目标仓位 20%",
+        direction="buy",
+        urgency="high",
+        target_weight=0.2,
+        price=123.45,
+        strategy_id="dual_ma",
+        timestamp="2026-04-18T09:30:00",
+        asset_class="stock",
+    )
+    intent = OrderIntentEvent(
+        timestamp=datetime(2026, 4, 18, 14, 50),
+        intent_id="INTENT-1",
+        strategy_id="dual_ma",
+        symbol=Symbol("600519"),
+        side=OrderSide.BUY,
+        target_weight=Decimal("0.20"),
+        quantity=Decimal("100"),
+        reference_price=Decimal("123.45"),
+        source_signal_id="1",
+        reason="journal test",
+    )
+    decision = RiskDecisionEvent(
+        timestamp=intent.timestamp,
+        decision_id="RISK-1",
+        intent_id=intent.intent_id,
+        passed=False,
+        symbol=intent.symbol,
+        side=intent.side,
+        reasons=["max position weight exceeded"],
+        severity="warning",
+    )
+    db.save_risk_decision_sync(intent=intent, decision=decision)
+
+    journal = db.list_signal_journal_sync()
+
+    assert len(journal) == 1
+    entry = journal[0]
+    assert entry["signal"]["id"] == 1
+    assert entry["signal"]["symbol"] == "600519"
+    assert entry["action_task"]["status"] == "pending"
+    assert entry["risk_decision"]["decision_id"] == "RISK-1"
+    assert entry["risk_decision"]["passed"] is False
+    assert entry["latest_event"]["event_type"] == "risk.signal.recorded"
+
+
 def test_app_database_ledger_entries_append_portfolio_events(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

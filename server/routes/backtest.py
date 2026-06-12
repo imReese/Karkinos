@@ -86,6 +86,14 @@ def _backtest_metrics_from_payload(payload: dict[str, Any]) -> BacktestMetrics:
     )
 
 
+def _backtest_evidence_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    evidence_json = _json_object(payload.get("evidence_json"))
+    if evidence_json:
+        return evidence_json
+    metrics_json = _json_object(payload.get("metrics_json"))
+    return _json_object(metrics_json.get("evidence_bundle"))
+
+
 def _run_single_backtest(
     request: BacktestRequest,
     config: Any,
@@ -154,6 +162,13 @@ def _run_single_backtest(
         for ts, eq in result.equity_curve
     ]
     metrics = result.metrics
+    evidence_json = (
+        result.evidence_bundle.to_json_dict()
+        if result.evidence_bundle is not None
+        else {}
+    )
+    metrics_json = metrics.to_json_dict()
+    metrics_json["evidence_bundle"] = evidence_json
 
     return {
         "initial_cash": float(result.initial_cash),
@@ -166,8 +181,9 @@ def _run_single_backtest(
         "win_rate": metrics.win_rate,
         "duration_days": result.duration_days,
         "equity_curve": equity_curve,
-        "metrics_json": metrics.to_json_dict(),
+        "metrics_json": metrics_json,
         "cost_summary_json": result.cost_summary.to_json_dict(),
+        "evidence_json": evidence_json,
         "fills": [_fill_to_response(fill) for fill in result.fills],
     }
 
@@ -195,6 +211,8 @@ def create_router() -> APIRouter:
         config = state.config
 
         bt_result = await asyncio.to_thread(_run_backtest, request, config, state.db)
+        metrics_json = dict(bt_result["metrics_json"])
+        metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
 
         # 保存到数据库
         config_json = request.model_dump_json()
@@ -212,7 +230,7 @@ def create_router() -> APIRouter:
             sortino=bt_result["sortino"],
             win_rate=bt_result["win_rate"],
             duration_days=bt_result["duration_days"],
-            metrics_json=json.dumps(bt_result["metrics_json"], ensure_ascii=False),
+            metrics_json=json.dumps(metrics_json, ensure_ascii=False),
             cost_summary_json=json.dumps(
                 bt_result["cost_summary_json"], ensure_ascii=False
             ),
@@ -224,8 +242,9 @@ def create_router() -> APIRouter:
             config=request,
             metrics=_backtest_metrics_from_payload(bt_result),
             equity_curve=[EquityPoint(**p) for p in bt_result["equity_curve"]],
-            metrics_json=bt_result["metrics_json"],
+            metrics_json=metrics_json,
             cost_summary_json=bt_result["cost_summary_json"],
+            evidence_json=_backtest_evidence_from_payload(bt_result),
             fills=[BacktestFill(**fill) for fill in bt_result.get("fills", [])],
         )
 
@@ -267,6 +286,7 @@ def create_router() -> APIRouter:
         equity_data = json.loads(row.get("equity_curve_json", "[]"))
         metrics_json = _json_object(row.get("metrics_json"))
         cost_summary_json = _json_object(row.get("cost_summary_json"))
+        evidence_json = _json_object(metrics_json.get("evidence_bundle"))
         metrics_payload = {
             **row,
             "metrics_json": metrics_json,
@@ -281,6 +301,7 @@ def create_router() -> APIRouter:
             equity_curve=[EquityPoint(**p) for p in equity_data],
             metrics_json=metrics_json,
             cost_summary_json=cost_summary_json,
+            evidence_json=evidence_json,
             fills=[],
         )
 
@@ -328,6 +349,8 @@ def create_router() -> APIRouter:
             bt_result = await asyncio.to_thread(
                 _run_single_backtest, bt_request, config, state.db
             )
+            metrics_json = dict(bt_result["metrics_json"])
+            metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
 
             # 保存到数据库
             config_json = bt_request.model_dump_json()
@@ -344,7 +367,7 @@ def create_router() -> APIRouter:
                 sortino=bt_result["sortino"],
                 win_rate=bt_result["win_rate"],
                 duration_days=bt_result["duration_days"],
-                metrics_json=json.dumps(bt_result["metrics_json"], ensure_ascii=False),
+                metrics_json=json.dumps(metrics_json, ensure_ascii=False),
                 cost_summary_json=json.dumps(
                     bt_result["cost_summary_json"], ensure_ascii=False
                 ),

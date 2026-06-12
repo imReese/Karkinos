@@ -30,8 +30,23 @@ def generate_report(result: BacktestResult) -> str:
         f"总滑点成本: {result.cost_summary.total_slippage:>14,.2f} CNY",
         f"回测天数:   {result.duration_days:>14d}",
         "-" * 50,
-        "持仓:",
+        "成本后证据:",
     ]
+
+    if result.evidence_bundle is not None:
+        evidence = result.evidence_bundle
+        lines.extend(
+            [
+                f"  成本后收益率:     {evidence.net_return * 100:>10.2f}%",
+                f"  成本前估算收益率: {evidence.gross_return_before_costs * 100:>10.2f}%",
+                f"  总成本:           {evidence.total_cost:>10,.2f} CNY",
+                f"  成本占初始资金:   {evidence.cost_to_initial_cash * 100:>10.2f}%",
+                f"  成交笔数:         {evidence.fill_count:>10d}",
+                "  限制: " + "；".join(evidence.limitations),
+            ]
+        )
+
+    lines.extend(["-" * 50, "持仓:"])
 
     for symbol, pos in result.positions.items():
         if pos.quantity > 0:

@@ -9,7 +9,11 @@ from decimal import Decimal
 
 import pandas as pd
 
-from analytics.backtest_metrics import calculate_backtest_metrics, summarize_fill_costs
+from analytics.backtest_metrics import (
+    build_after_cost_evidence,
+    calculate_backtest_metrics,
+    summarize_fill_costs,
+)
 from backtest.result import BacktestResult
 from core.clock import SimulatedClock
 from core.event_bus import EventBus
@@ -325,6 +329,11 @@ class BacktestEngine:
             final_equity=final_equity,
             cost_summary=cost_summary,
         )
+        evidence_bundle = build_after_cost_evidence(
+            initial_cash=self.initial_cash,
+            final_equity=final_equity,
+            cost_summary=cost_summary,
+        )
         return BacktestResult(
             equity_curve=self.portfolio.equity_curve,
             positions=self.portfolio.positions,
@@ -333,4 +342,5 @@ class BacktestEngine:
             metrics=metrics,
             fills=list(self.fills),
             cost_summary=cost_summary,
+            evidence_bundle=evidence_bundle,
         )

@@ -28,7 +28,7 @@ class Portfolio:
     def __init__(
         self,
         event_bus: EventBus,
-        initial_cash: Decimal = Decimal("100000"),
+        initial_cash: Decimal = Decimal("0"),
     ) -> None:
         self.event_bus = event_bus
         self.cash = initial_cash

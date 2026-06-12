@@ -202,6 +202,31 @@ class TestDataManager:
         assert loaded is not None
         assert len(loaded) > 0
 
+    def test_store_meta_records_actual_provider_after_fallback(self, tmp_path):
+        """写入缓存的元数据应记录实际成功的数据源，而不是请求的主源。"""
+        from data.store import DataStore
+
+        primary = FailingSource("tushare")
+        fallback = MockSource("akshare")
+        store = DataStore(str(tmp_path / "store"))
+        manager = DataManager(
+            {"tushare": primary, "akshare": fallback},
+            store=store,
+            default_source="tushare",
+        )
+
+        manager.get_bars(
+            Symbol("601985"),
+            start=_TEST_START,
+            end=_TEST_END,
+            asset_class=AssetClass.STOCK,
+        )
+
+        meta = store.get_meta(Symbol("601985"), BarFrequency.DAILY)
+        assert meta is not None
+        assert meta["provider_name"] == "akshare"
+        assert meta["data_source"] == "akshare"
+
     def test_remote_fetch_falls_back_to_akshare_when_primary_returns_empty(self):
         """主数据源返回空结果时也应 fallback 到 AKShare。"""
         primary = EmptySource("tushare")

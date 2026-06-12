@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
+from analytics import backtest_metrics
 from analytics.backtest_metrics import (
     CostSummary,
     calculate_backtest_metrics,
@@ -74,3 +75,40 @@ def test_summarize_fill_costs_aggregates_commission_slippage_and_turnover():
     assert summary.total_slippage == Decimal("3")
     assert summary.total_trades == 2
     assert summary.gross_turnover == Decimal("2100")
+
+
+def test_build_after_cost_evidence_separates_gross_and_net_results():
+    cost_summary = CostSummary(
+        total_commission=Decimal("8"),
+        total_slippage=Decimal("2"),
+        total_trades=2,
+        gross_turnover=Decimal("2100"),
+    )
+
+    evidence = backtest_metrics.build_after_cost_evidence(
+        initial_cash=Decimal("1000"),
+        final_equity=Decimal("1100"),
+        cost_summary=cost_summary,
+        assumptions=["commission model: test"],
+        limitations=["no liquidity model"],
+    )
+
+    assert evidence.net_pnl == Decimal("100")
+    assert evidence.total_cost == Decimal("10")
+    assert evidence.gross_pnl_before_costs == Decimal("110")
+    assert evidence.net_return == Decimal("0.1")
+    assert evidence.gross_return_before_costs == Decimal("0.11")
+    assert evidence.cost_to_initial_cash == Decimal("0.01")
+    assert evidence.fill_count == 2
+    assert evidence.to_json_dict() == {
+        "net_pnl": 100.0,
+        "total_cost": 10.0,
+        "gross_pnl_before_costs": 110.0,
+        "net_return": 0.1,
+        "gross_return_before_costs": 0.11,
+        "cost_to_initial_cash": 0.01,
+        "fill_count": 2,
+        "gross_turnover": 2100.0,
+        "assumptions": ["commission model: test"],
+        "limitations": ["no liquidity model"],
+    }
