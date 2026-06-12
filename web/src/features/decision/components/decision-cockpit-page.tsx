@@ -1,0 +1,376 @@
+import { useMemo } from 'react';
+
+import { useCopy } from '../../../app/copy';
+import {
+  formatCurrency,
+  formatPercent,
+  formatPrice,
+  formatTimestamp,
+} from '../../../shared/format';
+import {
+  useIntradayDecisionQuery,
+  useTodayDecisionQuery,
+  type DecisionCandidate,
+  type DecisionResponse,
+} from '../api';
+
+function normalizeStatus(value: string | null | undefined) {
+  return (value ?? 'unknown').replace(/_/g, ' ');
+}
+
+function decisionTone(value: string) {
+  if (value === 'passed' || value === 'attached' || value === 'live') {
+    return 'success';
+  }
+  if (
+    value === 'blocked' ||
+    value === 'failed' ||
+    value === 'missing' ||
+    value === 'not_attached'
+  ) {
+    return 'danger';
+  }
+  return 'warning';
+}
+
+function evidenceStatus(candidate: DecisionCandidate) {
+  return candidate.evidence.after_cost_oos_validation.status;
+}
+
+function manualStatus(candidate: DecisionCandidate) {
+  if (
+    candidate.manual_confirmation_status === 'ready_for_manual_confirmation'
+  ) {
+    return 'ready for confirmation';
+  }
+  return normalizeStatus(candidate.manual_confirmation_status);
+}
+
+export function DecisionCockpitPage() {
+  const copy = useCopy();
+  const labels = copy.decision;
+  const today = useTodayDecisionQuery();
+  const intraday = useIntradayDecisionQuery();
+  const loading = today.isLoading || intraday.isLoading;
+  const error = today.error ?? intraday.error;
+  const lanes = useMemo(
+    () =>
+      [today.data, intraday.data].filter((item): item is DecisionResponse =>
+        Boolean(item),
+      ),
+    [intraday.data, today.data],
+  );
+
+  if (loading) {
+    return (
+      <section className="space-y-5">
+        <PageHeader title={labels.title} subtitle={labels.subtitle} />
+        <StatePanel title={copy.states.loading} detail={labels.loading} />
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="space-y-5">
+        <PageHeader title={labels.title} subtitle={labels.subtitle} />
+        <StatePanel
+          title={copy.states.error}
+          detail={error instanceof Error ? error.message : labels.error}
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-5 sm:space-y-6">
+      <PageHeader title={labels.title} subtitle={labels.subtitle} />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {lanes.map((lane) => (
+          <LaneStatusTile key={lane.lane} lane={lane} />
+        ))}
+        <SummaryTile
+          label={labels.marketHealth}
+          value={`Market health: ${
+            today.data?.summary.market_data?.source_health ?? '--'
+          }`}
+          detail={labels.quotesDetail(
+            today.data?.summary.market_data?.live_quote_count ?? 0,
+            today.data?.summary.market_data?.stale_quote_count ?? 0,
+          )}
+        />
+        <SummaryTile
+          label={labels.portfolio}
+          value={`${labels.portfolioEquity}: ${formatCurrency(
+            today.data?.summary.portfolio?.total_equity,
+          )}`}
+          detail={labels.positionCount(
+            today.data?.summary.portfolio?.position_count ?? 0,
+          )}
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        {lanes.map((lane) => (
+          <DecisionLanePanel key={lane.lane} lane={lane} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  const labels = useCopy().decision;
+  return (
+    <header className="app-page-header pb-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">{labels.kicker}</div>
+          <h1 className="app-page-title mt-2">{title}</h1>
+        </div>
+        <p className="app-page-subtitle sm:max-w-xl sm:text-right">
+          {subtitle}
+        </p>
+      </div>
+    </header>
+  );
+}
+
+function StatePanel({ title, detail }: { title: string; detail: string }) {
+  return (
+    <section className="app-terminal-panel rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner rounded-[27px] p-5">
+        <h2 className="app-card-title">{title}</h2>
+        <p className="app-muted mt-2 text-sm">{detail}</p>
+      </div>
+    </section>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="app-card rounded-[22px] p-4">
+      <div className="app-product-mark">{label}</div>
+      <div className="mt-2 text-base font-semibold text-[var(--app-text)]">
+        {value}
+      </div>
+      <div className="app-muted mt-1 text-xs">{detail}</div>
+    </div>
+  );
+}
+
+function LaneStatusTile({ lane }: { lane: DecisionResponse }) {
+  const labels = useCopy().decision;
+  return (
+    <SummaryTile
+      label={lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane}
+      value={`${labels.decision}: ${lane.decision}`}
+      detail={labels.candidateCount(lane.summary.candidate_count)}
+    />
+  );
+}
+
+function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
+  const labels = useCopy().decision;
+  const laneLabel =
+    lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
+  return (
+    <section className="app-terminal-panel overflow-hidden rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="app-product-mark">{laneLabel}</div>
+            <h2 className="app-card-title mt-1.5">
+              {labels.decision}: {lane.decision}
+            </h2>
+            <p className="app-muted mt-2 text-sm">
+              {labels.generatedAt}: {formatTimestamp(lane.generated_at)}
+            </p>
+          </div>
+          <div className="grid gap-1 text-left text-xs sm:text-right">
+            <span>
+              {labels.riskBlocked}: {lane.summary.risk_blocked_count}
+            </span>
+            <span>
+              {labels.manualReady}:{' '}
+              {lane.summary.ready_for_manual_confirmation_count}
+            </span>
+            {lane.summary.excluded_daily_count !== undefined ? (
+              <span>
+                {labels.excludedDaily}: {lane.summary.excluded_daily_count}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {lane.candidates.length > 0 ? (
+          <div className="mt-5 grid gap-3">
+            {lane.candidates.map((candidate) => (
+              <DecisionCandidateCard
+                key={`${lane.lane}-${candidate.action_id ?? candidate.symbol}`}
+                candidate={candidate}
+              />
+            ))}
+          </div>
+        ) : (
+          <NoActionReasons reasons={lane.no_action_reasons} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function NoActionReasons({ reasons }: { reasons: string[] }) {
+  const labels = useCopy().decision;
+  return (
+    <div className="mt-5 rounded-[20px] border border-[color-mix(in_srgb,var(--app-border)_50%,transparent)] p-4">
+      <div className="text-sm font-semibold">{labels.noActionReasons}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {(reasons.length ? reasons : [labels.noActionUnavailable]).map(
+          (reason) => (
+            <span
+              key={reason}
+              className="rounded-full border border-[var(--app-accent-border)] px-3 py-1 text-xs text-[var(--app-muted)]"
+            >
+              {reason}
+            </span>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DecisionCandidateCard({
+  candidate,
+}: {
+  candidate: DecisionCandidate;
+}) {
+  const labels = useCopy().decision;
+  const readyForManual =
+    candidate.manual_confirmation_status === 'ready_for_manual_confirmation';
+  return (
+    <article className="rounded-[22px] border border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_58%,transparent)] p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-[var(--app-text)]">
+              {candidate.symbol}
+            </span>
+            <StatusPill value={candidate.action} />
+            <StatusPill
+              value={candidate.risk_gate_status}
+              prefix={labels.riskGate}
+            />
+          </div>
+          <p className="app-muted mt-2 text-sm">
+            {candidate.detail || candidate.title || labels.noDetail}
+          </p>
+        </div>
+        {readyForManual ? (
+          <a
+            className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-2xl px-4 text-sm font-semibold"
+            href="/trading"
+            aria-label={`${labels.openTradingApprovals}: ${candidate.symbol}`}
+          >
+            {labels.openTradingApprovals}
+          </a>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+        <EvidenceLine
+          label={labels.manual}
+          value={manualStatus(candidate)}
+          tone={readyForManual ? 'success' : 'warning'}
+        />
+        <EvidenceLine
+          label={labels.afterCostOos}
+          value={evidenceStatus(candidate)}
+          tone={decisionTone(evidenceStatus(candidate))}
+        />
+        <EvidenceLine
+          label={labels.dataFreshness}
+          value={candidate.evidence.data_freshness.status}
+          tone={decisionTone(candidate.evidence.data_freshness.status)}
+        />
+        <EvidenceLine
+          label={labels.journal}
+          value={candidate.evidence.journal.latest_event_type ?? '--'}
+          tone={
+            candidate.evidence.journal.has_journal_entry ? 'success' : 'warning'
+          }
+        />
+        <EvidenceLine
+          label={labels.strategy}
+          value={candidate.evidence.strategy.strategy_id ?? '--'}
+        />
+        <EvidenceLine
+          label={labels.targetWeight}
+          value={formatPercent(candidate.target_weight)}
+        />
+        <EvidenceLine
+          label={labels.price}
+          value={formatPrice(candidate.price)}
+        />
+        <EvidenceLine
+          label={labels.riskDecision}
+          value={String(candidate.evidence.risk_gate.decision_id ?? '--')}
+        />
+      </div>
+    </article>
+  );
+}
+
+function StatusPill({ value, prefix }: { value: string; prefix?: string }) {
+  const tone = decisionTone(value);
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+        tone === 'success'
+          ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
+          : tone === 'danger'
+            ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]'
+            : 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
+      }`}
+    >
+      {prefix ? `${prefix}: ${normalizeStatus(value)}` : normalizeStatus(value)}
+    </span>
+  );
+}
+
+function EvidenceLine({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'success' | 'warning' | 'danger';
+}) {
+  const textColor =
+    tone === 'success'
+      ? 'text-[var(--app-success)]'
+      : tone === 'danger'
+        ? 'text-[var(--app-danger)]'
+        : tone === 'warning'
+          ? 'text-[var(--app-warning)]'
+          : 'text-[var(--app-text)]';
+  return (
+    <div className="rounded-2xl bg-[color-mix(in_srgb,var(--app-mantle)_42%,transparent)] px-3 py-2">
+      <div className="app-muted text-[11px] uppercase">{label}</div>
+      <div className={`mt-1 text-sm font-semibold ${textColor}`}>
+        {label}: {value}
+      </div>
+    </div>
+  );
+}

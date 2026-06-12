@@ -210,6 +210,7 @@ test('renders portfolio workspace navigation', async () => {
   expect(await screen.findByText('Portfolio')).toBeTruthy();
   expect(await screen.findByText('Activity')).toBeTruthy();
   expect(await screen.findByText('Risk')).toBeTruthy();
+  expect(await screen.findByText('Decision')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(await screen.findByText('Trading')).toBeTruthy();
   expect(await screen.findByText('Backtest')).toBeTruthy();
@@ -252,6 +253,7 @@ test('switches interface language from english to chinese', async () => {
   expect(await screen.findByText('组合')).toBeTruthy();
   expect(await screen.findByText('流水')).toBeTruthy();
   expect(await screen.findByText('风险')).toBeTruthy();
+  expect(await screen.findByText('决策')).toBeTruthy();
   expect(await screen.findByText('全局工具栏')).toBeTruthy();
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
 });

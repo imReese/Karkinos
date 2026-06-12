@@ -201,7 +201,7 @@ cd web && npm install && cd ..
 ./scripts/start_server.sh prod --host 0.0.0.0 --port 8000
 ```
 
-访问 <http://localhost:8000> 打开 Web 仪表盘。这个地址是产品/客户入口，刷新或直接打开 `/portfolio`、`/activity`、`/risk`、`/market`、`/settings` 等页面时，后端会返回前端应用入口并保留当前 URL。
+访问 <http://localhost:8000> 打开 Web 仪表盘。这个地址是产品/客户入口，刷新或直接打开 `/portfolio`、`/activity`、`/risk`、`/decision`、`/market`、`/settings` 等页面时，后端会返回前端应用入口并保留当前 URL。
 
 开发模式下，启动脚本会同时拉起后端和前端：
 
@@ -544,6 +544,7 @@ React + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 | Portfolio | `/portfolio` | 持仓明细、资产筛选、配置分组 |
 | Activity | `/activity` | 交易、分红、现金流、手工调整流水 |
 | Risk | `/risk` | 风险指标、回撤、集中度、权益解释 |
+| Decision | `/decision` | 日级 / 盘中候选动作、风控、证据和人工确认入口 |
 | Market | `/market` | 研究看板、关注列表、K 线与研究笔记 |
 | Settings | `/settings` | 设置入口 |
 
