@@ -385,7 +385,9 @@ review notes 作为不可变审计事件写入 journal。它不会修改 action 
 
 `GET /api/decision/today` 聚合已有 action task、风控闸门状态、signal journal
 和最新 quote freshness，输出 `buy`、`sell`、`hold`、`rebalance`、`no_action`
-或 `review_required`。它只读现有事实，不创建订单、不提交券商，也不改变人工确认默认值。
+或 `review_required`。候选动作会按 `strategy_id` 附上最新已保存回测的
+after-cost / 样本外验证证据；如果没有匹配证据，会显式返回缺失原因。它只读现有事实，
+不创建订单、不提交券商，也不改变人工确认默认值。
 
 `GET /api/decision/intraday` 复用相同证据包，但只把股票和常见场内 ETF 代码纳入
 盘中候选动作；场外基金 / 长期配置 action 会被排除并留给日级 lane。该接口用于

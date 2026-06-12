@@ -373,9 +373,11 @@ change an action task, create an order, submit to a broker, or mark a fill.
 
 `GET /api/decision/today` aggregates existing action tasks, risk-gate state,
 signal journal entries, and latest quote freshness into `buy`, `sell`, `hold`,
-`rebalance`, `no_action`, or `review_required`. It reads existing facts only:
-it does not create orders, submit to a broker, or change the manual-confirmation
-default.
+`rebalance`, `no_action`, or `review_required`. Candidate actions attach the
+latest saved after-cost / out-of-sample validation evidence for the same
+`strategy_id`; when no matching evidence exists, the response carries an
+explicit missing-evidence reason. It reads existing facts only: it does not
+create orders, submit to a broker, or change the manual-confirmation default.
 
 `GET /api/decision/intraday` uses the same evidence-bundle shape but only admits
 stock and common exchange-traded ETF candidates. Open-end fund and long-horizon
