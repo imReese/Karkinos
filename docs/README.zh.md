@@ -463,6 +463,10 @@ React + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 | Market | `/market` | 研究看板、关注列表、K 线与研究笔记 |
 | Settings | `/settings` | 设置入口 |
 
+初始界面不会内置任何看起来像用户资产、交易或基金名称的有效数据。
+资产、持仓和流水来自本地数据库或显式私有运行配置；例如 Activity 的批量基金加仓候选
+来自已持有基金仓位，而不是前端硬编码默认基金。
+
 ### 开发
 
 ```bash

@@ -446,10 +446,16 @@ React 19 + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vi
 |------|------|-------------|
 | DashboardView | `/` | Dashboard, portfolio overview + live indicators |
 | PortfolioView | `/portfolio` | Position details + allocation pie chart |
+| ActivityView | `/activity` | Trades, dividends, cash flows, and manual adjustments |
 | MarketView | `/market` | Market quotes + K-line chart |
 | SignalsView | `/signals` | Signal history + signal badges |
 | BacktestView | `/backtest` | Run backtest + equity curve |
 | SettingsView | `/settings` | Config management + live control + notification test |
+
+Initial screens do not seed effective user assets, trades, or fund names.
+Portfolio assets, holdings, and ledger activity come from the local database or
+explicit private runtime configuration; Activity batch fund candidates are
+derived from held fund positions instead of frontend defaults.
 
 ### Development
 

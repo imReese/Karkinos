@@ -235,3 +235,12 @@ Secondary metrics:
 * number of unsafe trades blocked by risk gate
 * time from idea to reproducible backtest
 * strategy promotion pass rate
+
+<!-- codex-progress:start -->
+## Codex Progress
+
+* 2026-06-12: Removed the Activity batch fund form's built-in fund candidates.
+  Batch fund candidates now come from held fund positions, preserving an empty
+  initial state until portfolio data exists in the database or explicit private
+  runtime configuration.
+<!-- codex-progress:end -->
