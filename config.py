@@ -15,7 +15,7 @@ _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 class BacktestConfig:
     """回测配置。"""
 
-    initial_cash: Decimal = Decimal("100000")
+    initial_cash: Decimal = Decimal("0")
     start_date: str = "2025-01-02"
     end_date: str = field(default_factory=lambda: _DEFAULT_END_DATE)
     # Backtest-only and legacy migration inputs. Live watchlists and asset

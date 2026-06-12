@@ -1,8 +1,10 @@
 """分析层。"""
 
 from analytics.backtest_metrics import (
+    AfterCostEvidence,
     BacktestMetrics,
     CostSummary,
+    build_after_cost_evidence,
     calculate_backtest_metrics,
     summarize_fill_costs,
 )
@@ -22,8 +24,10 @@ __all__ = [
     "WinRate",
     "AnnualizedReturn",
     "EquityCurve",
+    "AfterCostEvidence",
     "BacktestMetrics",
     "CostSummary",
+    "build_after_cost_evidence",
     "calculate_backtest_metrics",
     "summarize_fill_costs",
 ]

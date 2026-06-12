@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-import json
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 
-from core.types import AssetClass, BarFrequency, ZERO, Symbol
+from core.types import ZERO, AssetClass, BarFrequency, Symbol
+from server.ledger.models import LedgerEntry
 from server.models import (
-    AccountStateResponse,
     AccountOverview,
+    AccountStateResponse,
     ActivityItem,
     AllocationGroup,
     AllocationItem,
@@ -32,8 +33,8 @@ from server.models import (
     LiveHoldingGroupResponse,
     LiveHoldingItemResponse,
     LiveHoldingsResponse,
-    PortfolioSnapshot,
     PendingFundOrderResponse,
+    PortfolioSnapshot,
     PositionResponse,
     RiskConcentrationItem,
     RiskDrawdownPoint,
@@ -45,7 +46,6 @@ from server.models import (
     TradeCreate,
     TradeResponse,
 )
-from server.ledger.models import LedgerEntry
 from server.projections.service import (
     build_equity_curve_from_db,
     build_equity_series_from_db,
@@ -53,8 +53,8 @@ from server.projections.service import (
     build_portfolio_projection_from_db,
 )
 from server.services.account_state import build_account_state_projection
-from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
@@ -142,8 +142,8 @@ def _resolve_fund_buy_fill(
     gross_amount: float,
     commission: float,
 ) -> dict:
-    from data.manager import build_sources
     from core.types import AssetClass, BarFrequency, Symbol
+    from data.manager import build_sources
 
     submitted_at = datetime.fromisoformat(timestamp)
     target_date = submitted_at.date()
@@ -206,8 +206,8 @@ def _resolve_fund_buy_fill(
 
 
 def _resolve_fund_identity(state, symbol: str) -> dict[str, str]:
-    from data.manager import build_sources
     from core.types import Symbol
+    from data.manager import build_sources
 
     sources = build_sources(
         data_source=getattr(state.config, "data_source", "akshare"),
@@ -2068,8 +2068,8 @@ def create_router() -> APIRouter:
 
         if portfolio is None:
             return PortfolioSnapshot(
-                cash=float(state.config.initial_cash),
-                total_equity=float(state.config.initial_cash),
+                cash=0.0,
+                total_equity=0.0,
                 total_deposits=0.0,
                 positions=[],
                 allocation=[],

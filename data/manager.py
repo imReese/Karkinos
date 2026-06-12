@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta
 
 import pandas as pd
+
 from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
 from data.source import DataSource
@@ -156,7 +157,9 @@ class DataManager:
                 )
 
         if not allow_remote_refresh:
-            logger.info("远端刷新已禁用，返回空缓存结果: %s (%s)", symbol, frequency.value)
+            logger.info(
+                "远端刷新已禁用，返回空缓存结果: %s (%s)", symbol, frequency.value
+            )
             return DataHandler(
                 self._empty_bars(),
                 symbol,
@@ -244,6 +247,9 @@ class DataManager:
                 )
                 continue
             if df is not None and not df.empty:
+                df = df.copy()
+                df.attrs["provider_name"] = candidate_name
+                df.attrs["data_source"] = candidate_name
                 if candidate_name != (source_name or self.default_source):
                     logger.info(
                         "远端数据源 fallback 成功: %s -> %s for %s (%s)",

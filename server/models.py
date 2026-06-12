@@ -408,6 +408,41 @@ class ActionCard(BaseModel):
     status: str = "pending"
 
 
+class SignalJournalRiskDecision(BaseModel):
+    id: int | None = None
+    decision_id: str
+    intent_id: str | None = None
+    timestamp: str
+    passed: bool
+    symbol: str
+    side: str
+    reasons: list[str] = Field(default_factory=list)
+    resulting_order_id: str | None = None
+    severity: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class SignalJournalEvent(BaseModel):
+    id: int | None = None
+    event_type: str
+    timestamp: str
+    entity_type: str | None = None
+    entity_id: str | None = None
+    source: str
+    source_ref: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    payload_json: str | None = None
+    created_at: str | None = None
+
+
+class SignalJournalEntry(BaseModel):
+    signal: SignalResponse
+    action_task: ActionCard | None = None
+    risk_decision: SignalJournalRiskDecision | None = None
+    latest_event: SignalJournalEvent | None = None
+
+
 class CashFlowCreate(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     amount: float
@@ -629,6 +664,7 @@ class BacktestResponse(BaseModel):
     equity_curve: list[EquityPoint]
     metrics_json: dict[str, Any] = Field(default_factory=dict)
     cost_summary_json: dict[str, Any] = Field(default_factory=dict)
+    evidence_json: dict[str, Any] = Field(default_factory=dict)
     fills: list[BacktestFill] = Field(default_factory=list)
 
 
@@ -667,7 +703,7 @@ class SettingsResponse(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     live_auto_start: bool = True
-    initial_cash: float = 100_000
+    initial_cash: float = 0
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     assets: list[dict[str, Any]] = Field(default_factory=list)

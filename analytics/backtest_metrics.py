@@ -37,6 +37,36 @@ class CostSummary:
 
 
 @dataclass(frozen=True)
+class AfterCostEvidence:
+    """Audit-friendly evidence for after-cost backtest results."""
+
+    net_pnl: Decimal
+    total_cost: Decimal
+    gross_pnl_before_costs: Decimal
+    net_return: Decimal
+    gross_return_before_costs: Decimal
+    cost_to_initial_cash: Decimal
+    fill_count: int
+    gross_turnover: Decimal
+    assumptions: list[str]
+    limitations: list[str]
+
+    def to_json_dict(self) -> dict[str, float | int | list[str]]:
+        return {
+            "net_pnl": float(self.net_pnl),
+            "total_cost": float(self.total_cost),
+            "gross_pnl_before_costs": float(self.gross_pnl_before_costs),
+            "net_return": float(self.net_return),
+            "gross_return_before_costs": float(self.gross_return_before_costs),
+            "cost_to_initial_cash": float(self.cost_to_initial_cash),
+            "fill_count": self.fill_count,
+            "gross_turnover": float(self.gross_turnover),
+            "assumptions": list(self.assumptions),
+            "limitations": list(self.limitations),
+        }
+
+
+@dataclass(frozen=True)
 class BacktestMetrics:
     """Core risk-adjusted metrics for a backtest."""
 
@@ -76,6 +106,50 @@ def summarize_fill_costs(fills: list[FillEvent]) -> CostSummary:
         total_slippage=total_slippage,
         total_trades=len(fills),
         gross_turnover=gross_turnover,
+    )
+
+
+def build_after_cost_evidence(
+    *,
+    initial_cash: Decimal,
+    final_equity: Decimal,
+    cost_summary: CostSummary,
+    assumptions: list[str] | None = None,
+    limitations: list[str] | None = None,
+) -> AfterCostEvidence:
+    """Build a reproducible, after-cost evidence bundle for backtest outputs."""
+    total_cost = cost_summary.total_commission + cost_summary.total_slippage
+    net_pnl = final_equity - initial_cash
+    gross_pnl_before_costs = net_pnl + total_cost
+
+    if initial_cash == Decimal("0"):
+        net_return = Decimal("0")
+        gross_return_before_costs = Decimal("0")
+        cost_to_initial_cash = Decimal("0")
+    else:
+        net_return = net_pnl / initial_cash
+        gross_return_before_costs = gross_pnl_before_costs / initial_cash
+        cost_to_initial_cash = total_cost / initial_cash
+
+    return AfterCostEvidence(
+        net_pnl=net_pnl,
+        total_cost=total_cost,
+        gross_pnl_before_costs=gross_pnl_before_costs,
+        net_return=net_return,
+        gross_return_before_costs=gross_return_before_costs,
+        cost_to_initial_cash=cost_to_initial_cash,
+        fill_count=cost_summary.total_trades,
+        gross_turnover=cost_summary.gross_turnover,
+        assumptions=assumptions
+        or [
+            "Backtest results are calculated after simulated commissions and slippage.",
+            "Gross values are reconstructed by adding recorded costs back to net PnL.",
+        ],
+        limitations=limitations
+        or [
+            "Backtest evidence is not a profitability claim.",
+            "Liquidity, market impact, and rejected-live-order effects may differ from simulation.",
+        ],
     )
 
 

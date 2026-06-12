@@ -333,6 +333,97 @@ class AppDatabase:
         """获取最新信号。"""
         return await self.get_signals(limit=limit, offset=0)
 
+    async def list_signal_journal(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Async wrapper for the signal journal audit view."""
+        return self.list_signal_journal_sync(limit=limit, offset=offset)
+
+    def list_signal_journal_sync(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """List signal → action task → risk decision journal entries."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            signal_rows = conn.execute(
+                """
+                SELECT *
+                FROM signals
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
+            action_rows = conn.execute("""
+                SELECT *
+                FROM action_tasks
+                WHERE source_signal_id IN (
+                    SELECT id FROM signals
+                )
+                ORDER BY updated_at DESC, id DESC
+                """).fetchall()
+            risk_rows = conn.execute("""
+                SELECT *
+                FROM risk_decisions
+                ORDER BY timestamp DESC, id DESC
+                """).fetchall()
+            event_rows = conn.execute("""
+                SELECT *
+                FROM event_log
+                WHERE source IN ('action_tasks', 'risk_decisions')
+                ORDER BY timestamp DESC, id DESC
+                """).fetchall()
+
+        actions_by_signal: dict[int, dict[str, Any]] = {}
+        for row in action_rows:
+            action = dict(row)
+            source_signal_id = action.get("source_signal_id")
+            if (
+                source_signal_id is not None
+                and int(source_signal_id) not in actions_by_signal
+            ):
+                actions_by_signal[int(source_signal_id)] = action
+
+        risks_by_signal: dict[int, dict[str, Any]] = {}
+        for row in risk_rows:
+            risk = dict(row)
+            payload = _json_dict(risk.get("payload_json"))
+            source_signal_id = payload.get("intent", {}).get("source_signal_id")
+            if source_signal_id is None:
+                continue
+            signal_id = int(source_signal_id)
+            if signal_id not in risks_by_signal:
+                risk["payload"] = payload
+                risk["reasons"] = _json_list(risk.get("reasons_json"))
+                risk["passed"] = bool(risk.get("passed"))
+                risks_by_signal[signal_id] = risk
+
+        latest_events = [_event_log_response(row) for row in event_rows]
+        entries: list[dict[str, Any]] = []
+        for row in signal_rows:
+            signal = dict(row)
+            signal_id = int(signal["id"])
+            action = actions_by_signal.get(signal_id)
+            risk = risks_by_signal.get(signal_id)
+            entries.append(
+                {
+                    "signal": signal,
+                    "action_task": action,
+                    "risk_decision": (
+                        _risk_decision_journal_response(risk)
+                        if risk is not None
+                        else None
+                    ),
+                    "latest_event": _latest_signal_journal_event(
+                        signal_id=signal_id,
+                        action_task=action,
+                        risk_decision=risk,
+                        events=latest_events,
+                    ),
+                }
+            )
+        return entries
+
     # ---------- Action Tasks ----------
 
     def upsert_action_task_sync(
@@ -2868,6 +2959,73 @@ def _action_task_event_payload(row: sqlite3.Row) -> dict[str, Any]:
         "asset_class": row["asset_class"],
         "status": row["status"],
     }
+
+
+def _risk_decision_journal_response(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "decision_id": row["decision_id"],
+        "intent_id": row["intent_id"],
+        "timestamp": row["timestamp"],
+        "passed": bool(row["passed"]),
+        "symbol": row["symbol"],
+        "side": row["side"],
+        "reasons": row.get("reasons") or _json_list(row.get("reasons_json")),
+        "resulting_order_id": row["resulting_order_id"],
+        "severity": row["severity"],
+        "payload": row.get("payload") or _json_dict(row.get("payload_json")),
+        "created_at": row["created_at"],
+    }
+
+
+def _event_log_response(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    event = dict(row)
+    event["payload"] = _json_dict(event.get("payload_json"))
+    return event
+
+
+def _latest_signal_journal_event(
+    *,
+    signal_id: int,
+    action_task: dict[str, Any] | None,
+    risk_decision: dict[str, Any] | None,
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    action_ref = str(action_task["id"]) if action_task is not None else None
+    risk_ref = str(risk_decision["decision_id"]) if risk_decision is not None else None
+    for event in events:
+        if event["source"] == "risk_decisions" and event["source_ref"] == risk_ref:
+            return event
+        if event["source"] == "action_tasks" and event["source_ref"] == action_ref:
+            return event
+        payload = event.get("payload", {})
+        if payload.get("source_signal_id") == signal_id:
+            return event
+    return None
+
+
+def _json_dict(value) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _json_list(value) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if not value:
+        return []
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:

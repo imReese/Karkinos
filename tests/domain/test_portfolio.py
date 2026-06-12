@@ -12,6 +12,13 @@ from domain.instrument import make_stock
 from domain.portfolio import Portfolio
 
 
+def test_portfolio_defaults_to_no_real_cash() -> None:
+    portfolio = Portfolio(EventBus())
+
+    assert portfolio.cash == Decimal("0")
+    assert portfolio.initial_cash == Decimal("0")
+
+
 def test_signal_emits_order_intent_not_order_event() -> None:
     bus = EventBus()
     symbol = Symbol("600519")
