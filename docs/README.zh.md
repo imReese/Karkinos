@@ -389,6 +389,10 @@ review notes 作为不可变审计事件写入 journal。它不会修改 action 
 after-cost / 样本外验证证据；如果没有匹配证据，会显式返回缺失原因。它只读现有事实，
 不创建订单、不提交券商，也不改变人工确认默认值。
 
+决策摘要的 `summary` 字段同时包含组合现金 / 持仓 / 权益概览、latest quote 缓存健康、
+action task 状态计数，以及 signal / journal / risk-gate 审计计数，便于驾驶舱解释
+“为什么行动或不行动”。
+
 `GET /api/decision/intraday` 复用相同证据包，但只把股票和常见场内 ETF 代码纳入
 盘中候选动作；场外基金 / 长期配置 action 会被排除并留给日级 lane。该接口用于
 分钟级或轮询级驾驶舱展示，不是高频或毫秒级交易系统，也不会自动执行。

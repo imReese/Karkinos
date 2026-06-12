@@ -373,4 +373,9 @@ automation.
   backtest result for each action's `strategy_id` and include after-cost,
   out-of-sample validation, cost summary, limitations, and explicit
   missing-evidence reasons without running a new backtest or creating orders.
+* 2026-06-12: Added current-state aggregation to decision summaries. Daily and
+  intraday decision responses now include portfolio cash / positions / equity,
+  latest quote cache health, action-task status counts, and signal / journal /
+  risk-gate audit counts so the cockpit can explain action and no-action states
+  without adding any execution side effects.
 <!-- codex-progress:end -->

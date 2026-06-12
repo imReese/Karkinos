@@ -35,20 +35,12 @@ def create_router() -> APIRouter:
             "requires_manual_confirmation": any(
                 candidate["manual_confirmation_required"] for candidate in candidates
             ),
-            "summary": {
-                "candidate_count": len(candidates),
-                "risk_blocked_count": sum(
-                    1
-                    for candidate in candidates
-                    if candidate["risk_gate_status"] == "blocked"
-                ),
-                "ready_for_manual_confirmation_count": sum(
-                    1
-                    for candidate in candidates
-                    if candidate["manual_confirmation_status"]
-                    == "ready_for_manual_confirmation"
-                ),
-            },
+            "summary": _decision_summary(
+                state,
+                actions=actions,
+                candidates=candidates,
+                journal_by_signal=journal_by_signal,
+            ),
             "candidates": candidates,
             "no_action_reasons": no_action_reasons,
             "limitations": [
@@ -87,19 +79,13 @@ def create_router() -> APIRouter:
                 candidate["manual_confirmation_required"] for candidate in candidates
             ),
             "summary": {
-                "candidate_count": len(candidates),
+                **_decision_summary(
+                    state,
+                    actions=actions,
+                    candidates=candidates,
+                    journal_by_signal=journal_by_signal,
+                ),
                 "excluded_daily_count": len(daily_actions),
-                "risk_blocked_count": sum(
-                    1
-                    for candidate in candidates
-                    if candidate["risk_gate_status"] == "blocked"
-                ),
-                "ready_for_manual_confirmation_count": sum(
-                    1
-                    for candidate in candidates
-                    if candidate["manual_confirmation_status"]
-                    == "ready_for_manual_confirmation"
-                ),
             },
             "candidates": candidates,
             "excluded_daily_symbols": [
@@ -136,6 +122,265 @@ def _journal_by_signal_id(db: Any) -> dict[int, dict[str, Any]]:
             continue
         indexed[int(signal_id)] = row
     return indexed
+
+
+def _decision_summary(
+    state: Any,
+    *,
+    actions: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    journal_by_signal: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    risk_blocked_count = sum(
+        1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
+    )
+    return {
+        "candidate_count": len(candidates),
+        "risk_blocked_count": risk_blocked_count,
+        "ready_for_manual_confirmation_count": sum(
+            1
+            for candidate in candidates
+            if candidate["manual_confirmation_status"]
+            == "ready_for_manual_confirmation"
+        ),
+        "portfolio": _portfolio_state_summary(state),
+        "market_data": _market_data_summary(state, actions),
+        "action_tasks": _action_task_summary(actions),
+        "audit": _audit_summary(actions, candidates, journal_by_signal),
+    }
+
+
+def _portfolio_state_summary(state: Any) -> dict[str, Any]:
+    scheduler = getattr(state, "scheduler", None)
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+    if portfolio is None:
+        return {
+            "status": "missing",
+            "cash": 0.0,
+            "position_count": 0,
+            "symbols": [],
+            "total_market_value": 0.0,
+            "total_equity": 0.0,
+        }
+    positions = getattr(portfolio, "positions", {}) or {}
+    position_items = positions.items() if isinstance(positions, dict) else []
+    symbols: list[str] = []
+    total_market_value = 0.0
+    for symbol, position in position_items:
+        symbols.append(str(symbol))
+        total_market_value += _position_market_value(position)
+    cash = _float_or_zero(getattr(portfolio, "cash", 0.0))
+    total_equity = _portfolio_total_equity(portfolio, cash, total_market_value)
+    return {
+        "status": "available",
+        "cash": cash,
+        "position_count": len(symbols),
+        "symbols": symbols,
+        "total_market_value": total_market_value,
+        "total_equity": total_equity,
+    }
+
+
+def _portfolio_total_equity(
+    portfolio: Any,
+    cash: float,
+    total_market_value: float,
+) -> float:
+    total_equity = getattr(portfolio, "total_equity", None)
+    if callable(total_equity):
+        try:
+            return _float_or_zero(total_equity())
+        except TypeError:
+            pass
+    if total_equity is not None and not callable(total_equity):
+        return _float_or_zero(total_equity)
+    return cash + total_market_value
+
+
+def _position_market_value(position: Any) -> float:
+    market_value = getattr(position, "market_value", None)
+    if callable(market_value):
+        try:
+            return _float_or_zero(market_value())
+        except TypeError:
+            return 0.0
+    if market_value is not None:
+        return _float_or_zero(market_value)
+    quantity = _float_or_zero(
+        getattr(position, "quantity", getattr(position, "shares", 0.0))
+    )
+    price = _float_or_zero(
+        getattr(
+            position,
+            "current_price",
+            getattr(position, "last_price", getattr(position, "price", 0.0)),
+        )
+    )
+    return quantity * price
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _market_data_summary(
+    state: Any,
+    actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    symbols = _decision_symbols(state, actions)
+    quotes = _collect_decision_quotes(state)
+    relevant_quotes = {symbol: quotes[symbol] for symbol in symbols if symbol in quotes}
+    statuses = [
+        str(quote.get("quote_status") or quote.get("provider_status") or "live")
+        for quote in relevant_quotes.values()
+    ]
+    live_count = sum(1 for status in statuses if status == "live")
+    stale_count = sum(1 for status in statuses if status != "live")
+    missing_symbols = [symbol for symbol in symbols if symbol not in quotes]
+    latest_timestamp = _latest_quote_timestamp(relevant_quotes.values())
+    if not symbols:
+        source_health = "unknown"
+    elif missing_symbols and not relevant_quotes:
+        source_health = "missing"
+    elif missing_symbols or stale_count:
+        source_health = "partial" if live_count else "stale"
+    else:
+        source_health = "live"
+    return {
+        "source_health": source_health,
+        "quote_count": len(relevant_quotes),
+        "live_quote_count": live_count,
+        "stale_quote_count": stale_count,
+        "missing_symbols": missing_symbols,
+        "latest_quote_timestamp": latest_timestamp,
+        "has_persistent_cache": _has_persistent_quote_cache(state),
+    }
+
+
+def _decision_symbols(state: Any, actions: list[dict[str, Any]]) -> list[str]:
+    symbols: list[str] = []
+    for action in actions:
+        _append_unique_symbol(symbols, action.get("symbol"))
+    scheduler = getattr(state, "scheduler", None)
+    for item in getattr(scheduler, "watchlist", []) or []:
+        symbol = item[0] if isinstance(item, (list, tuple)) and item else item
+        _append_unique_symbol(symbols, symbol)
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+    positions = getattr(portfolio, "positions", {}) if portfolio else {}
+    if isinstance(positions, dict):
+        for symbol in positions:
+            _append_unique_symbol(symbols, symbol)
+    config = getattr(state, "config", None)
+    for asset in getattr(config, "assets", []) or []:
+        if isinstance(asset, dict):
+            _append_unique_symbol(symbols, asset.get("symbol"))
+    return symbols
+
+
+def _append_unique_symbol(symbols: list[str], symbol: Any) -> None:
+    if symbol is None:
+        return
+    value = str(symbol)
+    if value and value not in symbols:
+        symbols.append(value)
+
+
+def _collect_decision_quotes(state: Any) -> dict[str, dict[str, Any]]:
+    quotes: dict[str, dict[str, Any]] = {}
+    scheduler = getattr(state, "scheduler", None)
+    for symbol, quote in (getattr(scheduler, "latest_quotes", {}) or {}).items():
+        if isinstance(quote, dict):
+            quotes[str(symbol)] = _normalize_quote(symbol, quote)
+    db = getattr(state, "db", None)
+    if db is None:
+        return quotes
+    for reader_name in ("list_latest_quotes_sync", "get_latest_quotes_sync"):
+        reader = getattr(db, reader_name, None)
+        if not callable(reader):
+            continue
+        for row in reader() or []:
+            if not isinstance(row, dict):
+                continue
+            symbol = row.get("symbol")
+            if symbol is None:
+                continue
+            quotes[str(symbol)] = _normalize_quote(symbol, row)
+    return quotes
+
+
+def _normalize_quote(symbol: Any, quote: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **quote,
+        "symbol": str(quote.get("symbol") or symbol),
+        "asset_class": quote.get("asset_class") or quote.get("asset_type"),
+        "quote_status": quote.get("quote_status") or quote.get("provider_status"),
+        "quote_timestamp": quote.get("quote_timestamp") or quote.get("timestamp"),
+    }
+
+
+def _latest_quote_timestamp(quotes: Any) -> str | None:
+    timestamps = [
+        str(timestamp)
+        for quote in quotes
+        for timestamp in [quote.get("quote_timestamp") or quote.get("timestamp")]
+        if timestamp
+    ]
+    return max(timestamps) if timestamps else None
+
+
+def _has_persistent_quote_cache(state: Any) -> bool:
+    db = getattr(state, "db", None)
+    if db is None:
+        return False
+    for reader_name in ("list_latest_quotes_sync", "get_latest_quotes_sync"):
+        reader = getattr(db, reader_name, None)
+        if not callable(reader):
+            continue
+        rows = reader() or []
+        if rows:
+            return True
+    return False
+
+
+def _action_task_summary(actions: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses = [str(action.get("status") or "unknown") for action in actions]
+    return {
+        "total_count": len(actions),
+        "pending_count": statuses.count("pending"),
+        "deferred_count": statuses.count("deferred"),
+        "symbols": [
+            str(action.get("symbol")) for action in actions if action.get("symbol")
+        ],
+    }
+
+
+def _audit_summary(
+    actions: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    journal_by_signal: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "signal_count": len(
+            {
+                action.get("source_signal_id")
+                for action in actions
+                if action.get("source_signal_id") is not None
+            }
+        ),
+        "journal_entry_count": len(journal_by_signal),
+        "risk_checked_count": sum(
+            1
+            for action in actions
+            if action.get("risk_gate_status") in {"passed", "blocked"}
+            or action.get("risk_gate_passed") is not None
+        ),
+        "risk_blocked_count": sum(
+            1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
+        ),
+    }
 
 
 async def _validation_by_strategy_id(db: Any) -> dict[str, dict[str, Any]]:

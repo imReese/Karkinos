@@ -5002,6 +5002,147 @@ def test_decision_today_attaches_latest_after_cost_oos_validation(monkeypatch):
     assert "not a profitability claim" in validation["limitations"][0]
 
 
+def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
+    monkeypatch,
+):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "strategy_id": "dual_ma",
+                    "asset_class": "stock",
+                    "status": "pending",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                },
+                {
+                    "id": 10,
+                    "source_signal_id": 2,
+                    "symbol": "018125",
+                    "direction": "hold",
+                    "strategy_id": "monthly_rebalance",
+                    "asset_class": "fund",
+                    "status": "deferred",
+                    "risk_gate_status": "blocked",
+                    "risk_gate_passed": False,
+                    "risk_gate_reasons": ["data_quality:stale_quote"],
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "blocked_by_risk_gate",
+                },
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return [
+                {
+                    "signal": {"id": 1, "strategy_id": "dual_ma"},
+                    "latest_event": {"event_type": "risk.signal.recorded"},
+                },
+                {
+                    "signal": {"id": 2, "strategy_id": "monthly_rebalance"},
+                    "latest_event": {"event_type": "risk.signal.recorded"},
+                },
+            ]
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "asset_type": asset_type,
+                "price": 123.45 if symbol == "600519" else 2.34,
+                "quote_status": "live" if symbol == "600519" else "stale",
+                "quote_timestamp": (
+                    "2026-04-18T09:34:00+08:00"
+                    if symbol == "600519"
+                    else "2026-04-17T15:00:00+08:00"
+                ),
+                "quote_source": "fixture",
+            }
+
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_type": "stock",
+                    "price": 123.45,
+                    "quote_status": "live",
+                    "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                    "quote_source": "fixture",
+                },
+                {
+                    "symbol": "018125",
+                    "asset_type": "fund",
+                    "price": 2.34,
+                    "quote_status": "stale",
+                    "quote_timestamp": "2026-04-17T15:00:00+08:00",
+                    "quote_source": "fixture",
+                },
+            ]
+
+        async def get_backtest_results(self):
+            return []
+
+    fake_portfolio = SimpleNamespace(
+        cash=12000.0,
+        positions={
+            "600519": SimpleNamespace(market_value=20000.0),
+            "018125": SimpleNamespace(market_value=8000.0),
+        },
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[
+                {"symbol": "600519", "asset_class": "stock"},
+                {"symbol": "018125", "asset_class": "fund"},
+            ]
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            latest_quotes={},
+            watchlist=[("600519", "stock"), ("018125", "fund")],
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    summary = response["summary"]
+    assert summary["portfolio"]["status"] == "available"
+    assert summary["portfolio"]["cash"] == 12000.0
+    assert summary["portfolio"]["position_count"] == 2
+    assert summary["portfolio"]["total_market_value"] == 28000.0
+    assert summary["portfolio"]["total_equity"] == 40000.0
+    assert summary["market_data"]["source_health"] == "partial"
+    assert summary["market_data"]["quote_count"] == 2
+    assert summary["market_data"]["live_quote_count"] == 1
+    assert summary["market_data"]["stale_quote_count"] == 1
+    assert summary["market_data"]["missing_symbols"] == []
+    assert summary["market_data"]["latest_quote_timestamp"] == (
+        "2026-04-18T09:34:00+08:00"
+    )
+    assert summary["action_tasks"]["pending_count"] == 1
+    assert summary["action_tasks"]["deferred_count"] == 1
+    assert summary["audit"]["signal_count"] == 2
+    assert summary["audit"]["journal_entry_count"] == 2
+    assert summary["audit"]["risk_checked_count"] == 2
+    assert summary["audit"]["risk_blocked_count"] == 1
+
+
 def test_decision_today_returns_no_action_reason(monkeypatch):
     from server.routes import decision as decision_routes
 
