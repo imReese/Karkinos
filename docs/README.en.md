@@ -236,7 +236,13 @@ See [Docker Deployment](#docker-deployment) section for details.
 
 ### config.json Fields
 
-Copy `config.example.json` to `config.json` and modify as needed.
+Do not hand-edit tokens into `config.json`. Use the local onboarding command:
+
+```bash
+uv run python scripts/configure_data_source.py
+```
+
+The command lets you choose `akshare` or `tushare`, prompts for a TuShare token only when needed, hides token input, and writes ignored local `config.json` for you. `config.example.json` is only a reference for advanced runtime fields.
 
 #### Server Runtime Config
 
@@ -246,7 +252,7 @@ Copy `config.example.json` to `config.json` and modify as needed.
 | `port` | int | `8000` | Server listen port |
 | `live_auto_start` | bool | `true` | Auto-start Web built-in live monitoring |
 | `data_source` | string | `"akshare"` | Data source (`akshare` / `tushare`) |
-| `tushare_token` | string | `""` | Local TuShare token; `TUSHARE_TOKEN` can also be used |
+| `tushare_token` | string | `""` | Local TuShare token written by the onboarding script; `TUSHARE_TOKEN` can also be used |
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |

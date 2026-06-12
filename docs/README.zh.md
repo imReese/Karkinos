@@ -248,7 +248,13 @@ docker compose logs -f
 
 ### config.json 字段说明
 
-复制 `config.example.json` 为 `config.json` 并按需修改。
+不要手工把 token 写进 `config.json`。推荐使用本地引导命令：
+
+```bash
+uv run python scripts/configure_data_source.py
+```
+
+该命令会引导你选择 `akshare` 或 `tushare`，仅在选择 TuShare 时隐藏输入 token，并自动写入已被 Git 忽略的本地 `config.json`。`config.example.json` 只作为高级运行字段参考。
 
 #### 服务运行配置
 
@@ -258,7 +264,7 @@ docker compose logs -f
 | `port` | int | `8000` | 服务监听端口 |
 | `live_auto_start` | bool | `true` | 是否自动启动 Web 内建实时监控 |
 | `data_source` | string | `"akshare"` | 数据源（`akshare` / `tushare`） |
-| `tushare_token` | string | `""` | 本地 TuShare token；也可使用环境变量 `TUSHARE_TOKEN` |
+| `tushare_token` | string | `""` | 由配置引导脚本写入的本地 TuShare token；也可使用环境变量 `TUSHARE_TOKEN` |
 | `notification` | object | `{"type":"console"}` | 通知配置 |
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
