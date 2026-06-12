@@ -59,6 +59,7 @@ def _run_scheduler_once(
     snapshots: dict[tuple[str, AssetClass], dict] | None = None,
     poll_error: Exception | None = None,
     strategy_factory=None,
+    fund_nav_sync=None,
 ) -> AppDatabase:
     from server import scheduler as scheduler_module
 
@@ -129,6 +130,19 @@ def _run_scheduler_once(
         scheduler_module,
         "rebuild_portfolio_from_ledger",
         lambda config, db, latest_quotes: None,
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "refresh_fund_nav_quotes",
+        fund_nav_sync
+        or (
+            lambda config, db, watchlist, latest_quotes: SimpleNamespace(
+                refreshed=[],
+                skipped=[],
+                failed={},
+                quotes={},
+            )
+        ),
     )
 
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
@@ -253,6 +267,56 @@ def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp
     assert metadata["provider_status"] == "partial"
     assert metadata["success_symbols"] == ["600519"]
     assert metadata["failed_symbols"] == ["510300"]
+
+
+def test_scheduler_syncs_fund_nav_quotes_before_live_poll(monkeypatch, tmp_path):
+    from server import scheduler as scheduler_module
+
+    calls = []
+
+    def fake_refresh_fund_nav_quotes(config, db, watchlist, latest_quotes):
+        calls.append(
+            {
+                "data_source": config.data_source,
+                "watchlist": list(watchlist),
+                "latest_quotes": dict(latest_quotes),
+            }
+        )
+        return SimpleNamespace(
+            refreshed=["018125"],
+            skipped=[],
+            failed={},
+            quotes={
+                "018125": {
+                    "price": 2.2527,
+                    "timestamp": "2026-06-12 15:00",
+                    "asset_class": "fund",
+                    "quote_source": "eastmoney_fund_estimate",
+                    "provider_name": "akshare",
+                    "quote_status": "live",
+                    "provider_status": "live",
+                    "captured_reason": "fund_nav_sync",
+                    "nav_date": "2026-06-12",
+                }
+            },
+        )
+
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        watchlist=[(Symbol("018125"), AssetClass.FUND)],
+        events=[],
+        fund_nav_sync=fake_refresh_fund_nav_quotes,
+    )
+
+    assert calls == [
+        {
+            "data_source": "akshare",
+            "watchlist": [(Symbol("018125"), AssetClass.FUND)],
+            "latest_quotes": {},
+        }
+    ]
+    assert db.list_quote_fetch_runs()[0]["status"] == "failed"
 
 
 def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(

@@ -21,6 +21,7 @@ from notification.notifier import build_notifier, format_signal_message
 from risk.pre_trade import PreTradePolicy, PreTradeRiskManager
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
+from server.services.fund_nav_sync import refresh_fund_nav_quotes
 from server.services.live_context import LiveContextProvider
 from server.services.market_hours import is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
@@ -418,6 +419,31 @@ class TradingScheduler:
         )
         return events
 
+    def _sync_fund_nav_quotes(self) -> None:
+        """Refresh fund NAV/estimate quotes independently from stock quote polling."""
+        if self._db is None:
+            return
+        with self._lock:
+            watchlist = list(self._watchlist)
+            latest_quotes = dict(self._latest_quotes)
+        if not any(asset_class is AssetClass.FUND for _, asset_class in watchlist):
+            return
+
+        try:
+            result = refresh_fund_nav_quotes(
+                self._config,
+                self._db,
+                watchlist,
+                latest_quotes,
+            )
+        except Exception:
+            logger.warning("基金净值/估值同步失败，将保留已有快照", exc_info=True)
+            return
+
+        if result.quotes:
+            with self._lock:
+                self._latest_quotes.update(result.quotes)
+
     def _run_loop(self) -> None:
         """后台线程主循环。"""
         # 初始化组件
@@ -590,6 +616,8 @@ class TradingScheduler:
 
         # 主循环
         while self._running.is_set():
+            self._sync_fund_nav_quotes()
+
             # Bug 7: 非交易时段跳过轮询
             if not self._is_market_open():
                 self._maybe_backfill_historical_bars(data_manager)
