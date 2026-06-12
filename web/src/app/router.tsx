@@ -66,6 +66,7 @@ import {
 } from '../features/activity/components/trade-form';
 import {
   FundBatchForm,
+  type FundBatchCandidate,
   type FundBatchFormValues,
 } from '../features/activity/components/fund-batch-form';
 import {
@@ -1957,6 +1958,7 @@ function ActivityPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const entries = useLedgerEntriesQuery();
   const pendingFundOrders = usePendingFundOrdersQuery();
+  const positions = usePositionsQuery();
   const createTrade = useCreateTradeMutation();
   const createCashFlow = useCreateCashFlowMutation();
   const createDividend = useCreateDividendMutation();
@@ -1970,6 +1972,17 @@ function ActivityPage() {
         0,
       ),
     [ledgerRows],
+  );
+  const fundBatchCandidates = useMemo<FundBatchCandidate[]>(
+    () =>
+      (positions.data ?? [])
+        .filter((position) => position.asset_class?.toLowerCase() === 'fund')
+        .map((position) => ({
+          symbol: position.symbol,
+          display_name:
+            position.display_name || position.name || position.symbol,
+        })),
+    [positions.data],
   );
 
   const pushToast = (
@@ -2157,6 +2170,8 @@ function ActivityPage() {
           <div className="grid gap-6 xl:grid-cols-2">
             <div className="space-y-6">
               <FundBatchForm
+                candidates={fundBatchCandidates}
+                loadingCandidates={positions.isLoading}
                 onSubmit={handleFundBatchSubmit}
                 pending={createTrade.isPending}
               />

@@ -57,6 +57,11 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 
 The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider.
 
+Initial screens do not seed portfolio assets, trades, or fund names. Effective
+portfolio data comes from the local database or explicit private runtime
+configuration; for example, Activity batch fund candidates are derived from
+held fund positions instead of built-in defaults.
+
 In `dev` mode the script also starts Vite at `http://localhost:5173` for hot-reload frontend editing. Treat `5173` as a developer-only URL; use `8000` for product-like demos and customer flow checks.
 
 The API only trusts local Vite origins by default:

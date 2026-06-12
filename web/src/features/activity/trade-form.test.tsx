@@ -66,10 +66,29 @@ test('submits a fund buy by subscription amount', async () => {
   );
 });
 
-test('submits a batch fund add payload with positive rows only', async () => {
+test('does not render hard-coded fund candidates in the initial state', () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
 
   render(<FundBatchForm onSubmit={onSubmit} />);
+
+  expect(screen.queryByText('永赢先进制造智选混合C')).toBeNull();
+  expect(screen.queryByText('融通科技臻选混合C')).toBeNull();
+  expect(screen.queryByText('华夏核心成长混合C')).toBeNull();
+  expect(screen.getByText('No held funds available for batch add.')).toBeTruthy();
+});
+
+test('submits a batch fund add payload with positive candidate rows only', async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <FundBatchForm
+      onSubmit={onSubmit}
+      candidates={[
+        { symbol: '018125', display_name: 'Configured Fund A' },
+        { symbol: '012710', display_name: 'Configured Fund C' },
+      ]}
+    />,
+  );
 
   fireEvent.change(screen.getByLabelText('018125 Amount'), {
     target: { value: '200' },

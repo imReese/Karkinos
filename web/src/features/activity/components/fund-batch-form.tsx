@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
 
@@ -14,31 +14,52 @@ export type FundBatchFormValues = {
   orders: FundBatchOrder[];
 };
 
-const DEFAULT_FUNDS: Omit<FundBatchOrder, 'amount'>[] = [
-  { symbol: '018125', display_name: '永赢先进制造智选混合C' },
-  { symbol: '026539', display_name: '融通科技臻选混合C' },
-  { symbol: '012710', display_name: '华夏核心成长混合C' },
-];
+export type FundBatchCandidate = Omit<FundBatchOrder, 'amount'>;
 
-function defaultValues(): FundBatchFormValues {
+const EMPTY_CANDIDATES: FundBatchCandidate[] = [];
+
+function defaultValues(candidates: FundBatchCandidate[]): FundBatchFormValues {
   return {
     occurred_at: new Date().toISOString().slice(0, 16),
     note: '',
-    orders: DEFAULT_FUNDS.map((fund) => ({ ...fund, amount: null })),
+    orders: candidates.map((fund) => ({ ...fund, amount: null })),
   };
 }
 
 export function FundBatchForm({
+  candidates = EMPTY_CANDIDATES,
+  loadingCandidates = false,
   onSubmit,
   pending = false,
 }: {
+  candidates?: FundBatchCandidate[];
+  loadingCandidates?: boolean;
   onSubmit: (values: FundBatchFormValues) => Promise<void>;
   pending?: boolean;
 }) {
   const copy = useCopy();
   const labels = copy.activity.forms.fundBatch;
-  const [values, setValues] = useState(defaultValues);
+  const candidateKey = useMemo(
+    () =>
+      candidates
+        .map((fund) => `${fund.symbol}:${fund.display_name}`)
+        .join('|'),
+    [candidates],
+  );
+  const [values, setValues] = useState(() => defaultValues(candidates));
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValues((current) => ({
+      ...current,
+      orders: candidates.map((fund) => {
+        const existing = current.orders.find(
+          (order) => order.symbol === fund.symbol,
+        );
+        return { ...fund, amount: existing?.amount ?? null };
+      }),
+    }));
+  }, [candidateKey, candidates]);
 
   const updateOrderAmount = (index: number, amount: number | null) => {
     setValues((current) => ({
@@ -67,7 +88,7 @@ export function FundBatchForm({
         }
         try {
           await onSubmit({ ...values, orders: activeOrders });
-          setValues(defaultValues());
+          setValues(defaultValues(candidates));
         } catch (error) {
           setSubmitError(
             error instanceof Error ? error.message : labels.genericSubmitError,
@@ -94,33 +115,45 @@ export function FundBatchForm({
         }
         className="app-field w-full rounded-2xl px-4 py-3 text-sm"
       />
-      <div className="space-y-2">
-        {values.orders.map((order, index) => (
-          <div
-            key={order.symbol}
-            className="app-panel-strong grid gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_150px]"
-          >
-            <div>
-              <div className="text-sm font-semibold">{order.display_name}</div>
-              <div className="app-muted mt-1 text-xs">{order.symbol}</div>
+      {loadingCandidates ? (
+        <div className="app-panel-strong rounded-2xl p-3 text-sm app-muted">
+          {labels.loadingCandidates}
+        </div>
+      ) : values.orders.length === 0 ? (
+        <div className="app-panel-strong rounded-2xl p-3 text-sm app-muted">
+          {labels.noCandidates}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {values.orders.map((order, index) => (
+            <div
+              key={order.symbol}
+              className="app-panel-strong grid gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_150px]"
+            >
+              <div>
+                <div className="text-sm font-semibold">{order.display_name}</div>
+                <div className="app-muted mt-1 text-xs">{order.symbol}</div>
+              </div>
+              <input
+                aria-label={labels.amountLabel(order.symbol)}
+                type="number"
+                step="any"
+                min="0"
+                placeholder={labels.amountPlaceholder}
+                value={order.amount ?? ''}
+                onChange={(event) => {
+                  const nextAmount =
+                    event.target.value === ''
+                      ? null
+                      : Number(event.target.value);
+                  updateOrderAmount(index, nextAmount);
+                }}
+                className="app-field rounded-2xl px-4 py-3 text-sm"
+              />
             </div>
-            <input
-              aria-label={labels.amountLabel(order.symbol)}
-              type="number"
-              step="any"
-              min="0"
-              placeholder={labels.amountPlaceholder}
-              value={order.amount ?? ''}
-              onChange={(event) => {
-                const nextAmount =
-                  event.target.value === '' ? null : Number(event.target.value);
-                updateOrderAmount(index, nextAmount);
-              }}
-              className="app-field rounded-2xl px-4 py-3 text-sm"
-            />
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       <input
         aria-label={labels.noteLabel}
         placeholder={labels.notePlaceholder}
