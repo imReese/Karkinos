@@ -29,6 +29,7 @@ public demos and development.
 - T+1 freeze/thaw built into Position
 - Live monitoring with Telegram / WeChat push notifications
 - React + TanStack Query + TanStack Router portfolio workspace
+- Read-only decision cockpit APIs for daily action review without automatic trading
 - Docker one-click deploy
 
 **Architecture**

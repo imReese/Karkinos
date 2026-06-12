@@ -4811,6 +4811,301 @@ def test_signal_journal_route_returns_auditable_chain(monkeypatch):
     assert response[0].latest_event.event_type == "risk.signal.recorded"
 
 
+def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            assert statuses == ["pending", "deferred"]
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "title": "建议增持 600519",
+                    "detail": "dual_ma 触发，目标仓位 20%",
+                    "direction": "buy",
+                    "urgency": "high",
+                    "target_weight": 0.2,
+                    "price": 123.45,
+                    "strategy_id": "dual_ma",
+                    "timestamp": "2026-04-18T09:35:00",
+                    "asset_class": "stock",
+                    "status": "pending",
+                    "risk_decision_id": "RISK-1",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "risk_gate_severity": "info",
+                    "risk_gate_reasons": [],
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                    "manual_confirmation_reason": "Risk gate passed; operator confirmation is still required.",
+                }
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return [
+                {
+                    "signal": {
+                        "id": 1,
+                        "timestamp": "2026-04-18T09:35:00",
+                        "strategy_id": "dual_ma",
+                        "symbol": "600519",
+                        "direction": "buy",
+                        "target_weight": 0.2,
+                        "price": 123.45,
+                        "asset_class": "stock",
+                    },
+                    "latest_event": {
+                        "event_type": "risk.signal.recorded",
+                        "source": "risk_decisions",
+                        "source_ref": "RISK-1",
+                    },
+                }
+            ]
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "asset_type": asset_type or "stock",
+                "price": 123.45,
+                "quote_status": "live",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+            }
+
+    fake_state = SimpleNamespace(db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response["lane"] == "daily"
+    assert response["decision"] == "buy"
+    assert response["requires_manual_confirmation"] is True
+    assert response["no_action_reasons"] == []
+    assert response["summary"]["candidate_count"] == 1
+    candidate = response["candidates"][0]
+    assert candidate["action"] == "buy"
+    assert candidate["manual_confirmation_status"] == "ready_for_manual_confirmation"
+    assert candidate["evidence"]["strategy"]["strategy_id"] == "dual_ma"
+    assert candidate["evidence"]["signal"]["id"] == 1
+    assert candidate["evidence"]["risk_gate"]["status"] == "passed"
+    assert candidate["evidence"]["data_freshness"]["status"] == "live"
+    assert candidate["evidence"]["manual_confirmation"]["required"] is True
+    assert candidate["evidence"]["journal"]["latest_event_type"] == (
+        "risk.signal.recorded"
+    )
+    assert "not investment advice" in response["limitations"][0]
+
+
+def test_decision_today_returns_no_action_reason(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            get_action_tasks_sync=lambda statuses=None, limit=50, offset=0: [],
+            list_signal_journal_sync=lambda limit=50, offset=0: [],
+            get_latest_quote_sync=lambda symbol, asset_type=None: None,
+        )
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response["decision"] == "no_action"
+    assert response["summary"]["candidate_count"] == 0
+    assert response["no_action_reasons"] == ["no_pending_action_tasks"]
+    assert response["requires_manual_confirmation"] is False
+
+
+def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    intraday_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/intraday"
+    )
+    endpoint = intraday_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "title": "建议增持 600519",
+                    "detail": "dual_ma 触发，目标仓位 20%",
+                    "direction": "buy",
+                    "urgency": "high",
+                    "target_weight": 0.2,
+                    "price": 123.45,
+                    "strategy_id": "dual_ma",
+                    "timestamp": "2026-04-18T09:35:00",
+                    "asset_class": "stock",
+                    "status": "pending",
+                    "risk_decision_id": "RISK-STOCK",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "risk_gate_severity": "info",
+                    "risk_gate_reasons": [],
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                },
+                {
+                    "id": 10,
+                    "source_signal_id": 2,
+                    "symbol": "510300",
+                    "title": "建议减仓 510300",
+                    "detail": "ETF rotation 触发，目标仓位 0%",
+                    "direction": "sell",
+                    "urgency": "medium",
+                    "target_weight": 0.0,
+                    "price": 4.56,
+                    "strategy_id": "dual_ma",
+                    "timestamp": "2026-04-18T09:36:00",
+                    "asset_class": "fund",
+                    "status": "pending",
+                    "risk_decision_id": "RISK-ETF",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "risk_gate_severity": "info",
+                    "risk_gate_reasons": [],
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                },
+                {
+                    "id": 11,
+                    "source_signal_id": 3,
+                    "symbol": "018125",
+                    "title": "建议申购 018125",
+                    "detail": "长期配置日级检查",
+                    "direction": "buy",
+                    "urgency": "low",
+                    "target_weight": 0.1,
+                    "price": 1.23,
+                    "strategy_id": "monthly_rebalance",
+                    "timestamp": "2026-04-18T09:37:00",
+                    "asset_class": "fund",
+                    "status": "pending",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                },
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return [
+                {
+                    "signal": {
+                        "id": 1,
+                        "strategy_id": "dual_ma",
+                        "symbol": "600519",
+                        "target_weight": 0.2,
+                    },
+                    "latest_event": {"event_type": "risk.signal.recorded"},
+                },
+                {
+                    "signal": {
+                        "id": 2,
+                        "strategy_id": "dual_ma",
+                        "symbol": "510300",
+                        "target_weight": 0.0,
+                    },
+                    "latest_event": {"event_type": "risk.signal.recorded"},
+                },
+            ]
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "asset_type": asset_type or "stock",
+                "price": 123.45 if symbol == "600519" else 4.56,
+                "quote_status": "live",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+            }
+
+    fake_state = SimpleNamespace(db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response["lane"] == "intraday"
+    assert response["decision"] == "rebalance"
+    assert response["summary"]["candidate_count"] == 2
+    assert response["summary"]["excluded_daily_count"] == 1
+    assert [candidate["symbol"] for candidate in response["candidates"]] == [
+        "600519",
+        "510300",
+    ]
+    assert response["candidates"][1]["asset_class"] == "fund"
+    assert response["candidates"][1]["evidence"]["data_freshness"]["status"] == "live"
+    assert response["excluded_daily_symbols"] == ["018125"]
+    assert response["no_action_reasons"] == []
+
+
+def test_decision_intraday_returns_no_action_reason_when_only_daily_assets(
+    monkeypatch,
+):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    intraday_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/intraday"
+    )
+    endpoint = intraday_route.endpoint
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            get_action_tasks_sync=lambda statuses=None, limit=50, offset=0: [
+                {
+                    "id": 11,
+                    "source_signal_id": 3,
+                    "symbol": "018125",
+                    "direction": "buy",
+                    "asset_class": "fund",
+                    "status": "pending",
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                }
+            ],
+            list_signal_journal_sync=lambda limit=50, offset=0: [],
+            get_latest_quote_sync=lambda symbol, asset_type=None: None,
+        )
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response["decision"] == "no_action"
+    assert response["summary"]["candidate_count"] == 0
+    assert response["summary"]["excluded_daily_count"] == 1
+    assert response["no_action_reasons"] == ["no_intraday_stock_or_etf_action_tasks"]
+    assert response["excluded_daily_symbols"] == ["018125"]
+
+
 def test_backtest_strategies_route_returns_benchmark_metadata():
     from server.routes import backtest as backtest_routes
 

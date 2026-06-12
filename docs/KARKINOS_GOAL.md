@@ -236,6 +236,30 @@ Secondary metrics:
 * time from idea to reproducible backtest
 * strategy promotion pass rate
 
+## Acceptance Criteria for v0.3
+
+Karkinos v0.3 — Daily + Intraday Decision Cockpit — moves the system toward
+daily and intraday decision review without enabling default real-money
+automation.
+
+* [x] `GET /api/decision/today` returns a daily decision summary.
+* [x] `GET /api/decision/intraday` returns an intraday candidate-action view
+  for stocks and exchange-traded ETFs.
+* [ ] Decision summaries aggregate current portfolio state, market/cache
+  health, signals, action tasks, risk decisions, and journal evidence.
+* [x] Each summary explicitly returns `buy`, `sell`, `hold`, `rebalance`,
+  `no_action`, or `review_required`.
+* [ ] Each candidate action includes an evidence bundle with strategy, signal,
+  risk gate, after-cost/OOS validation, data freshness, manual-confirmation
+  state, and journal references.
+* [x] No-action responses include explicit reasons.
+* [ ] The frontend decision cockpit shows daily and intraday candidate actions,
+  risk state, evidence, and manual-confirmation entry points.
+* [ ] Deterministic tests cover data/cache → feature/strategy signal → action
+  candidate → risk gate → journal → decision API/dashboard.
+* [x] README/docs describe the behavior boundary: research and investment
+  cockpit, not investment advice, and no default automatic real-money trading.
+
 <!-- codex-progress:start -->
 ## Codex Progress
 
@@ -325,4 +349,23 @@ Secondary metrics:
   local tests, docs, API surfaces, and validation commands, while preserving
   manual confirmation as the live-like default and avoiding investment-advice
   claims.
+* 2026-06-12: Started v0.3 shadow-trading reliability work. Daily shadow runs
+  now expose schema versioning and idempotent reuse of same-date/action order
+  facts, avoiding repeated writes or duplicate order events when operators rerun
+  the safe local paper/shadow process.
+* 2026-06-12: Added the first v0.3 data-quality gate to daily shadow runs.
+  The safe paper/shadow endpoint now requires a live, positive latest quote for
+  each risk-passed action, returns a versioned data-quality summary, and skips
+  actions with missing, stale, or invalid quote evidence before any shadow order
+  fact is written.
+* 2026-06-12: Started the Daily + Intraday Decision Cockpit API surface.
+  `/api/decision/today` now returns a read-only daily decision summary from
+  existing action tasks, risk-gate state, signal journal entries, and latest
+  quote freshness, including no-action reasons and manual-confirmation
+  requirements without creating orders or enabling automatic trading.
+* 2026-06-12: Added the first read-only intraday decision lane.
+  `/api/decision/intraday` now filters pending stock and common exchange-traded
+  ETF action candidates into a polling/minute-level cockpit view, keeps open-end
+  fund-style actions in the daily lane, returns explicit no-action reasons, and
+  preserves manual confirmation as the live-like default.
 <!-- codex-progress:end -->

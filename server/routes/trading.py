@@ -176,7 +176,10 @@ def create_router() -> APIRouter:
             limit=1000,
         )
         recorded_orders: list[dict] = []
+        reused_orders: list[dict] = []
         skipped: list[dict] = []
+        data_quality_issues: list[dict] = []
+        data_quality_passed = 0
         timestamp = datetime.now().isoformat()
         for action in action_rows:
             if (
@@ -200,6 +203,17 @@ def create_router() -> APIRouter:
                     }
                 )
                 continue
+            quality_issue = _shadow_action_data_quality_issue(state, action)
+            if quality_issue is not None:
+                data_quality_issues.append(quality_issue)
+                skipped.append(
+                    {
+                        "action_id": action.get("id"),
+                        "reason": f"data_quality:{quality_issue['reason']}",
+                    }
+                )
+                continue
+            data_quality_passed += 1
             target_weight = float(action.get("target_weight") or 0)
             quantity = int((base_equity * target_weight) / price)
             if quantity <= 0:
@@ -211,9 +225,29 @@ def create_router() -> APIRouter:
                 )
                 continue
             order_id = f"SHADOW-{run_date}-{action['id']}"
+            existing_order = (
+                state.db.get_order_sync(order_id)
+                if hasattr(state.db, "get_order_sync")
+                else None
+            )
+            if existing_order is not None:
+                reused_orders.append(
+                    {
+                        "order_id": existing_order["order_id"],
+                        "source_action_id": action["id"],
+                        "symbol": existing_order["symbol"],
+                        "side": existing_order["side"],
+                        "quantity": float(existing_order["quantity"]),
+                        "price": existing_order["price"],
+                        "reused": True,
+                    }
+                )
+                continue
             order_payload = {
+                "shadow_run_schema_version": 1,
                 "run_id": run_id,
                 "run_date": run_date,
+                "shadow_run_idempotency_key": order_id,
                 "action_id": action["id"],
                 "source_signal_id": action.get("source_signal_id"),
                 "strategy_id": action.get("strategy_id"),
@@ -247,16 +281,30 @@ def create_router() -> APIRouter:
                     "side": side,
                     "quantity": float(quantity),
                     "price": price,
+                    "reused": False,
                 }
             )
         result = {
+            "shadow_run_schema_version": 1,
             "run_id": run_id,
             "run_date": run_date,
             "execution_mode": "paper_shadow",
             "base_equity": base_equity,
+            "data_quality_status": _shadow_data_quality_status(
+                passed_count=data_quality_passed,
+                blocked_count=len(data_quality_issues),
+            ),
+            "data_quality": {
+                "schema_version": 1,
+                "passed_count": data_quality_passed,
+                "blocked_count": len(data_quality_issues),
+                "issues": data_quality_issues,
+            },
             "processed_count": len(recorded_orders),
+            "reused_count": len(reused_orders),
             "skipped_count": len(skipped),
             "orders": recorded_orders,
+            "reused_orders": reused_orders,
             "skipped": skipped,
         }
         await _broadcast_if_possible(state, "DailyShadowRunRecorded", result)
@@ -399,6 +447,58 @@ def _shadow_base_equity(state) -> float:
             return total
     config = getattr(state, "config", None)
     return float(getattr(config, "initial_cash", 0.0) or 0.0)
+
+
+def _shadow_action_data_quality_issue(state, action: dict) -> dict | None:
+    db = getattr(state, "db", None)
+    get_latest_quote = getattr(db, "get_latest_quote_sync", None)
+    if not callable(get_latest_quote):
+        return None
+    symbol = str(action.get("symbol") or "")
+    asset_class = str(action.get("asset_class") or "stock")
+    quote = get_latest_quote(symbol, asset_type=asset_class)
+    if quote is None:
+        quote = get_latest_quote(symbol)
+    if quote is None:
+        return {
+            "action_id": action.get("id"),
+            "symbol": symbol,
+            "asset_class": asset_class,
+            "reason": "missing_latest_quote",
+        }
+    quote_status = str(quote.get("quote_status") or "live")
+    if quote_status != "live":
+        return {
+            "action_id": action.get("id"),
+            "symbol": symbol,
+            "asset_class": asset_class,
+            "reason": f"quote_status_{quote_status}",
+            "quote_status": quote_status,
+            "stale_reason": quote.get("stale_reason"),
+            "quote_timestamp": quote.get("quote_timestamp"),
+        }
+    try:
+        price = float(quote.get("price"))
+    except (TypeError, ValueError):
+        price = 0.0
+    if price <= 0:
+        return {
+            "action_id": action.get("id"),
+            "symbol": symbol,
+            "asset_class": asset_class,
+            "reason": "invalid_quote_price",
+            "quote_status": quote_status,
+            "quote_timestamp": quote.get("quote_timestamp"),
+        }
+    return None
+
+
+def _shadow_data_quality_status(*, passed_count: int, blocked_count: int) -> str:
+    if blocked_count and not passed_count:
+        return "blocked"
+    if blocked_count:
+        return "partial"
+    return "passed"
 
 
 def _manual_order_action_id(order: dict) -> int | None:

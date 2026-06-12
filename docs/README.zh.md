@@ -376,6 +376,21 @@ Action card 的 `risk_gate_status` 显式区分 `not_checked`、`passed`、`bloc
 review notes 作为不可变审计事件写入 journal。它不会修改 action task，不会创建订单，
 不会提交到券商，也不会记录成交。
 
+#### 决策驾驶舱 — /api/decision
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/decision/today` | 获取今日只读决策摘要、候选动作、证据包和 no-action 原因 |
+| GET | `/api/decision/intraday` | 获取股票 / 常见场内 ETF 的只读盘中候选动作视图 |
+
+`GET /api/decision/today` 聚合已有 action task、风控闸门状态、signal journal
+和最新 quote freshness，输出 `buy`、`sell`、`hold`、`rebalance`、`no_action`
+或 `review_required`。它只读现有事实，不创建订单、不提交券商，也不改变人工确认默认值。
+
+`GET /api/decision/intraday` 复用相同证据包，但只把股票和常见场内 ETF 代码纳入
+盘中候选动作；场外基金 / 长期配置 action 会被排除并留给日级 lane。该接口用于
+分钟级或轮询级驾驶舱展示，不是高频或毫秒级交易系统，也不会自动执行。
+
 #### 交易控制 — /api/trading
 
 | 方法 | 路径 | 说明 |
@@ -399,7 +414,12 @@ review notes 作为不可变审计事件写入 journal。它不会修改 action 
 
 `POST /api/trading/shadow-runs/daily` 会为已经通过风控的 action card 记录
 确定性的 `paper_shadow` 订单事实。它会跳过 blocked / not-yet-checked action，
-不会创建人工订单，不会提交到券商，也不会记录成交。
+不会创建人工订单，不会提交到券商，也不会记录成交。同一 `run_date` 和 action
+重复运行时会复用已有订单事实；响应中的 `shadow_run_schema_version`、
+`reused_count` 和 `reused_orders` 用于审计幂等重跑，而不是再次写入订单或事件。
+每日 shadow run 还会在写入前检查 action 对应的 `latest_quotes`：缺失 quote、
+非 `live` 状态或非正价格会被记入 `data_quality.issues`，并以
+`data_quality:*` 原因跳过该 action，不生成 shadow order。
 
 `POST /api/trading/order-facts/{order_id}/shadow-divergence-review` 会在已有
 `paper_shadow` 订单事实上记录操作者 review，例如 `within_expectations`。
