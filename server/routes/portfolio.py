@@ -29,6 +29,7 @@ from server.models import (
     ExplainabilityDriver,
     ExplainabilityPositionDriver,
     ExplainabilityResponse,
+    ExplainabilityTimelineBreakdownItem,
     ExplainabilityTimelineEvent,
     ExplainabilityTimelinePoint,
     LiveHoldingGroupResponse,
@@ -90,6 +91,19 @@ _ASSET_CLASS_LABELS = {
     "gold": "黄金",
     "bond": "债券",
     "cash": "现金",
+}
+
+_TIMELINE_MARKET_COMPONENTS = (
+    ("stock", "stocks"),
+    ("fund", "funds"),
+    ("other", "others"),
+)
+
+_EXTERNAL_FLOW_LABELS = {
+    "cash_deposit": "入金",
+    "cash_withdrawal": "出金",
+    "dividend": "分红",
+    "manual_adjustment": "手工调整",
 }
 
 
@@ -411,6 +425,49 @@ def _timeline_date_from_timestamp(timestamp: str) -> str:
     return timestamp.split("T")[0]
 
 
+def _ledger_entry_notional(entry: dict) -> float:
+    amount = entry.get("amount")
+    if amount is not None:
+        return abs(float(amount))
+    quantity = entry.get("quantity")
+    price = entry.get("price")
+    if quantity is None or price is None:
+        return 0.0
+    return abs(float(quantity) * float(price))
+
+
+def _build_timeline_breakdown_items(
+    values: dict[str, float],
+    labels: dict[str, str],
+) -> list[ExplainabilityTimelineBreakdownItem]:
+    return [
+        ExplainabilityTimelineBreakdownItem(
+            key=key,
+            label=labels.get(key, key.replace("_", " ").title()),
+            value=value,
+        )
+        for key, value in values.items()
+        if abs(value) > 1e-9
+    ]
+
+
+def _equity_series_components_by_date(
+    points: list[EquitySeriesPoint],
+) -> dict[str, dict[str, float]]:
+    components_by_date: dict[str, dict[str, float]] = {}
+    for point in points:
+        point_date = str(point.timestamp).split("T")[0]
+        if not point_date:
+            continue
+        components_by_date[point_date] = {
+            "stocks": float(point.stocks),
+            "funds": float(point.funds),
+            "others": float(point.others),
+            "cash": float(point.cash),
+        }
+    return components_by_date
+
+
 def _build_timeline(
     equity_curve: list[EquityPoint],
     entries: list[dict],
@@ -420,12 +477,19 @@ def _build_timeline(
     to_date: str | None = None,
     valuation_status_by_date: dict[str, str] | None = None,
     missing_price_symbols_by_date: dict[str, list[str]] | None = None,
+    component_values_by_date: dict[str, dict[str, float]] | None = None,
 ) -> list[ExplainabilityTimelinePoint]:
     if not equity_curve:
         return []
 
     events_by_date: dict[str, list[ExplainabilityTimelineEvent]] = defaultdict(list)
     external_flow_by_date: dict[str, float] = defaultdict(float)
+    external_flow_breakdown_by_date: dict[str, dict[str, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    positioning_flow_by_date: dict[str, dict[str, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
 
     for entry in entries:
         timestamp = str(entry.get("timestamp") or "")
@@ -437,6 +501,7 @@ def _build_timeline(
             continue
         symbol = entry.get("symbol")
         amount = float(entry.get("amount") or 0.0)
+        asset_class = _normalize_asset_class(entry.get("asset_class"))
         category = "portfolio"
         impact_source = "market"
 
@@ -446,12 +511,14 @@ def _build_timeline(
             title = "Cash deposited"
             detail = entry.get("note") or "Capital added to the portfolio."
             external_flow_by_date[event_date] += amount
+            external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "capital"
             impact_source = "external"
         elif entry_type == "cash_withdrawal":
             title = "Cash withdrawn"
             detail = entry.get("note") or "Capital removed from the portfolio."
             external_flow_by_date[event_date] -= abs(amount)
+            external_flow_breakdown_by_date[event_date][entry_type] -= abs(amount)
             amount = -abs(amount)
             category = "capital"
             impact_source = "external"
@@ -459,12 +526,14 @@ def _build_timeline(
             title = f"Dividend from {symbol}"
             detail = entry.get("note") or "Cash income recorded from holdings."
             external_flow_by_date[event_date] += amount
+            external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "income"
             impact_source = "cash"
         elif entry_type == "manual_adjustment":
             title = "Manual adjustment"
             detail = entry.get("note") or "Manual ledger override applied."
             external_flow_by_date[event_date] += amount
+            external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "override"
             impact_source = "manual"
         elif entry_type == "trade_buy":
@@ -473,12 +542,18 @@ def _build_timeline(
             amount = None
             category = "trade"
             impact_source = "positioning"
+            positioning_flow_by_date[event_date][asset_class] += _ledger_entry_notional(
+                entry
+            )
         elif entry_type == "trade_sell":
             title = f"Sold {symbol}"
             detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
             amount = None
             category = "trade"
             impact_source = "positioning"
+            positioning_flow_by_date[event_date][asset_class] -= _ledger_entry_notional(
+                entry
+            )
 
         events_by_date[event_date].append(
             ExplainabilityTimelineEvent(
@@ -495,12 +570,15 @@ def _build_timeline(
 
     timeline: list[ExplainabilityTimelinePoint] = []
     previous_equity: float | None = None
+    previous_components: dict[str, float] | None = None
     previous_valuation_status = "complete"
     previous_missing_price_symbols: list[str] = []
     for point in equity_curve:
         point_date = point.timestamp.split("T")[0]
+        point_components = (component_values_by_date or {}).get(point_date)
         if from_date and point_date < from_date:
             previous_equity = point.equity
+            previous_components = point_components
             previous_valuation_status = (valuation_status_by_date or {}).get(
                 point_date, "complete"
             )
@@ -530,6 +608,29 @@ def _build_timeline(
             missing_price_symbols = sorted(
                 set(missing_price_symbols) | set(previous_missing_price_symbols)
             )
+        market_breakdown: list[ExplainabilityTimelineBreakdownItem] = []
+        if (
+            valuation_status != "missing"
+            and previous_components is not None
+            and point_components is not None
+        ):
+            market_values: dict[str, float] = {}
+            positioning_values = positioning_flow_by_date.get(point_date, {})
+            for asset_key, component_key in _TIMELINE_MARKET_COMPONENTS:
+                current_value = float(point_components.get(component_key, 0.0))
+                previous_value = float(previous_components.get(component_key, 0.0))
+                component_delta = current_value - previous_value
+                market_values[asset_key] = component_delta - float(
+                    positioning_values.get(asset_key, 0.0)
+                )
+            market_breakdown = _build_timeline_breakdown_items(
+                market_values,
+                _ASSET_CLASS_LABELS,
+            )
+        external_flow_breakdown = _build_timeline_breakdown_items(
+            dict(external_flow_breakdown_by_date.get(point_date, {})),
+            _EXTERNAL_FLOW_LABELS,
+        )
         timeline.append(
             ExplainabilityTimelinePoint(
                 date=point_date,
@@ -540,9 +641,12 @@ def _build_timeline(
                 events=events_by_date.get(point_date, []),
                 valuation_status=valuation_status,
                 missing_price_symbols=missing_price_symbols,
+                market_breakdown=market_breakdown,
+                external_flow_breakdown=external_flow_breakdown,
             )
         )
         previous_equity = point.equity
+        previous_components = point_components
         previous_valuation_status = point_valuation_status
         previous_missing_price_symbols = point_missing_price_symbols
 
@@ -2603,6 +2707,7 @@ def create_router() -> APIRouter:
         equity_curve: list[EquityPoint] = []
         valuation_status_by_date: dict[str, str] = {}
         missing_price_symbols_by_date: dict[str, list[str]] = {}
+        component_values_by_date: dict[str, dict[str, float]] = {}
         if state.db is not None and (
             hasattr(state.db, "get_latest_daily_close_before_sync")
             or hasattr(state.db, "get_latest_quote_before_date_sync")
@@ -2611,6 +2716,7 @@ def create_router() -> APIRouter:
             equity_series = _trim_non_trading_terminal_series_point(equity_series)
             equity_series = _dedupe_equity_series_points_by_date(equity_series)
             equity_curve = _equity_points_from_series(equity_series)
+            component_values_by_date = _equity_series_components_by_date(equity_series)
             (
                 valuation_status_by_date,
                 missing_price_symbols_by_date,
@@ -2634,6 +2740,7 @@ def create_router() -> APIRouter:
                 to_date=to_date,
                 valuation_status_by_date=valuation_status_by_date,
                 missing_price_symbols_by_date=missing_price_symbols_by_date,
+                component_values_by_date=component_values_by_date,
             ),
         )
 

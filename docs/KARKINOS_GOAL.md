@@ -451,4 +451,10 @@ automation.
   before falling back to daily-close snapshots or quote snapshots, and dedupes
   same-date daily/current points by valuation quality so stale current points do
   not override complete historical bars.
+* 2026-06-14: Added traceable daily-change breakdowns to the return calendar.
+  Explainability timeline points now expose market moves by asset bucket
+  (stock/fund/other) and external-flow events by kind (deposit, withdrawal,
+  dividend, manual adjustment), and the cockpit detail panel surfaces those
+  components so total daily change is auditable instead of a single opaque
+  number.
 <!-- codex-progress:end -->
