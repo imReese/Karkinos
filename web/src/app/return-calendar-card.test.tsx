@@ -28,6 +28,15 @@ const timeline = [
     market_pnl: 600,
   },
   {
+    date: '2026-02-11',
+    equity: 101000,
+    delta: 0,
+    external_flow: 0,
+    market_pnl: 0,
+    valuation_status: 'missing',
+    missing_price_symbols: ['600519'],
+  },
+  {
     date: '2025-12-31',
     equity: 100000,
     delta: 1000,
@@ -87,11 +96,14 @@ test('renders a month calendar with selectable daily return cells by default', a
   expect(screen.queryByText(/risk page/i)).toBeNull();
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-02-10 · CN¥800.00' }),
+    screen.getByRole('button', { name: '2026-02-10 · CN¥600.00' }),
   ).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: '2026-02-10 · CN¥800.00' }),
+  ).toBeNull();
 
   await userEvent.click(
-    screen.getByRole('button', { name: '2026-02-10 · CN¥800.00' }),
+    screen.getByRole('button', { name: '2026-02-10 · CN¥600.00' }),
   );
 
   expect(await screen.findByText('2026-02-10')).toBeTruthy();
@@ -117,18 +129,32 @@ test('switches the return calendar between monthly days, yearly months, and year
     within(yearGrid).getByRole('button', { name: '2026-01 · CN¥200.00' }),
   ).toBeTruthy();
   expect(
-    within(yearGrid).getByRole('button', { name: '2026-02 · CN¥800.00' }),
+    within(yearGrid).getByRole('button', { name: '2026-02 · Price gap' }),
   ).toBeTruthy();
 
   await user.selectOptions(screen.getByLabelText('Calendar period'), 'years');
 
   const yearsGrid = await screen.findByTestId('return-calendar-years-grid');
   expect(
-    within(yearsGrid).getByRole('button', { name: '2026 · CN¥1,000.00' }),
+    within(yearsGrid).getByRole('button', { name: '2026 · Price gap' }),
   ).toBeTruthy();
   expect(
-    within(yearsGrid).getByRole('button', { name: '2025 · CN¥1,000.00' }),
+    within(yearsGrid).getByRole('button', { name: '2025 · CN¥500.00' }),
   ).toBeTruthy();
+});
+
+test('marks return calendar days with incomplete historical prices', async () => {
+  renderCalendar();
+
+  const missingPriceCell = await screen.findByRole('button', {
+    name: '2026-02-11 · Price gap',
+  });
+  expect(missingPriceCell).toBeTruthy();
+
+  await userEvent.click(missingPriceCell);
+
+  expect(await screen.findByText('Valuation coverage')).toBeTruthy();
+  expect(screen.getByText('Missing historical prices: 600519')).toBeTruthy();
 });
 
 test('supports a compact cockpit layout for the overview page', async () => {

@@ -331,6 +331,8 @@ class ExplainabilityTimelinePoint(BaseModel):
     external_flow: float
     market_pnl: float
     events: list[ExplainabilityTimelineEvent]
+    valuation_status: str = "complete"
+    missing_price_symbols: list[str] = []
 
 
 class ExplainabilityResponse(BaseModel):
@@ -553,6 +555,7 @@ class EquitySeriesPoint(BaseModel):
     cash: float
     unrealized_pnl: float | None = None
     quote_status: str = "live"
+    missing_price_symbols: list[str] = []
 
 
 class ActivityItem(BaseModel):

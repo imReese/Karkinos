@@ -190,7 +190,7 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(await screen.findByText('Return calendar')).toBeTruthy();
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
-    await screen.findByRole('button', { name: '2026-02-10 · CN¥800.00' }),
+    await screen.findByRole('button', { name: '2026-02-10 · CN¥600.00' }),
   ).toBeTruthy();
 });
 
