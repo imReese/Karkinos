@@ -1754,7 +1754,7 @@ def _daily_equity_series_for_range(
         is_range_start = current_date == start_date
         is_range_end = current_date == end_date
         is_trading_day = current_date.weekday() < 5
-        should_emit_day = is_range_start or is_range_end or is_trading_day
+        should_emit_day = is_range_start or is_trading_day
         if active_point is not None and should_emit_day:
             point_timestamp = (
                 end_timestamp
@@ -1789,6 +1789,17 @@ def _equity_points_from_series(
             equity=float(point.total),
         )
     return list(by_date.values())
+
+
+def _trim_non_trading_terminal_series_point(
+    points: list[EquitySeriesPoint],
+) -> list[EquitySeriesPoint]:
+    if len(points) < 2:
+        return points
+    timestamp = _parse_quote_timestamp(points[-1].timestamp)
+    if timestamp is not None and timestamp.weekday() >= 5:
+        return points[:-1]
+    return points
 
 
 def _equity_series_metadata_by_date(
@@ -1949,11 +1960,7 @@ def _daily_equity_series_from_ledger_history(
                 )
             entry_index += 1
 
-        should_emit_day = (
-            current_date == start_date
-            or current_date == end_date
-            or current_date.weekday() < 5
-        )
+        should_emit_day = current_date == start_date or current_date.weekday() < 5
         if active_entries and should_emit_day:
             historical_quotes: dict[str, dict] = {}
             missing_price_symbols: list[str] = []
@@ -2525,6 +2532,7 @@ def create_router() -> APIRouter:
             or hasattr(state.db, "get_latest_quote_before_date_sync")
         ):
             equity_series = await get_equity_curve_series("all")
+            equity_series = _trim_non_trading_terminal_series_point(equity_series)
             equity_curve = _equity_points_from_series(equity_series)
             (
                 valuation_status_by_date,

@@ -115,6 +115,21 @@ test('renders a month calendar with selectable daily return cells by default', a
   expect(within(selectedPeriod!).getByText('CN¥600.00')).toBeTruthy();
 });
 
+test('uses Sunday as the first weekday column in the return calendar', async () => {
+  renderCalendar();
+
+  const weekdays = await screen.findAllByTestId('return-calendar-weekday');
+  expect(weekdays.map((day) => day.textContent)).toEqual([
+    'Sun',
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+  ]);
+});
+
 test('switches the return calendar between monthly days, yearly months, and years', async () => {
   renderCalendar();
   const user = userEvent.setup();
