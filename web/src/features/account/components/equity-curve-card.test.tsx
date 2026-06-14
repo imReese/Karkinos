@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
@@ -293,12 +293,25 @@ test('renders premium performance dashboard controls', async () => {
   renderCard();
 
   expect(await screen.findByText('Performance Analysis')).toBeTruthy();
-  for (const label of ['Total', 'Stocks', 'Funds', 'Others', 'Cash']) {
+  const seriesControls = await screen.findByTestId('equity-series-controls');
+  expect(
+    within(seriesControls)
+      .getAllByRole('button')
+      .map((button) => button.textContent),
+  ).toEqual(['All series', 'Total', 'Cash', 'Stocks', 'Funds', 'Others']);
+
+  expect(
+    (
+      await within(seriesControls).findByRole('button', {
+        name: 'All series',
+      })
+    ).getAttribute('aria-pressed'),
+  ).toBe('true');
+
+  for (const label of ['Total', 'Cash', 'Stocks', 'Funds', 'Others']) {
     const chip = await screen.findByRole('button', { name: label });
     expect(chip.className).toContain('rounded-full');
-    expect(chip.getAttribute('aria-pressed')).toBe(
-      label === 'Total' ? 'true' : 'false',
-    );
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
   }
 
   for (const label of ['1D', '5D', '1M', '6M', '1Y', 'ALL']) {
@@ -321,7 +334,31 @@ test('toggles category chips without removing the control', async () => {
   const stocks = await screen.findByRole('button', { name: 'Stocks' });
   await user.click(stocks);
 
-  expect(stocks.getAttribute('aria-pressed')).toBe('true');
+  expect(stocks.getAttribute('aria-pressed')).toBe('false');
+  expect(
+    (await screen.findByRole('button', { name: 'All series' })).getAttribute(
+      'aria-pressed',
+    ),
+  ).toBe('false');
+});
+
+test('restores all equity series from the all-series chip', async () => {
+  renderCard();
+  const user = userEvent.setup();
+
+  const stocks = await screen.findByRole('button', { name: 'Stocks' });
+  await user.click(stocks);
+  expect(stocks.getAttribute('aria-pressed')).toBe('false');
+
+  await user.click(await screen.findByRole('button', { name: 'All series' }));
+
+  for (const label of ['Total', 'Cash', 'Stocks', 'Funds', 'Others']) {
+    expect(
+      (await screen.findByRole('button', { name: label })).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true');
+  }
 });
 
 test('updates the active range and notifies the parent query layer', async () => {

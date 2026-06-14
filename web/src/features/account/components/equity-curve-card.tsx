@@ -41,6 +41,7 @@ type CustomTooltipProps = {
 const SERIES_META: Array<{ key: SeriesKey; color: string; gradient: string }> =
   [
     { key: 'total', color: 'var(--app-accent)', gradient: 'totalGradient' },
+    { key: 'cash', color: 'var(--app-teal)', gradient: 'cashGradient' },
     {
       key: 'stocks',
       color: 'var(--app-accent-secondary)',
@@ -48,8 +49,15 @@ const SERIES_META: Array<{ key: SeriesKey; color: string; gradient: string }> =
     },
     { key: 'funds', color: 'var(--app-success)', gradient: 'fundsGradient' },
     { key: 'others', color: 'var(--app-warning)', gradient: 'othersGradient' },
-    { key: 'cash', color: 'var(--app-teal)', gradient: 'cashGradient' },
   ];
+
+const ALL_VISIBLE_SERIES: Record<SeriesKey, boolean> = {
+  total: true,
+  cash: true,
+  stocks: true,
+  funds: true,
+  others: true,
+};
 
 const RANGE_DAYS: Record<EquityCurveRange, number> = {
   '1d': 1,
@@ -380,15 +388,8 @@ export function EquityCurveCard({
   const [uncontrolledRange, setUncontrolledRange] =
     useState<EquityCurveRange>('1m');
   const range = controlledRange ?? uncontrolledRange;
-  const [visibleSeries, setVisibleSeries] = useState<
-    Record<SeriesKey, boolean>
-  >({
-    total: true,
-    stocks: false,
-    funds: false,
-    others: false,
-    cash: false,
-  });
+  const [visibleSeries, setVisibleSeries] =
+    useState<Record<SeriesKey, boolean>>(ALL_VISIBLE_SERIES);
 
   const chartPoints = filterByRange(toChartPoints(points), range);
   const hasUsableData = chartPoints.length >= 2;
@@ -409,11 +410,14 @@ export function EquityCurveCard({
   const activeRangeIndex = rangeOptions.findIndex(([value]) => value === range);
   const seriesLabels: Record<SeriesKey, string> = {
     total: labels.total,
+    cash: labels.cash,
     stocks: labels.stocks,
     funds: labels.funds,
     others: labels.others,
-    cash: labels.cash,
   };
+  const allSeriesSelected = SERIES_META.every(
+    (series) => visibleSeries[series.key],
+  );
 
   return (
     <section className="w-full px-0 py-1">
@@ -431,7 +435,23 @@ export function EquityCurveCard({
               <span className="truncate">{labels.cachedValuation}</span>
             </div>
           ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <div
+            data-testid="equity-series-controls"
+            className="mt-3 flex flex-wrap items-center gap-1.5"
+          >
+            <button
+              type="button"
+              aria-pressed={allSeriesSelected}
+              aria-label={labels.allSeries}
+              onClick={() => setVisibleSeries(ALL_VISIBLE_SERIES)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
+                allSeriesSelected
+                  ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
+                  : 'border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:opacity-100'
+              }`}
+            >
+              {labels.allSeries}
+            </button>
             {SERIES_META.map((series) => {
               const active = visibleSeries[series.key];
               return (
