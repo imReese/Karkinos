@@ -2062,6 +2062,38 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_latest_market_bar_before_date_sync(
+        self, symbol: str, trade_date: str, frequency: str = "1d"
+    ) -> dict[str, Any] | None:
+        """Read the latest daily OHLC bar before trade_date from the data store."""
+        meta_path = self._path.parent / "meta.db"
+        if not meta_path.exists():
+            return None
+        try:
+            with sqlite3.connect(meta_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                    SELECT
+                        symbol, frequency, timestamp, open, high, low, close,
+                        volume, amount, created_at, updated_at
+                    FROM market_bars
+                    WHERE symbol = ? AND frequency = ? AND substr(timestamp, 1, 10) < ?
+                    ORDER BY substr(timestamp, 1, 10) DESC, timestamp DESC
+                    LIMIT 1
+                    """,
+                    (symbol, frequency, trade_date),
+                ).fetchone()
+        except sqlite3.Error:
+            return None
+        if row is None:
+            return None
+        result = dict(row)
+        result["trade_date"] = str(result["timestamp"])[:10]
+        result["price"] = result["close"]
+        result["source"] = "market_bars"
+        return result
+
     def get_latest_quote_before_date_sync(
         self, symbol: str, trade_date: str
     ) -> dict[str, Any] | None:

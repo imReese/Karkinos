@@ -446,4 +446,9 @@ automation.
   an incomplete valuation point is now marked as a price-coverage gap instead
   of reporting the synthetic revaluation delta as market PnL, and the return
   curve view now renders visible x/y axes with endpoint labels.
+* 2026-06-14: Connected return-calendar daily valuation to the authoritative
+  local OHLC cache. Explainability now reads daily close from `market_bars`
+  before falling back to daily-close snapshots or quote snapshots, and dedupes
+  same-date daily/current points by valuation quality so stale current points do
+  not override complete historical bars.
 <!-- codex-progress:end -->

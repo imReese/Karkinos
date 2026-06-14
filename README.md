@@ -30,7 +30,7 @@ public demos and development.
 - Live monitoring with Telegram / WeChat push notifications
 - React + TanStack Query + TanStack Router portfolio workspace
 - Responsive cockpit layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
-- Return calendar cockpit view: inspect one month by day, one year by month, or every year from audited attribution data. The calendar starts weeks on Sunday, uses market PnL for cells, keeps cash deposits/withdrawals as external-flow context, skips non-trading terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
+- Return calendar cockpit view: inspect one month by day, one year by month, or every year from audited attribution data. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, keeps cash deposits/withdrawals as external-flow context, skips non-trading terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
 - Read-only decision cockpit APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
 

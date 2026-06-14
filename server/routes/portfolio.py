@@ -1825,6 +1825,41 @@ def _trim_non_trading_terminal_series_point(
     return points
 
 
+def _equity_series_status_rank(status: str | None) -> int:
+    if status in {"missing", "error"}:
+        return 0
+    if status == "stale":
+        return 1
+    return 2
+
+
+def _dedupe_equity_series_points_by_date(
+    points: list[EquitySeriesPoint],
+) -> list[EquitySeriesPoint]:
+    by_date: dict[str, EquitySeriesPoint] = {}
+    for point in points:
+        point_date = str(point.timestamp).split("T")[0]
+        if not point_date:
+            continue
+        existing = by_date.get(point_date)
+        if existing is None:
+            by_date[point_date] = point
+            continue
+        existing_timestamp = _parse_quote_timestamp(existing.timestamp)
+        point_timestamp = _parse_quote_timestamp(point.timestamp)
+        existing_score = (
+            _equity_series_status_rank(existing.quote_status),
+            existing_timestamp or datetime.min.replace(tzinfo=_SH_TZ),
+        )
+        point_score = (
+            _equity_series_status_rank(point.quote_status),
+            point_timestamp or datetime.min.replace(tzinfo=_SH_TZ),
+        )
+        if point_score >= existing_score:
+            by_date[point_date] = point
+    return [by_date[day] for day in sorted(by_date)]
+
+
 def _equity_series_metadata_by_date(
     points: list[EquitySeriesPoint],
 ) -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -1892,6 +1927,24 @@ def _historical_quote_for_equity_day(
 
     next_date = (trade_date + timedelta(days=1)).isoformat()
     db = state.db
+    if db is not None and hasattr(db, "get_latest_market_bar_before_date_sync"):
+        market_bar = db.get_latest_market_bar_before_date_sync(symbol, next_date)
+        if market_bar:
+            return {
+                "symbol": symbol,
+                "asset_class": market_bar.get("asset_class") or asset_class,
+                "price": market_bar.get("price", market_bar.get("close")),
+                "timestamp": market_bar.get("timestamp")
+                or market_bar.get("trade_date")
+                or trade_date.isoformat(),
+                "quote_status": "historical_bar",
+                "source": market_bar.get("source") or "market_bars",
+                "open": market_bar.get("open"),
+                "high": market_bar.get("high"),
+                "low": market_bar.get("low"),
+                "close": market_bar.get("close"),
+            }
+
     if db is not None and hasattr(db, "get_latest_daily_close_before_sync"):
         daily_close = db.get_latest_daily_close_before_sync(symbol, next_date)
         if daily_close:
@@ -2016,10 +2069,10 @@ def _daily_equity_series_from_ledger_history(
                 buckets[bucket] += market_value
                 unrealized_pnl += float(position.unrealized_pnl)
 
-            timestamp = (
-                latest_timestamp
-                if current_date == end_date
-                else datetime.combine(current_date, _CN_AFTERNOON_CLOSE, tzinfo=_SH_TZ)
+            timestamp = datetime.combine(
+                current_date,
+                _CN_AFTERNOON_CLOSE,
+                tzinfo=_SH_TZ,
             )
             points.append(
                 EquitySeriesPoint(
@@ -2556,6 +2609,7 @@ def create_router() -> APIRouter:
         ):
             equity_series = await get_equity_curve_series("all")
             equity_series = _trim_non_trading_terminal_series_point(equity_series)
+            equity_series = _dedupe_equity_series_points_by_date(equity_series)
             equity_curve = _equity_points_from_series(equity_series)
             (
                 valuation_status_by_date,
