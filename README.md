@@ -30,7 +30,7 @@ public demos and development.
 - Live monitoring with Telegram / WeChat push notifications
 - React + TanStack Query + TanStack Router portfolio workspace
 - Responsive cockpit layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
-- Return calendar cockpit view: inspect one month by day, one year by month, or every year from audited attribution data
+- Return calendar cockpit view: inspect one month by day, one year by month, or every year from audited attribution data; when persisted portfolio snapshots are absent, the backend derives daily portfolio valuation from ledger history plus historical close/quote cache instead of inventing returns
 - Read-only decision cockpit APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
 

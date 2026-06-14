@@ -425,4 +425,11 @@ automation.
   holdings display. The empty-state now explains that the calendar is warming
   up, links to activity and market data surfaces, and prioritizes asset names
   over symbols in current-position PnL cards.
+* 2026-06-14: Connected explainability attribution to deterministic daily
+  portfolio valuation when historical price cache is available. The return
+  calendar can now consume a ledger-history timeline built from cash/trade
+  entries plus historical close or quote cache, while falling back to the legacy
+  equity curve when no historical price lookup exists. Ledger events are mapped
+  to Shanghai trading dates before external-flow attribution, avoiding synthetic
+  market PnL from UTC timestamp boundaries.
 <!-- codex-progress:end -->

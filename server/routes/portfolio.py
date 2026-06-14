@@ -404,6 +404,13 @@ def _build_recent_drivers(entries: list[dict]) -> list[ExplainabilityDriver]:
     return drivers
 
 
+def _timeline_date_from_timestamp(timestamp: str) -> str:
+    parsed = _parse_quote_timestamp(timestamp)
+    if parsed is not None:
+        return parsed.date().isoformat()
+    return timestamp.split("T")[0]
+
+
 def _build_timeline(
     equity_curve: list[EquityPoint],
     entries: list[dict],
@@ -422,7 +429,7 @@ def _build_timeline(
         timestamp = str(entry.get("timestamp") or "")
         if not timestamp:
             continue
-        event_date = timestamp.split("T")[0]
+        event_date = _timeline_date_from_timestamp(timestamp)
         entry_type = entry.get("entry_type") or "ledger"
         if event_kind and entry_type != event_kind:
             continue
@@ -1761,6 +1768,21 @@ def _daily_equity_series_for_range(
     return daily_points or points
 
 
+def _equity_points_from_series(
+    points: list[EquitySeriesPoint],
+) -> list[EquityPoint]:
+    by_date: dict[str, EquityPoint] = {}
+    for point in points:
+        point_date = str(point.timestamp).split("T")[0]
+        if not point_date:
+            continue
+        by_date[point_date] = EquityPoint(
+            timestamp=point.timestamp,
+            equity=float(point.total),
+        )
+    return list(by_date.values())
+
+
 def _load_ledger_entries_for_equity_series(
     db, batch_size: int = 500
 ) -> list[LedgerEntry]:
@@ -2467,7 +2489,15 @@ def create_router() -> APIRouter:
         state = get_app_state()
         snapshot = await get_portfolio()
         summary = await get_overview()
-        equity_curve = await get_equity_curve()
+        equity_curve: list[EquityPoint] = []
+        if state.db is not None and (
+            hasattr(state.db, "get_latest_daily_close_before_sync")
+            or hasattr(state.db, "get_latest_quote_before_date_sync")
+        ):
+            equity_series = await get_equity_curve_series("all")
+            equity_curve = _equity_points_from_series(equity_series)
+        if not equity_curve:
+            equity_curve = await get_equity_curve()
 
         entries = []
         if state.db is not None and hasattr(state.db, "get_ledger_entries_sync"):
