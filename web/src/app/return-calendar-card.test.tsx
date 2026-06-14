@@ -39,6 +39,7 @@ const timeline = [
 const positionSnapshot = [
   {
     symbol: '026539',
+    display_name: 'Rongtong Tech Growth Fund C',
     asset_class: 'fund',
     market_value: 775.78,
     unrealized_pnl: 175.78,
@@ -46,6 +47,7 @@ const positionSnapshot = [
   },
   {
     symbol: '603659',
+    name: 'Putailai',
     asset_class: 'stock',
     market_value: 5668,
     unrealized_pnl: -95,
@@ -147,8 +149,12 @@ test('shows a current-position fallback when daily attribution is not available'
   );
 
   expect(await screen.findByText('Current position PnL')).toBeTruthy();
-  expect(screen.getByText('Historical snapshots required')).toBeTruthy();
+  expect(screen.getByText('Return calendar is warming up')).toBeTruthy();
   expect(screen.getAllByText('CN¥80.78').length).toBeGreaterThan(0);
+  expect(screen.getByText('Rongtong Tech Growth Fund C')).toBeTruthy();
   expect(screen.getByText('026539')).toBeTruthy();
+  expect(screen.getByText('Putailai')).toBeTruthy();
   expect(screen.getByText('603659')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Add activity' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Check data source' })).toBeTruthy();
 });

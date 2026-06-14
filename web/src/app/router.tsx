@@ -339,7 +339,7 @@ export function OverviewPage() {
                 <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_58%,transparent)] pt-4">
                   <ReturnCalendarCard
                     timeline={explainability.data?.timeline ?? []}
-                    positions={explainability.data?.positions ?? []}
+                    positions={positions}
                     compact
                   />
                 </div>
@@ -2805,7 +2805,9 @@ type ReturnCalendarRow = {
 
 type ReturnCalendarPosition = {
   symbol: string;
-  asset_class: string;
+  name?: string | null;
+  display_name?: string | null;
+  asset_class?: string | null;
   market_value: number;
   unrealized_pnl: number;
   realized_pnl: number;
@@ -3101,13 +3103,18 @@ function ReturnCalendarEmptyState({
             {rankedPositions.map((position) => {
               const positionPnl =
                 position.unrealized_pnl + position.realized_pnl;
+              const displayName =
+                position.display_name || position.name || position.symbol;
+              const assetClass = position.asset_class || '--';
               return (
                 <div
                   key={position.symbol}
                   className="rounded-md border border-[var(--app-border)] px-3 py-2"
                 >
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="font-semibold">{position.symbol}</span>
+                    <span className="min-w-0 truncate font-semibold">
+                      {displayName}
+                    </span>
                     <span
                       className={
                         positionPnl >= 0 ? 'text-red-500' : 'text-emerald-500'
@@ -3116,8 +3123,10 @@ function ReturnCalendarEmptyState({
                       {formatCurrency(positionPnl)}
                     </span>
                   </div>
-                  <div className="app-muted mt-1 text-[11px] uppercase">
-                    {position.asset_class}
+                  <div className="app-muted mt-1 flex items-center gap-2 text-[11px] uppercase">
+                    <span>{position.symbol}</span>
+                    <span aria-hidden="true">/</span>
+                    <span>{assetClass}</span>
                   </div>
                 </div>
               );
@@ -3127,10 +3136,24 @@ function ReturnCalendarEmptyState({
       </div>
       <div className="rounded-md border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-1)_72%,transparent)] p-3">
         <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-          {copy.explainability.historicalSnapshotsRequired}
+          {copy.explainability.returnCalendarWarmingUp}
         </div>
         <div className="app-muted mt-2 text-sm">
           {copy.explainability.returnCalendarEmptyDetail}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a
+            href="/activity"
+            className="rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent-border)] hover:text-[var(--app-accent)]"
+          >
+            {copy.explainability.addActivity}
+          </a>
+          <a
+            href="/market"
+            className="rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent-border)] hover:text-[var(--app-accent)]"
+          >
+            {copy.explainability.checkDataSource}
+          </a>
         </div>
       </div>
     </div>

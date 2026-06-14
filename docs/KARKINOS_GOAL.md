@@ -421,4 +421,8 @@ automation.
   curve and return calendar now live inside one performance-analysis card so
   trend, attribution, and missing-snapshot explanations share the same cockpit
   context without changing trading or API behavior.
+* 2026-06-14: Polished the Overview return-calendar fallback language and
+  holdings display. The empty-state now explains that the calendar is warming
+  up, links to activity and market data surfaces, and prioritizes asset names
+  over symbols in current-position PnL cards.
 <!-- codex-progress:end -->
