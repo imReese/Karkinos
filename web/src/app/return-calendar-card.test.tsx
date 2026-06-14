@@ -29,8 +29,8 @@ const timeline = [
   },
   {
     date: '2026-02-11',
-    equity: 101000,
-    delta: 0,
+    equity: 100721,
+    delta: -279,
     external_flow: 0,
     market_pnl: 0,
     valuation_status: 'missing',
@@ -170,6 +170,26 @@ test('marks return calendar days with incomplete historical prices', async () =>
 
   expect(await screen.findByText('Valuation coverage')).toBeTruthy();
   expect(screen.getByText('Missing historical prices: 600519')).toBeTruthy();
+  expect(screen.getAllByText('Price gap').length).toBeGreaterThan(0);
+  const selectedPeriod = screen
+    .getByText('Selected period')
+    .closest('div')?.parentElement;
+  expect(selectedPeriod).toBeTruthy();
+  expect(within(selectedPeriod!).queryByText(/279/)).toBeNull();
+
+  await userEvent.selectOptions(screen.getByDisplayValue('Calendar'), 'table');
+  expect(screen.getAllByText('Price gap').length).toBeGreaterThan(0);
+});
+
+test('renders axes when the return calendar switches to curve view', async () => {
+  renderCalendar();
+
+  await userEvent.selectOptions(screen.getByDisplayValue('Calendar'), 'curve');
+
+  expect(await screen.findByTestId('return-curve-x-axis')).toBeTruthy();
+  expect(screen.getByTestId('return-curve-y-axis')).toBeTruthy();
+  expect(screen.getByText('2026-02-11')).toBeTruthy();
+  expect(screen.getByText('CN¥600.00')).toBeTruthy();
 });
 
 test('supports a compact cockpit layout for the overview page', async () => {

@@ -495,16 +495,41 @@ def _build_timeline(
 
     timeline: list[ExplainabilityTimelinePoint] = []
     previous_equity: float | None = None
+    previous_valuation_status = "complete"
+    previous_missing_price_symbols: list[str] = []
     for point in equity_curve:
         point_date = point.timestamp.split("T")[0]
         if from_date and point_date < from_date:
             previous_equity = point.equity
+            previous_valuation_status = (valuation_status_by_date or {}).get(
+                point_date, "complete"
+            )
+            previous_missing_price_symbols = (missing_price_symbols_by_date or {}).get(
+                point_date, []
+            )
             continue
         if to_date and point_date > to_date:
             continue
         delta = 0.0 if previous_equity is None else point.equity - previous_equity
         external_flow = external_flow_by_date.get(point_date, 0.0)
         market_pnl = 0.0 if previous_equity is None else delta - external_flow
+        point_valuation_status = (valuation_status_by_date or {}).get(
+            point_date, "complete"
+        )
+        point_missing_price_symbols = (missing_price_symbols_by_date or {}).get(
+            point_date, []
+        )
+        valuation_status = point_valuation_status
+        missing_price_symbols = point_missing_price_symbols
+        if previous_equity is not None and (
+            point_valuation_status in {"missing", "partial"}
+            or previous_valuation_status in {"missing", "partial"}
+        ):
+            valuation_status = "missing"
+            market_pnl = 0.0
+            missing_price_symbols = sorted(
+                set(missing_price_symbols) | set(previous_missing_price_symbols)
+            )
         timeline.append(
             ExplainabilityTimelinePoint(
                 date=point_date,
@@ -513,15 +538,13 @@ def _build_timeline(
                 external_flow=external_flow,
                 market_pnl=market_pnl,
                 events=events_by_date.get(point_date, []),
-                valuation_status=(valuation_status_by_date or {}).get(
-                    point_date, "complete"
-                ),
-                missing_price_symbols=(missing_price_symbols_by_date or {}).get(
-                    point_date, []
-                ),
+                valuation_status=valuation_status,
+                missing_price_symbols=missing_price_symbols,
             )
         )
         previous_equity = point.equity
+        previous_valuation_status = point_valuation_status
+        previous_missing_price_symbols = point_missing_price_symbols
 
     return timeline
 
