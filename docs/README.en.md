@@ -18,6 +18,7 @@ Key Features:
 - **Notifications** — Console / Telegram / WeChat (ServerChan) channels
 - **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts workspace
 - **Responsive Cockpit Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
+- **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data
 - **Docker One-Click Deploy** — Multi-stage build, all-in-one frontend + backend image
 
 ## Architecture

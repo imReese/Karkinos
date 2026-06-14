@@ -2778,7 +2778,17 @@ function DrawdownChart({
   );
 }
 
-function ReturnCalendarCard({
+type ReturnCalendarPeriod = 'month-days' | 'year-months' | 'years';
+
+type ReturnCalendarRow = {
+  label: string;
+  delta: number;
+  externalFlow: number;
+  marketPnl: number;
+  percentChange: number;
+};
+
+export function ReturnCalendarCard({
   timeline,
 }: {
   timeline: Array<{
@@ -2790,15 +2800,43 @@ function ReturnCalendarCard({
   }>;
 }) {
   const copy = useCopy();
-  const [viewMode, setViewMode] = useState<'heatmap' | 'table' | 'curve'>(
-    'heatmap',
+  const dailyRows = aggregateReturnTimeline(timeline, 'day');
+  const monthlyRows = aggregateReturnTimeline(timeline, 'month');
+  const yearlyRows = aggregateReturnTimeline(timeline, 'year');
+  const monthOptions = Array.from(
+    new Set(dailyRows.map((row) => row.label.slice(0, 7))),
+  ).sort();
+  const yearOptions = Array.from(
+    new Set(monthlyRows.map((row) => row.label.slice(0, 4))),
+  ).sort();
+  const initialMonth = monthOptions[monthOptions.length - 1] ?? '';
+  const initialYear = yearOptions[yearOptions.length - 1] ?? '';
+  const [viewMode, setViewMode] = useState<'calendar' | 'table' | 'curve'>(
+    'calendar',
   );
-  const [bucket, setBucket] = useState<'day' | 'week' | 'month' | 'year'>(
-    'day',
-  );
+  const [period, setPeriod] = useState<ReturnCalendarPeriod>('month-days');
   const [metric, setMetric] = useState<'amount' | 'percent'>('amount');
+  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
+  const [selectedYear, setSelectedYear] = useState(initialYear);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
 
-  const aggregated = aggregateReturnTimeline(timeline, bucket);
+  const activeMonth = monthOptions.includes(selectedMonth)
+    ? selectedMonth
+    : initialMonth;
+  const activeYear = yearOptions.includes(selectedYear)
+    ? selectedYear
+    : initialYear;
+
+  const aggregated =
+    period === 'month-days'
+      ? dailyRows.filter((row) => row.label.startsWith(activeMonth))
+      : period === 'year-months'
+        ? monthlyRows.filter((row) => row.label.startsWith(activeYear))
+        : yearlyRows;
+  const selectedRow =
+    aggregated.find((row) => row.label === selectedLabel) ??
+    aggregated[aggregated.length - 1] ??
+    null;
 
   return (
     <div className="app-panel rounded-2xl p-4 sm:p-5">
@@ -2808,30 +2846,65 @@ function ReturnCalendarCard({
             {copy.explainability.returnCalendar}
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <select
             value={viewMode}
             onChange={(event) =>
-              setViewMode(event.target.value as 'heatmap' | 'table' | 'curve')
+              setViewMode(event.target.value as 'calendar' | 'table' | 'curve')
             }
             className="app-field rounded-2xl px-3 py-2 text-sm"
           >
-            <option value="heatmap">{copy.explainability.heatmapView}</option>
+            <option value="calendar">{copy.explainability.calendarView}</option>
             <option value="table">{copy.explainability.tableView}</option>
             <option value="curve">{copy.explainability.curveView}</option>
           </select>
           <select
-            value={bucket}
+            aria-label={copy.explainability.calendarPeriod}
+            value={period}
             onChange={(event) =>
-              setBucket(event.target.value as 'day' | 'week' | 'month' | 'year')
+              setPeriod(event.target.value as ReturnCalendarPeriod)
             }
             className="app-field rounded-2xl px-3 py-2 text-sm"
           >
-            <option value="day">{copy.explainability.day}</option>
-            <option value="week">{copy.explainability.week}</option>
-            <option value="month">{copy.explainability.month}</option>
-            <option value="year">{copy.explainability.year}</option>
+            <option value="month-days">{copy.explainability.monthDays}</option>
+            <option value="year-months">
+              {copy.explainability.yearMonths}
+            </option>
+            <option value="years">{copy.explainability.years}</option>
           </select>
+          {period === 'month-days' ? (
+            <select
+              aria-label={copy.explainability.month}
+              value={activeMonth}
+              onChange={(event) => {
+                setSelectedMonth(event.target.value);
+                setSelectedLabel(null);
+              }}
+              className="app-field rounded-2xl px-3 py-2 text-sm"
+            >
+              {monthOptions.map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
+              ))}
+            </select>
+          ) : period === 'year-months' ? (
+            <select
+              aria-label={copy.explainability.year}
+              value={activeYear}
+              onChange={(event) => {
+                setSelectedYear(event.target.value);
+                setSelectedLabel(null);
+              }}
+              className="app-field rounded-2xl px-3 py-2 text-sm"
+            >
+              {yearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <select
             value={metric}
             onChange={(event) =>
@@ -2849,14 +2922,19 @@ function ReturnCalendarCard({
         <div className="app-muted mt-4 text-sm">
           {copy.explainability.timelineEmpty}
         </div>
-      ) : viewMode === 'heatmap' ? (
-        <div className="mt-4">
-          <ReturnHeatmap
+      ) : viewMode === 'calendar' ? (
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <ReturnCalendarGrid
             rows={aggregated}
-            bucket={bucket}
+            period={period}
+            activeMonth={activeMonth}
+            activeYear={activeYear}
             metric={metric}
             copy={copy}
+            selectedLabel={selectedRow?.label ?? null}
+            onSelect={setSelectedLabel}
           />
+          <ReturnCalendarDetail row={selectedRow} metric={metric} copy={copy} />
         </div>
       ) : viewMode === 'table' ? (
         <div className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
@@ -3032,22 +3110,24 @@ function formatCurrency(value: number) {
   return formatCurrencyValue(value);
 }
 
-function ReturnHeatmap({
+function ReturnCalendarGrid({
   rows,
-  bucket,
+  period,
+  activeMonth,
+  activeYear,
   metric,
   copy,
+  selectedLabel,
+  onSelect,
 }: {
-  rows: Array<{
-    label: string;
-    delta: number;
-    externalFlow: number;
-    marketPnl: number;
-    percentChange: number;
-  }>;
-  bucket: 'day' | 'week' | 'month' | 'year';
+  rows: ReturnCalendarRow[];
+  period: ReturnCalendarPeriod;
+  activeMonth: string;
+  activeYear: string;
   metric: 'amount' | 'percent';
   copy: AppCopy;
+  selectedLabel: string | null;
+  onSelect: (label: string) => void;
 }) {
   const maxMagnitude = Math.max(
     ...rows.map((row) =>
@@ -3055,46 +3135,313 @@ function ReturnHeatmap({
     ),
     0.0001,
   );
-  const columns =
-    bucket === 'day'
-      ? 'grid-cols-7'
-      : bucket === 'week'
-        ? 'grid-cols-4'
-        : 'grid-cols-3';
+
+  if (period === 'month-days') {
+    return (
+      <ReturnMonthGrid
+        rows={rows}
+        activeMonth={activeMonth}
+        metric={metric}
+        copy={copy}
+        maxMagnitude={maxMagnitude}
+        selectedLabel={selectedLabel}
+        onSelect={onSelect}
+      />
+    );
+  }
+
+  if (period === 'year-months') {
+    return (
+      <ReturnYearGrid
+        rows={rows}
+        activeYear={activeYear}
+        metric={metric}
+        copy={copy}
+        maxMagnitude={maxMagnitude}
+        selectedLabel={selectedLabel}
+        onSelect={onSelect}
+      />
+    );
+  }
 
   return (
-    <div className={`grid gap-2 ${columns}`}>
-      {rows.map((row) => {
-        const value = metric === 'amount' ? row.delta : row.percentChange;
-        const tone = getHeatmapTone(value, maxMagnitude);
+    <ReturnYearsGrid
+      rows={rows}
+      metric={metric}
+      maxMagnitude={maxMagnitude}
+      selectedLabel={selectedLabel}
+      onSelect={onSelect}
+    />
+  );
+}
+
+function ReturnMonthGrid({
+  rows,
+  activeMonth,
+  metric,
+  copy,
+  maxMagnitude,
+  selectedLabel,
+  onSelect,
+}: {
+  rows: ReturnCalendarRow[];
+  activeMonth: string;
+  metric: 'amount' | 'percent';
+  copy: AppCopy;
+  maxMagnitude: number;
+  selectedLabel: string | null;
+  onSelect: (label: string) => void;
+}) {
+  const rowsByLabel = new Map(rows.map((row) => [row.label, row]));
+  const firstDay = new Date(`${activeMonth}-01T00:00:00`);
+  const month = firstDay.getMonth();
+  const year = firstDay.getFullYear();
+  const leadingBlanks = (firstDay.getDay() || 7) - 1;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ];
+
+  return (
+    <div className="min-w-0">
+      <div className="app-kicker grid grid-cols-7 gap-2 text-center text-[11px] uppercase tracking-[0.14em]">
+        {copy.explainability.weekdays.map((day) => (
+          <div key={day}>{day}</div>
+        ))}
+      </div>
+      <div
+        className="mt-2 grid grid-cols-7 gap-2"
+        data-testid="return-calendar-month-grid"
+      >
+        {cells.map((day, index) => {
+          if (day === null) {
+            return (
+              <div
+                key={`blank-${index}`}
+                className="min-h-[5.75rem] rounded-lg border border-dashed border-[color-mix(in_srgb,var(--app-border)_44%,transparent)]"
+              />
+            );
+          }
+          const label = `${activeMonth}-${String(day).padStart(2, '0')}`;
+          const row = rowsByLabel.get(label);
+          return (
+            <ReturnCalendarCell
+              key={label}
+              label={label}
+              heading={String(day)}
+              row={row}
+              metric={metric}
+              maxMagnitude={maxMagnitude}
+              selected={selectedLabel === label}
+              onSelect={onSelect}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReturnYearGrid({
+  rows,
+  activeYear,
+  metric,
+  copy,
+  maxMagnitude,
+  selectedLabel,
+  onSelect,
+}: {
+  rows: ReturnCalendarRow[];
+  activeYear: string;
+  metric: 'amount' | 'percent';
+  copy: AppCopy;
+  maxMagnitude: number;
+  selectedLabel: string | null;
+  onSelect: (label: string) => void;
+}) {
+  const rowsByLabel = new Map(rows.map((row) => [row.label, row]));
+  return (
+    <div
+      className="grid gap-2 sm:grid-cols-3 xl:grid-cols-4"
+      data-testid="return-calendar-year-grid"
+    >
+      {Array.from({ length: 12 }, (_, index) => {
+        const label = `${activeYear}-${String(index + 1).padStart(2, '0')}`;
         return (
-          <div
-            key={row.label}
-            className={`rounded-2xl border px-3 py-3 text-left ${tone}`}
-            title={`${row.label} · ${
-              metric === 'amount'
-                ? formatCurrency(row.delta)
-                : formatPercent(row.percentChange)
-            }`}
-          >
-            <div className="text-xs font-semibold uppercase tracking-[0.12em]">
-              {row.label}
-            </div>
-            <div className="mt-3 text-sm font-semibold">
-              {metric === 'amount'
-                ? formatCurrency(row.delta)
-                : formatPercent(row.percentChange)}
-            </div>
-            <div className="mt-2 text-xs opacity-80">
-              {copy.explainability.marketPnl}: {formatCurrency(row.marketPnl)}
-            </div>
-            <div className="mt-1 text-xs opacity-80">
-              {copy.explainability.externalFlow}:{' '}
-              {formatCurrency(row.externalFlow)}
-            </div>
-          </div>
+          <ReturnCalendarCell
+            key={label}
+            label={label}
+            heading={label.slice(5)}
+            row={rowsByLabel.get(label)}
+            metric={metric}
+            maxMagnitude={maxMagnitude}
+            selected={selectedLabel === label}
+            onSelect={onSelect}
+            sublabel={copy.explainability.month}
+          />
         );
       })}
+    </div>
+  );
+}
+
+function ReturnYearsGrid({
+  rows,
+  metric,
+  maxMagnitude,
+  selectedLabel,
+  onSelect,
+}: {
+  rows: ReturnCalendarRow[];
+  metric: 'amount' | 'percent';
+  maxMagnitude: number;
+  selectedLabel: string | null;
+  onSelect: (label: string) => void;
+}) {
+  return (
+    <div
+      className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3"
+      data-testid="return-calendar-years-grid"
+    >
+      {rows
+        .slice()
+        .reverse()
+        .map((row) => (
+          <ReturnCalendarCell
+            key={row.label}
+            label={row.label}
+            heading={row.label}
+            row={row}
+            metric={metric}
+            maxMagnitude={maxMagnitude}
+            selected={selectedLabel === row.label}
+            onSelect={onSelect}
+          />
+        ))}
+    </div>
+  );
+}
+
+function ReturnCalendarCell({
+  label,
+  heading,
+  row,
+  metric,
+  maxMagnitude,
+  selected,
+  onSelect,
+  sublabel,
+}: {
+  label: string;
+  heading: string;
+  row: ReturnCalendarRow | undefined;
+  metric: 'amount' | 'percent';
+  maxMagnitude: number;
+  selected: boolean;
+  onSelect: (label: string) => void;
+  sublabel?: string;
+}) {
+  const value = row ? (metric === 'amount' ? row.delta : row.percentChange) : 0;
+  const displayValue = row
+    ? metric === 'amount'
+      ? formatCurrency(row.delta)
+      : formatPercent(row.percentChange)
+    : '--';
+  const tone = row
+    ? getHeatmapTone(value, maxMagnitude)
+    : 'border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_42%,transparent)] text-[var(--app-muted)]';
+
+  if (!row) {
+    return (
+      <div className={`min-h-[5.75rem] rounded-lg border px-3 py-3 ${tone}`}>
+        <div className="text-xs font-semibold">{heading}</div>
+        {sublabel ? (
+          <div className="app-muted mt-1 text-[11px]">{sublabel}</div>
+        ) : null}
+        <div className="mt-3 text-sm font-semibold">{displayValue}</div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={`${label} · ${displayValue}`}
+      onClick={() => onSelect(label)}
+      className={`min-h-[5.75rem] rounded-lg border px-3 py-3 text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] ${
+        selected ? 'ring-2 ring-[var(--app-accent)]' : ''
+      } ${tone}`}
+    >
+      <div className="text-xs font-semibold">{heading}</div>
+      {sublabel ? (
+        <div className="mt-1 text-[11px] opacity-70">{sublabel}</div>
+      ) : null}
+      <div className="mt-3 text-sm font-semibold">{displayValue}</div>
+      <div className="mt-2 text-[11px] opacity-80">
+        {formatCurrency(row.marketPnl)}
+      </div>
+    </button>
+  );
+}
+
+function ReturnCalendarDetail({
+  row,
+  metric,
+  copy,
+}: {
+  row: ReturnCalendarRow | null;
+  metric: 'amount' | 'percent';
+  copy: AppCopy;
+}) {
+  if (row === null) {
+    return (
+      <div className="rounded-lg border border-dashed border-[var(--app-border)] p-4 text-sm text-[var(--app-muted)]">
+        {copy.explainability.timelineEmpty}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-4">
+      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+        {copy.explainability.selectedPeriod}
+      </div>
+      <div className="mt-2 text-lg font-semibold">{row.label}</div>
+      <div className="mt-4 space-y-3 text-sm">
+        <CalendarDetailMetric
+          label={copy.explainability.netChange}
+          value={
+            metric === 'amount'
+              ? formatCurrency(row.delta)
+              : formatPercent(row.percentChange)
+          }
+        />
+        <CalendarDetailMetric
+          label={copy.explainability.marketPnl}
+          value={formatCurrency(row.marketPnl)}
+        />
+        <CalendarDetailMetric
+          label={copy.explainability.externalFlow}
+          value={formatCurrency(row.externalFlow)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CalendarDetailMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-[var(--app-border)] pt-3 first:border-t-0 first:pt-0">
+      <span className="app-muted">{label}</span>
+      <span className="text-right font-semibold">{value}</span>
     </div>
   );
 }

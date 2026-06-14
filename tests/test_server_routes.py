@@ -5786,7 +5786,7 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
                     "symbol": "600519",
                     "asset_class": "stock",
                     "price": 1010.0,
-                    "timestamp": "2026-04-18T09:40:00",
+                    "timestamp": "2026-04-20T09:40:00",
                     "previous_close": 1000.0,
                     "previous_close_date": "2026-04-17",
                 },
@@ -5794,7 +5794,7 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
                     "symbol": "510300",
                     "asset_class": "etf",
                     "price": 3.2,
-                    "timestamp": "2026-04-18T09:40:00",
+                    "timestamp": "2026-04-20T09:40:00",
                     "previous_close": 3.0,
                     "previous_close_date": "2026-04-17",
                 },
@@ -5842,7 +5842,7 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
                 return pd.DataFrame(
                     {
                         "timestamp": pd.to_datetime(
-                            ["2026-04-18T09:35:00", "2026-04-18T09:40:00"]
+                            ["2026-04-20T09:35:00", "2026-04-20T09:40:00"]
                         ),
                         "close": [1005.0, 1010.0],
                     }
@@ -5851,7 +5851,7 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
                 return pd.DataFrame(
                     {
                         "timestamp": pd.to_datetime(
-                            ["2026-04-18T09:35:00", "2026-04-18T09:40:00"]
+                            ["2026-04-20T09:35:00", "2026-04-20T09:40:00"]
                         ),
                         "close": [3.1, 3.2],
                     }
@@ -5866,7 +5866,7 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 18, 9, 45, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: datetime(2026, 4, 20, 9, 45, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -5911,7 +5911,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
                 {
                     "id": 1,
                     "entry_type": "cash_deposit",
-                    "timestamp": "2026-04-18T09:00:00+00:00",
+                    "timestamp": "2026-04-20T09:00:00+00:00",
                     "amount": 100000.0,
                     "symbol": None,
                     "direction": None,
@@ -5922,7 +5922,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
                     "note": "",
                     "source": "manual",
                     "source_ref": "deposit-1",
-                    "created_at": "2026-04-18T09:00:01+00:00",
+                    "created_at": "2026-04-20T09:00:01+00:00",
                 }
             ]
 
@@ -5932,7 +5932,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
                     "symbol": "600519",
                     "asset_class": "stock",
                     "price": 1000.0,
-                    "timestamp": "2026-04-18T09:20:00",
+                    "timestamp": "2026-04-20T09:20:00",
                     "previous_close": 1000.0,
                     "previous_close_date": "2026-04-17",
                 }
@@ -5982,15 +5982,91 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 18, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 
     series = asyncio.run(endpoint("1d"))
 
-    assert series[0].timestamp.startswith("2026-04-18T09:30:00")
-    assert series[-1].timestamp.startswith("2026-04-18T15:00:00")
+    assert series[0].timestamp.startswith("2026-04-20T09:30:00")
+    assert series[-1].timestamp.startswith("2026-04-20T15:00:00")
     assert all(point.total == pytest.approx(60000.0) for point in series)
     assert all(point.unrealized_pnl == pytest.approx(0.0) for point in series)
+
+
+def test_portfolio_equity_curve_series_1d_skips_intraday_source_when_market_closed(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    curve_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+    endpoint = curve_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        avg_cost=10.0,
+        market_value=1200.0,
+        unrealized_pnl=200.0,
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            intraday_curve_timeout_seconds=4.0,
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=99000.0,
+                positions={"600519": fake_position},
+            ),
+            instruments={
+                Symbol("600519"): SimpleNamespace(
+                    asset_class=SimpleNamespace(value="stock")
+                )
+            },
+            latest_quotes={},
+        ),
+        db=SimpleNamespace(
+            get_latest_quotes_sync=lambda: [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 12.0,
+                    "timestamp": "2026-06-14T09:59:00+08:00",
+                }
+            ]
+        ),
+    )
+
+    class UnexpectedSource:
+        def fetch_bars(self, symbol, start, end, frequency, asset_class):
+            raise AssertionError("closed market 1d curve must not fetch intraday bars")
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": UnexpectedSource()},
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 14, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    series = asyncio.run(endpoint("1d"))
+
+    assert [point.timestamp[11:16] for point in series[:2]] == ["09:30", "09:35"]
+    assert series[-1].timestamp.startswith("2026-06-14T15:00:00")
+    assert all(point.total == pytest.approx(100200.0) for point in series)
+    assert all(point.stocks == pytest.approx(1200.0) for point in series)
 
 
 def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypatch):
