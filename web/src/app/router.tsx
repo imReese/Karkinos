@@ -3012,25 +3012,30 @@ export function ReturnCalendarCard({
               {aggregated
                 .slice()
                 .reverse()
-                .map((row) => (
-                  <tr
-                    key={row.label}
-                    className="border-t border-[var(--app-border)]"
-                  >
-                    <td className="px-3 py-3 font-medium">{row.label}</td>
-                    <td className="px-3 py-3">
-                      {metric === 'amount'
-                        ? formatCurrency(row.delta)
-                        : formatPercent(row.percentChange)}
-                    </td>
-                    <td className="px-3 py-3">
-                      {formatCurrency(row.externalFlow)}
-                    </td>
-                    <td className="px-3 py-3">
-                      {formatCurrency(row.marketPnl)}
-                    </td>
-                  </tr>
-                ))}
+                .map((row) => {
+                  const hasMissingValuation = row.valuationStatus === 'missing';
+                  const returnValue = hasMissingValuation
+                    ? copy.explainability.missingValuationShort
+                    : metric === 'amount'
+                      ? formatCurrency(row.delta)
+                      : formatPercent(row.percentChange);
+                  const marketValue = hasMissingValuation
+                    ? copy.explainability.missingValuationShort
+                    : formatCurrency(row.marketPnl);
+                  return (
+                    <tr
+                      key={row.label}
+                      className="border-t border-[var(--app-border)]"
+                    >
+                      <td className="px-3 py-3 font-medium">{row.label}</td>
+                      <td className="px-3 py-3">{returnValue}</td>
+                      <td className="px-3 py-3">
+                        {formatCurrency(row.externalFlow)}
+                      </td>
+                      <td className="px-3 py-3">{marketValue}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -3187,20 +3192,88 @@ function ReturnCurveChart({
   if (points.length === 0) {
     return null;
   }
+  const width = 680;
+  const height = 260;
+  const left = 74;
+  const right = 18;
+  const top = 16;
+  const bottom = 42;
+  const chartWidth = width - left - right;
+  const chartHeight = height - top - bottom;
   const values = points.map((point) => point.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
   const line = points
     .map((point, index) => {
-      const x = (index / Math.max(points.length - 1, 1)) * 640;
-      const y = 220 - ((point.value - min) / range) * 220;
+      const x = left + (index / Math.max(points.length - 1, 1)) * chartWidth;
+      const y = top + chartHeight - ((point.value - min) / range) * chartHeight;
       return `${x},${y}`;
     })
     .join(' ');
+  const ticks = max === min ? [max] : [max, min];
+  const firstLabel = points[0]?.label ?? '';
+  const lastLabel = points[points.length - 1]?.label ?? firstLabel;
 
   return (
-    <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-48 w-full sm:h-56">
+      <line
+        data-testid="return-curve-y-axis"
+        x1={left}
+        y1={top}
+        x2={left}
+        y2={top + chartHeight}
+        stroke="currentColor"
+        strokeOpacity="0.32"
+      />
+      <line
+        data-testid="return-curve-x-axis"
+        x1={left}
+        y1={top + chartHeight}
+        x2={left + chartWidth}
+        y2={top + chartHeight}
+        stroke="currentColor"
+        strokeOpacity="0.32"
+      />
+      {ticks.map((tick) => {
+        const y = top + chartHeight - ((tick - min) / range) * chartHeight;
+        return (
+          <g key={tick}>
+            <line
+              x1={left}
+              y1={y}
+              x2={left + chartWidth}
+              y2={y}
+              stroke="currentColor"
+              strokeOpacity="0.1"
+            />
+            <text
+              x={left - 8}
+              y={y + 4}
+              textAnchor="end"
+              className="fill-current text-[11px] opacity-70"
+            >
+              {formatCurrency(tick)}
+            </text>
+          </g>
+        );
+      })}
+      <text
+        x={left}
+        y={height - 12}
+        textAnchor="start"
+        className="fill-current text-[11px] opacity-70"
+      >
+        {firstLabel}
+      </text>
+      <text
+        x={left + chartWidth}
+        y={height - 12}
+        textAnchor="end"
+        className="fill-current text-[11px] opacity-70"
+      >
+        {lastLabel}
+      </text>
       <polyline
         fill="none"
         stroke="currentColor"
@@ -3682,6 +3755,16 @@ function ReturnCalendarDetail({
     );
   }
 
+  const hasMissingValuation = row.valuationStatus === 'missing';
+  const returnValue = hasMissingValuation
+    ? copy.explainability.missingValuationShort
+    : metric === 'amount'
+      ? formatCurrency(row.delta)
+      : formatPercent(row.percentChange);
+  const marketValue = hasMissingValuation
+    ? copy.explainability.missingValuationShort
+    : formatCurrency(row.marketPnl);
+
   return (
     <div className={detailClass}>
       <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
@@ -3697,15 +3780,11 @@ function ReturnCalendarDetail({
       >
         <CalendarDetailMetric
           label={copy.explainability.netChange}
-          value={
-            metric === 'amount'
-              ? formatCurrency(row.delta)
-              : formatPercent(row.percentChange)
-          }
+          value={returnValue}
         />
         <CalendarDetailMetric
           label={copy.explainability.marketPnl}
-          value={formatCurrency(row.marketPnl)}
+          value={marketValue}
         />
         <CalendarDetailMetric
           label={copy.explainability.externalFlow}

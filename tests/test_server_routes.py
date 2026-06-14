@@ -4486,6 +4486,31 @@ def test_portfolio_explainability_maps_ledger_events_to_shanghai_dates():
     assert apr27.events[0].category == "capital"
 
 
+def test_portfolio_explainability_marks_return_after_missing_valuation_as_gap():
+    from server.models import EquityPoint
+    from server.routes.portfolio import _build_timeline
+
+    timeline = _build_timeline(
+        [
+            EquityPoint(timestamp="2026-06-11T15:00:00+08:00", equity=15131.8275),
+            EquityPoint(timestamp="2026-06-12T15:00:00+08:00", equity=14852.8275),
+        ],
+        [],
+        valuation_status_by_date={
+            "2026-06-11": "missing",
+            "2026-06-12": "live",
+        },
+        missing_price_symbols_by_date={
+            "2026-06-11": ["601985", "603659"],
+        },
+    )
+
+    assert timeline[-1].date == "2026-06-12"
+    assert timeline[-1].market_pnl == pytest.approx(0.0)
+    assert timeline[-1].valuation_status == "missing"
+    assert timeline[-1].missing_price_symbols == ["601985", "603659"]
+
+
 def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 

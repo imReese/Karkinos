@@ -442,4 +442,8 @@ automation.
   semantics. Month grids now start weeks on Sunday, and explainability trims a
   terminal weekend current-quote point before building return attribution so
   Sunday cache/current valuation moves do not appear as weekend market returns.
+* 2026-06-14: Fixed return-calendar valuation-gap attribution. A day following
+  an incomplete valuation point is now marked as a price-coverage gap instead
+  of reporting the synthetic revaluation delta as market PnL, and the return
+  curve view now renders visible x/y axes with endpoint labels.
 <!-- codex-progress:end -->
