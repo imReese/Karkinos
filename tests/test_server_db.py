@@ -122,6 +122,58 @@ def test_app_database_initializes_latest_quotes_table(tmp_path):
     assert "idx_latest_quotes_quote_status" in indexes
 
 
+def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(tmp_path / "meta.db") as conn:
+        conn.execute("""
+            CREATE TABLE market_bars (
+                symbol TEXT NOT NULL,
+                frequency TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                open REAL,
+                high REAL,
+                low REAL,
+                close REAL NOT NULL,
+                volume REAL,
+                amount REAL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (symbol, frequency, timestamp)
+            )
+        """)
+        conn.execute(
+            """
+            INSERT INTO market_bars (
+                symbol, frequency, timestamp, open, high, low, close,
+                volume, amount, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "601985",
+                "1d",
+                "2026-06-12T00:00:00",
+                9.1,
+                9.26,
+                9.05,
+                9.24,
+                1890788.75,
+                1737699.868,
+                "2026-06-14T22:00:00",
+                "2026-06-14T22:00:00",
+            ),
+        )
+        conn.commit()
+
+    bar = db.get_latest_market_bar_before_date_sync("601985", "2026-06-13")
+
+    assert bar is not None
+    assert bar["trade_date"] == "2026-06-12"
+    assert bar["open"] == 9.1
+    assert bar["close"] == 9.24
+    assert bar["price"] == 9.24
+
+
 def test_app_database_initializes_instrument_metadata_table(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

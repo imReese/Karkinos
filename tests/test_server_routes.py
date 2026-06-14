@@ -4511,6 +4511,159 @@ def test_portfolio_explainability_marks_return_after_missing_valuation_as_gap():
     assert timeline[-1].missing_price_symbols == ["601985", "603659"]
 
 
+def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    explain_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/explainability"
+    )
+    endpoint = explain_route.endpoint
+
+    class FakeDb:
+        daily_closes = [
+            {
+                "symbol": "601985",
+                "asset_class": "stock",
+                "trade_date": "2026-06-12",
+                "close_price": 9.12,
+                "source": "reported_previous_close",
+            },
+            {
+                "symbol": "603659",
+                "asset_class": "stock",
+                "trade_date": "2026-06-12",
+                "close_price": 27.23,
+                "source": "reported_previous_close",
+            },
+        ]
+        market_bars = {
+            ("601985", "2026-06-11"): {"open": 9.05, "close": 9.12},
+            ("601985", "2026-06-12"): {"open": 9.10, "close": 9.24},
+            ("603659", "2026-06-11"): {"open": 27.48, "close": 27.23},
+            ("603659", "2026-06-12"): {"open": 27.59, "close": 28.34},
+        }
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-06-10T01:00:00+00:00",
+                    "amount": 100000.0,
+                    "symbol": None,
+                    "direction": None,
+                    "quantity": None,
+                    "price": None,
+                    "commission": 0.0,
+                    "asset_class": "cash",
+                    "note": "seed cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                    "created_at": "2026-06-10T01:00:01+00:00",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-06-11T02:00:00+00:00",
+                    "amount": 912.0,
+                    "symbol": "601985",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 9.12,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "note": "first stock lot",
+                    "source": "manual",
+                    "source_ref": "stock-1",
+                    "created_at": "2026-06-11T02:00:01+00:00",
+                },
+                {
+                    "id": 3,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-06-11T02:30:00+00:00",
+                    "amount": 5446.0,
+                    "symbol": "603659",
+                    "direction": "buy",
+                    "quantity": 200.0,
+                    "price": 27.23,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "note": "second stock lot",
+                    "source": "manual",
+                    "source_ref": "stock-2",
+                    "created_at": "2026-06-11T02:30:01+00:00",
+                },
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
+            candidates = [
+                (bar_date, bar)
+                for (bar_symbol, bar_date), bar in self.market_bars.items()
+                if bar_symbol == symbol and bar_date < trade_date
+            ]
+            if not candidates:
+                return None
+            bar_date, bar = sorted(candidates)[-1]
+            return {
+                "symbol": symbol,
+                "trade_date": bar_date,
+                "timestamp": f"{bar_date}T00:00:00",
+                "open": bar["open"],
+                "close": bar["close"],
+                "price": bar["close"],
+                "source": "market_bars",
+            }
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            candidates = [
+                close
+                for close in self.daily_closes
+                if close["symbol"] == symbol and close["trade_date"] < trade_date
+            ]
+            return candidates[-1] if candidates else None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 100000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    response = asyncio.run(endpoint(limit=50))
+    timeline_by_date = {point.date: point for point in response.timeline}
+
+    assert timeline_by_date["2026-06-12"].valuation_status == "live"
+    assert timeline_by_date["2026-06-12"].missing_price_symbols == []
+    assert timeline_by_date["2026-06-12"].market_pnl == pytest.approx(234.0)
+
+
 def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
