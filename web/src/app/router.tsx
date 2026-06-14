@@ -373,6 +373,7 @@ export function OverviewPage() {
             <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
               <ReturnCalendarCard
                 timeline={explainability.data?.timeline ?? []}
+                positions={explainability.data?.positions ?? []}
                 compact
               />
             </div>
@@ -2802,8 +2803,17 @@ type ReturnCalendarRow = {
   percentChange: number;
 };
 
+type ReturnCalendarPosition = {
+  symbol: string;
+  asset_class: string;
+  market_value: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+};
+
 export function ReturnCalendarCard({
   timeline,
+  positions = [],
   compact = false,
 }: {
   timeline: Array<{
@@ -2813,6 +2823,7 @@ export function ReturnCalendarCard({
     external_flow: number;
     market_pnl: number;
   }>;
+  positions?: ReturnCalendarPosition[];
   compact?: boolean;
 }) {
   const copy = useCopy();
@@ -2857,6 +2868,7 @@ export function ReturnCalendarCard({
   const contentGridClass = compact
     ? 'mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1fr)_260px]'
     : 'mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]';
+  const hasTimeline = timeline.length > 0;
 
   return (
     <div className={panelClass} data-testid="return-calendar-card">
@@ -2869,82 +2881,94 @@ export function ReturnCalendarCard({
             {copy.explainability.returnCalendarDetail}
           </div>
         </div>
-        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <select
-            value={viewMode}
-            onChange={(event) =>
-              setViewMode(event.target.value as 'calendar' | 'table' | 'curve')
-            }
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
-          >
-            <option value="calendar">{copy.explainability.calendarView}</option>
-            <option value="table">{copy.explainability.tableView}</option>
-            <option value="curve">{copy.explainability.curveView}</option>
-          </select>
-          <select
-            aria-label={copy.explainability.calendarPeriod}
-            value={period}
-            onChange={(event) =>
-              setPeriod(event.target.value as ReturnCalendarPeriod)
-            }
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
-          >
-            <option value="month-days">{copy.explainability.monthDays}</option>
-            <option value="year-months">
-              {copy.explainability.yearMonths}
-            </option>
-            <option value="years">{copy.explainability.years}</option>
-          </select>
-          {period === 'month-days' ? (
+        {hasTimeline ? (
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <select
-              aria-label={copy.explainability.month}
-              value={activeMonth}
-              onChange={(event) => {
-                setSelectedMonth(event.target.value);
-                setSelectedLabel(null);
-              }}
+              value={viewMode}
+              onChange={(event) =>
+                setViewMode(
+                  event.target.value as 'calendar' | 'table' | 'curve',
+                )
+              }
               className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
             >
-              {monthOptions.map((month) => (
-                <option key={month} value={month}>
-                  {month}
-                </option>
-              ))}
+              <option value="calendar">
+                {copy.explainability.calendarView}
+              </option>
+              <option value="table">{copy.explainability.tableView}</option>
+              <option value="curve">{copy.explainability.curveView}</option>
             </select>
-          ) : period === 'year-months' ? (
             <select
-              aria-label={copy.explainability.year}
-              value={activeYear}
-              onChange={(event) => {
-                setSelectedYear(event.target.value);
-                setSelectedLabel(null);
-              }}
+              aria-label={copy.explainability.calendarPeriod}
+              value={period}
+              onChange={(event) =>
+                setPeriod(event.target.value as ReturnCalendarPeriod)
+              }
               className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
             >
-              {yearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
+              <option value="month-days">
+                {copy.explainability.monthDays}
+              </option>
+              <option value="year-months">
+                {copy.explainability.yearMonths}
+              </option>
+              <option value="years">{copy.explainability.years}</option>
             </select>
-          ) : null}
-          <select
-            value={metric}
-            onChange={(event) =>
-              setMetric(event.target.value as 'amount' | 'percent')
-            }
-            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
-          >
-            <option value="amount">{copy.explainability.amountMetric}</option>
-            <option value="percent">{copy.explainability.percentMetric}</option>
-          </select>
-        </div>
+            {period === 'month-days' ? (
+              <select
+                aria-label={copy.explainability.month}
+                value={activeMonth}
+                onChange={(event) => {
+                  setSelectedMonth(event.target.value);
+                  setSelectedLabel(null);
+                }}
+                className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              >
+                {monthOptions.map((month) => (
+                  <option key={month} value={month}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            ) : period === 'year-months' ? (
+              <select
+                aria-label={copy.explainability.year}
+                value={activeYear}
+                onChange={(event) => {
+                  setSelectedYear(event.target.value);
+                  setSelectedLabel(null);
+                }}
+                className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              >
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <select
+              value={metric}
+              onChange={(event) =>
+                setMetric(event.target.value as 'amount' | 'percent')
+              }
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+            >
+              <option value="amount">{copy.explainability.amountMetric}</option>
+              <option value="percent">
+                {copy.explainability.percentMetric}
+              </option>
+            </select>
+          </div>
+        ) : null}
       </div>
 
       {aggregated.length === 0 ? (
-        <div className="app-muted mt-4 text-sm">
-          {copy.explainability.timelineEmpty}
-        </div>
+        <ReturnCalendarEmptyState
+          positions={positions}
+          copy={copy}
+          compact={compact}
+        />
       ) : viewMode === 'calendar' ? (
         <div className={contentGridClass}>
           <ReturnCalendarGrid
@@ -3014,6 +3038,116 @@ export function ReturnCalendarCard({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function ReturnCalendarEmptyState({
+  positions,
+  copy,
+  compact,
+}: {
+  positions: ReturnCalendarPosition[];
+  copy: AppCopy;
+  compact: boolean;
+}) {
+  const totalUnrealizedPnl = positions.reduce(
+    (total, position) => total + position.unrealized_pnl,
+    0,
+  );
+  const totalRealizedPnl = positions.reduce(
+    (total, position) => total + position.realized_pnl,
+    0,
+  );
+  const totalMarketValue = positions.reduce(
+    (total, position) => total + position.market_value,
+    0,
+  );
+  const totalPnl = totalUnrealizedPnl + totalRealizedPnl;
+  const rankedPositions = positions
+    .slice()
+    .sort(
+      (left, right) =>
+        Math.abs(right.unrealized_pnl + right.realized_pnl) -
+        Math.abs(left.unrealized_pnl + left.realized_pnl),
+    )
+    .slice(0, 4);
+  const wrapperClass = compact
+    ? 'mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_240px]'
+    : 'mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]';
+
+  return (
+    <div className={wrapperClass} data-testid="return-calendar-empty-state">
+      <div className="min-w-0 rounded-md border border-dashed border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-3">
+        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+          {copy.explainability.currentPositionPnl}
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <CalendarFallbackMetric
+            label={copy.explainability.netChange}
+            value={formatCurrency(totalPnl)}
+          />
+          <CalendarFallbackMetric
+            label={copy.explainability.marketValue}
+            value={formatCurrency(totalMarketValue)}
+          />
+          <CalendarFallbackMetric
+            label={copy.explainability.unrealizedPnl}
+            value={formatCurrency(totalUnrealizedPnl)}
+          />
+        </div>
+        {rankedPositions.length > 0 ? (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {rankedPositions.map((position) => {
+              const positionPnl =
+                position.unrealized_pnl + position.realized_pnl;
+              return (
+                <div
+                  key={position.symbol}
+                  className="rounded-md border border-[var(--app-border)] px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="font-semibold">{position.symbol}</span>
+                    <span
+                      className={
+                        positionPnl >= 0 ? 'text-red-500' : 'text-emerald-500'
+                      }
+                    >
+                      {formatCurrency(positionPnl)}
+                    </span>
+                  </div>
+                  <div className="app-muted mt-1 text-[11px] uppercase">
+                    {position.asset_class}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+      <div className="rounded-md border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-1)_72%,transparent)] p-3">
+        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+          {copy.explainability.historicalSnapshotsRequired}
+        </div>
+        <div className="app-muted mt-2 text-sm">
+          {copy.explainability.returnCalendarEmptyDetail}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalendarFallbackMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-md border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-1)_72%,transparent)] px-3 py-2">
+      <div className="app-muted text-[11px]">{label}</div>
+      <div className="mt-1 text-sm font-semibold">{value}</div>
     </div>
   );
 }

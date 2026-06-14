@@ -36,6 +36,23 @@ const timeline = [
   },
 ];
 
+const positionSnapshot = [
+  {
+    symbol: '026539',
+    asset_class: 'fund',
+    market_value: 775.78,
+    unrealized_pnl: 175.78,
+    realized_pnl: 0,
+  },
+  {
+    symbol: '603659',
+    asset_class: 'stock',
+    market_value: 5668,
+    unrealized_pnl: -95,
+    realized_pnl: 0,
+  },
+];
+
 beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -118,4 +135,18 @@ test('supports a compact cockpit layout for the overview page', async () => {
   expect(panel.className).not.toContain('rounded-2xl');
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(screen.getByText('Selected period')).toBeTruthy();
+});
+
+test('shows a current-position fallback when daily attribution is not available', async () => {
+  render(
+    <PreferencesProvider>
+      <ReturnCalendarCard timeline={[]} positions={positionSnapshot} compact />
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByText('Current position PnL')).toBeTruthy();
+  expect(screen.getByText('Historical snapshots required')).toBeTruthy();
+  expect(screen.getAllByText('CN¥80.78').length).toBeGreaterThan(0);
+  expect(screen.getByText('026539')).toBeTruthy();
+  expect(screen.getByText('603659')).toBeTruthy();
 });
