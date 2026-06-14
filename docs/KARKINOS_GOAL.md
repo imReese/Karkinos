@@ -432,4 +432,10 @@ automation.
   equity curve when no historical price lookup exists. Ledger events are mapped
   to Shanghai trading dates before external-flow attribution, avoiding synthetic
   market PnL from UTC timestamp boundaries.
+* 2026-06-14: Tightened the return-calendar attribution contract. Calendar heat
+  cells, rollups, and curve values now use market PnL rather than net equity
+  delta, so cash deposits and withdrawals remain external-flow context instead
+  of return. Daily portfolio valuation now carries missing-price symbols through
+  explainability, and the frontend marks incomplete price coverage as a data
+  gap rather than showing misleading flat zero-return days.
 <!-- codex-progress:end -->

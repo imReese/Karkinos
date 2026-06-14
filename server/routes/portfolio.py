@@ -418,6 +418,8 @@ def _build_timeline(
     event_kind: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    valuation_status_by_date: dict[str, str] | None = None,
+    missing_price_symbols_by_date: dict[str, list[str]] | None = None,
 ) -> list[ExplainabilityTimelinePoint]:
     if not equity_curve:
         return []
@@ -511,6 +513,12 @@ def _build_timeline(
                 external_flow=external_flow,
                 market_pnl=market_pnl,
                 events=events_by_date.get(point_date, []),
+                valuation_status=(valuation_status_by_date or {}).get(
+                    point_date, "complete"
+                ),
+                missing_price_symbols=(missing_price_symbols_by_date or {}).get(
+                    point_date, []
+                ),
             )
         )
         previous_equity = point.equity
@@ -1783,6 +1791,22 @@ def _equity_points_from_series(
     return list(by_date.values())
 
 
+def _equity_series_metadata_by_date(
+    points: list[EquitySeriesPoint],
+) -> tuple[dict[str, str], dict[str, list[str]]]:
+    valuation_status_by_date: dict[str, str] = {}
+    missing_symbols_by_date: dict[str, list[str]] = {}
+    for point in points:
+        point_date = str(point.timestamp).split("T")[0]
+        if not point_date:
+            continue
+        valuation_status_by_date[point_date] = point.quote_status
+        missing_symbols = getattr(point, "missing_price_symbols", None)
+        if missing_symbols:
+            missing_symbols_by_date[point_date] = list(missing_symbols)
+    return valuation_status_by_date, missing_symbols_by_date
+
+
 def _load_ledger_entries_for_equity_series(
     db, batch_size: int = 500
 ) -> list[LedgerEntry]:
@@ -1932,6 +1956,7 @@ def _daily_equity_series_from_ledger_history(
         )
         if active_entries and should_emit_day:
             historical_quotes: dict[str, dict] = {}
+            missing_price_symbols: list[str] = []
             for symbol, asset_class in asset_classes.items():
                 quote = _historical_quote_for_equity_day(
                     state,
@@ -1943,6 +1968,8 @@ def _daily_equity_series_from_ledger_history(
                 )
                 if quote is not None:
                     historical_quotes[symbol] = quote
+                elif any(entry.symbol == symbol for entry in active_entries):
+                    missing_price_symbols.append(symbol)
 
             projection = build_portfolio_projection(
                 active_entries,
@@ -1976,7 +2003,8 @@ def _daily_equity_series_from_ledger_history(
                     others=buckets["others"],
                     cash=float(projection.cash),
                     unrealized_pnl=unrealized_pnl,
-                    quote_status="live",
+                    quote_status="missing" if missing_price_symbols else "live",
+                    missing_price_symbols=sorted(set(missing_price_symbols)),
                 )
             )
 
@@ -2490,12 +2518,18 @@ def create_router() -> APIRouter:
         snapshot = await get_portfolio()
         summary = await get_overview()
         equity_curve: list[EquityPoint] = []
+        valuation_status_by_date: dict[str, str] = {}
+        missing_price_symbols_by_date: dict[str, list[str]] = {}
         if state.db is not None and (
             hasattr(state.db, "get_latest_daily_close_before_sync")
             or hasattr(state.db, "get_latest_quote_before_date_sync")
         ):
             equity_series = await get_equity_curve_series("all")
             equity_curve = _equity_points_from_series(equity_series)
+            (
+                valuation_status_by_date,
+                missing_price_symbols_by_date,
+            ) = _equity_series_metadata_by_date(equity_series)
         if not equity_curve:
             equity_curve = await get_equity_curve()
 
@@ -2513,6 +2547,8 @@ def create_router() -> APIRouter:
                 event_kind=event_kind,
                 from_date=from_date,
                 to_date=to_date,
+                valuation_status_by_date=valuation_status_by_date,
+                missing_price_symbols_by_date=missing_price_symbols_by_date,
             ),
         )
 

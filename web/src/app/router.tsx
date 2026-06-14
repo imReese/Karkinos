@@ -2801,6 +2801,8 @@ type ReturnCalendarRow = {
   externalFlow: number;
   marketPnl: number;
   percentChange: number;
+  valuationStatus: string;
+  missingPriceSymbols: string[];
 };
 
 type ReturnCalendarPosition = {
@@ -2824,6 +2826,8 @@ export function ReturnCalendarCard({
     delta: number;
     external_flow: number;
     market_pnl: number;
+    valuation_status?: string;
+    missing_price_symbols?: string[];
   }>;
   positions?: ReturnCalendarPosition[];
   compact?: boolean;
@@ -3035,7 +3039,7 @@ export function ReturnCalendarCard({
           <ReturnCurveChart
             points={aggregated.map((row) => ({
               label: row.label,
-              value: metric === 'amount' ? row.delta : row.percentChange,
+              value: metric === 'amount' ? row.marketPnl : row.percentChange,
             }))}
           />
         </div>
@@ -3216,6 +3220,8 @@ function aggregateReturnTimeline(
     delta: number;
     external_flow: number;
     market_pnl: number;
+    valuation_status?: string;
+    missing_price_symbols?: string[];
   }>,
   bucket: 'day' | 'week' | 'month' | 'year',
 ) {
@@ -3228,6 +3234,8 @@ function aggregateReturnTimeline(
       marketPnl: number;
       startEquity: number;
       endEquity: number;
+      valuationStatus: string;
+      missingPriceSymbols: Set<string>;
     }
   >();
 
@@ -3235,11 +3243,20 @@ function aggregateReturnTimeline(
     const label = toReturnBucket(point.date, bucket);
     const existing = groups.get(label);
     const previousEquity = point.equity - point.delta;
+    const valuationStatus = normalizeValuationStatus(point.valuation_status);
+    const missingPriceSymbols = point.missing_price_symbols ?? [];
     if (existing) {
       existing.delta += point.delta;
       existing.externalFlow += point.external_flow;
       existing.marketPnl += point.market_pnl;
       existing.endEquity = point.equity;
+      existing.valuationStatus = combineValuationStatus(
+        existing.valuationStatus,
+        valuationStatus,
+      );
+      missingPriceSymbols.forEach((symbol) =>
+        existing.missingPriceSymbols.add(symbol),
+      );
       return;
     }
     groups.set(label, {
@@ -3249,14 +3266,37 @@ function aggregateReturnTimeline(
       marketPnl: point.market_pnl,
       startEquity: previousEquity,
       endEquity: point.equity,
+      valuationStatus,
+      missingPriceSymbols: new Set(missingPriceSymbols),
     });
   });
 
   return Array.from(groups.values()).map((row) => ({
     ...row,
+    missingPriceSymbols: Array.from(row.missingPriceSymbols).sort(),
     percentChange:
-      row.startEquity === 0 ? 0 : row.delta / Math.abs(row.startEquity),
+      row.startEquity === 0 ? 0 : row.marketPnl / Math.abs(row.startEquity),
   }));
+}
+
+function normalizeValuationStatus(status: string | undefined) {
+  if (status === 'missing') {
+    return 'missing';
+  }
+  if (status === 'partial') {
+    return 'partial';
+  }
+  return 'complete';
+}
+
+function combineValuationStatus(left: string, right: string) {
+  if (left === 'missing' || right === 'missing') {
+    return 'missing';
+  }
+  if (left === 'partial' || right === 'partial') {
+    return 'partial';
+  }
+  return 'complete';
 }
 
 function toReturnBucket(
@@ -3319,7 +3359,7 @@ function ReturnCalendarGrid({
 }) {
   const maxMagnitude = Math.max(
     ...rows.map((row) =>
-      Math.abs(metric === 'amount' ? row.delta : row.percentChange),
+      Math.abs(metric === 'amount' ? row.marketPnl : row.percentChange),
     ),
     0.0001,
   );
@@ -3550,14 +3590,24 @@ function ReturnCalendarCell({
   sublabel?: string;
   compact: boolean;
 }) {
-  const value = row ? (metric === 'amount' ? row.delta : row.percentChange) : 0;
-  const displayValue = row
+  const copy = useCopy();
+  const hasMissingValuation = row?.valuationStatus === 'missing';
+  const value = row
     ? metric === 'amount'
-      ? formatCurrency(row.delta)
-      : formatPercent(row.percentChange)
+      ? row.marketPnl
+      : row.percentChange
+    : 0;
+  const displayValue = row
+    ? hasMissingValuation
+      ? copy.explainability.missingValuationShort
+      : metric === 'amount'
+        ? formatCurrency(row.marketPnl)
+        : formatPercent(row.percentChange)
     : '--';
   const tone = row
-    ? getHeatmapTone(value, maxMagnitude)
+    ? hasMissingValuation
+      ? 'border-dashed border-[color-mix(in_srgb,var(--app-border)_72%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_64%,transparent)] text-[var(--app-muted)]'
+      : getHeatmapTone(value, maxMagnitude)
     : 'border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_42%,transparent)] text-[var(--app-muted)]';
   const cellClass = compact
     ? 'min-h-[4.25rem] rounded-md px-2 py-2'
@@ -3596,7 +3646,11 @@ function ReturnCalendarCell({
         <div className="mt-1 text-[11px] opacity-70">{sublabel}</div>
       ) : null}
       <div className={valueClass}>{displayValue}</div>
-      <div className={metaClass}>{formatCurrency(row.marketPnl)}</div>
+      <div className={metaClass}>
+        {hasMissingValuation
+          ? row.missingPriceSymbols.slice(0, 2).join(', ')
+          : formatCurrency(row.marketPnl)}
+      </div>
     </button>
   );
 }
@@ -3655,6 +3709,12 @@ function ReturnCalendarDetail({
           label={copy.explainability.externalFlow}
           value={formatCurrency(row.externalFlow)}
         />
+        {row.valuationStatus === 'missing' ? (
+          <CalendarDetailMetric
+            label={copy.explainability.valuationCoverage}
+            value={`${copy.explainability.missingHistoricalPrices}: ${row.missingPriceSymbols.join(', ')}`}
+          />
+        ) : null}
       </div>
     </div>
   );

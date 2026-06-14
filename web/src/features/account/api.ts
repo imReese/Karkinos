@@ -144,6 +144,8 @@ export type ExplainabilityResponse = {
     delta: number;
     external_flow: number;
     market_pnl: number;
+    valuation_status?: string;
+    missing_price_symbols?: string[];
     events: Array<{
       category: string;
       impact_source: string;
