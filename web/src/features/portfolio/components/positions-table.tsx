@@ -221,8 +221,14 @@ export function PositionsTable({
         })}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] md:block">
-        <table className="app-data-table w-full min-w-[1180px] text-left text-sm">
+      <div
+        data-testid="positions-table-scroll"
+        className="hidden min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] md:block"
+      >
+        <table
+          data-testid="positions-table-desktop"
+          className="app-data-table w-full min-w-[1180px] text-left text-sm"
+        >
           <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
             <tr>
               <th className="px-4 py-3">{labels.symbol}</th>

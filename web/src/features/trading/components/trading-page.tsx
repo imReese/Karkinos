@@ -189,17 +189,17 @@ export function TradingPage() {
 
       <KillSwitchPanel />
 
-      <section className="app-terminal-panel overflow-hidden rounded-[28px] p-[1px]">
-        <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
+      <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
+        <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+          <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
               <div className="app-product-mark">{labels.filterTitle}</div>
               <h2 className="app-card-title mt-1.5">{labels.ordersTitle}</h2>
-              <p className="app-muted mt-2 text-sm">
+              <p className="app-muted mt-2 break-words text-sm">
                 {labels.filteredCount(rows.length)}
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[680px]">
+            <div className="grid min-w-0 w-full gap-3 sm:grid-cols-3 xl:max-w-[680px]">
               <label className="grid gap-2 text-sm font-medium">
                 {labels.statusFilter}
                 <select
@@ -358,7 +358,7 @@ function OrderQueue({
   }
 
   return (
-    <div className="mt-5 overflow-x-auto">
+    <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
       <table className="min-w-[1120px] table-fixed text-left text-sm">
         <thead>
           <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] text-[11px] uppercase tracking-[0.16em]">

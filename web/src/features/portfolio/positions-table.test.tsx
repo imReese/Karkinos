@@ -84,3 +84,34 @@ test('shows cached quote copy for stale positions', () => {
     screen.getAllByText('quote_older_than_expected_session').length,
   ).toBeGreaterThan(0);
 });
+
+test('contains the desktop positions table in a local horizontal scroller', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          symbol: '600519',
+          name: '贵州茅台',
+          asset_class: 'stock',
+          quantity: 60,
+          available_qty: 60,
+          frozen_qty: 0,
+          avg_cost: 1500,
+          market_value: 96000,
+          unrealized_pnl: 6000,
+          realized_pnl: 0,
+          commission_paid: 5,
+        },
+      ]}
+    />,
+  );
+
+  const scrollRegion = screen.getByTestId('positions-table-scroll');
+  const table = screen.getByTestId('positions-table-desktop');
+
+  expect(scrollRegion.className).toContain('min-w-0');
+  expect(scrollRegion.className).toContain('max-w-full');
+  expect(scrollRegion.className).toContain('overflow-x-auto');
+  expect(scrollRegion.className).toContain('overscroll-x-contain');
+  expect(table.className).toContain('min-w-[1180px]');
+});

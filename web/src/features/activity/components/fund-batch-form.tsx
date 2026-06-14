@@ -93,13 +93,15 @@ export function FundBatchForm({
           );
         }
       }}
-      className="app-panel space-y-4 rounded-2xl p-5"
+      className="app-panel min-w-0 max-w-full space-y-4 rounded-2xl p-5"
     >
-      <div>
+      <div className="min-w-0">
         <div className="app-kicker text-xs uppercase tracking-[0.18em]">
           {labels.title}
         </div>
-        <p className="app-muted mt-2 text-xs leading-5">{labels.helper}</p>
+        <p className="app-muted mt-2 break-words text-xs leading-5">
+          {labels.helper}
+        </p>
       </div>
       <input
         aria-label={labels.occurredAtLabel}
@@ -111,7 +113,7 @@ export function FundBatchForm({
             occurred_at: event.target.value,
           }))
         }
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-w-0 w-full rounded-2xl px-4 py-3 text-sm"
       />
       {loadingCandidates ? (
         <div className="app-panel-strong rounded-2xl p-3 text-sm app-muted">
@@ -122,17 +124,19 @@ export function FundBatchForm({
           {labels.noCandidates}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-2">
           {values.orders.map((order, index) => (
             <div
               key={order.symbol}
-              className="app-panel-strong grid gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_150px]"
+              className="app-panel-strong grid min-w-0 gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_minmax(130px,150px)]"
             >
-              <div>
-                <div className="text-sm font-semibold">
+              <div className="min-w-0">
+                <div className="break-words text-sm font-semibold">
                   {order.display_name}
                 </div>
-                <div className="app-muted mt-1 text-xs">{order.symbol}</div>
+                <div className="app-muted mt-1 break-all text-xs">
+                  {order.symbol}
+                </div>
               </div>
               <input
                 aria-label={labels.amountLabel(order.symbol)}
@@ -148,7 +152,7 @@ export function FundBatchForm({
                       : Number(event.target.value);
                   updateOrderAmount(index, nextAmount);
                 }}
-                className="app-field rounded-2xl px-4 py-3 text-sm"
+                className="app-field min-w-0 w-full rounded-2xl px-4 py-3 text-sm"
               />
             </div>
           ))}
@@ -161,7 +165,7 @@ export function FundBatchForm({
         onChange={(event) =>
           setValues((current) => ({ ...current, note: event.target.value }))
         }
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-w-0 w-full rounded-2xl px-4 py-3 text-sm"
       />
       {submitError ? (
         <div className="app-error-text text-sm">{submitError}</div>

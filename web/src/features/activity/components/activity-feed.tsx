@@ -20,7 +20,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   }
 
   return (
-    <div className="app-panel overflow-hidden rounded-2xl">
+    <div className="app-panel min-w-0 overflow-hidden rounded-2xl">
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
         <div>
           <div className="app-product-mark">{labels.kicker}</div>
@@ -30,7 +30,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           {labels.count(entries.length)}
         </span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
         <table className="app-data-table w-full min-w-[820px] text-left text-sm">
           <thead>
             <tr>

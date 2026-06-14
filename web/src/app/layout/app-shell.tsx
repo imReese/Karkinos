@@ -252,8 +252,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     : undefined;
 
   return (
-    <div className="app-root min-h-[100dvh] w-full overflow-hidden">
-      <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] w-full">
+    <div className="app-root min-h-[100dvh] w-full">
+      <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] min-w-0 w-full">
         <div
           className={`fixed inset-0 z-30 bg-[color-mix(in_srgb,var(--app-mantle)_54%,transparent)] transition lg:hidden ${
             mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
@@ -321,7 +321,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </aside>
 
-        <main className="app-shell-main flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="app-shell-main flex min-w-0 flex-1 flex-col">
           <header className="app-toolbar-shell shrink-0 border-b">
             <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-5 lg:px-6">
               <div className="min-w-0 flex-1">
@@ -339,10 +339,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              <div className="flex shrink-0 flex-row items-center justify-end gap-4 self-center whitespace-nowrap">
+              <div className="flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
                 <div
                   ref={statusRailRef}
-                  className="hidden flex-row flex-nowrap items-center gap-3 self-center xl:flex"
+                  className="hidden flex-row flex-nowrap items-center gap-3 self-center 2xl:flex"
                   aria-label={copy.shell.accountStatus}
                 >
                   <StatusChip
@@ -493,7 +493,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
 
                 <div
-                  className="hidden h-6 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_26%,transparent)] xl:block"
+                  className="hidden h-6 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_26%,transparent)] 2xl:block"
                   aria-hidden="true"
                 />
 
@@ -511,7 +511,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {copy.shell.navigation}
                 </button>
 
-                <div className="flex flex-row items-center gap-3">
+                <div className="flex min-w-0 flex-row items-center gap-2 sm:gap-3">
                   <ThemeSwitcher
                     label={copy.shell.theme}
                     value={theme}
@@ -544,8 +544,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <div className="app-shell-content min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1880px] px-4 py-5 sm:px-5 sm:py-6 lg:px-6 xl:px-7 2xl:px-8">
+          <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
+            <div className="mx-auto min-w-0 w-full max-w-[1880px] px-4 py-5 sm:px-5 sm:py-6 lg:px-6 xl:px-7 2xl:px-8">
               {children}
             </div>
           </div>

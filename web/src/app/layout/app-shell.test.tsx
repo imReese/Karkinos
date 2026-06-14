@@ -327,6 +327,37 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(languageButton.textContent).toBe('English');
 });
 
+test('keeps app shell overflow from clipping responsive content', async () => {
+  renderShell();
+
+  expect(await screen.findByText('Overview page')).toBeTruthy();
+
+  const root = document.querySelector('.app-root') as HTMLElement | null;
+  const frame = document.querySelector(
+    '.app-shell-frame',
+  ) as HTMLElement | null;
+  const main = document.querySelector('.app-shell-main') as HTMLElement | null;
+  const content = document.querySelector(
+    '.app-shell-content',
+  ) as HTMLElement | null;
+  const contentInner = content?.firstElementChild as HTMLElement | null;
+
+  expect(root).toBeTruthy();
+  expect(frame).toBeTruthy();
+  expect(main).toBeTruthy();
+  expect(content).toBeTruthy();
+  expect(contentInner).toBeTruthy();
+
+  expect(root?.className).not.toContain('overflow-hidden');
+  expect(main?.className).not.toContain('overflow-hidden');
+  expect(frame?.className).toContain('min-w-0');
+  expect(main?.className).toContain('min-w-0');
+  expect(content?.className).toContain('min-w-0');
+  expect(content?.className).toContain('overflow-y-auto');
+  expect(content?.className).toContain('overflow-x-auto');
+  expect(contentInner?.className).toContain('min-w-0');
+});
+
 test('uses full language names and fluid menu width', async () => {
   renderShell();
   const user = userEvent.setup();

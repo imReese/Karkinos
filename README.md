@@ -29,6 +29,7 @@ public demos and development.
 - T+1 freeze/thaw built into Position
 - Live monitoring with Telegram / WeChat push notifications
 - React + TanStack Query + TanStack Router portfolio workspace
+- Responsive cockpit layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
 - Read-only decision cockpit APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
 

@@ -285,7 +285,7 @@ function OverviewPage() {
       {overview.isLoading || snapshot.isLoading ? (
         <div className="space-y-5">
           <OverviewCardsSkeleton />
-          <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">
+          <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
             <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
               <EquityCurveSkeleton />
             </div>
@@ -313,7 +313,7 @@ function OverviewPage() {
           />
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-            <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">
+            <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
               <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
                 {equityCurve.isLoading ? (
                   <EquityCurveSkeleton />
@@ -368,7 +368,7 @@ function OverviewPage() {
             </aside>
           </div>
 
-          <section className="app-terminal-panel overflow-hidden rounded-[2rem] p-1.5">
+          <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
             <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
@@ -2133,18 +2133,18 @@ function ActivityPage() {
   return (
     <>
       <ToastStack toasts={toasts} />
-      <section className="space-y-6">
-        <header className="space-y-2">
+      <section className="min-w-0 space-y-6">
+        <header className="min-w-0 space-y-2">
           <div className="app-kicker text-xs font-medium uppercase tracking-[0.24em]">
             {copy.activity.kicker}
           </div>
           <h1 className="text-3xl font-semibold">{copy.activity.title}</h1>
-          <p className="app-muted max-w-2xl text-sm leading-6">
+          <p className="app-muted max-w-2xl break-words text-sm leading-6">
             {copy.activity.subtitle}
           </p>
         </header>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <ActivityMetric
             label={copy.activity.summary.pendingOrders}
             value={
@@ -2174,9 +2174,9 @@ function ActivityPage() {
           />
         </div>
 
-        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.8fr)]">
-          <div className="grid gap-6 xl:grid-cols-2">
-            <div className="space-y-6">
+        <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.8fr)]">
+          <div className="grid min-w-0 gap-6 xl:grid-cols-2">
+            <div className="min-w-0 space-y-6">
               <FundBatchForm
                 candidates={fundBatchCandidates}
                 loadingCandidates={positions.isLoading}
@@ -2192,7 +2192,7 @@ function ActivityPage() {
                 pending={createDividend.isPending}
               />
             </div>
-            <div className="space-y-6">
+            <div className="min-w-0 space-y-6">
               <CashFlowForm
                 onSubmit={handleCashFlowSubmit}
                 pending={createCashFlow.isPending}
@@ -2203,7 +2203,7 @@ function ActivityPage() {
               />
             </div>
           </div>
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-6">
             <PendingFundOrdersCard
               orders={pendingFundOrders.data ?? []}
               loading={pendingFundOrders.isLoading}
@@ -2859,7 +2859,7 @@ function ReturnCalendarCard({
           />
         </div>
       ) : viewMode === 'table' ? (
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
           <table className="min-w-full text-left text-sm">
             <thead className="app-kicker text-[11px] uppercase tracking-[0.16em]">
               <tr>

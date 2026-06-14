@@ -396,4 +396,11 @@ automation.
   `/decision` cockpit, deterministic API/dashboard acceptance coverage,
   README/docs behavior boundaries, and manual-confirmation-only live-like
   behavior.
+* 2026-06-12: Fixed Web cockpit responsive containment. The app shell no longer
+  uses root/main `overflow-hidden` to silently clip content, the toolbar folds
+  secondary status chips below 2xl widths, Decision Cockpit evidence and manual
+  confirmation cards remain shrinkable, and wide portfolio/activity/trading/
+  backtest tables scroll inside local panels. Frontend tests now cover the app
+  shell overflow contract, Decision responsive accessibility, Activity batch
+  form shrinkability, and Portfolio table-local horizontal scrolling.
 <!-- codex-progress:end -->

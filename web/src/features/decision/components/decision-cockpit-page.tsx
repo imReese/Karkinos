@@ -83,10 +83,13 @@ export function DecisionCockpitPage() {
   }
 
   return (
-    <section className="space-y-5 sm:space-y-6">
+    <section className="min-w-0 space-y-5 sm:space-y-6">
       <PageHeader title={labels.title} subtitle={labels.subtitle} />
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div
+        data-testid="decision-summary-grid"
+        className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4"
+      >
         {lanes.map((lane) => (
           <LaneStatusTile key={lane.lane} lane={lane} />
         ))}
@@ -111,7 +114,10 @@ export function DecisionCockpitPage() {
         />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div
+        data-testid="decision-lane-grid"
+        className="grid min-w-0 gap-5 xl:grid-cols-2"
+      >
         {lanes.map((lane) => (
           <DecisionLanePanel key={lane.lane} lane={lane} />
         ))}
@@ -123,13 +129,13 @@ export function DecisionCockpitPage() {
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   const labels = useCopy().decision;
   return (
-    <header className="app-page-header pb-1">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <header className="app-page-header min-w-0 pb-1">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <div className="app-product-mark">{labels.kicker}</div>
           <h1 className="app-page-title mt-2">{title}</h1>
         </div>
-        <p className="app-page-subtitle sm:max-w-xl sm:text-right">
+        <p className="app-page-subtitle min-w-0 break-words sm:max-w-xl sm:text-right">
           {subtitle}
         </p>
       </div>
@@ -158,12 +164,12 @@ function SummaryTile({
   detail: string;
 }) {
   return (
-    <div className="app-card rounded-[22px] p-4">
+    <div className="app-card min-w-0 rounded-[22px] p-4">
       <div className="app-product-mark">{label}</div>
-      <div className="mt-2 text-base font-semibold text-[var(--app-text)]">
+      <div className="mt-2 break-words text-base font-semibold text-[var(--app-text)]">
         {value}
       </div>
-      <div className="app-muted mt-1 text-xs">{detail}</div>
+      <div className="app-muted mt-1 break-words text-xs">{detail}</div>
     </div>
   );
 }
@@ -184,19 +190,19 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
   const laneLabel =
     lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
   return (
-    <section className="app-terminal-panel overflow-hidden rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <div className="app-product-mark">{laneLabel}</div>
             <h2 className="app-card-title mt-1.5">
               {labels.decision}: {lane.decision}
             </h2>
-            <p className="app-muted mt-2 text-sm">
+            <p className="app-muted mt-2 break-words text-sm">
               {labels.generatedAt}: {formatTimestamp(lane.generated_at)}
             </p>
           </div>
-          <div className="grid gap-1 text-left text-xs sm:text-right">
+          <div className="grid min-w-0 gap-1 text-left text-xs sm:text-right">
             <span>
               {labels.riskBlocked}: {lane.summary.risk_blocked_count}
             </span>
@@ -213,7 +219,7 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
         </div>
 
         {lane.candidates.length > 0 ? (
-          <div className="mt-5 grid gap-3">
+          <div className="mt-5 grid min-w-0 gap-3">
             {lane.candidates.map((candidate) => (
               <DecisionCandidateCard
                 key={`${lane.lane}-${candidate.action_id ?? candidate.symbol}`}
@@ -232,14 +238,14 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
 function NoActionReasons({ reasons }: { reasons: string[] }) {
   const labels = useCopy().decision;
   return (
-    <div className="mt-5 rounded-[20px] border border-[color-mix(in_srgb,var(--app-border)_50%,transparent)] p-4">
+    <div className="mt-5 min-w-0 rounded-[20px] border border-[color-mix(in_srgb,var(--app-border)_50%,transparent)] p-4">
       <div className="text-sm font-semibold">{labels.noActionReasons}</div>
       <div className="mt-2 flex flex-wrap gap-2">
         {(reasons.length ? reasons : [labels.noActionUnavailable]).map(
           (reason) => (
             <span
               key={reason}
-              className="rounded-full border border-[var(--app-accent-border)] px-3 py-1 text-xs text-[var(--app-muted)]"
+              className="min-w-0 rounded-full border border-[var(--app-accent-border)] px-3 py-1 text-xs text-[var(--app-muted)]"
             >
               {reason}
             </span>
@@ -259,11 +265,14 @@ function DecisionCandidateCard({
   const readyForManual =
     candidate.manual_confirmation_status === 'ready_for_manual_confirmation';
   return (
-    <article className="rounded-[22px] border border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_58%,transparent)] p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <article
+      data-testid={`decision-candidate-card-${candidate.symbol}`}
+      className="min-w-0 break-words rounded-[22px] border border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_58%,transparent)] p-4"
+    >
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-[var(--app-text)]">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="break-all font-semibold text-[var(--app-text)]">
               {candidate.symbol}
             </span>
             <StatusPill value={candidate.action} />
@@ -272,13 +281,13 @@ function DecisionCandidateCard({
               prefix={labels.riskGate}
             />
           </div>
-          <p className="app-muted mt-2 text-sm">
+          <p className="app-muted mt-2 break-words text-sm">
             {candidate.detail || candidate.title || labels.noDetail}
           </p>
         </div>
         {readyForManual ? (
           <a
-            className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-2xl px-4 text-sm font-semibold"
+            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
             href="/trading"
             aria-label={`${labels.openTradingApprovals}: ${candidate.symbol}`}
           >
@@ -287,7 +296,7 @@ function DecisionCandidateCard({
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+      <div className="mt-4 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
         <EvidenceLine
           label={labels.manual}
           value={manualStatus(candidate)}
@@ -335,7 +344,7 @@ function StatusPill({ value, prefix }: { value: string; prefix?: string }) {
   const tone = decisionTone(value);
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+      className={`min-w-0 rounded-full border px-2.5 py-1 text-xs font-semibold break-words ${
         tone === 'success'
           ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
           : tone === 'danger'
@@ -366,9 +375,12 @@ function EvidenceLine({
           ? 'text-[var(--app-warning)]'
           : 'text-[var(--app-text)]';
   return (
-    <div className="rounded-2xl bg-[color-mix(in_srgb,var(--app-mantle)_42%,transparent)] px-3 py-2">
-      <div className="app-muted text-[11px] uppercase">{label}</div>
-      <div className={`mt-1 text-sm font-semibold ${textColor}`}>
+    <div
+      data-testid="decision-evidence-line"
+      className="min-w-0 rounded-2xl bg-[color-mix(in_srgb,var(--app-mantle)_42%,transparent)] px-3 py-2"
+    >
+      <div className="app-muted break-words text-[11px] uppercase">{label}</div>
+      <div className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
         {label}: {value}
       </div>
     </div>

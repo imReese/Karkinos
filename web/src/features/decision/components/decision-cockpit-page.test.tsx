@@ -60,7 +60,8 @@ const dailyDecision = {
       symbol: '600519',
       asset_class: 'stock',
       title: 'Increase 600519',
-      detail: 'dual_ma target weight 20%',
+      detail:
+        '双均线策略触发目标权重 20%，需要人工确认；这是一段很长的中文证据说明，用来验证窄屏和浏览器 125% 缩放时不会把候选动作卡片从右侧裁掉。',
       urgency: 'high',
       target_weight: 0.2,
       price: 123.45,
@@ -218,4 +219,31 @@ test('renders daily and intraday decision cockpit evidence without execution', a
       .getAttribute('href'),
   ).toBe('/trading');
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {
+  renderDecisionCockpit();
+
+  expect(await screen.findByText('Decision cockpit')).toBeTruthy();
+
+  const candidateCard = await screen.findByTestId(
+    'decision-candidate-card-600519',
+  );
+  const summaryGrid = screen.getByTestId('decision-summary-grid');
+  const laneGrid = screen.getByTestId('decision-lane-grid');
+  const tradingLink = screen.getByRole('link', {
+    name: 'Open Trading approvals: 600519',
+  });
+
+  expect(summaryGrid.className).toContain('min-w-0');
+  expect(laneGrid.className).toContain('min-w-0');
+  expect(candidateCard.className).toContain('min-w-0');
+  expect(candidateCard.className).toContain('break-words');
+  expect(tradingLink.className).toContain('shrink-0');
+  expect(tradingLink.className).toContain('whitespace-normal');
+
+  for (const evidenceLine of screen.getAllByTestId('decision-evidence-line')) {
+    expect(evidenceLine.className).toContain('min-w-0');
+    expect(evidenceLine.textContent).toBeTruthy();
+  }
 });
