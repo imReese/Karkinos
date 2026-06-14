@@ -413,4 +413,8 @@ automation.
   performance-analysis layout now keeps daily, monthly, and annual attribution
   beside the net-value workspace, while Risk no longer owns the main return
   calendar module.
+* 2026-06-14: Improved the Overview return-calendar empty state. When daily
+  attribution snapshots are not available, the cockpit now shows current
+  position PnL, market value, top PnL contributors, and the missing historical
+  snapshot requirement instead of a bare empty message or fake calendar data.
 <!-- codex-progress:end -->
