@@ -52,10 +52,10 @@ beforeEach(() => {
   });
 });
 
-function renderCalendar() {
+function renderCalendar({ compact = false }: { compact?: boolean } = {}) {
   return render(
     <PreferencesProvider>
-      <ReturnCalendarCard timeline={timeline} />
+      <ReturnCalendarCard timeline={timeline} compact={compact} />
     </PreferencesProvider>,
   );
 }
@@ -108,4 +108,14 @@ test('switches the return calendar between monthly days, yearly months, and year
   expect(
     within(yearsGrid).getByRole('button', { name: '2025 · CN¥1,000.00' }),
   ).toBeTruthy();
+});
+
+test('supports a compact cockpit layout for the overview page', async () => {
+  renderCalendar({ compact: true });
+
+  const panel = await screen.findByTestId('return-calendar-card');
+  expect(panel.className).toContain('p-4');
+  expect(panel.className).not.toContain('rounded-2xl');
+  expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
+  expect(screen.getByText('Selected period')).toBeTruthy();
 });

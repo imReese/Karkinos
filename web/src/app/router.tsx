@@ -211,7 +211,7 @@ function HoldingDetailRoutePage() {
   return <HoldingDetailPage symbol={symbol} />;
 }
 
-function OverviewPage() {
+export function OverviewPage() {
   const copy = useCopy();
   const [equityCurveRange, setEquityCurveRange] =
     useState<EquityCurveRange>('1m');
@@ -220,6 +220,7 @@ function OverviewPage() {
   const liveHoldings = useLiveHoldingsQuery();
   const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
   const riskWorkspace = useRiskWorkspaceQuery();
+  const explainability = useExplainabilityQuery();
   const ledgerEntries = useLedgerEntriesQuery(8);
   const pendingOrders = usePendingManualOrdersQuery();
   const marketHealth = useMarketDataHealthQuery();
@@ -367,6 +368,15 @@ function OverviewPage() {
               </div>
             </aside>
           </div>
+
+          <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
+            <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
+              <ReturnCalendarCard
+                timeline={explainability.data?.timeline ?? []}
+                compact
+              />
+            </div>
+          </section>
 
           <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
             <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
@@ -2392,6 +2402,7 @@ function ExplainabilityWorkspace({
   explainability,
   loading,
   filters,
+  showReturnCalendar = false,
 }: {
   title: string;
   stateLabelRecent: string;
@@ -2435,6 +2446,7 @@ function ExplainabilityWorkspace({
     | undefined;
   loading: boolean;
   filters?: ReactNode;
+  showReturnCalendar?: boolean;
 }) {
   const copy = useCopy();
 
@@ -2625,7 +2637,9 @@ function ExplainabilityWorkspace({
         </div>
       </div>
 
-      <ReturnCalendarCard timeline={explainability?.timeline ?? []} />
+      {showReturnCalendar ? (
+        <ReturnCalendarCard timeline={explainability?.timeline ?? []} />
+      ) : null}
     </div>
   );
 }
@@ -2790,6 +2804,7 @@ type ReturnCalendarRow = {
 
 export function ReturnCalendarCard({
   timeline,
+  compact = false,
 }: {
   timeline: Array<{
     date: string;
@@ -2798,6 +2813,7 @@ export function ReturnCalendarCard({
     external_flow: number;
     market_pnl: number;
   }>;
+  compact?: boolean;
 }) {
   const copy = useCopy();
   const dailyRows = aggregateReturnTimeline(timeline, 'day');
@@ -2837,22 +2853,29 @@ export function ReturnCalendarCard({
     aggregated.find((row) => row.label === selectedLabel) ??
     aggregated[aggregated.length - 1] ??
     null;
+  const panelClass = compact ? 'p-4' : 'app-panel rounded-2xl p-4 sm:p-5';
+  const contentGridClass = compact
+    ? 'mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1fr)_260px]'
+    : 'mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]';
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+    <div className={panelClass} data-testid="return-calendar-card">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {copy.explainability.returnCalendar}
           </div>
+          <div className="app-muted mt-2 max-w-2xl text-sm">
+            {copy.explainability.returnCalendarDetail}
+          </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <select
             value={viewMode}
             onChange={(event) =>
               setViewMode(event.target.value as 'calendar' | 'table' | 'curve')
             }
-            className="app-field rounded-2xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
           >
             <option value="calendar">{copy.explainability.calendarView}</option>
             <option value="table">{copy.explainability.tableView}</option>
@@ -2864,7 +2887,7 @@ export function ReturnCalendarCard({
             onChange={(event) =>
               setPeriod(event.target.value as ReturnCalendarPeriod)
             }
-            className="app-field rounded-2xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
           >
             <option value="month-days">{copy.explainability.monthDays}</option>
             <option value="year-months">
@@ -2880,7 +2903,7 @@ export function ReturnCalendarCard({
                 setSelectedMonth(event.target.value);
                 setSelectedLabel(null);
               }}
-              className="app-field rounded-2xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
             >
               {monthOptions.map((month) => (
                 <option key={month} value={month}>
@@ -2896,7 +2919,7 @@ export function ReturnCalendarCard({
                 setSelectedYear(event.target.value);
                 setSelectedLabel(null);
               }}
-              className="app-field rounded-2xl px-3 py-2 text-sm"
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
             >
               {yearOptions.map((year) => (
                 <option key={year} value={year}>
@@ -2910,7 +2933,7 @@ export function ReturnCalendarCard({
             onChange={(event) =>
               setMetric(event.target.value as 'amount' | 'percent')
             }
-            className="app-field rounded-2xl px-3 py-2 text-sm"
+            className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
           >
             <option value="amount">{copy.explainability.amountMetric}</option>
             <option value="percent">{copy.explainability.percentMetric}</option>
@@ -2923,7 +2946,7 @@ export function ReturnCalendarCard({
           {copy.explainability.timelineEmpty}
         </div>
       ) : viewMode === 'calendar' ? (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className={contentGridClass}>
           <ReturnCalendarGrid
             rows={aggregated}
             period={period}
@@ -2931,10 +2954,16 @@ export function ReturnCalendarCard({
             activeYear={activeYear}
             metric={metric}
             copy={copy}
+            compact={compact}
             selectedLabel={selectedRow?.label ?? null}
             onSelect={setSelectedLabel}
           />
-          <ReturnCalendarDetail row={selectedRow} metric={metric} copy={copy} />
+          <ReturnCalendarDetail
+            row={selectedRow}
+            metric={metric}
+            copy={copy}
+            compact={compact}
+          />
         </div>
       ) : viewMode === 'table' ? (
         <div className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
@@ -3117,6 +3146,7 @@ function ReturnCalendarGrid({
   activeYear,
   metric,
   copy,
+  compact,
   selectedLabel,
   onSelect,
 }: {
@@ -3126,6 +3156,7 @@ function ReturnCalendarGrid({
   activeYear: string;
   metric: 'amount' | 'percent';
   copy: AppCopy;
+  compact: boolean;
   selectedLabel: string | null;
   onSelect: (label: string) => void;
 }) {
@@ -3143,6 +3174,7 @@ function ReturnCalendarGrid({
         activeMonth={activeMonth}
         metric={metric}
         copy={copy}
+        compact={compact}
         maxMagnitude={maxMagnitude}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
@@ -3157,6 +3189,7 @@ function ReturnCalendarGrid({
         activeYear={activeYear}
         metric={metric}
         copy={copy}
+        compact={compact}
         maxMagnitude={maxMagnitude}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
@@ -3168,6 +3201,7 @@ function ReturnCalendarGrid({
     <ReturnYearsGrid
       rows={rows}
       metric={metric}
+      compact={compact}
       maxMagnitude={maxMagnitude}
       selectedLabel={selectedLabel}
       onSelect={onSelect}
@@ -3180,6 +3214,7 @@ function ReturnMonthGrid({
   activeMonth,
   metric,
   copy,
+  compact,
   maxMagnitude,
   selectedLabel,
   onSelect,
@@ -3188,6 +3223,7 @@ function ReturnMonthGrid({
   activeMonth: string;
   metric: 'amount' | 'percent';
   copy: AppCopy;
+  compact: boolean;
   maxMagnitude: number;
   selectedLabel: string | null;
   onSelect: (label: string) => void;
@@ -3202,16 +3238,22 @@ function ReturnMonthGrid({
     ...Array.from({ length: leadingBlanks }, () => null),
     ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
   ];
+  const gapClass = compact ? 'gap-1.5' : 'gap-2';
+  const blankClass = compact
+    ? 'min-h-[4.25rem] rounded-md'
+    : 'min-h-[5.75rem] rounded-lg';
 
   return (
     <div className="min-w-0">
-      <div className="app-kicker grid grid-cols-7 gap-2 text-center text-[11px] uppercase tracking-[0.14em]">
+      <div
+        className={`app-kicker grid grid-cols-7 ${gapClass} text-center text-[11px] uppercase tracking-[0.14em]`}
+      >
         {copy.explainability.weekdays.map((day) => (
           <div key={day}>{day}</div>
         ))}
       </div>
       <div
-        className="mt-2 grid grid-cols-7 gap-2"
+        className={`mt-2 grid grid-cols-7 ${gapClass}`}
         data-testid="return-calendar-month-grid"
       >
         {cells.map((day, index) => {
@@ -3219,7 +3261,7 @@ function ReturnMonthGrid({
             return (
               <div
                 key={`blank-${index}`}
-                className="min-h-[5.75rem] rounded-lg border border-dashed border-[color-mix(in_srgb,var(--app-border)_44%,transparent)]"
+                className={`${blankClass} border border-dashed border-[color-mix(in_srgb,var(--app-border)_44%,transparent)]`}
               />
             );
           }
@@ -3235,6 +3277,7 @@ function ReturnMonthGrid({
               maxMagnitude={maxMagnitude}
               selected={selectedLabel === label}
               onSelect={onSelect}
+              compact={compact}
             />
           );
         })}
@@ -3248,6 +3291,7 @@ function ReturnYearGrid({
   activeYear,
   metric,
   copy,
+  compact,
   maxMagnitude,
   selectedLabel,
   onSelect,
@@ -3256,6 +3300,7 @@ function ReturnYearGrid({
   activeYear: string;
   metric: 'amount' | 'percent';
   copy: AppCopy;
+  compact: boolean;
   maxMagnitude: number;
   selectedLabel: string | null;
   onSelect: (label: string) => void;
@@ -3263,7 +3308,7 @@ function ReturnYearGrid({
   const rowsByLabel = new Map(rows.map((row) => [row.label, row]));
   return (
     <div
-      className="grid gap-2 sm:grid-cols-3 xl:grid-cols-4"
+      className={`grid ${compact ? 'gap-1.5' : 'gap-2'} sm:grid-cols-3 xl:grid-cols-4`}
       data-testid="return-calendar-year-grid"
     >
       {Array.from({ length: 12 }, (_, index) => {
@@ -3279,6 +3324,7 @@ function ReturnYearGrid({
             selected={selectedLabel === label}
             onSelect={onSelect}
             sublabel={copy.explainability.month}
+            compact={compact}
           />
         );
       })}
@@ -3289,19 +3335,21 @@ function ReturnYearGrid({
 function ReturnYearsGrid({
   rows,
   metric,
+  compact,
   maxMagnitude,
   selectedLabel,
   onSelect,
 }: {
   rows: ReturnCalendarRow[];
   metric: 'amount' | 'percent';
+  compact: boolean;
   maxMagnitude: number;
   selectedLabel: string | null;
   onSelect: (label: string) => void;
 }) {
   return (
     <div
-      className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3"
+      className={`grid ${compact ? 'gap-1.5' : 'gap-2'} sm:grid-cols-2 xl:grid-cols-3`}
       data-testid="return-calendar-years-grid"
     >
       {rows
@@ -3317,6 +3365,7 @@ function ReturnYearsGrid({
             maxMagnitude={maxMagnitude}
             selected={selectedLabel === row.label}
             onSelect={onSelect}
+            compact={compact}
           />
         ))}
     </div>
@@ -3332,6 +3381,7 @@ function ReturnCalendarCell({
   selected,
   onSelect,
   sublabel,
+  compact,
 }: {
   label: string;
   heading: string;
@@ -3341,6 +3391,7 @@ function ReturnCalendarCell({
   selected: boolean;
   onSelect: (label: string) => void;
   sublabel?: string;
+  compact: boolean;
 }) {
   const value = row ? (metric === 'amount' ? row.delta : row.percentChange) : 0;
   const displayValue = row
@@ -3351,15 +3402,24 @@ function ReturnCalendarCell({
   const tone = row
     ? getHeatmapTone(value, maxMagnitude)
     : 'border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_42%,transparent)] text-[var(--app-muted)]';
+  const cellClass = compact
+    ? 'min-h-[4.25rem] rounded-md px-2 py-2'
+    : 'min-h-[5.75rem] rounded-lg px-3 py-3';
+  const valueClass = compact
+    ? 'mt-2 text-xs font-semibold leading-4'
+    : 'mt-3 text-sm font-semibold';
+  const metaClass = compact
+    ? 'mt-1 text-[10px] opacity-80'
+    : 'mt-2 text-[11px] opacity-80';
 
   if (!row) {
     return (
-      <div className={`min-h-[5.75rem] rounded-lg border px-3 py-3 ${tone}`}>
+      <div className={`${cellClass} border ${tone}`}>
         <div className="text-xs font-semibold">{heading}</div>
         {sublabel ? (
           <div className="app-muted mt-1 text-[11px]">{sublabel}</div>
         ) : null}
-        <div className="mt-3 text-sm font-semibold">{displayValue}</div>
+        <div className={valueClass}>{displayValue}</div>
       </div>
     );
   }
@@ -3370,7 +3430,7 @@ function ReturnCalendarCell({
       aria-pressed={selected}
       aria-label={`${label} · ${displayValue}`}
       onClick={() => onSelect(label)}
-      className={`min-h-[5.75rem] rounded-lg border px-3 py-3 text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] ${
+      className={`${cellClass} border text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] ${
         selected ? 'ring-2 ring-[var(--app-accent)]' : ''
       } ${tone}`}
     >
@@ -3378,10 +3438,8 @@ function ReturnCalendarCell({
       {sublabel ? (
         <div className="mt-1 text-[11px] opacity-70">{sublabel}</div>
       ) : null}
-      <div className="mt-3 text-sm font-semibold">{displayValue}</div>
-      <div className="mt-2 text-[11px] opacity-80">
-        {formatCurrency(row.marketPnl)}
-      </div>
+      <div className={valueClass}>{displayValue}</div>
+      <div className={metaClass}>{formatCurrency(row.marketPnl)}</div>
     </button>
   );
 }
@@ -3390,26 +3448,40 @@ function ReturnCalendarDetail({
   row,
   metric,
   copy,
+  compact,
 }: {
   row: ReturnCalendarRow | null;
   metric: 'amount' | 'percent';
   copy: AppCopy;
+  compact: boolean;
 }) {
+  const detailClass = compact
+    ? 'rounded-md border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-3'
+    : 'rounded-lg border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-4';
+
   if (row === null) {
     return (
-      <div className="rounded-lg border border-dashed border-[var(--app-border)] p-4 text-sm text-[var(--app-muted)]">
+      <div
+        className={`${compact ? 'rounded-md p-3' : 'rounded-lg p-4'} border border-dashed border-[var(--app-border)] text-sm text-[var(--app-muted)]`}
+      >
         {copy.explainability.timelineEmpty}
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-4">
+    <div className={detailClass}>
       <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
         {copy.explainability.selectedPeriod}
       </div>
-      <div className="mt-2 text-lg font-semibold">{row.label}</div>
-      <div className="mt-4 space-y-3 text-sm">
+      <div
+        className={`${compact ? 'mt-1 text-base' : 'mt-2 text-lg'} font-semibold`}
+      >
+        {row.label}
+      </div>
+      <div
+        className={`${compact ? 'mt-3 space-y-2' : 'mt-4 space-y-3'} text-sm`}
+      >
         <CalendarDetailMetric
           label={copy.explainability.netChange}
           value={
