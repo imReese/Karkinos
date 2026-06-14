@@ -708,6 +708,8 @@ export const copy = {
       empty: 'No explainability data available yet.',
       timeline: 'Timeline attribution',
       returnCalendar: 'Return calendar',
+      returnCalendarDetail:
+        'Audit daily, monthly, and annual return attribution without leaving the portfolio cockpit.',
       calendarView: 'Calendar',
       heatmapView: 'Heatmap',
       tableView: 'Table',
@@ -1727,6 +1729,8 @@ export const copy = {
       empty: '当前还没有可用的解释层数据。',
       timeline: '时间序列归因',
       returnCalendar: '收益日历',
+      returnCalendarDetail:
+        '在组合驾驶舱里查看每日、每月与年度收益归因，不必切到风险页。',
       calendarView: '日历',
       heatmapView: '热力图',
       tableView: '表格',

@@ -409,4 +409,8 @@ automation.
   AKShare timeout waits. The explainability return calendar now supports a
   cockpit-style calendar view for month-by-day, year-by-month, and annual
   attribution while preserving table and curve views.
+* 2026-06-14: Moved the return calendar into the Overview cockpit. The compact
+  performance-analysis layout now keeps daily, monthly, and annual attribution
+  beside the net-value workspace, while Risk no longer owns the main return
+  calendar module.
 <!-- codex-progress:end -->
