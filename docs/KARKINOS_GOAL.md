@@ -457,4 +457,9 @@ automation.
   dividend, manual adjustment), and the cockpit detail panel surfaces those
   components so total daily change is auditable instead of a single opaque
   number.
+* 2026-06-14: Clarified ledger and holding labels in the web cockpit. Activity
+  and Overview ledger rows now surface instrument names, amount, quantity,
+  price, and commission with localized labels, while portfolio asset classes
+  render as UI-language labels such as Stock/Fund or 股票/基金 instead of raw
+  storage codes.
 <!-- codex-progress:end -->

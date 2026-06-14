@@ -1,10 +1,10 @@
 import { useCopy } from '../../../app/copy';
 import {
   formatCurrency,
-  formatPrice,
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { LedgerEntry } from '../api';
 
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
@@ -84,9 +84,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     className={`px-5 py-4 text-right align-top font-mono text-sm font-semibold tabular-nums ${summary.amountClass}`}
                   >
                     {summary.amount}
-                    <div className="app-muted mt-1 text-xs">
-                      {formatExecution(entry)}
-                    </div>
+                    <LedgerExecutionDetails entry={entry} labels={labels} />
                   </td>
                   <td className="max-w-[280px] px-5 py-4 align-top text-[var(--app-muted)]">
                     <span className="line-clamp-2 break-words">
@@ -202,22 +200,60 @@ function formatSignedCurrency(value: number | null) {
   return `${prefix}${formatCurrency(Math.abs(value))}`;
 }
 
-function formatExecution(entry: LedgerEntry) {
-  if (entry.quantity === null && entry.price === null) {
-    return '--';
+function LedgerExecutionDetails({
+  entry,
+  labels,
+}: {
+  entry: LedgerEntry;
+  labels: ReturnType<typeof useCopy>['activity']['feed'];
+}) {
+  const details = [
+    {
+      label: labels.detailFields.amount,
+      value:
+        entry.amount === null || !Number.isFinite(entry.amount)
+          ? null
+          : formatCurrency(entry.amount),
+    },
+    {
+      label: labels.detailFields.quantity,
+      value:
+        entry.quantity === null || !Number.isFinite(entry.quantity)
+          ? null
+          : formatQuantity(entry.quantity),
+    },
+    {
+      label: labels.detailFields.price,
+      value:
+        entry.price === null || !Number.isFinite(entry.price)
+          ? null
+          : formatCurrency(entry.price),
+    },
+    {
+      label: labels.detailFields.fee,
+      value: formatCurrency(entry.commission),
+    },
+  ].filter((item) => item.value !== null);
+
+  if (details.length === 0) {
+    return <div className="app-muted mt-1 text-xs">--</div>;
   }
-  return `${formatQuantity(entry.quantity)} @ ${formatPrice(entry.price)}`;
+
+  return (
+    <div className="app-muted mt-1 flex flex-col items-end gap-0.5 text-xs">
+      {details.map((item) => (
+        <span key={item.label}>
+          {item.label} {item.value}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function resolveInstrumentName(entry: LedgerEntry) {
-  const noteName = readableNoteSegments(entry.note).find(
-    (segment) =>
-      /[\u4e00-\u9fff]/.test(segment) &&
-      !segment.includes('用户记录') &&
-      !segment.includes('保存') &&
-      !segment.includes('加仓') &&
-      !segment.includes('成本价'),
-  );
+  const noteName = readableNoteSegments(entry.note)
+    .map(extractInstrumentNameFromSegment)
+    .find(Boolean);
   return noteName ?? entry.symbol ?? '--';
 }
 
@@ -252,6 +288,24 @@ function looksLikeInstrumentNameOnly(segment: string) {
   return /^[\u4e00-\u9fffA-Za-z0-9（）()·\-\s]+[A-C]?$/.test(segment);
 }
 
+function extractInstrumentNameFromSegment(segment: string) {
+  const cleaned = segment.replace(/^用户记录[:：]\s*/, '').trim();
+  if (!/[\u4e00-\u9fff]/.test(cleaned)) {
+    return null;
+  }
+  if (cleaned.includes('保存') || cleaned.includes('成本价')) {
+    return null;
+  }
+  const candidate = cleaned
+    .split(/\s+(买入|卖出|申购|赎回|分红|调整|加仓)/u)[0]
+    .split(/[，；:：]/u)[0]
+    .trim();
+  if (!candidate || candidate === cleaned) {
+    return looksLikeInstrumentNameOnly(cleaned) ? cleaned : null;
+  }
+  return candidate;
+}
+
 function formatSource(
   source: string | null | undefined,
   labels: ReturnType<typeof useCopy>['activity']['feed'],
@@ -270,10 +324,5 @@ function formatAssetClass(
   assetClass: string,
   copy: ReturnType<typeof useCopy>,
 ) {
-  const normalized = assetClass.trim().toLowerCase();
-  if (normalized === 'fund') return copy.common.assetClassFund;
-  if (normalized === 'etf') return copy.common.assetClassEtf;
-  if (normalized === 'gold') return copy.common.assetClassGold;
-  if (normalized === 'bond') return copy.common.assetClassBond;
-  return copy.common.assetClassStock;
+  return formatAssetClassLabel(assetClass, copy.common);
 }

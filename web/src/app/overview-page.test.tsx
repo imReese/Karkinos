@@ -37,6 +37,25 @@ const explainability = {
   ],
 };
 
+const ledgerEntries = [
+  {
+    id: 1,
+    entry_type: 'trade_buy',
+    timestamp: '2026-04-23T14:46:00+00:00',
+    amount: 200,
+    symbol: '012710',
+    direction: 'buy',
+    quantity: 204.102,
+    price: 0.9799,
+    commission: 0,
+    asset_class: 'fund',
+    note: '用户记录：华夏核心成长混合C 买入 200 元',
+    source: 'manual',
+    source_ref: 'trade_buy-012710',
+    created_at: null,
+  },
+];
+
 beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',
@@ -130,7 +149,7 @@ function installOverviewFetchMock() {
       });
     }
     if (url.includes('/api/ledger/entries')) {
-      return jsonResponse([]);
+      return jsonResponse(ledgerEntries);
     }
     if (url.includes('/api/trading/orders')) {
       return jsonResponse([]);
@@ -192,6 +211,11 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(
     await screen.findByRole('button', { name: '2026-02-10 · CN¥600.00' }),
   ).toBeTruthy();
+  expect(await screen.findByText(/华夏核心成长混合C/)).toBeTruthy();
+  expect(screen.getByText('Fund')).toBeTruthy();
+  expect(screen.getByText('Qty 204.102')).toBeTruthy();
+  expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
+  expect(screen.queryByText('fund')).toBeNull();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {

@@ -14,6 +14,7 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
@@ -206,6 +207,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     allocation?.asset_class ??
     position.asset_class ??
     '--';
+  const assetClassDisplay = formatAssetClassLabel(assetClass, copy.common);
   const portfolioWeight = allocation?.weight ?? null;
   const marketOpen = marketHealth.data?.market_open;
   const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
@@ -306,7 +308,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 <div>
                   <div className="app-product-mark">{labels.summary}</div>
                   <h2 className="app-card-title mt-1.5">{displayName}</h2>
-                  <p className="app-muted mt-2 text-sm">{assetClass}</p>
+                  <p className="app-muted mt-2 text-sm">{assetClassDisplay}</p>
                 </div>
                 <div className="font-mono text-sm font-semibold tabular-nums">
                   {position.symbol}

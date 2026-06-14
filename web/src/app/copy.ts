@@ -834,6 +834,12 @@ export const copy = {
           amount: 'Cash impact',
           detail: 'Public note',
         },
+        detailFields: {
+          amount: 'Amount',
+          quantity: 'Quantity',
+          price: 'Price',
+          fee: 'Fee',
+        },
         entryTypes: {
           tradeBuy: 'Security buy',
           tradeSell: 'Security sell',
@@ -1875,6 +1881,12 @@ export const copy = {
           instrument: '标的',
           amount: '资金影响',
           detail: '业务备注',
+        },
+        detailFields: {
+          amount: '金额',
+          quantity: '份额/数量',
+          price: '价格',
+          fee: '手续费',
         },
         entryTypes: {
           tradeBuy: '证券买入',

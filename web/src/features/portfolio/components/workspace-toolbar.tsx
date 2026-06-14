@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 
 type WorkspaceMode = 'account' | 'strategy';
 type PnlFilter = 'all' | 'winners' | 'losers';
@@ -80,7 +81,7 @@ export function WorkspaceToolbar({
             <option value="all">{labels.allAssetClasses}</option>
             {assetClasses.map((assetClass) => (
               <option key={assetClass} value={assetClass}>
-                {assetClass}
+                {formatAssetClassLabel(assetClass, copy.common)}
               </option>
             ))}
           </select>
