@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from './preferences';
@@ -191,5 +191,20 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
     await screen.findByRole('button', { name: '2026-02-10 · CN¥800.00' }),
+  ).toBeTruthy();
+});
+
+test('keeps the return calendar inside the performance analysis card', async () => {
+  renderOverviewPage();
+
+  const performanceCard = await screen.findByTestId(
+    'overview-performance-card',
+  );
+  expect(
+    within(performanceCard).getByText('Performance Analysis'),
+  ).toBeTruthy();
+  expect(within(performanceCard).getByText('Return calendar')).toBeTruthy();
+  expect(
+    within(performanceCard).getByTestId('return-calendar-month-grid'),
   ).toBeTruthy();
 });

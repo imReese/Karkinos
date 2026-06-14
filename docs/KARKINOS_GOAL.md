@@ -417,4 +417,8 @@ automation.
   attribution snapshots are not available, the cockpit now shows current
   position PnL, market value, top PnL contributors, and the missing historical
   snapshot requirement instead of a bare empty message or fake calendar data.
+* 2026-06-14: Consolidated the Overview performance module. The net-value
+  curve and return calendar now live inside one performance-analysis card so
+  trend, attribution, and missing-snapshot explanations share the same cockpit
+  context without changing trading or API behavior.
 <!-- codex-progress:end -->

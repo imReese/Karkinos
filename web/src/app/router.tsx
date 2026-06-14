@@ -314,7 +314,10 @@ export function OverviewPage() {
           />
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
-            <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
+            <section
+              className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
+              data-testid="overview-performance-card"
+            >
               <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
                 {equityCurve.isLoading ? (
                   <EquityCurveSkeleton />
@@ -333,6 +336,13 @@ export function OverviewPage() {
                     onRangeChange={setEquityCurveRange}
                   />
                 )}
+                <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_58%,transparent)] pt-4">
+                  <ReturnCalendarCard
+                    timeline={explainability.data?.timeline ?? []}
+                    positions={explainability.data?.positions ?? []}
+                    compact
+                  />
+                </div>
               </div>
             </section>
 
@@ -368,16 +378,6 @@ export function OverviewPage() {
               </div>
             </aside>
           </div>
-
-          <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
-            <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-              <ReturnCalendarCard
-                timeline={explainability.data?.timeline ?? []}
-                positions={explainability.data?.positions ?? []}
-                compact
-              />
-            </div>
-          </section>
 
           <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
             <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
