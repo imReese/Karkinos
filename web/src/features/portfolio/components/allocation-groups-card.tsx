@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatPercent } from '../../../shared/format';
 import type { AllocationGroup } from '../api';
 
@@ -26,7 +27,7 @@ export function AllocationGroupsCard({
         {groups.map((group) => (
           <div key={group.asset_class} className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span>{group.name}</span>
+              <span>{formatAssetClassLabel(group.name, copy.common)}</span>
               <span className="font-semibold tabular-nums">
                 {formatPercent(group.weight)}
               </span>

@@ -1,16 +1,35 @@
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
-import { expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
+import { PreferencesProvider } from '../../app/preferences';
 import { PositionsTable } from './components/positions-table';
+
+beforeEach(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 function renderTable(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    </PreferencesProvider>,
   );
 }
 
@@ -50,6 +69,8 @@ test('renders active positions', () => {
   ).toBeGreaterThan(0);
   expect(screen.getAllByText('60').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Market Value').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Stock').length).toBeGreaterThan(0);
+  expect(screen.queryByText('stock')).toBeNull();
 });
 
 test('shows cached quote copy for stale positions', () => {

@@ -103,6 +103,7 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../shared/format';
+import { formatAssetClassLabel } from '../shared/asset-class';
 
 type PortfolioSearchState = {
   assetClass: string;
@@ -551,6 +552,11 @@ function DashboardLedger({
                   <div className="app-muted mt-1 text-xs">
                     {formatTimestamp(entry.timestamp)}
                   </div>
+                  <div className="app-muted mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs">
+                    {formatLedgerEntryDetails(entry, copy).map((detail) => (
+                      <span key={detail}>{detail}</span>
+                    ))}
+                  </div>
                 </div>
                 <div className="text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
                   {formatLedgerEntryAmount(entry)}
@@ -576,11 +582,12 @@ function MetricLine({ label, value }: { label: string; value: string }) {
 }
 
 function formatLedgerEntryTitle(entry: LedgerEntry, copy: AppCopy) {
+  const instrumentName = resolveLedgerInstrumentName(entry);
   if (entry.entry_type === 'trade_buy') {
-    return `${copy.overview.dashboard.tradeBuy} ${entry.symbol ?? ''}`.trim();
+    return `${copy.overview.dashboard.tradeBuy} ${instrumentName}`.trim();
   }
   if (entry.entry_type === 'trade_sell') {
-    return `${copy.overview.dashboard.tradeSell} ${entry.symbol ?? ''}`.trim();
+    return `${copy.overview.dashboard.tradeSell} ${instrumentName}`.trim();
   }
   if (entry.entry_type === 'cash_deposit') {
     return copy.overview.dashboard.cashDeposit;
@@ -589,12 +596,64 @@ function formatLedgerEntryTitle(entry: LedgerEntry, copy: AppCopy) {
     return copy.overview.dashboard.cashWithdrawal;
   }
   if (entry.entry_type === 'dividend') {
-    return `${copy.overview.dashboard.dividend} ${entry.symbol ?? ''}`.trim();
+    return `${copy.overview.dashboard.dividend} ${instrumentName}`.trim();
   }
   if (entry.entry_type === 'manual_adjustment') {
-    return `${copy.overview.dashboard.adjustment} ${entry.symbol ?? ''}`.trim();
+    return `${copy.overview.dashboard.adjustment} ${instrumentName}`.trim();
   }
   return copy.overview.dashboard.unknownActivity;
+}
+
+function formatLedgerEntryDetails(entry: LedgerEntry, copy: AppCopy) {
+  const labels = copy.activity.feed.detailFields;
+  const details = [
+    formatAssetClassLabel(entry.asset_class, copy.common),
+    entry.quantity === null || !Number.isFinite(entry.quantity)
+      ? null
+      : `${labels.quantity === 'Quantity' ? 'Qty' : labels.quantity} ${formatQuantity(entry.quantity)}`,
+    entry.price === null || !Number.isFinite(entry.price)
+      ? null
+      : `${labels.price} ${formatCurrencyValue(entry.price)}`,
+    `${labels.fee} ${formatCurrencyValue(entry.commission)}`,
+  ];
+  return details.filter((detail): detail is string => Boolean(detail));
+}
+
+function resolveLedgerInstrumentName(entry: LedgerEntry) {
+  const noteName = readableLedgerNoteSegments(entry.note)
+    .map(extractLedgerInstrumentName)
+    .find(Boolean);
+  return noteName ?? entry.symbol ?? '';
+}
+
+function readableLedgerNoteSegments(note: string | null | undefined) {
+  if (!note) {
+    return [];
+  }
+  return note
+    .split('|')
+    .map((segment) => segment.trim())
+    .filter(
+      (segment) =>
+        segment &&
+        !/(^|\s)[a-z][a-z0-9_]*=/i.test(segment) &&
+        !/auto-confirmed/i.test(segment),
+    );
+}
+
+function extractLedgerInstrumentName(segment: string) {
+  const cleaned = segment.replace(/^用户记录[:：]\s*/, '').trim();
+  if (!/[\u4e00-\u9fff]/.test(cleaned)) {
+    return null;
+  }
+  const candidate = cleaned
+    .split(/\s+(买入|卖出|申购|赎回|分红|调整|加仓)/u)[0]
+    .split(/[，；:：]/u)[0]
+    .trim();
+  if (!candidate || candidate === cleaned) {
+    return null;
+  }
+  return candidate;
 }
 
 function formatLedgerEntryAmount(entry: LedgerEntry) {
@@ -3127,6 +3186,10 @@ function ReturnCalendarEmptyState({
               const displayName =
                 position.display_name || position.name || position.symbol;
               const assetClass = position.asset_class || '--';
+              const assetClassDisplay = formatAssetClassLabel(
+                assetClass,
+                copy.common,
+              );
               return (
                 <div
                   key={position.symbol}
@@ -3147,7 +3210,7 @@ function ReturnCalendarEmptyState({
                   <div className="app-muted mt-1 flex items-center gap-2 text-[11px] uppercase">
                     <span>{position.symbol}</span>
                     <span aria-hidden="true">/</span>
-                    <span>{assetClass}</span>
+                    <span>{assetClassDisplay}</span>
                   </div>
                 </div>
               );

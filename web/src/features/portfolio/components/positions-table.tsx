@@ -6,6 +6,7 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { useRefreshMarketQuotesMutation } from '../../market/api';
 import type { Position } from '../api';
 
@@ -97,6 +98,10 @@ export function PositionsTable({
           const displayName = resolvePositionName(position);
           const assetClass =
             position.asset_class ?? assetClassBySymbol[position.symbol] ?? '--';
+          const assetClassDisplay = formatAssetClassLabel(
+            assetClass,
+            copy.common,
+          );
           const refreshing =
             refreshQuotes.isPending &&
             refreshQuotes.variables?.symbols?.includes(position.symbol);
@@ -114,7 +119,9 @@ export function PositionsTable({
                   <div className="mt-1 text-sm font-medium text-[var(--app-soft)]">
                     {displayName}
                   </div>
-                  <div className="app-muted mt-1 text-xs">{assetClass}</div>
+                  <div className="app-muted mt-1 text-xs">
+                    {assetClassDisplay}
+                  </div>
                   {isStale ? (
                     <div
                       className="mt-2 inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]"
@@ -258,6 +265,10 @@ export function PositionsTable({
                 position.asset_class ??
                 assetClassBySymbol[position.symbol] ??
                 '--';
+              const assetClassDisplay = formatAssetClassLabel(
+                assetClass,
+                copy.common,
+              );
               const refreshing =
                 refreshQuotes.isPending &&
                 refreshQuotes.variables?.symbols?.includes(position.symbol);
@@ -282,7 +293,7 @@ export function PositionsTable({
                   </td>
                   <td className="px-4 py-3.5 text-[var(--app-muted)]">
                     <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-2.5 py-1 text-xs">
-                      {assetClass}
+                      {assetClassDisplay}
                     </span>
                   </td>
                   <td className="px-4 py-3.5 text-right font-mono tabular-nums text-[var(--app-soft)]">

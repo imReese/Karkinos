@@ -65,6 +65,11 @@ portfolio data comes from the local database or explicit private runtime
 configuration; for example, Activity batch fund candidates are derived from
 held fund positions instead of built-in defaults.
 
+The web cockpit localizes portfolio asset classes in the selected UI language
+and keeps ledger rows auditable: trade activity surfaces the instrument name
+when present, amount, quantity, price, and commission without exposing
+technical confirmation metadata.
+
 In `dev` mode the script also starts Vite at `http://localhost:5173` for hot-reload frontend editing. Treat `5173` as a developer-only URL; use `8000` for product-like demos and customer flow checks.
 
 The API only trusts local Vite origins by default:

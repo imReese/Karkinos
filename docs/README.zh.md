@@ -554,6 +554,10 @@ React + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 资产、持仓和流水来自本地数据库或显式私有运行配置；例如 Activity 的批量基金加仓候选
 来自已持有基金仓位，而不是前端硬编码默认基金。
 
+Web cockpit 会按当前界面语言展示资产类别，例如中文界面显示“股票 / 基金”，英文界面显示
+“Stock / Fund”。流水行会优先展示可解析的标的名称，并列出金额、份额/数量、价格、手续费，
+同时隐藏自动确认等技术元数据。
+
 ### 开发
 
 ```bash

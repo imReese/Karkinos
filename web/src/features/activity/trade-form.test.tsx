@@ -227,7 +227,7 @@ test('renders ledger entries as a user-facing audit table', () => {
           price: 0.9799,
           commission: 0,
           asset_class: 'fund',
-          note: '用户记录：买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
+          note: '用户记录：华夏核心成长混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
           source: 'manual',
           source_ref: 'trade_buy-012710',
           created_at: null,
@@ -240,6 +240,11 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Fund')).toBeTruthy();
   expect(screen.getByText('Manual entry')).toBeTruthy();
   expect(screen.getByText('-CN¥200.00')).toBeTruthy();
+  expect(screen.getByText('华夏核心成长混合C')).toBeTruthy();
+  expect(screen.getByText('Amount CN¥200.00')).toBeTruthy();
+  expect(screen.getByText('Quantity 204.102')).toBeTruthy();
+  expect(screen.getByText('Price CN¥0.98')).toBeTruthy();
+  expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
   expect(screen.queryByText(/gross_amount/)).toBeNull();
   expect(screen.queryByText(/Auto-confirmed/)).toBeNull();
 });
