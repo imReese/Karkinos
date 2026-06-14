@@ -324,6 +324,12 @@ class ExplainabilityTimelineEvent(BaseModel):
     amount: float | None = None
 
 
+class ExplainabilityTimelineBreakdownItem(BaseModel):
+    key: str
+    label: str
+    value: float
+
+
 class ExplainabilityTimelinePoint(BaseModel):
     date: str
     equity: float
@@ -332,7 +338,13 @@ class ExplainabilityTimelinePoint(BaseModel):
     market_pnl: float
     events: list[ExplainabilityTimelineEvent]
     valuation_status: str = "complete"
-    missing_price_symbols: list[str] = []
+    missing_price_symbols: list[str] = Field(default_factory=list)
+    market_breakdown: list[ExplainabilityTimelineBreakdownItem] = Field(
+        default_factory=list
+    )
+    external_flow_breakdown: list[ExplainabilityTimelineBreakdownItem] = Field(
+        default_factory=list
+    )
 
 
 class ExplainabilityResponse(BaseModel):

@@ -762,6 +762,18 @@ export const copy = {
       netChange: 'Net change',
       externalFlow: 'External flow',
       marketPnl: 'Market move',
+      marketBreakdownLabels: {
+        stock: 'Stocks',
+        fund: 'Funds',
+        etf: 'ETFs',
+        other: 'Other assets',
+      },
+      externalFlowBreakdownLabels: {
+        cash_deposit: 'Deposits',
+        cash_withdrawal: 'Withdrawals',
+        dividend: 'Dividends',
+        manual_adjustment: 'Manual adjustments',
+      },
       equityBridgeLabels: {
         deposits: 'Net Deposits',
         realized: 'Realized PnL',
@@ -1793,6 +1805,18 @@ export const copy = {
       netChange: '当日变化',
       externalFlow: '事件流入/流出',
       marketPnl: '市场变动',
+      marketBreakdownLabels: {
+        stock: '股票变化',
+        fund: '基金变化',
+        etf: 'ETF变化',
+        other: '其他资产变化',
+      },
+      externalFlowBreakdownLabels: {
+        cash_deposit: '入金',
+        cash_withdrawal: '出金',
+        dividend: '分红',
+        manual_adjustment: '手工调整',
+      },
       equityBridgeLabels: {
         deposits: '净投入',
         realized: '已实现盈亏',

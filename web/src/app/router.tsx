@@ -2435,6 +2435,8 @@ function ExplainabilityWorkspace({
           delta: number;
           external_flow: number;
           market_pnl: number;
+          market_breakdown?: ReturnCalendarBreakdownItem[];
+          external_flow_breakdown?: ReturnCalendarBreakdownItem[];
           events: Array<{
             category: string;
             impact_source: string;
@@ -2795,6 +2797,12 @@ function DrawdownChart({
 
 type ReturnCalendarPeriod = 'month-days' | 'year-months' | 'years';
 
+type ReturnCalendarBreakdownItem = {
+  key: string;
+  label: string;
+  value: number;
+};
+
 type ReturnCalendarRow = {
   label: string;
   delta: number;
@@ -2803,6 +2811,8 @@ type ReturnCalendarRow = {
   percentChange: number;
   valuationStatus: string;
   missingPriceSymbols: string[];
+  marketBreakdown: ReturnCalendarBreakdownItem[];
+  externalFlowBreakdown: ReturnCalendarBreakdownItem[];
 };
 
 type ReturnCalendarPosition = {
@@ -2828,6 +2838,8 @@ export function ReturnCalendarCard({
     market_pnl: number;
     valuation_status?: string;
     missing_price_symbols?: string[];
+    market_breakdown?: ReturnCalendarBreakdownItem[];
+    external_flow_breakdown?: ReturnCalendarBreakdownItem[];
   }>;
   positions?: ReturnCalendarPosition[];
   compact?: boolean;
@@ -3295,6 +3307,8 @@ function aggregateReturnTimeline(
     market_pnl: number;
     valuation_status?: string;
     missing_price_symbols?: string[];
+    market_breakdown?: ReturnCalendarBreakdownItem[];
+    external_flow_breakdown?: ReturnCalendarBreakdownItem[];
   }>,
   bucket: 'day' | 'week' | 'month' | 'year',
 ) {
@@ -3309,6 +3323,8 @@ function aggregateReturnTimeline(
       endEquity: number;
       valuationStatus: string;
       missingPriceSymbols: Set<string>;
+      marketBreakdown: Map<string, ReturnCalendarBreakdownItem>;
+      externalFlowBreakdown: Map<string, ReturnCalendarBreakdownItem>;
     }
   >();
 
@@ -3327,6 +3343,11 @@ function aggregateReturnTimeline(
         existing.valuationStatus,
         valuationStatus,
       );
+      mergeBreakdownItems(existing.marketBreakdown, point.market_breakdown);
+      mergeBreakdownItems(
+        existing.externalFlowBreakdown,
+        point.external_flow_breakdown,
+      );
       missingPriceSymbols.forEach((symbol) =>
         existing.missingPriceSymbols.add(symbol),
       );
@@ -3341,15 +3362,46 @@ function aggregateReturnTimeline(
       endEquity: point.equity,
       valuationStatus,
       missingPriceSymbols: new Set(missingPriceSymbols),
+      marketBreakdown: buildBreakdownMap(point.market_breakdown),
+      externalFlowBreakdown: buildBreakdownMap(point.external_flow_breakdown),
     });
   });
 
   return Array.from(groups.values()).map((row) => ({
     ...row,
     missingPriceSymbols: Array.from(row.missingPriceSymbols).sort(),
+    marketBreakdown: Array.from(row.marketBreakdown.values()).filter(
+      (item) => Math.abs(item.value) > 0.000001,
+    ),
+    externalFlowBreakdown: Array.from(
+      row.externalFlowBreakdown.values(),
+    ).filter((item) => Math.abs(item.value) > 0.000001),
     percentChange:
       row.startEquity === 0 ? 0 : row.marketPnl / Math.abs(row.startEquity),
   }));
+}
+
+function buildBreakdownMap(items: ReturnCalendarBreakdownItem[] | undefined) {
+  const map = new Map<string, ReturnCalendarBreakdownItem>();
+  mergeBreakdownItems(map, items);
+  return map;
+}
+
+function mergeBreakdownItems(
+  target: Map<string, ReturnCalendarBreakdownItem>,
+  items: ReturnCalendarBreakdownItem[] | undefined,
+) {
+  (items ?? []).forEach((item) => {
+    const existing = target.get(item.key);
+    if (existing) {
+      target.set(item.key, {
+        ...existing,
+        value: existing.value + item.value,
+      });
+      return;
+    }
+    target.set(item.key, { ...item });
+  });
 }
 
 function normalizeValuationStatus(status: string | undefined) {
@@ -3786,10 +3838,30 @@ function ReturnCalendarDetail({
           label={copy.explainability.marketPnl}
           value={marketValue}
         />
+        {row.marketBreakdown.length > 0 ? (
+          <CalendarDetailBreakdown
+            items={row.marketBreakdown}
+            labelForKey={(item) =>
+              copy.explainability.marketBreakdownLabels[
+                item.key as keyof typeof copy.explainability.marketBreakdownLabels
+              ] ?? item.label
+            }
+          />
+        ) : null}
         <CalendarDetailMetric
           label={copy.explainability.externalFlow}
           value={formatCurrency(row.externalFlow)}
         />
+        {row.externalFlowBreakdown.length > 0 ? (
+          <CalendarDetailBreakdown
+            items={row.externalFlowBreakdown}
+            labelForKey={(item) =>
+              copy.explainability.externalFlowBreakdownLabels[
+                item.key as keyof typeof copy.explainability.externalFlowBreakdownLabels
+              ] ?? item.label
+            }
+          />
+        ) : null}
         {row.valuationStatus === 'missing' ? (
           <CalendarDetailMetric
             label={copy.explainability.valuationCoverage}
@@ -3812,6 +3884,30 @@ function CalendarDetailMetric({
     <div className="flex items-center justify-between gap-3 border-t border-[var(--app-border)] pt-3 first:border-t-0 first:pt-0">
       <span className="app-muted">{label}</span>
       <span className="text-right font-semibold">{value}</span>
+    </div>
+  );
+}
+
+function CalendarDetailBreakdown({
+  items,
+  labelForKey,
+}: {
+  items: ReturnCalendarBreakdownItem[];
+  labelForKey: (item: ReturnCalendarBreakdownItem) => string;
+}) {
+  return (
+    <div className="space-y-2 border-t border-[var(--app-border)] pt-3">
+      {items.map((item) => (
+        <div
+          key={item.key}
+          className="flex items-center justify-between gap-3 text-xs"
+        >
+          <span className="app-muted">{labelForKey(item)}</span>
+          <span className="text-right font-semibold">
+            {formatCurrency(item.value)}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

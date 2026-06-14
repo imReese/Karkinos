@@ -4484,6 +4484,56 @@ def test_portfolio_explainability_maps_ledger_events_to_shanghai_dates():
     assert apr27.external_flow == pytest.approx(12000.0)
     assert apr27.market_pnl == pytest.approx(0.0)
     assert apr27.events[0].category == "capital"
+    assert apr27.external_flow_breakdown[0].key == "cash_deposit"
+    assert apr27.external_flow_breakdown[0].value == pytest.approx(12000.0)
+
+
+def test_portfolio_explainability_breaks_daily_change_into_asset_and_flow_buckets():
+    from server.models import EquityPoint
+    from server.routes.portfolio import _build_timeline
+
+    timeline = _build_timeline(
+        [
+            EquityPoint(timestamp="2026-06-11T15:00:00+08:00", equity=14852.827551),
+            EquityPoint(timestamp="2026-06-12T15:00:00+08:00", equity=15082.897551),
+        ],
+        [
+            {
+                "entry_type": "dividend",
+                "timestamp": "2026-06-12T06:00:00+00:00",
+                "amount": 5.0,
+                "symbol": "601985",
+                "asset_class": "stock",
+                "note": "cash dividend",
+            }
+        ],
+        component_values_by_date={
+            "2026-06-11": {
+                "stocks": 6362.0,
+                "funds": 2727.827551,
+                "others": 0.0,
+                "cash": 5763.0,
+            },
+            "2026-06-12": {
+                "stocks": 6596.0,
+                "funds": 2718.897551,
+                "others": 0.0,
+                "cash": 5768.0,
+            },
+        },
+    )
+
+    jun12 = timeline[-1]
+    assert jun12.market_pnl == pytest.approx(225.07)
+    assert {item.key: item.value for item in jun12.market_breakdown} == pytest.approx(
+        {
+            "stock": 234.0,
+            "fund": -8.93,
+        }
+    )
+    assert {
+        item.key: item.value for item in jun12.external_flow_breakdown
+    } == pytest.approx({"dividend": 5.0})
 
 
 def test_portfolio_explainability_marks_return_after_missing_valuation_as_gap():
@@ -4662,6 +4712,9 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
     assert timeline_by_date["2026-06-12"].valuation_status == "live"
     assert timeline_by_date["2026-06-12"].missing_price_symbols == []
     assert timeline_by_date["2026-06-12"].market_pnl == pytest.approx(234.0)
+    assert {
+        item.key: item.value for item in timeline_by_date["2026-06-12"].market_breakdown
+    } == pytest.approx({"stock": 234.0})
 
 
 def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch):

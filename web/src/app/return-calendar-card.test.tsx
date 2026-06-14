@@ -26,6 +26,13 @@ const timeline = [
     delta: 800,
     external_flow: 200,
     market_pnl: 600,
+    market_breakdown: [
+      { key: 'stock', label: 'Stocks', value: 650 },
+      { key: 'fund', label: 'Funds', value: -50 },
+    ],
+    external_flow_breakdown: [
+      { key: 'cash_deposit', label: 'Deposits', value: 200 },
+    ],
   },
   {
     date: '2026-02-11',
@@ -113,6 +120,14 @@ test('renders a month calendar with selectable daily return cells by default', a
   expect(selectedPeriod).toBeTruthy();
   expect(within(selectedPeriod!).getByText('Market move')).toBeTruthy();
   expect(within(selectedPeriod!).getByText('CN¥600.00')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('Stocks')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('CN¥650.00')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('Funds')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('-CN¥50.00')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('Deposits')).toBeTruthy();
+  expect(
+    within(selectedPeriod!).getAllByText('CN¥200.00').length,
+  ).toBeGreaterThan(0);
 });
 
 test('uses Sunday as the first weekday column in the return calendar', async () => {

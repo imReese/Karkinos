@@ -144,6 +144,16 @@ export type ExplainabilityResponse = {
     delta: number;
     external_flow: number;
     market_pnl: number;
+    market_breakdown?: Array<{
+      key: string;
+      label: string;
+      value: number;
+    }>;
+    external_flow_breakdown?: Array<{
+      key: string;
+      label: string;
+      value: number;
+    }>;
     valuation_status?: string;
     missing_price_symbols?: string[];
     events: Array<{
