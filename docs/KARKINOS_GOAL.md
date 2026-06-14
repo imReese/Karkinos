@@ -403,4 +403,10 @@ automation.
   backtest tables scroll inside local panels. Frontend tests now cover the app
   shell overflow contract, Decision responsive accessibility, Activity batch
   form shrinkability, and Portfolio table-local horizontal scrolling.
+* 2026-06-14: Improved portfolio analysis responsiveness and audit surfaces.
+  The 1D equity series now skips live intraday provider calls on closed-market
+  days and immediately returns a cache-based flat session fallback, avoiding
+  AKShare timeout waits. The explainability return calendar now supports a
+  cockpit-style calendar view for month-by-day, year-by-month, and annual
+  attribution while preserving table and curve views.
 <!-- codex-progress:end -->

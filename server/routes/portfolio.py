@@ -1983,6 +1983,10 @@ def _flat_intraday_equity_series_from_current(
     ]
 
 
+def _should_fetch_intraday_equity_curve(now: datetime) -> bool:
+    return now.astimezone(_SH_TZ).weekday() < 5
+
+
 def _series_point_from_intraday(
     point: dict, quote_status: str = "live"
 ) -> EquitySeriesPoint:
@@ -2361,6 +2365,9 @@ def create_router() -> APIRouter:
             quote_status = (
                 "live" if current_point is None else current_point.quote_status
             )
+            if not _should_fetch_intraday_equity_curve(get_shanghai_now()):
+                return _flat_intraday_equity_series_from_current(current_point)
+
             timeout_seconds = float(
                 getattr(state.config, "intraday_curve_timeout_seconds", 4.0) or 4.0
             )
