@@ -709,7 +709,7 @@ export const copy = {
       timeline: 'Timeline attribution',
       returnCalendar: 'Return calendar',
       returnCalendarDetail:
-        'Audit daily, monthly, and annual return attribution without leaving the portfolio cockpit.',
+        'Review daily, monthly, and annual return distribution next to the net-value curve.',
       calendarView: 'Calendar',
       heatmapView: 'Heatmap',
       tableView: 'Table',
@@ -1735,8 +1735,7 @@ export const copy = {
       empty: '当前还没有可用的解释层数据。',
       timeline: '时间序列归因',
       returnCalendar: '收益日历',
-      returnCalendarDetail:
-        '在组合驾驶舱里查看每日、每月与年度收益归因，不必切到风险页。',
+      returnCalendarDetail: '结合净值曲线查看每日、每月与年度收益分布。',
       calendarView: '日历',
       heatmapView: '热力图',
       tableView: '表格',

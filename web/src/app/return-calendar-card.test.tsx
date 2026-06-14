@@ -81,6 +81,8 @@ test('renders a month calendar with selectable daily return cells by default', a
   renderCalendar();
 
   expect(await screen.findByText('Return calendar')).toBeTruthy();
+  expect(screen.getByText(/next to the net-value curve/i)).toBeTruthy();
+  expect(screen.queryByText(/risk page/i)).toBeNull();
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-02-10 · CN¥800.00' }),
