@@ -4341,6 +4341,125 @@ def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
     assert timeline_by_date["2026-04-22"].missing_price_symbols == ["600519"]
 
 
+def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    explain_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/explainability"
+    )
+    endpoint = explain_route.endpoint
+
+    class FakeDb:
+        daily_closes = [
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
+                "trade_date": "2026-04-22",
+                "close_price": 10.0,
+                "source": "test_close",
+            },
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
+                "trade_date": "2026-05-08",
+                "close_price": 11.0,
+                "source": "test_close",
+            },
+        ]
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-18T09:00:00+00:00",
+                    "amount": 100000.0,
+                    "symbol": None,
+                    "direction": None,
+                    "quantity": None,
+                    "price": None,
+                    "commission": 0.0,
+                    "asset_class": "cash",
+                    "note": "seed cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                    "created_at": "2026-04-18T09:00:01+00:00",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-22T10:00:00+00:00",
+                    "amount": 1000.0,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 10.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "note": "first stock lot",
+                    "source": "manual",
+                    "source_ref": "stock-1",
+                    "created_at": "2026-04-22T10:00:01+00:00",
+                },
+            ]
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 12.0,
+                    "volume": 1000.0,
+                    "timestamp": "2026-05-10T12:00:00+08:00",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            candidates = [
+                close
+                for close in self.daily_closes
+                if close["symbol"] == symbol and close["trade_date"] < trade_date
+            ]
+            return candidates[-1] if candidates else None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 100000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 5, 10, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    response = asyncio.run(endpoint(limit=50))
+
+    assert response.timeline[-1].date == "2026-05-08"
+    assert response.timeline[-1].equity == pytest.approx(100100.0)
+    assert all(point.date != "2026-05-10" for point in response.timeline)
+
+
 def test_portfolio_explainability_maps_ledger_events_to_shanghai_dates():
     from server.models import EquityPoint
     from server.routes.portfolio import _build_timeline

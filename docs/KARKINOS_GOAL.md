@@ -438,4 +438,8 @@ automation.
   of return. Daily portfolio valuation now carries missing-price symbols through
   explainability, and the frontend marks incomplete price coverage as a data
   gap rather than showing misleading flat zero-return days.
+* 2026-06-14: Aligned the return calendar with China-market non-trading day
+  semantics. Month grids now start weeks on Sunday, and explainability trims a
+  terminal weekend current-quote point before building return attribution so
+  Sunday cache/current valuation moves do not appear as weekend market returns.
 <!-- codex-progress:end -->

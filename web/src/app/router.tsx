@@ -3314,8 +3314,8 @@ function toReturnBucket(
     return `${date.getFullYear()}`;
   }
   const start = new Date(date);
-  const day = start.getDay() || 7;
-  start.setDate(start.getDate() - day + 1);
+  const day = start.getDay();
+  start.setDate(start.getDate() - day);
   return `${start.getFullYear()}-W${String(weekOfYear(start)).padStart(2, '0')}`;
 }
 
@@ -3429,7 +3429,7 @@ function ReturnMonthGrid({
   const firstDay = new Date(`${activeMonth}-01T00:00:00`);
   const month = firstDay.getMonth();
   const year = firstDay.getFullYear();
-  const leadingBlanks = (firstDay.getDay() || 7) - 1;
+  const leadingBlanks = firstDay.getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells = [
     ...Array.from({ length: leadingBlanks }, () => null),
@@ -3446,7 +3446,9 @@ function ReturnMonthGrid({
         className={`app-kicker grid grid-cols-7 ${gapClass} text-center text-[11px] uppercase tracking-[0.14em]`}
       >
         {copy.explainability.weekdays.map((day) => (
-          <div key={day}>{day}</div>
+          <div key={day} data-testid="return-calendar-weekday">
+            {day}
+          </div>
         ))}
       </div>
       <div
