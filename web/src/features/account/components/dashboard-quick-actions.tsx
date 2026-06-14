@@ -122,7 +122,7 @@ export function DashboardQuickActions({
               </span>
             </div>
           </div>
-          <div className="grid gap-2 text-left sm:grid-cols-2 xl:min-w-[26rem]">
+          <div className="grid min-w-0 gap-2 text-left sm:grid-cols-2 xl:w-[26rem] xl:max-w-full">
             {statusRows.map((row) => (
               <div
                 key={row.label}
@@ -150,7 +150,7 @@ export function DashboardQuickActions({
         ) : null}
       </div>
 
-      <div className="app-panel rounded-[1.75rem] p-4 sm:p-5 lg:min-w-[18rem]">
+      <div className="app-panel min-w-0 rounded-[1.75rem] p-4 sm:p-5 lg:w-[18rem] lg:max-w-full">
         <div className="app-product-mark">{labels.quickActions}</div>
         <div className="mt-3 grid gap-2">
           <button

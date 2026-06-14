@@ -17,6 +17,7 @@ Key Features:
 - **Live Monitoring** — Standalone Live mode + built-in Scheduler in Web service, with signal push notifications
 - **Notifications** — Console / Telegram / WeChat (ServerChan) channels
 - **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts workspace
+- **Responsive Cockpit Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
 - **Docker One-Click Deploy** — Multi-stage build, all-in-one frontend + backend image
 
 ## Architecture

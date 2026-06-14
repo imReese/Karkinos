@@ -45,7 +45,7 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
   return (
     <div
       data-testid="account-metrics-rail"
-      className="app-terminal-panel grid overflow-hidden rounded-[2rem] font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
+      className="app-terminal-panel grid min-w-0 overflow-hidden rounded-[2rem] font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
     >
       {items.map((item, index) => (
         <div
@@ -104,7 +104,7 @@ export function OverviewCardsSkeleton() {
     <div
       data-testid="account-metrics-skeleton"
       aria-hidden="true"
-      className="app-terminal-panel grid animate-pulse overflow-hidden rounded-[2rem] sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
+      className="app-terminal-panel grid min-w-0 animate-pulse overflow-hidden rounded-[2rem] sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
     >
       {Array.from({ length: 5 }).map((_, index) => (
         <div key={index} className="px-4 py-3 sm:px-5">

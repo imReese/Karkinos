@@ -110,6 +110,32 @@ test('submits a batch fund add payload with positive candidate rows only', async
   ]);
 });
 
+test('keeps batch fund rows shrinkable for responsive activity layouts', () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  const { container } = render(
+    <FundBatchForm
+      onSubmit={onSubmit}
+      candidates={[
+        {
+          symbol: '018125',
+          display_name:
+            '永赢先进制造智选混合发起C超长中文名称用于响应式布局验证',
+        },
+      ]}
+    />,
+  );
+
+  const form = container.querySelector('form') as HTMLFormElement | null;
+  const amountInput = screen.getByLabelText('018125 Amount');
+
+  expect(form?.className).toContain('min-w-0');
+  expect(form?.className).toContain('max-w-full');
+  expect(amountInput.className).toContain('min-w-0');
+  expect(amountInput.className).toContain('w-full');
+  expect(screen.getByText(/超长中文名称/).className).toContain('break-words');
+});
+
 test('submits a dividend payload', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
 

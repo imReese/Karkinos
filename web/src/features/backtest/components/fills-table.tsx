@@ -81,7 +81,7 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
   });
 
   return (
-    <section className="app-panel overflow-hidden rounded-2xl">
+    <section className="app-panel min-w-0 overflow-hidden rounded-2xl">
       <div className="flex flex-wrap items-end justify-between gap-3 px-4 py-4 sm:px-5">
         <div>
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
@@ -99,7 +99,7 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
           {labels.empty}
         </div>
       ) : (
-        <div className="overflow-x-auto border-t border-[color-mix(in_srgb,var(--app-border)_22%,transparent)]">
+        <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-t border-[color-mix(in_srgb,var(--app-border)_22%,transparent)]">
           <table className="min-w-full text-left text-sm">
             <thead className="app-panel-strong app-kicker text-xs uppercase tracking-[0.14em]">
               {table.getHeaderGroups().map((headerGroup) => (

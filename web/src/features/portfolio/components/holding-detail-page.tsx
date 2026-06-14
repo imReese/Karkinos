@@ -552,7 +552,7 @@ function LedgerTrace({
   }
 
   return (
-    <div className="mt-5 overflow-x-auto">
+    <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
       <table className="app-data-table w-full min-w-[760px] text-left text-sm">
         <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
           <tr>

@@ -70,7 +70,7 @@ export function OrderApprovalTable() {
           {labels.empty}
         </div>
       ) : (
-        <div className="mt-5 overflow-x-auto">
+        <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
           <table className="min-w-[920px] table-fixed text-left text-sm">
             <thead>
               <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] text-[11px] uppercase tracking-[0.16em]">
