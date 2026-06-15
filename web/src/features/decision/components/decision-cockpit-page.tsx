@@ -60,6 +60,71 @@ export function DecisionCockpitPage() {
       ),
     [intraday.data, today.data],
   );
+  const commandRegisterRows = useMemo(() => {
+    const totals = lanes.reduce(
+      (accumulator, lane) => ({
+        candidates: accumulator.candidates + lane.summary.candidate_count,
+        manualReady:
+          accumulator.manualReady +
+          lane.summary.ready_for_manual_confirmation_count,
+        riskBlocked: accumulator.riskBlocked + lane.summary.risk_blocked_count,
+        signals: accumulator.signals + (lane.summary.audit?.signal_count ?? 0),
+        journalEntries:
+          accumulator.journalEntries +
+          (lane.summary.audit?.journal_entry_count ?? 0),
+      }),
+      {
+        candidates: 0,
+        manualReady: 0,
+        riskBlocked: 0,
+        signals: 0,
+        journalEntries: 0,
+      },
+    );
+
+    return [
+      {
+        label: labels.candidateActions,
+        value: String(totals.candidates),
+        tone: totals.candidates > 0 ? 'success' : 'neutral',
+      },
+      {
+        label: labels.manualConfirmations,
+        value: labels.readyCount(totals.manualReady),
+        tone: totals.manualReady > 0 ? 'success' : 'neutral',
+      },
+      {
+        label: labels.riskBlocks,
+        value: labels.blockedCount(totals.riskBlocked),
+        tone: totals.riskBlocked > 0 ? 'danger' : 'success',
+      },
+      {
+        label: labels.auditCoverage,
+        value: `${totals.journalEntries}/${totals.signals}`,
+        tone:
+          totals.signals > 0 && totals.journalEntries >= totals.signals
+            ? 'success'
+            : 'warning',
+      },
+      {
+        label: labels.marketData,
+        value: today.data?.summary.market_data?.source_health ?? '--',
+        tone:
+          today.data?.summary.market_data?.source_health === 'live'
+            ? 'success'
+            : 'warning',
+      },
+      {
+        label: labels.executionDefault,
+        value: labels.manualConfirmationRequired,
+        tone: 'success',
+      },
+    ] satisfies Array<{
+      label: string;
+      value: string;
+      tone: 'success' | 'warning' | 'danger' | 'neutral';
+    }>;
+  }, [lanes, labels, today.data]);
 
   if (loading) {
     return (
@@ -85,6 +150,32 @@ export function DecisionCockpitPage() {
   return (
     <section className="min-w-0 space-y-5 sm:space-y-6">
       <PageHeader title={labels.title} subtitle={labels.subtitle} />
+
+      <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
+        <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="app-product-mark">{labels.commandRegister}</div>
+              <h2 className="app-card-title mt-1.5">
+                {labels.commandRegisterTitle}
+              </h2>
+            </div>
+            <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
+              {labels.commandRegisterDetail}
+            </p>
+          </div>
+          <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {commandRegisterRows.map((row) => (
+              <DecisionRegisterRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                tone={row.tone}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
 
       <div
         data-testid="decision-summary-grid"
@@ -170,6 +261,44 @@ function SummaryTile({
         {value}
       </div>
       <div className="app-muted mt-1 break-words text-xs">{detail}</div>
+    </div>
+  );
+}
+
+function DecisionRegisterRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'success'
+      ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
+      : tone === 'danger'
+        ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]'
+        : tone === 'warning'
+          ? 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
+          : 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] text-[var(--app-soft)]';
+  return (
+    <div
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+      aria-label={`Decision register item: ${label} ${value}`}
+    >
+      <div className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+        {label}
+      </div>
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 justify-self-end">
+        <span
+          className={`h-2 w-2 rounded-full border ${toneClass}`}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
+          {value}
+        </span>
+      </div>
     </div>
   );
 }
