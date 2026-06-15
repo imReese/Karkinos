@@ -12,6 +12,7 @@ import {
   formatPercent,
   formatPrice,
   formatQuantity,
+  formatReturnPercent,
   formatTimestamp,
 } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
@@ -235,7 +236,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       value: formatCurrency(position.unrealized_pnl),
       tone: position.unrealized_pnl >= 0 ? 'success' : 'danger',
     },
-    { label: labels.pnlPct, value: formatPercent(pnlPct) },
+    { label: labels.pnlPct, value: formatReturnPercent(pnlPct) },
   ];
 
   const valuationMetrics: DetailMetric[] = [

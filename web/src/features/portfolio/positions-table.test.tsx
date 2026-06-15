@@ -70,6 +70,8 @@ test('renders active positions', () => {
   expect(screen.getAllByText('60').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Market Value').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Stock').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('6.67%').length).toBeGreaterThan(0);
+  expect(screen.queryByText('6.7%')).toBeNull();
   expect(screen.queryByText('stock')).toBeNull();
 });
 

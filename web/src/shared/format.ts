@@ -86,6 +86,13 @@ export function formatPercent(
   }).format(normalized);
 }
 
+export function formatReturnPercent(value: number | null | undefined) {
+  return formatPercent(value, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export function formatTimestamp(value: string | null | undefined) {
   if (!value) {
     return '--';

@@ -507,4 +507,8 @@ automation.
   deployment, position, and manual-confirmation boundaries from active risk
   blocking evidence, with deterministic frontend coverage and no execution
   behavior changes.
+* 2026-06-15: Standardized portfolio return percentages to two decimal places.
+  Live holding cards, the positions table, and holding detail now use a
+  dedicated return-percent formatter while leaving allocation and risk weights
+  on their existing compact formatting.
 <!-- codex-progress:end -->

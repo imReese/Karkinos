@@ -111,6 +111,10 @@ test('renders holdings quote board in english', () => {
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
   ).toBeGreaterThan(0);
+  expect(screen.getByText('-1.10%')).toBeTruthy();
+  expect(screen.getAllByText('20.00%').length).toBeGreaterThan(0);
+  expect(screen.queryByText('-1.1%')).toBeNull();
+  expect(screen.queryByText('20.0%')).toBeNull();
 });
 
 test('renders localized holdings quote board in chinese', () => {
