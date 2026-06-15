@@ -465,6 +465,10 @@ paper/shadow 或人工确认。
 `POST /api/backtest/run` 也可选传入 `oos_split_date`（YYYY-MM-DD）和
 `benchmark_return`，用于在回测结果的 `metrics_json.oos_validation` 中附带
 样本外 after-cost 验证证据；该证据用于审计与策略晋级，不构成投资建议或收益承诺。
+每次回测还会在 `metrics_json.dataset_snapshot` 中记录本次交给引擎的数据快照：
+配置的数据源、可用 source、缓存/元数据状态、请求日期范围、标的 universe、每个标的
+的行数与首尾时间、可用的复权模式、缓存 dataset id 以及数据质量诊断。该快照用于复现
+和比较研究结果，不代表行情数据完整性保证。
 `GET /api/backtest/strategy-validation` 读取已保存回测结果，报告三条 v0.2
 基准策略是否具备 after-cost 与样本外验证证据；该矩阵只用于审计与晋级检查。
 `GET /api/backtest/strategy-promotion-readiness` 会组合 after-cost/OOS 证据、

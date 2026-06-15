@@ -391,6 +391,146 @@ def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
     assert "not investment advice" in oos["limitations"][0]
 
 
+def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
+    import pandas as pd
+
+    from analytics.backtest_metrics import BacktestMetrics, CostSummary
+    from backtest.result import BacktestResult
+    from core.types import AssetClass, BarFrequency, Symbol
+    from data.handler import DataHandler
+    from domain.instrument import make_stock
+    from server.routes import backtest as backtest_routes
+
+    class FakeStore:
+        def get_meta(self, symbol, frequency):
+            assert symbol == Symbol("600519")
+            assert frequency == BarFrequency.DAILY
+            return {
+                "provider_name": "fixture_provider",
+                "data_source": "fixture",
+                "adjustment_mode": "qfq",
+                "dataset_id": "cache-dataset-600519",
+                "diagnostics": {
+                    "duplicate_timestamp_count": 0,
+                    "missing_ohlcv_count": 0,
+                    "is_monotonic": True,
+                },
+            }
+
+    class FakeDataManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def get_instrument(symbol, asset_class):
+            assert symbol == Symbol("600519")
+            assert asset_class == AssetClass.STOCK
+            return make_stock("600519", "贵州茅台")
+
+        def get_bars(self, symbol, start, end, asset_class):
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.to_datetime(["2026-01-05", "2026-01-06"]),
+                    "open": [100.0, 101.0],
+                    "high": [102.0, 103.0],
+                    "low": [99.0, 100.0],
+                    "close": [101.0, 102.0],
+                    "volume": [1000.0, 1100.0],
+                }
+            )
+            return DataHandler(
+                df,
+                symbol,
+                frequency=BarFrequency.DAILY,
+                asset_class=asset_class,
+            )
+
+    class FakeEngine:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def run(self):
+            return BacktestResult(
+                equity_curve=[
+                    (datetime(2026, 1, 5), Decimal("100000")),
+                    (datetime(2026, 1, 6), Decimal("100100")),
+                ],
+                positions={},
+                initial_cash=Decimal("100000"),
+                final_equity=Decimal("100100"),
+                metrics=BacktestMetrics(
+                    initial_cash=100000.0,
+                    final_equity=100100.0,
+                    total_return=0.001,
+                    annual_return=0.01,
+                    sharpe=0.2,
+                    sortino=0.3,
+                    max_drawdown=0.01,
+                    win_rate=0.5,
+                    duration_days=2,
+                ),
+                cost_summary=CostSummary(),
+            )
+
+    monkeypatch.setattr("data.store.DataStore", FakeStore)
+    monkeypatch.setattr("data.manager.DataManager", FakeDataManager)
+    monkeypatch.setattr(
+        "data.manager.build_sources", lambda **kwargs: {"fixture": object()}
+    )
+    monkeypatch.setattr("backtest.engine.BacktestEngine", FakeEngine)
+
+    result = backtest_routes._run_single_backtest(
+        backtest_routes.BacktestRequest(
+            start_date="2026-01-05",
+            end_date="2026-01-06",
+            initial_cash=100000,
+            strategy="dual_ma",
+            params={"short_period": 3, "long_period": 5},
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+        ),
+        SimpleNamespace(
+            assets=[],
+            data_source="fixture",
+            tushare_token="",
+        ),
+    )
+
+    snapshot = result["metrics_json"]["dataset_snapshot"]
+
+    assert snapshot["schema_version"] == "karkinos.dataset_snapshot.v1"
+    assert snapshot["snapshot_id"].startswith("sha256:")
+    assert snapshot["provider"] == {
+        "configured_source": "fixture",
+        "available_sources": ["fixture"],
+    }
+    assert snapshot["cache"] == {
+        "store_available": True,
+        "metadata_available": True,
+    }
+    assert snapshot["date_range"] == {
+        "start": "2026-01-05",
+        "end": "2026-01-06",
+    }
+    assert snapshot["row_count"] == 2
+    assert snapshot["adjustment_mode"] == "qfq"
+    assert snapshot["data_quality"] == {"status": "ok", "issues": []}
+    assert snapshot["symbol_universe"] == [
+        {
+            "symbol": "600519",
+            "asset_class": "stock",
+            "frequency": "1d",
+            "row_count": 2,
+            "first_timestamp": "2026-01-05T00:00:00",
+            "last_timestamp": "2026-01-06T00:00:00",
+            "provider_name": "fixture_provider",
+            "data_source": "fixture",
+            "adjustment_mode": "qfq",
+            "source_dataset_id": "cache-dataset-600519",
+            "data_quality": {"status": "ok", "issues": []},
+        }
+    ]
+
+
 def test_backtest_result_returns_json_contract_and_empty_fills(monkeypatch):
     from server.routes import backtest as backtest_routes
 

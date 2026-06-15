@@ -362,6 +362,13 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added dataset snapshot metadata to the single Backtest runner.
+  Each run now attaches `metrics_json.dataset_snapshot` with a stable
+  snapshot id, configured/available data sources, cache metadata availability,
+  requested date range, total row count, symbol universe rows, per-symbol
+  first/last timestamps, provider/cache dataset metadata when available,
+  adjustment mode, and data-quality diagnostics. Deterministic route tests
+  cover the snapshot contract without network access.
 * 2026-06-15: Refined the Web Backtest strategy-parameter experience for
   Chinese users. The app now defaults to Chinese when the browser locale is
   Chinese and no saved preference exists; dual moving-average controls explain
