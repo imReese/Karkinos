@@ -515,4 +515,8 @@ automation.
   Asset-class summaries now group market value, today's move, and since-buy
   return into separate labeled metric cells so each amount can be read without
   cross-referencing distant labels.
+* 2026-06-15: Deduplicated the Portfolio holdings quote board detail surface.
+  The board now keeps asset-class summaries plus compact, clickable holding
+  rows that link to each holding detail page, leaving the full per-instrument
+  metrics in the table/detail flow and avoiding overlapping detail cards.
 <!-- codex-progress:end -->
