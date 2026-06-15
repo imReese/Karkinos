@@ -523,4 +523,8 @@ automation.
   holdings quote board now stops rendering individual holding rows, while a
   reusable OHLC/K-line price structure surface appears in holding detail pages
   and the Market research workspace without adding trading execution behavior.
+* 2026-06-15: Redesigned the Portfolio positions entry affordance. Holding
+  names are now the primary detail links, symbols are kept as secondary
+  identifiers, and both mobile holding cards and desktop rows can open the
+  holding detail while refresh/trade/ledger controls remain separate.
 <!-- codex-progress:end -->

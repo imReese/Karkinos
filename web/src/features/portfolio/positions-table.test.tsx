@@ -58,9 +58,18 @@ test('renders active positions', () => {
   expect(screen.getAllByText('贵州茅台').length).toBeGreaterThan(0);
   expect(
     screen
-      .getAllByRole('link', { name: 'Holding Details: 600519' })[0]
+      .getAllByRole('link', { name: 'Holding Details: 贵州茅台 600519' })[0]
       .getAttribute('href'),
   ).toBe('/portfolio/600519');
+  expect(
+    screen.queryByRole('link', { name: 'Holding Details: 600519' }),
+  ).toBeNull();
+  expect(screen.getByTestId('position-card-600519').className).toContain(
+    'cursor-pointer',
+  );
+  expect(screen.getByTestId('position-row-600519').className).toContain(
+    'cursor-pointer',
+  );
   expect(
     screen.getAllByRole('link', { name: /Trade/i }).length,
   ).toBeGreaterThan(0);

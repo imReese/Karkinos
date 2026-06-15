@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import type { KeyboardEvent, MouseEvent } from 'react';
 import {
   formatCurrency,
   formatPrice,
@@ -51,6 +52,30 @@ function resolvePnlPct(position: Position) {
     return null;
   }
   return position.unrealized_pnl / costBasis;
+}
+
+function detailAriaLabel(
+  labels: ReturnType<typeof useCopy>['portfolio']['table'],
+  displayName: string,
+  symbol: string,
+) {
+  return `${labels.detailsTitle}: ${displayName} ${symbol}`;
+}
+
+function openHoldingDetail(href: string) {
+  window.location.assign(href);
+}
+
+function stopEntryNavigation(event: MouseEvent<HTMLElement>) {
+  event.stopPropagation();
+}
+
+function handleEntryKeyDown(event: KeyboardEvent<HTMLElement>, href: string) {
+  if (event.key !== 'Enter' && event.key !== ' ') {
+    return;
+  }
+  event.preventDefault();
+  openHoldingDetail(href);
 }
 
 export function PositionsTable({
@@ -107,22 +132,41 @@ export function PositionsTable({
             position.stale_reason,
             copy.common.staleReasons,
           );
+          const detailHref = holdingDetailHref(position.symbol);
+          const detailLabel = detailAriaLabel(
+            labels,
+            displayName,
+            position.symbol,
+          );
           const refreshing =
             refreshQuotes.isPending &&
             refreshQuotes.variables?.symbols?.includes(position.symbol);
           return (
-            <div key={position.symbol} className="app-panel rounded-3xl p-4">
+            <div
+              key={position.symbol}
+              data-testid={`position-card-${position.symbol}`}
+              className="app-panel cursor-pointer rounded-3xl p-4 transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_42%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              tabIndex={0}
+              aria-label={detailLabel}
+              onClick={() => {
+                openHoldingDetail(detailHref);
+              }}
+              onKeyDown={(event) => {
+                handleEntryKeyDown(event, detailHref);
+              }}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <a
-                    href={holdingDetailHref(position.symbol)}
-                    className="font-mono text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
-                    aria-label={`${labels.detailsTitle}: ${position.symbol}`}
+                    href={detailHref}
+                    className="text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                    aria-label={detailLabel}
+                    onClick={stopEntryNavigation}
                   >
-                    {position.symbol}
-                  </a>
-                  <div className="mt-1 text-sm font-medium text-[var(--app-soft)]">
                     {displayName}
+                  </a>
+                  <div className="mt-1 font-mono text-xs font-medium text-[var(--app-soft)]">
+                    {position.symbol}
                   </div>
                   <div className="app-muted mt-1 text-xs">
                     {assetClassDisplay}
@@ -199,8 +243,9 @@ export function PositionsTable({
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <a
-                  href={holdingDetailHref(position.symbol)}
+                  href={detailHref}
                   className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
+                  onClick={stopEntryNavigation}
                 >
                   {labels.detailsTitle}
                 </a>
@@ -209,7 +254,8 @@ export function PositionsTable({
                   className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={refreshing}
                   aria-busy={refreshing}
-                  onClick={() => {
+                  onClick={(event) => {
+                    stopEntryNavigation(event);
                     void refreshQuotes.mutateAsync({
                       symbols: [position.symbol],
                       force: true,
@@ -221,12 +267,14 @@ export function PositionsTable({
                 <a
                   href={symbolTradingHref(position.symbol)}
                   className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
+                  onClick={stopEntryNavigation}
                 >
                   {labels.trade}
                 </a>
                 <a
                   href={symbolActivityHref(position.symbol)}
                   className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
+                  onClick={stopEntryNavigation}
                 >
                   {labels.ledger}
                 </a>
@@ -281,24 +329,43 @@ export function PositionsTable({
                 position.stale_reason,
                 copy.common.staleReasons,
               );
+              const detailHref = holdingDetailHref(position.symbol);
+              const detailLabel = detailAriaLabel(
+                labels,
+                displayName,
+                position.symbol,
+              );
               const refreshing =
                 refreshQuotes.isPending &&
                 refreshQuotes.variables?.symbols?.includes(position.symbol);
               return (
-                <tr key={position.symbol} className="group">
+                <tr
+                  key={position.symbol}
+                  data-testid={`position-row-${position.symbol}`}
+                  className="group cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--app-accent)_5%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--app-focus)]"
+                  tabIndex={0}
+                  aria-label={detailLabel}
+                  onClick={() => {
+                    openHoldingDetail(detailHref);
+                  }}
+                  onKeyDown={(event) => {
+                    handleEntryKeyDown(event, detailHref);
+                  }}
+                >
                   <td className="px-4 py-3.5 text-[var(--app-text)]">
                     <span className="flex min-w-44 items-start gap-2">
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-accent)] opacity-70 transition-opacity group-hover:opacity-100" />
                       <span className="min-w-0">
                         <a
-                          href={holdingDetailHref(position.symbol)}
-                          className="font-mono font-semibold underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
-                          aria-label={`${labels.detailsTitle}: ${position.symbol}`}
+                          href={detailHref}
+                          className="block truncate font-semibold underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                          aria-label={detailLabel}
+                          onClick={stopEntryNavigation}
                         >
-                          {position.symbol}
-                        </a>
-                        <span className="mt-1 block truncate text-xs font-medium text-[var(--app-muted)]">
                           {displayName}
+                        </a>
+                        <span className="mt-1 block truncate font-mono text-xs font-medium text-[var(--app-muted)]">
+                          {position.symbol}
                         </span>
                       </span>
                     </span>
@@ -383,8 +450,9 @@ export function PositionsTable({
                       }`}
                     >
                       <a
-                        href={holdingDetailHref(position.symbol)}
+                        href={detailHref}
                         className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
+                        onClick={stopEntryNavigation}
                       >
                         {labels.detailsTitle}
                       </a>
@@ -393,7 +461,8 @@ export function PositionsTable({
                         className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                         disabled={refreshing}
                         aria-busy={refreshing}
-                        onClick={() => {
+                        onClick={(event) => {
+                          stopEntryNavigation(event);
                           void refreshQuotes.mutateAsync({
                             symbols: [position.symbol],
                             force: true,
@@ -407,12 +476,14 @@ export function PositionsTable({
                           <a
                             href={symbolTradingHref(position.symbol)}
                             className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
+                            onClick={stopEntryNavigation}
                           >
                             {labels.trade}
                           </a>
                           <a
                             href={symbolActivityHref(position.symbol)}
                             className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
+                            onClick={stopEntryNavigation}
                           >
                             {labels.ledger}
                           </a>
