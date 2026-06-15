@@ -106,6 +106,11 @@ _EXTERNAL_FLOW_LABELS = {
     "manual_adjustment": "手工调整",
 }
 
+_FUND_ESTIMATE_QUOTE_SOURCES = {
+    "eastmoney_fund_estimate",
+    "eastmoney_fund_page",
+}
+
 
 def _normalize_asset_class(value: str | None) -> str:
     if not value:
@@ -933,6 +938,40 @@ def _expected_quote_date(now: datetime | None = None):
     return current.date()
 
 
+def _quote_asset_class(quote: dict | None) -> str:
+    if not quote:
+        return ""
+    value = quote.get("asset_class") or quote.get("asset_type")
+    if hasattr(value, "value"):
+        value = value.value
+    return str(value or "").strip().lower()
+
+
+def _quote_source_name(quote: dict | None) -> str:
+    if not quote:
+        return ""
+    value = (
+        quote.get("quote_source")
+        or quote.get("source")
+        or quote.get("provider_name")
+        or quote.get("provider")
+    )
+    return str(value or "").strip().lower()
+
+
+def _quote_live_ttl_seconds(
+    quote: dict | None,
+    *,
+    live_poll_interval: int | None = None,
+) -> int:
+    base_seconds = max(int(live_poll_interval or 60), 15)
+    asset_class = _quote_asset_class(quote)
+    source = _quote_source_name(quote)
+    if asset_class in {"fund", "etf"} and source in _FUND_ESTIMATE_QUOTE_SOURCES:
+        return max(base_seconds * 10, 600)
+    return base_seconds * 3
+
+
 def _quote_is_stale(
     quote: dict | None,
     *,
@@ -951,7 +990,10 @@ def _quote_is_stale(
         return True
 
     if is_cn_trading_session(current):
-        ttl_seconds = max(int(live_poll_interval or 60), 15) * 3
+        ttl_seconds = _quote_live_ttl_seconds(
+            quote,
+            live_poll_interval=live_poll_interval,
+        )
         return (current - timestamp).total_seconds() > ttl_seconds
 
     return False
