@@ -477,4 +477,9 @@ automation.
   Portfolio and Market health now share the same computed quote status instead
   of trusting cached `live` flags, while Eastmoney fund estimate quotes receive
   a bounded intraday lag window distinct from stricter stock realtime quotes.
+* 2026-06-15: Made TuShare fund permission fallback auditable in the cockpit.
+  Fund quote refresh now converts TuShare `fund_nav` permission failures into a
+  stable internal reason code, marks successful Eastmoney fallback quotes as
+  provider fallback, and localizes the cockpit message without changing trading
+  execution behavior.
 <!-- codex-progress:end -->

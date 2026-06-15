@@ -772,6 +772,48 @@ def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
     assert metadata["stale_reason"] == "quote_older_than_expected_session"
 
 
+def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch):
+    from core.types import AssetClass
+    from server.routes import market as market_routes
+
+    class TushareWithoutFundNav:
+        def fetch_latest(self, symbol, asset_class):
+            raise RuntimeError("抱歉，您没有接口(fund_nav)访问权限，权限的具体详情访问")
+
+    class AkshareFundEstimate:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "symbol": str(symbol),
+                "price": 2.3077,
+                "volume": 0.0,
+                "timestamp": "2026-06-15 11:20",
+                "quote_source": "eastmoney_fund_estimate",
+                "provider_name": "akshare",
+            }
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda data_source, tushare_token: {
+            "tushare": TushareWithoutFundNav(),
+            "akshare": AkshareFundEstimate(),
+        },
+    )
+
+    payload = market_routes._load_latest_snapshot_from_provider(
+        SimpleNamespace(
+            config=SimpleNamespace(data_source="tushare", tushare_token="token")
+        ),
+        "018125",
+        AssetClass.FUND,
+    )
+
+    assert payload is not None
+    assert payload["quote_status"] == "live"
+    assert payload["provider_status"] == "fallback"
+    assert payload["quote_source"] == "eastmoney_fund_estimate"
+    assert payload["stale_reason"] == "tushare_fund_nav_permission_denied"
+
+
 def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatch):
     from server.routes import market as market_routes
 

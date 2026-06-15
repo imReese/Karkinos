@@ -60,6 +60,7 @@ _ASSET_CLASS_MAP = {
     "gold": AssetClass.GOLD,
     "bond": AssetClass.BOND,
 }
+_TUSHARE_FUND_NAV_PERMISSION_DENIED = "tushare_fund_nav_permission_denied"
 
 
 class QuoteRefreshRequest(BaseModel):
@@ -243,6 +244,33 @@ def _mark_persistent_cache_quote(
     marked["using_persistent_cache"] = True
     marked["persistent_cache_status"] = "available"
     return marked
+
+
+def _provider_error_code(exc: Exception) -> str | None:
+    message = str(exc)
+    normalized = message.lower()
+    if "fund_nav" in normalized and (
+        "访问权限" in message
+        or "没有接口" in message
+        or "permission" in normalized
+        or "access" in normalized
+    ):
+        return _TUSHARE_FUND_NAV_PERMISSION_DENIED
+    return None
+
+
+def _provider_error_reason(error_code: str, *, using_cache: bool) -> str:
+    if error_code == _TUSHARE_FUND_NAV_PERMISSION_DENIED:
+        return (
+            "TuShare fund_nav 权限不足，继续使用本地基金缓存"
+            if using_cache
+            else "TuShare fund_nav 权限不足，请使用 Eastmoney 基金估算源或提升 TuShare 权限"
+        )
+    return (
+        "行情源刷新失败，继续使用本地缓存"
+        if using_cache
+        else "行情源刷新失败，暂无真实行情数据"
+    )
 
 
 def _stale_reason(
@@ -1327,7 +1355,9 @@ def _load_latest_snapshot_from_provider(
     snapshot = None
     selected_source_name = data_source
     last_error: Exception | None = None
+    fallback_reason_code: str | None = None
     saw_provider_response = False
+    primary_source_name = source_chain[0][0]
     for source_name, source in source_chain:
         try:
             snapshot = _fetch_provider_latest_with_timeout(
@@ -1346,6 +1376,8 @@ def _load_latest_snapshot_from_provider(
                 exc_info=True,
             )
             last_error = exc
+            if source_name == primary_source_name:
+                fallback_reason_code = _provider_error_code(exc)
             snapshot = None
         if snapshot:
             selected_source_name = source_name
@@ -1369,7 +1401,10 @@ def _load_latest_snapshot_from_provider(
         "exchange": snapshot.get("exchange"),
         "market": snapshot.get("market"),
         "quote_status": "live",
-        "provider_status": "live",
+        "provider_status": (
+            "fallback" if selected_source_name != primary_source_name else "live"
+        ),
+        "stale_reason": fallback_reason_code,
         "nav_date": snapshot.get("nav_date")
         or (snapshot.get("timestamp") if asset_class == AssetClass.FUND else None),
     }
@@ -1528,10 +1563,11 @@ async def _refresh_one_quote(
     except Exception as exc:
         cached_quote = _latest_persistent_real_quote(state, symbol)
         logger.warning("Manual quote refresh failed for %s", symbol, exc_info=True)
-        error_message = str(exc)
+        error_code = _provider_error_code(exc)
+        error_message = error_code or str(exc)
         _QUOTE_REFRESH_ERRORS[key] = error_message
         cached_quote = _mark_persistent_cache_quote(
-            cached_quote, stale_reason="provider_unavailable"
+            cached_quote, stale_reason=error_code or "provider_unavailable"
         )
         metadata = _quote_metadata(
             state,
@@ -1550,10 +1586,9 @@ async def _refresh_one_quote(
             quote_source=metadata["quote_source"],
             quote_age_seconds=metadata["quote_age_seconds"],
             error=error_message,
-            reason=(
-                "行情源刷新失败，继续使用本地缓存"
-                if cached_quote
-                else "行情源刷新失败，暂无真实行情数据"
+            reason=_provider_error_reason(
+                error_message,
+                using_cache=bool(cached_quote),
             ),
             last_refresh_attempt=attempted_at.isoformat(),
             last_refresh_error=error_message,

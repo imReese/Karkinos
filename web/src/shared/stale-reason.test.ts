@@ -20,3 +20,12 @@ test('keeps provider error text readable when it is not an internal code', () =>
     ),
   ).toBe('TuShare fund_nav permission denied');
 });
+
+test('formats tushare fund permission fallback reason for chinese cockpit copy', () => {
+  expect(
+    formatStaleReason(
+      'tushare_fund_nav_permission_denied',
+      copy.zh.common.staleReasons,
+    ),
+  ).toBe('TuShare fund_nav 权限不足，已切换 Eastmoney 基金估算源');
+});
