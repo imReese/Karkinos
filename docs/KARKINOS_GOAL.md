@@ -362,6 +362,15 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added the first backend Strategy Lab parameter-sweep API.
+  `POST /api/backtest/sweep` now expands bounded typed parameter grids for one
+  registered strategy, rejects oversized grids and unsupported ranking metrics
+  before execution, validates every tested parameter payload through the shared
+  strategy registry schema, persists each tested configuration as an ordinary
+  backtest result, and returns deterministic rankings with explicit
+  research-only / multiple-testing warnings. Deterministic route tests cover
+  successful grid execution, persisted normalized params, grid-size rejection,
+  and invalid rank metric rejection before any backtest runs.
 * 2026-06-15: Made local Strategy Lab extension scripts runnable through the
   Backtest API path. Extension manifests discovered from
   `KARKINOS_STRATEGY_EXTENSION_DIR` can now point `class_path` at a Python

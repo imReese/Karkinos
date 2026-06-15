@@ -6694,6 +6694,160 @@ def test_backtest_run_rejects_unknown_generic_params_before_execution(monkeypatc
     }
 
 
+def test_backtest_sweep_runs_bounded_grid_and_persists_each_configuration(
+    monkeypatch,
+):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/sweep", "POST").endpoint
+    saved_payloads: list[dict[str, object]] = []
+    captured_params: list[dict[str, object]] = []
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            saved_payloads.append(kwargs)
+            return 900 + len(saved_payloads)
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    def fake_run_backtest(request, config, db=None):
+        captured_params.append(dict(request.params or {}))
+        short_period = int(request.params["short_period"])
+        total_return = 0.01 * short_period
+        return {
+            "initial_cash": 100000.0,
+            "final_equity": 100000.0 * (1 + total_return),
+            "total_return": total_return,
+            "annual_return": total_return,
+            "sharpe": float(short_period),
+            "sortino": float(short_period) / 2,
+            "max_drawdown": 0.01 * (10 - short_period),
+            "win_rate": 0.5,
+            "duration_days": 10,
+            "equity_curve": [{"timestamp": "2026-01-01T00:00:00", "equity": 100000.0}],
+            "metrics_json": {"total_trades": short_period},
+            "cost_summary_json": {"total_trades": short_period},
+            "evidence_json": {},
+            "fills": [],
+        }
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fake_run_backtest)
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.BacktestSweepRequest(
+                strategy="dual_ma",
+                param_grid={"short_period": [3, 5], "long_period": [9]},
+                max_combinations=4,
+                rank_by="total_return",
+            )
+        )
+    )
+
+    assert response.strategy == "dual_ma"
+    assert response.tested_count == 2
+    assert response.results[0].rank == 1
+    assert response.results[0].params == {"short_period": 5, "long_period": 9}
+    assert response.results[0].result_id == 902
+    assert response.results[0].metrics.total_return == 0.05
+    assert response.results[1].params == {"short_period": 3, "long_period": 9}
+    assert response.warnings == [
+        "Parameter sweep rankings are research evidence, not investment advice.",
+        "Multiple testing can overfit historical data; require OOS and after-cost review before promotion.",
+    ]
+    assert captured_params == [
+        {"short_period": 3, "long_period": 9},
+        {"short_period": 5, "long_period": 9},
+    ]
+    saved_configs = [
+        json.loads(str(payload["config_json"])) for payload in saved_payloads
+    ]
+    assert [config["params"] for config in saved_configs] == captured_params
+
+
+def test_backtest_sweep_rejects_unbounded_grid_before_execution(monkeypatch):
+    from fastapi import HTTPException
+
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/sweep", "POST").endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=SimpleNamespace(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("sweep should reject oversized grids before execution")
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fail_if_called)
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            endpoint(
+                backtest_routes.BacktestSweepRequest(
+                    strategy="dual_ma",
+                    param_grid={
+                        "short_period": [3, 5, 7],
+                        "long_period": [9, 12],
+                    },
+                    max_combinations=4,
+                )
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert error.value.detail["errors"][0]["code"] == "parameter_grid_too_large"
+
+
+def test_backtest_sweep_rejects_unsupported_rank_metric_before_execution(
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/sweep", "POST").endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=SimpleNamespace(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("sweep should reject invalid rank_by before execution")
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fail_if_called)
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            endpoint(
+                backtest_routes.BacktestSweepRequest(
+                    strategy="dual_ma",
+                    param_grid={"short_period": [3], "long_period": [9]},
+                    rank_by="profit_factor",
+                )
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert error.value.detail["errors"][0]["code"] == "unsupported_rank_metric"
+
+
 def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch):
     from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
     from server.routes import backtest as backtest_routes
