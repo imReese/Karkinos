@@ -161,6 +161,8 @@ test('switches the return calendar between monthly days, yearly months, and year
   expect(
     within(yearGrid).getByRole('button', { name: '2026-02 · Price gap' }),
   ).toBeTruthy();
+  expect(await screen.findByText('Monthly change')).toBeTruthy();
+  expect(screen.queryByText('Daily change')).toBeNull();
 
   await user.selectOptions(screen.getByLabelText('Calendar period'), 'years');
 
@@ -171,6 +173,8 @@ test('switches the return calendar between monthly days, yearly months, and year
   expect(
     within(yearsGrid).getByRole('button', { name: '2025 · CN¥500.00' }),
   ).toBeTruthy();
+  expect(await screen.findByText('Annual change')).toBeTruthy();
+  expect(screen.queryByText('Daily change')).toBeNull();
 });
 
 test('marks return calendar days with incomplete historical prices', async () => {

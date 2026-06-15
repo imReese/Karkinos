@@ -820,6 +820,9 @@ export const copy = {
       sourcePositioning: 'Positioning',
       equity: 'Equity',
       netChange: 'Net change',
+      netChangeDaily: 'Daily change',
+      netChangeMonthly: 'Monthly change',
+      netChangeAnnual: 'Annual change',
       externalFlow: 'External flow',
       marketPnl: 'Market move',
       marketBreakdownLabels: {
@@ -1989,6 +1992,9 @@ export const copy = {
       sourcePositioning: '持仓变化',
       equity: '净值',
       netChange: '当日变化',
+      netChangeDaily: '当日变化',
+      netChangeMonthly: '当月变化',
+      netChangeAnnual: '当年变化',
       externalFlow: '事件流入/流出',
       marketPnl: '市场变动',
       marketBreakdownLabels: {

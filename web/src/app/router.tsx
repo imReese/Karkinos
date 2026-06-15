@@ -3044,6 +3044,7 @@ export function ReturnCalendarCard({
           />
           <ReturnCalendarDetail
             row={selectedRow}
+            period={period}
             metric={metric}
             copy={copy}
             compact={compact}
@@ -3830,11 +3831,13 @@ function ReturnCalendarCell({
 
 function ReturnCalendarDetail({
   row,
+  period,
   metric,
   copy,
   compact,
 }: {
   row: ReturnCalendarRow | null;
+  period: ReturnCalendarPeriod;
   metric: 'amount' | 'percent';
   copy: AppCopy;
   compact: boolean;
@@ -3862,6 +3865,12 @@ function ReturnCalendarDetail({
   const marketValue = hasMissingValuation
     ? copy.explainability.missingValuationShort
     : formatCurrency(row.marketPnl);
+  const netChangeLabel =
+    period === 'month-days'
+      ? copy.explainability.netChangeDaily
+      : period === 'year-months'
+        ? copy.explainability.netChangeMonthly
+        : copy.explainability.netChangeAnnual;
 
   return (
     <div className={detailClass}>
@@ -3876,10 +3885,7 @@ function ReturnCalendarDetail({
       <div
         className={`${compact ? 'mt-3 space-y-2' : 'mt-4 space-y-3'} text-sm`}
       >
-        <CalendarDetailMetric
-          label={copy.explainability.netChange}
-          value={returnValue}
-        />
+        <CalendarDetailMetric label={netChangeLabel} value={returnValue} />
         <CalendarDetailMetric
           label={copy.explainability.marketPnl}
           value={marketValue}
