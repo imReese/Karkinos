@@ -253,6 +253,82 @@ const sweepResponse = {
   ],
 };
 
+const compareResponse = {
+  compared_count: 2,
+  dataset_snapshot_id: 'snapshot-shared',
+  dataset_snapshot: {
+    schema_version: 'karkinos.dataset_snapshot.v1',
+    snapshot_id: 'snapshot-shared',
+    row_count: 10,
+  },
+  warnings: [
+    'Strategy comparison results are research evidence, not investment advice.',
+    'Comparison is valid only when every run uses the same frozen dataset snapshot.',
+  ],
+  results: [
+    {
+      strategy: 'dual_ma',
+      description: 'Dual moving-average crossover baseline.',
+      result_id: 1201,
+      params: { short_period: 3, long_period: 9 },
+      dataset_snapshot_id: 'snapshot-shared',
+      dataset_snapshot: {
+        schema_version: 'karkinos.dataset_snapshot.v1',
+        snapshot_id: 'snapshot-shared',
+        row_count: 10,
+      },
+      metrics: {
+        initial_cash: 100000,
+        final_equity: 103000,
+        total_return: 0.03,
+        annual_return: 0.03,
+        sharpe: 1.03,
+        sortino: 1.2,
+        max_drawdown: 0.02,
+        calmar: 1.5,
+        volatility: 0.1,
+        win_rate: 0.51,
+        duration_days: 10,
+        total_commission: 3,
+        total_slippage: 1,
+        total_trades: 2,
+        gross_turnover: 9000,
+      },
+      equity_curve: [],
+    },
+    {
+      strategy: 'dual_ma',
+      description: 'Dual moving-average crossover baseline.',
+      result_id: 1202,
+      params: { short_period: 5, long_period: 9 },
+      dataset_snapshot_id: 'snapshot-shared',
+      dataset_snapshot: {
+        schema_version: 'karkinos.dataset_snapshot.v1',
+        snapshot_id: 'snapshot-shared',
+        row_count: 10,
+      },
+      metrics: {
+        initial_cash: 100000,
+        final_equity: 105000,
+        total_return: 0.05,
+        annual_return: 0.05,
+        sharpe: 1.25,
+        sortino: 1.3,
+        max_drawdown: 0.025,
+        calmar: 2,
+        volatility: 0.11,
+        win_rate: 0.54,
+        duration_days: 10,
+        total_commission: 4,
+        total_slippage: 1,
+        total_trades: 3,
+        gross_turnover: 12000,
+      },
+      equity_curve: [],
+    },
+  ],
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -377,11 +453,13 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 function installBacktestFetchMock({
   runFails = false,
   sweepFails = false,
+  compareFails = false,
   results = [savedSummary],
   strategies = strategyCatalog,
 }: {
   runFails?: boolean;
   sweepFails?: boolean;
+  compareFails?: boolean;
   results?: unknown[];
   strategies?: unknown[];
 } = {}) {
@@ -406,6 +484,11 @@ function installBacktestFetchMock({
         return sweepFails
           ? jsonResponse({ detail: 'sweep unavailable' }, { status: 503 })
           : jsonResponse(sweepResponse);
+      }
+      if (url.includes('/api/backtest/compare')) {
+        return compareFails
+          ? jsonResponse({ detail: 'compare unavailable' }, { status: 409 })
+          : jsonResponse(compareResponse);
       }
       if (url.includes('/api/backtest/results/1')) {
         return jsonResponse(savedReport);
@@ -727,6 +810,61 @@ test('runs a parameter sweep and renders ranked research warnings', async () => 
   expect(
     await screen.findByText(
       'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.',
+    ),
+  ).toBeTruthy();
+});
+
+test('runs a same-dataset parameter comparison and renders saved result ids', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+
+  await screen.findByText('Strategy replay');
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(await screen.findByLabelText('Comparison parameter sets'), {
+    target: {
+      value: 'short_period=3, long_period=9\nshort_period=5, long_period=9',
+    },
+  });
+  const compareButton = screen.getByRole('button', {
+    name: 'Run comparison',
+  });
+  fireEvent.submit(compareButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/compare',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const compareCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/compare'),
+  );
+  const payload = JSON.parse(String(compareCall?.[1]?.body));
+  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+  expect(payload.runs).toEqual([
+    {
+      strategy: 'dual_ma',
+      params: { short_period: 3, long_period: 9 },
+    },
+    {
+      strategy: 'dual_ma',
+      params: { short_period: 5, long_period: 9 },
+    },
+  ]);
+  expect(await screen.findByText('Comparison results')).toBeTruthy();
+  expect(await screen.findByText('2 compared')).toBeTruthy();
+  expect(await screen.findByText('snapshot-shared')).toBeTruthy();
+  expect(await screen.findByText('Result #1202')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Short moving-average window=5, Long moving-average window=9',
+    ),
+  ).toBeTruthy();
+  expect(await screen.findByText('5.0%')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Comparison is valid only when every run uses the same frozen dataset snapshot.',
     ),
   ).toBeTruthy();
 });

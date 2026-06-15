@@ -7,6 +7,7 @@ import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
+import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
@@ -468,6 +469,14 @@ export function BacktestPage() {
               strategy={strategy}
               parameterSchema={parameterSchema}
               parameterValues={parameterValues}
+              assets={buildSingleAsset(symbol, assetClass)}
+            />
+            <ParameterComparePanel
+              startDate={startDate}
+              endDate={endDate}
+              initialCash={initialCash}
+              strategy={strategy}
+              parameterSchema={parameterSchema}
               assets={buildSingleAsset(symbol, assetClass)}
             />
           </div>

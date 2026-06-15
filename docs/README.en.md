@@ -477,6 +477,9 @@ If any run produces a different or missing snapshot id, the endpoint returns
 409 instead of silently ranking results from different data inputs. Returned
 items include the saved result id, normalized params, metrics, equity curve,
 and shared dataset snapshot id for audit.
+The Web Backtest Strategy Lab can submit explicit same-strategy parameter sets
+to this endpoint and renders the saved result ids, normalized params, returns,
+drawdowns, costs, warnings, and shared snapshot id without approving execution.
 
 `GET /api/backtest/strategy-promotion-readiness` combines saved after-cost/OOS
 validation, blocked-risk evidence, paper/shadow order facts, and explicit
