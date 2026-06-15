@@ -362,6 +362,13 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Reduced raw Strategy Lab parameter-key exposure in the Web
+  Backtest comparison panel. Same-dataset parameter comparison now defaults to
+  localized/human-readable parameter names, accepts localized names or stable
+  API keys in the textarea, and still submits canonical `params` payloads to
+  the backend. Frontend tests cover Chinese comparison input translating
+  `短期均线周期` / `长期均线周期` back to `short_period` / `long_period`
+  without changing the API contract or any trading execution behavior.
 * 2026-06-15: Surfaced persisted Strategy Lab metadata in saved Web Backtest
   reports. Reports that include `metrics_json.strategy_metadata` now render a
   strategy-audit snapshot with localized strategy names, business parameter

@@ -672,8 +672,10 @@ export const copy = {
         subtitle:
           'Compare explicit parameter sets for the selected strategy. Results are saved only when the backend confirms every run used the same frozen dataset snapshot.',
         parameterSets: 'Comparison parameter sets',
-        setsHint: (count: number) =>
-          `${count} parameter sets parsed; use one set per line, for example short_period=3, long_period=9.`,
+        setsHint: (count: number, example: string) =>
+          `${count} parameter sets parsed; use one set per line${
+            example ? `, for example ${example}` : ''
+          }.`,
         invalidSets:
           'Enter at least two valid parameter sets using known parameter keys.',
         run: 'Run comparison',
@@ -2036,9 +2038,11 @@ export const copy = {
         subtitle:
           '对当前策略的显式参数集做对比；只有后端确认每次运行使用同一个冻结数据快照时才保存结果。',
         parameterSets: '对比参数集',
-        setsHint: (count: number) =>
-          `已解析 ${count} 组参数；每行一组，例如 short_period=3, long_period=9。`,
-        invalidSets: '请至少输入两组有效参数，并使用已知参数键。',
+        setsHint: (count: number, example: string) =>
+          `已解析 ${count} 组参数；每行一组${
+            example ? `，例如 ${example}` : ''
+          }。`,
+        invalidSets: '请至少输入两组有效参数，并使用已知参数名或 API 键。',
         run: '运行对比',
         running: '正在对比',
         resultsKicker: '对比复核',
