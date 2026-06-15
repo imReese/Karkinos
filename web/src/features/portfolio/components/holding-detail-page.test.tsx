@@ -240,7 +240,9 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('initial allocation')).toBeTruthy();
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
-  expect(await screen.findByText('market_closed_cache_only')).toBeTruthy();
+  expect(
+    await screen.findByText('Market closed; using cached quote'),
+  ).toBeTruthy();
   expect(document.body.textContent).not.toMatch(/real-time|latest price|NaN/i);
 });
 

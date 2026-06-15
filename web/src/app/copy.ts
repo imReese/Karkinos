@@ -84,6 +84,17 @@ export const copy = {
       assetClassGold: 'Gold',
       assetClassBond: 'Bond',
       assetClassCash: 'Cash',
+      staleReasons: {
+        noRealDataAvailable: 'No real quote available',
+        quoteTimestampMissing: 'Quote timestamp missing',
+        marketClosedCacheOnly: 'Market closed; using cached quote',
+        refreshPolicyCacheOnly: 'Refresh policy uses cache only',
+        quoteOlderThanExpectedSession:
+          'Quote older than expected trading session',
+        providerTimeout: 'Data source timed out; using cached quote',
+        providerUnavailable: 'Data source unavailable; using cached quote',
+        sourceUnavailable: 'Data source unavailable; using cached quote',
+      },
     },
     mode: {
       account: 'Account Perspective',
@@ -1162,6 +1173,16 @@ export const copy = {
       assetClassGold: '黄金',
       assetClassBond: '债券',
       assetClassCash: '现金',
+      staleReasons: {
+        noRealDataAvailable: '暂无可用真实行情',
+        quoteTimestampMissing: '缺少行情时间戳',
+        marketClosedCacheOnly: '休市中，使用缓存行情',
+        refreshPolicyCacheOnly: '当前刷新策略仅使用缓存',
+        quoteOlderThanExpectedSession: '行情未及时更新（早于当前交易时段）',
+        providerTimeout: '数据源超时，使用缓存行情',
+        providerUnavailable: '数据源不可用，使用缓存行情',
+        sourceUnavailable: '数据源不可用，使用缓存行情',
+      },
     },
     mode: {
       account: '账户视角',

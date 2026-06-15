@@ -104,6 +104,7 @@ import {
   formatTimestamp,
 } from '../shared/format';
 import { formatAssetClassLabel } from '../shared/asset-class';
+import { formatStaleReason } from '../shared/stale-reason';
 
 type PortfolioSearchState = {
   assetClass: string;
@@ -1711,7 +1712,10 @@ function MarketPage() {
                     />
                     <MetricBlock
                       label={copy.market.staleReason}
-                      value={selectedHealthQuote?.stale_reason ?? '--'}
+                      value={formatStaleReason(
+                        selectedHealthQuote?.stale_reason,
+                        copy.common.staleReasons,
+                      )}
                     />
                     <MetricBlock
                       label={copy.market.lastResearch}

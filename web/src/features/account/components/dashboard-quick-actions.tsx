@@ -1,5 +1,6 @@
 import { useCopy } from '../../../app/copy';
 import { formatDateTime, formatTimestamp } from '../../../shared/format';
+import { formatStaleReason } from '../../../shared/stale-reason';
 import type { AccountOverview } from '../api';
 import {
   useRefreshMarketQuotesMutation,
@@ -88,10 +89,11 @@ export function DashboardQuickActions({
       ),
     },
   ];
-  const staleReason = normalizeStatus(
+  const staleReason = formatStaleReason(
     overview.stale_reason ??
       marketHealth?.provider_last_error ??
       marketHealth?.last_refresh_error,
+    copy.common.staleReasons,
   );
 
   return (

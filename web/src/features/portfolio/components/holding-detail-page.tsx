@@ -15,6 +15,7 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
+import { formatStaleReason } from '../../../shared/stale-reason';
 import {
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
@@ -189,6 +190,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     position.stale_reason ??
     liveItem?.stale_reason ??
     healthQuote?.stale_reason;
+  const staleReasonLabel = formatStaleReason(
+    staleReason,
+    copy.common.staleReasons,
+  );
   const isStale = quoteStatus === 'stale';
   const quotePrice = resolveQuotePrice(
     position,
@@ -361,7 +366,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 />
                 <InfoRow
                   label={labels.staleReason}
-                  value={staleReason ?? '--'}
+                  value={staleReasonLabel}
                   tone={staleReason ? 'warning' : undefined}
                 />
                 <InfoRow
