@@ -93,30 +93,24 @@ test('renders holdings quote board in english', () => {
   const copy = getCopy('en');
 
   expect(screen.getByText(copy.portfolio.liveBoard.title)).toBeTruthy();
-  expect(screen.getByText('Example Fund')).toBeTruthy();
-  expect(screen.getByText('Kweichow Moutai')).toBeTruthy();
-  expect(screen.getByText('600519')).toBeTruthy();
   expect(screen.getAllByText('Stock').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Fund').length).toBeGreaterThan(0);
   expect(screen.getAllByText('1 active holding').length).toBeGreaterThan(0);
-  expect(
-    screen.getAllByText(copy.portfolio.liveBoard.latestPrice).length,
-  ).toBeGreaterThan(0);
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.todayMove).length,
   ).toBeGreaterThan(0);
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.sinceBuyReturn).length,
   ).toBeGreaterThan(0);
-  expect(
-    screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
-  ).toBeGreaterThan(0);
-  expect(screen.getByText('-1.10%')).toBeTruthy();
-  expect(
-    screen.getByRole('link', {
-      name: copy.portfolio.liveBoard.holdingDetailLink('600519'),
-    }),
-  ).toHaveProperty('href', expect.stringContaining('/portfolio/600519'));
+  expect(screen.queryAllByText(copy.portfolio.liveBoard.quoteLive).length).toBe(
+    0,
+  );
+  expect(screen.getByText(copy.portfolio.liveBoard.summaryOnly)).toBeTruthy();
+  expect(screen.queryByText('Example Fund')).toBeNull();
+  expect(screen.queryByText('Kweichow Moutai')).toBeNull();
+  expect(screen.queryByText('600519')).toBeNull();
+  expect(screen.queryByText('-1.10%')).toBeNull();
+  expect(screen.queryByRole('link')).toBeNull();
   expect(screen.queryByText('Avg Cost CN¥1,500.00')).toBeNull();
   expect(screen.queryByText('-1.1%')).toBeNull();
 });
@@ -151,27 +145,21 @@ test('renders localized holdings quote board in chinese', () => {
   const copy = getCopy('zh');
 
   expect(screen.getByText(copy.portfolio.liveBoard.title)).toBeTruthy();
-  expect(screen.getByText('示例基金')).toBeTruthy();
-  expect(screen.getByText('贵州茅台')).toBeTruthy();
-  expect(screen.getByText('600519')).toBeTruthy();
   expect(screen.getAllByText('股票').length).toBeGreaterThan(0);
   expect(screen.getAllByText('基金').length).toBeGreaterThan(0);
   expect(screen.getAllByText('1 个活跃持仓').length).toBeGreaterThan(0);
-  expect(
-    screen.getAllByText(copy.portfolio.liveBoard.latestPrice).length,
-  ).toBeGreaterThan(0);
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.todayMove).length,
   ).toBeGreaterThan(0);
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.sinceBuyReturn).length,
   ).toBeGreaterThan(0);
-  expect(
-    screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
-  ).toBeGreaterThan(0);
-  expect(
-    screen.getByRole('link', {
-      name: copy.portfolio.liveBoard.holdingDetailLink('600519'),
-    }),
-  ).toHaveProperty('href', expect.stringContaining('/portfolio/600519'));
+  expect(screen.queryAllByText(copy.portfolio.liveBoard.quoteLive).length).toBe(
+    0,
+  );
+  expect(screen.getByText(copy.portfolio.liveBoard.summaryOnly)).toBeTruthy();
+  expect(screen.queryByText('示例基金')).toBeNull();
+  expect(screen.queryByText('贵州茅台')).toBeNull();
+  expect(screen.queryByText('600519')).toBeNull();
+  expect(screen.queryByRole('link')).toBeNull();
 });

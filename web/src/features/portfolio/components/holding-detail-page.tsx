@@ -4,8 +4,10 @@ import { useAccountOverviewQuery } from '../../account/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
   useMarketDataHealthQuery,
+  useKlineQuery,
   useRefreshMarketQuotesMutation,
 } from '../../market/api';
+import { PriceStructureChart } from '../../market/components/price-structure-chart';
 import { useCopy } from '../../../app/copy';
 import {
   formatCurrency,
@@ -95,6 +97,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const liveHoldings = useLiveHoldingsQuery();
   const overview = useAccountOverviewQuery();
   const marketHealth = useMarketDataHealthQuery();
+  const kline = useKlineQuery(decodedSymbol);
   const ledger = useLedgerEntriesQuery(200);
   const refreshQuote = useRefreshMarketQuotesMutation();
 
@@ -321,6 +324,17 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 </div>
               </div>
               <MetricGrid metrics={summaryMetrics} />
+            </div>
+          </section>
+
+          <section className="app-terminal-panel rounded-[28px] p-[1px]">
+            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+              <PriceStructureChart
+                bars={kline.data ?? []}
+                emptyLabel={copy.market.noChart}
+                titleLabel={copy.market.priceRangeKline}
+                priceLabel={copy.market.priceLabel}
+              />
             </div>
           </section>
 

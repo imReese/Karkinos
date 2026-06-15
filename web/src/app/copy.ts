@@ -384,6 +384,8 @@ export const copy = {
         quoteLive: 'Quote available',
         quoteStale: 'Cached quote',
         holdingDetailLink: (symbol: string) => `Holding Details: ${symbol}`,
+        summaryOnly:
+          'Instrument-level quote, cost, and K-line details are shown in the holdings list and detail pages below.',
       },
     },
     riskPage: {
@@ -655,6 +657,7 @@ export const copy = {
       watchlist: 'Research board',
       health: 'Data health',
       chart: 'Price structure',
+      priceRangeKline: 'Price range / K-line',
       addSymbol: 'Add symbol',
       symbolPlaceholder: 'Symbol',
       assetClass: 'Asset class',
@@ -1538,6 +1541,7 @@ export const copy = {
         quoteLive: '行情可用',
         quoteStale: '缓存行情',
         holdingDetailLink: (symbol: string) => `持仓明细：${symbol}`,
+        summaryOnly: '单只标的行情、成本和 K 线在下方持仓明细与详情页中查看。',
       },
     },
     riskPage: {
@@ -1796,6 +1800,7 @@ export const copy = {
       watchlist: '研究看板',
       health: '数据健康度',
       chart: '价格结构',
+      priceRangeKline: '区间波动 / K 线',
       addSymbol: '新增标的',
       symbolPlaceholder: '代码',
       assetClass: '资产类别',

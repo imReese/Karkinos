@@ -95,6 +95,7 @@ import {
   useRemoveWatchlistItemMutation,
 } from '../features/market/api';
 import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
+import { PriceStructureChart } from '../features/market/components/price-structure-chart';
 import { SettingsPage } from '../features/settings/components/settings-page';
 import {
   formatCurrency as formatCurrencyValue,
@@ -1690,6 +1691,8 @@ function MarketPage() {
                     <PriceStructureChart
                       bars={kline.data ?? []}
                       emptyLabel={copy.market.noChart}
+                      titleLabel={copy.market.priceRangeKline}
+                      priceLabel={copy.market.priceLabel}
                     />
                   ) : (
                     <div className="app-muted text-sm">
@@ -2778,87 +2781,6 @@ function formatAge(seconds: number | null | undefined) {
     return `${Math.round(seconds / 3600)}h`;
   }
   return `${Math.round(seconds / 86400)}d`;
-}
-
-function PriceStructureChart({
-  bars,
-  emptyLabel,
-}: {
-  bars: Array<{ close: number; timestamp?: string }>;
-  emptyLabel: string;
-}) {
-  const copy = useCopy();
-
-  if (bars.length === 0) {
-    return (
-      <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] text-sm text-[var(--app-muted)]">
-        {emptyLabel}
-      </div>
-    );
-  }
-  const closes = bars.map((bar) => bar.close);
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = max - min || 1;
-  const latest = closes[closes.length - 1] ?? 0;
-  const first = closes[0] ?? latest;
-  const change = latest - first;
-  const changePercent = first === 0 ? 0 : change / first;
-  const points = closes
-    .map((close, index) => {
-      const x = (index / Math.max(closes.length - 1, 1)) * 640;
-      const y = 190 - ((close - min) / range) * 160 + 15;
-      return `${x},${y}`;
-    })
-    .join(' ');
-  const areaPoints = `0,220 ${points} 640,220`;
-  const latestTone =
-    change >= 0 ? 'text-[var(--app-success)]' : 'text-[var(--app-danger)]';
-
-  return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-            {copy.market.priceLabel}
-          </div>
-          <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-[var(--app-text)]">
-            {formatCurrency(latest)}
-          </div>
-        </div>
-        <div className={`font-mono text-sm font-semibold ${latestTone}`}>
-          {change >= 0 ? '+' : ''}
-          {formatCurrency(change)} · {formatPercent(changePercent)}
-        </div>
-      </div>
-      <svg viewBox="0 0 640 220" className="h-48 w-full sm:h-56">
-        {[40, 90, 140, 190].map((y) => (
-          <line
-            key={y}
-            x1="0"
-            x2="640"
-            y1={y}
-            y2={y}
-            stroke="currentColor"
-            strokeOpacity="0.08"
-          />
-        ))}
-        <polygon fill="currentColor" fillOpacity="0.08" points={areaPoints} />
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          points={points}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="mt-2 flex items-center justify-between font-mono text-[11px] text-[var(--app-muted)]">
-        <span>{formatCurrency(min)}</span>
-        <span>{formatCurrency(max)}</span>
-      </div>
-    </div>
-  );
 }
 
 function DrawdownChart({
