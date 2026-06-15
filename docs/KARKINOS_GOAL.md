@@ -362,6 +362,14 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Wired the Web Backtest page to the strategy registry. The page
+  now loads `/api/backtest/strategies`, uses a select instead of free-text
+  strategy entry, renders typed parameter controls from each strategy schema,
+  and submits generic `params` plus an optional one-symbol asset selection for
+  browser-driven research backtests. Built-in strategy names are localized in
+  the Web UI without changing stable strategy ids in the API payload. Frontend
+  tests cover registry selection, dynamic controls, localized strategy labels,
+  one-symbol payload construction, report rendering, and run error handling.
 * 2026-06-15: Started v0.4 Strategy Lab backend parameter contracts. Built-in
   strategies now expose typed parameter schemas with defaults, required flags,
   ranges, and descriptions; the strategy registry validates generic params,

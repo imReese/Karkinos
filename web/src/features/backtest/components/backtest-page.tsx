@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import { formatCurrency, formatPercent } from '../../../shared/format';
@@ -8,31 +8,58 @@ import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
 import {
   useRunBacktestMutation,
+  useBacktestStrategiesQuery,
   type BacktestReport,
   type BacktestRunRequest,
+  type BacktestStrategyInfo,
+  type StrategyParameterSchema,
 } from '../api';
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function parseAssetLines(value: string): BacktestRunRequest['assets'] {
-  const assets = value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [symbol, assetClass] = line
-        .split(/[:,\s]+/)
-        .map((part) => part.trim());
-      return {
-        symbol,
-        asset_class: assetClass || 'stock',
-      };
-    })
-    .filter((asset) => asset.symbol.length > 0);
+const fallbackStrategies: BacktestStrategyInfo[] = [
+  {
+    strategy_id: 'dual_ma',
+    name: 'dual_ma',
+    display_name: 'Dual Moving Average',
+    description: 'Dual moving-average crossover baseline.',
+    params: [],
+    parameter_schema: [
+      {
+        name: 'short_period',
+        type: 'int',
+        default: 5,
+        required: false,
+        min: 1,
+        max: 250,
+        allowed_values: null,
+        description: 'Short moving-average window in trading bars.',
+      },
+      {
+        name: 'long_period',
+        type: 'int',
+        default: 20,
+        required: false,
+        min: 2,
+        max: 500,
+        allowed_values: null,
+        description: 'Long moving-average window in trading bars.',
+      },
+    ],
+  },
+];
 
-  return assets.length > 0 ? assets : undefined;
+function buildSingleAsset(
+  symbol: string,
+  assetClass: string,
+): BacktestRunRequest['assets'] {
+  const normalized = symbol.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return [{ symbol: normalized, asset_class: assetClass }];
 }
 
 function isPositiveNumber(value: string) {
@@ -40,31 +67,88 @@ function isPositiveNumber(value: string) {
   return Number.isFinite(numeric) && numeric > 0;
 }
 
+function schemaDefaultValue(param: StrategyParameterSchema) {
+  if (param.default === null || param.default === undefined) {
+    return '';
+  }
+  if (typeof param.default === 'object') {
+    return JSON.stringify(param.default);
+  }
+  return String(param.default);
+}
+
+function parseParamValue(param: StrategyParameterSchema, value: string) {
+  if (value.trim() === '') {
+    return null;
+  }
+  if (param.type === 'int') {
+    return Number.parseInt(value, 10);
+  }
+  if (param.type === 'float') {
+    return Number(value);
+  }
+  if (param.type === 'bool') {
+    return value === 'true';
+  }
+  return value;
+}
+
+function buildParamValues(
+  schema: StrategyParameterSchema[],
+): Record<string, string> {
+  return Object.fromEntries(
+    schema.map((param) => [param.name, schemaDefaultValue(param)]),
+  );
+}
+
+function strategyDisplayName(
+  strategy: BacktestStrategyInfo,
+  localizedNames: Record<string, string>,
+) {
+  return (
+    localizedNames[strategy.name] ??
+    localizedNames[strategy.strategy_id] ??
+    strategy.display_name ??
+    strategy.name
+  );
+}
+
 function buildRunPayload({
   startDate,
   endDate,
   initialCash,
   strategy,
-  shortPeriod,
-  longPeriod,
-  assetLines,
+  parameterSchema,
+  parameterValues,
+  symbol,
+  assetClass,
 }: {
   startDate: string;
   endDate: string;
   initialCash: string;
   strategy: string;
-  shortPeriod: string;
-  longPeriod: string;
-  assetLines: string;
+  parameterSchema: StrategyParameterSchema[];
+  parameterValues: Record<string, string>;
+  symbol: string;
+  assetClass: string;
 }): BacktestRunRequest {
+  const params = Object.fromEntries(
+    parameterSchema.map((param) => [
+      param.name,
+      parseParamValue(param, parameterValues[param.name] ?? ''),
+    ]),
+  );
+  const shortPeriod = params.short_period;
+  const longPeriod = params.long_period;
   return {
     start_date: startDate,
     end_date: endDate,
     initial_cash: Number(initialCash),
     strategy: strategy.trim() || 'dual_ma',
-    short_period: Number(shortPeriod),
-    long_period: Number(longPeriod),
-    assets: parseAssetLines(assetLines),
+    ...(typeof shortPeriod === 'number' ? { short_period: shortPeriod } : {}),
+    ...(typeof longPeriod === 'number' ? { long_period: longPeriod } : {}),
+    params,
+    assets: buildSingleAsset(symbol, assetClass),
   };
 }
 
@@ -90,17 +174,41 @@ export function BacktestPage() {
   const labels = copy.backtest.page;
   const common = copy.common;
   const runBacktest = useRunBacktestMutation();
+  const strategies = useBacktestStrategiesQuery();
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());
   const [initialCash, setInitialCash] = useState('100000');
   const [strategy, setStrategy] = useState('dual_ma');
-  const [shortPeriod, setShortPeriod] = useState('5');
-  const [longPeriod, setLongPeriod] = useState('20');
-  const [assetLines, setAssetLines] = useState('');
+  const [parameterValues, setParameterValues] = useState<
+    Record<string, string>
+  >(() => buildParamValues(fallbackStrategies[0].parameter_schema));
+  const [symbol, setSymbol] = useState('');
+  const [assetClass, setAssetClass] = useState('stock');
   const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
   const [formError, setFormError] = useState('');
 
   const summary = useMemo(() => resultSummary(latestReport), [latestReport]);
+  const strategyCatalog = useMemo(
+    () =>
+      strategies.data && strategies.data.length > 0
+        ? strategies.data
+        : fallbackStrategies,
+    [strategies.data],
+  );
+  const selectedStrategy = useMemo(
+    () =>
+      strategyCatalog.find((item) => item.name === strategy) ??
+      strategyCatalog[0],
+    [strategy, strategyCatalog],
+  );
+  const parameterSchema = useMemo(
+    () => selectedStrategy.parameter_schema ?? [],
+    [selectedStrategy],
+  );
+
+  useEffect(() => {
+    setParameterValues(buildParamValues(parameterSchema));
+  }, [strategy, parameterSchema]);
 
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -108,8 +216,13 @@ export function BacktestPage() {
       !startDate ||
       !endDate ||
       !isPositiveNumber(initialCash) ||
-      !isPositiveNumber(shortPeriod) ||
-      !isPositiveNumber(longPeriod)
+      parameterSchema.some((param) => {
+        if (param.type !== 'int' && param.type !== 'float') {
+          return false;
+        }
+        const value = parameterValues[param.name] ?? '';
+        return !isPositiveNumber(value);
+      })
     ) {
       setFormError(common.mustBePositive);
       return;
@@ -122,9 +235,10 @@ export function BacktestPage() {
           endDate,
           initialCash,
           strategy,
-          shortPeriod,
-          longPeriod,
-          assetLines,
+          parameterSchema,
+          parameterValues,
+          symbol,
+          assetClass,
         }),
       );
       setLatestReport(report);
@@ -199,51 +313,99 @@ export function BacktestPage() {
                 />
               </label>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="grid gap-2 text-sm font-medium sm:col-span-1">
+              <div className="grid gap-3">
+                <label className="grid gap-2 text-sm font-medium">
                   {labels.strategy}
-                  <input
+                  <select
                     className="app-field rounded-2xl px-4 py-3 text-sm"
                     value={strategy}
                     onChange={(event) => setStrategy(event.target.value)}
                     aria-label={labels.strategy}
-                  />
+                  >
+                    {strategyCatalog.map((item) => (
+                      <option key={item.strategy_id} value={item.name}>
+                        {strategyDisplayName(item, labels.strategyNames)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.shortPeriod}
-                  <input
-                    className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
-                    type="number"
-                    min="1"
-                    value={shortPeriod}
-                    onChange={(event) => setShortPeriod(event.target.value)}
-                    aria-label={labels.shortPeriod}
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.longPeriod}
-                  <input
-                    className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
-                    type="number"
-                    min="1"
-                    value={longPeriod}
-                    onChange={(event) => setLongPeriod(event.target.value)}
-                    aria-label={labels.longPeriod}
-                  />
-                </label>
+                {strategies.isError ? (
+                  <span className="app-muted text-xs">
+                    {labels.strategyRegistryFailed}
+                  </span>
+                ) : null}
+                {strategies.isPending ? (
+                  <span className="app-muted text-xs">
+                    {labels.strategyRegistryLoading}
+                  </span>
+                ) : null}
               </div>
 
-              <label className="grid gap-2 text-sm font-medium">
-                {labels.assets}
-                <textarea
-                  className="app-field min-h-28 rounded-2xl px-4 py-3 text-sm leading-6"
-                  value={assetLines}
-                  onChange={(event) => setAssetLines(event.target.value)}
-                  placeholder={labels.assetsPlaceholder}
-                  aria-label={labels.assets}
-                />
-                <span className="app-muted text-xs">{labels.assetsHint}</span>
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {parameterSchema.map((param) => (
+                  <label
+                    key={param.name}
+                    className="grid gap-2 text-sm font-medium"
+                  >
+                    {param.name}
+                    <input
+                      className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                      type={
+                        param.type === 'int' || param.type === 'float'
+                          ? 'number'
+                          : 'text'
+                      }
+                      min={param.min ?? undefined}
+                      max={param.max ?? undefined}
+                      step={param.type === 'float' ? '0.1' : '1'}
+                      value={parameterValues[param.name] ?? ''}
+                      onChange={(event) =>
+                        setParameterValues((current) => ({
+                          ...current,
+                          [param.name]: event.target.value,
+                        }))
+                      }
+                      aria-label={param.name}
+                    />
+                    {param.description ? (
+                      <span className="app-muted text-xs">
+                        {param.description}
+                      </span>
+                    ) : null}
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+                <label className="grid gap-2 text-sm font-medium">
+                  {labels.symbol}
+                  <input
+                    className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                    value={symbol}
+                    onChange={(event) => setSymbol(event.target.value)}
+                    placeholder={labels.symbolPlaceholder}
+                    aria-label={labels.symbol}
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-medium">
+                  {labels.assetClass}
+                  <select
+                    className="app-field rounded-2xl px-4 py-3 text-sm"
+                    value={assetClass}
+                    onChange={(event) => setAssetClass(event.target.value)}
+                    aria-label={labels.assetClass}
+                  >
+                    <option value="stock">stock</option>
+                    <option value="etf">etf</option>
+                    <option value="fund">fund</option>
+                    <option value="gold">gold</option>
+                    <option value="bond">bond</option>
+                  </select>
+                </label>
+                <span className="app-muted text-xs sm:col-span-2">
+                  {labels.singleSymbolHint}
+                </span>
+              </div>
 
               {formError ? (
                 <div

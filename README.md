@@ -26,6 +26,9 @@ public demos and development.
 - Event-driven architecture with deterministic backtesting
 - Strategy registry exposes typed parameter schemas, and backtest requests can
   use validated generic `params` while preserving legacy moving-average fields
+- Web Backtest Strategy Lab selects registry strategies, renders typed
+  parameter controls, and can run a single-symbol research backtest from the
+  browser
 - Multi-asset: A-shares / ETF / Gold / Bond
 - Target-weight signals — strategy outputs 0~1, Portfolio handles share counts
 - T+1 freeze/thaw built into Position
