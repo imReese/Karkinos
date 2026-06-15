@@ -463,6 +463,12 @@ These panels are research evidence only and do not approve execution.
 whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.
 It is for audit and promotion checks, not investment advice.
 
+The Web Backtest Strategy Lab can run the same bounded parameter sweep for the
+selected strategy and optional one-symbol universe. It renders the tested
+configuration ranking, saved result ids, scores, costs, and multiple-testing
+warnings so the operator can review parameter perturbation evidence before any
+promotion or paper/shadow workflow.
+
 `GET /api/backtest/strategy-promotion-readiness` combines saved after-cost/OOS
 validation, blocked-risk evidence, paper/shadow order facts, and explicit
 paper/shadow divergence review evidence. It never promotes a strategy

@@ -7,6 +7,7 @@ import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
+import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
   useRunBacktestMutation,
@@ -402,14 +403,9 @@ export function BacktestPage() {
                         }
                         aria-label={displayName}
                       />
-                      {description || displayName !== param.name ? (
+                      {description ? (
                         <span className="app-muted flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                          {description ? <span>{description}</span> : null}
-                          {displayName !== param.name ? (
-                            <span className="font-mono text-[11px]">
-                              {labels.parameterCode(param.name)}
-                            </span>
-                          ) : null}
+                          <span>{description}</span>
                         </span>
                       ) : null}
                     </label>
@@ -465,6 +461,15 @@ export function BacktestPage() {
                 {runBacktest.isPending ? labels.running : labels.run}
               </button>
             </form>
+            <ParameterSweepPanel
+              startDate={startDate}
+              endDate={endDate}
+              initialCash={initialCash}
+              strategy={strategy}
+              parameterSchema={parameterSchema}
+              parameterValues={parameterValues}
+              assets={buildSingleAsset(symbol, assetClass)}
+            />
           </div>
         </section>
 

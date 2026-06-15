@@ -193,6 +193,66 @@ const runReport = {
   equity_curve: [],
 };
 
+const sweepResponse = {
+  strategy: 'dual_ma',
+  rank_by: 'total_return',
+  tested_count: 2,
+  warnings: [
+    'Parameter sweep rankings are research evidence, not investment advice.',
+    'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.',
+  ],
+  results: [
+    {
+      rank: 1,
+      result_id: 12,
+      strategy: 'dual_ma',
+      params: { short_period: 5, long_period: 9 },
+      score: 0.14,
+      metrics: {
+        initial_cash: 100000,
+        final_equity: 114000,
+        total_return: 0.14,
+        annual_return: 0.18,
+        sharpe: 1.41,
+        sortino: 1.7,
+        max_drawdown: 0.04,
+        calmar: 4.5,
+        volatility: 0.12,
+        win_rate: 0.62,
+        duration_days: 260,
+        total_commission: 9,
+        total_slippage: 3,
+        total_trades: 4,
+        gross_turnover: 31000,
+      },
+    },
+    {
+      rank: 2,
+      result_id: 11,
+      strategy: 'dual_ma',
+      params: { short_period: 3, long_period: 9 },
+      score: 0.09,
+      metrics: {
+        initial_cash: 100000,
+        final_equity: 109000,
+        total_return: 0.09,
+        annual_return: 0.12,
+        sharpe: 1.08,
+        sortino: 1.2,
+        max_drawdown: 0.05,
+        calmar: 2.4,
+        volatility: 0.15,
+        win_rate: 0.56,
+        duration_days: 260,
+        total_commission: 8,
+        total_slippage: 2,
+        total_trades: 3,
+        gross_turnover: 26000,
+      },
+    },
+  ],
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -316,10 +376,12 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 function installBacktestFetchMock({
   runFails = false,
+  sweepFails = false,
   results = [savedSummary],
   strategies = strategyCatalog,
 }: {
   runFails?: boolean;
+  sweepFails?: boolean;
   results?: unknown[];
   strategies?: unknown[];
 } = {}) {
@@ -339,6 +401,11 @@ function installBacktestFetchMock({
         return runFails
           ? jsonResponse({ detail: 'backtest unavailable' }, { status: 503 })
           : jsonResponse(runReport);
+      }
+      if (url.includes('/api/backtest/sweep')) {
+        return sweepFails
+          ? jsonResponse({ detail: 'sweep unavailable' }, { status: 503 })
+          : jsonResponse(sweepResponse);
       }
       if (url.includes('/api/backtest/results/1')) {
         return jsonResponse(savedReport);
@@ -606,4 +673,60 @@ test('shows a clear error when the run endpoint fails', async () => {
     'backtest unavailable',
   );
   expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('runs a parameter sweep and renders ranked research warnings', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+
+  await screen.findByText('Strategy replay');
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(
+    await screen.findByLabelText('Short moving-average window candidates'),
+    {
+      target: { value: '3, 5' },
+    },
+  );
+  fireEvent.change(
+    await screen.findByLabelText('Long moving-average window candidates'),
+    {
+      target: { value: '9' },
+    },
+  );
+  const sweepButton = screen.getByRole('button', {
+    name: 'Run parameter sweep',
+  });
+  fireEvent.submit(sweepButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/sweep',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const sweepCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/sweep'),
+  );
+  const payload = JSON.parse(String(sweepCall?.[1]?.body));
+  expect(payload.param_grid).toEqual({
+    short_period: [3, 5],
+    long_period: [9],
+  });
+  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+  expect(await screen.findByText('Sweep rankings')).toBeTruthy();
+  expect(await screen.findByText('2 tested')).toBeTruthy();
+  expect(await screen.findByText('Result #12')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Short moving-average window=5, Long moving-average window=9',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('short_period=5, long_period=9')).toBeNull();
+  expect(await screen.findByText('14.0%')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.',
+    ),
+  ).toBeTruthy();
 });

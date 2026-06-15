@@ -176,6 +176,35 @@ export type BacktestRunRequest = {
   assets?: Array<{ symbol: string; asset_class: string }>;
 };
 
+export type BacktestSweepRequest = {
+  start_date: string;
+  end_date: string;
+  initial_cash: number;
+  strategy: string;
+  params?: Record<string, number | string | boolean | null>;
+  param_grid: Record<string, Array<number | string | boolean | null>>;
+  assets?: Array<{ symbol: string; asset_class: string }>;
+  rank_by?: string;
+  max_combinations?: number;
+};
+
+export type BacktestSweepResult = {
+  rank: number;
+  result_id: number;
+  strategy: string;
+  params: Record<string, number | string | boolean | null>;
+  metrics: BacktestMetrics;
+  score: number;
+};
+
+export type BacktestSweepResponse = {
+  strategy: string;
+  rank_by: string;
+  tested_count: number;
+  results: BacktestSweepResult[];
+  warnings: string[];
+};
+
 export type BacktestReport = {
   id: number;
   created_at: string;
@@ -248,6 +277,17 @@ export function useRunBacktestMutation() {
           queryKey: ['backtest-result', report.id],
         }),
       ]);
+    },
+  });
+}
+
+export function useRunBacktestSweepMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BacktestSweepRequest) =>
+      postJson<BacktestSweepResponse>('/api/backtest/sweep', payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['backtest-results'] });
     },
   });
 }

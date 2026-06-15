@@ -28,7 +28,8 @@ public demos and development.
   use validated generic `params` while preserving legacy moving-average fields
 - Backtest parameter sweeps run bounded typed grids, persist each tested
   configuration, and return deterministic rankings with multiple-testing
-  warnings
+  warnings; the Web Strategy Lab can run the same bounded sweep and review the
+  ranked configurations without approving execution
 - Backtest reports record a dataset snapshot with data-source/cache metadata,
   requested range, symbol universe, row counts, adjustment mode when available,
   and data-quality diagnostics, and the Web report exposes that audit panel for
