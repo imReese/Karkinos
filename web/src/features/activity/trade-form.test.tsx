@@ -37,6 +37,33 @@ test('submits a manual trade payload', async () => {
   );
 });
 
+test('prefills manual trade fee from account commission settings', async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <TradeForm
+      onSubmit={onSubmit}
+      commissionSettings={{
+        stock_rate: 0.00025,
+        stock_min_commission: 3,
+      }}
+    />,
+  );
+
+  fireEvent.change(screen.getByLabelText('Quantity'), {
+    target: { value: '200' },
+  });
+  fireEvent.change(screen.getByLabelText('Unit Price'), {
+    target: { value: '28.82' },
+  });
+
+  const feeInput = screen.getByLabelText('Fee') as HTMLInputElement;
+  expect(feeInput.value).toBe('3');
+  expect(
+    screen.getByText('Commission rate 2.5 bp, minimum CN¥3.00'),
+  ).toBeTruthy();
+});
+
 test('submits a fund buy by subscription amount', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
 

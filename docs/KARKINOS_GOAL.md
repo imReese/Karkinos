@@ -534,4 +534,9 @@ automation.
 * 2026-06-15: Tightened the holding-detail page header. The page now uses a
   compact return/context/status bar, removes the duplicate top quote-state
   card, and leaves holding identity and metrics to the summary surface.
+* 2026-06-15: Added account-level manual trade commission configuration.
+  Settings now exposes a runtime stock/ETF commission-rate and minimum-fee
+  profile, Activity pre-fills manual trade fees from that profile, and the
+  portfolio trade API applies the same profile when callers omit commission,
+  while leaving backtest cost assumptions and live execution behavior unchanged.
 <!-- codex-progress:end -->

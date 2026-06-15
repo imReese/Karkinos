@@ -39,6 +39,8 @@ export type SettingsResponse = {
   tushare_token: string;
   notification: Record<string, unknown>;
   live_poll_interval: number;
+  account_commission_rate: number;
+  account_min_commission: number;
 };
 
 export type DataSourceSettingsPayload = {
@@ -46,6 +48,8 @@ export type DataSourceSettingsPayload = {
   tushare_token: string;
   live_poll_interval: number;
 };
+
+export type SettingsUpdatePayload = SettingsResponse;
 
 export type DataSourceStatusResponse = {
   data_source: string;
@@ -184,6 +188,17 @@ export function useUpdateDataSourceSettingsMutation() {
         }),
         queryClient.invalidateQueries({ queryKey: ['account-state'] }),
       ]);
+    },
+  });
+}
+
+export function useUpdateSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SettingsUpdatePayload) =>
+      putJson<SettingsResponse>('/api/settings', payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
   });
 }

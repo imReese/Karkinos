@@ -516,7 +516,7 @@ class TradeCreate(BaseModel):
     quantity: float | None = None
     price: float | None = None
     amount: float | None = None
-    commission: float = 0.0
+    commission: float | None = None
     asset_class: str = "stock"
     note: str = ""
 
@@ -767,6 +767,8 @@ class SettingsResponse(BaseModel):
     tushare_token: str = ""
     notification: dict = Field(default_factory=lambda: {"type": "console"})
     live_poll_interval: int = 60
+    account_commission_rate: float = 0.0001
+    account_min_commission: float = 5.0
 
 
 class DataSourceSettingsUpdate(BaseModel):

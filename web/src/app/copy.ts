@@ -965,6 +965,8 @@ export const copy = {
           amountRequired: 'Enter the subscription amount for a fund buy.',
           fundAmountHelp:
             'Fund buys can be recorded by amount. The system confirms quantity and cost from the published NAV.',
+          commissionHelp: (rateBp: number, minimum: string) =>
+            `Commission rate ${Number(rateBp).toFixed(1)} bp, minimum ${minimum}`,
           submit: 'Save Trade',
           saving: 'Saving...',
           genericSubmitError: 'Unable to save the trade.',
@@ -1129,6 +1131,21 @@ export const copy = {
       pollIntervalUnit: 'seconds',
       token: 'Provider token',
       maskedToken: 'Masked token retained',
+      accountCostProfile: 'Account cost profile',
+      accountCostProfileDetail:
+        'Used only to prefill manual stock/ETF trade fees. It does not change backtest assumptions or submit orders.',
+      stockCommissionRate: 'Stock commission rate',
+      minimumCommission: 'Minimum commission',
+      accountCostPreview: (rate: number, minimum: number) =>
+        `Manual trade default: ${Number(rate * 10000).toFixed(2)} bp, minimum CN¥${Number(
+          minimum,
+        ).toFixed(2)}`,
+      saveAccountCosts: 'Save account costs',
+      savingAccountCosts: 'Saving account costs',
+      accountCostsSaved: 'Account costs saved',
+      accountCostsSavedDetail:
+        'New manual trades will prefill fees from this account profile.',
+      accountCostsFailed: 'Failed to save account costs',
       saveDataSource: 'Save data settings',
       savingDataSource: 'Saving data settings',
       dataSourceSaved: 'Data settings saved',
@@ -2116,6 +2133,8 @@ export const copy = {
           amountRequired: '基金买入需要填写申购金额。',
           fundAmountHelp:
             '基金买入可只记录金额，系统会在净值披露后确认份额和成本。',
+          commissionHelp: (rateBp: number, minimum: string) =>
+            `佣金率万${Number(rateBp).toFixed(1)}，最低 ${minimum}`,
           submit: '保存交易',
           saving: '保存中...',
           genericSubmitError: '交易保存失败。',
@@ -2272,6 +2291,20 @@ export const copy = {
       pollIntervalUnit: '秒',
       token: '供应商 token',
       maskedToken: '保留已脱敏 token',
+      accountCostProfile: '账户成本配置',
+      accountCostProfileDetail:
+        '仅用于手工录入股票/ETF 交易时预填费用，不改变回测假设，也不会提交订单。',
+      stockCommissionRate: '股票佣金率',
+      minimumCommission: '最低佣金',
+      accountCostPreview: (rate: number, minimum: number) =>
+        `手工交易默认：万${Number(rate * 10000).toFixed(2)}，最低 ¥${Number(
+          minimum,
+        ).toFixed(2)}`,
+      saveAccountCosts: '保存账户成本',
+      savingAccountCosts: '保存中',
+      accountCostsSaved: '账户成本已保存',
+      accountCostsSavedDetail: '新的手工交易会按该账户成本预填费用。',
+      accountCostsFailed: '账户成本保存失败',
       saveDataSource: '保存数据设置',
       savingDataSource: '保存中',
       dataSourceSaved: '数据设置已保存',
