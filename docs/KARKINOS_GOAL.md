@@ -492,4 +492,9 @@ automation.
   provider configuration and asset metadata readiness are separated into
   dedicated surfaces that preserve manual data-source changes and avoid trading
   execution behavior changes.
+* 2026-06-15: Added Settings runtime-boundary and safety-register surfaces.
+  Live service state now groups scheduler, broker-interface, market-session,
+  and manual-confirmation defaults into a compact boundary panel; data safety
+  now records no-auto-trading, timestamp, analysis-only, and private-data
+  guardrails without changing execution behavior.
 <!-- codex-progress:end -->

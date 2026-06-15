@@ -248,6 +248,21 @@ test('renders backend data status and service state', async () => {
   ).toBeTruthy();
   expect(await screen.findByLabelText('Refresh policy: live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect(await screen.findByText('Runtime boundary')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Boundary item: Scheduler Scheduler running'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText(
+      'Boundary item: Execution default Manual confirmation',
+    ),
+  ).toBeTruthy();
+  expect(await screen.findByText('Safety register')).toBeTruthy();
+  expect(
+    await screen.findByLabelText(
+      'Safety item: Execution default Manual confirmation required',
+    ),
+  ).toBeTruthy();
   expect(
     await screen.findByRole('button', { name: 'Data source: AKShare' }),
   ).toBeTruthy();

@@ -304,6 +304,78 @@ export function SettingsPage() {
     value: string | number;
     tone: StatusTone;
   }>;
+  const schedulerState = liveStatus.isLoading
+    ? copy.shell.checking
+    : liveStatus.data?.running
+      ? copy.settings.schedulerRunning
+      : copy.settings.schedulerStopped;
+  const brokerState = liveStatus.isLoading
+    ? copy.shell.checking
+    : liveStatus.data?.running
+      ? copy.settings.brokerReady
+      : copy.settings.brokerDegraded;
+  const marketSessionState = liveStatus.isLoading
+    ? copy.shell.checking
+    : liveStatus.data?.market_open
+      ? copy.shell.marketOpen
+      : copy.shell.marketClosed;
+  const boundaryRows = [
+    {
+      label: copy.settings.scheduler,
+      value: schedulerState,
+      tone: liveStatus.data?.running ? 'success' : 'warning',
+    },
+    {
+      label: copy.settings.brokerInterface,
+      value: brokerState,
+      tone: liveStatus.data?.running ? 'success' : 'warning',
+    },
+    {
+      label: copy.shell.marketSession,
+      value: marketSessionState,
+      tone: liveStatus.data?.market_open ? 'success' : 'warning',
+    },
+    {
+      label: copy.settings.executionDefault,
+      value: copy.settings.manualConfirmation,
+      tone: 'success',
+    },
+  ] satisfies Array<{
+    label: string;
+    value: string | number;
+    tone: StatusTone;
+  }>;
+  const safetyRows = [
+    {
+      label: copy.settings.executionDefault,
+      value: copy.settings.manualConfirmationRequired,
+      detail: copy.settings.safetyManualConfirmation,
+      tone: 'success',
+    },
+    {
+      label: copy.settings.marketDataBoundary,
+      value: copy.settings.timestampRequired,
+      detail: copy.settings.safetyCachedQuotes,
+      tone: isCacheOnly || isStaleQuote ? 'warning' : 'success',
+    },
+    {
+      label: copy.settings.adviceBoundary,
+      value: copy.settings.analysisOnly,
+      detail: copy.settings.safetyNoAdvice,
+      tone: 'neutral',
+    },
+    {
+      label: copy.settings.privateDataBoundary,
+      value: copy.settings.keepPrivate,
+      detail: copy.settings.safetyPrivateData,
+      tone: 'neutral',
+    },
+  ] satisfies Array<{
+    label: string;
+    value: string | number;
+    detail: string;
+    tone: StatusTone;
+  }>;
   const manualTasks: Array<{ id: ManualTaskId; label: string; href: string }> =
     [
       {
@@ -552,52 +624,26 @@ export function SettingsPage() {
             title={copy.settings.liveServices}
             detail={copy.settings.liveServicesDetail}
           >
-            <div className="grid gap-3 md:grid-cols-3">
-              <StatusMetric
-                label={copy.settings.scheduler}
-                value={
-                  liveStatus.isLoading
-                    ? copy.shell.checking
-                    : liveStatus.data?.running
-                      ? copy.settings.schedulerRunning
-                      : copy.settings.schedulerStopped
-                }
-                tone={
-                  liveStatus.isLoading
-                    ? 'neutral'
-                    : liveStatus.data?.running
-                      ? 'success'
-                      : 'warning'
-                }
-              />
-              <StatusMetric
-                label={copy.settings.brokerInterface}
-                value={
-                  liveStatus.isLoading
-                    ? copy.shell.checking
-                    : liveStatus.data?.running
-                      ? copy.settings.brokerReady
-                      : copy.settings.brokerDegraded
-                }
-                tone={
-                  liveStatus.isLoading
-                    ? 'neutral'
-                    : liveStatus.data?.running
-                      ? 'success'
-                      : 'warning'
-                }
-              />
-              <StatusMetric
-                label={copy.shell.marketSession}
-                value={
-                  liveStatus.isLoading
-                    ? copy.shell.checking
-                    : liveStatus.data?.market_open
-                      ? copy.shell.marketOpen
-                      : copy.shell.marketClosed
-                }
-                tone={liveStatus.data?.market_open ? 'success' : 'warning'}
-              />
+            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm font-semibold">
+                  {copy.settings.runtimeBoundary}
+                </div>
+                <div className="app-muted text-xs leading-5">
+                  {copy.settings.schedulerBoundaryDetail}
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {boundaryRows.map((row) => (
+                  <RegisterRow
+                    key={row.label}
+                    label={row.label}
+                    value={row.value}
+                    tone={row.tone}
+                    ariaLabelPrefix="Boundary item"
+                  />
+                ))}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -953,10 +999,30 @@ export function SettingsPage() {
             title={copy.settings.dataSafety}
             detail={copy.settings.dataSafetyDetail}
           >
-            <div className="grid gap-3">
-              <SafetyLine text={copy.settings.safetyCachedQuotes} />
-              <SafetyLine text={copy.settings.safetyNoAdvice} />
-              <SafetyLine text={copy.settings.safetyPrivateData} />
+            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">
+                  {copy.settings.safetyRegister}
+                </div>
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
+                  {copy.settings.noAutoTrading}
+                </span>
+              </div>
+              <div className="grid gap-2">
+                {safetyRows.map((row) => (
+                  <div key={row.label} className="grid gap-1.5">
+                    <RegisterRow
+                      label={row.label}
+                      value={row.value}
+                      tone={row.tone}
+                      ariaLabelPrefix="Safety item"
+                    />
+                    <div className="app-muted px-3 text-xs leading-5">
+                      {row.detail}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
             <InlineNotice
               tone="neutral"
@@ -1022,16 +1088,18 @@ function RegisterRow({
   legacyLabel,
   value,
   tone,
+  ariaLabelPrefix = 'Register item',
 }: {
   label: string;
   legacyLabel?: string;
   value: string | number;
   tone: StatusTone;
+  ariaLabelPrefix?: string;
 }) {
   return (
     <div
       className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2.5"
-      aria-label={`Register item: ${label} ${value}`}
+      aria-label={`${ariaLabelPrefix}: ${label} ${value}`}
     >
       {legacyLabel ? (
         <span className="sr-only" aria-label={`${legacyLabel}: ${value}`} />
@@ -1174,14 +1242,6 @@ function InlineNotice({
     >
       <div className="text-sm font-semibold">{title}</div>
       <div className="mt-1 text-xs leading-5 opacity-85">{detail}</div>
-    </div>
-  );
-}
-
-function SafetyLine({ text }: { text: string }) {
-  return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm leading-6 text-[var(--app-soft)]">
-      {text}
     </div>
   );
 }
