@@ -362,6 +362,11 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Fixed the Web Backtest initial-cash control so ordinary
+  whole-number cash values such as `10000` pass native browser validation.
+  The regression test now covers the number input's browser validity contract,
+  preventing the `min=1` / `step=1000` mismatch from blocking normal backtest
+  runs before request submission.
 * 2026-06-15: Added the first local Strategy Lab extension area. Karkinos now
   documents `strategy/extensions/`, keeps private copied scripts/manifests
   ignored by default, discovers local `*.strategy.json` manifests (or a

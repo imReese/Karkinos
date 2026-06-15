@@ -308,6 +308,17 @@ test('switches strategy schema controls from the registry', async () => {
   expect(screen.queryByLabelText('short_period')).toBeNull();
 });
 
+test('accepts ordinary whole-number initial cash values in browser validation', async () => {
+  renderBacktestPage({ results: [] });
+
+  const initialCashInput = (await screen.findByLabelText(
+    'Initial cash',
+  )) as HTMLInputElement;
+  fireEvent.change(initialCashInput, { target: { value: '10000' } });
+
+  expect(initialCashInput.validity.valid).toBe(true);
+});
+
 test('localizes built-in strategy names without changing strategy ids', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
