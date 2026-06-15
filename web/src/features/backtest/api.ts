@@ -167,6 +167,23 @@ export type BacktestStrategyInfo = {
   validation_notes?: string[];
 };
 
+export type StrategyMetadataSnapshot = {
+  schema_version: string;
+  strategy_id: string;
+  name?: string;
+  display_name?: string;
+  description?: string;
+  asset_universe?: string[];
+  supported_frequencies?: string[];
+  benchmark_role?: string | null;
+  benchmark_universe?: string[];
+  requires_out_of_sample_validation?: boolean;
+  requires_after_cost_report?: boolean;
+  validation_notes?: string[];
+  parameter_schema?: StrategyParameterSchema[];
+  params?: Record<string, number | string | boolean | null>;
+};
+
 export type BacktestRunRequest = {
   start_date: string;
   end_date: string;
@@ -258,6 +275,7 @@ export type BacktestReport = {
     dataset_snapshot?: DatasetSnapshot;
     evidence_bundle?: AfterCostEvidence;
     oos_validation?: OutOfSampleValidation;
+    strategy_metadata?: StrategyMetadataSnapshot;
   };
   cost_summary_json?: CostSummary;
   evidence_json?: AfterCostEvidence;

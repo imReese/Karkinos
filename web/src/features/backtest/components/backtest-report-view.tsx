@@ -10,6 +10,7 @@ import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
+import { StrategyMetadataSnapshotPanel } from './strategy-metadata-snapshot-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
   useBacktestResultQuery,
@@ -147,6 +148,7 @@ export function BacktestReportView() {
         <>
           <MetricsGrid report={report.data} />
           <ValidationEvidencePanel report={report.data} />
+          <StrategyMetadataSnapshotPanel report={report.data} />
           <DatasetSnapshotPanel report={report.data} />
           <EquityDrawdownChart points={report.data.equity_curve} />
           <FillsTable fills={report.data.fills ?? []} />

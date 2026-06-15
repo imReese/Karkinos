@@ -50,6 +50,48 @@ const savedReport = {
     total_slippage: 2.1,
     total_trades: 2,
     gross_turnover: 21800,
+    strategy_metadata: {
+      schema_version: 'karkinos.strategy_metadata.v1',
+      strategy_id: 'dual_ma',
+      name: 'dual_ma',
+      display_name: 'Dual Moving Average',
+      description: 'Dual moving-average crossover baseline.',
+      asset_universe: ['etf'],
+      supported_frequencies: ['1d'],
+      benchmark_role: 'etf_rotation_trend_following',
+      benchmark_universe: ['etf'],
+      requires_out_of_sample_validation: true,
+      requires_after_cost_report: true,
+      validation_notes: [
+        'Requires after-cost, out-of-sample ETF trend-following validation before promotion.',
+      ],
+      parameter_schema: [
+        {
+          name: 'short_period',
+          type: 'int',
+          default: 5,
+          required: false,
+          min: 1,
+          max: 250,
+          allowed_values: null,
+          description: 'Short moving-average window in trading bars.',
+        },
+        {
+          name: 'long_period',
+          type: 'int',
+          default: 20,
+          required: false,
+          min: 2,
+          max: 500,
+          allowed_values: null,
+          description: 'Long moving-average window in trading bars.',
+        },
+      ],
+      params: {
+        short_period: 5,
+        long_period: 20,
+      },
+    },
     evidence_bundle: {
       net_pnl: 8200,
       total_cost: 10.5,
@@ -644,10 +686,14 @@ test('renders extension strategy metadata and submits its typed params', async (
   expect(await screen.findByLabelText('Lookback Window')).toBeTruthy();
   expect(await screen.findByText('Strategy metadata')).toBeTruthy();
   expect(await screen.findByText('stock, etf')).toBeTruthy();
-  expect(await screen.findByText('1d')).toBeTruthy();
+  expect((await screen.findAllByText('1d')).length).toBeGreaterThanOrEqual(1);
   expect(await screen.findByText('custom_momentum_research')).toBeTruthy();
-  expect(await screen.findByText('OOS required')).toBeTruthy();
-  expect(await screen.findByText('After-cost required')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('OOS required')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('After-cost required')).length,
+  ).toBeGreaterThanOrEqual(1);
   expect(
     await screen.findByLabelText('Lookback Window candidates'),
   ).toBeTruthy();
@@ -823,6 +869,81 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('600519')).toBeTruthy();
   expect(await screen.findByText('260 rows')).toBeTruthy();
   expect(await screen.findByText('qfq')).toBeTruthy();
+});
+
+test('renders persisted strategy metadata for saved reports', async () => {
+  renderBacktestPage();
+
+  expect(await screen.findByText('Strategy snapshot')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Dual Moving Average')).length,
+  ).toBeGreaterThanOrEqual(2);
+  expect((await screen.findAllByText('dual_ma')).length).toBeGreaterThanOrEqual(
+    1,
+  );
+  expect(
+    (await screen.findAllByText('etf_rotation_trend_following')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByText('etf')).length).toBeGreaterThanOrEqual(1);
+  expect((await screen.findAllByText('1d')).length).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('OOS required')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('After-cost required')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(await screen.findByText('Short moving-average window=5')).toBeTruthy();
+  expect(await screen.findByText('Long moving-average window=20')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('API field: short_period')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('Short moving-average window')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('default 5')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (
+      await screen.findAllByText(
+        'Requires after-cost, out-of-sample ETF trend-following validation before promotion.',
+      )
+    ).length,
+  ).toBeGreaterThanOrEqual(1);
+});
+
+test('localizes persisted strategy metadata for chinese reports', async () => {
+  renderBacktestPage({ locale: 'zh' });
+
+  expect(await screen.findByText('策略快照')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('双均线策略')).length,
+  ).toBeGreaterThanOrEqual(2);
+  expect(await screen.findByText('短期均线周期=5')).toBeTruthy();
+  expect(await screen.findByText('长期均线周期=20')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('参数键：short_period')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('默认值 5')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (
+      await screen.findAllByText(
+        '用于计算短期移动平均线的 K 线/交易周期数，例如 5 表示最近 5 根日线或分钟线。',
+      )
+    ).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (
+      await screen.findAllByText(
+        '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
+      )
+    ).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    screen.queryByText('Short moving-average window in trading bars.'),
+  ).toBeNull();
 });
 
 test('renders after-cost and out-of-sample evidence for saved reports', async () => {
