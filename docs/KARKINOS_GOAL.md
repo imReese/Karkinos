@@ -487,4 +487,9 @@ automation.
   Eastmoney fund-estimate fallback, persistent cache readiness, and a local-only
   manual TuShare daily checklist for sign-in, market-guess, and permission
   review reminders without automating third-party actions.
+* 2026-06-15: Tightened the Settings cockpit density around backend operations.
+  Backend provider state now reads as a compact operations register, while
+  provider configuration and asset metadata readiness are separated into
+  dedicated surfaces that preserve manual data-source changes and avoid trading
+  execution behavior changes.
 <!-- codex-progress:end -->

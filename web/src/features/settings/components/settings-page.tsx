@@ -245,6 +245,65 @@ export function SettingsPage() {
     status: string;
     tone: StatusTone;
   }>;
+  const operationsRegisterRows = [
+    {
+      label: copy.settings.registerProvider,
+      legacyLabel: copy.settings.currentProvider,
+      value: dataSourceStatus.isLoading ? copy.shell.checking : providerName,
+      tone: dataSourceStatus.data?.provider_configured ? 'success' : 'warning',
+    },
+    {
+      label: copy.settings.registerPollInterval,
+      value: settings.isLoading ? copy.shell.checking : `${pollInterval}s`,
+      tone: 'neutral',
+    },
+    {
+      label: copy.settings.registerTrackedAssets,
+      value: settings.isLoading
+        ? copy.shell.checking
+        : copy.settings.assetsTracked(trackedAssets),
+      tone: trackedAssets > 0 ? 'success' : 'warning',
+    },
+    {
+      label: copy.settings.registerStrategy,
+      value: settings.data?.strategy ?? copy.shell.statusUnknown,
+      tone: 'neutral',
+    },
+    {
+      label: copy.settings.initialCash,
+      value: settings.data
+        ? formatCurrency(settings.data.initial_cash)
+        : copy.shell.statusUnknown,
+      tone: 'neutral',
+    },
+    {
+      label: copy.settings.providerSupportsFunds,
+      value:
+        providerSupportsFunds == null
+          ? copy.market.unknown
+          : providerSupportsFunds
+            ? copy.market.fundSupported
+            : copy.market.fundUnsupported,
+      tone:
+        providerSupportsFunds == null
+          ? 'neutral'
+          : providerSupportsFunds
+            ? 'success'
+            : 'warning',
+    },
+    {
+      label: copy.settings.persistentCache,
+      value: dataSourceStatus.data?.has_persistent_cache
+        ? copy.market.configured
+        : copy.market.notConfigured,
+      tone: dataSourceStatus.data?.has_persistent_cache ? 'success' : 'warning',
+    },
+  ] satisfies Array<{
+    label: string;
+    legacyLabel?: string;
+    value: string | number;
+    tone: StatusTone;
+  }>;
   const manualTasks: Array<{ id: ManualTaskId; label: string; href: string }> =
     [
       {
@@ -611,78 +670,27 @@ export function SettingsPage() {
             title={copy.settings.backendSettings}
             detail={copy.settings.liveServicesDetail}
           >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <StatusMetric
-                label={copy.settings.currentProvider}
-                value={
-                  dataSourceStatus.isLoading
-                    ? copy.shell.checking
-                    : providerName
-                }
-                tone="neutral"
-              />
-              <StatusMetric
-                label={copy.settings.providerConfigured}
-                value={
-                  dataSourceStatus.isLoading
-                    ? copy.shell.checking
-                    : dataSourceStatus.data?.provider_configured
-                      ? copy.market.configured
-                      : copy.market.notConfigured
-                }
-                tone={
-                  dataSourceStatus.data?.provider_configured
-                    ? 'success'
-                    : 'warning'
-                }
-              />
-              <StatusMetric
-                label={copy.settings.providerSupportsFunds}
-                value={
-                  providerSupportsFunds == null
-                    ? copy.market.unknown
-                    : providerSupportsFunds
-                      ? copy.market.fundSupported
-                      : copy.market.fundUnsupported
-                }
-                tone={
-                  providerSupportsFunds == null
-                    ? 'neutral'
-                    : providerSupportsFunds
-                      ? 'success'
-                      : 'warning'
-                }
-              />
-              <StatusMetric
-                label={copy.settings.metadataConfigured}
-                value={metadataConfiguredCount}
-                tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
-              />
-              <StatusMetric
-                label={copy.settings.persistentCache}
-                value={
-                  dataSourceStatus.data?.has_persistent_cache
-                    ? copy.market.configured
-                    : copy.market.notConfigured
-                }
-                tone={
-                  dataSourceStatus.data?.has_persistent_cache
-                    ? 'success'
-                    : 'warning'
-                }
-              />
-              <StatusMetric
-                label={copy.settings.lastSuccessfulSync}
-                value={
-                  dataSourceStatus.data?.latest_persistent_quote_timestamp ??
-                  copy.settings.noValuationTime
-                }
-                tone={
-                  dataSourceStatus.data?.latest_persistent_quote_timestamp
-                    ? 'neutral'
-                    : 'warning'
-                }
-              />
+            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">
+                  {copy.settings.operationsRegister}
+                </div>
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
+                  {dataSourceStatus.data?.latest_persistent_quote_timestamp ??
+                    copy.settings.noValuationTime}
+                </span>
+              </div>
+              <div className="grid gap-2">
+                {operationsRegisterRows.map((row) => (
+                  <RegisterRow
+                    key={row.label}
+                    label={row.label}
+                    legacyLabel={row.legacyLabel}
+                    value={row.value}
+                    tone={row.tone}
+                  />
+                ))}
+              </div>
             </div>
 
             {providerTimedOut ? (
@@ -707,7 +715,18 @@ export function SettingsPage() {
               />
             ) : null}
 
-            <form className="grid gap-4" onSubmit={submitDataSource}>
+            <form
+              className="grid gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+              onSubmit={submitDataSource}
+            >
+              <div>
+                <div className="text-sm font-semibold">
+                  {copy.settings.providerConfiguration}
+                </div>
+                <div className="app-muted mt-1 text-xs leading-5">
+                  {copy.settings.providerConfigurationDetail}
+                </div>
+              </div>
               <div className="grid gap-2">
                 <span className="text-sm font-medium">
                   {copy.settings.selectDataSource}
@@ -816,6 +835,14 @@ export function SettingsPage() {
             ) : null}
 
             <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div>
+                <div className="text-sm font-semibold">
+                  {copy.settings.metadataReadiness}
+                </div>
+                <div className="app-muted mt-1 text-xs leading-5">
+                  {copy.settings.metadataReadinessDetail}
+                </div>
+              </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <StatusMetric
                   label={copy.settings.metadataConfigured}
@@ -882,43 +909,21 @@ export function SettingsPage() {
                 />
               )}
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <StatusMetric
-                label={copy.settings.assetsTracked(trackedAssets)}
-                value={settings.isLoading ? copy.shell.checking : trackedAssets}
-                tone="neutral"
-              />
-              <StatusMetric
-                label={copy.settings.initialCash}
-                value={
-                  settings.data
-                    ? formatCurrency(settings.data.initial_cash)
-                    : copy.shell.statusUnknown
-                }
-                tone="neutral"
-              />
-              <StatusMetric
-                label={copy.settings.strategy}
-                value={settings.data?.strategy ?? copy.shell.statusUnknown}
-                tone="neutral"
-              />
-              <StatusMetric
-                label={copy.settings.notificationType}
-                value={notificationType}
-                tone={
-                  notificationType === copy.settings.notificationUnavailable
-                    ? 'warning'
-                    : 'success'
-                }
-              />
-            </div>
           </SettingsSection>
 
           <SettingsSection
             title={copy.settings.notifications}
             detail={copy.settings.notificationsDetail}
           >
+            <RegisterRow
+              label={copy.settings.notificationType}
+              value={notificationType}
+              tone={
+                notificationType === copy.settings.notificationUnavailable
+                  ? 'warning'
+                  : 'success'
+              }
+            />
             <button
               type="button"
               className="app-button-secondary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
@@ -1007,6 +1012,41 @@ function StatusMetric({
       </div>
       <div className="mt-2 break-words font-mono text-sm font-semibold tabular-nums">
         {value}
+      </div>
+    </div>
+  );
+}
+
+function RegisterRow({
+  label,
+  legacyLabel,
+  value,
+  tone,
+}: {
+  label: string;
+  legacyLabel?: string;
+  value: string | number;
+  tone: StatusTone;
+}) {
+  return (
+    <div
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2.5"
+      aria-label={`Register item: ${label} ${value}`}
+    >
+      {legacyLabel ? (
+        <span className="sr-only" aria-label={`${legacyLabel}: ${value}`} />
+      ) : null}
+      <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+        {label}
+      </div>
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 justify-self-end text-right">
+        <span
+          className={`h-2 w-2 rounded-full border ${getStatusToneClasses(tone)}`}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
+          {value}
+        </span>
       </div>
     </div>
   );

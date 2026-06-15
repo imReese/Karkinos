@@ -255,6 +255,15 @@ test('renders backend data status and service state', async () => {
     await screen.findByLabelText('Current provider: akshare'),
   ).toBeTruthy();
   expect(await screen.findByText('2 tracked assets')).toBeTruthy();
+  expect(await screen.findByText('Operations register')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Register item: Provider akshare'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Register item: Poll interval 60s'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Provider configuration')).toBeTruthy();
+  expect(await screen.findByText('Metadata readiness')).toBeTruthy();
 });
 
 test('shows cached quote guidance for cache-only and stale valuation states', async () => {
