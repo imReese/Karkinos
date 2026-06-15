@@ -231,7 +231,7 @@ function renderHoldingDetail(
     },
   });
 
-  render(
+  return render(
     <PreferencesProvider>
       <QueryClientProvider client={queryClient}>
         <HoldingDetailPage symbol="600519" />
@@ -248,7 +248,6 @@ afterEach(() => {
 test('renders holding detail with cached quote status and ledger trace', async () => {
   renderHoldingDetail();
 
-  expect(await screen.findByText('600519 Position')).toBeTruthy();
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
   expect(await screen.findByText('Cached quote')).toBeTruthy();
   expect(
@@ -270,6 +269,24 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(document.body.textContent).not.toMatch(/real-time|latest price|NaN/i);
 });
 
+test('keeps the holding detail header compact and non-duplicative', async () => {
+  const { container } = renderHoldingDetail();
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const header = container.querySelector(
+    '[data-testid="holding-detail-header"]',
+  );
+  expect(header).not.toBeNull();
+  expect(header?.querySelectorAll('a[href="/portfolio"]').length).toBe(1);
+  expect(header?.textContent).toContain('Holding detail');
+  expect(header?.textContent).toContain('Cached quote');
+  expect(header?.textContent).not.toContain('Quote & data status');
+  expect(
+    header?.querySelector('[data-testid="holding-header-status-card"]'),
+  ).toBeNull();
+});
+
 test('shows not found state when the symbol is absent', async () => {
   renderHoldingDetail({ includePosition: false });
 
@@ -284,7 +301,7 @@ test('shows not found state when the symbol is absent', async () => {
 test('shows ledger empty state without breaking the page', async () => {
   renderHoldingDetail({ includeLedger: false });
 
-  expect(await screen.findByText('600519 Position')).toBeTruthy();
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
   expect(
     await screen.findByText(
       'No ledger trace is available for this symbol yet.',
