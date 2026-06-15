@@ -1,0 +1,22 @@
+import { expect, test } from 'vitest';
+
+import { copy } from '../app/copy';
+import { formatStaleReason } from './stale-reason';
+
+test('formats stale quote reason codes for chinese cockpit copy', () => {
+  expect(
+    formatStaleReason(
+      'quote_older_than_expected_session',
+      copy.zh.common.staleReasons,
+    ),
+  ).toBe('行情未及时更新（早于当前交易时段）');
+});
+
+test('keeps provider error text readable when it is not an internal code', () => {
+  expect(
+    formatStaleReason(
+      'TuShare fund_nav permission denied',
+      copy.zh.common.staleReasons,
+    ),
+  ).toBe('TuShare fund_nav permission denied');
+});

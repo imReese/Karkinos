@@ -9,6 +9,7 @@ import {
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { useRefreshMarketQuotesMutation } from '../../market/api';
 import type { Position } from '../api';
+import { formatStaleReason } from '../../../shared/stale-reason';
 
 function holdingDetailHref(symbol: string) {
   return `/portfolio/${encodeURIComponent(symbol)}`;
@@ -102,6 +103,10 @@ export function PositionsTable({
             assetClass,
             copy.common,
           );
+          const staleReason = formatStaleReason(
+            position.stale_reason,
+            copy.common.staleReasons,
+          );
           const refreshing =
             refreshQuotes.isPending &&
             refreshQuotes.variables?.symbols?.includes(position.symbol);
@@ -125,7 +130,7 @@ export function PositionsTable({
                   {isStale ? (
                     <div
                       className="mt-2 inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]"
-                      title={position.stale_reason ?? undefined}
+                      title={staleReason}
                     >
                       {labels.cachedQuoteAt(
                         formatTimestamp(position.quote_timestamp),
@@ -269,6 +274,10 @@ export function PositionsTable({
                 assetClass,
                 copy.common,
               );
+              const staleReason = formatStaleReason(
+                position.stale_reason,
+                copy.common.staleReasons,
+              );
               const refreshing =
                 refreshQuotes.isPending &&
                 refreshQuotes.variables?.symbols?.includes(position.symbol);
@@ -334,7 +343,7 @@ export function PositionsTable({
                             ? 'border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] text-[var(--app-warning)]'
                             : 'border-[color-mix(in_srgb,var(--app-success)_30%,transparent)] text-[var(--app-success)]'
                         }`}
-                        title={position.stale_reason ?? undefined}
+                        title={staleReason}
                       >
                         {isStale
                           ? labels.cachedQuoteAt(
@@ -348,7 +357,7 @@ export function PositionsTable({
                       </span>
                       {position.stale_reason ? (
                         <span className="app-muted max-w-40 truncate text-[10px]">
-                          {position.stale_reason}
+                          {staleReason}
                         </span>
                       ) : null}
                     </div>

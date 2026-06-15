@@ -102,7 +102,7 @@ test('shows cached quote copy for stale positions', () => {
   ).toBeTruthy();
   expect(screen.getAllByText(/^Cached /).length).toBeGreaterThan(0);
   expect(
-    screen.getAllByText('quote_older_than_expected_session').length,
+    screen.getAllByText('Quote older than expected trading session').length,
   ).toBeGreaterThan(0);
 });
 

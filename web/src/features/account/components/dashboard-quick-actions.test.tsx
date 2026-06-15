@@ -79,7 +79,9 @@ test('surfaces cached quote status and homepage action paths', () => {
   );
 
   expect(screen.getByText('Cached quotes')).toBeTruthy();
-  expect(screen.getByText(/quote_older_than_expected_session/)).toBeTruthy();
+  expect(
+    screen.getByText(/Quote older than expected trading session/),
+  ).toBeTruthy();
   expect(screen.getByText('Refresh quotes or check source')).toBeTruthy();
   expect(
     screen.getByRole('link', { name: 'Add ledger entry' }).getAttribute('href'),
