@@ -582,6 +582,20 @@ export const copy = {
           bollinger: 'Bollinger Mean Reversion',
           rsi: 'RSI Momentum / Reversion',
         },
+        strategyDescriptions: {
+          dual_ma: 'Dual moving-average crossover baseline.',
+          monthly_rebalance: 'Scheduled allocation rebalance baseline.',
+          bollinger: 'Bollinger band mean-reversion baseline.',
+          rsi: 'RSI momentum/reversion baseline.',
+        },
+        validationNotes: {
+          'Requires after-cost, out-of-sample ETF trend-following validation before promotion.':
+            'Requires after-cost, out-of-sample ETF trend-following validation before promotion.',
+          'Requires after-cost, out-of-sample validation across equity ETF, bond, gold, and cash proxy allocations.':
+            'Requires after-cost, out-of-sample validation across equity ETF, bond, gold, and cash proxy allocations.',
+          'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.':
+            'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.',
+        },
         parameterLabels: {
           short_period: 'Short moving-average window',
           long_period: 'Long moving-average window',
@@ -596,6 +610,14 @@ export const copy = {
             'Number of standard deviations used to place the upper and lower bands.',
         },
         parameterCode: (name: string) => `API field: ${name}`,
+        strategyMetadata: 'Strategy metadata',
+        assetUniverse: 'Asset universe',
+        supportedFrequencies: 'Frequencies',
+        benchmarkRole: 'Benchmark role',
+        validationRequirements: 'Validation',
+        oosRequired: 'OOS required',
+        afterCostRequired: 'After-cost required',
+        notDeclared: 'Not declared',
         strategyRegistryLoading: 'Loading strategy registry.',
         strategyRegistryFailed:
           'Strategy registry unavailable; using the default baseline.',
@@ -1898,6 +1920,20 @@ export const copy = {
           bollinger: '布林带均值回归',
           rsi: 'RSI 动量/反转',
         },
+        strategyDescriptions: {
+          dual_ma: '用短期均线与长期均线的交叉关系判断趋势方向的基准策略。',
+          monthly_rebalance: '按固定周期把组合调回目标权重的再平衡基准策略。',
+          bollinger: '基于布林带上下轨偏离程度观察均值回归机会的基准策略。',
+          rsi: '基于 RSI 强弱变化观察动量或反转机会的基准策略。',
+        },
+        validationNotes: {
+          'Requires after-cost, out-of-sample ETF trend-following validation before promotion.':
+            '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
+          'Requires after-cost, out-of-sample validation across equity ETF, bond, gold, and cash proxy allocations.':
+            '晋级前需要覆盖股票 ETF、债券、黄金和现金代理配置的 after-cost 与样本外验证。',
+          'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.':
+            '晋级前需要在 A 股或 ETF fixture 上完成 after-cost 与样本外均值回归验证。',
+        },
         parameterLabels: {
           short_period: '短期均线周期',
           long_period: '长期均线周期',
@@ -1913,6 +1949,14 @@ export const copy = {
           num_std: '上下轨距离均线的标准差倍数。',
         },
         parameterCode: (name: string) => `参数键：${name}`,
+        strategyMetadata: '策略元数据',
+        assetUniverse: '适用资产',
+        supportedFrequencies: '支持频率',
+        benchmarkRole: '基准角色',
+        validationRequirements: '验证要求',
+        oosRequired: '需要样本外验证',
+        afterCostRequired: '需要 after-cost 报告',
+        notDeclared: '未声明',
         strategyRegistryLoading: '正在加载策略注册表。',
         strategyRegistryFailed: '策略注册表不可用；暂用默认基准策略。',
         shortPeriod: '短周期',

@@ -42,8 +42,9 @@ public demos and development.
   benchmark comparison, assumptions, and limitations without turning research
   output into execution approval
 - Web Backtest Strategy Lab selects registry strategies, renders typed
-  parameter controls, and can run a single-symbol research backtest from the
-  browser
+  parameter controls with readable labels, exposes strategy metadata and
+  validation requirements, and can run a single-symbol research backtest from
+  the browser
 - Multi-asset: A-shares / ETF / Gold / Bond
 - Target-weight signals — strategy outputs 0~1, Portfolio handles share counts
 - T+1 freeze/thaw built into Position

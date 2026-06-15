@@ -362,6 +362,14 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added Strategy Lab strategy metadata and readable parameter
+  labels to the Web Backtest page. The UI now shows the selected registry
+  strategy's description, asset universe, supported frequencies, benchmark
+  role, OOS/after-cost requirements, and validation notes next to the strategy
+  selector, while parameter inputs and sweep labels use localized or humanized
+  business labels instead of exposing raw schema keys as primary UI text.
+  Payloads still preserve the typed `params` contract and internal keys for
+  reproducible audit.
 * 2026-06-15: Added the Web Strategy Lab same-dataset comparison review
   surface. The Backtest page now lets operators enter explicit parameter sets
   for the selected strategy, submit them to `POST /api/backtest/compare` with
