@@ -362,6 +362,14 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Surfaced persisted Strategy Lab metadata in saved Web Backtest
+  reports. Reports that include `metrics_json.strategy_metadata` now render a
+  strategy-audit snapshot with localized strategy names, business parameter
+  labels, normalized run params, API keys as secondary audit fields, parameter
+  schema defaults/ranges/descriptions, benchmark role, asset universe,
+  frequencies, and validation notes. Frontend tests cover both English and
+  Chinese rendering and verify Chinese reports do not expose raw English
+  parameter descriptions as primary UI text.
 * 2026-06-15: Persisted Strategy Lab strategy metadata snapshots on saved
   backtest reports. `metrics_json.strategy_metadata` now captures the
   strategy id/name, display name, description, asset universe, supported

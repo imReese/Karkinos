@@ -459,7 +459,10 @@ Saved results also persist `metrics_json.strategy_metadata` with the strategy
 identity, display name, description, asset universe, supported frequencies,
 parameter schema, normalized params, benchmark role, and validation
 requirements used for that run, so historical reports remain explainable even
-if the registry or an extension manifest changes later.
+if the registry or an extension manifest changes later. The Web report renders
+this as a strategy-audit snapshot with readable strategy and parameter labels,
+while keeping internal parameter keys visible only as secondary API/audit
+fields.
 The same report also surfaces the after-cost evidence bundle and
 out-of-sample validation payload: net versus gross return, cost drag,
 turnover, benchmark role/status, split point, assumptions, and limitations.

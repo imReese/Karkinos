@@ -40,7 +40,9 @@ public demos and development.
   saved and freshly run results
 - Backtest results persist a strategy metadata snapshot with strategy identity,
   parameter schema, normalized params, benchmark role, and validation
-  requirements so saved reports remain auditable when the registry changes
+  requirements so saved reports remain auditable when the registry changes; Web
+  reports render the snapshot with readable strategy and parameter labels while
+  keeping API keys as secondary audit fields
 - Web Backtest reports surface after-cost evidence, out-of-sample split status,
   benchmark comparison, assumptions, and limitations without turning research
   output into execution approval
