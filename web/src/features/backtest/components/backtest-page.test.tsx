@@ -249,12 +249,17 @@ function installBacktestFetchMock({
 function renderBacktestPage(
   options?: Parameters<typeof installBacktestFetchMock>[0] & {
     locale?: 'en' | 'zh';
+    navigatorLanguage?: string;
   },
 ) {
   window.localStorage.clear();
   if (options?.locale) {
     window.localStorage.setItem('karkinos.locale', options.locale);
   }
+  Object.defineProperty(window.navigator, 'language', {
+    value: options?.navigatorLanguage ?? 'en-US',
+    configurable: true,
+  });
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
     media: query,
@@ -296,6 +301,21 @@ test('renders the backtest workspace and saved report history', async () => {
   ).toBeTruthy();
   expect(await screen.findByText('Report selection')).toBeTruthy();
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
+});
+
+test('defaults strategy parameters to chinese for chinese browser locales', async () => {
+  renderBacktestPage({ results: [], navigatorLanguage: 'zh-CN' });
+
+  expect(await screen.findByText('策略回放')).toBeTruthy();
+  expect(await screen.findByLabelText('短期均线周期')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      '用于计算短期移动平均线的交易 bar 数，例如 5 表示最近 5 根日线或分钟线。',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText('Short moving-average window in trading bars.'),
+  ).toBeNull();
 });
 
 test('switches strategy schema controls from the registry', async () => {
@@ -354,19 +374,21 @@ test('localizes built-in strategy names without changing strategy ids', async ()
 test('localizes built-in parameter labels and descriptions without changing payload keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
-  expect(await screen.findByLabelText('短均线周期')).toBeTruthy();
-  expect(await screen.findByLabelText('长均线周期')).toBeTruthy();
+  expect(await screen.findByLabelText('短期均线周期')).toBeTruthy();
+  expect(await screen.findByLabelText('长期均线周期')).toBeTruthy();
   expect(
-    await screen.findByText('短期均线窗口，按交易 bar 计算。'),
+    await screen.findByText(
+      '用于计算短期移动平均线的交易 bar 数，例如 5 表示最近 5 根日线或分钟线。',
+    ),
   ).toBeTruthy();
   expect(
     screen.queryByText('Short moving-average window in trading bars.'),
   ).toBeNull();
 
-  fireEvent.change(await screen.findByLabelText('短均线周期'), {
+  fireEvent.change(await screen.findByLabelText('短期均线周期'), {
     target: { value: '3' },
   });
-  fireEvent.change(await screen.findByLabelText('长均线周期'), {
+  fireEvent.change(await screen.findByLabelText('长期均线周期'), {
     target: { value: '9' },
   });
   const runButton = screen.getByRole('button', { name: '运行回测' });

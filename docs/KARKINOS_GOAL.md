@@ -362,6 +362,13 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Refined the Web Backtest strategy-parameter experience for
+  Chinese users. The app now defaults to Chinese when the browser locale is
+  Chinese and no saved preference exists; dual moving-average controls explain
+  short/long periods as trading-bar lookback windows while preserving
+  `short_period` / `long_period` only as secondary parameter keys. Frontend
+  tests cover Chinese-locale defaulting, localized parameter explanations, and
+  unchanged submitted payload keys.
 * 2026-06-15: Added the first backend Strategy Lab parameter-sweep API.
   `POST /api/backtest/sweep` now expands bounded typed parameter grids for one
   registered strategy, rejects oversized grids and unsupported ranking metrics

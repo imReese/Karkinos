@@ -1788,18 +1788,20 @@ export const copy = {
           rsi: 'RSI 动量/反转',
         },
         parameterLabels: {
-          short_period: '短均线周期',
-          long_period: '长均线周期',
+          short_period: '短期均线周期',
+          long_period: '长期均线周期',
           bb_period: '布林带回看周期',
           num_std: '标准差倍数',
         },
         parameterDescriptions: {
-          short_period: '短期均线窗口，按交易 bar 计算。',
-          long_period: '长期均线窗口，按交易 bar 计算。',
+          short_period:
+            '用于计算短期移动平均线的交易 bar 数，例如 5 表示最近 5 根日线或分钟线。',
+          long_period:
+            '用于计算长期移动平均线的交易 bar 数，必须大于短期周期。',
           bb_period: '用于计算布林带上下轨的回看窗口。',
           num_std: '上下轨距离均线的标准差倍数。',
         },
-        parameterCode: (name: string) => `API 字段：${name}`,
+        parameterCode: (name: string) => `参数键：${name}`,
         strategyRegistryLoading: '正在加载策略注册表。',
         strategyRegistryFailed: '策略注册表不可用；暂用默认基准策略。',
         shortPeriod: '短周期',

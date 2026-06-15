@@ -380,11 +380,6 @@ export function BacktestPage() {
                     >
                       <span className="flex min-w-0 flex-wrap items-center gap-2">
                         <span>{displayName}</span>
-                        {displayName !== param.name ? (
-                          <span className="app-chip px-2 py-0.5 font-mono text-[11px] font-semibold">
-                            {labels.parameterCode(param.name)}
-                          </span>
-                        ) : null}
                       </span>
                       <input
                         className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
@@ -405,8 +400,15 @@ export function BacktestPage() {
                         }
                         aria-label={displayName}
                       />
-                      {description ? (
-                        <span className="app-muted text-xs">{description}</span>
+                      {description || displayName !== param.name ? (
+                        <span className="app-muted flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                          {description ? <span>{description}</span> : null}
+                          {displayName !== param.name ? (
+                            <span className="font-mono text-[11px]">
+                              {labels.parameterCode(param.name)}
+                            </span>
+                          ) : null}
+                        </span>
                       ) : null}
                     </label>
                   );
