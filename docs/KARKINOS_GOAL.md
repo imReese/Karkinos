@@ -319,49 +319,58 @@ v0.4 should make it possible to answer:
 
 ### Acceptance Criteria for v0.4
 
-* [ ] A documented `strategy/extensions/` or equivalent local extension area
+* [x] A documented `strategy/extensions/` or equivalent local extension area
   exists for private strategy scripts, with examples that do not contain
   secrets or private financial data.
-* [ ] Built-in and extension strategies share one typed metadata contract:
+* [x] Built-in and extension strategies share one typed metadata contract:
   id, display name, description, asset universe, supported frequencies,
   parameters, defaults, constraints, benchmark role, and validation
   requirements.
-* [ ] `/api/backtest/strategies` returns typed strategy parameter schemas for
+* [x] `/api/backtest/strategies` returns typed strategy parameter schemas for
   both built-in and extension strategies.
-* [ ] `POST /api/backtest/run` accepts generic strategy parameters and records
+* [x] `POST /api/backtest/run` accepts generic strategy parameters and records
   the exact parameter payload in the persisted result.
-* [ ] The Web Backtest page uses the strategy registry instead of a free-text
+* [x] The Web Backtest page uses the strategy registry instead of a free-text
   strategy field, renders validated controls for strategy parameters, and
   supports one-symbol historical backtests from the browser.
-* [ ] At least one custom extension strategy can be added locally, discovered
+* [x] At least one custom extension strategy can be added locally, discovered
   by the registry, run from the Web UI, and verified by deterministic tests.
-* [ ] Backtest runs record frozen dataset identity, provider/cache metadata,
+* [x] Backtest runs record frozen dataset identity, provider/cache metadata,
   date range, symbol universe, adjustment mode when available, row count, and
   data-quality diagnostics.
-* [ ] Backtest reports expose after-cost metrics, cost assumptions, slippage
+* [x] Backtest reports expose after-cost metrics, cost assumptions, slippage
   assumptions, fills, equity/drawdown curves, benchmark comparison, OOS split
   evidence, and limitations in both API and Web UI.
-* [ ] Parameter sweep runs support bounded grids, persist each tested
+* [x] Parameter sweep runs support bounded grids, persist each tested
   configuration, and present rankings with explicit overfitting / multiple
   testing warnings.
-* [ ] Strategy comparison can compare multiple strategies or parameter sets on
+* [x] Strategy comparison can compare multiple strategies or parameter sets on
   the same dataset snapshot without silently changing data inputs.
-* [ ] Strategy outputs can be promoted only as research evidence; they cannot
+* [x] Strategy outputs can be promoted only as research evidence; they cannot
   bypass pre-trade risk gates, signal journaling, paper/shadow review, or
   manual confirmation.
-* [ ] Backend deterministic tests cover built-in strategy run, extension
+* [x] Backend deterministic tests cover built-in strategy run, extension
   strategy discovery, generic parameter validation, one-symbol Web/API run,
   parameter sweep, after-cost/OOS reporting, and blocked unsafe extension
   behavior.
-* [ ] Frontend tests cover strategy selection, dynamic parameter controls,
+* [x] Frontend tests cover strategy selection, dynamic parameter controls,
   one-symbol run setup, report rendering, and parameter-sweep result review.
-* [ ] README and Chinese docs explain how to add a local strategy, run it from
+* [x] README and Chinese docs explain how to add a local strategy, run it from
   Web, interpret reports, and keep the output as research rather than
   investment advice.
 
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added a v0.4 Strategy Lab acceptance audit and marked the v0.4
+  acceptance criteria complete. `build_v04_strategy_lab_acceptance_audit()`
+  maps all 14 Strategy Lab checkboxes to concrete code, docs, deterministic
+  tests, and validation commands covering extension strategy discovery,
+  generic params, Web one-symbol runs, dataset snapshots, after-cost/OOS
+  reports, bounded sweeps, same-dataset comparison, research-only promotion
+  boundaries, and docs. `tests/test_acceptance_audit.py` now verifies the
+  evidence paths exist and that the v0.4 checkbox text in this goal document
+  matches the audit manifest.
 * 2026-06-15: Split Strategy Lab after-cost report assumptions into structured
   cost and slippage evidence. `AfterCostEvidence` now serializes
   `cost_assumptions` and `slippage_assumptions` alongside the existing generic

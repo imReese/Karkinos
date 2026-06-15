@@ -1,8 +1,8 @@
-"""Static v0.2 acceptance evidence manifest.
+"""Static acceptance evidence manifests.
 
-This module does not promote strategies or execute trades. It records the local
-evidence files and commands that prove each Profit Discipline MVP acceptance
-criterion for review and CI checks.
+This module does not promote strategies or execute trades. It records local
+evidence files and commands that prove product acceptance criteria for review
+and CI checks.
 """
 
 from __future__ import annotations
@@ -227,6 +227,266 @@ def build_acceptance_audit() -> AcceptanceAudit:
                 validation_commands=(
                     'rg -n "not investment advice|不构成投资建议|research and portfolio tooling" README.md docs',
                     "uv run python -m pytest",
+                ),
+            ),
+        )
+    )
+
+
+def build_v04_strategy_lab_acceptance_audit() -> AcceptanceAudit:
+    """Return v0.4 Strategy Lab criteria mapped to deterministic evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="documented_extension_area",
+                checkbox_text=(
+                    "* [x] A documented `strategy/extensions/` or equivalent local "
+                    "extension area"
+                ),
+                evidence_paths=(
+                    "strategy/extensions/README.md",
+                    "strategy/extensions/.gitignore",
+                    "strategy/extensions/examples/local_momentum.py.example",
+                    "strategy/extensions/examples/local_momentum.strategy.json.example",
+                    "docs/README.zh.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/strategy/test_extension_strategy_registry.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="shared_typed_metadata_contract",
+                checkbox_text=(
+                    "* [x] Built-in and extension strategies share one typed metadata "
+                    "contract:"
+                ),
+                evidence_paths=(
+                    "strategy/schema.py",
+                    "strategy/registry.py",
+                    "tests/strategy/test_strategy_parameter_schema.py",
+                    "tests/strategy/test_extension_strategy_registry.py",
+                    "tests/strategy/test_registry_metadata.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/strategy/test_strategy_parameter_schema.py tests/strategy/test_extension_strategy_registry.py tests/strategy/test_registry_metadata.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategies_api_typed_schemas",
+                checkbox_text=(
+                    "* [x] `/api/backtest/strategies` returns typed strategy "
+                    "parameter schemas for"
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "server/models.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k 'backtest_strategies_route'",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backtest_run_generic_params_persisted",
+                checkbox_text=(
+                    "* [x] `POST /api/backtest/run` accepts generic strategy "
+                    "parameters and records"
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "server/bootstrap.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k 'generic_params or unknown_generic_params'",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="web_backtest_registry_one_symbol",
+                checkbox_text=(
+                    "* [x] The Web Backtest page uses the strategy registry instead "
+                    "of a free-text"
+                ),
+                evidence_paths=(
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/backtest/api.ts",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- backtest-page",
+                    "npm --prefix web run build",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="custom_extension_web_api_run",
+                checkbox_text=(
+                    "* [x] At least one custom extension strategy can be added "
+                    "locally, discovered"
+                ),
+                evidence_paths=(
+                    "strategy/extensions/examples/local_momentum.py.example",
+                    "strategy/extensions/examples/local_momentum.strategy.json.example",
+                    "tests/strategy/test_extension_strategy_registry.py",
+                    "tests/test_server_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/strategy/test_extension_strategy_registry.py tests/test_server_routes.py -k 'extension_strategy or local_extension'",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="dataset_snapshot_metadata",
+                checkbox_text=(
+                    "* [x] Backtest runs record frozen dataset identity, "
+                    "provider/cache metadata,"
+                ),
+                evidence_paths=(
+                    "analytics/dataset_snapshot.py",
+                    "server/routes/backtest.py",
+                    "web/src/features/backtest/components/dataset-snapshot-panel.tsx",
+                    "tests/test_server_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k dataset_snapshot",
+                    "npm --prefix web test -- backtest-page",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="after_cost_oos_reports_api_web",
+                checkbox_text=(
+                    "* [x] Backtest reports expose after-cost metrics, cost "
+                    "assumptions, slippage"
+                ),
+                evidence_paths=(
+                    "analytics/backtest_metrics.py",
+                    "analytics/oos_validation.py",
+                    "server/routes/backtest.py",
+                    "web/src/features/backtest/components/validation-evidence-panel.tsx",
+                    "web/src/features/backtest/components/fills-table.tsx",
+                    "web/src/features/backtest/components/equity-drawdown-chart.tsx",
+                    "tests/analytics/test_backtest_metrics.py",
+                    "tests/analytics/test_oos_validation.py",
+                    "tests/test_server_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_backtest_metrics.py tests/analytics/test_oos_validation.py tests/test_server_routes.py -k 'after_cost or oos or backtest_run_returns_metrics_json'",
+                    "npm --prefix web test -- backtest-page",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="bounded_parameter_sweep",
+                checkbox_text=(
+                    "* [x] Parameter sweep runs support bounded grids, persist each "
+                    "tested"
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "web/src/features/backtest/components/parameter-sweep-panel.tsx",
+                    "tests/test_server_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k backtest_sweep",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="same_dataset_strategy_comparison",
+                checkbox_text=(
+                    "* [x] Strategy comparison can compare multiple strategies or "
+                    "parameter sets on"
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "web/src/features/backtest/components/parameter-compare-panel.tsx",
+                    "tests/test_server_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k backtest_compare",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="research_only_promotion_boundaries",
+                checkbox_text=(
+                    "* [x] Strategy outputs can be promoted only as research "
+                    "evidence; they cannot"
+                ),
+                evidence_paths=(
+                    "analytics/strategy_promotion_readiness.py",
+                    "server/routes/backtest.py",
+                    "server/routes/trading.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                    "tests/test_server_routes.py",
+                    "README.md",
+                    "docs/README.zh.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_strategy_promotion_readiness.py tests/test_server_routes.py -k 'promotion_readiness or backtest_strategy_promotion'",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backend_deterministic_strategy_lab_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover built-in strategy run, "
+                    "extension"
+                ),
+                evidence_paths=(
+                    "tests/test_bootstrap.py",
+                    "tests/test_server_routes.py",
+                    "tests/strategy/test_extension_strategy_registry.py",
+                    "tests/strategy/test_strategy_parameter_schema.py",
+                    "tests/analytics/test_backtest_metrics.py",
+                    "tests/analytics/test_oos_validation.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_bootstrap.py tests/test_server_routes.py tests/strategy/test_extension_strategy_registry.py tests/strategy/test_strategy_parameter_schema.py tests/analytics/test_backtest_metrics.py tests/analytics/test_oos_validation.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frontend_strategy_lab_tests",
+                checkbox_text=(
+                    "* [x] Frontend tests cover strategy selection, dynamic "
+                    "parameter controls,"
+                ),
+                evidence_paths=(
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/parameter-sweep-panel.tsx",
+                    "web/src/features/backtest/components/backtest-report-view.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- backtest-page",
+                    "npm --prefix web run test",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_lab_docs",
+                checkbox_text=(
+                    "* [x] README and Chinese docs explain how to add a local "
+                    "strategy, run it from"
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                    "strategy/extensions/README.md",
+                ),
+                validation_commands=(
+                    'rg -n "Strategy Extensions|本地扩展策略|research evidence|不构成投资建议" README.md docs strategy/extensions/README.md',
+                    "uv run python -m pytest tests/test_acceptance_audit.py",
                 ),
             ),
         )
