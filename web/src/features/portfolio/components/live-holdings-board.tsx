@@ -13,21 +13,6 @@ function toneClass(value: number | null) {
   return value > 0 ? 'app-positive' : 'app-negative';
 }
 
-function baselineLabel(
-  baselineSource: string,
-  previousCloseLabel: string,
-  fallbackCloseLabel: string,
-  unavailableLabel: string,
-) {
-  if (baselineSource === 'previous_close') {
-    return previousCloseLabel;
-  }
-  if (baselineSource === 'fallback_close') {
-    return fallbackCloseLabel;
-  }
-  return unavailableLabel;
-}
-
 function assetClassLabel(
   assetClass: string,
   labels: {
@@ -130,77 +115,48 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                   {labels.positionCount(group.items.length)}
                 </span>
               </div>
-              <div className="app-muted text-sm">
-                {formatCurrency(group.total_market_value)}
-              </div>
+              <div className="app-muted text-sm">{labels.latestPrice}</div>
             </div>
-            <div className="grid gap-3">
+            <div className="grid gap-2">
               {group.items.map((item) => (
-                <div
+                <a
                   key={item.symbol}
-                  className="app-panel-strong rounded-2xl px-4 py-4"
+                  href={`/portfolio/${encodeURIComponent(item.symbol)}`}
+                  aria-label={labels.holdingDetailLink(item.symbol)}
+                  className="group grid min-w-0 gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 transition-colors duration-200 hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] md:grid-cols-[minmax(0,1fr)_150px_150px_112px] md:items-center"
                 >
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <div className="truncate text-sm font-semibold">
-                          {item.display_name || item.name || item.symbol}
-                        </div>
-                        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
-                          {assetClassLabel(item.asset_class, copy.common)}
-                        </span>
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <div className="truncate text-sm font-semibold text-[var(--app-text)] group-hover:text-[var(--app-accent)]">
+                        {item.display_name || item.name || item.symbol}
                       </div>
-                      <div className="app-muted mt-1 flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-mono">{item.symbol}</span>
-                        <span>{formatQuantity(item.quantity)}</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="app-button-secondary rounded-full px-3 py-1">
-                        {item.quote_status === 'live'
-                          ? labels.quoteLive
-                          : labels.quoteStale}
-                      </span>
-                      <span className="app-button-secondary rounded-full px-3 py-1">
-                        {labels.baseline}:{' '}
-                        {baselineLabel(
-                          item.baseline_source,
-                          labels.baselinePreviousClose,
-                          labels.baselineFallbackClose,
-                          labels.baselineUnavailable,
-                        )}
+                      <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+                        {assetClassLabel(item.asset_class, copy.common)}
                       </span>
                     </div>
+                    <div className="app-muted mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-mono">{item.symbol}</span>
+                      <span>{formatQuantity(item.quantity)}</span>
+                    </div>
                   </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <Metric
-                      label={labels.latestPrice}
-                      value={formatCurrency(item.latest_price)}
-                    />
-                    <Metric
-                      label={labels.todayMove}
-                      value={formatCurrency(item.today_change)}
-                      tone={toneClass(item.today_change)}
-                      hint={formatReturnPercent(item.today_change_pct)}
-                    />
-                    <Metric
-                      label={labels.sinceBuyReturn}
-                      value={formatCurrency(item.since_buy_pnl)}
-                      tone={toneClass(item.since_buy_pnl)}
-                      hint={formatReturnPercent(item.since_buy_pnl_pct)}
-                    />
-                    <Metric
-                      label={copy.portfolio.table.marketValue}
-                      value={formatCurrency(item.market_value)}
-                      hint={`${copy.portfolio.table.avgCost} ${formatCurrency(item.avg_cost)}`}
-                    />
+                  <CompactHoldingMetric
+                    label={labels.latestPrice}
+                    value={formatCurrency(item.latest_price)}
+                  />
+                  <CompactHoldingMetric
+                    label={labels.todayMove}
+                    value={formatCurrency(item.today_change)}
+                    hint={formatReturnPercent(item.today_change_pct)}
+                    tone={toneClass(item.today_change)}
+                  />
+                  <div className="flex flex-wrap items-center gap-2 text-xs md:justify-end">
+                    <span className="app-button-secondary rounded-full px-3 py-1">
+                      {item.quote_status === 'live'
+                        ? labels.quoteLive
+                        : labels.quoteStale}
+                    </span>
                   </div>
-
-                  <div className="app-muted mt-3 text-xs">
-                    {labels.updatedAt}: {item.quote_timestamp ?? '--'}
-                  </div>
-                </div>
+                </a>
               ))}
             </div>
           </section>
@@ -238,7 +194,7 @@ function SummaryMetric({
   );
 }
 
-function Metric({
+function CompactHoldingMetric({
   label,
   value,
   hint,
@@ -250,12 +206,14 @@ function Metric({
   tone?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[var(--app-border)] px-4 py-4">
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+    <div className="min-w-0">
+      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
         {label}
       </div>
-      <div className={`mt-2 text-sm font-semibold ${tone ?? ''}`}>{value}</div>
-      {hint ? <div className="app-muted mt-2 text-xs">{hint}</div> : null}
+      <div className={`mt-1 truncate text-sm font-semibold ${tone ?? ''}`}>
+        {value}
+      </div>
+      {hint ? <div className="app-muted mt-1 text-xs">{hint}</div> : null}
     </div>
   );
 }

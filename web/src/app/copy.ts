@@ -383,6 +383,7 @@ export const copy = {
         baselineUnavailable: 'Daily baseline unavailable',
         quoteLive: 'Quote available',
         quoteStale: 'Cached quote',
+        holdingDetailLink: (symbol: string) => `Holding Details: ${symbol}`,
       },
     },
     riskPage: {
@@ -1536,6 +1537,7 @@ export const copy = {
         baselineUnavailable: '暂无可用日内基准',
         quoteLive: '行情可用',
         quoteStale: '缓存行情',
+        holdingDetailLink: (symbol: string) => `持仓明细：${symbol}`,
       },
     },
     riskPage: {

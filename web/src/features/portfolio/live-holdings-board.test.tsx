@@ -112,9 +112,13 @@ test('renders holdings quote board in english', () => {
     screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
   ).toBeGreaterThan(0);
   expect(screen.getByText('-1.10%')).toBeTruthy();
-  expect(screen.getAllByText('20.00%').length).toBeGreaterThan(0);
+  expect(
+    screen.getByRole('link', {
+      name: copy.portfolio.liveBoard.holdingDetailLink('600519'),
+    }),
+  ).toHaveProperty('href', expect.stringContaining('/portfolio/600519'));
+  expect(screen.queryByText('Avg Cost CN¥1,500.00')).toBeNull();
   expect(screen.queryByText('-1.1%')).toBeNull();
-  expect(screen.queryByText('20.0%')).toBeNull();
 });
 
 test('groups summary values with their labels in the asset cards', () => {
@@ -165,4 +169,9 @@ test('renders localized holdings quote board in chinese', () => {
   expect(
     screen.getAllByText(copy.portfolio.liveBoard.quoteLive).length,
   ).toBeGreaterThan(0);
+  expect(
+    screen.getByRole('link', {
+      name: copy.portfolio.liveBoard.holdingDetailLink('600519'),
+    }),
+  ).toHaveProperty('href', expect.stringContaining('/portfolio/600519'));
 });
