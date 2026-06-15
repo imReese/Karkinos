@@ -497,4 +497,9 @@ automation.
   and manual-confirmation defaults into a compact boundary panel; data safety
   now records no-auto-trading, timestamp, analysis-only, and private-data
   guardrails without changing execution behavior.
+* 2026-06-15: Began cockpit-density cleanup on the Decision page. The page now
+  opens with a compact decision command register aggregating daily and intraday
+  candidate actions, manual-confirmation readiness, risk blocks, audit coverage,
+  market-data state, and the manual-confirmation execution default without
+  adding any execution behavior.
 <!-- codex-progress:end -->

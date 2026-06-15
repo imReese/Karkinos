@@ -191,6 +191,25 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   renderDecisionCockpit();
 
   expect(await screen.findByText('Decision cockpit')).toBeTruthy();
+  expect(await screen.findByText('Decision command register')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Decision register item: Candidate actions 1'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText(
+      'Decision register item: Manual confirmations 1 ready',
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText(
+      'Decision register item: Risk blocks 0 blocked',
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText(
+      'Decision register item: Execution default Manual confirmation required',
+    ),
+  ).toBeTruthy();
   expect((await screen.findAllByText('Daily lane')).length).toBeGreaterThan(0);
   expect((await screen.findAllByText('Intraday lane')).length).toBeGreaterThan(
     0,
