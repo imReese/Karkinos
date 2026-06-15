@@ -320,6 +320,7 @@ def _run_single_backtest(
     """同步运行单次回测（在线程池中执行），供 run 和 compare 共用。"""
     from datetime import datetime
 
+    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
     from backtest.engine import BacktestEngine
     from data.manager import DataManager, build_sources
     from data.store import DataStore
@@ -331,11 +332,12 @@ def _run_single_backtest(
     except Exception:
         pass
 
+    sources = build_sources(
+        data_source=config.data_source,
+        tushare_token=config.tushare_token,
+    )
     dm = DataManager(
-        sources=build_sources(
-            data_source=config.data_source,
-            tushare_token=config.tushare_token,
-        ),
+        sources=sources,
         store=store,
         default_source=config.data_source,
     )
@@ -354,6 +356,15 @@ def _run_single_backtest(
             asset_class=ac,
         )
         data_handlers[sym] = handler
+
+    dataset_snapshot_json = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source=getattr(config, "data_source", None),
+        data_handlers=data_handlers,
+        store=store,
+        source_names=list(sources.keys()),
+    )
 
     event_bus_placeholder = type(
         "EventBus", (), {"subscribe": lambda *a: None, "publish": lambda *a: None}
@@ -388,6 +399,7 @@ def _run_single_backtest(
     )
     metrics_json = metrics.to_json_dict()
     metrics_json["evidence_bundle"] = evidence_json
+    metrics_json["dataset_snapshot"] = dataset_snapshot_json
     oos_validation_json = _build_oos_validation_payload(request, result)
     if oos_validation_json:
         metrics_json["oos_validation"] = oos_validation_json

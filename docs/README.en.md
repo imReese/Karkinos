@@ -436,12 +436,22 @@ fill.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/backtest/strategies` | List strategies with v0.2 benchmark / OOS / after-cost requirements |
+| GET | `/api/backtest/strategies` | List strategies with typed parameter schemas and v0.2 benchmark / OOS / after-cost requirements |
 | GET | `/api/backtest/strategy-validation` | Get the v0.2 benchmark strategy after-cost / OOS evidence matrix |
 | GET | `/api/backtest/strategy-promotion-readiness` | Get promotion-readiness gates for benchmark strategies |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
+| POST | `/api/backtest/sweep` | Run bounded parameter grids, persist each tested configuration, and return deterministic rankings with multiple-testing warnings |
 | GET | `/api/backtest/results` | List all backtest result summaries |
 | GET | `/api/backtest/results/{result_id}` | Get single backtest detail + equity curve |
+
+`POST /api/backtest/run` accepts generic `params`, for example
+`{"short_period": 5, "long_period": 20}`. The backend validates types, ranges,
+unknown parameters, and strategy-specific cross-field constraints before
+execution. Each run records `metrics_json.dataset_snapshot` with configured
+data sources, cache metadata availability, requested range, symbol universe,
+row counts, first/last timestamps, adjustment mode when available, cache
+dataset ids, and data-quality diagnostics. The snapshot is reproducibility
+evidence for research comparison, not a guarantee of market-data completeness.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports
 whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.

@@ -29,6 +29,9 @@ public demos and development.
 - Backtest parameter sweeps run bounded typed grids, persist each tested
   configuration, and return deterministic rankings with multiple-testing
   warnings
+- Backtest reports record a dataset snapshot with data-source/cache metadata,
+  requested range, symbol universe, row counts, adjustment mode when available,
+  and data-quality diagnostics
 - Web Backtest Strategy Lab selects registry strategies, renders typed
   parameter controls, and can run a single-symbol research backtest from the
   browser
