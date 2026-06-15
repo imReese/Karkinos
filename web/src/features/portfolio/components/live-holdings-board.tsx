@@ -1,8 +1,8 @@
 import { useCopy } from '../../../app/copy';
 import {
   formatCurrency,
-  formatPercent,
   formatQuantity,
+  formatReturnPercent,
 } from '../../../shared/format';
 import type { LiveHoldingGroup } from '../api';
 
@@ -173,13 +173,13 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                       label={labels.todayMove}
                       value={formatCurrency(item.today_change)}
                       tone={toneClass(item.today_change)}
-                      hint={formatPercent(item.today_change_pct)}
+                      hint={formatReturnPercent(item.today_change_pct)}
                     />
                     <Metric
                       label={labels.sinceBuyReturn}
                       value={formatCurrency(item.since_buy_pnl)}
                       tone={toneClass(item.since_buy_pnl)}
-                      hint={formatPercent(item.since_buy_pnl_pct)}
+                      hint={formatReturnPercent(item.since_buy_pnl_pct)}
                     />
                     <Metric
                       label={copy.portfolio.table.marketValue}

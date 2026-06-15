@@ -1,9 +1,9 @@
 import { useCopy } from '../../../app/copy';
 import {
   formatCurrency,
-  formatPercent,
   formatPrice,
   formatQuantity,
+  formatReturnPercent,
   formatTimestamp,
 } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
@@ -158,7 +158,10 @@ export function PositionsTable({
                   ],
                   [labels.marketValue, formatCurrency(position.market_value)],
                   [labels.unrealized, formatCurrency(position.unrealized_pnl)],
-                  [labels.returnPct, formatPercent(resolvePnlPct(position))],
+                  [
+                    labels.returnPct,
+                    formatReturnPercent(resolvePnlPct(position)),
+                  ],
                   [labels.quoteAge, formatAge(position.quote_age_seconds)],
                   ...(showFullColumns
                     ? ([
@@ -333,7 +336,7 @@ export function PositionsTable({
                         : 'text-[var(--app-danger)]'
                     }`}
                   >
-                    {formatPercent(resolvePnlPct(position))}
+                    {formatReturnPercent(resolvePnlPct(position))}
                   </td>
                   <td className="px-4 py-3.5">
                     <div className="flex min-w-36 flex-col gap-1">

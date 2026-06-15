@@ -240,6 +240,8 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('initial allocation')).toBeTruthy();
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
+  expect(await screen.findByText('6.67%')).toBeTruthy();
+  expect(screen.queryByText('6.7%')).toBeNull();
   expect(
     await screen.findByText('Market closed; using cached quote'),
   ).toBeTruthy();
