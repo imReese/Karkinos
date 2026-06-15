@@ -291,7 +291,9 @@ test('renders the backtest workspace and saved report history', async () => {
   expect(await screen.findByText('Strategy replay')).toBeTruthy();
   expect(await screen.findByText('Backtest configuration')).toBeTruthy();
   expect(await screen.findByDisplayValue('Dual Moving Average')).toBeTruthy();
-  expect(await screen.findByLabelText('short_period')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Short moving-average window'),
+  ).toBeTruthy();
   expect(await screen.findByText('Report selection')).toBeTruthy();
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
 });
@@ -303,9 +305,13 @@ test('switches strategy schema controls from the registry', async () => {
   const strategySelect = screen.getByLabelText('Strategy');
   fireEvent.change(strategySelect, { target: { value: 'bollinger' } });
 
-  expect(await screen.findByLabelText('bb_period')).toBeTruthy();
-  expect(await screen.findByLabelText('num_std')).toBeTruthy();
-  expect(screen.queryByLabelText('short_period')).toBeNull();
+  expect(
+    await screen.findByLabelText('Bollinger lookback window'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Standard-deviation multiplier'),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText('Short moving-average window')).toBeNull();
 });
 
 test('accepts ordinary whole-number initial cash values in browser validation', async () => {
@@ -345,6 +351,40 @@ test('localizes built-in strategy names without changing strategy ids', async ()
   expect(payload.strategy).toBe('dual_ma');
 });
 
+test('localizes built-in parameter labels and descriptions without changing payload keys', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
+
+  expect(await screen.findByLabelText('短均线周期')).toBeTruthy();
+  expect(await screen.findByLabelText('长均线周期')).toBeTruthy();
+  expect(
+    await screen.findByText('短期均线窗口，按交易 bar 计算。'),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText('Short moving-average window in trading bars.'),
+  ).toBeNull();
+
+  fireEvent.change(await screen.findByLabelText('短均线周期'), {
+    target: { value: '3' },
+  });
+  fireEvent.change(await screen.findByLabelText('长均线周期'), {
+    target: { value: '9' },
+  });
+  const runButton = screen.getByRole('button', { name: '运行回测' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const runCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/run'),
+  );
+  const payload = JSON.parse(String(runCall?.[1]?.body));
+  expect(payload.params).toEqual({ short_period: 3, long_period: 9 });
+});
+
 test('runs a backtest and displays metrics_json and cost_summary_json fields', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
@@ -352,10 +392,13 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '603659' },
   });
-  fireEvent.change(await screen.findByLabelText('short_period'), {
-    target: { value: '3' },
-  });
-  fireEvent.change(await screen.findByLabelText('long_period'), {
+  fireEvent.change(
+    await screen.findByLabelText('Short moving-average window'),
+    {
+      target: { value: '3' },
+    },
+  );
+  fireEvent.change(await screen.findByLabelText('Long moving-average window'), {
     target: { value: '9' },
   });
   const runButton = screen.getByRole('button', { name: 'Run backtest' });

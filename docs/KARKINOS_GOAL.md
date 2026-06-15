@@ -362,6 +362,11 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Localized Web Backtest strategy parameter labels and
+  descriptions while preserving stable API parameter ids in submitted payloads.
+  Built-in parameter controls now show user-facing Chinese/English labels and
+  explain the underlying API field as secondary audit context; deterministic
+  frontend tests cover localized controls and unchanged `params` keys.
 * 2026-06-15: Fixed the Web Backtest initial-cash control so ordinary
   whole-number cash values such as `10000` pass native browser validation.
   The regression test now covers the number input's browser validity contract,
