@@ -306,7 +306,7 @@ export function BacktestPage() {
                   className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
                   type="number"
                   min="1"
-                  step="1000"
+                  step="1"
                   value={initialCash}
                   onChange={(event) => setInitialCash(event.target.value)}
                   aria-label={labels.initialCash}
