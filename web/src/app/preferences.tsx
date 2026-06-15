@@ -30,6 +30,25 @@ const PreferencesContext = createContext<PreferencesContextValue>({
 const LOCALE_KEY = 'karkinos.locale';
 const THEME_KEY = 'karkinos.theme';
 
+function readStoredLocale(): Locale {
+  if (typeof window === 'undefined') {
+    return 'en';
+  }
+  const stored = window.localStorage.getItem(LOCALE_KEY);
+  if (stored === 'zh' || stored === 'en') {
+    return stored;
+  }
+  const browserLanguages = [
+    ...(window.navigator.languages ?? []),
+    window.navigator.language,
+  ];
+  return browserLanguages.some((language) =>
+    language.toLowerCase().startsWith('zh'),
+  )
+    ? 'zh'
+    : 'en';
+}
+
 function readStoredTheme(): ThemePreference {
   if (typeof window === 'undefined') {
     return 'system';
@@ -54,13 +73,7 @@ function applyThemeToDocument(nextTheme: ResolvedTheme) {
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocale] = useState<Locale>(() => {
-    if (typeof window === 'undefined') {
-      return 'en';
-    }
-    const stored = window.localStorage.getItem(LOCALE_KEY);
-    return stored === 'zh' ? 'zh' : 'en';
-  });
+  const [locale, setLocale] = useState<Locale>(() => readStoredLocale());
   const [theme, setTheme] = useState<ThemePreference>(() => {
     return readStoredTheme();
   });
