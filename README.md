@@ -92,6 +92,12 @@ discovers sanitized `*.strategy.json` manifests from that directory, or from
 `/api/backtest/strategies`. The committed `.example` files show the interface;
 copied private strategy scripts and manifests stay ignored by git.
 
+For private scripts stored directly in the extension directory, `class_path`
+may point to the local module in `module:ClassName` form, for example
+`local_momentum:LocalMomentumStrategy`. Karkinos loads that class only when a
+registered extension is instantiated for a research backtest, then validates
+its declared params before constructing the strategy.
+
 Extension manifests cannot declare live trading, broker submission, or
 real-money execution capabilities. Strategy Lab runs remain research evidence
 and do not bypass risk gates, paper/shadow review, signal journaling, or manual

@@ -6508,6 +6508,150 @@ def test_backtest_run_accepts_generic_params_and_persists_exact_payload(monkeypa
     assert config_json["long_period"] == 9
 
 
+def test_backtest_run_can_instantiate_local_extension_strategy(monkeypatch, tmp_path):
+    from server.bootstrap import build_strategy
+    from server.routes import backtest as backtest_routes
+    from strategy.registry import StrategyRegistry
+
+    extension_dir = tmp_path / "extensions"
+    extension_dir.mkdir()
+    (extension_dir / "local_threshold.py").write_text(
+        """
+from __future__ import annotations
+
+from core.events import MarketEvent
+from core.types import Symbol
+from strategy.base import Strategy
+
+
+class LocalThresholdStrategy(Strategy):
+    def __init__(
+        self,
+        event_bus,
+        threshold: float = 1.0,
+        strategy_id: str = "local_threshold",
+    ) -> None:
+        super().__init__(strategy_id, event_bus)
+        self.threshold = threshold
+
+    def on_init(self, symbols: list[Symbol]) -> None:
+        self.symbols = symbols
+
+    def on_data(self, event: MarketEvent) -> None:
+        self._last_timestamp = event.timestamp
+        if float(event.close) > self.threshold:
+            self.emit_signal(event.symbol, target_weight=1.0, price=float(event.close))
+""",
+        encoding="utf-8",
+    )
+    (extension_dir / "local_threshold.strategy.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "karkinos.strategy.v1",
+                "strategy_id": "local_threshold",
+                "display_name": "Local Threshold",
+                "description": "Local deterministic threshold research strategy.",
+                "class_path": "local_threshold:LocalThresholdStrategy",
+                "asset_universe": ["stock"],
+                "supported_frequencies": ["1d"],
+                "benchmark_role": "local_research_threshold",
+                "benchmark_universe": ["stock"],
+                "requires_out_of_sample_validation": True,
+                "requires_after_cost_report": True,
+                "validation_notes": ["Research-only extension."],
+                "parameters": [
+                    {
+                        "name": "threshold",
+                        "type": "float",
+                        "default": 1.0,
+                        "required": False,
+                        "min": 0.1,
+                        "max": 10.0,
+                        "description": "Close-price threshold.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KARKINOS_STRATEGY_EXTENSION_DIR", str(extension_dir))
+    StrategyRegistry.clear_extension_strategies_for_tests()
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/run", "POST").endpoint
+    instantiated: dict[str, object] = {}
+    saved_payload: dict[str, object] = {}
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            saved_payload.update(kwargs)
+            return 88
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    class FakeEventBus:
+        def subscribe(self, *args, **kwargs):
+            return None
+
+        def publish(self, *args, **kwargs):
+            return None
+
+    def fake_run_backtest(request, config, db=None):
+        strategy = build_strategy(request, FakeEventBus())
+        instantiated["class_name"] = type(strategy).__name__
+        instantiated["threshold"] = strategy.threshold
+        instantiated["strategy_id"] = strategy.strategy_id
+        return {
+            "initial_cash": 100000.0,
+            "final_equity": 100200.0,
+            "total_return": 0.002,
+            "annual_return": 0.02,
+            "sharpe": 0.4,
+            "sortino": 0.5,
+            "max_drawdown": 0.01,
+            "win_rate": 0.5,
+            "duration_days": 10,
+            "equity_curve": [{"timestamp": "2026-01-01T00:00:00", "equity": 100000.0}],
+            "metrics_json": {},
+            "cost_summary_json": {},
+            "evidence_json": {},
+            "fills": [],
+        }
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fake_run_backtest)
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
+
+    try:
+        response = asyncio.run(
+            endpoint(
+                backtest_routes.BacktestRequest(
+                    strategy="local_threshold",
+                    params={"threshold": "2.5"},
+                )
+            )
+        )
+
+        assert response.id == 88
+        assert instantiated == {
+            "class_name": "LocalThresholdStrategy",
+            "threshold": 2.5,
+            "strategy_id": "local_threshold",
+        }
+        config_json = json.loads(str(saved_payload["config_json"]))
+        assert config_json["strategy"] == "local_threshold"
+        assert config_json["params"] == {"threshold": 2.5}
+    finally:
+        StrategyRegistry.clear_extension_strategies_for_tests()
+
+
 def test_backtest_run_rejects_unknown_generic_params_before_execution(monkeypatch):
     from fastapi import HTTPException
 
