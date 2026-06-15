@@ -260,7 +260,12 @@ function resolveInstrumentName(entry: LedgerEntry) {
 function formatPublicNote(note: string | null | undefined) {
   const segments = readableNoteSegments(note)
     .filter((segment) => !looksLikeInstrumentNameOnly(segment))
-    .map((segment) => segment.replace(/^用户记录[:：]\s*/, '').trim())
+    .map((segment) =>
+      segment
+        .replace(/^用户记录[:：]\s*/, '')
+        .replace(/^手工录入(?:持仓|基金申购)[:：]\s*/, '')
+        .trim(),
+    )
     .filter(Boolean);
   return segments.length > 0 ? segments.slice(0, 2).join(' · ') : null;
 }
@@ -289,7 +294,10 @@ function looksLikeInstrumentNameOnly(segment: string) {
 }
 
 function extractInstrumentNameFromSegment(segment: string) {
-  const cleaned = segment.replace(/^用户记录[:：]\s*/, '').trim();
+  const cleaned = segment
+    .replace(/^用户记录[:：]\s*/, '')
+    .replace(/^手工录入(?:持仓|基金申购)[:：]\s*/, '')
+    .trim();
   if (!/[\u4e00-\u9fff]/.test(cleaned)) {
     return null;
   }

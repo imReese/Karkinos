@@ -222,12 +222,22 @@ else
 	echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
 fi
 
-if command -v setsid >/dev/null 2>&1; then
-	setsid nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then
+	if command -v setsid >/dev/null 2>&1; then
+		setsid nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+	else
+		nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+	fi
 else
-	nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+	if command -v setsid >/dev/null 2>&1; then
+		setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+	else
+		nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+	fi
 fi
 
 LAUNCH_PID=$!

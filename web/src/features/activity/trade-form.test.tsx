@@ -232,19 +232,39 @@ test('renders ledger entries as a user-facing audit table', () => {
           source_ref: 'trade_buy-012710',
           created_at: null,
         },
+        {
+          id: 2,
+          entry_type: 'trade_buy',
+          timestamp: '2026-06-05T06:33:41+00:00',
+          amount: 2755,
+          symbol: '603659',
+          direction: 'buy',
+          quantity: 100,
+          price: 27.55,
+          commission: 5,
+          asset_class: 'stock',
+          note: '手工录入持仓：璞泰来 买入，佣金按万一最低5元计收',
+          source: 'manual',
+          source_ref: 'manual-603659-20260605-143341',
+          created_at: null,
+        },
       ]}
     />,
   );
 
-  expect(screen.getByText('Security buy')).toBeTruthy();
+  expect(screen.getAllByText('Security buy').length).toBeGreaterThan(1);
   expect(screen.getByText('Fund')).toBeTruthy();
-  expect(screen.getByText('Manual entry')).toBeTruthy();
+  expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(1);
   expect(screen.getByText('-CN¥200.00')).toBeTruthy();
   expect(screen.getByText('华夏核心成长混合C')).toBeTruthy();
   expect(screen.getByText('Amount CN¥200.00')).toBeTruthy();
   expect(screen.getByText('Quantity 204.102')).toBeTruthy();
   expect(screen.getByText('Price CN¥0.98')).toBeTruthy();
   expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
+  expect(screen.getByText('璞泰来')).toBeTruthy();
+  expect(screen.getByText('Stock')).toBeTruthy();
+  expect(screen.getByText('603659')).toBeTruthy();
+  expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.queryByText(/gross_amount/)).toBeNull();
   expect(screen.queryByText(/Auto-confirmed/)).toBeNull();
 });

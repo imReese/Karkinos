@@ -83,6 +83,7 @@ export const copy = {
       assetClassFund: 'Fund',
       assetClassGold: 'Gold',
       assetClassBond: 'Bond',
+      assetClassCash: 'Cash',
     },
     mode: {
       account: 'Account Perspective',
@@ -1160,6 +1161,7 @@ export const copy = {
       assetClassFund: '基金',
       assetClassGold: '黄金',
       assetClassBond: '债券',
+      assetClassCash: '现金',
     },
     mode: {
       account: '账户视角',

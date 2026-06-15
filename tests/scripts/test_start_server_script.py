@@ -22,3 +22,10 @@ def test_start_server_guides_local_data_source_configuration():
     assert script.index("guide_data_source_configuration") < script.index(
         "Starting Karkinos Web service"
     )
+
+
+def test_start_server_no_live_path_avoids_empty_env_prefix_expansion():
+    script = Path("scripts/start_server.sh").read_text()
+
+    assert 'if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then\n\tif command -v setsid' in script
+    assert 'env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}"' in script

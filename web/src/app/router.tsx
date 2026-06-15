@@ -582,7 +582,7 @@ function MetricLine({ label, value }: { label: string; value: string }) {
 }
 
 function formatLedgerEntryTitle(entry: LedgerEntry, copy: AppCopy) {
-  const instrumentName = resolveLedgerInstrumentName(entry);
+  const instrumentName = formatLedgerInstrumentLabel(entry);
   if (entry.entry_type === 'trade_buy') {
     return `${copy.overview.dashboard.tradeBuy} ${instrumentName}`.trim();
   }
@@ -626,6 +626,18 @@ function resolveLedgerInstrumentName(entry: LedgerEntry) {
   return noteName ?? entry.symbol ?? '';
 }
 
+function formatLedgerInstrumentLabel(entry: LedgerEntry) {
+  const name = resolveLedgerInstrumentName(entry);
+  const symbol = entry.symbol?.trim();
+  if (!symbol) {
+    return name;
+  }
+  if (!name || name === symbol) {
+    return symbol;
+  }
+  return `${name} ${symbol}`;
+}
+
 function readableLedgerNoteSegments(note: string | null | undefined) {
   if (!note) {
     return [];
@@ -642,7 +654,10 @@ function readableLedgerNoteSegments(note: string | null | undefined) {
 }
 
 function extractLedgerInstrumentName(segment: string) {
-  const cleaned = segment.replace(/^用户记录[:：]\s*/, '').trim();
+  const cleaned = segment
+    .replace(/^用户记录[:：]\s*/, '')
+    .replace(/^手工录入(?:持仓|基金申购)[:：]\s*/, '')
+    .trim();
   if (!/[\u4e00-\u9fff]/.test(cleaned)) {
     return null;
   }
