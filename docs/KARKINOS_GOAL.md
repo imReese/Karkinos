@@ -502,4 +502,9 @@ automation.
   candidate actions, manual-confirmation readiness, risk blocks, audit coverage,
   market-data state, and the manual-confirmation execution default without
   adding any execution behavior.
+* 2026-06-15: Reworked the Risk page summary into boundary and blocking
+  registers. The cockpit now separates read-only concentration, cash,
+  deployment, position, and manual-confirmation boundaries from active risk
+  blocking evidence, with deterministic frontend coverage and no execution
+  behavior changes.
 <!-- codex-progress:end -->

@@ -900,7 +900,7 @@ function PortfolioPage() {
   );
 }
 
-function RiskPage() {
+export function RiskPage() {
   const copy = useCopy();
   const state = useAccountStateQuery();
   const risks = useRiskSummaryQuery();
@@ -963,25 +963,53 @@ function RiskPage() {
             ))}
           </div>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                {copy.riskPage.alerts}
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
+            <div
+              data-testid="risk-blocking-register"
+              className="app-panel min-w-0 rounded-2xl p-4 sm:p-5"
+            >
+              <div className="min-w-0">
+                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                  {copy.riskPage.blockingRegister}
+                </div>
+                <div className="app-muted mt-2 max-w-3xl text-sm">
+                  {copy.riskPage.blockingRegisterDetail}
+                </div>
               </div>
-              <div className="mt-4 grid gap-3">
-                {risks.data?.map((item) => (
-                  <div
-                    key={`${item.kind}-${item.title}`}
-                    className={`rounded-2xl border px-4 py-4 ${
-                      item.level === 'high' || item.level === 'medium'
-                        ? 'app-panel-danger'
-                        : 'app-panel-strong'
-                    }`}
-                  >
-                    <div className="text-sm font-semibold">{item.title}</div>
-                    <div className="mt-2 text-sm opacity-90">{item.detail}</div>
+              <div className="mt-4 grid min-w-0 gap-3">
+                {(risks.data ?? []).length > 0 ? (
+                  (risks.data ?? []).map((item) => (
+                    <div
+                      key={`${item.kind}-${item.title}`}
+                      className={`min-w-0 rounded-2xl border px-4 py-4 ${
+                        item.level === 'high' || item.level === 'medium'
+                          ? 'app-panel-danger'
+                          : 'app-panel-strong'
+                      }`}
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold">
+                            {item.title}
+                          </div>
+                          <div className="app-muted mt-1 break-all text-xs">
+                            {item.kind}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em]">
+                          {item.level}
+                        </span>
+                      </div>
+                      <div className="mt-3 break-words text-sm opacity-90">
+                        {item.detail}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="app-panel-strong rounded-2xl px-4 py-4 text-sm">
+                    {copy.riskPage.noBlockingItems}
                   </div>
-                ))}
+                )}
               </div>
             </div>
             <div className="space-y-5">
