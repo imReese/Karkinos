@@ -38,6 +38,9 @@ public demos and development.
   requested range, symbol universe, row counts, adjustment mode when available,
   and data-quality diagnostics, and the Web report exposes that audit panel for
   saved and freshly run results
+- Backtest results persist a strategy metadata snapshot with strategy identity,
+  parameter schema, normalized params, benchmark role, and validation
+  requirements so saved reports remain auditable when the registry changes
 - Web Backtest reports surface after-cost evidence, out-of-sample split status,
   benchmark comparison, assumptions, and limitations without turning research
   output into execution approval
