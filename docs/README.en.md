@@ -464,6 +464,11 @@ These panels are research evidence only and do not approve execution.
 whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.
 It is for audit and promotion checks, not investment advice.
 
+The Web Backtest Strategy Lab renders registry strategy metadata, asset
+universe, supported frequencies, benchmark role, validation requirements, and
+readable parameter labels while preserving internal parameter keys for the API
+contract and parameter-set audit trail.
+
 The Web Backtest Strategy Lab can run the same bounded parameter sweep for the
 selected strategy and optional one-symbol universe. It renders the tested
 configuration ranking, saved result ids, scores, costs, and multiple-testing

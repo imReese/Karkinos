@@ -383,7 +383,9 @@ const strategyCatalog = [
     benchmark_universe: ['etf'],
     requires_out_of_sample_validation: true,
     requires_after_cost_report: true,
-    validation_notes: [],
+    validation_notes: [
+      'Requires after-cost, out-of-sample ETF trend-following validation before promotion.',
+    ],
   },
   {
     strategy_id: 'bollinger',
@@ -441,6 +443,44 @@ const strategyCatalog = [
     validation_notes: [],
   },
 ];
+
+const extensionStrategy = {
+  strategy_id: 'local_momentum',
+  name: 'local_momentum',
+  display_name: 'Local Momentum Extension',
+  description: 'Private local extension strategy loaded from a manifest.',
+  params: [
+    {
+      name: 'lookback_window',
+      type: 'int',
+      default: 15,
+      required: false,
+      min: 2,
+      max: 120,
+      allowed_values: null,
+      description: 'Local extension lookback window in trading bars.',
+    },
+  ],
+  parameter_schema: [
+    {
+      name: 'lookback_window',
+      type: 'int',
+      default: 15,
+      required: false,
+      min: 2,
+      max: 120,
+      allowed_values: null,
+      description: 'Local extension lookback window in trading bars.',
+    },
+  ],
+  asset_universe: ['stock', 'etf'],
+  supported_frequencies: ['1d'],
+  benchmark_role: 'custom_momentum_research',
+  benchmark_universe: ['stock'],
+  requires_out_of_sample_validation: true,
+  requires_after_cost_report: true,
+  validation_notes: ['Requires paper/shadow review before promotion.'],
+};
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -591,6 +631,55 @@ test('switches strategy schema controls from the registry', async () => {
   expect(screen.queryByLabelText('Short moving-average window')).toBeNull();
 });
 
+test('renders extension strategy metadata and submits its typed params', async () => {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    strategies: [...strategyCatalog, extensionStrategy],
+  });
+
+  await screen.findByText('Local Momentum Extension');
+  const strategySelect = screen.getByLabelText('Strategy');
+  fireEvent.change(strategySelect, { target: { value: 'local_momentum' } });
+
+  expect(await screen.findByLabelText('Lookback Window')).toBeTruthy();
+  expect(await screen.findByText('Strategy metadata')).toBeTruthy();
+  expect(await screen.findByText('stock, etf')).toBeTruthy();
+  expect(await screen.findByText('1d')).toBeTruthy();
+  expect(await screen.findByText('custom_momentum_research')).toBeTruthy();
+  expect(await screen.findByText('OOS required')).toBeTruthy();
+  expect(await screen.findByText('After-cost required')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Lookback Window candidates'),
+  ).toBeTruthy();
+  expect(screen.queryByText('lookback_window candidates')).toBeNull();
+  expect(
+    await screen.findByText('Requires paper/shadow review before promotion.'),
+  ).toBeTruthy();
+
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(await screen.findByLabelText('Lookback Window'), {
+    target: { value: '21' },
+  });
+  const runButton = screen.getByRole('button', { name: 'Run backtest' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const runCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/run'),
+  );
+  const payload = JSON.parse(String(runCall?.[1]?.body));
+  expect(payload.strategy).toBe('local_momentum');
+  expect(payload.params).toEqual({ lookback_window: 21 });
+  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+});
+
 test('accepts ordinary whole-number initial cash values in browser validation', async () => {
   renderBacktestPage({ results: [] });
 
@@ -608,6 +697,16 @@ test('localizes built-in strategy names without changing strategy ids', async ()
   expect(await screen.findByText('策略回放')).toBeTruthy();
   expect(await screen.findByDisplayValue('双均线策略')).toBeTruthy();
   expect(await screen.findByText('布林带均值回归')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(
+      'Requires after-cost, out-of-sample ETF trend-following validation before promotion.',
+    ),
+  ).toBeNull();
 
   fireEvent.change(await screen.findByLabelText('标的代码'), {
     target: { value: '603659' },
@@ -732,7 +831,9 @@ test('renders after-cost and out-of-sample evidence for saved reports', async ()
   expect(await screen.findByText('Validation evidence')).toBeTruthy();
   expect(await screen.findByText('After-cost evidence')).toBeTruthy();
   expect(await screen.findByText('Out-of-sample split')).toBeTruthy();
-  expect(await screen.findByText('etf_rotation_trend_following')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('etf_rotation_trend_following')).length,
+  ).toBeGreaterThanOrEqual(1);
   expect(await screen.findByText('Benchmark passed')).toBeTruthy();
   expect(await screen.findByText('2025-09-01 00:00')).toBeTruthy();
   expect(

@@ -71,7 +71,15 @@ function formatParamList(
 }
 
 function parameterLabel(labels: Partial<Record<string, string>>, name: string) {
-  return labels[name] ?? name;
+  return labels[name] ?? humanizeParameterName(name);
+}
+
+function humanizeParameterName(name: string) {
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 export function ParameterSweepPanel({

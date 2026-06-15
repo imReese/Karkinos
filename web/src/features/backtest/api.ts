@@ -158,6 +158,8 @@ export type BacktestStrategyInfo = {
   description: string;
   params: StrategyParameterSchema[];
   parameter_schema: StrategyParameterSchema[];
+  asset_universe?: string[];
+  supported_frequencies?: string[];
   benchmark_role?: string | null;
   benchmark_universe?: string[];
   requires_out_of_sample_validation?: boolean;

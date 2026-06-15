@@ -117,6 +117,17 @@ function strategyDisplayName(
   );
 }
 
+function strategyDescription(
+  strategy: BacktestStrategyInfo,
+  localizedDescriptions: Record<string, string>,
+) {
+  return (
+    localizedDescriptions[strategy.name] ??
+    localizedDescriptions[strategy.strategy_id] ??
+    strategy.description
+  );
+}
+
 function humanizeParameterName(name: string) {
   return name
     .split('_')
@@ -365,6 +376,14 @@ export function BacktestPage() {
                     {labels.strategyRegistryLoading}
                   </span>
                 ) : null}
+                <StrategyMetadataPanel
+                  strategy={selectedStrategy}
+                  description={strategyDescription(
+                    selectedStrategy,
+                    labels.strategyDescriptions,
+                  )}
+                  labels={labels}
+                />
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
@@ -534,6 +553,92 @@ export function BacktestPage() {
       <BacktestReportView />
     </section>
   );
+}
+
+function StrategyMetadataPanel({
+  strategy,
+  description,
+  labels,
+}: {
+  strategy: BacktestStrategyInfo;
+  description: string;
+  labels: ReturnType<typeof useCopy>['backtest']['page'];
+}) {
+  const assetUniverse = strategy.asset_universe ?? strategy.benchmark_universe;
+  const frequencies = strategy.supported_frequencies;
+  const validationBadges = [
+    strategy.requires_out_of_sample_validation ? labels.oosRequired : null,
+    strategy.requires_after_cost_report ? labels.afterCostRequired : null,
+  ].filter(Boolean);
+  const validationNoteLabels: Record<string, string> = labels.validationNotes;
+
+  return (
+    <section className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4">
+      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+        {labels.strategyMetadata}
+      </div>
+      <p className="mt-2 text-sm leading-6 text-[var(--app-text)]">
+        {description}
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <MetadataItem
+          label={labels.assetUniverse}
+          value={formatMetadataList(assetUniverse, labels.notDeclared)}
+        />
+        <MetadataItem
+          label={labels.supportedFrequencies}
+          value={formatMetadataList(frequencies, labels.notDeclared)}
+        />
+        <MetadataItem
+          label={labels.benchmarkRole}
+          value={strategy.benchmark_role ?? labels.notDeclared}
+        />
+        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
+          <div className="app-muted text-[11px]">
+            {labels.validationRequirements}
+          </div>
+          {validationBadges.length > 0 ? (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {validationBadges.map((badge) => (
+                <span
+                  key={badge}
+                  className="rounded-full border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--app-accent-strong)]"
+                >
+                  {badge}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 text-sm font-semibold">
+              {labels.notDeclared}
+            </div>
+          )}
+        </div>
+      </div>
+      {strategy.validation_notes?.length ? (
+        <ul className="mt-3 space-y-1 text-xs leading-5 text-[var(--app-muted)]">
+          {strategy.validation_notes.map((note) => (
+            <li key={note}>{validationNoteLabels[note] ?? note}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function MetadataItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
+      <div className="app-muted text-[11px]">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold tabular-nums">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function formatMetadataList(values: string[] | undefined, fallback: string) {
+  return values && values.length > 0 ? values.join(', ') : fallback;
 }
 
 function SummaryValue({
