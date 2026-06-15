@@ -41,17 +41,17 @@ const ledgerEntries = [
   {
     id: 1,
     entry_type: 'trade_buy',
-    timestamp: '2026-04-23T14:46:00+00:00',
-    amount: 200,
-    symbol: '012710',
+    timestamp: '2026-06-05T06:33:41+00:00',
+    amount: 2755,
+    symbol: '603659',
     direction: 'buy',
-    quantity: 204.102,
-    price: 0.9799,
-    commission: 0,
-    asset_class: 'fund',
-    note: '用户记录：华夏核心成长混合C 买入 200 元',
+    quantity: 100,
+    price: 27.55,
+    commission: 5,
+    asset_class: 'stock',
+    note: '手工录入持仓：璞泰来 买入，佣金按万一最低5元计收',
     source: 'manual',
-    source_ref: 'trade_buy-012710',
+    source_ref: 'manual-603659-20260605-143341',
     created_at: null,
   },
 ];
@@ -211,11 +211,12 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(
     await screen.findByRole('button', { name: '2026-02-10 · CN¥600.00' }),
   ).toBeTruthy();
-  expect(await screen.findByText(/华夏核心成长混合C/)).toBeTruthy();
-  expect(screen.getByText('Fund')).toBeTruthy();
-  expect(screen.getByText('Qty 204.102')).toBeTruthy();
-  expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
-  expect(screen.queryByText('fund')).toBeNull();
+  expect(await screen.findByText(/璞泰来 603659/)).toBeTruthy();
+  expect(screen.queryByText(/手工录入持仓/)).toBeNull();
+  expect(screen.getByText('Stock')).toBeTruthy();
+  expect(screen.getByText('Qty 100')).toBeTruthy();
+  expect(screen.getByText('Fee CN¥5.00')).toBeTruthy();
+  expect(screen.queryByText('stock')).toBeNull();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {

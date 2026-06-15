@@ -462,4 +462,15 @@ automation.
   price, and commission with localized labels, while portfolio asset classes
   render as UI-language labels such as Stock/Fund or 股票/基金 instead of raw
   storage codes.
+* 2026-06-15: Tightened current-day return attribution and ledger naming. The
+  return calendar now drops stale weekday terminal quote points whose valuation
+  timestamp is older than the displayed date, preventing 2026-06-12 fund quotes
+  from appearing as 2026-06-15 income. Overview and Activity ledger surfaces now
+  parse manual holding/fund notes into instrument names and keep symbols visible
+  beside the business name.
+* 2026-06-15: Separated current valuation from audited return-calendar
+  attribution. Daily explainability no longer uses live `latest_quotes` as
+  historical day-close evidence, so intraday fund estimates can update current
+  holdings without creating same-day calendar income; localized asset-class
+  display now includes cash/现金 as well as stock/股票 and fund/基金.
 <!-- codex-progress:end -->

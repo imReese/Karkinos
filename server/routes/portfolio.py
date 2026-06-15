@@ -1926,6 +1926,33 @@ def _trim_non_trading_terminal_series_point(
     timestamp = _parse_quote_timestamp(points[-1].timestamp)
     if timestamp is not None and timestamp.weekday() >= 5:
         return points[:-1]
+    previous_timestamp = _parse_quote_timestamp(points[-2].timestamp)
+    if (
+        points[-1].quote_status == "stale"
+        and timestamp is not None
+        and previous_timestamp is not None
+        and timestamp.date() > previous_timestamp.date()
+    ):
+        return points[:-1]
+    return points
+
+
+def _trim_intraday_terminal_series_point(
+    points: list[EquitySeriesPoint],
+    *,
+    now: datetime | None = None,
+) -> list[EquitySeriesPoint]:
+    if len(points) < 2:
+        return points
+    timestamp = _parse_quote_timestamp(points[-1].timestamp)
+    if timestamp is None:
+        return points
+    current = (now or get_shanghai_now()).astimezone(_SH_TZ)
+    point_time = timestamp.astimezone(_SH_TZ).time().replace(tzinfo=None)
+    if timestamp.astimezone(_SH_TZ).date() == current.date() and (
+        point_time != _CN_AFTERNOON_CLOSE
+    ):
+        return points[:-1]
     return points
 
 
@@ -2026,8 +2053,7 @@ def _historical_quote_for_equity_day(
     latest_quotes: dict[str, dict],
     is_current_day: bool,
 ) -> dict | None:
-    if is_current_day and symbol in latest_quotes:
-        return latest_quotes[symbol]
+    _ = is_current_day
 
     next_date = (trade_date + timedelta(days=1)).isoformat()
     db = state.db
@@ -2074,6 +2100,22 @@ def _historical_quote_for_equity_day(
         )
     ):
         return latest_quotes.get(symbol)
+    return None
+
+
+def _quote_valuation_date(quote: dict | None) -> date | None:
+    if not quote:
+        return None
+    for key in ("trade_date", "timestamp", "quote_timestamp"):
+        value = quote.get(key)
+        parsed = _parse_quote_timestamp(value)
+        if parsed is not None:
+            return parsed.date()
+        if isinstance(value, str) and value.strip():
+            try:
+                return date.fromisoformat(value.strip().split("T")[0].split(" ")[0])
+            except ValueError:
+                continue
     return None
 
 
@@ -2144,6 +2186,7 @@ def _daily_equity_series_from_ledger_history(
         if active_entries and should_emit_day:
             historical_quotes: dict[str, dict] = {}
             missing_price_symbols: list[str] = []
+            stale_terminal_symbols: list[str] = []
             for symbol, asset_class in asset_classes.items():
                 quote = _historical_quote_for_equity_day(
                     state,
@@ -2154,9 +2197,17 @@ def _daily_equity_series_from_ledger_history(
                     is_current_day=current_date == end_date,
                 )
                 if quote is not None:
+                    quote_date = _quote_valuation_date(quote)
+                    if current_date == end_date and quote_date != current_date:
+                        stale_terminal_symbols.append(symbol)
+                        continue
                     historical_quotes[symbol] = quote
                 elif any(entry.symbol == symbol for entry in active_entries):
                     missing_price_symbols.append(symbol)
+
+            if current_date == end_date and stale_terminal_symbols:
+                current_date += timedelta(days=1)
+                continue
 
             projection = build_portfolio_projection(
                 active_entries,
@@ -2714,6 +2765,7 @@ def create_router() -> APIRouter:
         ):
             equity_series = await get_equity_curve_series("all")
             equity_series = _trim_non_trading_terminal_series_point(equity_series)
+            equity_series = _trim_intraday_terminal_series_point(equity_series)
             equity_series = _dedupe_equity_series_points_by_date(equity_series)
             equity_curve = _equity_points_from_series(equity_series)
             component_values_by_date = _equity_series_components_by_date(equity_series)

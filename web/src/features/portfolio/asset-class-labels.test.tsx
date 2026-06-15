@@ -51,8 +51,10 @@ test('localizes portfolio asset filter options in english', () => {
 
   expect(screen.getByRole('option', { name: 'Fund' })).toBeTruthy();
   expect(screen.getByRole('option', { name: 'Stock' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: 'Cash' })).toBeTruthy();
   expect(screen.queryByRole('option', { name: 'fund' })).toBeNull();
   expect(screen.queryByRole('option', { name: 'stock' })).toBeNull();
+  expect(screen.queryByRole('option', { name: 'cash' })).toBeNull();
 });
 
 test('localizes portfolio asset filter options and allocation groups in chinese', () => {
@@ -60,8 +62,10 @@ test('localizes portfolio asset filter options and allocation groups in chinese'
 
   expect(screen.getByRole('option', { name: '基金' })).toBeTruthy();
   expect(screen.getByRole('option', { name: '股票' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '现金' })).toBeTruthy();
   expect(screen.queryByRole('option', { name: 'fund' })).toBeNull();
   expect(screen.queryByRole('option', { name: 'stock' })).toBeNull();
+  expect(screen.queryByRole('option', { name: 'cash' })).toBeNull();
 
   renderWithLocale(
     <AllocationGroupsCard

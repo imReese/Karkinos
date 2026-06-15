@@ -4,7 +4,7 @@ import asyncio
 import json
 import sqlite3
 import time
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -4250,8 +4250,8 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
     assert timeline_by_date["2026-04-22"].equity == pytest.approx(100050.0)
     assert timeline_by_date["2026-05-08"].equity == pytest.approx(100100.0)
     assert timeline_by_date["2026-05-08"].market_pnl == pytest.approx(50.0)
-    assert response.timeline[-1].date == "2026-05-12"
-    assert response.timeline[-1].equity == pytest.approx(100200.0)
+    assert response.timeline[-1].date == "2026-05-11"
+    assert "2026-05-12" not in timeline_by_date
 
 
 def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
@@ -4458,6 +4458,252 @@ def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
     assert response.timeline[-1].date == "2026-05-08"
     assert response.timeline[-1].equity == pytest.approx(100100.0)
     assert all(point.date != "2026-05-10" for point in response.timeline)
+
+
+def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    explain_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/explainability"
+    )
+    endpoint = explain_route.endpoint
+
+    class FakeDb:
+        market_bars = {
+            ("012710", "2026-06-12"): {"close": 0.9194},
+        }
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-06-10T01:00:00+00:00",
+                    "amount": 1000.0,
+                    "symbol": None,
+                    "direction": None,
+                    "quantity": None,
+                    "price": None,
+                    "commission": 0.0,
+                    "asset_class": "cash",
+                    "note": "seed cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                    "created_at": "2026-06-10T01:00:01+00:00",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-06-12T06:00:00+00:00",
+                    "amount": 100.0,
+                    "symbol": "012710",
+                    "direction": "buy",
+                    "quantity": 100.0,
+                    "price": 0.9,
+                    "commission": 0.0,
+                    "asset_class": "fund",
+                    "note": "手工录入基金申购：华夏核心成长混合C，申购金额 100.00",
+                    "source": "manual",
+                    "source_ref": "fund-1",
+                    "created_at": "2026-06-12T06:00:01+00:00",
+                },
+            ]
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "012710",
+                    "asset_class": "fund",
+                    "price": 0.9202,
+                    "volume": 0.0,
+                    "timestamp": "2026-06-12T15:00:00+08:00",
+                    "quote_timestamp": "2026-06-12T15:00:00+08:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                }
+            ]
+
+        def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
+            candidates = [
+                (bar_date, bar)
+                for (bar_symbol, bar_date), bar in self.market_bars.items()
+                if bar_symbol == symbol and bar_date < trade_date
+            ]
+            if not candidates:
+                return None
+            bar_date, bar = sorted(candidates)[-1]
+            return {
+                "symbol": symbol,
+                "asset_class": "fund",
+                "trade_date": bar_date,
+                "timestamp": f"{bar_date}T15:00:00+08:00",
+                "close": bar["close"],
+                "price": bar["close"],
+                "source": "market_bars",
+            }
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 1000.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 15, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    response = asyncio.run(endpoint(limit=50))
+
+    assert response.timeline[-1].date == "2026-06-12"
+    assert all(point.date != "2026-06-15" for point in response.timeline)
+
+
+def test_portfolio_explainability_trims_intraday_terminal_point_from_return_calendar():
+    from zoneinfo import ZoneInfo
+
+    from server.models import EquitySeriesPoint
+    from server.routes.portfolio import _trim_intraday_terminal_series_point
+
+    shanghai = ZoneInfo("Asia/Shanghai")
+    points = [
+        EquitySeriesPoint(
+            timestamp="2026-06-12T15:00:00+08:00",
+            total=15084.30,
+            stocks=6596.0,
+            funds=2718.9,
+            others=0.0,
+            cash=5769.4,
+            unrealized_pnl=760.0,
+            quote_status="live",
+        ),
+        EquitySeriesPoint(
+            timestamp="2026-06-15T10:45:00+08:00",
+            total=15204.42,
+            stocks=6678.0,
+            funds=2757.01,
+            others=0.0,
+            cash=5769.4,
+            unrealized_pnl=880.12,
+            quote_status="live",
+        ),
+    ]
+
+    trimmed = _trim_intraday_terminal_series_point(
+        points,
+        now=datetime(2026, 6, 15, 10, 50, tzinfo=shanghai),
+    )
+
+    assert [point.timestamp for point in trimmed] == ["2026-06-12T15:00:00+08:00"]
+
+
+def test_portfolio_explainability_keeps_daily_close_terminal_point():
+    from zoneinfo import ZoneInfo
+
+    from server.models import EquitySeriesPoint
+    from server.routes.portfolio import _trim_intraday_terminal_series_point
+
+    shanghai = ZoneInfo("Asia/Shanghai")
+    points = [
+        EquitySeriesPoint(
+            timestamp="2026-06-12T15:00:00+08:00",
+            total=15084.30,
+            stocks=6596.0,
+            funds=2718.9,
+            others=0.0,
+            cash=5769.4,
+            unrealized_pnl=760.0,
+            quote_status="live",
+        ),
+        EquitySeriesPoint(
+            timestamp="2026-06-15T15:00:00+08:00",
+            total=15204.42,
+            stocks=6678.0,
+            funds=2757.01,
+            others=0.0,
+            cash=5769.4,
+            unrealized_pnl=880.12,
+            quote_status="live",
+        ),
+    ]
+
+    trimmed = _trim_intraday_terminal_series_point(
+        points,
+        now=datetime(2026, 6, 15, 16, 0, tzinfo=shanghai),
+    )
+
+    assert [point.timestamp for point in trimmed] == [
+        "2026-06-12T15:00:00+08:00",
+        "2026-06-15T15:00:00+08:00",
+    ]
+
+
+def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_attribution():
+    from server.routes.portfolio import _historical_quote_for_equity_day
+
+    class FakeDb:
+        def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
+            assert symbol == "012710"
+            assert trade_date == "2026-06-16"
+            return {
+                "symbol": symbol,
+                "asset_class": "fund",
+                "trade_date": "2026-06-12",
+                "timestamp": "2026-06-12T15:00:00+08:00",
+                "close": 0.9194,
+                "price": 0.9194,
+                "source": "market_bars",
+            }
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    quote = _historical_quote_for_equity_day(
+        SimpleNamespace(db=FakeDb()),
+        symbol="012710",
+        asset_class="fund",
+        trade_date=date(2026, 6, 15),
+        latest_quotes={
+            "012710": {
+                "symbol": "012710",
+                "asset_class": "fund",
+                "price": 0.9075,
+                "quote_timestamp": "2026-06-15 10:45",
+                "quote_source": "eastmoney_fund_estimate",
+            }
+        },
+        is_current_day=True,
+    )
+
+    assert quote is not None
+    assert quote["source"] == "market_bars"
+    assert quote["timestamp"] == "2026-06-12T15:00:00+08:00"
+    assert quote["price"] == pytest.approx(0.9194)
 
 
 def test_portfolio_explainability_maps_ledger_events_to_shanghai_dates():
