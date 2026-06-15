@@ -187,6 +187,26 @@ function installHoldingFetchMock({
         stale_symbols_sample: includePosition ? ['600519'] : [],
       });
     }
+    if (url.includes('/api/market/kline/600519')) {
+      return jsonResponse([
+        {
+          timestamp: '2026-04-19T15:00:00+08:00',
+          open: 1510,
+          high: 1620,
+          low: 1500,
+          close: 1600,
+          volume: 120000,
+        },
+        {
+          timestamp: '2026-04-20T15:00:00+08:00',
+          open: 1600,
+          high: 1660,
+          low: 1580,
+          close: 1640,
+          volume: 130000,
+        },
+      ]);
+    }
     return new Response('Not found', { status: 404 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -241,6 +261,8 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
   expect(await screen.findByText('6.67%')).toBeTruthy();
+  expect(await screen.findByText('Price range / K-line')).toBeTruthy();
+  expect(await screen.findByText('CN¥1,640.00')).toBeTruthy();
   expect(screen.queryByText('6.7%')).toBeNull();
   expect(
     await screen.findByText('Market closed; using cached quote'),

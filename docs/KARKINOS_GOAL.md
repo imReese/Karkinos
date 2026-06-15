@@ -519,4 +519,8 @@ automation.
   The board now keeps asset-class summaries plus compact, clickable holding
   rows that link to each holding detail page, leaving the full per-instrument
   metrics in the table/detail flow and avoiding overlapping detail cards.
+* 2026-06-15: Split Portfolio quote summaries from instrument detail. The
+  holdings quote board now stops rendering individual holding rows, while a
+  reusable OHLC/K-line price structure surface appears in holding detail pages
+  and the Market research workspace without adding trading execution behavior.
 <!-- codex-progress:end -->

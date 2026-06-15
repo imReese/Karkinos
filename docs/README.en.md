@@ -17,6 +17,7 @@ Key Features:
 - **Live Monitoring** — Standalone Live mode + built-in Scheduler in Web service, with signal push notifications
 - **Notifications** — Console / Telegram / WeChat (ServerChan) channels
 - **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts workspace
+- **Holdings and market detail** — the Portfolio quote board summarizes asset classes, while instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research workspace
 - **Responsive Cockpit Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
 - **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data
 - **Docker One-Click Deploy** — Multi-stage build, all-in-one frontend + backend image
