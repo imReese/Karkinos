@@ -76,11 +76,12 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
         {groups.map((group) => (
           <div
             key={group.asset_class}
+            data-testid={`live-holdings-group-summary-${group.asset_class}`}
             className="app-panel-strong rounded-2xl px-4 py-4"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">
                   {group.label ||
                     assetClassLabel(group.asset_class, copy.common)}
                 </div>
@@ -88,21 +89,29 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
                   {labels.positionCount(group.items.length)}
                 </div>
               </div>
-              <div
-                className={`text-sm font-semibold ${toneClass(group.total_today_change)}`}
-              >
-                {formatCurrency(group.total_today_change)}
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              <SummaryMetric
+                testId={`live-holdings-group-summary-${group.asset_class}-market-value`}
+                label={copy.portfolio.table.marketValue}
+                value={formatCurrency(group.total_market_value)}
+                valueClassName="text-base"
+              />
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+                <SummaryMetric
+                  testId={`live-holdings-group-summary-${group.asset_class}-today-move`}
+                  label={labels.todayMove}
+                  value={formatCurrency(group.total_today_change)}
+                  valueClassName={toneClass(group.total_today_change)}
+                />
+                <SummaryMetric
+                  testId={`live-holdings-group-summary-${group.asset_class}-since-buy`}
+                  label={labels.sinceBuyReturn}
+                  value={formatCurrency(group.total_since_buy_pnl)}
+                  valueClassName={toneClass(group.total_since_buy_pnl)}
+                />
               </div>
-            </div>
-            <div className="mt-3 text-lg font-semibold">
-              {formatCurrency(group.total_market_value)}
-            </div>
-            <div className="mt-2 flex items-center justify-between gap-3 text-xs">
-              <span className="app-muted">{labels.todayMove}</span>
-              <span className={toneClass(group.total_since_buy_pnl)}>
-                {labels.sinceBuyReturn}{' '}
-                {formatCurrency(group.total_since_buy_pnl)}
-              </span>
             </div>
           </div>
         ))}
@@ -196,6 +205,34 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
             </div>
           </section>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function SummaryMetric({
+  testId,
+  label,
+  value,
+  valueClassName,
+}: {
+  testId: string;
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-3"
+    >
+      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+        {label}
+      </div>
+      <div
+        className={`mt-2 truncate text-sm font-semibold tabular-nums ${valueClassName ?? ''}`}
+      >
+        {value}
       </div>
     </div>
   );

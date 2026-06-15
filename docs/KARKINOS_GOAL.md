@@ -511,4 +511,8 @@ automation.
   Live holding cards, the positions table, and holding detail now use a
   dedicated return-percent formatter while leaving allocation and risk weights
   on their existing compact formatting.
+* 2026-06-15: Clarified the Portfolio holdings quote board summary cards.
+  Asset-class summaries now group market value, today's move, and since-buy
+  return into separate labeled metric cells so each amount can be read without
+  cross-referencing distant labels.
 <!-- codex-progress:end -->
