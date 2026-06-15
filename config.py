@@ -26,6 +26,8 @@ class BacktestConfig:
     short_period: int = 5
     long_period: int = 20
     commission_rate: Decimal = Decimal("0.0003")
+    account_commission_rate: Decimal = Decimal("0.0001")
+    account_min_commission: Decimal = Decimal("5")
     data_source: str = "akshare"
     tushare_token: str = ""
     notification: dict = field(default_factory=lambda: {"type": "console"})
@@ -45,6 +47,18 @@ class BacktestConfig:
             data["commission_rate"], Decimal
         ):
             data["commission_rate"] = Decimal(str(data["commission_rate"]))
+        if "account_commission_rate" in data and not isinstance(
+            data["account_commission_rate"], Decimal
+        ):
+            data["account_commission_rate"] = Decimal(
+                str(data["account_commission_rate"])
+            )
+        if "account_min_commission" in data and not isinstance(
+            data["account_min_commission"], Decimal
+        ):
+            data["account_min_commission"] = Decimal(
+                str(data["account_min_commission"])
+            )
 
         # 空字符串视为"使用默认值"（config.example.json 中 end_date 为 ""）
         if data.get("end_date") == "":

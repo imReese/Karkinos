@@ -5393,6 +5393,70 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
     assert fake_state.db.instrument_metadata[0]["display_name"] == "华夏核心成长混合C"
 
 
+def test_portfolio_trade_uses_configured_account_commission_when_missing(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    trade_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
+    )
+
+    class FakeDb:
+        def __init__(self):
+            self.trades: list[dict] = []
+            self.ledger_entries: list[dict] = []
+
+        async def add_trade(self, **payload):
+            trade_id = len(self.trades) + 1
+            self.trades.insert(
+                0,
+                {
+                    "id": trade_id,
+                    **payload,
+                    "created_at": "2026-06-05T14:33:42",
+                },
+            )
+            return trade_id
+
+        def insert_ledger_entry_sync(self, **payload):
+            self.ledger_entries.append(payload)
+
+        async def get_trades(self, limit=50, offset=0):
+            return self.trades[offset : offset + limit]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            account_commission_rate=0.00025,
+            account_min_commission=3.0,
+        ),
+        scheduler=SimpleNamespace(is_running=False),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(
+        trade_route.endpoint(
+            portfolio_routes.TradeCreate(
+                timestamp="2026-06-05T14:33:41",
+                symbol="603659",
+                direction="buy",
+                quantity=200,
+                price=28.82,
+                asset_class="stock",
+            )
+        )
+    )
+
+    assert response.commission == pytest.approx(3.0)
+    assert response.note == "账户佣金配置：佣金率万2.5，最低3元"
+    assert fake_state.db.ledger_entries[0]["commission"] == pytest.approx(3.0)
+    assert fake_state.db.ledger_entries[0]["note"] == response.note
+
+
 def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
     monkeypatch, tmp_path
 ):

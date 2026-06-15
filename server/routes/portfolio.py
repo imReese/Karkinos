@@ -93,6 +93,43 @@ _ASSET_CLASS_LABELS = {
     "cash": "现金",
 }
 
+
+def _decimal_config_value(config, name: str, fallback: str) -> Decimal:
+    value = getattr(config, name, fallback)
+    return Decimal(str(value))
+
+
+def _format_decimal_short(value: Decimal) -> str:
+    normalized = value.normalize()
+    return format(normalized, "f")
+
+
+def _account_commission_note(rate: Decimal, min_commission: Decimal) -> str:
+    rate_per_ten_thousand = rate * Decimal("10000")
+    return (
+        "账户佣金配置：佣金率万"
+        f"{_format_decimal_short(rate_per_ten_thousand)}，"
+        f"最低{_format_decimal_short(min_commission)}元"
+    )
+
+
+def _resolve_account_commission(
+    config,
+    *,
+    asset_class: str,
+    quantity: float | None,
+    price: float | None,
+) -> tuple[float, str] | None:
+    if asset_class.lower() not in {"stock", "etf"} or quantity is None or price is None:
+        return None
+    rate = _decimal_config_value(config, "account_commission_rate", "0.0001")
+    min_commission = _decimal_config_value(config, "account_min_commission", "5")
+    notional = Decimal(str(quantity)) * Decimal(str(price))
+    calculated = max(notional * rate, min_commission)
+    commission = calculated.quantize(Decimal("0.01"))
+    return float(commission), _account_commission_note(rate, min_commission)
+
+
 _TIMELINE_MARKET_COMPONENTS = (
     ("stock", "stocks"),
     ("fund", "funds"),
@@ -2915,6 +2952,7 @@ def create_router() -> APIRouter:
         quantity = body.quantity
         price = body.price
         note = body.note
+        commission = body.commission
 
         if (
             body.asset_class == "fund"
@@ -2927,7 +2965,7 @@ def create_router() -> APIRouter:
                     symbol=symbol,
                     timestamp=body.timestamp,
                     gross_amount=body.amount,
-                    commission=body.commission,
+                    commission=commission or 0.0,
                 )
             except LookupError as exc:
                 from fastapi.responses import JSONResponse
@@ -2944,7 +2982,7 @@ def create_router() -> APIRouter:
                     symbol=identity["symbol"],
                     display_name=identity["display_name"],
                     amount=body.amount,
-                    commission=body.commission,
+                    commission=commission or 0.0,
                     asset_class=body.asset_class,
                     target_trade_date=_fund_target_trade_date(body.timestamp),
                     note=body.note,
@@ -2957,7 +2995,7 @@ def create_router() -> APIRouter:
                         "symbol": identity["symbol"],
                         "display_name": identity["display_name"],
                         "amount": body.amount,
-                        "commission": body.commission,
+                        "commission": commission or 0.0,
                         "asset_class": body.asset_class,
                         "target_trade_date": _fund_target_trade_date(body.timestamp),
                         "detail": str(exc),
@@ -2992,13 +3030,27 @@ def create_router() -> APIRouter:
                 detail="quantity and price are required unless this is a fund buy with amount",
             )
 
+        if commission is None:
+            configured_commission = _resolve_account_commission(
+                state.config,
+                asset_class=body.asset_class,
+                quantity=quantity,
+                price=price,
+            )
+            if configured_commission is None:
+                commission = 0.0
+            else:
+                commission, commission_note = configured_commission
+                if not note.strip():
+                    note = commission_note
+
         trade_id = await db.add_trade(
             timestamp=body.timestamp,
             symbol=symbol,
             direction=body.direction,
             quantity=quantity,
             price=price,
-            commission=body.commission,
+            commission=commission,
             asset_class=body.asset_class,
             note=note,
         )
@@ -3010,7 +3062,7 @@ def create_router() -> APIRouter:
             direction=body.direction,
             quantity=float(quantity),
             price=float(price),
-            commission=body.commission,
+            commission=commission,
             asset_class=body.asset_class,
             note=note,
             source="portfolio_trade",
@@ -3036,7 +3088,7 @@ def create_router() -> APIRouter:
                         side=side,
                         fill_price=Decimal(str(price)),
                         fill_quantity=Decimal(str(quantity)),
-                        commission=Decimal(str(body.commission)),
+                        commission=Decimal(str(commission)),
                         slippage=Decimal("0"),
                     )
                     portfolio.on_fill(fill)

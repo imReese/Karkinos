@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../app/copy';
+import { formatCurrency } from '../../../shared/format';
 
 export type TradeFormValues = {
   occurred_at: string;
@@ -14,6 +15,42 @@ export type TradeFormValues = {
   fee: number;
   note: string;
 };
+
+export type CommissionSettings = {
+  stock_rate: number;
+  stock_min_commission: number;
+};
+
+function calculateCommission({
+  assetClass,
+  quantity,
+  price,
+  settings,
+}: {
+  assetClass: string;
+  quantity: number | null;
+  price: number | null;
+  settings?: CommissionSettings;
+}) {
+  if (!settings || !['stock', 'etf'].includes(assetClass.toLowerCase())) {
+    return null;
+  }
+  if (
+    typeof quantity !== 'number' ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    typeof price !== 'number' ||
+    !Number.isFinite(price) ||
+    price <= 0
+  ) {
+    return null;
+  }
+  const calculated = Math.max(
+    quantity * price * settings.stock_rate,
+    settings.stock_min_commission,
+  );
+  return Number(calculated.toFixed(2));
+}
 
 function assetClassOptions(copy: ReturnType<typeof useCopy>) {
   return [
@@ -28,9 +65,11 @@ function assetClassOptions(copy: ReturnType<typeof useCopy>) {
 export function TradeForm({
   onSubmit,
   pending = false,
+  commissionSettings,
 }: {
   onSubmit: (values: TradeFormValues) => Promise<void>;
   pending?: boolean;
+  commissionSettings?: CommissionSettings;
 }) {
   const copy = useCopy();
   const common = copy.common;
@@ -54,14 +93,30 @@ export function TradeForm({
     handleSubmit,
     watch,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<TradeFormValues>({
     defaultValues: createDefaultValues(),
   });
   const assetClass = watch('asset_class');
   const direction = watch('direction');
+  const quantity = watch('quantity');
+  const price = watch('unit_price');
   const isFundBuy =
     assetClass.trim().toLowerCase() === 'fund' && direction === 'buy';
+  const calculatedCommission = calculateCommission({
+    assetClass,
+    quantity,
+    price,
+    settings: commissionSettings,
+  });
+
+  useEffect(() => {
+    if (calculatedCommission === null) {
+      return;
+    }
+    setValue('fee', calculatedCommission);
+  }, [calculatedCommission, setValue]);
 
   return (
     <form
@@ -180,6 +235,14 @@ export function TradeForm({
           {...register('fee', { valueAsNumber: true })}
         />
       </div>
+      {commissionSettings ? (
+        <div className="app-muted text-xs leading-5">
+          {labels.commissionHelp(
+            commissionSettings.stock_rate * 10000,
+            formatCurrency(commissionSettings.stock_min_commission),
+          )}
+        </div>
+      ) : null}
       {errors.quantity ? (
         <FieldError message={errors.quantity.message} />
       ) : null}

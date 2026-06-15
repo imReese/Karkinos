@@ -26,6 +26,7 @@ import {
   useStopLiveMutation,
   useTestNotificationMutation,
   useUpdateDataSourceSettingsMutation,
+  useUpdateSettingsMutation,
 } from '../api';
 
 type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
@@ -68,6 +69,7 @@ export function SettingsPage() {
   const marketHealth = useMarketDataHealthQuery();
   const overview = useAccountOverviewQuery();
   const updateDataSource = useUpdateDataSourceSettingsMutation();
+  const updateSettings = useUpdateSettingsMutation();
   const startLive = useStartLiveMutation();
   const stopLive = useStopLiveMutation();
   const testNotification = useTestNotificationMutation();
@@ -76,6 +78,8 @@ export function SettingsPage() {
   const [dataSource, setDataSource] = useState('');
   const [providerToken, setProviderToken] = useState('');
   const [pollInterval, setPollInterval] = useState('60');
+  const [accountCommissionRate, setAccountCommissionRate] = useState('0.0001');
+  const [accountMinCommission, setAccountMinCommission] = useState('5');
   const taskStorageKey = useMemo(() => dailyTaskKey(), []);
   const [manualTasksDone, setManualTasksDone] = useState<
     Partial<Record<ManualTaskId, boolean>>
@@ -94,6 +98,8 @@ export function SettingsPage() {
     setDataSource(settings.data.data_source);
     setProviderToken(settings.data.tushare_token);
     setPollInterval(String(settings.data.live_poll_interval));
+    setAccountCommissionRate(String(settings.data.account_commission_rate));
+    setAccountMinCommission(String(settings.data.account_min_commission));
   }, [settings.data]);
 
   useEffect(() => {
@@ -406,6 +412,16 @@ export function SettingsPage() {
     );
   }, [dataSource, pollInterval, providerToken, settings.data]);
 
+  const accountCommissionChanged = useMemo(() => {
+    if (!settings.data) {
+      return false;
+    }
+    return (
+      Number(accountCommissionRate) !== settings.data.account_commission_rate ||
+      Number(accountMinCommission) !== settings.data.account_min_commission
+    );
+  }, [accountCommissionRate, accountMinCommission, settings.data]);
+
   const submitDataSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
@@ -415,6 +431,22 @@ export function SettingsPage() {
       live_poll_interval: normalizedInterval,
     });
     setPollInterval(String(normalizedInterval));
+  };
+
+  const submitAccountCommission = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!settings.data) {
+      return;
+    }
+    const normalizedRate = Math.max(Number(accountCommissionRate) || 0, 0);
+    const normalizedMinimum = Math.max(Number(accountMinCommission) || 0, 0);
+    await updateSettings.mutateAsync({
+      ...settings.data,
+      account_commission_rate: normalizedRate,
+      account_min_commission: normalizedMinimum,
+    });
+    setAccountCommissionRate(String(normalizedRate));
+    setAccountMinCommission(String(normalizedMinimum));
   };
 
   return (
@@ -758,6 +790,94 @@ export function SettingsPage() {
                 tone="neutral"
                 title={copy.settings.providerNextAction}
                 detail={providerActionLabel}
+              />
+            ) : null}
+
+            <form
+              className="grid gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+              onSubmit={submitAccountCommission}
+            >
+              <div>
+                <div className="text-sm font-semibold">
+                  {copy.settings.accountCostProfile}
+                </div>
+                <div className="app-muted mt-1 text-xs leading-5">
+                  {copy.settings.accountCostProfileDetail}
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.settings.stockCommissionRate}
+                  </span>
+                  <input
+                    aria-label={copy.settings.stockCommissionRate}
+                    className="app-field rounded-2xl px-3 py-2 text-sm tabular-nums"
+                    type="number"
+                    min={0}
+                    step="0.00001"
+                    value={accountCommissionRate}
+                    onChange={(event) =>
+                      setAccountCommissionRate(event.target.value)
+                    }
+                    disabled={settings.isLoading}
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.settings.minimumCommission}
+                  </span>
+                  <input
+                    aria-label={copy.settings.minimumCommission}
+                    className="app-field rounded-2xl px-3 py-2 text-sm tabular-nums"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={accountMinCommission}
+                    onChange={(event) =>
+                      setAccountMinCommission(event.target.value)
+                    }
+                    disabled={settings.isLoading}
+                  />
+                </label>
+              </div>
+              <div className="app-muted text-xs leading-5">
+                {copy.settings.accountCostPreview(
+                  Number(accountCommissionRate) || 0,
+                  Number(accountMinCommission) || 0,
+                )}
+              </div>
+              <button
+                type="submit"
+                className="app-button-primary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={
+                  settings.isLoading ||
+                  updateSettings.isPending ||
+                  !accountCommissionChanged
+                }
+                aria-busy={updateSettings.isPending}
+              >
+                {updateSettings.isPending
+                  ? copy.settings.savingAccountCosts
+                  : copy.settings.saveAccountCosts}
+              </button>
+            </form>
+
+            {updateSettings.isSuccess ? (
+              <InlineNotice
+                tone="success"
+                title={copy.settings.accountCostsSaved}
+                detail={copy.settings.accountCostsSavedDetail}
+              />
+            ) : null}
+            {updateSettings.isError ? (
+              <InlineNotice
+                tone="danger"
+                title={copy.settings.accountCostsFailed}
+                detail={getErrorMessage(
+                  updateSettings.error,
+                  copy.settings.accountCostsFailed,
+                )}
               />
             ) : null}
 

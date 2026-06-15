@@ -39,6 +39,7 @@ import {
   usePendingManualOrdersQuery,
   type ManualOrder,
 } from '../features/trading/api';
+import { useSettingsQuery } from '../features/settings/api';
 import {
   useCreateAdjustmentMutation,
   useCreateCashFlowMutation,
@@ -2090,6 +2091,7 @@ function ActivityPage() {
   const entries = useLedgerEntriesQuery();
   const pendingFundOrders = usePendingFundOrdersQuery();
   const positions = usePositionsQuery();
+  const settings = useSettingsQuery();
   const createTrade = useCreateTradeMutation();
   const createCashFlow = useCreateCashFlowMutation();
   const createDividend = useCreateDividendMutation();
@@ -2309,6 +2311,15 @@ function ActivityPage() {
               <TradeForm
                 onSubmit={handleTradeSubmit}
                 pending={createTrade.isPending}
+                commissionSettings={
+                  settings.data
+                    ? {
+                        stock_rate: settings.data.account_commission_rate,
+                        stock_min_commission:
+                          settings.data.account_min_commission,
+                      }
+                    : undefined
+                }
               />
               <DividendForm
                 onSubmit={handleDividendSubmit}

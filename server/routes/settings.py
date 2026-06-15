@@ -100,6 +100,10 @@ def _settings_response(state) -> SettingsResponse:
         tushare_token=_mask_token(config.tushare_token),
         notification=config.notification,
         live_poll_interval=config.live_poll_interval,
+        account_commission_rate=float(
+            getattr(config, "account_commission_rate", 0.0001)
+        ),
+        account_min_commission=float(getattr(config, "account_min_commission", 5)),
     )
 
 
@@ -193,6 +197,12 @@ def create_router() -> APIRouter:
             config.tushare_token = new_token
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
+        config.account_commission_rate = __import__("decimal").Decimal(
+            str(settings.account_commission_rate)
+        )
+        config.account_min_commission = __import__("decimal").Decimal(
+            str(settings.account_min_commission)
+        )
 
         return _settings_response(state)
 

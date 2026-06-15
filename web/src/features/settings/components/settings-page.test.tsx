@@ -29,6 +29,8 @@ const defaultSettings = {
   tushare_token: '****1234',
   notification: { type: 'console' },
   live_poll_interval: 60,
+  account_commission_rate: 0.0001,
+  account_min_commission: 5,
 };
 
 const defaultLiveStatus = {
@@ -184,6 +186,12 @@ function installFetchMock({
       return jsonResponse({ status: 'ok', message: 'sent' });
     }
     if (url.endsWith('/api/settings')) {
+      if (init?.method === 'PUT') {
+        return jsonResponse({
+          ...settings,
+          ...(JSON.parse(String(init?.body ?? '{}')) as object),
+        });
+      }
       return jsonResponse(settings);
     }
     if (url.includes('/api/settings/live/status')) {
@@ -354,6 +362,40 @@ test('saves data source settings through the settings endpoint', async () => {
     );
   });
   expect(await screen.findByText('Data settings saved')).toBeTruthy();
+});
+
+test('saves account commission settings through the settings endpoint', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderSettingsPage();
+
+  const rateInput = (await screen.findByRole('spinbutton', {
+    name: 'Stock commission rate',
+  })) as HTMLInputElement;
+  const minInput = screen.getByRole('spinbutton', {
+    name: 'Minimum commission',
+  }) as HTMLInputElement;
+
+  await waitFor(() => expect(rateInput.disabled).toBe(false));
+  await user.clear(rateInput);
+  await user.type(rateInput, '0.00025');
+  await user.clear(minInput);
+  await user.type(minInput, '3');
+  await user.click(screen.getByRole('button', { name: 'Save account costs' }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/settings',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          ...defaultSettings,
+          account_commission_rate: 0.00025,
+          account_min_commission: 3,
+        }),
+      }),
+    );
+  });
+  expect(await screen.findByText('Account costs saved')).toBeTruthy();
 });
 
 test('shows provider timeout guidance without alternate local provider action', async () => {
