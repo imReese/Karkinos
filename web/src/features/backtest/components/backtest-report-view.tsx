@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatTimestamp,
 } from '../../../shared/format';
+import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
@@ -144,6 +145,7 @@ export function BacktestReportView() {
       ) : report.data ? (
         <>
           <MetricsGrid report={report.data} />
+          <DatasetSnapshotPanel report={report.data} />
           <EquityDrawdownChart points={report.data.equity_curve} />
           <FillsTable fills={report.data.fills ?? []} />
         </>

@@ -27,6 +27,53 @@ export type CostSummary = {
   gross_turnover?: number;
 };
 
+export type DatasetQualityIssue = {
+  code: string;
+  message?: string;
+  count?: number;
+  symbol?: string;
+};
+
+export type DatasetQuality = {
+  status: string;
+  issues: DatasetQualityIssue[];
+};
+
+export type DatasetSnapshotSymbol = {
+  symbol: string;
+  asset_class?: string | null;
+  frequency?: string | null;
+  row_count: number;
+  first_timestamp?: string | null;
+  last_timestamp?: string | null;
+  provider_name?: string | null;
+  data_source?: string | null;
+  adjustment_mode?: string | null;
+  source_dataset_id?: string | null;
+  data_quality?: DatasetQuality;
+};
+
+export type DatasetSnapshot = {
+  schema_version: string;
+  snapshot_id: string;
+  provider: {
+    configured_source?: string | null;
+    available_sources?: string[];
+  };
+  cache: {
+    store_available: boolean;
+    metadata_available: boolean;
+  };
+  date_range: {
+    start: string;
+    end: string;
+  };
+  row_count: number;
+  adjustment_mode?: string | null;
+  data_quality: DatasetQuality;
+  symbol_universe: DatasetSnapshotSymbol[];
+};
+
 export type BacktestEquityPoint = {
   timestamp: string;
   equity: number;
@@ -103,7 +150,9 @@ export type BacktestReport = {
     assets?: Array<{ symbol: string; asset_class: string }> | null;
   };
   metrics: BacktestMetrics;
-  metrics_json?: Partial<BacktestMetrics>;
+  metrics_json?: Partial<BacktestMetrics> & {
+    dataset_snapshot?: DatasetSnapshot;
+  };
   cost_summary_json?: CostSummary;
   fills?: BacktestFill[];
   equity_curve: BacktestEquityPoint[];

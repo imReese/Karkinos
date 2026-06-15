@@ -50,6 +50,46 @@ const savedReport = {
     total_slippage: 2.1,
     total_trades: 2,
     gross_turnover: 21800,
+    dataset_snapshot: {
+      schema_version: 'karkinos.dataset_snapshot.v1',
+      snapshot_id: 'sha256:fixture-dataset-snapshot',
+      provider: {
+        configured_source: 'fixture',
+        available_sources: ['fixture', 'akshare'],
+      },
+      cache: {
+        store_available: true,
+        metadata_available: true,
+      },
+      date_range: {
+        start: '2025-01-02',
+        end: '2026-05-15',
+      },
+      row_count: 260,
+      adjustment_mode: 'qfq',
+      data_quality: {
+        status: 'ok',
+        issues: [],
+      },
+      symbol_universe: [
+        {
+          symbol: '600519',
+          asset_class: 'stock',
+          frequency: '1d',
+          row_count: 260,
+          first_timestamp: '2025-01-02T00:00:00',
+          last_timestamp: '2026-05-15T00:00:00',
+          provider_name: 'fixture_provider',
+          data_source: 'fixture',
+          adjustment_mode: 'qfq',
+          source_dataset_id: 'cache-dataset-600519',
+          data_quality: {
+            status: 'ok',
+            issues: [],
+          },
+        },
+      ],
+    },
   },
   cost_summary_json: {
     total_commission: 8.4,
@@ -310,7 +350,7 @@ test('defaults strategy parameters to chinese for chinese browser locales', asyn
   expect(await screen.findByLabelText('短期均线周期')).toBeTruthy();
   expect(
     await screen.findByText(
-      '用于计算短期移动平均线的交易 bar 数，例如 5 表示最近 5 根日线或分钟线。',
+      '用于计算短期移动平均线的 K 线/交易周期数，例如 5 表示最近 5 根日线或分钟线。',
     ),
   ).toBeTruthy();
   expect(
@@ -378,7 +418,7 @@ test('localizes built-in parameter labels and descriptions without changing payl
   expect(await screen.findByLabelText('长期均线周期')).toBeTruthy();
   expect(
     await screen.findByText(
-      '用于计算短期移动平均线的交易 bar 数，例如 5 表示最近 5 根日线或分钟线。',
+      '用于计算短期移动平均线的 K 线/交易周期数，例如 5 表示最近 5 根日线或分钟线。',
     ),
   ).toBeTruthy();
   expect(
@@ -453,6 +493,20 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
     ),
   ).toBeTruthy();
   expect(screen.queryByText('NaN')).toBeNull();
+});
+
+test('renders dataset snapshot metadata for saved reports', async () => {
+  renderBacktestPage();
+
+  expect(await screen.findByText('Dataset snapshot')).toBeTruthy();
+  expect(
+    await screen.findByText('sha256:fixture-dataset-snapshot'),
+  ).toBeTruthy();
+  expect(await screen.findByText('fixture')).toBeTruthy();
+  expect(await screen.findByText('2025-01-02 -> 2026-05-15')).toBeTruthy();
+  expect(await screen.findByText('600519')).toBeTruthy();
+  expect(await screen.findByText('260 rows')).toBeTruthy();
+  expect(await screen.findByText('qfq')).toBeTruthy();
 });
 
 test('shows a clear error when the run endpoint fails', async () => {

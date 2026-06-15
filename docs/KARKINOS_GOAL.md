@@ -362,6 +362,11 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Surfaced Backtest dataset snapshots in the Web report. Saved
+  reports and freshly run reports now render a data-audit panel with snapshot
+  id, configured source, date range, total rows, cache boundaries, adjustment
+  mode, quality status, and per-symbol universe coverage. Frontend tests cover
+  rendering the snapshot from `metrics_json.dataset_snapshot`.
 * 2026-06-15: Added dataset snapshot metadata to the single Backtest runner.
   Each run now attaches `metrics_json.dataset_snapshot` with a stable
   snapshot id, configured/available data sources, cache metadata availability,

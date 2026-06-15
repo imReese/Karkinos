@@ -452,6 +452,8 @@ data sources, cache metadata availability, requested range, symbol universe,
 row counts, first/last timestamps, adjustment mode when available, cache
 dataset ids, and data-quality diagnostics. The snapshot is reproducibility
 evidence for research comparison, not a guarantee of market-data completeness.
+The Web Backtest report surfaces the same snapshot as a data-audit panel for
+both freshly run results and saved report history.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports
 whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.
