@@ -1029,6 +1029,17 @@ export const copy = {
       providerTushare: 'Tushare',
       selectDataSource: 'Select data source',
       providerTimeoutNotice: 'The configured quote source is timing out.',
+      operationsRegister: 'Operations register',
+      registerProvider: 'Provider',
+      registerPollInterval: 'Poll interval',
+      registerTrackedAssets: 'Tracked assets',
+      registerStrategy: 'Strategy',
+      providerConfiguration: 'Provider configuration',
+      providerConfigurationDetail:
+        'Data-source changes stay explicit and do not alter execution behavior.',
+      metadataReadiness: 'Metadata readiness',
+      metadataReadinessDetail:
+        'Instrument names and provider symbols are checked before dashboard display.',
       dataSourceOperations: 'Data source operations',
       dataSourceOperationsDetail:
         'Review provider capability, permission gaps, fallback routing, and manual TuShare tasks.',
@@ -2104,6 +2115,16 @@ export const copy = {
       providerTushare: 'Tushare',
       selectDataSource: '选择数据源',
       providerTimeoutNotice: '当前行情源请求超时。',
+      operationsRegister: '运营登记',
+      registerProvider: '供应商',
+      registerPollInterval: '轮询间隔',
+      registerTrackedAssets: '跟踪资产',
+      registerStrategy: '策略',
+      providerConfiguration: '供应商配置',
+      providerConfigurationDetail: '数据源变更保持显式，不改变交易执行行为。',
+      metadataReadiness: '元数据就绪',
+      metadataReadinessDetail:
+        '资产名称和 provider_symbol 在进入驾驶舱展示前需要可追溯。',
       dataSourceOperations: '数据源运营',
       dataSourceOperationsDetail:
         '集中查看供应商能力、权限缺口、fallback 路由和 TuShare 手工任务。',
