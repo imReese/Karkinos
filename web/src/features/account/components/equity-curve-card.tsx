@@ -59,6 +59,14 @@ const ALL_VISIBLE_SERIES: Record<SeriesKey, boolean> = {
   others: true,
 };
 
+const NO_VISIBLE_SERIES: Record<SeriesKey, boolean> = {
+  total: false,
+  cash: false,
+  stocks: false,
+  funds: false,
+  others: false,
+};
+
 const RANGE_DAYS: Record<EquityCurveRange, number> = {
   '1d': 1,
   '5d': 5,
@@ -271,6 +279,32 @@ function resolveYAxisDomain(
   ] as const;
 }
 
+function resolveSeriesHighs(
+  points: ChartPoint[],
+  visibleSeries: Record<SeriesKey, boolean>,
+  seriesLabels: Record<SeriesKey, string>,
+) {
+  return SERIES_META.flatMap((series) => {
+    if (!visibleSeries[series.key]) {
+      return [];
+    }
+    const values = points
+      .map((point) => point[series.key])
+      .filter((value): value is number => Number.isFinite(value));
+    if (values.length === 0) {
+      return [];
+    }
+    return [
+      {
+        key: series.key,
+        color: series.color,
+        label: seriesLabels[series.key],
+        value: Math.max(...values),
+      },
+    ];
+  });
+}
+
 function CustomTooltip({
   active,
   payload,
@@ -418,6 +452,11 @@ export function EquityCurveCard({
   const allSeriesSelected = SERIES_META.every(
     (series) => visibleSeries[series.key],
   );
+  const seriesHighs = resolveSeriesHighs(
+    chartPoints,
+    visibleSeries,
+    seriesLabels,
+  );
 
   return (
     <section className="w-full px-0 py-1">
@@ -443,7 +482,11 @@ export function EquityCurveCard({
               type="button"
               aria-pressed={allSeriesSelected}
               aria-label={labels.allSeries}
-              onClick={() => setVisibleSeries(ALL_VISIBLE_SERIES)}
+              onClick={() =>
+                setVisibleSeries(
+                  allSeriesSelected ? NO_VISIBLE_SERIES : ALL_VISIBLE_SERIES,
+                )
+              }
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
                 allSeriesSelected
                   ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
@@ -518,6 +561,32 @@ export function EquityCurveCard({
           ))}
         </div>
       </div>
+
+      {seriesHighs.length > 0 ? (
+        <div
+          className="mb-3 flex min-w-0 flex-wrap items-center gap-2"
+          data-testid="equity-series-highs"
+        >
+          <div className="app-kicker mr-1 text-[11px] uppercase tracking-[0.16em]">
+            {labels.rangeHigh}
+          </div>
+          {seriesHighs.map((item) => (
+            <div
+              key={item.key}
+              className="inline-flex min-w-0 items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] px-2.5 py-1 text-[11px] font-medium"
+            >
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: item.color }}
+              />
+              <span className="text-[var(--app-muted)]">{item.label}</span>
+              <span className="font-mono tabular-nums text-[var(--app-text)]">
+                {formatWholeCurrency(item.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {hasUsableData ? (
         <div className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]">

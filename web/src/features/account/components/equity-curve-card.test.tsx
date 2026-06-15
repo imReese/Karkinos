@@ -361,6 +361,53 @@ test('restores all equity series from the all-series chip', async () => {
   }
 });
 
+test('toggles all equity series off and back on from the all-series chip', async () => {
+  renderCard();
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'All series' }));
+
+  expect(
+    (await screen.findByRole('button', { name: 'All series' })).getAttribute(
+      'aria-pressed',
+    ),
+  ).toBe('false');
+  for (const label of ['Total', 'Cash', 'Stocks', 'Funds', 'Others']) {
+    expect(
+      (await screen.findByRole('button', { name: label })).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('false');
+  }
+
+  await user.click(await screen.findByRole('button', { name: 'All series' }));
+
+  for (const label of ['Total', 'Cash', 'Stocks', 'Funds', 'Others']) {
+    expect(
+      (await screen.findByRole('button', { name: label })).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true');
+  }
+});
+
+test('shows the highest visible value for every selected equity series in the active range', async () => {
+  renderCard({ cardPoints: updatedPoints });
+  const user = userEvent.setup();
+
+  expect(await screen.findByText('Range high')).toBeTruthy();
+  const highPanel = screen.getByTestId('equity-series-highs');
+  expect(within(highPanel).getByText('Total')).toBeTruthy();
+  expect(within(highPanel).getByText('CN¥104,200')).toBeTruthy();
+  expect(within(highPanel).getByText('Stocks')).toBeTruthy();
+  expect(within(highPanel).getByText('CN¥12,600')).toBeTruthy();
+
+  await user.click(await screen.findByRole('button', { name: 'Stocks' }));
+
+  expect(within(highPanel).queryByText('Stocks')).toBeNull();
+  expect(within(highPanel).queryByText('CN¥12,600')).toBeNull();
+});
+
 test('updates the active range and notifies the parent query layer', async () => {
   const user = userEvent.setup();
   const onRangeChange = vi.fn();
