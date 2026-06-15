@@ -6,16 +6,19 @@ import asyncio
 import itertools
 import json
 import logging
+import os
+from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from config import BacktestConfig
 from core.types import Symbol
 from server.bootstrap import build_strategy, build_watchlist
+from server.config import BacktestConfig
 from server.models import (
     BacktestFill,
     BacktestMetrics,
@@ -51,6 +54,8 @@ _COMPARE_WARNINGS = [
     "Strategy comparison results are research evidence, not investment advice.",
     "Comparison is valid only when every run uses the same frozen dataset snapshot.",
 ]
+
+_DEFAULT_BACKTEST_REPORT_DIR = Path("reports/backtest")
 
 
 class StrategyInfoResponse(BaseModel):
@@ -382,6 +387,133 @@ def _backtest_report_metrics_json(
     return metrics_json
 
 
+def _last_equity_from_curve(equity_data: list[Any]) -> float | None:
+    if not equity_data:
+        return None
+    last_point = equity_data[-1]
+    if not isinstance(last_point, dict):
+        return None
+    try:
+        return float(last_point["equity"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _normalize_backtest_payload_from_equity_curve(
+    payload: dict[str, Any],
+    *,
+    metrics_json: dict[str, Any],
+    cost_summary_json: dict[str, Any] | None,
+    equity_data: list[Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Correct legacy stored metrics when final_equity disagrees with curve end."""
+    curve_final_equity = _last_equity_from_curve(equity_data)
+    if curve_final_equity is None:
+        return payload, metrics_json
+
+    normalized = dict(payload)
+    normalized_metrics = dict(metrics_json)
+    stored_final = normalized.get(
+        "final_equity", normalized_metrics.get("final_equity")
+    )
+    try:
+        stored_final_float = float(stored_final)
+    except (TypeError, ValueError):
+        stored_final_float = None
+
+    if stored_final_float is not None and abs(
+        stored_final_float - curve_final_equity
+    ) <= max(0.01, abs(curve_final_equity) * 1e-9):
+        return normalized, normalized_metrics
+
+    try:
+        initial_cash = float(
+            normalized.get("initial_cash", normalized_metrics.get("initial_cash", 0))
+        )
+    except (TypeError, ValueError):
+        initial_cash = 0.0
+    corrected_total_return = (
+        (curve_final_equity - initial_cash) / initial_cash if initial_cash else 0.0
+    )
+
+    normalized["final_equity"] = curve_final_equity
+    normalized["total_return"] = corrected_total_return
+    normalized_metrics["initial_cash"] = initial_cash
+    normalized_metrics["final_equity"] = curve_final_equity
+    normalized_metrics["total_return"] = corrected_total_return
+    normalized_metrics["legacy_correction"] = {
+        "reason": "stored_final_equity_mismatched_equity_curve",
+        "stored_final_equity": stored_final_float,
+        "curve_final_equity": curve_final_equity,
+    }
+
+    evidence = _json_object(normalized_metrics.get("evidence_bundle"))
+    if evidence:
+        costs = cost_summary_json or {}
+        total_cost = float(costs.get("total_commission", 0) or 0) + float(
+            costs.get("total_slippage", 0) or 0
+        )
+        net_pnl = curve_final_equity - initial_cash
+        gross_pnl = net_pnl + total_cost
+        evidence.update(
+            {
+                "net_pnl": net_pnl,
+                "gross_pnl_before_costs": gross_pnl,
+                "net_return": corrected_total_return,
+                "gross_return_before_costs": (
+                    gross_pnl / initial_cash if initial_cash else 0.0
+                ),
+                "cost_to_initial_cash": (
+                    total_cost / initial_cash if initial_cash else 0.0
+                ),
+            }
+        )
+        normalized_metrics["evidence_bundle"] = evidence
+
+    return normalized, normalized_metrics
+
+
+def _backtest_report_dir() -> Path:
+    return Path(
+        os.environ.get("KARKINOS_BACKTEST_REPORT_DIR") or _DEFAULT_BACKTEST_REPORT_DIR
+    )
+
+
+def _write_backtest_report_file(
+    *,
+    result_id: int,
+    request: BacktestRequest,
+    bt_result: dict[str, Any],
+    metrics_json: dict[str, Any],
+) -> Path:
+    report_dir = _backtest_report_dir()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"backtest-result-{result_id}.json"
+    payload = {
+        "schema_version": "karkinos.backtest_report.v1",
+        "id": result_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "config": request.model_dump(mode="json"),
+        "metrics": _backtest_metrics_from_payload(
+            {**bt_result, "metrics_json": metrics_json}
+        ).model_dump(mode="json"),
+        "equity_curve": bt_result["equity_curve"],
+        "metrics_json": metrics_json,
+        "cost_summary": bt_result["cost_summary_json"],
+        "evidence": _backtest_evidence_from_payload(
+            {**bt_result, "metrics_json": metrics_json}
+        ),
+        "fills": bt_result.get("fills", []),
+    }
+    tmp_path = report_path.with_suffix(".json.tmp")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    tmp_path.replace(report_path)
+    return report_path
+
+
 def _run_single_backtest(
     request: BacktestRequest,
     config: Any,
@@ -585,6 +717,15 @@ def create_router() -> APIRouter:
                 bt_result["cost_summary_json"], ensure_ascii=False
             ),
         )
+        try:
+            _write_backtest_report_file(
+                result_id=result_id,
+                request=request,
+                bt_result=bt_result,
+                metrics_json=metrics_json,
+            )
+        except OSError:
+            logger.warning("Failed to write local backtest report", exc_info=True)
 
         return BacktestResponse(
             id=result_id,
@@ -647,6 +788,15 @@ def create_router() -> APIRouter:
                     ensure_ascii=False,
                 ),
             )
+            try:
+                _write_backtest_report_file(
+                    result_id=result_id,
+                    request=bt_request,
+                    bt_result=bt_result,
+                    metrics_json=metrics_json,
+                )
+            except OSError:
+                logger.warning("Failed to write local backtest report", exc_info=True)
 
             metrics = _backtest_metrics_from_payload(bt_result)
             sweep_results.append(
@@ -688,14 +838,23 @@ def create_router() -> APIRouter:
         summaries: list[BacktestSummary] = []
         for row in rows:
             config_data = json.loads(row.get("config_json", "{}"))
+            equity_data = json.loads(row.get("equity_curve_json", "[]"))
+            metrics_json = _json_object(row.get("metrics_json"))
+            cost_summary_json = _json_object(row.get("cost_summary_json"))
+            metrics_payload, _ = _normalize_backtest_payload_from_equity_curve(
+                row,
+                metrics_json=metrics_json,
+                cost_summary_json=cost_summary_json,
+                equity_data=equity_data,
+            )
             summaries.append(
                 BacktestSummary(
                     id=row["id"],
                     created_at=row["created_at"],
                     strategy=config_data.get("strategy", "dual_ma"),
-                    total_return=row.get("total_return", 0),
-                    sharpe=row.get("sharpe", 0),
-                    max_drawdown=row.get("max_drawdown", 0),
+                    total_return=metrics_payload.get("total_return", 0),
+                    sharpe=metrics_payload.get("sharpe", 0),
+                    max_drawdown=metrics_payload.get("max_drawdown", 0),
                 )
             )
         return summaries
@@ -716,12 +875,18 @@ def create_router() -> APIRouter:
         equity_data = json.loads(row.get("equity_curve_json", "[]"))
         metrics_json = _json_object(row.get("metrics_json"))
         cost_summary_json = _json_object(row.get("cost_summary_json"))
-        evidence_json = _json_object(metrics_json.get("evidence_bundle"))
         metrics_payload = {
             **row,
             "metrics_json": metrics_json,
             "max_drawdown": row.get("max_drawdown", row.get("max_dd", 0)),
         }
+        metrics_payload, metrics_json = _normalize_backtest_payload_from_equity_curve(
+            metrics_payload,
+            metrics_json=metrics_json,
+            cost_summary_json=cost_summary_json,
+            equity_data=equity_data,
+        )
+        evidence_json = _json_object(metrics_json.get("evidence_bundle"))
 
         return BacktestResponse(
             id=row["id"],
@@ -865,6 +1030,15 @@ def create_router() -> APIRouter:
                     bt_result["cost_summary_json"], ensure_ascii=False
                 ),
             )
+            try:
+                _write_backtest_report_file(
+                    result_id=result_id,
+                    request=bt_request,
+                    bt_result=bt_result,
+                    metrics_json=metrics_json,
+                )
+            except OSError:
+                logger.warning("Failed to write local backtest report", exc_info=True)
 
             results.append(
                 StrategyCompareItem(

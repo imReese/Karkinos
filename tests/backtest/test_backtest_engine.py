@@ -41,6 +41,24 @@ class SimpleBuyStrategy(Strategy):
             self.emit_signal(event.symbol, target_weight=1.0, price=float(event.close))
 
 
+class FinalBarBuyStrategy(Strategy):
+    """测试用策略：最后一根 K 线才开仓。"""
+
+    def __init__(self, event_bus: EventBus, final_bar: int) -> None:
+        super().__init__("final_bar_buy", event_bus)
+        self._count = 0
+        self._final_bar = final_bar
+
+    def on_init(self, symbols: list[Symbol]) -> None:
+        self.symbols = symbols
+
+    def on_data(self, event: MarketEvent) -> None:
+        self._last_timestamp = event.timestamp
+        self._count += 1
+        if self._count == self._final_bar:
+            self.emit_signal(event.symbol, target_weight=1.0, price=float(event.close))
+
+
 def make_price_df(base: float = 1800.0, n: int = 30, seed: int = 42) -> pd.DataFrame:
     """生成模拟行情 DataFrame。"""
     import numpy as np
@@ -106,6 +124,24 @@ class TestBacktestEngine:
         pos = result.positions.get(symbol)
         assert pos is not None
         assert pos.quantity > ZERO
+
+    def test_final_equity_marks_last_bar_fill_to_market(self):
+        """最后一根 K 线成交后，指标终值应与资金曲线末值一致。"""
+        symbol = Symbol("600519")
+        inst = make_stock("600519", "贵州茅台")
+        df = make_price_df(n=6)
+
+        engine = BacktestEngine(
+            strategy=FinalBarBuyStrategy(EventBus(), final_bar=len(df)),
+            instruments={symbol: inst},
+            data_handlers={symbol: DataHandler(df, symbol)},
+            initial_cash=Decimal("1000000"),
+        )
+        result = engine.run()
+
+        assert result.fills
+        assert result.final_equity == result.equity_curve[-1][1]
+        assert result.metrics.final_equity == pytest.approx(float(result.final_equity))
 
     def test_t_plus_1_settlement(self):
         """T+1 冻结应在次日解冻。"""

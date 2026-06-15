@@ -157,10 +157,10 @@ async def lifespan(app: FastAPI):
     state = get_app_state()
 
     # ---- Startup ----
-    from config import ServerConfig
     from core.event_bus import EventBus
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
+    from server.config import ServerConfig
 
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
@@ -266,8 +266,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     env_live_auto_start = _env_flag("KARKINOS_LIVE_AUTO_START")
     if env_live_auto_start is not None:
         effective_overrides.setdefault("live_auto_start", env_live_auto_start)
-    from config import ServerConfig
     from server.bootstrap import load_runtime_config
+    from server.config import ServerConfig
 
     runtime_config = load_runtime_config(ServerConfig, **effective_overrides)
 

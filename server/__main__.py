@@ -20,8 +20,8 @@ def main() -> None:
 
     # 尝试从 config.json 读取默认值
     try:
-        from config import ServerConfig
         from server.bootstrap import load_runtime_config
+        from server.config import ServerConfig
 
         config = load_runtime_config(
             ServerConfig,
@@ -54,9 +54,7 @@ def main() -> None:
         return
 
     uvicorn.run(
-        create_app(
-            config_overrides={"live_auto_start": False} if args.no_live else {}
-        ),
+        create_app(config_overrides={"live_auto_start": False} if args.no_live else {}),
         host=host,
         port=port,
         reload=False,

@@ -170,6 +170,7 @@ web/dist/
 .uv-cache/
 .run/
 logs/
+reports/
 
 # Local temporary databases
 tmp-*.db

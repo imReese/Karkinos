@@ -97,6 +97,13 @@ and keeps ledger rows auditable: trade activity surfaces the instrument name
 and symbol when present, amount, quantity, price, and commission without
 exposing technical confirmation metadata.
 
+Backtest results are indexed in the local SQLite database at
+`data/store/app.db` so the Web cockpit, risk workspace, and strategy promotion
+checks can query them. Each saved backtest also writes a human-readable JSON
+artifact under `reports/backtest/backtest-result-<id>.json` by default. Set
+`KARKINOS_BACKTEST_REPORT_DIR` to place those local report files elsewhere.
+The report directory is runtime data and should stay out of git.
+
 In `dev` mode the script also starts Vite at `http://localhost:5173` for hot-reload frontend editing. Treat `5173` as a developer-only URL; use `8000` for product-like demos and customer flow checks.
 
 The API only trusts local Vite origins by default:

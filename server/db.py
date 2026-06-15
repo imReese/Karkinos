@@ -1440,8 +1440,9 @@ class AppDatabase:
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                """SELECT id, created_at, config_json, total_return, sharpe,
-                          max_drawdown, metrics_json, cost_summary_json
+                """SELECT id, created_at, config_json, initial_cash,
+                          final_equity, total_return, sharpe, max_drawdown,
+                          equity_curve_json, metrics_json, cost_summary_json
                    FROM backtest_results ORDER BY id DESC"""
             ).fetchall()
             return [dict(row) for row in rows]

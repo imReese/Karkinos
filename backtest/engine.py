@@ -161,6 +161,10 @@ class BacktestEngine:
             # 处理后续事件（Signal → Order → Risk → Fill）
             self.event_bus.drain()
 
+            # 同一根 K 线内可能成交并新建/改变持仓；成交后需再次盯市，
+            # 否则最后一根 K 线开仓时 final_equity 会只反映剩余现金。
+            self.portfolio.mark_to_market(prices)
+
             # 记录资金曲线
             self.portfolio.record_equity(
                 market_event.timestamp,

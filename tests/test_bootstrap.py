@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from config import BacktestConfig, ServerConfig
 from core.types import AssetClass, Symbol
 from server.bootstrap import (
     build_strategy,
@@ -17,6 +16,7 @@ from server.bootstrap import (
     resolve_config_path,
     resolve_data_dir,
 )
+from server.config import BacktestConfig, ServerConfig
 
 
 def test_runtime_config_defaults_do_not_seed_real_cash():

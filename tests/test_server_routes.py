@@ -197,12 +197,16 @@ def test_asset_metadata_status_reports_missing_symbols_and_template():
     )
 
 
-def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
+def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
+    monkeypatch, tmp_path
+):
     from server.routes import backtest as backtest_routes
 
     router = backtest_routes.create_router()
     endpoint = _backtest_route(router, "/api/backtest/run", "POST").endpoint
     saved_payload: dict[str, object] = {}
+    report_dir = tmp_path / "reports" / "backtest"
+    monkeypatch.setenv("KARKINOS_BACKTEST_REPORT_DIR", str(report_dir))
 
     class FakeDb:
         async def save_backtest_result(self, **kwargs):
@@ -309,6 +313,15 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     assert '"evidence_bundle":' in str(saved_payload["metrics_json"])
     assert '"slippage_assumptions":' in str(saved_payload["metrics_json"])
     assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
+    report_file = report_dir / "backtest-result-42.json"
+    assert report_file.exists()
+    report_payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert report_payload["schema_version"] == "karkinos.backtest_report.v1"
+    assert report_payload["id"] == 42
+    assert report_payload["config"]["strategy"] == "dual_ma"
+    assert report_payload["metrics"]["final_equity"] == 112000.0
+    assert report_payload["cost_summary"]["total_trades"] == 2
+    assert report_payload["fills"][0]["fill_id"] == "FILL-1"
 
 
 def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
@@ -585,6 +598,78 @@ def test_backtest_result_returns_json_contract_and_empty_fills(monkeypatch):
     assert response.cost_summary_json["total_commission"] == 12.5
     assert response.evidence_json == {}
     assert response.fills == []
+
+
+def test_backtest_result_normalizes_legacy_final_equity_from_curve(monkeypatch):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(
+        router, "/api/backtest/results/{result_id}", "GET"
+    ).endpoint
+
+    class FakeDb:
+        async def get_backtest_result(self, result_id: int):
+            assert result_id == 8
+            return {
+                "id": 8,
+                "created_at": "2026-06-15T18:00:00",
+                "config_json": backtest_routes.BacktestRequest(
+                    initial_cash=10000,
+                    params={"short_period": 3, "long_period": 9},
+                    assets=[{"symbol": "603659", "asset_class": "stock"}],
+                ).model_dump_json(),
+                "initial_cash": 10000.0,
+                "final_equity": 335.22377,
+                "total_return": -0.966477623,
+                "annual_return": 0.5201617418732067,
+                "sharpe": 1.2618,
+                "sortino": 1.7388,
+                "max_drawdown": 0.146,
+                "win_rate": 0.296,
+                "duration_days": 530,
+                "equity_curve_json": (
+                    '[{"timestamp":"2026-06-12T00:00:00","equity":17836.64753},'
+                    '{"timestamp":"2026-06-15T00:00:00","equity":17831.22377}]'
+                ),
+                "metrics_json": json.dumps(
+                    {
+                        "initial_cash": 10000.0,
+                        "final_equity": 335.22377,
+                        "total_return": -0.966477623,
+                        "calmar": 3.55,
+                        "volatility": 0.359,
+                        "total_trades": 37,
+                        "evidence_bundle": {
+                            "net_pnl": -9664.77623,
+                            "gross_pnl_before_costs": -9347.0,
+                            "net_return": -0.966477623,
+                            "gross_return_before_costs": -0.9347,
+                            "cost_to_initial_cash": 0.031777623,
+                        },
+                    }
+                ),
+                "cost_summary_json": (
+                    '{"total_commission":317.77623,"total_slippage":0.0,'
+                    '"total_trades":37,"gross_turnover":516353.0}'
+                ),
+            }
+
+    fake_state = SimpleNamespace(db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint(8))
+
+    assert response.metrics.final_equity == 17831.22377
+    assert response.metrics.total_return == pytest.approx(0.783122377)
+    assert response.metrics_json["final_equity"] == 17831.22377
+    assert response.metrics_json["total_return"] == pytest.approx(0.783122377)
+    assert (
+        response.metrics_json["legacy_correction"]["reason"]
+        == "stored_final_equity_mismatched_equity_curve"
+    )
+    assert response.evidence_json["net_pnl"] == pytest.approx(7831.22377)
+    assert response.evidence_json["gross_pnl_before_costs"] == pytest.approx(8149.0)
 
 
 def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch):
