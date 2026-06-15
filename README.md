@@ -84,6 +84,19 @@ set `KARKINOS_CORS_ALLOWED_ORIGINS` or `cors_allowed_origins` in your private
 runtime config to the exact browser origins you operate. Avoid `*` for public
 or credentialed deployments.
 
+**Strategy Extensions**
+
+Local research strategies belong under `strategy/extensions/`. Karkinos
+discovers sanitized `*.strategy.json` manifests from that directory, or from
+`KARKINOS_STRATEGY_EXTENSION_DIR`, and exposes their typed parameter schema via
+`/api/backtest/strategies`. The committed `.example` files show the interface;
+copied private strategy scripts and manifests stay ignored by git.
+
+Extension manifests cannot declare live trading, broker submission, or
+real-money execution capabilities. Strategy Lab runs remain research evidence
+and do not bypass risk gates, paper/shadow review, signal journaling, or manual
+confirmation.
+
 **Docker**
 
 ```bash

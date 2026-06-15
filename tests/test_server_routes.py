@@ -6391,6 +6391,64 @@ def test_backtest_strategies_route_returns_typed_parameter_schema():
     assert params["long_period"]["default"] == 20
 
 
+def test_backtest_strategies_route_returns_extension_strategy_metadata(
+    monkeypatch, tmp_path
+):
+    from server.routes import backtest as backtest_routes
+    from strategy.registry import StrategyRegistry
+
+    extension_dir = tmp_path / "extensions"
+    extension_dir.mkdir()
+    (extension_dir / "local_mean_reversion.strategy.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "karkinos.strategy.v1",
+                "strategy_id": "local_mean_reversion",
+                "display_name": "Local Mean Reversion",
+                "description": "Local transparent mean-reversion research strategy.",
+                "class_path": "strategy.examples.rsi:RSIStrategy",
+                "asset_universe": ["stock", "etf"],
+                "supported_frequencies": ["1d"],
+                "benchmark_role": "local_research_mean_reversion",
+                "benchmark_universe": ["stock", "etf"],
+                "requires_out_of_sample_validation": True,
+                "requires_after_cost_report": True,
+                "validation_notes": ["Research-only extension."],
+                "parameters": [
+                    {
+                        "name": "entry_zscore",
+                        "type": "float",
+                        "default": 1.5,
+                        "required": False,
+                        "min": 0.1,
+                        "max": 5.0,
+                        "description": "Entry threshold in standard deviations.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KARKINOS_STRATEGY_EXTENSION_DIR", str(extension_dir))
+    StrategyRegistry.clear_extension_strategies_for_tests()
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/strategies", "GET").endpoint
+
+    response = asyncio.run(endpoint())
+    by_name = {item.name: item for item in response}
+    extension = by_name["local_mean_reversion"]
+
+    assert extension.asset_universe == ["stock", "etf"]
+    assert extension.supported_frequencies == ["1d"]
+    assert extension.benchmark_role == "local_research_mean_reversion"
+    assert extension.requires_after_cost_report is True
+    assert extension.parameter_schema[0]["name"] == "entry_zscore"
+    assert extension.parameter_schema[0]["type"] == "float"
+
+    StrategyRegistry.clear_extension_strategies_for_tests()
+
+
 def test_backtest_run_accepts_generic_params_and_persists_exact_payload(monkeypatch):
     from server.routes import backtest as backtest_routes
 
@@ -6452,6 +6510,7 @@ def test_backtest_run_accepts_generic_params_and_persists_exact_payload(monkeypa
 
 def test_backtest_run_rejects_unknown_generic_params_before_execution(monkeypatch):
     from fastapi import HTTPException
+
     from server.routes import backtest as backtest_routes
 
     router = backtest_routes.create_router()

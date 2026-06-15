@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
+import json
 import logging
+import os
+from pathlib import Path
 from typing import Any, Callable, Type
 
 from core.event_bus import EventBus
@@ -10,14 +14,18 @@ from strategy.base import Strategy
 from strategy.schema import (
     STRATEGY_DISPLAY_NAMES,
     STRATEGY_PARAMETER_SCHEMAS,
+    StrategyExtensionValidationError,
     StrategyParameterSchema,
     infer_parameter_schema,
+    parameter_schema_from_dict,
     validate_strategy_params,
 )
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BENCHMARK_METADATA = {
+    "asset_universe": [],
+    "supported_frequencies": ["1d"],
     "benchmark_role": None,
     "benchmark_universe": [],
     "requires_out_of_sample_validation": False,
@@ -27,6 +35,7 @@ _DEFAULT_BENCHMARK_METADATA = {
 
 _BENCHMARK_METADATA = {
     "dual_ma": {
+        "asset_universe": ["stock", "etf"],
         "benchmark_role": "etf_rotation_trend_following",
         "benchmark_universe": ["etf"],
         "requires_out_of_sample_validation": True,
@@ -37,6 +46,7 @@ _BENCHMARK_METADATA = {
         ],
     },
     "monthly_rebalance": {
+        "asset_universe": ["equity_etf", "bond", "gold", "cash_proxy"],
         "benchmark_role": "defensive_allocation",
         "benchmark_universe": ["equity_etf", "bond", "gold", "cash_proxy"],
         "requires_out_of_sample_validation": True,
@@ -47,6 +57,7 @@ _BENCHMARK_METADATA = {
         ],
     },
     "bollinger": {
+        "asset_universe": ["stock", "etf"],
         "benchmark_role": "a_share_or_etf_mean_reversion",
         "benchmark_universe": ["stock", "etf"],
         "requires_out_of_sample_validation": True,
@@ -58,6 +69,15 @@ _BENCHMARK_METADATA = {
     },
 }
 
+_EXTENSION_SCHEMA_VERSION = "karkinos.strategy.v1"
+_UNSAFE_EXTENSION_FIELDS = {
+    "allow_live_trading",
+    "auto_trade",
+    "broker_submission",
+    "live_auto_start",
+    "real_money_execution",
+}
+
 
 class StrategyRegistry:
     """策略注册表。
@@ -66,6 +86,8 @@ class StrategyRegistry:
     """
 
     _strategies: dict[str, dict[str, Any]] = {}
+    _extension_strategy_ids: set[str] = set()
+    _loaded_extension_dirs: set[str] = set()
 
     @classmethod
     def register(cls, name: str) -> Callable[[Type[Strategy]], Type[Strategy]]:
@@ -104,6 +126,7 @@ class StrategyRegistry:
                 "parameter_schema": parameter_schema,
                 "params": [param.to_json_dict() for param in parameter_schema],
                 "description": strategy_cls.__doc__ or "",
+                "is_extension": False,
                 **benchmark_metadata,
             }
             logger.debug("策略 '%s' 注册成功", name)
@@ -114,11 +137,15 @@ class StrategyRegistry:
     @classmethod
     def create(cls, name: str, event_bus: EventBus, **kwargs: Any) -> Strategy:
         """工厂方法：按名称创建策略实例。"""
+        cls.discover_extensions()
         entry = cls._strategies.get(name)
         if entry is None:
             available = ", ".join(cls._strategies.keys()) or "(none)"
             raise ValueError(f"未知策略 '{name}'，可用策略: {available}")
-        strategy_cls = entry["class"]
+        strategy_cls = entry.get("class")
+        if strategy_cls is None:
+            strategy_cls = cls._load_extension_class(entry)
+            entry["class"] = strategy_cls
         return strategy_cls(event_bus, **kwargs)
 
     @classmethod
@@ -128,6 +155,7 @@ class StrategyRegistry:
         params: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Validate and coerce strategy params against the declared schema."""
+        cls.discover_extensions()
         entry = cls._strategies.get(name)
         if entry is None:
             available = ", ".join(cls._strategies.keys()) or "(none)"
@@ -141,16 +169,19 @@ class StrategyRegistry:
     @classmethod
     def list_strategies(cls) -> list[str]:
         """返回所有已注册策略名称。"""
+        cls.discover_extensions()
         return list(cls._strategies.keys())
 
     @classmethod
     def get(cls, name: str) -> dict[str, Any] | None:
         """获取策略注册信息。"""
+        cls.discover_extensions()
         return cls._strategies.get(name)
 
     @classmethod
     def get_info(cls) -> list[dict[str, Any]]:
         """获取所有策略的详细信息（用于 API 返回）。"""
+        cls.discover_extensions()
         result = []
         for name, entry in cls._strategies.items():
             # 将 type 对象转为字符串
@@ -180,6 +211,10 @@ class StrategyRegistry:
                     "description": entry["description"].strip(),
                     "params": params,
                     "parameter_schema": params,
+                    "asset_universe": list(entry.get("asset_universe", [])),
+                    "supported_frequencies": list(
+                        entry.get("supported_frequencies", [])
+                    ),
                     "benchmark_role": entry["benchmark_role"],
                     "benchmark_universe": list(entry["benchmark_universe"]),
                     "requires_out_of_sample_validation": entry[
@@ -190,6 +225,211 @@ class StrategyRegistry:
                 }
             )
         return result
+
+    @classmethod
+    def discover_extensions(
+        cls,
+        extension_dir: str | Path | None = None,
+        *,
+        force: bool = False,
+    ) -> None:
+        """Discover local research strategy manifests from the extension area."""
+        directory = (
+            Path(extension_dir) if extension_dir is not None else _extension_dir()
+        )
+        directory_key = str(directory.resolve())
+        if not force and directory_key in cls._loaded_extension_dirs:
+            return
+
+        if force:
+            cls.clear_extension_strategies_for_tests()
+
+        if not directory.exists():
+            cls._loaded_extension_dirs.add(directory_key)
+            return
+
+        for manifest_path in sorted(directory.glob("*.strategy.json")):
+            cls._register_extension_manifest(manifest_path)
+        cls._loaded_extension_dirs.add(directory_key)
+
+    @classmethod
+    def clear_extension_strategies_for_tests(cls) -> None:
+        """Remove dynamically discovered extension strategies in deterministic tests."""
+        for strategy_id in list(cls._extension_strategy_ids):
+            cls._strategies.pop(strategy_id, None)
+        cls._extension_strategy_ids.clear()
+        cls._loaded_extension_dirs.clear()
+
+    @classmethod
+    def _register_extension_manifest(cls, manifest_path: Path) -> None:
+        try:
+            raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StrategyExtensionValidationError(
+                str(manifest_path),
+                [
+                    {
+                        "field": "manifest",
+                        "code": "invalid_json",
+                        "message": "Extension manifest must be valid JSON.",
+                    }
+                ],
+            ) from exc
+
+        errors = _validate_extension_manifest(raw)
+        if errors:
+            raise StrategyExtensionValidationError(str(manifest_path), errors)
+
+        strategy_id = raw["strategy_id"].strip()
+        parameter_schema = [
+            parameter_schema_from_dict(param) for param in raw.get("parameters", [])
+        ]
+        entry = {
+            "class": None,
+            "class_path": raw["class_path"].strip(),
+            "display_name": raw["display_name"].strip(),
+            "description": raw.get("description", ""),
+            "parameter_schema": parameter_schema,
+            "params": [param.to_json_dict() for param in parameter_schema],
+            "asset_universe": list(raw.get("asset_universe", [])),
+            "supported_frequencies": list(raw.get("supported_frequencies", ["1d"])),
+            "benchmark_role": raw.get("benchmark_role"),
+            "benchmark_universe": list(raw.get("benchmark_universe", [])),
+            "requires_out_of_sample_validation": bool(
+                raw.get("requires_out_of_sample_validation", False)
+            ),
+            "requires_after_cost_report": bool(
+                raw.get("requires_after_cost_report", False)
+            ),
+            "validation_notes": list(raw.get("validation_notes", [])),
+            "is_extension": True,
+        }
+        if (
+            strategy_id in cls._strategies
+            and strategy_id not in cls._extension_strategy_ids
+        ):
+            raise StrategyExtensionValidationError(
+                str(manifest_path),
+                [
+                    {
+                        "field": "strategy_id",
+                        "code": "strategy_id_conflict",
+                        "message": (
+                            f"Extension strategy_id '{strategy_id}' conflicts "
+                            "with a built-in strategy."
+                        ),
+                    }
+                ],
+            )
+        cls._strategies[strategy_id] = entry
+        cls._extension_strategy_ids.add(strategy_id)
+
+    @classmethod
+    def _load_extension_class(cls, entry: dict[str, Any]) -> Type[Strategy]:
+        class_path = entry.get("class_path")
+        if not class_path or ":" not in class_path:
+            raise ValueError("Extension strategy class_path must use module:Class.")
+        module_name, class_name = class_path.split(":", 1)
+        module = importlib.import_module(module_name)
+        strategy_cls = getattr(module, class_name)
+        if not isinstance(strategy_cls, type) or not issubclass(strategy_cls, Strategy):
+            raise TypeError("Extension class_path must resolve to a Strategy subclass.")
+        return strategy_cls
+
+
+def _extension_dir() -> Path:
+    return Path(
+        os.environ.get("KARKINOS_STRATEGY_EXTENSION_DIR") or "strategy/extensions"
+    )
+
+
+def _validate_extension_manifest(raw: Any) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    if not isinstance(raw, dict):
+        return [
+            {
+                "field": "manifest",
+                "code": "invalid_manifest",
+                "message": "Extension manifest must be a JSON object.",
+            }
+        ]
+
+    if raw.get("schema_version") != _EXTENSION_SCHEMA_VERSION:
+        errors.append(
+            {
+                "field": "schema_version",
+                "code": "unsupported_schema_version",
+                "message": (
+                    "Extension manifest schema_version must be "
+                    f"'{_EXTENSION_SCHEMA_VERSION}'."
+                ),
+            }
+        )
+
+    for field in ("strategy_id", "display_name", "class_path"):
+        if not str(raw.get(field, "")).strip():
+            errors.append(
+                {
+                    "field": field,
+                    "code": "required_field_missing",
+                    "message": f"Extension manifest requires '{field}'.",
+                }
+            )
+
+    for field in _UNSAFE_EXTENSION_FIELDS:
+        if raw.get(field) is True:
+            errors.append(
+                {
+                    "field": field,
+                    "code": "unsafe_execution_capability",
+                    "message": (
+                        "Extension strategies cannot declare live or real-money "
+                        "execution capabilities."
+                    ),
+                }
+            )
+
+    parameters = raw.get("parameters", [])
+    if not isinstance(parameters, list):
+        errors.append(
+            {
+                "field": "parameters",
+                "code": "invalid_type",
+                "message": "Extension manifest parameters must be a list.",
+            }
+        )
+        return errors
+
+    seen_params: set[str] = set()
+    for index, parameter in enumerate(parameters):
+        if not isinstance(parameter, dict):
+            errors.append(
+                {
+                    "field": f"parameters[{index}]",
+                    "code": "invalid_type",
+                    "message": "Each extension parameter must be an object.",
+                }
+            )
+            continue
+        name = str(parameter.get("name", "")).strip()
+        if not name:
+            errors.append(
+                {
+                    "field": f"parameters[{index}].name",
+                    "code": "required_field_missing",
+                    "message": "Each extension parameter requires a name.",
+                }
+            )
+        elif name in seen_params:
+            errors.append(
+                {
+                    "field": name,
+                    "code": "duplicate_parameter",
+                    "message": f"Duplicate extension parameter '{name}'.",
+                }
+            )
+        seen_params.add(name)
+    return errors
 
 
 # 模块级快捷函数

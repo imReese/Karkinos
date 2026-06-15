@@ -1,0 +1,28 @@
+# Karkinos Strategy Extensions
+
+This directory is for local, private research strategies. Karkinos discovers
+extension metadata from files named `*.strategy.json` in this directory, or from
+the directory pointed to by `KARKINOS_STRATEGY_EXTENSION_DIR`.
+
+Keep private strategy code, account details, exports, logs, screenshots, and
+broker credentials out of git. The default `.gitignore` ignores local extension
+files; commit only sanitized examples.
+
+An extension manifest must use `schema_version: "karkinos.strategy.v1"` and
+declare a stable `strategy_id`, display metadata, a `class_path` in
+`module:ClassName` format, and typed parameters. Extension manifests cannot
+declare live trading, broker submission, auto-trading, or real-money execution
+capabilities. Strategy Lab output remains research evidence until existing
+risk gates, paper/shadow review, signal journaling, and manual confirmation
+boundaries are satisfied.
+
+To start from the example templates:
+
+```bash
+cp strategy/extensions/examples/local_momentum.py.example \
+  strategy/extensions/local_momentum.py
+cp strategy/extensions/examples/local_momentum.strategy.json.example \
+  strategy/extensions/local_momentum.strategy.json
+```
+
+Then edit the copied files locally. The copied files stay ignored by git.
