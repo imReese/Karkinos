@@ -37,6 +37,8 @@ class StrategyInfoResponse(BaseModel):
     description: str
     params: list[dict[str, Any]]
     parameter_schema: list[dict[str, Any]]
+    asset_universe: list[str] = Field(default_factory=list)
+    supported_frequencies: list[str] = Field(default_factory=list)
     benchmark_role: str | None = None
     benchmark_universe: list[str] = Field(default_factory=list)
     requires_out_of_sample_validation: bool = False

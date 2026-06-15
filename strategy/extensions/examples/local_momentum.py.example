@@ -1,0 +1,47 @@
+"""Sanitized local strategy extension example.
+
+Copy this file to strategy/extensions/local_momentum.py before editing.
+Do not commit private strategy code or account data.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+
+from core.event_bus import EventBus
+from core.events import MarketEvent
+from core.types import Symbol
+from strategy.base import Strategy
+
+
+class LocalMomentumStrategy(Strategy):
+    """Transparent close-above-average research strategy example."""
+
+    def __init__(
+        self,
+        event_bus: EventBus,
+        lookback: int = 20,
+        strategy_id: str = "local_momentum",
+    ) -> None:
+        super().__init__(strategy_id, event_bus)
+        self.lookback = lookback
+        self._prices: dict[Symbol, list[float]] = defaultdict(list)
+
+    def on_init(self, symbols: list[Symbol]) -> None:
+        for symbol in symbols:
+            self._prices[symbol] = []
+
+    def on_data(self, event: MarketEvent) -> None:
+        self._last_timestamp = event.timestamp
+        symbol = event.symbol
+        price = float(event.close)
+        prices = self._prices[symbol]
+        prices.append(price)
+        if len(prices) < self.lookback:
+            return
+        average = sum(prices[-self.lookback :]) / self.lookback
+        self.emit_signal(
+            symbol,
+            target_weight=1.0 if price > average else 0.0,
+            price=price,
+        )

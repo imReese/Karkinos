@@ -362,6 +362,15 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added the first local Strategy Lab extension area. Karkinos now
+  documents `strategy/extensions/`, keeps private copied scripts/manifests
+  ignored by default, discovers local `*.strategy.json` manifests (or a
+  `KARKINOS_STRATEGY_EXTENSION_DIR` directory), exposes extension asset
+  universe / supported frequency / typed parameter metadata through the
+  registry and `/api/backtest/strategies`, and rejects manifests that declare
+  live trading, broker submission, auto-trading, or real-money execution
+  capabilities. Deterministic tests cover extension discovery, parameter
+  validation, route exposure, and unsafe execution-capability rejection.
 * 2026-06-15: Wired the Web Backtest page to the strategy registry. The page
   now loads `/api/backtest/strategies`, uses a select instead of free-text
   strategy entry, renders typed parameter controls from each strategy schema,

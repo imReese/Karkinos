@@ -1,0 +1,6 @@
+*
+!__init__.py
+!.gitignore
+!README.md
+!examples/
+!examples/**

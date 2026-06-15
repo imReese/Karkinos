@@ -1,0 +1,27 @@
+{
+  "schema_version": "karkinos.strategy.v1",
+  "strategy_id": "local_momentum",
+  "display_name": "Local Momentum",
+  "description": "Sanitized close-above-average research strategy example.",
+  "class_path": "strategy.extensions.local_momentum:LocalMomentumStrategy",
+  "asset_universe": ["stock", "etf"],
+  "supported_frequencies": ["1d"],
+  "benchmark_role": "local_research_momentum",
+  "benchmark_universe": ["stock", "etf"],
+  "requires_out_of_sample_validation": true,
+  "requires_after_cost_report": true,
+  "validation_notes": [
+    "Research-only extension; must pass after-cost/OOS validation and risk gates before review."
+  ],
+  "parameters": [
+    {
+      "name": "lookback",
+      "type": "int",
+      "default": 20,
+      "required": false,
+      "min": 2,
+      "max": 250,
+      "description": "Momentum lookback window in trading bars."
+    }
+  ]
+}

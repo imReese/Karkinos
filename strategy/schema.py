@@ -40,6 +40,15 @@ class StrategyParameterValidationError(ValueError):
         super().__init__(f"Invalid parameters for strategy '{strategy_id}'")
 
 
+class StrategyExtensionValidationError(ValueError):
+    """Raised when a local strategy extension manifest is invalid or unsafe."""
+
+    def __init__(self, manifest_path: str, errors: list[dict[str, Any]]) -> None:
+        self.manifest_path = manifest_path
+        self.errors = errors
+        super().__init__(f"Invalid strategy extension manifest '{manifest_path}'")
+
+
 STRATEGY_DISPLAY_NAMES = {
     "dual_ma": "Dual Moving Average",
     "monthly_rebalance": "Monthly Rebalance",
@@ -130,6 +139,19 @@ def infer_parameter_schema(name: str, param: Parameter) -> StrategyParameterSche
         type=_annotation_to_type(param.annotation),
         default=default,
         required=required,
+    )
+
+
+def parameter_schema_from_dict(raw: dict[str, Any]) -> StrategyParameterSchema:
+    return StrategyParameterSchema(
+        name=str(raw.get("name", "")).strip(),
+        type=str(raw.get("type", "any")).strip() or "any",
+        default=raw.get("default"),
+        required=bool(raw.get("required", False)),
+        min=raw.get("min"),
+        max=raw.get("max"),
+        allowed_values=raw.get("allowed_values"),
+        description=str(raw.get("description", "")).strip(),
     )
 
 
