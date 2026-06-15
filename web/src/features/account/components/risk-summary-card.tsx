@@ -27,11 +27,13 @@ export function RiskSummaryCard({
       label: labels.concentration,
       value: formatPercent(topHoldingWeight),
       hint: snapshot.allocation[0]?.name ?? '--',
+      boundary: labels.concentrationBoundary,
     },
     {
       label: labels.cashBuffer,
       value: formatPercent(overview.cash_ratio),
       hint: overview.cash_ratio >= 0.2 ? labels.cashHealthy : labels.cashWatch,
+      boundary: labels.cashBoundary,
     },
     {
       label: labels.deployment,
@@ -40,40 +42,74 @@ export function RiskSummaryCard({
         deploymentRatio >= 0.8
           ? labels.deploymentHigh
           : labels.deploymentBalanced,
+      boundary: labels.deploymentBoundary,
     },
     {
       label: labels.positions,
       value: String(overview.positions_count),
       hint: labels.positionsHint(overview.positions_count),
+      boundary: labels.positionsBoundary,
     },
   ];
 
   return (
-    <div className="app-surface-card p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="app-card-title">{labels.title}</div>
+    <div
+      data-testid="risk-boundary-register"
+      className="app-surface-card min-w-0 p-4 sm:p-5"
+    >
+      <div className="mb-4 min-w-0">
+        <div className="app-kicker app-tier-4-label">
+          {labels.registerKicker}
+        </div>
+        <div className="mt-1 app-card-title">{labels.title}</div>
+        <div className="app-muted mt-2 text-sm">{labels.subtitle}</div>
       </div>
-      <div className="grid overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] sm:grid-cols-2">
-        {items.map((item, index) => (
+      <div className="grid min-w-0 gap-3">
+        {items.map((item) => (
           <div
             key={item.label}
-            className={`px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] ${
-              index > 0
-                ? 'border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]'
-                : ''
-            } ${index === 1 ? 'sm:border-t-0' : ''} ${
-              index % 2 === 1
-                ? 'sm:border-l sm:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]'
-                : ''
-            }`}
+            aria-label={`Risk boundary item: ${item.label} ${item.value} ${item.hint}`}
+            className="app-panel-strong min-w-0 rounded-2xl px-4 py-3"
           >
-            <div className="app-kicker app-tier-4-label">{item.label}</div>
-            <div className="mt-2 text-lg font-semibold tabular-nums">
-              {item.value}
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="app-kicker app-tier-4-label">{item.label}</div>
+                <div className="app-muted mt-1 break-words text-xs">
+                  {item.boundary}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-base font-semibold tabular-nums">
+                  {item.value}
+                </div>
+                <div className="app-muted mt-1 text-xs">{labels.current}</div>
+              </div>
             </div>
-            <div className="app-muted mt-1.5 text-xs">{item.hint}</div>
+            <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="rounded-full bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-accent-strong)]">
+                {labels.boundary}
+              </span>
+              <span className="app-muted min-w-0 break-words text-xs">
+                {item.hint}
+              </span>
+            </div>
           </div>
         ))}
+      </div>
+      <div className="app-panel-strong mt-4 min-w-0 rounded-2xl px-4 py-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">
+              {labels.executionBoundary}
+            </div>
+            <div className="app-muted mt-1 break-words text-xs">
+              {labels.executionBoundaryDetail}
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--app-warning)_18%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+            {labels.manualConfirmationRequired}
+          </span>
+        </div>
       </div>
     </div>
   );
