@@ -113,6 +113,28 @@ function strategyDisplayName(
   );
 }
 
+function humanizeParameterName(name: string) {
+  return name
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function parameterDisplayName(
+  param: StrategyParameterSchema,
+  localizedNames?: Record<string, string>,
+) {
+  return localizedNames?.[param.name] ?? humanizeParameterName(param.name);
+}
+
+function parameterDescription(
+  param: StrategyParameterSchema,
+  localizedDescriptions?: Record<string, string>,
+) {
+  return localizedDescriptions?.[param.name] ?? param.description;
+}
+
 function buildRunPayload({
   startDate,
   endDate,
@@ -342,38 +364,53 @@ export function BacktestPage() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {parameterSchema.map((param) => (
-                  <label
-                    key={param.name}
-                    className="grid gap-2 text-sm font-medium"
-                  >
-                    {param.name}
-                    <input
-                      className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
-                      type={
-                        param.type === 'int' || param.type === 'float'
-                          ? 'number'
-                          : 'text'
-                      }
-                      min={param.min ?? undefined}
-                      max={param.max ?? undefined}
-                      step={param.type === 'float' ? '0.1' : '1'}
-                      value={parameterValues[param.name] ?? ''}
-                      onChange={(event) =>
-                        setParameterValues((current) => ({
-                          ...current,
-                          [param.name]: event.target.value,
-                        }))
-                      }
-                      aria-label={param.name}
-                    />
-                    {param.description ? (
-                      <span className="app-muted text-xs">
-                        {param.description}
+                {parameterSchema.map((param) => {
+                  const displayName = parameterDisplayName(
+                    param,
+                    labels.parameterLabels,
+                  );
+                  const description = parameterDescription(
+                    param,
+                    labels.parameterDescriptions,
+                  );
+                  return (
+                    <label
+                      key={param.name}
+                      className="grid gap-2 text-sm font-medium"
+                    >
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span>{displayName}</span>
+                        {displayName !== param.name ? (
+                          <span className="app-chip px-2 py-0.5 font-mono text-[11px] font-semibold">
+                            {labels.parameterCode(param.name)}
+                          </span>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </label>
-                ))}
+                      <input
+                        className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                        type={
+                          param.type === 'int' || param.type === 'float'
+                            ? 'number'
+                            : 'text'
+                        }
+                        min={param.min ?? undefined}
+                        max={param.max ?? undefined}
+                        step={param.type === 'float' ? '0.1' : '1'}
+                        value={parameterValues[param.name] ?? ''}
+                        onChange={(event) =>
+                          setParameterValues((current) => ({
+                            ...current,
+                            [param.name]: event.target.value,
+                          }))
+                        }
+                        aria-label={displayName}
+                      />
+                      {description ? (
+                        <span className="app-muted text-xs">{description}</span>
+                      ) : null}
+                    </label>
+                  );
+                })}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">

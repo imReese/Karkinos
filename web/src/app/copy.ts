@@ -582,6 +582,20 @@ export const copy = {
           bollinger: 'Bollinger Mean Reversion',
           rsi: 'RSI Momentum / Reversion',
         },
+        parameterLabels: {
+          short_period: 'Short moving-average window',
+          long_period: 'Long moving-average window',
+          bb_period: 'Bollinger lookback window',
+          num_std: 'Standard-deviation multiplier',
+        },
+        parameterDescriptions: {
+          short_period: 'Fast-average lookback, counted in trading bars.',
+          long_period: 'Slow-average lookback, counted in trading bars.',
+          bb_period: 'Lookback window used to calculate Bollinger bands.',
+          num_std:
+            'Number of standard deviations used to place the upper and lower bands.',
+        },
+        parameterCode: (name: string) => `API field: ${name}`,
         strategyRegistryLoading: 'Loading strategy registry.',
         strategyRegistryFailed:
           'Strategy registry unavailable; using the default baseline.',
@@ -1773,6 +1787,19 @@ export const copy = {
           bollinger: '布林带均值回归',
           rsi: 'RSI 动量/反转',
         },
+        parameterLabels: {
+          short_period: '短均线周期',
+          long_period: '长均线周期',
+          bb_period: '布林带回看周期',
+          num_std: '标准差倍数',
+        },
+        parameterDescriptions: {
+          short_period: '短期均线窗口，按交易 bar 计算。',
+          long_period: '长期均线窗口，按交易 bar 计算。',
+          bb_period: '用于计算布林带上下轨的回看窗口。',
+          num_std: '上下轨距离均线的标准差倍数。',
+        },
+        parameterCode: (name: string) => `API 字段：${name}`,
         strategyRegistryLoading: '正在加载策略注册表。',
         strategyRegistryFailed: '策略注册表不可用；暂用默认基准策略。',
         shortPeriod: '短周期',
