@@ -362,6 +362,12 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added Web Backtest parameter-sweep review. The Strategy Lab page
+  now submits bounded typed parameter grids to `POST /api/backtest/sweep` using
+  the selected strategy, dates, cash, and optional one-symbol universe, then
+  renders deterministic rankings with saved result ids, tested params, score,
+  cost context, and explicit multiple-testing / research-only warnings.
+  Frontend tests cover payload construction and ranked result review.
 * 2026-06-15: Added a Web Backtest validation-evidence report panel. Saved
   reports and freshly run reports now surface after-cost evidence, cost drag,
   turnover, out-of-sample split status, benchmark role / comparison, explicit

@@ -460,7 +460,9 @@ Web 回测实验室会读取 `/api/backtest/strategies` 的策略注册表，把
 `{"short_period": [3, 5], "long_period": [9]}`。服务端会先检查组合数量不超过
 `max_combinations`，再对每组参数复用策略 schema 校验并保存独立回测结果。返回排名
 仅作为研究证据，并会附带多重测试 / 过拟合提示；不能绕过 OOS、after-cost、风控、
-paper/shadow 或人工确认。
+paper/shadow 或人工确认。Web 回测实验室也可以基于当前策略和可选单标的运行同一个
+有界参数扫描，并展示已测试配置排名、保存的结果 id、分数、成本和多重测试警告，便于在
+晋级或 paper/shadow 前复核参数扰动证据。
 
 `POST /api/backtest/run` 也可选传入 `oos_split_date`（YYYY-MM-DD）和
 `benchmark_return`，用于在回测结果的 `metrics_json.oos_validation` 中附带
