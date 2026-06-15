@@ -334,6 +334,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 emptyLabel={copy.market.noChart}
                 titleLabel={copy.market.priceRangeKline}
                 priceLabel={copy.market.priceLabel}
+                rangeLabels={copy.market.klineRanges}
+                axisLabels={copy.market.klineAxes}
+                rangeAriaLabel={copy.market.showKlineRange}
               />
             </div>
           </section>

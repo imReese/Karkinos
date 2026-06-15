@@ -527,4 +527,8 @@ automation.
   names are now the primary detail links, symbols are kept as secondary
   identifiers, and both mobile holding cards and desktop rows can open the
   holding detail while refresh/trade/ledger controls remain separate.
+* 2026-06-15: Upgraded the holding-detail and Market price-structure surface
+  from a compact sparkline into a K-line chart with selectable ranges,
+  explicit price/date axes, and OHLC candle bodies while preserving read-only
+  research behavior.
 <!-- codex-progress:end -->
