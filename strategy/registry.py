@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Callable, Type
 
@@ -287,6 +289,7 @@ class StrategyRegistry:
         entry = {
             "class": None,
             "class_path": raw["class_path"].strip(),
+            "manifest_dir": str(manifest_path.parent),
             "display_name": raw["display_name"].strip(),
             "description": raw.get("description", ""),
             "parameter_schema": parameter_schema,
@@ -330,11 +333,75 @@ class StrategyRegistry:
         if not class_path or ":" not in class_path:
             raise ValueError("Extension strategy class_path must use module:Class.")
         module_name, class_name = class_path.split(":", 1)
-        module = importlib.import_module(module_name)
+        module = _load_extension_module(module_name, entry)
         strategy_cls = getattr(module, class_name)
         if not isinstance(strategy_cls, type) or not issubclass(strategy_cls, Strategy):
             raise TypeError("Extension class_path must resolve to a Strategy subclass.")
         return strategy_cls
+
+
+def _load_extension_module(module_name: str, entry: dict[str, Any]) -> Any:
+    manifest_dir = entry.get("manifest_dir")
+    module_path = (
+        _module_path_from_extension_dir(Path(manifest_dir), module_name)
+        if manifest_dir
+        else None
+    )
+    if module_path is None:
+        return importlib.import_module(module_name)
+
+    return _load_extension_module_from_path(
+        module_name,
+        module_path,
+        Path(manifest_dir),
+    )
+
+
+def _load_extension_module_from_path(
+    module_name: str,
+    module_path: Path,
+    extension_dir: Path,
+) -> Any:
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load extension strategy module '{module_name}'.")
+
+        module = importlib.util.module_from_spec(spec)
+    except OSError as exc:
+        raise ImportError(
+            f"Cannot prepare extension strategy module '{module_name}'."
+        ) from exc
+
+    extension_dir_key = str(extension_dir.resolve())
+    inserted_path = False
+    if extension_dir_key not in sys.path:
+        sys.path.insert(0, extension_dir_key)
+        inserted_path = True
+    try:
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        if inserted_path:
+            try:
+                sys.path.remove(extension_dir_key)
+            except ValueError:
+                pass
+
+
+def _module_path_from_extension_dir(
+    extension_dir: Path,
+    module_name: str,
+) -> Path | None:
+    relative_parts = module_name.split(".")
+    module_file = extension_dir.joinpath(*relative_parts).with_suffix(".py")
+    if module_file.exists():
+        return module_file
+    package_file = extension_dir.joinpath(*relative_parts, "__init__.py")
+    if package_file.exists():
+        return package_file
+    return None
 
 
 def _extension_dir() -> Path:

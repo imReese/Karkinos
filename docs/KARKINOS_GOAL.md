@@ -362,6 +362,15 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Made local Strategy Lab extension scripts runnable through the
+  Backtest API path. Extension manifests discovered from
+  `KARKINOS_STRATEGY_EXTENSION_DIR` can now point `class_path` at a Python
+  module stored directly in that extension directory; the registry loads the
+  class lazily during research backtest instantiation, still validates typed
+  params first, and still rejects live/real-money execution capabilities.
+  Deterministic route tests cover `POST /api/backtest/run` validating an
+  extension payload, instantiating the local class through `build_strategy`,
+  and persisting the exact normalized params.
 * 2026-06-15: Localized Web Backtest strategy parameter labels and
   descriptions while preserving stable API parameter ids in submitted payloads.
   Built-in parameter controls now show user-facing Chinese/English labels and

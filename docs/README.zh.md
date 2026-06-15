@@ -628,6 +628,10 @@ manifest 使用 `schema_version: "karkinos.strategy.v1"`，声明稳定
 auto-trading 或真实资金执行能力；回测输出只作为研究证据，不能绕过风控、
 paper/shadow 复核、信号日志或人工确认。
 
+如果私有策略脚本直接放在扩展目录中，`class_path` 可以写成同目录模块形式，
+例如 `local_momentum:LocalMomentumStrategy`。Karkinos 只会在研究回测实例化该
+已注册扩展策略时加载对应类，并先按 manifest 中的 typed 参数 schema 完成参数校验。
+
 ## 通知系统
 
 三种通知通道：

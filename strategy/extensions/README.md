@@ -16,6 +16,12 @@ capabilities. Strategy Lab output remains research evidence until existing
 risk gates, paper/shadow review, signal journaling, and manual confirmation
 boundaries are satisfied.
 
+When a private strategy script is stored directly in this extension directory,
+the manifest can use the local module name in `class_path`, for example
+`local_momentum:LocalMomentumStrategy`. Karkinos validates the manifest during
+discovery and loads the class lazily only when a research backtest instantiates
+that registered extension strategy.
+
 To start from the example templates:
 
 ```bash
