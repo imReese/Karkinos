@@ -100,7 +100,32 @@ test('renders a month calendar with selectable daily return cells by default', a
 
   expect(await screen.findByText('Return calendar')).toBeTruthy();
   expect(screen.getByText(/next to the net-value curve/i)).toBeTruthy();
+  expect(screen.getByText('Data status')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Calendar' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Curve' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Day' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Week' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Month' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Year' })).toBeTruthy();
+  expect(screen.queryByText(/you earned/i)).toBeNull();
   expect(screen.queryByText(/risk page/i)).toBeNull();
+  const toolbar = screen.getByTestId('return-calendar-toolbar');
+  expect(toolbar).toBeTruthy();
+  expect(toolbar.className).toContain('sm:grid-cols-[auto_minmax');
+  expect(
+    within(toolbar).getByLabelText('View mode').getAttribute('data-compact'),
+  ).toBe('icon');
+  expect(
+    within(toolbar).getByLabelText('Period mode').getAttribute('data-compact'),
+  ).toBe('period');
+  expect(
+    within(toolbar).getByLabelText('Metric mode').getAttribute('data-compact'),
+  ).toBe('metric');
+  expect(
+    within(toolbar).queryByTestId('return-calendar-status-chip'),
+  ).toBeNull();
+  expect(screen.getByTestId('return-calendar-period-select')).toBeTruthy();
+  expect(screen.getByTestId('return-calendar-status-chip')).toBeTruthy();
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-02-10 · CN¥600.00' }),
@@ -149,10 +174,23 @@ test('switches the return calendar between monthly days, yearly months, and year
   renderCalendar();
   const user = userEvent.setup();
 
-  await user.selectOptions(
-    screen.getByLabelText('Calendar period'),
-    'year-months',
-  );
+  await user.click(screen.getByRole('button', { name: 'Week' }));
+
+  const weekGrid = await screen.findByTestId('return-calendar-week-grid');
+  expect(weekGrid.className).toContain('md:grid-cols-3');
+  expect(weekGrid.className).toContain('overflow-y-auto');
+  expect(weekGrid.className).toContain('max-h-');
+  expect(within(weekGrid).getByText('Week 1')).toBeTruthy();
+  expect(within(weekGrid).getByText('01/01-01/03')).toBeTruthy();
+  expect(within(weekGrid).getByText('02/08-02/14')).toBeTruthy();
+  expect(
+    within(weekGrid).getByRole('button', { name: '2026-W07 · Price gap' }),
+  ).toBeTruthy();
+  expect(await screen.findByText('Weekly change')).toBeTruthy();
+  expect(screen.getByText('Week 7 · 02/08-02/14')).toBeTruthy();
+  expect(screen.queryByText('2026-W07')).toBeNull();
+
+  await user.click(screen.getByRole('button', { name: 'Month' }));
 
   const yearGrid = await screen.findByTestId('return-calendar-year-grid');
   expect(
@@ -164,7 +202,7 @@ test('switches the return calendar between monthly days, yearly months, and year
   expect(await screen.findByText('Monthly change')).toBeTruthy();
   expect(screen.queryByText('Daily change')).toBeNull();
 
-  await user.selectOptions(screen.getByLabelText('Calendar period'), 'years');
+  await user.click(screen.getByRole('button', { name: 'Year' }));
 
   const yearsGrid = await screen.findByTestId('return-calendar-years-grid');
   expect(
@@ -196,14 +234,14 @@ test('marks return calendar days with incomplete historical prices', async () =>
   expect(selectedPeriod).toBeTruthy();
   expect(within(selectedPeriod!).queryByText(/279/)).toBeNull();
 
-  await userEvent.selectOptions(screen.getByDisplayValue('Calendar'), 'table');
+  await userEvent.click(screen.getByRole('button', { name: 'Table' }));
   expect(screen.getAllByText('Price gap').length).toBeGreaterThan(0);
 });
 
 test('renders axes when the return calendar switches to curve view', async () => {
   renderCalendar();
 
-  await userEvent.selectOptions(screen.getByDisplayValue('Calendar'), 'curve');
+  await userEvent.click(screen.getByRole('button', { name: 'Curve' }));
 
   expect(await screen.findByTestId('return-curve-x-axis')).toBeTruthy();
   expect(screen.getByTestId('return-curve-y-axis')).toBeTruthy();
