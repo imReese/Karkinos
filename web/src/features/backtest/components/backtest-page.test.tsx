@@ -104,6 +104,12 @@ const savedReport = {
       assumptions: [
         'Backtest results are calculated after simulated commissions and slippage.',
       ],
+      cost_assumptions: [
+        'Commission assumptions use the configured simulated backtest fee schedule.',
+      ],
+      slippage_assumptions: [
+        'Slippage assumptions use the configured simulated execution drift model.',
+      ],
       limitations: ['Backtest evidence is not a profitability claim.'],
     },
     oos_validation: {
@@ -203,6 +209,12 @@ const savedReport = {
     gross_turnover: 21800,
     assumptions: [
       'Backtest results are calculated after simulated commissions and slippage.',
+    ],
+    cost_assumptions: [
+      'Commission assumptions use the configured simulated backtest fee schedule.',
+    ],
+    slippage_assumptions: [
+      'Slippage assumptions use the configured simulated execution drift model.',
     ],
     limitations: ['Backtest evidence is not a profitability claim.'],
   },
@@ -959,6 +971,18 @@ test('renders after-cost and out-of-sample evidence for saved reports', async ()
   expect(await screen.findByText('2025-09-01 00:00')).toBeTruthy();
   expect(
     await screen.findByText('Backtest evidence is not a profitability claim.'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Cost assumptions')).toBeTruthy();
+  expect(await screen.findByText('Slippage assumptions')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Commission assumptions use the configured simulated backtest fee schedule.',
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Slippage assumptions use the configured simulated execution drift model.',
+    ),
   ).toBeTruthy();
   expect(
     await screen.findByText(

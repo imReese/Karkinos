@@ -48,6 +48,8 @@ class AfterCostEvidence:
     cost_to_initial_cash: Decimal
     fill_count: int
     gross_turnover: Decimal
+    cost_assumptions: list[str]
+    slippage_assumptions: list[str]
     assumptions: list[str]
     limitations: list[str]
 
@@ -61,6 +63,8 @@ class AfterCostEvidence:
             "cost_to_initial_cash": float(self.cost_to_initial_cash),
             "fill_count": self.fill_count,
             "gross_turnover": float(self.gross_turnover),
+            "cost_assumptions": list(self.cost_assumptions),
+            "slippage_assumptions": list(self.slippage_assumptions),
             "assumptions": list(self.assumptions),
             "limitations": list(self.limitations),
         }
@@ -114,6 +118,8 @@ def build_after_cost_evidence(
     initial_cash: Decimal,
     final_equity: Decimal,
     cost_summary: CostSummary,
+    cost_assumptions: list[str] | None = None,
+    slippage_assumptions: list[str] | None = None,
     assumptions: list[str] | None = None,
     limitations: list[str] | None = None,
 ) -> AfterCostEvidence:
@@ -140,6 +146,16 @@ def build_after_cost_evidence(
         cost_to_initial_cash=cost_to_initial_cash,
         fill_count=cost_summary.total_trades,
         gross_turnover=cost_summary.gross_turnover,
+        cost_assumptions=cost_assumptions
+        or [
+            "Commissions are simulated from the configured backtest commission model and recorded per fill.",
+            "Gross values add recorded commissions and slippage back to net PnL.",
+        ],
+        slippage_assumptions=slippage_assumptions
+        or [
+            "Slippage is simulated by the configured backtest slippage model and recorded per fill.",
+            "Simulation does not guarantee live liquidity, market impact, or rejected-order behavior.",
+        ],
         assumptions=assumptions
         or [
             "Backtest results are calculated after simulated commissions and slippage.",

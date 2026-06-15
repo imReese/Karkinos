@@ -89,6 +89,8 @@ def test_build_after_cost_evidence_separates_gross_and_net_results():
         initial_cash=Decimal("1000"),
         final_equity=Decimal("1100"),
         cost_summary=cost_summary,
+        cost_assumptions=["commission model: test"],
+        slippage_assumptions=["slippage model: test"],
         assumptions=["commission model: test"],
         limitations=["no liquidity model"],
     )
@@ -109,6 +111,36 @@ def test_build_after_cost_evidence_separates_gross_and_net_results():
         "cost_to_initial_cash": 0.01,
         "fill_count": 2,
         "gross_turnover": 2100.0,
+        "cost_assumptions": ["commission model: test"],
+        "slippage_assumptions": ["slippage model: test"],
         "assumptions": ["commission model: test"],
         "limitations": ["no liquidity model"],
     }
+
+
+def test_build_after_cost_evidence_exposes_structured_cost_and_slippage_assumptions():
+    cost_summary = CostSummary(
+        total_commission=Decimal("8"),
+        total_slippage=Decimal("2"),
+        total_trades=2,
+        gross_turnover=Decimal("2100"),
+    )
+
+    evidence = backtest_metrics.build_after_cost_evidence(
+        initial_cash=Decimal("1000"),
+        final_equity=Decimal("1100"),
+        cost_summary=cost_summary,
+        cost_assumptions=["A-share commission uses configured broker rate."],
+        slippage_assumptions=["Percent slippage applies to every simulated fill."],
+    )
+
+    payload = evidence.to_json_dict()
+
+    assert payload["cost_assumptions"] == [
+        "A-share commission uses configured broker rate."
+    ]
+    assert payload["slippage_assumptions"] == [
+        "Percent slippage applies to every simulated fill."
+    ]
+    assert "commissions" in payload["assumptions"][0]
+    assert "slippage" in payload["slippage_assumptions"][0]

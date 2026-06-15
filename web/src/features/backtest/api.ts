@@ -83,6 +83,8 @@ export type AfterCostEvidence = {
   cost_to_initial_cash?: number;
   fill_count?: number;
   gross_turnover?: number;
+  cost_assumptions?: string[];
+  slippage_assumptions?: string[];
   assumptions?: string[];
   limitations?: string[];
 };
