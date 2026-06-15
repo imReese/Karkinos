@@ -31,7 +31,8 @@ public demos and development.
   warnings
 - Backtest reports record a dataset snapshot with data-source/cache metadata,
   requested range, symbol universe, row counts, adjustment mode when available,
-  and data-quality diagnostics
+  and data-quality diagnostics, and the Web report exposes that audit panel for
+  saved and freshly run results
 - Web Backtest Strategy Lab selects registry strategies, renders typed
   parameter controls, and can run a single-symbol research backtest from the
   browser
