@@ -260,9 +260,114 @@ automation.
 * [x] README/docs describe the behavior boundary: research and investment
   cockpit, not investment advice, and no default automatic real-money trading.
 
+## Target for v0.4
+
+Karkinos v0.4 — Strategy Lab Backtesting Engine — should turn the current
+registered-strategy backtest path into a serious, auditable research workspace
+for China-market personal investment decisions.
+
+The goal is not to copy a generic quant framework. Karkinos should learn from
+established open-source systems while preserving its own cockpit, audit, and
+risk-first boundaries:
+
+* Zipline-style event-driven research ergonomics: strategy code should focus on
+  decisions while the engine owns data replay, portfolio state, costs, and
+  results.
+* backtrader-style extensibility: strategies, indicators, analyzers,
+  commission/slippage models, calendars, and data feeds should be separately
+  configurable without rewriting the engine.
+* Qlib-style research workflow discipline: data preparation, feature
+  generation, model/strategy execution, backtest, portfolio analysis, and
+  evidence review should remain a reproducible chain.
+* vectorbt-style parameter exploration where appropriate: single-strategy
+  parameter sweeps should be first-class, deterministic, and summarized without
+  hiding overfitting risk.
+* RQAlpha-style China-market assumptions: A-share, ETF/fund, trading calendar,
+  ST/suspension, corporate actions, T+1, transaction costs, and asset-specific
+  constraints must be explicit.
+
+v0.4 should make it possible to answer:
+
+> For this stock, ETF, fund basket, or portfolio universe, which transparent
+> strategy configuration was tested, on which frozen dataset, with which costs
+> and market assumptions, and what evidence says it is or is not ready for
+> paper/shadow review?
+
+### v0.4 Scope
+
+* Strategy authors can write local Python strategy scripts in a dedicated
+  extension area without placing strategy code inside `backtest/`.
+* Strategy scripts must use an explicit, versioned Karkinos strategy interface
+  and metadata contract.
+* The system can discover, validate, and list built-in and local extension
+  strategies without executing arbitrary untrusted code from the Web UI.
+* The Web Backtest page can select a strategy from the registry, render its
+  typed parameters, choose one symbol or a configured universe, and run a
+  reproducible experiment.
+* Backtest requests support generic strategy parameters rather than only fixed
+  `short_period` / `long_period` fields.
+* Backtest reports include dataset snapshot metadata, strategy metadata,
+  parameter values, after-cost metrics, OOS split evidence, known limitations,
+  and risk assumptions.
+* Parameter sweeps are supported for bounded, typed parameter grids, with
+  deterministic result ranking and explicit overfitting warnings.
+* Strategy comparison is supported across multiple strategies or parameter
+  sets on the same frozen dataset.
+* Extension scripts cannot enable broker submission, live-like execution, or
+  automatic real-money trading. All outputs remain research evidence until they
+  pass existing risk gates and manual-confirmation workflows.
+
+### Acceptance Criteria for v0.4
+
+* [ ] A documented `strategy/extensions/` or equivalent local extension area
+  exists for private strategy scripts, with examples that do not contain
+  secrets or private financial data.
+* [ ] Built-in and extension strategies share one typed metadata contract:
+  id, display name, description, asset universe, supported frequencies,
+  parameters, defaults, constraints, benchmark role, and validation
+  requirements.
+* [ ] `/api/backtest/strategies` returns typed strategy parameter schemas for
+  both built-in and extension strategies.
+* [ ] `POST /api/backtest/run` accepts generic strategy parameters and records
+  the exact parameter payload in the persisted result.
+* [ ] The Web Backtest page uses the strategy registry instead of a free-text
+  strategy field, renders validated controls for strategy parameters, and
+  supports one-symbol historical backtests from the browser.
+* [ ] At least one custom extension strategy can be added locally, discovered
+  by the registry, run from the Web UI, and verified by deterministic tests.
+* [ ] Backtest runs record frozen dataset identity, provider/cache metadata,
+  date range, symbol universe, adjustment mode when available, row count, and
+  data-quality diagnostics.
+* [ ] Backtest reports expose after-cost metrics, cost assumptions, slippage
+  assumptions, fills, equity/drawdown curves, benchmark comparison, OOS split
+  evidence, and limitations in both API and Web UI.
+* [ ] Parameter sweep runs support bounded grids, persist each tested
+  configuration, and present rankings with explicit overfitting / multiple
+  testing warnings.
+* [ ] Strategy comparison can compare multiple strategies or parameter sets on
+  the same dataset snapshot without silently changing data inputs.
+* [ ] Strategy outputs can be promoted only as research evidence; they cannot
+  bypass pre-trade risk gates, signal journaling, paper/shadow review, or
+  manual confirmation.
+* [ ] Backend deterministic tests cover built-in strategy run, extension
+  strategy discovery, generic parameter validation, one-symbol Web/API run,
+  parameter sweep, after-cost/OOS reporting, and blocked unsafe extension
+  behavior.
+* [ ] Frontend tests cover strategy selection, dynamic parameter controls,
+  one-symbol run setup, report rendering, and parameter-sweep result review.
+* [ ] README and Chinese docs explain how to add a local strategy, run it from
+  Web, interpret reports, and keep the output as research rather than
+  investment advice.
+
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added the v0.4 Strategy Lab Backtesting Engine target to the
+  project goal. The new target formalizes configurable strategy parameters,
+  local extension strategy scripts, reproducible one-symbol and universe
+  experiments, parameter sweeps, after-cost/OOS evidence, dataset snapshots,
+  and Web strategy-lab workflows while preserving no-default-auto-trading,
+  risk-gate, signal-journal, paper/shadow, and manual-confirmation boundaries.
 * 2026-06-12: Removed the Activity batch fund form's built-in fund candidates.
   Batch fund candidates now come from held fund positions, preserving an empty
   initial state until portfolio data exists in the database or explicit private
