@@ -146,7 +146,10 @@ export function DashboardQuickActions({
             {labels.refreshQuotes}:{' '}
             {formatTimestamp(marketHealth.last_refresh_attempt)}
             {marketHealth.last_refresh_error
-              ? ` · ${marketHealth.last_refresh_error}`
+              ? ` · ${formatStaleReason(
+                  marketHealth.last_refresh_error,
+                  copy.common.staleReasons,
+                )}`
               : ''}
           </div>
         ) : null}

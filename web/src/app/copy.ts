@@ -94,6 +94,8 @@ export const copy = {
         providerTimeout: 'Data source timed out; using cached quote',
         providerUnavailable: 'Data source unavailable; using cached quote',
         sourceUnavailable: 'Data source unavailable; using cached quote',
+        tushareFundNavPermissionDenied:
+          'TuShare fund_nav permission denied; using Eastmoney fund estimate',
       },
     },
     mode: {
@@ -1182,6 +1184,8 @@ export const copy = {
         providerTimeout: '数据源超时，使用缓存行情',
         providerUnavailable: '数据源不可用，使用缓存行情',
         sourceUnavailable: '数据源不可用，使用缓存行情',
+        tushareFundNavPermissionDenied:
+          'TuShare fund_nav 权限不足，已切换 Eastmoney 基金估算源',
       },
     },
     mode: {

@@ -1622,11 +1622,11 @@ function MarketPage() {
                     />
                     <MetricBlock
                       label={copy.market.lastRefreshError}
-                      value={
+                      value={formatStaleReason(
                         health?.provider_last_error ??
-                        health?.last_refresh_error ??
-                        '--'
-                      }
+                          health?.last_refresh_error,
+                        copy.common.staleReasons,
+                      )}
                     />
                     <MetricBlock
                       label={copy.market.providerNextAction}
