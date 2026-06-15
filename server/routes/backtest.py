@@ -47,6 +47,11 @@ _SWEEP_RANK_DIRECTIONS = {
     "max_drawdown": "asc",
 }
 
+_COMPARE_WARNINGS = [
+    "Strategy comparison results are research evidence, not investment advice.",
+    "Comparison is valid only when every run uses the same frozen dataset snapshot.",
+]
+
 
 class StrategyInfoResponse(BaseModel):
     strategy_id: str
@@ -280,6 +285,16 @@ def _build_parameter_grid(
 
 def _sweep_score(metrics: BacktestMetrics, rank_by: str) -> float:
     return float(getattr(metrics, rank_by))
+
+
+def _dataset_snapshot_from_result(result: dict[str, Any]) -> dict[str, Any]:
+    metrics_json = _json_object(result.get("metrics_json"))
+    return _json_object(metrics_json.get("dataset_snapshot"))
+
+
+def _dataset_snapshot_id(snapshot: dict[str, Any]) -> str | None:
+    snapshot_id = snapshot.get("snapshot_id")
+    return str(snapshot_id) if snapshot_id else None
 
 
 def _build_oos_validation_payload(
@@ -668,48 +683,78 @@ def create_router() -> APIRouter:
 
     @r.post("/compare", response_model=CompareResponse)
     async def compare_strategies(request: CompareRequest) -> CompareResponse:
-        """多策略对比回测：遍历指定策略（或全部），每个策略运行一次回测。"""
+        """Compare strategies or parameter sets on one frozen dataset snapshot."""
         from server.app import get_app_state
+
+        import strategy.examples  # noqa: F401
         from strategy.registry import StrategyRegistry
 
         state = get_app_state()
         config = state.config
 
-        # 确定要对比的策略列表
         all_strategies = StrategyRegistry.get_info()
-        if request.strategies:
-            strategy_names = [
-                s
-                for s in request.strategies
-                if any(a["name"] == s for a in all_strategies)
+        strategy_by_name = {s["name"]: s for s in all_strategies}
+        strategy_by_id = {s["strategy_id"]: s for s in all_strategies}
+
+        if request.runs:
+            run_specs = [
+                {
+                    "strategy": run.strategy,
+                    "params": run.params,
+                }
+                for run in request.runs
+            ]
+        elif request.strategies:
+            run_specs = [
+                {"strategy": strategy, "params": None}
+                for strategy in request.strategies
             ]
         else:
-            strategy_names = [s["name"] for s in all_strategies]
+            run_specs = [
+                {"strategy": strategy["name"], "params": None}
+                for strategy in all_strategies
+            ]
 
-        if not strategy_names:
-            return CompareResponse(results=[])
+        if not run_specs:
+            return CompareResponse(results=[], warnings=list(_COMPARE_WARNINGS))
 
-        results: list[StrategyCompareItem] = []
-        for strat_name in strategy_names:
-            strat_info = next(
-                (s for s in all_strategies if s["name"] == strat_name), None
+        prepared_runs: list[tuple[dict[str, Any], BacktestRequest, dict[str, Any]]] = []
+        snapshots: list[dict[str, Any]] = []
+        snapshot_ids: list[str | None] = []
+        for run_spec in run_specs:
+            strat_name = str(run_spec["strategy"])
+            strat_info = strategy_by_name.get(strat_name) or strategy_by_id.get(
+                strat_name
             )
             if not strat_info:
-                continue
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "strategy": strat_name,
+                        "errors": [
+                            {
+                                "field": "strategy",
+                                "code": "unknown_strategy",
+                                "message": f"Unknown strategy '{strat_name}'.",
+                            }
+                        ],
+                    },
+                )
 
-            # 构造 BacktestRequest：使用默认策略参数
-            default_params = {
-                p["name"]: p.get("default")
-                for p in strat_info.get("parameter_schema", strat_info["params"])
-            }
+            raw_params = run_spec["params"]
+            if raw_params is None:
+                raw_params = {
+                    p["name"]: p.get("default")
+                    for p in strat_info.get("parameter_schema", strat_info["params"])
+                }
             bt_request = _validate_backtest_strategy_params(
                 BacktestRequest(
                     start_date=request.start_date,
                     end_date=request.end_date,
                     initial_cash=request.initial_cash,
-                    strategy=strat_name,
+                    strategy=strat_info["name"],
                     assets=request.assets,
-                    params=default_params,
+                    params=raw_params,
                 )
             )
 
@@ -718,11 +763,38 @@ def create_router() -> APIRouter:
             )
             metrics_json = dict(bt_result["metrics_json"])
             metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
+            bt_result = {**bt_result, "metrics_json": metrics_json}
+            snapshot = _dataset_snapshot_from_result(bt_result)
+            snapshots.append(snapshot)
+            snapshot_ids.append(_dataset_snapshot_id(snapshot))
+            prepared_runs.append((strat_info, bt_request, bt_result))
 
-            # 保存到数据库
+        unique_snapshot_ids = {
+            snapshot_id for snapshot_id in snapshot_ids if snapshot_id
+        }
+        if len(unique_snapshot_ids) != 1 or len(unique_snapshot_ids) != len(
+            set(snapshot_ids)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "dataset_snapshot_mismatch",
+                    "message": (
+                        "Strategy comparison requires every run to use the same "
+                        "frozen dataset snapshot."
+                    ),
+                    "snapshot_ids": snapshot_ids,
+                },
+            )
+
+        dataset_snapshot = snapshots[0] if snapshots else {}
+        dataset_snapshot_id = _dataset_snapshot_id(dataset_snapshot)
+
+        results: list[StrategyCompareItem] = []
+        for strat_info, bt_request, bt_result in prepared_runs:
             config_json = bt_request.model_dump_json()
             equity_curve_json = json.dumps(bt_result["equity_curve"])
-            await state.db.save_backtest_result(
+            result_id = await state.db.save_backtest_result(
                 config_json=config_json,
                 initial_cash=bt_result["initial_cash"],
                 final_equity=bt_result["final_equity"],
@@ -742,13 +814,23 @@ def create_router() -> APIRouter:
 
             results.append(
                 StrategyCompareItem(
-                    strategy=strat_name,
-                    description=strat_info.get("description", strat_name),
+                    strategy=bt_request.strategy,
+                    description=strat_info.get("description", bt_request.strategy),
+                    result_id=result_id,
+                    params=dict(bt_request.params or {}),
+                    dataset_snapshot_id=dataset_snapshot_id,
+                    dataset_snapshot=dataset_snapshot,
                     metrics=_backtest_metrics_from_payload(bt_result),
                     equity_curve=[EquityPoint(**p) for p in bt_result["equity_curve"]],
                 )
             )
 
-        return CompareResponse(results=results)
+        return CompareResponse(
+            results=results,
+            compared_count=len(results),
+            dataset_snapshot_id=dataset_snapshot_id,
+            dataset_snapshot=dataset_snapshot,
+            warnings=list(_COMPARE_WARNINGS),
+        )
 
     return r

@@ -30,6 +30,9 @@ public demos and development.
   configuration, and return deterministic rankings with multiple-testing
   warnings; the Web Strategy Lab can run the same bounded sweep and review the
   ranked configurations without approving execution
+- Backtest strategy comparisons can run multiple strategies or parameter sets
+  against one frozen dataset snapshot, reject mismatched snapshots, and return
+  saved result ids for audit
 - Backtest reports record a dataset snapshot with data-source/cache metadata,
   requested range, symbol universe, row counts, adjustment mode when available,
   and data-quality diagnostics, and the Web report exposes that audit panel for

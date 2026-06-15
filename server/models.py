@@ -751,23 +751,37 @@ class BacktestSweepResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class CompareRunRequest(BaseModel):
+    strategy: str
+    params: dict[str, Any] | None = None
+
+
 class CompareRequest(BaseModel):
     start_date: str = "2011-06-01"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
     initial_cash: float = 100_000
     strategies: list[str] | None = None  # None = 全部策略
+    runs: list[CompareRunRequest] | None = None
     assets: list[dict[str, str]] | None = None
 
 
 class StrategyCompareItem(BaseModel):
     strategy: str
     description: str
+    result_id: int | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    dataset_snapshot_id: str | None = None
+    dataset_snapshot: dict[str, Any] = Field(default_factory=dict)
     metrics: BacktestMetrics
     equity_curve: list[EquityPoint]
 
 
 class CompareResponse(BaseModel):
     results: list[StrategyCompareItem]
+    compared_count: int = 0
+    dataset_snapshot_id: str | None = None
+    dataset_snapshot: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class BacktestSummary(BaseModel):

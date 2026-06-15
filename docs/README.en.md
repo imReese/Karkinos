@@ -441,6 +441,7 @@ fill.
 | GET | `/api/backtest/strategy-promotion-readiness` | Get promotion-readiness gates for benchmark strategies |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
 | POST | `/api/backtest/sweep` | Run bounded parameter grids, persist each tested configuration, and return deterministic rankings with multiple-testing warnings |
+| POST | `/api/backtest/compare` | Compare multiple strategies or explicit strategy parameter sets on one frozen dataset snapshot |
 | GET | `/api/backtest/results` | List all backtest result summaries |
 | GET | `/api/backtest/results/{result_id}` | Get single backtest detail + equity curve |
 
@@ -468,6 +469,14 @@ selected strategy and optional one-symbol universe. It renders the tested
 configuration ranking, saved result ids, scores, costs, and multiple-testing
 warnings so the operator can review parameter perturbation evidence before any
 promotion or paper/shadow workflow.
+
+`POST /api/backtest/compare` accepts either `strategies` or explicit `runs`
+with `strategy` and `params`, then saves each valid run only after all compared
+results prove they used the same `metrics_json.dataset_snapshot.snapshot_id`.
+If any run produces a different or missing snapshot id, the endpoint returns
+409 instead of silently ranking results from different data inputs. Returned
+items include the saved result id, normalized params, metrics, equity curve,
+and shared dataset snapshot id for audit.
 
 `GET /api/backtest/strategy-promotion-readiness` combines saved after-cost/OOS
 validation, blocked-risk evidence, paper/shadow order facts, and explicit

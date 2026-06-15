@@ -6988,6 +6988,187 @@ def test_backtest_sweep_rejects_unsupported_rank_metric_before_execution(
     assert error.value.detail["errors"][0]["code"] == "unsupported_rank_metric"
 
 
+def test_backtest_compare_runs_parameter_sets_on_one_dataset_snapshot(monkeypatch):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/compare", "POST").endpoint
+    saved_payloads: list[dict[str, object]] = []
+    captured_requests: list[tuple[str, dict[str, object]]] = []
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            saved_payloads.append(kwargs)
+            return 1200 + len(saved_payloads)
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    def fake_run_backtest(request, config, db=None):
+        captured_requests.append((request.strategy, dict(request.params or {})))
+        short_period = int((request.params or {}).get("short_period", 5))
+        total_return = short_period / 100
+        return {
+            "initial_cash": 100000.0,
+            "final_equity": 100000.0 * (1 + total_return),
+            "total_return": total_return,
+            "annual_return": total_return,
+            "sharpe": float(short_period),
+            "sortino": float(short_period) / 2,
+            "max_drawdown": 0.02,
+            "win_rate": 0.5,
+            "duration_days": 10,
+            "equity_curve": [{"timestamp": "2026-01-01T00:00:00", "equity": 100000.0}],
+            "metrics_json": {
+                "dataset_snapshot": {
+                    "schema_version": "karkinos.dataset_snapshot.v1",
+                    "snapshot_id": "snapshot-shared",
+                    "requested_range": {
+                        "start_date": "2026-01-01",
+                        "end_date": "2026-01-10",
+                    },
+                    "total_rows": 10,
+                    "symbols": [{"symbol": "603659", "rows": 10}],
+                }
+            },
+            "cost_summary_json": {"total_trades": short_period},
+            "evidence_json": {},
+            "fills": [],
+        }
+
+    monkeypatch.setattr(backtest_routes, "_run_single_backtest", fake_run_backtest)
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.CompareRequest(
+                start_date="2026-01-01",
+                end_date="2026-01-10",
+                assets=[{"symbol": "603659", "asset_class": "stock"}],
+                runs=[
+                    {
+                        "strategy": "dual_ma",
+                        "params": {"short_period": 3, "long_period": 9},
+                    },
+                    {
+                        "strategy": "dual_ma",
+                        "params": {"short_period": 5, "long_period": 9},
+                    },
+                ],
+            )
+        )
+    )
+
+    assert response.dataset_snapshot_id == "snapshot-shared"
+    assert response.compared_count == 2
+    assert [item.result_id for item in response.results] == [1201, 1202]
+    assert [item.params for item in response.results] == [
+        {"short_period": 3, "long_period": 9},
+        {"short_period": 5, "long_period": 9},
+    ]
+    assert [item.dataset_snapshot_id for item in response.results] == [
+        "snapshot-shared",
+        "snapshot-shared",
+    ]
+    assert captured_requests == [
+        ("dual_ma", {"short_period": 3, "long_period": 9}),
+        ("dual_ma", {"short_period": 5, "long_period": 9}),
+    ]
+    saved_configs = [
+        json.loads(str(payload["config_json"])) for payload in saved_payloads
+    ]
+    assert [config["params"] for config in saved_configs] == [
+        {"short_period": 3, "long_period": 9},
+        {"short_period": 5, "long_period": 9},
+    ]
+
+
+def test_backtest_compare_rejects_mismatched_dataset_snapshots_before_persisting(
+    monkeypatch,
+):
+    from fastapi import HTTPException
+
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/compare", "POST").endpoint
+    saved_payloads: list[dict[str, object]] = []
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            saved_payloads.append(kwargs)
+            return 1300 + len(saved_payloads)
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    snapshot_ids = iter(["snapshot-a", "snapshot-b"])
+
+    def fake_run_backtest(request, config, db=None):
+        snapshot_id = next(snapshot_ids)
+        return {
+            "initial_cash": 100000.0,
+            "final_equity": 101000.0,
+            "total_return": 0.01,
+            "annual_return": 0.01,
+            "sharpe": 1.0,
+            "sortino": 1.0,
+            "max_drawdown": 0.02,
+            "win_rate": 0.5,
+            "duration_days": 10,
+            "equity_curve": [{"timestamp": "2026-01-01T00:00:00", "equity": 100000.0}],
+            "metrics_json": {
+                "dataset_snapshot": {
+                    "schema_version": "karkinos.dataset_snapshot.v1",
+                    "snapshot_id": snapshot_id,
+                    "total_rows": 10,
+                }
+            },
+            "cost_summary_json": {},
+            "evidence_json": {},
+            "fills": [],
+        }
+
+    monkeypatch.setattr(backtest_routes, "_run_single_backtest", fake_run_backtest)
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            endpoint(
+                backtest_routes.CompareRequest(
+                    runs=[
+                        {
+                            "strategy": "dual_ma",
+                            "params": {"short_period": 3, "long_period": 9},
+                        },
+                        {
+                            "strategy": "dual_ma",
+                            "params": {"short_period": 5, "long_period": 9},
+                        },
+                    ]
+                )
+            )
+        )
+
+    assert error.value.status_code == 409
+    assert error.value.detail["code"] == "dataset_snapshot_mismatch"
+    assert saved_payloads == []
+
+
 def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch):
     from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
     from server.routes import backtest as backtest_routes
