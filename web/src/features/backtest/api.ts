@@ -74,6 +74,46 @@ export type DatasetSnapshot = {
   symbol_universe: DatasetSnapshotSymbol[];
 };
 
+export type AfterCostEvidence = {
+  net_pnl?: number;
+  total_cost?: number;
+  gross_pnl_before_costs?: number;
+  net_return?: number;
+  gross_return_before_costs?: number;
+  cost_to_initial_cash?: number;
+  fill_count?: number;
+  gross_turnover?: number;
+  assumptions?: string[];
+  limitations?: string[];
+};
+
+export type ValidationSegmentEvidence = {
+  start_timestamp?: string;
+  end_timestamp?: string;
+  initial_equity?: number;
+  final_equity?: number;
+  net_pnl?: number;
+  net_return?: number;
+  total_cost?: number;
+  gross_pnl_before_costs?: number;
+  gross_return_before_costs?: number;
+  fill_count?: number;
+};
+
+export type OutOfSampleValidation = {
+  strategy_id?: string;
+  benchmark_role?: string;
+  split_timestamp?: string;
+  in_sample?: ValidationSegmentEvidence;
+  out_of_sample?: ValidationSegmentEvidence;
+  benchmark_return?: number | null;
+  excess_return?: number | null;
+  passed_benchmark?: boolean | null;
+  validation_status?: string;
+  assumptions?: string[];
+  limitations?: string[];
+};
+
 export type BacktestEquityPoint = {
   timestamp: string;
   equity: number;
@@ -152,8 +192,11 @@ export type BacktestReport = {
   metrics: BacktestMetrics;
   metrics_json?: Partial<BacktestMetrics> & {
     dataset_snapshot?: DatasetSnapshot;
+    evidence_bundle?: AfterCostEvidence;
+    oos_validation?: OutOfSampleValidation;
   };
   cost_summary_json?: CostSummary;
+  evidence_json?: AfterCostEvidence;
   fills?: BacktestFill[];
   equity_curve: BacktestEquityPoint[];
 };

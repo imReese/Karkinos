@@ -7,6 +7,7 @@ import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
+import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
   useRunBacktestMutation,
   useBacktestStrategiesQuery,
@@ -502,6 +503,7 @@ export function BacktestPage() {
             {latestReport ? (
               <div className="mt-5 space-y-5">
                 <MetricsGrid report={latestReport} />
+                <ValidationEvidencePanel report={latestReport} />
                 <DatasetSnapshotPanel report={latestReport} />
                 <EquityDrawdownChart points={latestReport.equity_curve} />
                 <FillsTable fills={latestReport.fills ?? []} />

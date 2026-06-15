@@ -679,6 +679,44 @@ export const copy = {
         unknown: 'Unknown',
         notAvailable: 'N/A',
       },
+      validationEvidence: {
+        kicker: 'Research evidence',
+        title: 'Validation evidence',
+        subtitle:
+          'After-cost and out-of-sample evidence for this run. Use it for research review, not as an execution approval.',
+        afterCostTitle: 'After-cost evidence',
+        oosTitle: 'Out-of-sample split',
+        netReturn: 'Net return',
+        grossReturn: 'Gross before costs',
+        totalCost: 'Total cost',
+        costDrag: 'Cost drag',
+        fills: 'Fills',
+        turnover: 'Turnover',
+        strategy: 'Strategy',
+        benchmarkRole: 'Benchmark role',
+        split: 'Split',
+        status: 'Status',
+        oosReturn: 'OOS return',
+        excessReturn: 'Excess return',
+        benchmarkReturn: 'Benchmark return',
+        oosFills: 'OOS fills',
+        assumptions: 'Assumptions',
+        limitations: 'Limitations',
+        unknown: 'Unknown',
+        fillCount: (count: number) => `${count} fills`,
+        statusValue: (status?: string, passed?: boolean | null) => {
+          if (status === 'benchmark_passed' || passed === true) {
+            return 'Benchmark passed';
+          }
+          if (status === 'benchmark_failed' || passed === false) {
+            return 'Benchmark failed';
+          }
+          if (status === 'benchmark_not_supplied') {
+            return 'Benchmark not supplied';
+          }
+          return status ?? 'Unknown';
+        },
+      },
       chart: {
         kicker: 'Backtest curve',
         title: 'Equity and drawdown',
@@ -1907,6 +1945,44 @@ export const copy = {
         no: '否',
         unknown: '未知',
         notAvailable: '不可用',
+      },
+      validationEvidence: {
+        kicker: '研究证据',
+        title: '验证证据',
+        subtitle:
+          '本次运行的 after-cost 与样本外证据。用于研究复核，不代表执行审批。',
+        afterCostTitle: '扣成本后证据',
+        oosTitle: '样本外切分',
+        netReturn: '净收益率',
+        grossReturn: '扣成本前收益',
+        totalCost: '总成本',
+        costDrag: '成本拖累',
+        fills: '成交',
+        turnover: '成交额',
+        strategy: '策略',
+        benchmarkRole: '基准角色',
+        split: '切分点',
+        status: '状态',
+        oosReturn: '样本外收益',
+        excessReturn: '超额收益',
+        benchmarkReturn: '基准收益',
+        oosFills: '样本外成交',
+        assumptions: '假设',
+        limitations: '限制',
+        unknown: '未知',
+        fillCount: (count: number) => `${count} 笔成交`,
+        statusValue: (status?: string, passed?: boolean | null) => {
+          if (status === 'benchmark_passed' || passed === true) {
+            return '基准通过';
+          }
+          if (status === 'benchmark_failed' || passed === false) {
+            return '基准未通过';
+          }
+          if (status === 'benchmark_not_supplied') {
+            return '未提供基准';
+          }
+          return status ?? '未知';
+        },
       },
       chart: {
         kicker: '回测曲线',

@@ -33,6 +33,9 @@ public demos and development.
   requested range, symbol universe, row counts, adjustment mode when available,
   and data-quality diagnostics, and the Web report exposes that audit panel for
   saved and freshly run results
+- Web Backtest reports surface after-cost evidence, out-of-sample split status,
+  benchmark comparison, assumptions, and limitations without turning research
+  output into execution approval
 - Web Backtest Strategy Lab selects registry strategies, renders typed
   parameter controls, and can run a single-symbol research backtest from the
   browser
