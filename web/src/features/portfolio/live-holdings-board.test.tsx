@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
 import { getCopy } from '../../app/copy';
@@ -115,6 +115,31 @@ test('renders holdings quote board in english', () => {
   expect(screen.getAllByText('20.00%').length).toBeGreaterThan(0);
   expect(screen.queryByText('-1.1%')).toBeNull();
   expect(screen.queryByText('20.0%')).toBeNull();
+});
+
+test('groups summary values with their labels in the asset cards', () => {
+  renderBoard('en');
+  const copy = getCopy('en');
+
+  const stockSummary = screen.getByTestId('live-holdings-group-summary-stock');
+  const stockMarketValue = within(stockSummary).getByTestId(
+    'live-holdings-group-summary-stock-market-value',
+  );
+  const stockTodayMove = within(stockSummary).getByTestId(
+    'live-holdings-group-summary-stock-today-move',
+  );
+  const stockSinceBuy = within(stockSummary).getByTestId(
+    'live-holdings-group-summary-stock-since-buy',
+  );
+
+  expect(within(stockMarketValue).getByText(copy.portfolio.table.marketValue));
+  expect(within(stockMarketValue).getByText('CN¥1,800.00'));
+  expect(within(stockTodayMove).getByText(copy.portfolio.liveBoard.todayMove));
+  expect(within(stockTodayMove).getByText('-CN¥20.00'));
+  expect(
+    within(stockSinceBuy).getByText(copy.portfolio.liveBoard.sinceBuyReturn),
+  );
+  expect(within(stockSinceBuy).getByText('CN¥300.00'));
 });
 
 test('renders localized holdings quote board in chinese', () => {
