@@ -86,6 +86,119 @@ const runReport = {
   equity_curve: [],
 };
 
+const strategyCatalog = [
+  {
+    strategy_id: 'dual_ma',
+    name: 'dual_ma',
+    display_name: 'Dual Moving Average',
+    description: 'Dual moving-average crossover baseline.',
+    params: [
+      {
+        name: 'short_period',
+        type: 'int',
+        default: 5,
+        required: false,
+        min: 1,
+        max: 250,
+        allowed_values: null,
+        description: 'Short moving-average window in trading bars.',
+      },
+      {
+        name: 'long_period',
+        type: 'int',
+        default: 20,
+        required: false,
+        min: 2,
+        max: 500,
+        allowed_values: null,
+        description: 'Long moving-average window in trading bars.',
+      },
+    ],
+    parameter_schema: [
+      {
+        name: 'short_period',
+        type: 'int',
+        default: 5,
+        required: false,
+        min: 1,
+        max: 250,
+        allowed_values: null,
+        description: 'Short moving-average window in trading bars.',
+      },
+      {
+        name: 'long_period',
+        type: 'int',
+        default: 20,
+        required: false,
+        min: 2,
+        max: 500,
+        allowed_values: null,
+        description: 'Long moving-average window in trading bars.',
+      },
+    ],
+    benchmark_role: 'etf_rotation_trend_following',
+    benchmark_universe: ['etf'],
+    requires_out_of_sample_validation: true,
+    requires_after_cost_report: true,
+    validation_notes: [],
+  },
+  {
+    strategy_id: 'bollinger',
+    name: 'bollinger',
+    display_name: 'Bollinger Mean Reversion',
+    description: 'Bollinger band mean-reversion baseline.',
+    params: [
+      {
+        name: 'bb_period',
+        type: 'int',
+        default: 20,
+        required: false,
+        min: 2,
+        max: 500,
+        allowed_values: null,
+        description: 'Bollinger lookback window in trading bars.',
+      },
+      {
+        name: 'num_std',
+        type: 'float',
+        default: 2,
+        required: false,
+        min: 0.1,
+        max: 10,
+        allowed_values: null,
+        description: 'Number of standard deviations used for bands.',
+      },
+    ],
+    parameter_schema: [
+      {
+        name: 'bb_period',
+        type: 'int',
+        default: 20,
+        required: false,
+        min: 2,
+        max: 500,
+        allowed_values: null,
+        description: 'Bollinger lookback window in trading bars.',
+      },
+      {
+        name: 'num_std',
+        type: 'float',
+        default: 2,
+        required: false,
+        min: 0.1,
+        max: 10,
+        allowed_values: null,
+        description: 'Number of standard deviations used for bands.',
+      },
+    ],
+    benchmark_role: 'a_share_or_etf_mean_reversion',
+    benchmark_universe: ['stock', 'etf'],
+    requires_out_of_sample_validation: true,
+    requires_after_cost_report: true,
+    validation_notes: [],
+  },
+];
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -97,39 +210,51 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 function installBacktestFetchMock({
   runFails = false,
   results = [savedSummary],
+  strategies = strategyCatalog,
 }: {
   runFails?: boolean;
   results?: unknown[];
+  strategies?: unknown[];
 } = {}) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url =
-      typeof input === 'string'
-        ? input
-        : input instanceof Request
-          ? input.url
-          : input.toString();
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
 
-    if (url.includes('/api/backtest/run')) {
-      return runFails
-        ? jsonResponse({ detail: 'backtest unavailable' }, { status: 503 })
-        : jsonResponse(runReport);
-    }
-    if (url.includes('/api/backtest/results/1')) {
-      return jsonResponse(savedReport);
-    }
-    if (url.includes('/api/backtest/results')) {
-      return jsonResponse(results);
-    }
-    return new Response('Not found', { status: 404 });
-  });
+      if (url.includes('/api/backtest/strategies')) {
+        return jsonResponse(strategies);
+      }
+      if (url.includes('/api/backtest/run')) {
+        return runFails
+          ? jsonResponse({ detail: 'backtest unavailable' }, { status: 503 })
+          : jsonResponse(runReport);
+      }
+      if (url.includes('/api/backtest/results/1')) {
+        return jsonResponse(savedReport);
+      }
+      if (url.includes('/api/backtest/results')) {
+        return jsonResponse(results);
+      }
+      return new Response('Not found', { status: 404 });
+    },
+  );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
 
 function renderBacktestPage(
-  options?: Parameters<typeof installBacktestFetchMock>[0],
+  options?: Parameters<typeof installBacktestFetchMock>[0] & {
+    locale?: 'en' | 'zh';
+  },
 ) {
   window.localStorage.clear();
+  if (options?.locale) {
+    window.localStorage.setItem('karkinos.locale', options.locale);
+  }
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
     media: query,
@@ -165,14 +290,63 @@ test('renders the backtest workspace and saved report history', async () => {
 
   expect(await screen.findByText('Strategy replay')).toBeTruthy();
   expect(await screen.findByText('Backtest configuration')).toBeTruthy();
+  expect(await screen.findByDisplayValue('Dual Moving Average')).toBeTruthy();
+  expect(await screen.findByLabelText('short_period')).toBeTruthy();
   expect(await screen.findByText('Report selection')).toBeTruthy();
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
+});
+
+test('switches strategy schema controls from the registry', async () => {
+  renderBacktestPage({ results: [] });
+
+  await screen.findByText('Bollinger Mean Reversion');
+  const strategySelect = screen.getByLabelText('Strategy');
+  fireEvent.change(strategySelect, { target: { value: 'bollinger' } });
+
+  expect(await screen.findByLabelText('bb_period')).toBeTruthy();
+  expect(await screen.findByLabelText('num_std')).toBeTruthy();
+  expect(screen.queryByLabelText('short_period')).toBeNull();
+});
+
+test('localizes built-in strategy names without changing strategy ids', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
+
+  expect(await screen.findByText('策略回放')).toBeTruthy();
+  expect(await screen.findByDisplayValue('双均线策略')).toBeTruthy();
+  expect(await screen.findByText('布林带均值回归')).toBeTruthy();
+
+  fireEvent.change(await screen.findByLabelText('标的代码'), {
+    target: { value: '603659' },
+  });
+  const runButton = screen.getByRole('button', { name: '运行回测' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const runCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/run'),
+  );
+  const payload = JSON.parse(String(runCall?.[1]?.body));
+  expect(payload.strategy).toBe('dual_ma');
 });
 
 test('runs a backtest and displays metrics_json and cost_summary_json fields', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   await screen.findByText('Strategy replay');
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(await screen.findByLabelText('short_period'), {
+    target: { value: '3' },
+  });
+  fireEvent.change(await screen.findByLabelText('long_period'), {
+    target: { value: '9' },
+  });
   const runButton = screen.getByRole('button', { name: 'Run backtest' });
   fireEvent.submit(runButton.closest('form') as HTMLFormElement);
 
@@ -182,6 +356,13 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
       expect.objectContaining({ method: 'POST' }),
     );
   });
+  const runCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/run'),
+  );
+  const payload = JSON.parse(String(runCall?.[1]?.body));
+  expect(payload.strategy).toBe('dual_ma');
+  expect(payload.params).toEqual({ short_period: 3, long_period: 9 });
+  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
   expect(await screen.findByText('Run output')).toBeTruthy();
   expect(await screen.findByText('Calmar 3.10')).toBeTruthy();
   expect(await screen.findByText('3 fills')).toBeTruthy();

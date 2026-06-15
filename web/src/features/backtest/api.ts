@@ -53,13 +53,39 @@ export type BacktestSummary = {
   max_drawdown: number;
 };
 
+export type StrategyParameterSchema = {
+  name: string;
+  type: 'int' | 'float' | 'str' | 'bool' | 'dict' | string;
+  default: number | string | boolean | Record<string, unknown> | null;
+  required: boolean;
+  min?: number | null;
+  max?: number | null;
+  allowed_values?: Array<string | number | boolean> | null;
+  description: string;
+};
+
+export type BacktestStrategyInfo = {
+  strategy_id: string;
+  name: string;
+  display_name: string;
+  description: string;
+  params: StrategyParameterSchema[];
+  parameter_schema: StrategyParameterSchema[];
+  benchmark_role?: string | null;
+  benchmark_universe?: string[];
+  requires_out_of_sample_validation?: boolean;
+  requires_after_cost_report?: boolean;
+  validation_notes?: string[];
+};
+
 export type BacktestRunRequest = {
   start_date: string;
   end_date: string;
   initial_cash: number;
   strategy: string;
-  short_period: number;
-  long_period: number;
+  short_period?: number;
+  long_period?: number;
+  params?: Record<string, number | string | boolean | null>;
   assets?: Array<{ symbol: string; asset_class: string }>;
 };
 
@@ -71,8 +97,9 @@ export type BacktestReport = {
     end_date: string;
     initial_cash: number;
     strategy: string;
-    short_period: number;
-    long_period: number;
+    short_period?: number;
+    long_period?: number;
+    params?: Record<string, number | string | boolean | null>;
     assets?: Array<{ symbol: string; asset_class: string }> | null;
   };
   metrics: BacktestMetrics;
@@ -105,6 +132,15 @@ export function useBacktestResultsQuery() {
     queryKey: ['backtest-results'],
     queryFn: () => apiClient<BacktestSummary[]>('/api/backtest/results'),
     staleTime: 10_000,
+  });
+}
+
+export function useBacktestStrategiesQuery() {
+  return useQuery({
+    queryKey: ['backtest-strategies'],
+    queryFn: () =>
+      apiClient<BacktestStrategyInfo[]>('/api/backtest/strategies'),
+    staleTime: 60_000,
   });
 }
 
