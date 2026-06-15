@@ -704,7 +704,7 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
                     "symbol": "018125",
                     "asset_type": "fund",
                     "price": 2.4062,
-                    "quote_timestamp": "2026-06-05 15:00",
+                    "quote_timestamp": "2026-06-15 11:07",
                     "quote_source": "eastmoney_fund_estimate",
                     "provider_name": "akshare",
                     "provider_status": "live",
@@ -725,6 +725,10 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.portfolio.get_shanghai_now",
+        lambda now=None: datetime.fromisoformat("2026-06-15T11:11:36+08:00"),
+    )
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     response = asyncio.run(health_route.endpoint())
@@ -734,6 +738,38 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
     assert response.source_health == "live"
     assert response.next_action is None
     assert response.quotes[0].quote_source == "eastmoney_fund_estimate"
+
+
+def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
+    from server.routes import market as market_routes
+
+    fake_state = SimpleNamespace(config=SimpleNamespace(live_poll_interval=60))
+    quote = {
+        "symbol": "018125",
+        "asset_class": "fund",
+        "price": 2.4062,
+        "timestamp": "2026-06-15 11:07",
+        "quote_source": "eastmoney_fund_estimate",
+        "quote_status": "live",
+    }
+    monkeypatch.setattr(
+        market_routes,
+        "_resolve_quote_status",
+        lambda state, quote: "stale",
+    )
+
+    metadata = market_routes._quote_metadata(
+        fake_state,
+        "018125",
+        "fund",
+        quote,
+        market_open=True,
+        refresh_policy="live",
+        now=datetime.fromisoformat("2026-06-15T11:11:36+08:00"),
+    )
+
+    assert metadata["quote_status"] == "stale"
+    assert metadata["stale_reason"] == "quote_older_than_expected_session"
 
 
 def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatch):
@@ -4704,6 +4740,38 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
     assert quote["source"] == "market_bars"
     assert quote["timestamp"] == "2026-06-12T15:00:00+08:00"
     assert quote["price"] == pytest.approx(0.9194)
+
+
+def test_quote_status_allows_live_fund_estimate_provider_lag():
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    fake_state = SimpleNamespace(config=SimpleNamespace(live_poll_interval=60))
+    now = datetime(2026, 6, 15, 11, 11, 36, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    fund_quote = {
+        "price": 2.4062,
+        "timestamp": "2026-06-15 11:07",
+        "asset_class": "fund",
+        "quote_source": "eastmoney_fund_estimate",
+        "quote_status": "live",
+    }
+    stock_quote = {
+        "price": 28.71,
+        "timestamp": "2026-06-15T11:07:00+08:00",
+        "asset_class": "stock",
+        "quote_source": "tushare_realtime_quote",
+        "quote_status": "live",
+    }
+
+    assert portfolio_routes._quote_status(fake_state, fund_quote, now=now) == "live"
+    assert portfolio_routes._quote_stale_reason(fake_state, fund_quote, now=now) is None
+    assert portfolio_routes._quote_status(fake_state, stock_quote, now=now) == "stale"
+    assert (
+        portfolio_routes._quote_stale_reason(fake_state, stock_quote, now=now)
+        == "quote_older_than_expected_session"
+    )
 
 
 def test_portfolio_explainability_maps_ledger_events_to_shanghai_dates():

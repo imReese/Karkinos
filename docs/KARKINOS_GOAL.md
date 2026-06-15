@@ -473,4 +473,8 @@ automation.
   historical day-close evidence, so intraday fund estimates can update current
   holdings without creating same-day calendar income; localized asset-class
   display now includes cash/现金 as well as stock/股票 and fund/基金.
+* 2026-06-15: Tightened live quote freshness semantics for fund estimates.
+  Portfolio and Market health now share the same computed quote status instead
+  of trusting cached `live` flags, while Eastmoney fund estimate quotes receive
+  a bounded intraday lag window distinct from stricter stock realtime quotes.
 <!-- codex-progress:end -->

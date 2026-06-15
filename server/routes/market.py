@@ -297,11 +297,7 @@ def _quote_metadata(
     quote_status = (
         "missing"
         if not quote or quote.get("price") in {None, ""}
-        else (
-            str(quote.get("quote_status"))
-            if quote.get("quote_status")
-            else _resolve_quote_status(state, quote)
-        )
+        else _resolve_quote_status(state, quote)
     )
     stale_reason = (
         str(quote.get("stale_reason"))
