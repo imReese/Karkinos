@@ -1090,3 +1090,57 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
     ),
   ).toBeTruthy();
 });
+
+test('accepts localized comparison parameter names while submitting API keys', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
+
+  const parameterSets = (await screen.findByLabelText(
+    '对比参数集',
+  )) as HTMLTextAreaElement;
+  expect(parameterSets.value).toContain('短期均线周期=5');
+  expect(parameterSets.value).toContain('长期均线周期=20');
+  expect(parameterSets.value).not.toContain('short_period=');
+  expect(
+    await screen.findByText(
+      '已解析 2 组参数；每行一组，例如 短期均线周期=3, 长期均线周期=9。',
+    ),
+  ).toBeTruthy();
+
+  fireEvent.change(await screen.findByLabelText('标的代码'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(parameterSets, {
+    target: {
+      value: '短期均线周期=3, 长期均线周期=9\n短期均线周期=5, 长期均线周期=9',
+    },
+  });
+  const compareButton = screen.getByRole('button', {
+    name: '运行对比',
+  });
+  fireEvent.submit(compareButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/compare',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const compareCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/compare'),
+  );
+  const payload = JSON.parse(String(compareCall?.[1]?.body));
+  expect(payload.runs).toEqual([
+    {
+      strategy: 'dual_ma',
+      params: { short_period: 3, long_period: 9 },
+    },
+    {
+      strategy: 'dual_ma',
+      params: { short_period: 5, long_period: 9 },
+    },
+  ]);
+  expect(await screen.findByText('对比结果')).toBeTruthy();
+  expect(
+    await screen.findByText('短期均线周期=5, 长期均线周期=9'),
+  ).toBeTruthy();
+});

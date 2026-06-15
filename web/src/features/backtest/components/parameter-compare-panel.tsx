@@ -22,15 +22,42 @@ function schemaDefaultValue(param: StrategyParameterSchema) {
   return String(param.default);
 }
 
-function defaultCompareSets(parameterSchema: StrategyParameterSchema[]) {
+function parameterLabel(labels: Partial<Record<string, string>>, name: string) {
+  return labels[name] ?? humanizeParameterName(name);
+}
+
+function defaultCompareSets(
+  parameterSchema: StrategyParameterSchema[],
+  labels: Partial<Record<string, string>>,
+) {
   const defaults = parameterSchema
-    .map((param) => `${param.name}=${schemaDefaultValue(param)}`)
+    .map(
+      (param) =>
+        `${parameterLabel(labels, param.name)}=${schemaDefaultValue(param)}`,
+    )
     .join(', ');
   return [defaults, defaults].filter(Boolean).join('\n');
 }
 
-function parameterLabel(labels: Partial<Record<string, string>>, name: string) {
-  return labels[name] ?? humanizeParameterName(name);
+function comparisonExample(
+  parameterSchema: StrategyParameterSchema[],
+  labels: Partial<Record<string, string>>,
+) {
+  if (!parameterSchema.length) {
+    return '';
+  }
+  const exampleValues: Record<string, string> = {
+    long_period: '9',
+    short_period: '3',
+  };
+  return parameterSchema
+    .map(
+      (param) =>
+        `${parameterLabel(labels, param.name)}=${
+          exampleValues[param.name] ?? schemaDefaultValue(param)
+        }`,
+    )
+    .join(', ');
 }
 
 function humanizeParameterName(name: string) {
@@ -64,6 +91,7 @@ function parseParamValue(
 function parseParameterSet(
   line: string,
   schemaByName: Map<string, StrategyParameterSchema>,
+  schemaByAlias: Map<string, StrategyParameterSchema>,
 ) {
   const params: Record<string, ParameterPrimitive> = {};
   for (const rawPart of line.split(',')) {
@@ -77,11 +105,11 @@ function parseParameterSet(
     }
     const name = part.slice(0, separatorIndex).trim();
     const value = part.slice(separatorIndex + 1);
-    const schema = schemaByName.get(name);
+    const schema = schemaByName.get(name) ?? schemaByAlias.get(name);
     if (!schema) {
       throw new Error('invalid');
     }
-    params[name] = parseParamValue(schema, value);
+    params[schema.name] = parseParamValue(schema, value);
   }
   if (Object.keys(params).length === 0) {
     throw new Error('invalid');
@@ -128,10 +156,11 @@ export function ParameterComparePanel({
 }) {
   const copy = useCopy();
   const labels = copy.backtest.compare;
+  const pageLabels = copy.backtest.page;
   const common = copy.common;
   const compare = useRunBacktestCompareMutation();
   const [parameterSets, setParameterSets] = useState(() =>
-    defaultCompareSets(parameterSchema),
+    defaultCompareSets(parameterSchema, pageLabels.parameterLabels),
   );
   const [error, setError] = useState('');
   const [response, setResponse] = useState<BacktestCompareResponse | null>(
@@ -141,11 +170,27 @@ export function ParameterComparePanel({
     () => new Map(parameterSchema.map((param) => [param.name, param])),
     [parameterSchema],
   );
+  const schemaByAlias = useMemo(
+    () =>
+      new Map(
+        parameterSchema.flatMap((param) => [
+          [parameterLabel(pageLabels.parameterLabels, param.name), param],
+          [humanizeParameterName(param.name), param],
+        ]),
+      ),
+    [pageLabels.parameterLabels, parameterSchema],
+  );
+  const exampleSet = useMemo(
+    () => comparisonExample(parameterSchema, pageLabels.parameterLabels),
+    [pageLabels.parameterLabels, parameterSchema],
+  );
 
   useEffect(() => {
-    setParameterSets(defaultCompareSets(parameterSchema));
+    setParameterSets(
+      defaultCompareSets(parameterSchema, pageLabels.parameterLabels),
+    );
     setResponse(null);
-  }, [parameterSchema, strategy]);
+  }, [pageLabels.parameterLabels, parameterSchema, strategy]);
 
   const parsedRuns = useMemo(() => {
     try {
@@ -153,12 +198,12 @@ export function ParameterComparePanel({
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => parseParameterSet(line, schemaByName));
+        .map((line) => parseParameterSet(line, schemaByName, schemaByAlias));
       return { parsed, valid: true };
     } catch {
       return { parsed: [], valid: false };
     }
-  }, [parameterSets, schemaByName]);
+  }, [parameterSets, schemaByAlias, schemaByName]);
 
   const submitCompare = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -213,7 +258,7 @@ export function ParameterComparePanel({
           />
         </label>
         <span className="app-muted text-xs">
-          {labels.setsHint(parsedRuns.parsed.length)}
+          {labels.setsHint(parsedRuns.parsed.length, exampleSet)}
         </span>
         {error ? (
           <div
