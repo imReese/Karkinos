@@ -6370,6 +6370,127 @@ def test_backtest_strategies_route_returns_benchmark_metadata():
     assert by_name["rsi"].benchmark_role is None
 
 
+def test_backtest_strategies_route_returns_typed_parameter_schema():
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/strategies", "GET").endpoint
+
+    response = asyncio.run(endpoint())
+    by_name = {item.name: item for item in response}
+    dual_ma = by_name["dual_ma"]
+    params = {param["name"]: param for param in dual_ma.parameter_schema}
+
+    assert dual_ma.strategy_id == "dual_ma"
+    assert dual_ma.display_name == "Dual Moving Average"
+    assert params["short_period"]["type"] == "int"
+    assert params["short_period"]["default"] == 5
+    assert params["short_period"]["required"] is False
+    assert params["short_period"]["min"] == 1
+    assert params["short_period"]["max"] == 250
+    assert params["long_period"]["default"] == 20
+
+
+def test_backtest_run_accepts_generic_params_and_persists_exact_payload(monkeypatch):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/run", "POST").endpoint
+    saved_payload: dict[str, object] = {}
+    captured_request: dict[str, object] = {}
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            saved_payload.update(kwargs)
+            return 77
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    def fake_run_backtest(request, config, db=None):
+        captured_request["params"] = request.params
+        return {
+            "initial_cash": 100000.0,
+            "final_equity": 100100.0,
+            "total_return": 0.001,
+            "annual_return": 0.01,
+            "sharpe": 0.2,
+            "sortino": 0.3,
+            "max_drawdown": 0.01,
+            "win_rate": 0.5,
+            "duration_days": 10,
+            "equity_curve": [{"timestamp": "2026-01-01T00:00:00", "equity": 100000.0}],
+            "metrics_json": {},
+            "cost_summary_json": {},
+            "evidence_json": {},
+            "fills": [],
+        }
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fake_run_backtest)
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
+
+    request = backtest_routes.BacktestRequest(
+        strategy="dual_ma",
+        params={"short_period": "3", "long_period": 9},
+    )
+    response = asyncio.run(endpoint(request))
+
+    assert response.id == 77
+    assert captured_request["params"] == {"short_period": 3, "long_period": 9}
+    config_json = json.loads(str(saved_payload["config_json"]))
+    assert config_json["params"] == {"short_period": 3, "long_period": 9}
+    assert config_json["short_period"] == 3
+    assert config_json["long_period"] == 9
+
+
+def test_backtest_run_rejects_unknown_generic_params_before_execution(monkeypatch):
+    from fastapi import HTTPException
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/run", "POST").endpoint
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=SimpleNamespace(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("backtest runner should not execute invalid params")
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fail_if_called)
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            endpoint(
+                backtest_routes.BacktestRequest(
+                    strategy="dual_ma",
+                    params={"unknown": 1},
+                )
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert error.value.detail == {
+        "strategy": "dual_ma",
+        "errors": [
+            {
+                "field": "unknown",
+                "code": "unknown_parameter",
+                "message": "Unknown parameter 'unknown' for strategy 'dual_ma'.",
+            }
+        ],
+    }
+
+
 def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch):
     from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
     from server.routes import backtest as backtest_routes

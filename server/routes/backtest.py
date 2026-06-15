@@ -6,9 +6,10 @@ import asyncio
 import json
 import logging
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from config import BacktestConfig
@@ -30,9 +31,12 @@ logger = logging.getLogger(__name__)
 
 
 class StrategyInfoResponse(BaseModel):
+    strategy_id: str
     name: str
+    display_name: str
     description: str
     params: list[dict[str, Any]]
+    parameter_schema: list[dict[str, Any]]
     benchmark_role: str | None = None
     benchmark_universe: list[str] = Field(default_factory=list)
     requires_out_of_sample_validation: bool = False
@@ -141,6 +145,56 @@ def _backtest_evidence_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return _json_object(metrics_json.get("evidence_bundle"))
 
 
+def _validate_backtest_strategy_params(request: BacktestRequest) -> BacktestRequest:
+    """Return a request copy with validated generic strategy params."""
+    import strategy.examples  # noqa: F401
+    from strategy.registry import StrategyRegistry
+    from strategy.schema import StrategyParameterValidationError
+
+    strategy_info = StrategyRegistry.get(request.strategy)
+    if strategy_info is None:
+        available = StrategyRegistry.list_strategies()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "strategy": request.strategy,
+                "errors": [
+                    {
+                        "field": "strategy",
+                        "code": "unknown_strategy",
+                        "message": (
+                            f"Unknown strategy '{request.strategy}'. "
+                            f"Available strategies: {available}."
+                        ),
+                    }
+                ],
+            },
+        )
+
+    raw_params = request.params
+    if raw_params is None:
+        legacy_params = {}
+        for param in strategy_info.get("params", []):
+            name = param["name"]
+            if hasattr(request, name):
+                legacy_params[name] = getattr(request, name)
+        raw_params = legacy_params or None
+
+    try:
+        validated = StrategyRegistry.validate_params(request.strategy, raw_params)
+    except StrategyParameterValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"strategy": request.strategy, "errors": exc.errors},
+        ) from exc
+
+    updates: dict[str, Any] = {"params": validated}
+    for legacy_name in ("short_period", "long_period"):
+        if legacy_name in validated:
+            updates[legacy_name] = validated[legacy_name]
+    return request.model_copy(update=updates)
+
+
 def _build_oos_validation_payload(
     request: BacktestRequest,
     result: Any,
@@ -217,10 +271,11 @@ def _run_single_backtest(
     event_bus_placeholder = type(
         "EventBus", (), {"subscribe": lambda *a: None, "publish": lambda *a: None}
     )()
-    strategy_config = BacktestConfig(
+    strategy_config = SimpleNamespace(
         strategy=request.strategy,
         short_period=request.short_period,
         long_period=request.long_period,
+        params=request.params,
     )
     strategy = build_strategy(strategy_config, event_bus_placeholder)
 
@@ -334,6 +389,7 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         config = state.config
+        request = _validate_backtest_strategy_params(request)
 
         bt_result = await asyncio.to_thread(_run_backtest, request, config, state.db)
         metrics_json = dict(bt_result["metrics_json"])
@@ -462,13 +518,19 @@ def create_router() -> APIRouter:
                 continue
 
             # 构造 BacktestRequest：使用默认策略参数
-            bt_request = BacktestRequest(
-                start_date=request.start_date,
-                end_date=request.end_date,
-                initial_cash=request.initial_cash,
-                strategy=strat_name,
-                assets=request.assets,
-                **{p["name"]: p["default"] for p in strat_info["params"]},
+            default_params = {
+                p["name"]: p.get("default")
+                for p in strat_info.get("parameter_schema", strat_info["params"])
+            }
+            bt_request = _validate_backtest_strategy_params(
+                BacktestRequest(
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    initial_cash=request.initial_cash,
+                    strategy=strat_name,
+                    assets=request.assets,
+                    params=default_params,
+                )
             )
 
             bt_result = await asyncio.to_thread(

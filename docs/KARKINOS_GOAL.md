@@ -362,6 +362,12 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Started v0.4 Strategy Lab backend parameter contracts. Built-in
+  strategies now expose typed parameter schemas with defaults, required flags,
+  ranges, and descriptions; the strategy registry validates generic params,
+  rejects unknown parameters, enforces dual moving-average cross-field
+  constraints, and `POST /api/backtest/run` accepts normalized `params` while
+  preserving legacy `short_period` / `long_period` compatibility.
 * 2026-06-15: Added the v0.4 Strategy Lab Backtesting Engine target to the
   project goal. The new target formalizes configurable strategy parameters,
   local extension strategy scripts, reproducible one-symbol and universe

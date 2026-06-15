@@ -674,6 +674,7 @@ class BacktestRequest(BaseModel):
     strategy: str = "dual_ma"
     short_period: int = 5
     long_period: int = 20
+    params: dict[str, Any] | None = None
     assets: list[dict[str, str]] | None = None
     oos_split_date: str | None = None
     benchmark_return: float | None = None
