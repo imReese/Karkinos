@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
 import { PriceStructureChart } from './price-structure-chart';
@@ -9,9 +9,16 @@ test('renders OHLC price range as a K-line chart', () => {
       titleLabel="Price range / K-line"
       priceLabel="Price"
       emptyLabel="No chart"
+      rangeLabels={{
+        oneMonth: '1M',
+        threeMonths: '3M',
+        sixMonths: '6M',
+        oneYear: '1Y',
+        all: 'All',
+      }}
       bars={[
         {
-          timestamp: '2026-04-19',
+          timestamp: '2025-04-19',
           open: 1510,
           high: 1620,
           low: 1500,
@@ -32,8 +39,36 @@ test('renders OHLC price range as a K-line chart', () => {
 
   expect(screen.getByText('Price range / K-line')).toBeTruthy();
   expect(screen.getByText('CN¥1,640.00')).toBeTruthy();
-  expect(container.querySelectorAll('rect').length).toBe(2);
-  expect(container.querySelector('polyline')).not.toBeNull();
+  expect(
+    screen.getByRole('button', { name: 'Show 1M K-line range' }),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole('button', { name: 'Show All K-line range' })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
+  expect(screen.getByText('Price axis')).toBeTruthy();
+  expect(screen.getByText('Date axis')).toBeTruthy();
+  expect(screen.getByText('2025-04-19')).toBeTruthy();
+  expect(screen.getByText('2026-04-20')).toBeTruthy();
+  expect(
+    container.querySelectorAll('[data-testid="kline-candle"]').length,
+  ).toBe(2);
+  expect(
+    container.querySelector('[data-testid="close-price-trend"]'),
+  ).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show 1M K-line range' }));
+
+  expect(
+    screen
+      .getByRole('button', { name: 'Show 1M K-line range' })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
+  expect(
+    container.querySelectorAll('[data-testid="kline-candle"]').length,
+  ).toBe(1);
+  expect(screen.queryByText('2025-04-19')).toBeNull();
 });
 
 test('renders an empty state when no bars are available', () => {
