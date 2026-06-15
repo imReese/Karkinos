@@ -261,42 +261,45 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
   return (
     <section className="space-y-5 sm:space-y-6">
-      <header className="app-page-header pb-1">
-        <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-          <div className="min-w-0">
+      <header
+        data-testid="holding-detail-header"
+        className="app-page-header pb-0"
+      >
+        <div className="flex flex-col gap-3 rounded-[28px] border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_14%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
             <a
               href="/portfolio"
-              className="app-button-secondary mb-4 inline-flex rounded-2xl px-4 py-2 text-sm font-semibold"
+              className="app-button-secondary inline-flex w-max rounded-2xl px-4 py-2 text-sm font-semibold"
               aria-label={labels.returnToPortfolio}
             >
               {labels.backToPortfolio}
             </a>
-            <div className="app-product-mark">{labels.kicker}</div>
-            <h1 className="app-page-title mt-2 break-words">
-              {labels.title(position.symbol)}
-            </h1>
-            <p className="app-page-subtitle mt-2 max-w-3xl">
-              {labels.subtitle}
-            </p>
+            <span className="hidden h-8 w-px bg-[color-mix(in_srgb,var(--app-border)_36%,transparent)] sm:block" />
+            <div className="min-w-0">
+              <div className="app-product-mark">{labels.kicker}</div>
+              <div className="app-muted mt-1 truncate text-sm">
+                {displayName} · {position.symbol} · {assetClassDisplay}
+              </div>
+            </div>
           </div>
-          <div className="app-panel-strong min-w-[260px] rounded-[26px] px-5 py-4">
-            <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-              {labels.quoteStatus}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <StatusBadge
-                label={isStale ? labels.quoteStale : labels.quoteLive}
-                tone={isStale ? 'warning' : 'success'}
-              />
-              {marketOpen === false ? (
-                <StatusBadge label={labels.marketClosed} tone="warning" />
-              ) : null}
-              {refreshPolicy === 'cache_only' ? (
-                <StatusBadge label={labels.cacheOnly} tone="warning" />
-              ) : null}
-            </div>
-            <div className="app-muted mt-3 text-xs tabular-nums">
-              {labels.quoteTimestamp}: {formatTimestamp(quoteTimestamp)}
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <StatusBadge
+              label={isStale ? labels.quoteStale : labels.quoteLive}
+              tone={isStale ? 'warning' : 'success'}
+            />
+            {marketOpen === false ? (
+              <StatusBadge label={labels.marketClosed} tone="warning" />
+            ) : null}
+            {refreshPolicy === 'cache_only' ? (
+              <StatusBadge label={labels.cacheOnly} tone="warning" />
+            ) : null}
+            <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]">
+              <span className="app-kicker mr-1 text-[10px] uppercase tracking-[0.14em]">
+                {labels.quoteTimestamp}
+              </span>
+              <span className="font-mono tabular-nums">
+                {formatTimestamp(quoteTimestamp)}
+              </span>
             </div>
           </div>
         </div>

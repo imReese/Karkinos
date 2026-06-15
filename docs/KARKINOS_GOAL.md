@@ -531,4 +531,7 @@ automation.
   from a compact sparkline into a K-line chart with selectable ranges,
   explicit price/date axes, and OHLC candle bodies while preserving read-only
   research behavior.
+* 2026-06-15: Tightened the holding-detail page header. The page now uses a
+  compact return/context/status bar, removes the duplicate top quote-state
+  card, and leaves holding identity and metrics to the summary surface.
 <!-- codex-progress:end -->
