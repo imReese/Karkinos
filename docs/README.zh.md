@@ -100,6 +100,7 @@ Karkinos/
 │   ├── db.py               # SQLite 持久化（信号/回测/行情快照/流水）
 │   ├── models.py           # Pydantic v2 请求/响应模型
 │   ├── scheduler.py        # TradingScheduler（实时交易循环）
+│   ├── config.py           # 类型化配置加载（BacktestConfig + ServerConfig）
 │   ├── dependencies.py     # FastAPI 依赖注入
 │   ├── routes/             # REST 路由
 │   │   ├── market.py       #   /api/market — 行情/关注列表/K 线
@@ -125,7 +126,6 @@ Karkinos/
 │   ├── run_backtest.py     # 本地回测工具
 │   └── live_monitor.py     # 兼容独立监控工具（Web 服务使用 TradingScheduler）
 ├── live.py                 # 兼容 wrapper；优先使用 tools.live_monitor
-├── config.py               # 类型化配置加载（BacktestConfig + ServerConfig）
 ├── main.py                 # 兼容 wrapper；优先使用 tools.run_backtest
 ├── config.example.json     # 配置模板
 ├── Dockerfile              # 多阶段构建（Node 构建 + Python 运行）
@@ -462,6 +462,13 @@ Web 回测实验室会读取 `/api/backtest/strategies` 的策略注册表，把
 `短期均线周期=3, 长期均线周期=9`，提交给后端时仍会转换为稳定的
 `short_period` / `long_period` API 字段。
 标的留空时沿用后端配置资产池；所有输出仍是研究证据，不会触发真实资金自动交易。
+
+已保存回测会写入本地 SQLite 数据库 `data/store/app.db` 的 `backtest_results`
+表，供 Web 历史列表、风险页、决策证据和策略晋级流程查询。为了方便人工查看，每条
+保存的回测也会默认生成一份 JSON 文件：
+`reports/backtest/backtest-result-<id>.json`。可通过
+`KARKINOS_BACKTEST_REPORT_DIR` 改变报告输出目录；`reports/` 属于本地运行时数据，
+不应提交到 git。
 
 `POST /api/backtest/sweep` 接收 `param_grid`，例如
 `{"short_period": [3, 5], "long_period": [9]}`。服务端会先检查组合数量不超过

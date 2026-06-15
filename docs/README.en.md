@@ -100,6 +100,7 @@ Karkinos/
 │   ├── db.py               # SQLite persistence (signals/backtests/quote snapshots/ledger)
 │   ├── models.py           # Pydantic v2 request/response models
 │   ├── scheduler.py        # TradingScheduler (live trading loop)
+│   ├── config.py           # Typed configuration loader (BacktestConfig + ServerConfig)
 │   ├── dependencies.py     # FastAPI dependency injection
 │   ├── routes/             # REST routes
 │   │   ├── market.py       #   /api/market — quotes/watchlist/kline
@@ -125,7 +126,6 @@ Karkinos/
 │   ├── run_backtest.py     # Local backtest tool
 │   └── live_monitor.py     # Compatibility standalone monitor (Web service uses TradingScheduler)
 ├── live.py                 # Compatibility wrapper; prefer tools.live_monitor
-├── config.py               # Typed configuration loader (BacktestConfig + ServerConfig)
 ├── main.py                 # Compatibility wrapper; prefer tools.run_backtest
 ├── config.example.json     # Configuration template
 ├── Dockerfile              # Multi-stage build (Node build + Python runtime)

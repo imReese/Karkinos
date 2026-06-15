@@ -28,7 +28,7 @@ from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.trading_controls import TradingControlState
 
 if TYPE_CHECKING:
-    from config import ServerConfig
+    from server.config import ServerConfig
 
 logger = logging.getLogger(__name__)
 

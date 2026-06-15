@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from config import BacktestConfig
 from core.types import AssetClass, Symbol
 from data.manager import DataManager, build_sources
 from data.store import DataStore
+from server.config import BacktestConfig
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
