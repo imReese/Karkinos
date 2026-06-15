@@ -482,4 +482,9 @@ automation.
   stable internal reason code, marks successful Eastmoney fallback quotes as
   provider fallback, and localizes the cockpit message without changing trading
   execution behavior.
+* 2026-06-15: Added a Settings data-source operations surface. The page now
+  shows a provider capability matrix, TuShare `fund_nav` permission state,
+  Eastmoney fund-estimate fallback, persistent cache readiness, and a local-only
+  manual TuShare daily checklist for sign-in, market-guess, and permission
+  review reminders without automating third-party actions.
 <!-- codex-progress:end -->

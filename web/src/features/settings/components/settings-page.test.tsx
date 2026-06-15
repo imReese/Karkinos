@@ -353,6 +353,83 @@ test('shows provider timeout guidance without alternate local provider action', 
   ).toBeTruthy();
 });
 
+test('shows tushare capability matrix and manual daily tasks', async () => {
+  renderSettingsPage({
+    settings: {
+      ...defaultSettings,
+      data_source: 'tushare',
+    },
+    marketHealth: {
+      ...defaultMarketHealth,
+      provider_name: 'tushare',
+      provider_status: 'partial',
+      provider_supports_funds: true,
+      provider_last_error: 'tushare_fund_nav_permission_denied',
+      last_refresh_error: 'tushare_fund_nav_permission_denied',
+      next_action: 'refresh_quotes_or_check_source',
+      quotes: [
+        {
+          symbol: '600519',
+          asset_class: 'stock',
+          timestamp: '2026-06-15T11:20:35+08:00',
+          price: 28.72,
+          quote_status: 'live',
+          quote_source: 'tushare_realtime_quote',
+          quote_age_seconds: 120,
+          stale_reason: null,
+          last_refresh_attempt: null,
+          last_refresh_error: null,
+          using_persistent_cache: false,
+          nav_date: null,
+        },
+        {
+          symbol: '018125',
+          asset_class: 'fund',
+          timestamp: '2026-06-15 11:20',
+          price: 2.3077,
+          quote_status: 'live',
+          quote_source: 'eastmoney_fund_estimate',
+          quote_age_seconds: 180,
+          stale_reason: 'tushare_fund_nav_permission_denied',
+          last_refresh_attempt: null,
+          last_refresh_error: null,
+          using_persistent_cache: false,
+          nav_date: null,
+        },
+      ],
+    },
+    dataSourceStatus: {
+      ...defaultDataSourceStatus,
+      data_source: 'tushare',
+      provider_name: 'tushare',
+      provider_requires_token: true,
+      provider_supports_funds: false,
+      next_action: 'switch_to_fund_supported_provider',
+    },
+  });
+
+  expect(await screen.findByText('Provider capability matrix')).toBeTruthy();
+  expect(await screen.findByText('TuShare permissions')).toBeTruthy();
+  expect((await screen.findAllByText('fund_nav')).length).toBeGreaterThan(0);
+  expect(
+    (await screen.findAllByText('Permission blocked')).length,
+  ).toBeGreaterThan(0);
+  expect(
+    (await screen.findAllByText('Eastmoney fund estimate')).length,
+  ).toBeGreaterThan(0);
+  expect(await screen.findByText('Manual daily task checklist')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Manual task: TuShare sign-in'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Manual task: Guess market direction'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Manual task: Check points and permissions'),
+  ).toBeTruthy();
+  expect(screen.queryByText('Submit bugs or data requests')).toBeNull();
+});
+
 test('guides users to configure asset metadata when none is available', async () => {
   renderSettingsPage({
     marketHealth: {
