@@ -362,6 +362,14 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Split Strategy Lab after-cost report assumptions into structured
+  cost and slippage evidence. `AfterCostEvidence` now serializes
+  `cost_assumptions` and `slippage_assumptions` alongside the existing generic
+  assumptions/limitations payload; `POST /api/backtest/run` persists those
+  fields inside `metrics_json.evidence_bundle`; and the Web Backtest validation
+  panel renders cost assumptions and slippage assumptions as separate audit
+  lists. Deterministic analytics, route, and frontend tests cover the expanded
+  API/Web contract without changing strategy execution or trading approval.
 * 2026-06-15: Reduced raw Strategy Lab parameter-key exposure in the Web
   Backtest comparison panel. Same-dataset parameter comparison now defaults to
   localized/human-readable parameter names, accepts localized names or stable

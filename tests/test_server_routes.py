@@ -247,6 +247,12 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
             "gross_return_before_costs": 0.12016,
             "total_cost": 16.0,
             "fill_count": 1,
+            "cost_assumptions": [
+                "Commission assumptions use configured simulated fees."
+            ],
+            "slippage_assumptions": [
+                "Slippage assumptions use configured simulated execution drift."
+            ],
             "assumptions": ["after-cost metrics include simulated fills"],
             "limitations": ["paper backtest evidence, not a profit claim"],
         },
@@ -290,11 +296,18 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(monkeypatch):
     assert response.evidence_json["limitations"] == [
         "paper backtest evidence, not a profit claim"
     ]
+    assert response.evidence_json["cost_assumptions"] == [
+        "Commission assumptions use configured simulated fees."
+    ]
+    assert response.evidence_json["slippage_assumptions"] == [
+        "Slippage assumptions use configured simulated execution drift."
+    ]
     assert response.fills[0].fill_id == "FILL-1"
     assert response.fills[0].symbol == "600519"
     assert captured_runner_args["db"] is fake_state.db
     assert '"calmar": 2.25' in str(saved_payload["metrics_json"])
     assert '"evidence_bundle":' in str(saved_payload["metrics_json"])
+    assert '"slippage_assumptions":' in str(saved_payload["metrics_json"])
     assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
 
 

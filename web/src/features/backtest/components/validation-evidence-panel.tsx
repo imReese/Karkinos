@@ -154,6 +154,18 @@ export function ValidationEvidencePanel({
       {assumptions.length ? (
         <EvidenceList title={labels.assumptions} items={assumptions} />
       ) : null}
+      {afterCost?.cost_assumptions?.length ? (
+        <EvidenceList
+          title={labels.costAssumptions}
+          items={afterCost.cost_assumptions}
+        />
+      ) : null}
+      {afterCost?.slippage_assumptions?.length ? (
+        <EvidenceList
+          title={labels.slippageAssumptions}
+          items={afterCost.slippage_assumptions}
+        />
+      ) : null}
       {limitations.length ? (
         <EvidenceList title={labels.limitations} items={limitations} />
       ) : null}

@@ -465,7 +465,8 @@ while keeping internal parameter keys visible only as secondary API/audit
 fields.
 The same report also surfaces the after-cost evidence bundle and
 out-of-sample validation payload: net versus gross return, cost drag,
-turnover, benchmark role/status, split point, assumptions, and limitations.
+turnover, benchmark role/status, split point, structured cost assumptions,
+slippage assumptions, general assumptions, and limitations.
 These panels are research evidence only and do not approve execution.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports

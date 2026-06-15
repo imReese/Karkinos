@@ -44,8 +44,8 @@ public demos and development.
   reports render the snapshot with readable strategy and parameter labels while
   keeping API keys as secondary audit fields
 - Web Backtest reports surface after-cost evidence, out-of-sample split status,
-  benchmark comparison, assumptions, and limitations without turning research
-  output into execution approval
+  benchmark comparison, structured cost/slippage assumptions, and limitations
+  without turning research output into execution approval
 - Web Backtest Strategy Lab selects registry strategies, renders typed
   parameter controls with readable labels, exposes strategy metadata and
   validation requirements, and can run a single-symbol research backtest from
