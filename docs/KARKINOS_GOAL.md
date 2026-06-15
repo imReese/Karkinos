@@ -362,6 +362,16 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added a same-dataset Strategy Lab comparison contract.
+  `POST /api/backtest/compare` now accepts explicit strategy/parameter runs in
+  addition to the legacy strategy list, validates each run through the shared
+  registry schema, runs every candidate against the requested one-symbol or
+  configured universe, and saves results only after all runs report the same
+  frozen `dataset_snapshot.snapshot_id`. Responses now include compared count,
+  shared snapshot id, per-result ids, normalized params, metrics, equity curves,
+  and research-only comparison warnings; mismatched or missing snapshots return
+  409 without persisting partial results. Deterministic route tests cover
+  parameter-set comparison and blocked mismatched-snapshot persistence.
 * 2026-06-15: Added Web Backtest parameter-sweep review. The Strategy Lab page
   now submits bounded typed parameter grids to `POST /api/backtest/sweep` using
   the selected strategy, dates, cash, and optional one-symbol universe, then
