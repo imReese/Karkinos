@@ -50,6 +50,59 @@ const savedReport = {
     total_slippage: 2.1,
     total_trades: 2,
     gross_turnover: 21800,
+    evidence_bundle: {
+      net_pnl: 8200,
+      total_cost: 10.5,
+      gross_pnl_before_costs: 8210.5,
+      net_return: 0.082,
+      gross_return_before_costs: 0.082105,
+      cost_to_initial_cash: 0.000105,
+      fill_count: 2,
+      gross_turnover: 21800,
+      assumptions: [
+        'Backtest results are calculated after simulated commissions and slippage.',
+      ],
+      limitations: ['Backtest evidence is not a profitability claim.'],
+    },
+    oos_validation: {
+      strategy_id: 'dual_ma',
+      benchmark_role: 'etf_rotation_trend_following',
+      split_timestamp: '2025-09-01T00:00:00',
+      in_sample: {
+        start_timestamp: '2025-01-02T00:00:00',
+        end_timestamp: '2025-08-29T00:00:00',
+        initial_equity: 100000,
+        final_equity: 104000,
+        net_pnl: 4000,
+        net_return: 0.04,
+        total_cost: 4.5,
+        gross_pnl_before_costs: 4004.5,
+        gross_return_before_costs: 0.040045,
+        fill_count: 1,
+      },
+      out_of_sample: {
+        start_timestamp: '2025-09-01T00:00:00',
+        end_timestamp: '2026-05-15T00:00:00',
+        initial_equity: 104000,
+        final_equity: 108200,
+        net_pnl: 4200,
+        net_return: 0.040384615,
+        total_cost: 6,
+        gross_pnl_before_costs: 4206,
+        gross_return_before_costs: 0.040442307,
+        fill_count: 1,
+      },
+      benchmark_return: 0.02,
+      excess_return: 0.020384615,
+      passed_benchmark: true,
+      validation_status: 'benchmark_passed',
+      assumptions: [
+        'Out-of-sample validation is computed from a completed deterministic backtest result.',
+      ],
+      limitations: [
+        'Validation evidence is not investment advice or a profitability guarantee.',
+      ],
+    },
     dataset_snapshot: {
       schema_version: 'karkinos.dataset_snapshot.v1',
       snapshot_id: 'sha256:fixture-dataset-snapshot',
@@ -96,6 +149,20 @@ const savedReport = {
     total_slippage: 2.1,
     total_trades: 2,
     gross_turnover: 21800,
+  },
+  evidence_json: {
+    net_pnl: 8200,
+    total_cost: 10.5,
+    gross_pnl_before_costs: 8210.5,
+    net_return: 0.082,
+    gross_return_before_costs: 0.082105,
+    cost_to_initial_cash: 0.000105,
+    fill_count: 2,
+    gross_turnover: 21800,
+    assumptions: [
+      'Backtest results are calculated after simulated commissions and slippage.',
+    ],
+    limitations: ['Backtest evidence is not a profitability claim.'],
   },
   fills: [],
   equity_curve: [],
@@ -507,6 +574,25 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('600519')).toBeTruthy();
   expect(await screen.findByText('260 rows')).toBeTruthy();
   expect(await screen.findByText('qfq')).toBeTruthy();
+});
+
+test('renders after-cost and out-of-sample evidence for saved reports', async () => {
+  renderBacktestPage();
+
+  expect(await screen.findByText('Validation evidence')).toBeTruthy();
+  expect(await screen.findByText('After-cost evidence')).toBeTruthy();
+  expect(await screen.findByText('Out-of-sample split')).toBeTruthy();
+  expect(await screen.findByText('etf_rotation_trend_following')).toBeTruthy();
+  expect(await screen.findByText('Benchmark passed')).toBeTruthy();
+  expect(await screen.findByText('2025-09-01 00:00')).toBeTruthy();
+  expect(
+    await screen.findByText('Backtest evidence is not a profitability claim.'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Validation evidence is not investment advice or a profitability guarantee.',
+    ),
+  ).toBeTruthy();
 });
 
 test('shows a clear error when the run endpoint fails', async () => {

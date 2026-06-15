@@ -470,6 +470,8 @@ paper/shadow 或人工确认。
 的行数与首尾时间、可用的复权模式、缓存 dataset id 以及数据质量诊断。该快照用于复现
 和比较研究结果，不代表行情数据完整性保证。Web 回测报告会把该快照展示为数据审计
 面板，覆盖当前运行结果和已保存历史报告。
+同一报告也会展示 after-cost 证据包与样本外验证 payload：净/毛收益、成本拖累、
+成交额、基准角色与状态、切分点、假设和限制。这些面板只作为研究证据，不代表执行审批。
 `GET /api/backtest/strategy-validation` 读取已保存回测结果，报告三条 v0.2
 基准策略是否具备 after-cost 与样本外验证证据；该矩阵只用于审计与晋级检查。
 `GET /api/backtest/strategy-promotion-readiness` 会组合 after-cost/OOS 证据、

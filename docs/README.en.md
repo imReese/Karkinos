@@ -454,6 +454,10 @@ dataset ids, and data-quality diagnostics. The snapshot is reproducibility
 evidence for research comparison, not a guarantee of market-data completeness.
 The Web Backtest report surfaces the same snapshot as a data-audit panel for
 both freshly run results and saved report history.
+The same report also surfaces the after-cost evidence bundle and
+out-of-sample validation payload: net versus gross return, cost drag,
+turnover, benchmark role/status, split point, assumptions, and limitations.
+These panels are research evidence only and do not approve execution.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports
 whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.

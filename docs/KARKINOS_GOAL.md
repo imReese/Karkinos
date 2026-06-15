@@ -362,6 +362,12 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added a Web Backtest validation-evidence report panel. Saved
+  reports and freshly run reports now surface after-cost evidence, cost drag,
+  turnover, out-of-sample split status, benchmark role / comparison, explicit
+  assumptions, and limitations from persisted `evidence_bundle` /
+  `oos_validation` payloads without changing execution behavior. Frontend
+  tests cover rendering the evidence from saved report fixtures.
 * 2026-06-15: Surfaced Backtest dataset snapshots in the Web report. Saved
   reports and freshly run reports now render a data-audit panel with snapshot
   id, configured source, date range, total rows, cache boundaries, adjustment
