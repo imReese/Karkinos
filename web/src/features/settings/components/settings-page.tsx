@@ -16,6 +16,7 @@ import {
   type ThemePreference,
 } from '../../../app/preferences';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
+import { formatStaleReason } from '../../../shared/stale-reason';
 import {
   useDataSourceStatusQuery,
   useAssetMetadataStatusQuery,
@@ -28,6 +29,10 @@ import {
 } from '../api';
 
 type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
+type ManualTaskId =
+  | 'tushare_sign_in'
+  | 'guess_market_direction'
+  | 'check_points';
 
 function getStatusToneClasses(tone: StatusTone) {
   if (tone === 'success') {
@@ -50,6 +55,10 @@ function isMaskedToken(value: string) {
   return value.startsWith('****');
 }
 
+function dailyTaskKey() {
+  return `karkinos.tushareDailyTasks.${new Date().toISOString().slice(0, 10)}`;
+}
+
 export function SettingsPage() {
   const copy = useCopy();
   const settings = useSettingsQuery();
@@ -67,6 +76,16 @@ export function SettingsPage() {
   const [dataSource, setDataSource] = useState('');
   const [providerToken, setProviderToken] = useState('');
   const [pollInterval, setPollInterval] = useState('60');
+  const taskStorageKey = useMemo(() => dailyTaskKey(), []);
+  const [manualTasksDone, setManualTasksDone] = useState<
+    Partial<Record<ManualTaskId, boolean>>
+  >(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem(taskStorageKey) ?? '{}');
+    } catch {
+      return {};
+    }
+  });
 
   useEffect(() => {
     if (!settings.data) {
@@ -76,6 +95,13 @@ export function SettingsPage() {
     setProviderToken(settings.data.tushare_token);
     setPollInterval(String(settings.data.live_poll_interval));
   }, [settings.data]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      taskStorageKey,
+      JSON.stringify(manualTasksDone),
+    );
+  }, [manualTasksDone, taskStorageKey]);
 
   const quoteStatus = overview.data?.quote_status ?? copy.shell.statusUnknown;
   const valuationTime = overview.data?.valuation_timestamp
@@ -123,6 +149,120 @@ export function SettingsPage() {
   const availableProviders = dataSourceStatus.data?.available_providers ?? [];
   const dataSourceOptions =
     availableProviders.length > 0 ? availableProviders : ['akshare', 'tushare'];
+  const healthQuotes = marketHealth.data?.quotes ?? [];
+  const currentProviderName = String(providerName).toLowerCase();
+  const isTushareProvider = currentProviderName === 'tushare';
+  const providerError =
+    marketHealth.data?.provider_last_error ??
+    marketHealth.data?.last_refresh_error ??
+    null;
+  const configuredProviderSupportsFunds =
+    dataSourceStatus.data?.provider_supports_funds;
+  const fundNavBlocked =
+    providerError === 'tushare_fund_nav_permission_denied' ||
+    healthQuotes.some(
+      (quote) => quote.stale_reason === 'tushare_fund_nav_permission_denied',
+    );
+  const hasTushareStockQuote = healthQuotes.some(
+    (quote) =>
+      quote.asset_class === 'stock' &&
+      quote.quote_status === 'live' &&
+      (quote.quote_source?.includes('tushare') ?? false),
+  );
+  const hasEastmoneyFundEstimate = healthQuotes.some(
+    (quote) =>
+      quote.asset_class === 'fund' &&
+      quote.quote_status === 'live' &&
+      quote.quote_source === 'eastmoney_fund_estimate',
+  );
+  const hasTushareFundFallback =
+    isTushareProvider &&
+    configuredProviderSupportsFunds === false &&
+    hasEastmoneyFundEstimate;
+  const latestFallbackQuote = healthQuotes.find(
+    (quote) => quote.quote_source === 'eastmoney_fund_estimate',
+  );
+  const isFundNavBlocked = fundNavBlocked || hasTushareFundFallback;
+  const permissionReason = formatStaleReason(
+    isFundNavBlocked ? 'tushare_fund_nav_permission_denied' : providerError,
+    copy.common.staleReasons,
+  );
+  const capabilityRows = [
+    {
+      label: copy.settings.capabilityStockRealtime,
+      source: isTushareProvider
+        ? 'tushare_realtime_quote'
+        : marketHealth.data?.provider_name || '--',
+      status:
+        hasTushareStockQuote || isTushareProvider
+          ? copy.settings.available
+          : copy.shell.statusUnknown,
+      tone: hasTushareStockQuote || isTushareProvider ? 'success' : 'neutral',
+    },
+    {
+      label: copy.settings.capabilityStockDaily,
+      source: isTushareProvider
+        ? 'tushare_daily'
+        : marketHealth.data?.provider_name || '--',
+      status: isTushareProvider
+        ? copy.settings.available
+        : copy.shell.statusUnknown,
+      tone: isTushareProvider ? 'success' : 'neutral',
+    },
+    {
+      label: 'fund_nav',
+      source: 'tushare_fund_nav',
+      status: isFundNavBlocked
+        ? copy.settings.permissionBlocked
+        : providerSupportsFunds
+          ? copy.settings.available
+          : copy.settings.permissionUnknown,
+      tone: isFundNavBlocked
+        ? 'danger'
+        : providerSupportsFunds
+          ? 'success'
+          : 'warning',
+    },
+    {
+      label: copy.settings.capabilityFundEstimate,
+      source: 'eastmoney_fund_estimate',
+      status: hasEastmoneyFundEstimate
+        ? copy.settings.available
+        : copy.shell.statusUnknown,
+      tone: hasEastmoneyFundEstimate ? 'success' : 'neutral',
+    },
+    {
+      label: copy.settings.capabilityPersistentCache,
+      source: 'SQLite',
+      status: marketHealth.data?.has_persistent_cache
+        ? copy.settings.available
+        : copy.market.notConfigured,
+      tone: marketHealth.data?.has_persistent_cache ? 'success' : 'warning',
+    },
+  ] satisfies Array<{
+    label: string;
+    source: string;
+    status: string;
+    tone: StatusTone;
+  }>;
+  const manualTasks: Array<{ id: ManualTaskId; label: string; href: string }> =
+    [
+      {
+        id: 'tushare_sign_in',
+        label: copy.settings.taskTushareSignIn,
+        href: 'https://tushare.pro/',
+      },
+      {
+        id: 'guess_market_direction',
+        label: copy.settings.taskGuessMarketDirection,
+        href: 'https://tushare.pro/',
+      },
+      {
+        id: 'check_points',
+        label: copy.settings.taskCheckPoints,
+        href: 'https://tushare.pro/user/token',
+      },
+    ];
 
   const dataSourceChanged = useMemo(() => {
     if (!settings.data) {
@@ -256,6 +396,96 @@ export function SettingsPage() {
                 </div>
               </div>
               <MarketRefreshButton />
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title={copy.settings.dataSourceOperations}
+            detail={copy.settings.dataSourceOperationsDetail}
+          >
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+              <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm font-semibold">
+                    {copy.settings.providerCapabilityMatrix}
+                  </div>
+                  <div className="app-muted text-xs">
+                    {copy.settings.currentProvider}: {providerName}
+                  </div>
+                </div>
+                <div className="mt-4 overflow-x-auto">
+                  <div className="min-w-[34rem] divide-y divide-[color-mix(in_srgb,var(--app-border)_18%,transparent)]">
+                    {capabilityRows.map((row) => (
+                      <CapabilityRow
+                        key={row.label}
+                        label={row.label}
+                        source={row.source}
+                        status={row.status}
+                        tone={row.tone}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid min-w-0 gap-4">
+                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                  <div className="text-sm font-semibold">
+                    {copy.settings.tusharePermissions}
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                    <StatusMetric
+                      label="fund_nav"
+                      value={
+                        isFundNavBlocked
+                          ? copy.settings.permissionBlocked
+                          : copy.settings.permissionUnknown
+                      }
+                      tone={isFundNavBlocked ? 'danger' : 'warning'}
+                    />
+                    <StatusMetric
+                      label={copy.settings.fundFallback}
+                      value={
+                        hasEastmoneyFundEstimate
+                          ? copy.settings.eastmoneyFundEstimate
+                          : copy.shell.statusUnknown
+                      }
+                      tone={hasEastmoneyFundEstimate ? 'success' : 'neutral'}
+                    />
+                  </div>
+                  <div className="app-muted mt-3 text-xs leading-5">
+                    {permissionReason}
+                    {latestFallbackQuote?.timestamp
+                      ? ` · ${copy.settings.latestFallbackQuote}: ${formatTimestamp(
+                          latestFallbackQuote.timestamp,
+                        )}`
+                      : ''}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                  <div className="text-sm font-semibold">
+                    {copy.settings.manualDailyTaskChecklist}
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {manualTasks.map((task) => (
+                      <ManualTaskRow
+                        key={task.id}
+                        label={task.label}
+                        href={task.href}
+                        actionLabel={copy.settings.openExternal}
+                        checked={Boolean(manualTasksDone[task.id])}
+                        onChange={(checked) =>
+                          setManualTasksDone((current) => ({
+                            ...current,
+                            [task.id]: checked,
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </SettingsSection>
 
@@ -779,6 +1009,73 @@ function StatusMetric({
         {value}
       </div>
     </div>
+  );
+}
+
+function CapabilityRow({
+  label,
+  source,
+  status,
+  tone,
+}: {
+  label: string;
+  source: string;
+  status: string;
+  tone: StatusTone;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(10rem,1fr)_minmax(10rem,1fr)_8rem] items-center gap-3 py-3 text-sm">
+      <div className="min-w-0 font-semibold text-[var(--app-text)]">
+        {label}
+      </div>
+      <div className="min-w-0 truncate font-mono text-xs text-[var(--app-soft)]">
+        {source}
+      </div>
+      <span
+        className={`justify-self-start rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusToneClasses(
+          tone,
+        )}`}
+      >
+        {status}
+      </span>
+    </div>
+  );
+}
+
+function ManualTaskRow({
+  label,
+  href,
+  actionLabel,
+  checked,
+  onChange,
+}: {
+  label: string;
+  href: string;
+  actionLabel: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+      <input
+        type="checkbox"
+        className="h-4 w-4 accent-[var(--app-accent)]"
+        checked={checked}
+        aria-label={`Manual task: ${label}`}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="min-w-0 text-sm font-medium text-[var(--app-soft)]">
+        {label}
+      </span>
+      <a
+        className="app-link text-xs font-semibold"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {actionLabel}
+      </a>
+    </label>
   );
 }
 
