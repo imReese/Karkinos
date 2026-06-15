@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 from decimal import Decimal
@@ -21,6 +22,9 @@ from server.models import (
     BacktestRequest,
     BacktestResponse,
     BacktestSummary,
+    BacktestSweepRequest,
+    BacktestSweepResponse,
+    BacktestSweepResult,
     CompareRequest,
     CompareResponse,
     EquityPoint,
@@ -28,6 +32,20 @@ from server.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SWEEP_WARNINGS = [
+    "Parameter sweep rankings are research evidence, not investment advice.",
+    "Multiple testing can overfit historical data; require OOS and after-cost review before promotion.",
+]
+
+_SWEEP_RANK_DIRECTIONS = {
+    "total_return": "desc",
+    "annual_return": "desc",
+    "sharpe": "desc",
+    "sortino": "desc",
+    "win_rate": "desc",
+    "max_drawdown": "asc",
+}
 
 
 class StrategyInfoResponse(BaseModel):
@@ -195,6 +213,73 @@ def _validate_backtest_strategy_params(request: BacktestRequest) -> BacktestRequ
         if legacy_name in validated:
             updates[legacy_name] = validated[legacy_name]
     return request.model_copy(update=updates)
+
+
+def _build_parameter_grid(
+    request: BacktestSweepRequest,
+) -> list[dict[str, Any]]:
+    """Expand a bounded parameter grid into deterministic parameter payloads."""
+    errors: list[dict[str, Any]] = []
+    if request.rank_by not in _SWEEP_RANK_DIRECTIONS:
+        allowed = sorted(_SWEEP_RANK_DIRECTIONS)
+        errors.append(
+            {
+                "field": "rank_by",
+                "code": "unsupported_rank_metric",
+                "message": f"rank_by must be one of: {allowed}.",
+            }
+        )
+
+    if not request.param_grid:
+        errors.append(
+            {
+                "field": "param_grid",
+                "code": "required_field_missing",
+                "message": "Parameter sweep requires at least one grid field.",
+            }
+        )
+
+    combination_count = 1
+    for name, values in request.param_grid.items():
+        if not isinstance(values, list) or len(values) == 0:
+            errors.append(
+                {
+                    "field": name,
+                    "code": "invalid_parameter_grid",
+                    "message": "Each sweep parameter must provide a non-empty list.",
+                }
+            )
+            continue
+        combination_count *= len(values)
+
+    if combination_count > request.max_combinations:
+        errors.append(
+            {
+                "field": "param_grid",
+                "code": "parameter_grid_too_large",
+                "message": (
+                    f"Parameter grid expands to {combination_count} combinations, "
+                    f"which exceeds max_combinations={request.max_combinations}."
+                ),
+            }
+        )
+
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail={"strategy": request.strategy, "errors": errors},
+        )
+
+    names = list(request.param_grid.keys())
+    base_params = dict(request.params or {})
+    return [
+        {**base_params, **dict(zip(names, values))}
+        for values in itertools.product(*(request.param_grid[name] for name in names))
+    ]
+
+
+def _sweep_score(metrics: BacktestMetrics, rank_by: str) -> float:
+    return float(getattr(metrics, rank_by))
 
 
 def _build_oos_validation_payload(
@@ -429,6 +514,87 @@ def create_router() -> APIRouter:
             cost_summary_json=bt_result["cost_summary_json"],
             evidence_json=_backtest_evidence_from_payload(bt_result),
             fills=[BacktestFill(**fill) for fill in bt_result.get("fills", [])],
+        )
+
+    @r.post("/sweep", response_model=BacktestSweepResponse)
+    async def sweep_backtest_parameters(
+        request: BacktestSweepRequest,
+    ) -> BacktestSweepResponse:
+        """Run a bounded deterministic parameter sweep for one registered strategy."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        config = state.config
+        parameter_payloads = _build_parameter_grid(request)
+
+        sweep_results: list[BacktestSweepResult] = []
+        for params in parameter_payloads:
+            bt_request = _validate_backtest_strategy_params(
+                BacktestRequest(
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    initial_cash=request.initial_cash,
+                    strategy=request.strategy,
+                    assets=request.assets,
+                    params=params,
+                )
+            )
+
+            bt_result = await asyncio.to_thread(
+                _run_backtest,
+                bt_request,
+                config,
+                state.db,
+            )
+            metrics_json = dict(bt_result["metrics_json"])
+            metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
+            result_id = await state.db.save_backtest_result(
+                config_json=bt_request.model_dump_json(),
+                initial_cash=bt_result["initial_cash"],
+                final_equity=bt_result["final_equity"],
+                total_return=bt_result["total_return"],
+                sharpe=bt_result["sharpe"],
+                max_dd=bt_result["max_drawdown"],
+                equity_curve_json=json.dumps(bt_result["equity_curve"]),
+                annual_return=bt_result["annual_return"],
+                sortino=bt_result["sortino"],
+                win_rate=bt_result["win_rate"],
+                duration_days=bt_result["duration_days"],
+                metrics_json=json.dumps(metrics_json, ensure_ascii=False),
+                cost_summary_json=json.dumps(
+                    bt_result["cost_summary_json"],
+                    ensure_ascii=False,
+                ),
+            )
+
+            metrics = _backtest_metrics_from_payload(bt_result)
+            sweep_results.append(
+                BacktestSweepResult(
+                    rank=0,
+                    result_id=result_id,
+                    strategy=request.strategy,
+                    params=dict(bt_request.params or {}),
+                    metrics=metrics,
+                    score=_sweep_score(metrics, request.rank_by),
+                )
+            )
+
+        reverse = _SWEEP_RANK_DIRECTIONS[request.rank_by] == "desc"
+        ranked_results = sorted(
+            sweep_results,
+            key=lambda result: (result.score, -result.result_id),
+            reverse=reverse,
+        )
+        ranked_results = [
+            result.model_copy(update={"rank": index})
+            for index, result in enumerate(ranked_results, start=1)
+        ]
+        return BacktestSweepResponse(
+            strategy=request.strategy,
+            rank_by=request.rank_by,
+            tested_count=len(ranked_results),
+            results=ranked_results,
+            warnings=list(_SWEEP_WARNINGS),
         )
 
     @r.get("/results", response_model=list[BacktestSummary])

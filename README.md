@@ -26,6 +26,9 @@ public demos and development.
 - Event-driven architecture with deterministic backtesting
 - Strategy registry exposes typed parameter schemas, and backtest requests can
   use validated generic `params` while preserving legacy moving-average fields
+- Backtest parameter sweeps run bounded typed grids, persist each tested
+  configuration, and return deterministic rankings with multiple-testing
+  warnings
 - Web Backtest Strategy Lab selects registry strategies, renders typed
   parameter controls, and can run a single-symbol research backtest from the
   browser

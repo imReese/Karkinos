@@ -722,6 +722,35 @@ class BacktestResponse(BaseModel):
     fills: list[BacktestFill] = Field(default_factory=list)
 
 
+class BacktestSweepRequest(BaseModel):
+    start_date: str = "2025-01-02"
+    end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
+    initial_cash: float = 100_000
+    strategy: str = "dual_ma"
+    params: dict[str, Any] | None = None
+    param_grid: dict[str, list[Any]]
+    assets: list[dict[str, str]] | None = None
+    rank_by: str = "total_return"
+    max_combinations: int = Field(default=25, ge=1, le=100)
+
+
+class BacktestSweepResult(BaseModel):
+    rank: int
+    result_id: int
+    strategy: str
+    params: dict[str, Any]
+    metrics: BacktestMetrics
+    score: float
+
+
+class BacktestSweepResponse(BaseModel):
+    strategy: str
+    rank_by: str
+    tested_count: int
+    results: list[BacktestSweepResult]
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CompareRequest(BaseModel):
     start_date: str = "2011-06-01"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
