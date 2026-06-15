@@ -24,6 +24,8 @@ public demos and development.
 **Highlights**
 
 - Event-driven architecture with deterministic backtesting
+- Strategy registry exposes typed parameter schemas, and backtest requests can
+  use validated generic `params` while preserving legacy moving-average fields
 - Multi-asset: A-shares / ETF / Gold / Bond
 - Target-weight signals — strategy outputs 0~1, Portfolio handles share counts
 - T+1 freeze/thaw built into Position

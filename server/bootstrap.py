@@ -76,19 +76,25 @@ def build_watchlist(
 ) -> list[tuple[Symbol, AssetClass]]:
     """Convert config assets into normalized symbol/asset-class tuples."""
     watchlist: list[tuple[Symbol, AssetClass]] = []
-    assets = config.assets.items() if isinstance(config.assets, dict) else enumerate(config.assets)
+    assets = (
+        config.assets.items()
+        if isinstance(config.assets, dict)
+        else enumerate(config.assets)
+    )
     for key, asset_cfg in assets:
         if isinstance(asset_cfg, str):
             asset_cfg = {
                 "symbol": str(key) if not isinstance(key, int) else asset_cfg,
                 "asset_class": "stock",
             }
-        elif isinstance(asset_cfg, dict) and not asset_cfg.get("symbol") and not isinstance(key, int):
+        elif (
+            isinstance(asset_cfg, dict)
+            and not asset_cfg.get("symbol")
+            and not isinstance(key, int)
+        ):
             asset_cfg = {**asset_cfg, "symbol": str(key)}
         sym = Symbol(asset_cfg["symbol"])
-        asset_class = _ASSET_CLASS_MAP.get(
-            asset_cfg["asset_class"], AssetClass.STOCK
-        )
+        asset_class = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
         watchlist.append((sym, asset_class))
     return watchlist
 
@@ -100,11 +106,16 @@ def build_strategy(config: BacktestConfig, event_bus: Any) -> Any:
 
     strategy_info = StrategyRegistry.get(config.strategy) or {}
     param_names = {p["name"] for p in strategy_info.get("params", [])}
-    strategy_kwargs = {
-        key: value
-        for key, value in config.__dict__.items()
-        if key not in _NON_STRATEGY_FIELDS and key in param_names
-    }
+    raw_params = getattr(config, "params", None)
+    if raw_params is None:
+        raw_params = getattr(config, "strategy_params", None)
+    if raw_params is None:
+        raw_params = {
+            key: value
+            for key, value in config.__dict__.items()
+            if key not in _NON_STRATEGY_FIELDS and key in param_names
+        }
+    strategy_kwargs = StrategyRegistry.validate_params(config.strategy, raw_params)
     return StrategyRegistry.create(config.strategy, event_bus, **strategy_kwargs)
 
 

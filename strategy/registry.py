@@ -7,6 +7,13 @@ from typing import Any, Callable, Type
 
 from core.event_bus import EventBus
 from strategy.base import Strategy
+from strategy.schema import (
+    STRATEGY_DISPLAY_NAMES,
+    STRATEGY_PARAMETER_SCHEMAS,
+    StrategyParameterSchema,
+    infer_parameter_schema,
+    validate_strategy_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,34 +85,24 @@ class StrategyRegistry:
             import inspect
 
             sig = inspect.signature(strategy_cls.__init__)
-            params = []
+            inferred_params: list[StrategyParameterSchema] = []
             for pname, param in sig.parameters.items():
                 if pname in ("self", "event_bus", "strategy_id"):
                     continue
-                params.append(
-                    {
-                        "name": pname,
-                        "type": (
-                            param.annotation
-                            if param.annotation is not inspect.Parameter.empty
-                            else "any"
-                        ),
-                        "default": (
-                            param.default
-                            if param.default is not inspect.Parameter.empty
-                            else None
-                        ),
-                        "description": "",
-                    }
-                )
+                inferred_params.append(infer_parameter_schema(pname, param))
 
             benchmark_metadata = {
                 **_DEFAULT_BENCHMARK_METADATA,
                 **_BENCHMARK_METADATA.get(name, {}),
             }
+            parameter_schema = STRATEGY_PARAMETER_SCHEMAS.get(name, inferred_params)
             cls._strategies[name] = {
                 "class": strategy_cls,
-                "params": params,
+                "display_name": STRATEGY_DISPLAY_NAMES.get(
+                    name, name.replace("_", " ").title()
+                ),
+                "parameter_schema": parameter_schema,
+                "params": [param.to_json_dict() for param in parameter_schema],
                 "description": strategy_cls.__doc__ or "",
                 **benchmark_metadata,
             }
@@ -123,6 +120,23 @@ class StrategyRegistry:
             raise ValueError(f"未知策略 '{name}'，可用策略: {available}")
         strategy_cls = entry["class"]
         return strategy_cls(event_bus, **kwargs)
+
+    @classmethod
+    def validate_params(
+        cls,
+        name: str,
+        params: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Validate and coerce strategy params against the declared schema."""
+        entry = cls._strategies.get(name)
+        if entry is None:
+            available = ", ".join(cls._strategies.keys()) or "(none)"
+            raise ValueError(f"未知策略 '{name}'，可用策略: {available}")
+        return validate_strategy_params(
+            name,
+            entry["parameter_schema"],
+            params,
+        )
 
     @classmethod
     def list_strategies(cls) -> list[str]:
@@ -151,14 +165,21 @@ class StrategyRegistry:
                             else p["type"]
                         ),
                         "default": p["default"],
+                        "required": p.get("required", False),
+                        "min": p.get("min"),
+                        "max": p.get("max"),
+                        "allowed_values": p.get("allowed_values"),
                         "description": p["description"],
                     }
                 )
             result.append(
                 {
+                    "strategy_id": name,
                     "name": name,
+                    "display_name": entry["display_name"],
                     "description": entry["description"].strip(),
                     "params": params,
+                    "parameter_schema": params,
                     "benchmark_role": entry["benchmark_role"],
                     "benchmark_universe": list(entry["benchmark_universe"]),
                     "requires_out_of_sample_validation": entry[
