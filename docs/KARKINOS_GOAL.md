@@ -362,6 +362,13 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Persisted Strategy Lab strategy metadata snapshots on saved
+  backtest reports. `metrics_json.strategy_metadata` now captures the
+  strategy id/name, display name, description, asset universe, supported
+  frequencies, benchmark role, validation requirements, typed parameter schema,
+  and normalized params used for the run, so saved reports remain explainable
+  even if the registry or a local extension manifest changes later. The same
+  report metrics helper is used by run, sweep, and compare persistence paths.
 * 2026-06-15: Added Strategy Lab strategy metadata and readable parameter
   labels to the Web Backtest page. The UI now shows the selected registry
   strategy's description, asset universe, supported frequencies, benchmark

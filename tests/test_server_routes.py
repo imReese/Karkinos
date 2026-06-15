@@ -6646,6 +6646,21 @@ def test_backtest_run_accepts_generic_params_and_persists_exact_payload(monkeypa
     assert config_json["params"] == {"short_period": 3, "long_period": 9}
     assert config_json["short_period"] == 3
     assert config_json["long_period"] == 9
+    saved_metrics = json.loads(str(saved_payload["metrics_json"]))
+    strategy_metadata = saved_metrics["strategy_metadata"]
+    assert strategy_metadata["schema_version"] == "karkinos.strategy_metadata.v1"
+    assert strategy_metadata["strategy_id"] == "dual_ma"
+    assert strategy_metadata["display_name"] == "Dual Moving Average"
+    assert strategy_metadata["benchmark_role"] == "etf_rotation_trend_following"
+    assert strategy_metadata["params"] == {"short_period": 3, "long_period": 9}
+    assert {
+        param["name"]: param["default"]
+        for param in strategy_metadata["parameter_schema"]
+    } == {
+        "short_period": 5,
+        "long_period": 20,
+    }
+    assert response.metrics_json["strategy_metadata"] == strategy_metadata
 
 
 def test_backtest_run_can_instantiate_local_extension_strategy(monkeypatch, tmp_path):

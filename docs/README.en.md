@@ -455,6 +455,11 @@ dataset ids, and data-quality diagnostics. The snapshot is reproducibility
 evidence for research comparison, not a guarantee of market-data completeness.
 The Web Backtest report surfaces the same snapshot as a data-audit panel for
 both freshly run results and saved report history.
+Saved results also persist `metrics_json.strategy_metadata` with the strategy
+identity, display name, description, asset universe, supported frequencies,
+parameter schema, normalized params, benchmark role, and validation
+requirements used for that run, so historical reports remain explainable even
+if the registry or an extension manifest changes later.
 The same report also surfaces the after-cost evidence bundle and
 out-of-sample validation payload: net versus gross return, cost drag,
 turnover, benchmark role/status, split point, assumptions, and limitations.

@@ -327,6 +327,61 @@ def _build_oos_validation_payload(
     return evidence.to_json_dict()
 
 
+def _strategy_metadata_snapshot(request: BacktestRequest) -> dict[str, Any]:
+    """Build a persisted strategy metadata snapshot for backtest audit."""
+    import strategy.examples  # noqa: F401
+    from strategy.registry import StrategyRegistry
+
+    strategies = StrategyRegistry.get_info()
+    strategy_info = next(
+        (
+            item
+            for item in strategies
+            if item["name"] == request.strategy
+            or item["strategy_id"] == request.strategy
+        ),
+        None,
+    )
+    if strategy_info is None:
+        return {
+            "schema_version": "karkinos.strategy_metadata.v1",
+            "strategy_id": request.strategy,
+            "name": request.strategy,
+            "params": dict(request.params or {}),
+            "parameter_schema": [],
+        }
+    return {
+        "schema_version": "karkinos.strategy_metadata.v1",
+        "strategy_id": strategy_info["strategy_id"],
+        "name": strategy_info["name"],
+        "display_name": strategy_info["display_name"],
+        "description": strategy_info["description"],
+        "asset_universe": list(strategy_info.get("asset_universe", [])),
+        "supported_frequencies": list(strategy_info.get("supported_frequencies", [])),
+        "benchmark_role": strategy_info.get("benchmark_role"),
+        "benchmark_universe": list(strategy_info.get("benchmark_universe", [])),
+        "requires_out_of_sample_validation": bool(
+            strategy_info.get("requires_out_of_sample_validation", False)
+        ),
+        "requires_after_cost_report": bool(
+            strategy_info.get("requires_after_cost_report", False)
+        ),
+        "validation_notes": list(strategy_info.get("validation_notes", [])),
+        "parameter_schema": list(strategy_info.get("parameter_schema", [])),
+        "params": dict(request.params or {}),
+    }
+
+
+def _backtest_report_metrics_json(
+    request: BacktestRequest,
+    bt_result: dict[str, Any],
+) -> dict[str, Any]:
+    metrics_json = dict(bt_result.get("metrics_json") or {})
+    metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
+    metrics_json["strategy_metadata"] = _strategy_metadata_snapshot(request)
+    return metrics_json
+
+
 def _run_single_backtest(
     request: BacktestRequest,
     config: Any,
@@ -415,6 +470,7 @@ def _run_single_backtest(
     metrics_json = metrics.to_json_dict()
     metrics_json["evidence_bundle"] = evidence_json
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
+    metrics_json["strategy_metadata"] = _strategy_metadata_snapshot(request)
     oos_validation_json = _build_oos_validation_payload(request, result)
     if oos_validation_json:
         metrics_json["oos_validation"] = oos_validation_json
@@ -506,8 +562,7 @@ def create_router() -> APIRouter:
         request = _validate_backtest_strategy_params(request)
 
         bt_result = await asyncio.to_thread(_run_backtest, request, config, state.db)
-        metrics_json = dict(bt_result["metrics_json"])
-        metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
+        metrics_json = _backtest_report_metrics_json(request, bt_result)
 
         # 保存到数据库
         config_json = request.model_dump_json()
@@ -573,8 +628,7 @@ def create_router() -> APIRouter:
                 config,
                 state.db,
             )
-            metrics_json = dict(bt_result["metrics_json"])
-            metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
+            metrics_json = _backtest_report_metrics_json(bt_request, bt_result)
             result_id = await state.db.save_backtest_result(
                 config_json=bt_request.model_dump_json(),
                 initial_cash=bt_result["initial_cash"],
@@ -761,8 +815,7 @@ def create_router() -> APIRouter:
             bt_result = await asyncio.to_thread(
                 _run_single_backtest, bt_request, config, state.db
             )
-            metrics_json = dict(bt_result["metrics_json"])
-            metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
+            metrics_json = _backtest_report_metrics_json(bt_request, bt_result)
             bt_result = {**bt_result, "metrics_json": metrics_json}
             snapshot = _dataset_snapshot_from_result(bt_result)
             snapshots.append(snapshot)
@@ -794,6 +847,7 @@ def create_router() -> APIRouter:
         for strat_info, bt_request, bt_result in prepared_runs:
             config_json = bt_request.model_dump_json()
             equity_curve_json = json.dumps(bt_result["equity_curve"])
+            metrics_json = dict(bt_result["metrics_json"])
             result_id = await state.db.save_backtest_result(
                 config_json=config_json,
                 initial_cash=bt_result["initial_cash"],
