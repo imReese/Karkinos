@@ -539,4 +539,8 @@ automation.
   profile, Activity pre-fills manual trade fees from that profile, and the
   portfolio trade API applies the same profile when callers omit commission,
   while leaving backtest cost assumptions and live execution behavior unchanged.
+* 2026-06-15: Fixed return-calendar detail labels for aggregated periods.
+  Month and year views now label the selected-period change as monthly or
+  annual instead of reusing the daily-change label, without changing
+  attribution values or trading behavior.
 <!-- codex-progress:end -->
