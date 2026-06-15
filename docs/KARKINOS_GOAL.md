@@ -362,6 +362,14 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-15: Added the Web Strategy Lab same-dataset comparison review
+  surface. The Backtest page now lets operators enter explicit parameter sets
+  for the selected strategy, submit them to `POST /api/backtest/compare` with
+  the current dates, cash, and optional one-symbol universe, and review saved
+  result ids, normalized params, returns, drawdowns, costs, research-only
+  warnings, and the shared frozen dataset snapshot id. Frontend tests cover the
+  compare payload and rendered review evidence without adding any execution
+  approval behavior.
 * 2026-06-15: Added a same-dataset Strategy Lab comparison contract.
   `POST /api/backtest/compare` now accepts explicit strategy/parameter runs in
   addition to the legacy strategy list, validates each run through the shared

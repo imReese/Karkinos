@@ -205,6 +205,39 @@ export type BacktestSweepResponse = {
   warnings: string[];
 };
 
+export type BacktestCompareRunRequest = {
+  strategy: string;
+  params?: Record<string, number | string | boolean | null>;
+};
+
+export type BacktestCompareRequest = {
+  start_date: string;
+  end_date: string;
+  initial_cash: number;
+  strategies?: string[];
+  runs?: BacktestCompareRunRequest[];
+  assets?: Array<{ symbol: string; asset_class: string }>;
+};
+
+export type BacktestCompareResult = {
+  strategy: string;
+  description: string;
+  result_id?: number | null;
+  params: Record<string, number | string | boolean | null>;
+  dataset_snapshot_id?: string | null;
+  dataset_snapshot?: Partial<DatasetSnapshot>;
+  metrics: BacktestMetrics;
+  equity_curve: BacktestEquityPoint[];
+};
+
+export type BacktestCompareResponse = {
+  results: BacktestCompareResult[];
+  compared_count: number;
+  dataset_snapshot_id?: string | null;
+  dataset_snapshot?: Partial<DatasetSnapshot>;
+  warnings: string[];
+};
+
 export type BacktestReport = {
   id: number;
   created_at: string;
@@ -286,6 +319,17 @@ export function useRunBacktestSweepMutation() {
   return useMutation({
     mutationFn: (payload: BacktestSweepRequest) =>
       postJson<BacktestSweepResponse>('/api/backtest/sweep', payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['backtest-results'] });
+    },
+  });
+}
+
+export function useRunBacktestCompareMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BacktestCompareRequest) =>
+      postJson<BacktestCompareResponse>('/api/backtest/compare', payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['backtest-results'] });
     },
