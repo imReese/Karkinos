@@ -271,9 +271,17 @@ uv run python scripts/configure_data_source.py
 | `tushare_token` | string | `""` | 由配置引导脚本写入的本地 TuShare token；也可使用环境变量 `TUSHARE_TOKEN` |
 | `notification` | object | `{"type":"console"}` | 通知配置 |
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
+| `account_commission_rate` | number | `0.0001` | 当前账户股票 / ETF 佣金率规则，例如万1.5写作 `0.00015` |
+| `account_min_commission` | number | `5.0` | 当前账户单笔最低佣金规则 |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
 
 资金、持仓、关注列表、资产名称、历史行情和当前行情不属于运行配置：资金和交易来自账本，用户关注资产来自 `watchlist_assets`，资产身份来自 `instrument_metadata`，当前行情来自 `latest_quotes`，历史行情来自 `market_bars` / 数据缓存。
+
+#### 本地存储边界
+
+- `config.json`：本机运行偏好和环境相关开关，包括数据源、TuShare token、轮询间隔、通知、CORS origin、当前账户佣金率与最低佣金规则。
+- SQLite（`data/store/`）：会变化的金融事实和缓存，包括关注列表、资产元数据、交易流水、行情快照、历史 K 线、组合快照、交易控制状态和已保存回测索引。
+- `reports/`：一次研究或校验运行生成的人类可读证据，例如回测 JSON 报告、行情对账报告。报告属于运行时产物，不应提交到仓库。
 
 #### notification 字段格式
 
@@ -469,6 +477,16 @@ Web 回测实验室会读取 `/api/backtest/strategies` 的策略注册表，把
 `reports/backtest/backtest-result-<id>.json`。可通过
 `KARKINOS_BACKTEST_REPORT_DIR` 改变报告输出目录；`reports/` 属于本地运行时数据，
 不应提交到 git。
+
+历史 OHLCV 行情保存在本地 SQLite 表 `data/store/meta.db.market_bars`；
+`data/store/bars/` 下的 Parquet 文件只是兼容与人工检查用的本地镜像。若已有
+Parquet 历史行情，需要在不联网、不重新抓取的情况下灌入 SQLite，可运行
+`uv run python scripts/sync_market_bars_to_db.py`。缓存数据会记录 provider、抓取时间、
+日期范围、行数和质量诊断，但这不代表它能保证与所有公开网页或供应商永远完全一致；
+复权口径、基金净值延迟、停牌/非交易日、源站陈旧数据或供应商后续修正都可能造成差异。
+如果需要对某个标的和日期范围做显式校验，可运行例如
+`uv run python scripts/verify_market_bars.py --symbol 603659 --start 2026-06-12 --end 2026-06-15`。
+该命令会抓取 provider 数据并输出 JSON 差异报告，但不会自动覆盖本地缓存。
 
 `POST /api/backtest/sweep` 接收 `param_grid`，例如
 `{"short_period": [3, 5], "long_period": [9]}`。服务端会先检查组合数量不超过

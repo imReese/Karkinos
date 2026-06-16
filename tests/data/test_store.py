@@ -77,6 +77,40 @@ class TestDataStore:
         assert len(loaded) == 3
         assert list(loaded["close"]) == list(sample_df["close"])
 
+    def test_sync_parquet_bars_to_database_imports_existing_cache(
+        self, store: DataStore, sample_df: pd.DataFrame
+    ):
+        symbol = Symbol("600519")
+        parquet_path = (
+            store._root / "bars" / BarFrequency.DAILY.value / f"{symbol}.parquet"
+        )
+        parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        sample_df.to_parquet(parquet_path, index=False)
+
+        summary = store.sync_parquet_bars_to_database()
+
+        assert summary["synced_files"] == 1
+        assert summary["synced_rows"] == 3
+        with sqlite3.connect(store._meta_path) as conn:
+            count = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM market_bars
+                WHERE symbol = ? AND frequency = ?
+                """,
+                ("600519", BarFrequency.DAILY.value),
+            ).fetchone()[0]
+        assert count == 3
+        meta = store.get_meta(symbol, BarFrequency.DAILY)
+        assert meta is not None
+        assert meta["row_count"] == 3
+        assert meta["data_source"] == "local_parquet_sync"
+
+        parquet_path.unlink()
+        loaded = store.load_bars(symbol, BarFrequency.DAILY)
+        assert loaded is not None
+        assert list(loaded["close"]) == list(sample_df["close"])
+
     def test_load_nonexistent_returns_none(self, store: DataStore):
         result = store.load_bars(Symbol("999999"), BarFrequency.DAILY)
         assert result is None

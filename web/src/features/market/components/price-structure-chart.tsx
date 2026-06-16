@@ -190,24 +190,26 @@ export function PriceStructureChart({
 
   return (
     <div
-      className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4"
+      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4"
       aria-label={titleLabel}
     >
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
+      <div className="mb-4 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
           <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
             {titleLabel}
           </div>
-          <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-[var(--app-text)]">
+          <div className="mt-1 break-words font-mono text-2xl font-semibold tabular-nums text-[var(--app-text)]">
             {formatCurrency(latest)}
           </div>
         </div>
-        <div className={`font-mono text-sm font-semibold ${latestTone}`}>
+        <div
+          className={`shrink-0 font-mono text-sm font-semibold ${latestTone}`}
+        >
           {change >= 0 ? '+' : ''}
           {formatCurrency(change)} · {formatPercent(changePercent)}
         </div>
       </div>
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex min-w-0 flex-wrap gap-2">
         {KLINE_RANGES.map((rangeOption) => {
           const label = rangeLabels[rangeOption.key];
           const selected = selectedRange === rangeOption.key;
@@ -231,135 +233,146 @@ export function PriceStructureChart({
           );
         })}
       </div>
-      <svg
-        viewBox="0 0 640 244"
-        className="h-60 w-full overflow-visible text-[var(--app-soft)] sm:h-72"
-        role="img"
-        aria-label={`${titleLabel} ${priceLabel}`}
+      <div
+        data-testid="price-structure-chart-scroll"
+        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2"
       >
-        <text x={plot.left} y="10" className="fill-current text-[10px]">
-          {axisLabels.price}
-        </text>
-        <text
-          x={(plot.left + plot.right) / 2}
-          y="240"
-          textAnchor="middle"
-          className="fill-current text-[10px]"
+        <div
+          data-testid="price-structure-chart-canvas"
+          className="min-w-[640px]"
         >
-          {axisLabels.date}
-        </text>
-        <line
-          x1={plot.left}
-          x2={plot.left}
-          y1={plot.top}
-          y2={plot.bottom}
-          stroke="currentColor"
-          strokeOpacity="0.22"
-        />
-        <line
-          x1={plot.left}
-          x2={plot.right}
-          y1={plot.bottom}
-          y2={plot.bottom}
-          stroke="currentColor"
-          strokeOpacity="0.22"
-        />
-        {yTicks.map((tick) => (
-          <g key={tick.value}>
+          <svg
+            viewBox="0 0 640 244"
+            className="h-60 w-full overflow-visible text-[var(--app-soft)] sm:h-72"
+            role="img"
+            aria-label={`${titleLabel} ${priceLabel}`}
+          >
+            <text x={plot.left} y="10" className="fill-current text-[10px]">
+              {axisLabels.price}
+            </text>
+            <text
+              x={(plot.left + plot.right) / 2}
+              y="240"
+              textAnchor="middle"
+              className="fill-current text-[10px]"
+            >
+              {axisLabels.date}
+            </text>
+            <line
+              x1={plot.left}
+              x2={plot.left}
+              y1={plot.top}
+              y2={plot.bottom}
+              stroke="currentColor"
+              strokeOpacity="0.22"
+            />
             <line
               x1={plot.left}
               x2={plot.right}
-              y1={tick.y}
-              y2={tick.y}
+              y1={plot.bottom}
+              y2={plot.bottom}
               stroke="currentColor"
-              strokeOpacity="0.08"
+              strokeOpacity="0.22"
             />
-            <text
-              x={plot.left - 8}
-              y={tick.y + 4}
-              textAnchor="end"
-              className="fill-current font-mono text-[10px]"
-            >
-              {formatCurrency(tick.value)}
-            </text>
-          </g>
-        ))}
-        {xTickIndexes.map((index) => {
-          const bar = plottedBars[index];
-          const x = plot.left + step * index + step / 2;
-          return (
-            <g key={`${bar.timestamp ?? index}-tick`}>
-              <line
-                x1={x}
-                x2={x}
-                y1={plot.bottom}
-                y2={plot.bottom + 5}
-                stroke="currentColor"
-                strokeOpacity="0.22"
-              />
-              <text
-                x={x}
-                y={plot.bottom + 20}
-                textAnchor="middle"
-                className="fill-current font-mono text-[10px]"
-              >
-                {formatDateTick(bar.timestamp, index)}
-              </text>
-            </g>
-          );
-        })}
-        {plottedBars.map((bar, index) => {
-          const open = toFiniteNumber(bar.open) ?? bar.close;
-          const high = toFiniteNumber(bar.high) ?? Math.max(open, bar.close);
-          const low = toFiniteNumber(bar.low) ?? Math.min(open, bar.close);
-          const x = plot.left + step * index + step / 2;
-          const openY = plotY(open);
-          const closeY = plotY(bar.close);
-          const topY = Math.min(openY, closeY);
-          const height = Math.max(Math.abs(openY - closeY), 2);
-          const tone =
-            bar.close >= open ? 'var(--app-success)' : 'var(--app-danger)';
+            {yTicks.map((tick) => (
+              <g key={tick.value}>
+                <line
+                  x1={plot.left}
+                  x2={plot.right}
+                  y1={tick.y}
+                  y2={tick.y}
+                  stroke="currentColor"
+                  strokeOpacity="0.08"
+                />
+                <text
+                  x={plot.left - 8}
+                  y={tick.y + 4}
+                  textAnchor="end"
+                  className="fill-current font-mono text-[10px]"
+                >
+                  {formatCurrency(tick.value)}
+                </text>
+              </g>
+            ))}
+            {xTickIndexes.map((index) => {
+              const bar = plottedBars[index];
+              const x = plot.left + step * index + step / 2;
+              return (
+                <g key={`${bar.timestamp ?? index}-tick`}>
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={plot.bottom}
+                    y2={plot.bottom + 5}
+                    stroke="currentColor"
+                    strokeOpacity="0.22"
+                  />
+                  <text
+                    x={x}
+                    y={plot.bottom + 20}
+                    textAnchor="middle"
+                    className="fill-current font-mono text-[10px]"
+                  >
+                    {formatDateTick(bar.timestamp, index)}
+                  </text>
+                </g>
+              );
+            })}
+            {plottedBars.map((bar, index) => {
+              const open = toFiniteNumber(bar.open) ?? bar.close;
+              const high =
+                toFiniteNumber(bar.high) ?? Math.max(open, bar.close);
+              const low = toFiniteNumber(bar.low) ?? Math.min(open, bar.close);
+              const x = plot.left + step * index + step / 2;
+              const openY = plotY(open);
+              const closeY = plotY(bar.close);
+              const topY = Math.min(openY, closeY);
+              const height = Math.max(Math.abs(openY - closeY), 2);
+              const tone =
+                bar.close >= open ? 'var(--app-success)' : 'var(--app-danger)';
 
-          return (
-            <g
-              key={`${bar.timestamp ?? index}-${bar.close}`}
-              data-testid="kline-candle"
-            >
-              <line
-                x1={x}
-                x2={x}
-                y1={plotY(high)}
-                y2={plotY(low)}
-                stroke={tone}
-                strokeOpacity="0.9"
-                strokeWidth="1.4"
-              />
-              <rect
-                x={x - candleWidth / 2}
-                y={topY}
-                width={candleWidth}
-                height={height}
-                rx="1"
-                fill={tone}
-                fillOpacity={bar.close >= open ? '0.18' : '0.34'}
-                stroke={tone}
-                strokeWidth="1.5"
-              />
-            </g>
-          );
-        })}
-      </svg>
-      <div className="mt-2 flex flex-col gap-1 font-mono text-[11px] text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
-        <span>
-          {formatDateTick(plottedBars[0]?.timestamp, 0)} -{' '}
-          {formatDateTick(
-            plottedBars[plottedBars.length - 1]?.timestamp,
-            plottedBars.length - 1,
-          )}
-        </span>
-        <span>
-          {formatCurrency(min)} - {formatCurrency(max)}
-        </span>
+              return (
+                <g
+                  key={`${bar.timestamp ?? index}-${bar.close}`}
+                  data-testid="kline-candle"
+                >
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={plotY(high)}
+                    y2={plotY(low)}
+                    stroke={tone}
+                    strokeOpacity="0.9"
+                    strokeWidth="1.4"
+                  />
+                  <rect
+                    x={x - candleWidth / 2}
+                    y={topY}
+                    width={candleWidth}
+                    height={height}
+                    rx="1"
+                    fill={tone}
+                    fillOpacity={bar.close >= open ? '0.18' : '0.34'}
+                    stroke={tone}
+                    strokeWidth="1.5"
+                  />
+                </g>
+              );
+            })}
+          </svg>
+          <div className="mt-2 flex flex-col gap-1 font-mono text-[11px] text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {formatDateTick(plottedBars[0]?.timestamp, 0)} -{' '}
+              {formatDateTick(
+                plottedBars[plottedBars.length - 1]?.timestamp,
+                plottedBars.length - 1,
+              )}
+            </span>
+            <span>
+              {formatCurrency(min)} - {formatCurrency(max)}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

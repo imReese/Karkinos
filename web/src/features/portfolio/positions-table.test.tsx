@@ -143,7 +143,36 @@ test('contains the desktop positions table in a local horizontal scroller', () =
 
   expect(scrollRegion.className).toContain('min-w-0');
   expect(scrollRegion.className).toContain('max-w-full');
-  expect(scrollRegion.className).toContain('overflow-x-auto');
+  expect(scrollRegion.className).toContain('overflow-x-scroll');
   expect(scrollRegion.className).toContain('overscroll-x-contain');
-  expect(table.className).toContain('min-w-[1180px]');
+  expect(scrollRegion.className).toContain('pb-2');
+  expect(table.className).toContain('w-[1280px]');
+  expect(table.className).toContain('min-w-max');
+});
+
+test('keeps desktop asset class badges on one line', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          symbol: '600519',
+          name: '贵州茅台',
+          asset_class: 'stock',
+          quantity: 60,
+          available_qty: 60,
+          frozen_qty: 0,
+          avg_cost: 1500,
+          market_value: 96000,
+          unrealized_pnl: 6000,
+          realized_pnl: 0,
+          commission_paid: 5,
+        },
+      ]}
+    />,
+  );
+
+  const badge = screen.getByTestId('position-asset-class-600519');
+
+  expect(badge.className).toContain('whitespace-nowrap');
+  expect(badge.className).toContain('inline-flex');
 });

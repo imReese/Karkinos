@@ -201,9 +201,30 @@ function renderOverviewPage() {
 }
 
 test('renders the compact return calendar on the overview page', async () => {
-  renderOverviewPage();
+  const fetchMock = installOverviewFetchMock();
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OverviewPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
 
   expect(await screen.findByText('Performance Analysis')).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.some(([input]) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+      return url.includes('/api/portfolio/equity-curve/series?range=all');
+    }),
+  ).toBe(true);
   const calendar = await screen.findByTestId('return-calendar-card');
   expect(calendar.className).toContain('p-4');
   expect(await screen.findByText('Return calendar')).toBeTruthy();

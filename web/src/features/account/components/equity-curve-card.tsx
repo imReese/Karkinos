@@ -1,4 +1,4 @@
-import { startTransition, useState, type CSSProperties } from 'react';
+import { startTransition, useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -154,6 +154,22 @@ function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
     .sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
+function resolveDefaultVisibleSeries(points: EquitySeriesPoint[]) {
+  const chartPoints = toChartPoints(points);
+  const nextVisible = { ...NO_VISIBLE_SERIES };
+  for (const series of SERIES_META) {
+    nextVisible[series.key] = chartPoints.some((point) => {
+      const value = point[series.key];
+      return (
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        Math.abs(value) > 0
+      );
+    });
+  }
+  return nextVisible;
+}
+
 function clonePointAtTimestamp(point: ChartPoint, timestampMs: number) {
   return {
     ...point,
@@ -288,10 +304,21 @@ function resolveSeriesHighs(
     if (!visibleSeries[series.key]) {
       return [];
     }
-    const values = points
-      .map((point) => point[series.key])
-      .filter((value): value is number => Number.isFinite(value));
-    if (values.length === 0) {
+    const high = points.reduce<{
+      point: ChartPoint;
+      pointIndex: number;
+      value: number;
+    } | null>((currentHigh, point, pointIndex) => {
+      const value = point[series.key];
+      if (!Number.isFinite(value)) {
+        return currentHigh;
+      }
+      if (!currentHigh || value > currentHigh.value) {
+        return { point, pointIndex, value };
+      }
+      return currentHigh;
+    }, null);
+    if (!high) {
       return [];
     }
     return [
@@ -299,10 +326,115 @@ function resolveSeriesHighs(
         key: series.key,
         color: series.color,
         label: seriesLabels[series.key],
-        value: Math.max(...values),
+        value: high.value,
+        timestampMs: high.point.timestampMs,
+        pointIndex: high.pointIndex,
       },
     ];
   });
+}
+
+function renderHighPointDot({
+  high,
+  range,
+  seriesIndex,
+  pointCount,
+}: {
+  high: ReturnType<typeof resolveSeriesHighs>[number];
+  range: EquityCurveRange;
+  seriesIndex: number;
+  pointCount: number;
+}) {
+  return ({
+    cx,
+    cy,
+    payload,
+    value,
+  }: {
+    cx?: number;
+    cy?: number;
+    payload?: ChartPoint;
+    value?: number;
+  }) => {
+    if (
+      typeof cx !== 'number' ||
+      typeof cy !== 'number' ||
+      typeof value !== 'number' ||
+      payload?.timestampMs !== high.timestampMs ||
+      value !== high.value
+    ) {
+      return null;
+    }
+
+    const isNearRightEdge = high.pointIndex >= Math.max(pointCount - 2, 0);
+    const isNearTop = cy < 96;
+    const labelWidth = 138;
+    const labelHeight = 38;
+    const laneOffset = (seriesIndex % 3) * 28;
+    const labelX = isNearRightEdge ? -labelWidth - 10 : 10;
+    const labelY = isNearTop ? 12 + laneOffset : -labelHeight - 8 - laneOffset;
+    const textX = labelX + 9;
+    const displayDate = formatAxisTimestamp(high.timestampMs, range);
+    const displayValue = formatWholeCurrency(high.value);
+
+    return (
+      <g
+        data-testid={`equity-series-high-marker-${high.key}`}
+        transform={`translate(${cx} ${cy})`}
+        pointerEvents="none"
+      >
+        <circle
+          r="5"
+          fill={high.color}
+          stroke="var(--app-mantle)"
+          strokeWidth="2.5"
+        />
+        <circle
+          r="9"
+          fill="none"
+          stroke={high.color}
+          strokeOpacity="0.38"
+          strokeWidth="1.5"
+        />
+        <line
+          x1="0"
+          y1={isNearTop ? 8 : -8}
+          x2="0"
+          y2={labelY + (isNearTop ? 0 : labelHeight)}
+          stroke={high.color}
+          strokeOpacity="0.42"
+          strokeDasharray="3 4"
+        />
+        <rect
+          x={labelX}
+          y={labelY}
+          width={labelWidth}
+          height={labelHeight}
+          rx="10"
+          fill="var(--app-panel-strong)"
+          stroke={high.color}
+          strokeOpacity="0.54"
+        />
+        <text
+          x={textX}
+          y={labelY + 14}
+          className="fill-current text-[10px] font-semibold"
+        >
+          <tspan>{high.label}</tspan>
+          <tspan dx="7" className="opacity-70">
+            {displayDate}
+          </tspan>
+        </text>
+        <text
+          x={textX}
+          y={labelY + 30}
+          className="fill-current text-[11px] font-semibold"
+        >
+          {displayValue}
+        </text>
+      </g>
+    );
+  };
 }
 
 function CustomTooltip({
@@ -420,10 +552,22 @@ export function EquityCurveCard({
   const copy = useCopy();
   const labels = copy.overview.equityCurve;
   const [uncontrolledRange, setUncontrolledRange] =
-    useState<EquityCurveRange>('1m');
+    useState<EquityCurveRange>('all');
   const range = controlledRange ?? uncontrolledRange;
+  const defaultVisibleSeries = useMemo(
+    () => resolveDefaultVisibleSeries(points),
+    [points],
+  );
+  const [hasManualSeriesSelection, setHasManualSeriesSelection] =
+    useState(false);
   const [visibleSeries, setVisibleSeries] =
-    useState<Record<SeriesKey, boolean>>(ALL_VISIBLE_SERIES);
+    useState<Record<SeriesKey, boolean>>(defaultVisibleSeries);
+
+  useEffect(() => {
+    if (!hasManualSeriesSelection) {
+      setVisibleSeries(defaultVisibleSeries);
+    }
+  }, [defaultVisibleSeries, hasManualSeriesSelection]);
 
   const chartPoints = filterByRange(toChartPoints(points), range);
   const hasUsableData = chartPoints.length >= 2;
@@ -441,7 +585,6 @@ export function EquityCurveCard({
     ['1y', labels.oneYear],
     ['all', labels.all],
   ];
-  const activeRangeIndex = rangeOptions.findIndex(([value]) => value === range);
   const seriesLabels: Record<SeriesKey, string> = {
     total: labels.total,
     cash: labels.cash,
@@ -482,11 +625,12 @@ export function EquityCurveCard({
               type="button"
               aria-pressed={allSeriesSelected}
               aria-label={labels.allSeries}
-              onClick={() =>
+              onClick={() => {
+                setHasManualSeriesSelection(true);
                 setVisibleSeries(
                   allSeriesSelected ? NO_VISIBLE_SERIES : ALL_VISIBLE_SERIES,
-                )
-              }
+                );
+              }}
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
                 allSeriesSelected
                   ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
@@ -503,12 +647,13 @@ export function EquityCurveCard({
                   type="button"
                   aria-pressed={active}
                   aria-label={seriesLabels[series.key]}
-                  onClick={() =>
+                  onClick={() => {
+                    setHasManualSeriesSelection(true);
                     setVisibleSeries((current) => ({
                       ...current,
                       [series.key]: !current[series.key],
-                    }))
-                  }
+                    }));
+                  }}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
                     active
                       ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
@@ -526,16 +671,10 @@ export function EquityCurveCard({
           </div>
         </div>
 
-        <div className="relative inline-flex w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_30%,transparent)] p-1 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)]">
-          <div
-            className="absolute bottom-1 top-1 w-[calc(100%/6)] rounded-full bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_7%,transparent)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-            style={
-              {
-                transform: `translateX(${Math.max(activeRangeIndex, 0) * 100}%)`,
-              } as CSSProperties
-            }
-            aria-hidden="true"
-          />
+        <div
+          data-testid="equity-range-controls"
+          className="grid w-full max-w-[340px] grid-cols-6 gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_30%,transparent)] p-1 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:w-max"
+        >
           {rangeOptions.map(([value, label]) => (
             <button
               key={value}
@@ -550,9 +689,9 @@ export function EquityCurveCard({
                   onRangeChange?.(value);
                 });
               }}
-              className={`relative z-10 h-7 min-w-10 rounded-full px-2.5 font-mono text-[11px] font-semibold transition-colors duration-300 ${
+              className={`h-7 min-w-0 rounded-full px-2 font-mono text-[11px] font-semibold transition-[background-color,box-shadow,color,transform] duration-300 active:scale-[0.98] ${
                 range === value
-                  ? 'text-[var(--app-accent)]'
+                  ? 'bg-[color-mix(in_srgb,var(--app-accent)_26%,transparent)] text-[var(--app-accent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_8%,transparent)]'
                   : 'text-[var(--app-muted)]'
               }`}
             >
@@ -561,32 +700,6 @@ export function EquityCurveCard({
           ))}
         </div>
       </div>
-
-      {seriesHighs.length > 0 ? (
-        <div
-          className="mb-3 flex min-w-0 flex-wrap items-center gap-2"
-          data-testid="equity-series-highs"
-        >
-          <div className="app-kicker mr-1 text-[11px] uppercase tracking-[0.16em]">
-            {labels.rangeHigh}
-          </div>
-          {seriesHighs.map((item) => (
-            <div
-              key={item.key}
-              className="inline-flex min-w-0 items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] px-2.5 py-1 text-[11px] font-medium"
-            >
-              <span
-                className="h-2 w-2 shrink-0 rounded-full"
-                style={{ backgroundColor: item.color }}
-              />
-              <span className="text-[var(--app-muted)]">{item.label}</span>
-              <span className="font-mono tabular-nums text-[var(--app-text)]">
-                {formatWholeCurrency(item.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
 
       {hasUsableData ? (
         <div className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]">
@@ -669,6 +782,9 @@ export function EquityCurveCard({
                   return null;
                 }
                 const isPrimarySeries = series.key === 'total';
+                const high = seriesHighs.find(
+                  (item) => item.key === series.key,
+                );
                 return (
                   <Line
                     key={series.key}
@@ -682,7 +798,18 @@ export function EquityCurveCard({
                     strokeLinejoin="round"
                     animationDuration={520}
                     animationEasing="ease-out"
-                    dot={false}
+                    dot={
+                      high
+                        ? renderHighPointDot({
+                            high,
+                            range,
+                            seriesIndex: seriesHighs.findIndex(
+                              (item) => item.key === series.key,
+                            ),
+                            pointCount: chartPoints.length,
+                          })
+                        : false
+                    }
                     activeDot={{
                       r: series.key === 'total' ? 5 : 4,
                       stroke: 'var(--app-mantle)',

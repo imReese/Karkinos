@@ -225,7 +225,7 @@ function HoldingDetailRoutePage() {
 export function OverviewPage() {
   const copy = useCopy();
   const [equityCurveRange, setEquityCurveRange] =
-    useState<EquityCurveRange>('1m');
+    useState<EquityCurveRange>('all');
   const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
@@ -2935,9 +2935,14 @@ export function ReturnCalendarCard({
     aggregated[aggregated.length - 1] ??
     null;
   const panelClass = compact ? 'p-4' : 'app-panel rounded-2xl p-4 sm:p-5';
-  const contentGridClass = compact
-    ? 'mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1fr)_260px]'
-    : 'mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]';
+  const contentGridClass =
+    period === 'week'
+      ? compact
+        ? 'return-calendar-layout-week mt-3 grid gap-3 2xl:grid-cols-1'
+        : 'return-calendar-layout-week mt-4 grid gap-4 xl:grid-cols-1'
+      : compact
+        ? 'mt-3 grid gap-3 2xl:grid-cols-[minmax(0,1fr)_260px]'
+        : 'mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]';
   const hasTimeline = timeline.length > 0;
   const valuationStatus = summarizeReturnCalendarStatus(aggregated);
 
@@ -3072,7 +3077,7 @@ export function ReturnCalendarCard({
           compact={compact}
         />
       ) : viewMode === 'calendar' ? (
-        <div className={contentGridClass}>
+        <div className={contentGridClass} data-testid="return-calendar-layout">
           <ReturnCalendarGrid
             rows={aggregated}
             period={period}
@@ -3392,34 +3397,51 @@ function ReturnCurveChart({
 }: {
   points: Array<{ label: string; value: number }>;
 }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   if (points.length === 0) {
     return null;
   }
-  const width = 680;
-  const height = 260;
-  const left = 74;
-  const right = 18;
-  const top = 16;
-  const bottom = 42;
+  const width = 760;
+  const height = 340;
+  const left = 84;
+  const right = 28;
+  const top = 26;
+  const bottom = 58;
   const chartWidth = width - left - right;
   const chartHeight = height - top - bottom;
   const values = points.map((point) => point.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 0);
   const range = max - min || 1;
-  const line = points
-    .map((point, index) => {
-      const x = left + (index / Math.max(points.length - 1, 1)) * chartWidth;
-      const y = top + chartHeight - ((point.value - min) / range) * chartHeight;
-      return `${x},${y}`;
-    })
+  const positionForPoint = (point: { value: number }, index: number) => {
+    const x = left + (index / Math.max(points.length - 1, 1)) * chartWidth;
+    const y = top + chartHeight - ((point.value - min) / range) * chartHeight;
+    return { x, y };
+  };
+  const positionedPoints = points.map((point, index) => ({
+    ...point,
+    ...positionForPoint(point, index),
+  }));
+  const line = positionedPoints
+    .map((point) => `${point.x},${point.y}`)
     .join(' ');
-  const ticks = max === min ? [max] : [max, min];
+  const ticks = Array.from(new Set(max === min ? [max] : [max, 0, min]));
+  const zeroY = top + chartHeight - ((0 - min) / range) * chartHeight;
   const firstLabel = points[0]?.label ?? '';
   const lastLabel = points[points.length - 1]?.label ?? firstLabel;
+  const activePoint =
+    activeIndex === null ? null : (positionedPoints[activeIndex] ?? null);
+  const tooltipX = activePoint
+    ? Math.min(Math.max(activePoint.x + 12, left), width - 184)
+    : 0;
+  const tooltipY = activePoint ? Math.max(top + 6, activePoint.y - 54) : 0;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-48 w-full sm:h-56">
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-[280px] w-full sm:h-[320px]"
+      data-testid="return-curve-chart"
+    >
       <line
         data-testid="return-curve-y-axis"
         x1={left}
@@ -3437,6 +3459,16 @@ function ReturnCurveChart({
         y2={top + chartHeight}
         stroke="currentColor"
         strokeOpacity="0.32"
+      />
+      <line
+        data-testid="return-curve-zero-axis"
+        x1={left}
+        y1={zeroY}
+        x2={left + chartWidth}
+        y2={zeroY}
+        stroke="currentColor"
+        strokeDasharray="4 5"
+        strokeOpacity="0.22"
       />
       {ticks.map((tick) => {
         const y = top + chartHeight - ((tick - min) / range) * chartHeight;
@@ -3485,6 +3517,58 @@ function ReturnCurveChart({
         strokeLinejoin="round"
         strokeLinecap="round"
       />
+      {positionedPoints.map((point, index) => (
+        <circle
+          key={point.label}
+          cx={point.x}
+          cy={point.y}
+          r={activeIndex === index ? 5 : 3.5}
+          tabIndex={0}
+          role="img"
+          aria-label={`${point.label} · ${formatCurrency(point.value)}`}
+          data-testid={`return-curve-point-${index}`}
+          fill="var(--app-text)"
+          stroke="var(--app-mantle)"
+          strokeWidth="2"
+          opacity={activeIndex === null || activeIndex === index ? 1 : 0.56}
+          onClick={() => setActiveIndex(index)}
+          onFocus={() => setActiveIndex(index)}
+          onBlur={() => setActiveIndex(null)}
+          onPointerEnter={() => setActiveIndex(index)}
+          onPointerMove={() => setActiveIndex(index)}
+          onPointerLeave={() => setActiveIndex(null)}
+          onMouseEnter={() => setActiveIndex(index)}
+          onMouseLeave={() => setActiveIndex(null)}
+        />
+      ))}
+      {activePoint ? (
+        <g data-testid="return-curve-tooltip">
+          <rect
+            x={tooltipX}
+            y={tooltipY}
+            width="162"
+            height="46"
+            rx="10"
+            fill="var(--app-panel-strong)"
+            stroke="var(--app-border)"
+            opacity="0.96"
+          />
+          <text
+            x={tooltipX + 12}
+            y={tooltipY + 18}
+            className="fill-current text-[11px]"
+          >
+            {activePoint.label}
+          </text>
+          <text
+            x={tooltipX + 12}
+            y={tooltipY + 36}
+            className="fill-current text-[12px] font-semibold"
+          >
+            {formatCurrency(activePoint.value)}
+          </text>
+        </g>
+      ) : null}
     </svg>
   );
 }
@@ -4026,6 +4110,20 @@ function ReturnYearsGrid({
   );
 }
 
+function formatReturnCalendarCellHeading(heading: string, sublabel?: string) {
+  if (!sublabel) {
+    return { headingText: heading, sublabelText: null };
+  }
+  if (/^\d{2}$/.test(heading)) {
+    return {
+      headingText:
+        sublabel === '月' ? `${heading}${sublabel}` : `${heading} ${sublabel}`,
+      sublabelText: null,
+    };
+  }
+  return { headingText: heading, sublabelText: sublabel };
+}
+
 function ReturnCalendarCell({
   label,
   heading,
@@ -4067,23 +4165,34 @@ function ReturnCalendarCell({
       : getHeatmapTone(value, maxMagnitude)
     : 'border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_42%,transparent)] text-[var(--app-muted)]';
   const cellClass = compact
-    ? 'min-h-[4.25rem] rounded-md px-2 py-2'
-    : 'min-h-[5.75rem] rounded-lg px-3 py-3';
+    ? 'flex min-h-[4.25rem] flex-col rounded-md px-2 py-2'
+    : 'flex min-h-[5.75rem] flex-col rounded-lg px-3 py-3';
   const valueClass = compact
-    ? 'mt-2 text-xs font-semibold leading-4'
-    : 'mt-3 text-sm font-semibold';
+    ? 'mt-auto self-end text-right text-sm font-semibold leading-5'
+    : 'mt-auto self-end text-right text-base font-semibold';
   const metaClass = compact
-    ? 'mt-1 text-[10px] opacity-80'
-    : 'mt-2 text-[11px] opacity-80';
+    ? 'mt-1 self-end text-right text-[10px] opacity-80'
+    : 'mt-2 self-end text-right text-[11px] opacity-80';
+  const { headingText, sublabelText } = formatReturnCalendarCellHeading(
+    heading,
+    sublabel,
+  );
 
   if (!row) {
     return (
       <div className={`${cellClass} border ${tone}`}>
-        <div className="text-xs font-semibold">{heading}</div>
-        {sublabel ? (
-          <div className="app-muted mt-1 text-[11px]">{sublabel}</div>
+        <div
+          className="text-xs font-semibold"
+          data-testid="return-calendar-cell-heading"
+        >
+          {headingText}
+        </div>
+        {sublabelText ? (
+          <div className="app-muted mt-1 text-[11px]">{sublabelText}</div>
         ) : null}
-        <div className={valueClass}>{displayValue}</div>
+        <div className={valueClass} data-testid="return-calendar-cell-value">
+          {displayValue}
+        </div>
       </div>
     );
   }
@@ -4098,11 +4207,18 @@ function ReturnCalendarCell({
         selected ? 'ring-2 ring-[var(--app-accent)]' : ''
       } ${tone}`}
     >
-      <div className="text-xs font-semibold">{heading}</div>
-      {sublabel ? (
-        <div className="mt-1 text-[11px] opacity-70">{sublabel}</div>
+      <div
+        className="text-xs font-semibold"
+        data-testid="return-calendar-cell-heading"
+      >
+        {headingText}
+      </div>
+      {sublabelText ? (
+        <div className="mt-1 text-[11px] opacity-70">{sublabelText}</div>
       ) : null}
-      <div className={valueClass}>{displayValue}</div>
+      <div className={valueClass} data-testid="return-calendar-cell-value">
+        {displayValue}
+      </div>
       {hasMissingValuation && row.missingPriceSymbols.length > 0 ? (
         <div className={metaClass}>
           {row.missingPriceSymbols.slice(0, 2).join(', ')}
