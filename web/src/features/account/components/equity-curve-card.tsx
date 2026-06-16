@@ -1,9 +1,15 @@
-import { startTransition, useEffect, useMemo, useState } from 'react';
+import {
+  startTransition,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   CartesianGrid,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -21,6 +27,7 @@ type SeriesKey = 'total' | 'stocks' | 'funds' | 'others' | 'cash';
 
 type ChartPoint = EquitySeriesPoint & {
   timestampMs: number;
+  seriesChange: Partial<Record<SeriesKey, number>>;
 };
 
 type TooltipPayload = {
@@ -33,9 +40,16 @@ type TooltipPayload = {
 
 type CustomTooltipProps = {
   active?: boolean;
+  categoryDailyChangeLabel: (label: string) => string;
+  portfolioTotalLabel: string;
   quoteStatusLabel: string;
   realtimeUnrealizedPnlLabel: string;
   payload?: TooltipPayload[];
+};
+
+type ChartSize = {
+  height: number;
+  width: number;
 };
 
 const SERIES_META: Array<{ key: SeriesKey; color: string; gradient: string }> =
@@ -119,6 +133,85 @@ function formatWholeCurrency(value: number) {
   });
 }
 
+function readChartElementSize(element: HTMLElement | null): ChartSize | null {
+  if (!element) {
+    return null;
+  }
+
+  const rect = element.getBoundingClientRect();
+  const width = Math.floor(rect.width || element.clientWidth || 0);
+  const height = Math.floor(rect.height || element.clientHeight || 0);
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { width, height };
+}
+
+function useChartContainerSize<TElement extends HTMLElement>() {
+  const ref = useRef<TElement | null>(null);
+  const [size, setSize] = useState<ChartSize | null>(null);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) {
+      return undefined;
+    }
+
+    let animationFrame: number | null = null;
+
+    const commitSize = () => {
+      const nextSize = readChartElementSize(element);
+      if (!nextSize) {
+        return;
+      }
+      setSize((currentSize) => {
+        if (
+          currentSize?.width === nextSize.width &&
+          currentSize.height === nextSize.height
+        ) {
+          return currentSize;
+        }
+        return nextSize;
+      });
+    };
+
+    const scheduleSizeCommit = () => {
+      if (typeof window === 'undefined') {
+        commitSize();
+        return;
+      }
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        commitSize();
+      });
+    };
+
+    commitSize();
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(scheduleSizeCommit);
+    resizeObserver?.observe(element);
+    window.addEventListener('resize', scheduleSizeCommit);
+
+    return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', scheduleSizeCommit);
+    };
+  }, []);
+
+  return [ref, size] as const;
+}
+
 function TimeAxisTick({
   x = 0,
   y = 0,
@@ -149,9 +242,55 @@ function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
     .map((point) => ({
       ...point,
       timestampMs: new Date(point.timestamp).getTime(),
+      seriesChange: {},
     }))
     .filter((point) => Number.isFinite(point.timestampMs))
     .sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+function withSeriesChangeFromBaseline(points: ChartPoint[]): ChartPoint[] {
+  const baselinePoint = points[0];
+  if (!baselinePoint) {
+    return points;
+  }
+  return points.map((point, index) => {
+    if (index === 0) {
+      return point;
+    }
+
+    const seriesChange = SERIES_META.reduce<Partial<Record<SeriesKey, number>>>(
+      (changes, series) => {
+        const currentValue = point[series.key];
+        const baselineValue = baselinePoint[series.key];
+        if (
+          typeof currentValue === 'number' &&
+          Number.isFinite(currentValue) &&
+          typeof baselineValue === 'number' &&
+          Number.isFinite(baselineValue)
+        ) {
+          changes[series.key] = currentValue - baselineValue;
+        }
+        return changes;
+      },
+      {},
+    );
+
+    return {
+      ...point,
+      seriesChange,
+    };
+  });
+}
+
+function resolveTooltipSeriesKey(
+  dataKey: TooltipPayload['dataKey'],
+): SeriesKey | null {
+  if (typeof dataKey !== 'string') {
+    return null;
+  }
+  return SERIES_META.some((series) => series.key === dataKey)
+    ? (dataKey as SeriesKey)
+    : null;
 }
 
 function resolveDefaultVisibleSeries(points: EquitySeriesPoint[]) {
@@ -440,6 +579,8 @@ function renderHighPointDot({
 function CustomTooltip({
   active,
   payload,
+  categoryDailyChangeLabel,
+  portfolioTotalLabel,
   quoteStatusLabel,
   realtimeUnrealizedPnlLabel,
 }: CustomTooltipProps) {
@@ -451,6 +592,27 @@ function CustomTooltip({
   if (!point) {
     return null;
   }
+
+  const includesTotalSeries = payload.some((item) => item.dataKey === 'total');
+  const categoryChangeRows = payload.flatMap((item) => {
+    const seriesKey = resolveTooltipSeriesKey(item.dataKey);
+    if (seriesKey !== 'stocks' && seriesKey !== 'funds') {
+      return [];
+    }
+    const change = point.seriesChange[seriesKey];
+    if (typeof change !== 'number' || !Number.isFinite(change)) {
+      return [];
+    }
+    return [
+      {
+        key: seriesKey,
+        label: categoryDailyChangeLabel(String(item.name)),
+        value: change,
+      },
+    ];
+  });
+  const shouldShowPortfolioContext =
+    includesTotalSeries || categoryChangeRows.length > 0;
 
   return (
     <div className="z-[90] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_92%,transparent)] px-3 py-2.5 text-xs shadow-[0_18px_54px_color-mix(in_srgb,var(--app-mantle)_54%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] backdrop-blur-md tabular-nums">
@@ -480,7 +642,35 @@ function CustomTooltip({
             </div>
           );
         })}
-        {typeof point.unrealized_pnl === 'number' ? (
+        {categoryChangeRows.map((row) => (
+          <div
+            key={`${row.key}-daily-change`}
+            className="mt-2 flex min-w-40 items-center justify-between gap-5 border-t border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] pt-2"
+          >
+            <span className="text-[var(--app-muted)]">{row.label}</span>
+            <span
+              className={`font-medium tabular-nums ${
+                row.value >= 0
+                  ? 'text-[var(--app-success)]'
+                  : 'text-[var(--app-danger)]'
+              }`}
+            >
+              {formatWholeCurrency(row.value)}
+            </span>
+          </div>
+        ))}
+        {!includesTotalSeries && categoryChangeRows.length > 0 ? (
+          <div className="flex min-w-40 items-center justify-between gap-5">
+            <span className="text-[var(--app-muted)]">
+              {portfolioTotalLabel}
+            </span>
+            <span className="font-medium tabular-nums text-[var(--app-text)]">
+              {formatWholeCurrency(point.total)}
+            </span>
+          </div>
+        ) : null}
+        {shouldShowPortfolioContext &&
+        typeof point.unrealized_pnl === 'number' ? (
           <div className="mt-2 flex min-w-36 items-center justify-between gap-5 border-t border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] pt-2">
             <span className="text-[var(--app-muted)]">
               {realtimeUnrealizedPnlLabel}
@@ -569,13 +759,17 @@ export function EquityCurveCard({
     }
   }, [defaultVisibleSeries, hasManualSeriesSelection]);
 
-  const chartPoints = filterByRange(toChartPoints(points), range);
+  const chartPoints = withSeriesChangeFromBaseline(
+    filterByRange(toChartPoints(points), range),
+  );
   const hasUsableData = chartPoints.length >= 2;
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
   const yAxisDomain = resolveYAxisDomain(chartPoints, visibleSeries);
   const latestPoint = chartPoints[chartPoints.length - 1];
   const isStale = latestPoint?.quote_status === 'stale';
+  const [chartContainerRef, chartSize] =
+    useChartContainerSize<HTMLDivElement>();
 
   const rangeOptions: Array<[EquityCurveRange, string]> = [
     ['1d', labels.oneDay],
@@ -702,9 +896,15 @@ export function EquityCurveCard({
       </div>
 
       {hasUsableData ? (
-        <div className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <div
+          ref={chartContainerRef}
+          data-testid="equity-chart-frame"
+          className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]"
+        >
+          {chartSize ? (
             <LineChart
+              width={chartSize.width}
+              height={chartSize.height}
               data={chartPoints}
               margin={{ left: 10, right: 30, top: 18, bottom: 34 }}
             >
@@ -765,6 +965,8 @@ export function EquityCurveCard({
               <Tooltip
                 content={
                   <CustomTooltip
+                    categoryDailyChangeLabel={labels.categoryDailyChange}
+                    portfolioTotalLabel={labels.portfolioTotal}
                     quoteStatusLabel={labels.quoteStatus}
                     realtimeUnrealizedPnlLabel={labels.realtimeUnrealizedPnl}
                   />
@@ -821,7 +1023,7 @@ export function EquityCurveCard({
                 );
               })}
             </LineChart>
-          </ResponsiveContainer>
+          ) : null}
         </div>
       ) : (
         <div className="flex h-[340px] items-center justify-center rounded-[26px] border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-6 text-center sm:h-[410px]">

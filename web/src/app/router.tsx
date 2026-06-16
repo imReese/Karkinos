@@ -56,6 +56,10 @@ import {
   usePendingFundOrdersQuery,
   type LedgerEntry,
 } from '../features/activity/api';
+import {
+  calculateLedgerEntryAmount,
+  formatLedgerInstrumentLabel,
+} from '../features/activity/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
   CashFlowForm,
@@ -244,10 +248,26 @@ export function OverviewPage() {
     () => liveGroups.flatMap((group) => group.items),
     [liveGroups],
   );
-  const todayPnl = useMemo(
-    () => liveGroups.reduce((sum, group) => sum + group.total_today_change, 0),
+  const todayPnlBreakdown = useMemo(
+    () =>
+      liveGroups.reduce(
+        (breakdown, group) => {
+          const assetClass = group.asset_class.toLowerCase();
+          const value = group.total_today_change;
+          if (assetClass === 'stock') {
+            breakdown.stocks += value;
+          }
+          if (assetClass === 'fund' || assetClass === 'etf') {
+            breakdown.funds += value;
+          }
+          breakdown.total += value;
+          return breakdown;
+        },
+        { stocks: 0, funds: 0, total: 0 },
+      ),
     [liveGroups],
   );
+  const todayPnl = todayPnlBreakdown.total;
   const currentDrawdown = riskWorkspace.data?.drawdown.current_drawdown ?? 0;
   const enhancedOverview = useMemo(
     () =>
@@ -255,10 +275,11 @@ export function OverviewPage() {
         ? {
             ...overview.data,
             today_pnl: todayPnl,
+            today_pnl_breakdown: todayPnlBreakdown,
             current_drawdown: currentDrawdown,
           }
         : null,
-    [currentDrawdown, overview.data, todayPnl],
+    [currentDrawdown, overview.data, todayPnl, todayPnlBreakdown],
   );
   const latestPriceBySymbol = useMemo(
     () =>
@@ -629,66 +650,8 @@ function formatLedgerEntryDetails(entry: LedgerEntry, copy: AppCopy) {
   return details.filter((detail): detail is string => Boolean(detail));
 }
 
-function resolveLedgerInstrumentName(entry: LedgerEntry) {
-  const noteName = readableLedgerNoteSegments(entry.note)
-    .map(extractLedgerInstrumentName)
-    .find(Boolean);
-  return noteName ?? entry.symbol ?? '';
-}
-
-function formatLedgerInstrumentLabel(entry: LedgerEntry) {
-  const name = resolveLedgerInstrumentName(entry);
-  const symbol = entry.symbol?.trim();
-  if (!symbol) {
-    return name;
-  }
-  if (!name || name === symbol) {
-    return symbol;
-  }
-  return `${name} ${symbol}`;
-}
-
-function readableLedgerNoteSegments(note: string | null | undefined) {
-  if (!note) {
-    return [];
-  }
-  return note
-    .split('|')
-    .map((segment) => segment.trim())
-    .filter(
-      (segment) =>
-        segment &&
-        !/(^|\s)[a-z][a-z0-9_]*=/i.test(segment) &&
-        !/auto-confirmed/i.test(segment),
-    );
-}
-
-function extractLedgerInstrumentName(segment: string) {
-  const cleaned = segment
-    .replace(/^用户记录[:：]\s*/, '')
-    .replace(/^手工录入(?:持仓|基金申购)[:：]\s*/, '')
-    .trim();
-  if (!/[\u4e00-\u9fff]/.test(cleaned)) {
-    return null;
-  }
-  const candidate = cleaned
-    .split(/\s+(买入|卖出|申购|赎回|分红|调整|加仓)/u)[0]
-    .split(/[，；:：]/u)[0]
-    .trim();
-  if (!candidate || candidate === cleaned) {
-    return null;
-  }
-  return candidate;
-}
-
 function formatLedgerEntryAmount(entry: LedgerEntry) {
-  if (typeof entry.amount === 'number') {
-    return formatCurrencyValue(entry.amount);
-  }
-  if (typeof entry.price === 'number' && typeof entry.quantity === 'number') {
-    return formatCurrencyValue(entry.price * entry.quantity);
-  }
-  return '--';
+  return formatCurrencyValue(calculateLedgerEntryAmount(entry));
 }
 
 function PortfolioPage() {

@@ -20,6 +20,7 @@ export type LedgerEntry = {
   timestamp: string;
   amount: number | null;
   symbol: string | null;
+  display_name: string | null;
   direction: string | null;
   quantity: number | null;
   price: number | null;

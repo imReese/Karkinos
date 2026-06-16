@@ -858,26 +858,44 @@ def _adapt_persistent_quote_for_portfolio(row: dict) -> dict:
     return quote
 
 
-def _quote_merge_timestamp(quote: dict) -> datetime | None:
+def _quote_market_timestamp(quote: dict) -> datetime | None:
     timestamps = [
         _parse_quote_timestamp(quote.get(key))
-        for key in ("captured_at", "updated_at", "timestamp", "quote_timestamp")
+        for key in ("timestamp", "quote_timestamp")
     ]
     timestamps = [timestamp for timestamp in timestamps if timestamp is not None]
     return max(timestamps) if timestamps else None
 
 
+def _quote_merge_timestamp(quote: dict) -> datetime | None:
+    timestamps = [
+        _parse_quote_timestamp(quote.get(key)) for key in ("captured_at", "updated_at")
+    ]
+    timestamps = [timestamp for timestamp in timestamps if timestamp is not None]
+    return max(timestamps) if timestamps else _quote_market_timestamp(quote)
+
+
 def _merge_quote_identity(base: dict, candidate: dict) -> dict:
-    base_timestamp = _quote_merge_timestamp(base)
-    candidate_timestamp = _quote_merge_timestamp(candidate)
-    if candidate_timestamp is not None and (
-        base_timestamp is None or candidate_timestamp > base_timestamp
-    ):
-        primary = candidate
-        secondary = base
+    base_timestamp = _quote_market_timestamp(base)
+    candidate_timestamp = _quote_market_timestamp(candidate)
+    if base_timestamp is not None and candidate_timestamp is not None:
+        if candidate_timestamp > base_timestamp:
+            primary = candidate
+            secondary = base
+        else:
+            primary = base
+            secondary = candidate
     else:
-        primary = base
-        secondary = candidate
+        base_timestamp = _quote_merge_timestamp(base)
+        candidate_timestamp = _quote_merge_timestamp(candidate)
+        if candidate_timestamp is not None and (
+            base_timestamp is None or candidate_timestamp > base_timestamp
+        ):
+            primary = candidate
+            secondary = base
+        else:
+            primary = base
+            secondary = candidate
 
     merged = dict(primary)
     for key in (
@@ -1065,6 +1083,12 @@ def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int |
         return None
     current = get_shanghai_now(now)
     return max(int((current - timestamp).total_seconds()), 0)
+
+
+def _quote_latest_price(quote: dict | None) -> float | None:
+    if not quote or quote.get("price") in {None, ""}:
+        return None
+    return float(quote["price"])
 
 
 def _quote_source(state, quote: dict | None) -> str | None:
@@ -1391,6 +1415,77 @@ def _resolve_live_holding_baseline(
     return None, None, "unavailable"
 
 
+def _ledger_entry_shanghai_date(entry: dict) -> date | None:
+    timestamp = entry.get("timestamp")
+    if timestamp in {None, ""}:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_SH_TZ)
+    return parsed.astimezone(_SH_TZ).date()
+
+
+def _same_day_buy_cost_basis(
+    state,
+    *,
+    symbol: str,
+    trade_day: date,
+    current_quantity: float,
+) -> tuple[float | None, float | None]:
+    db = state.db
+    if (
+        current_quantity <= 0
+        or db is None
+        or not hasattr(db, "get_ledger_entries_sync")
+    ):
+        return None, None
+
+    total_quantity = 0.0
+    total_cost = 0.0
+    batch_size = 500
+    offset = 0
+    while True:
+        entries = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not entries:
+            break
+        for entry in entries:
+            if (
+                str(entry.get("symbol") or "") != symbol
+                or str(entry.get("entry_type") or "").lower() != "trade_buy"
+                or _ledger_entry_shanghai_date(entry) != trade_day
+            ):
+                continue
+            quantity = entry.get("quantity")
+            price = entry.get("price")
+            if quantity in {None, ""} or price in {None, ""}:
+                continue
+            quantity_value = float(quantity)
+            if quantity_value <= 0:
+                continue
+            amount = entry.get("amount")
+            cost = (
+                float(amount)
+                if amount not in {None, ""}
+                else quantity_value * float(price)
+            )
+            cost += float(entry.get("commission") or 0.0)
+            total_quantity += quantity_value
+            total_cost += cost
+        if len(entries) < batch_size:
+            break
+        offset += batch_size
+
+    if total_quantity <= 0:
+        return None, None
+    matched_quantity = min(current_quantity, total_quantity)
+    if matched_quantity < current_quantity:
+        return None, None
+    return total_cost / total_quantity, total_cost
+
+
 def _build_live_holdings_response(state) -> LiveHoldingsResponse:
     portfolio, instruments = _resolve_projection_sources(state)
     portfolio, instruments, _ = _hydrate_missing_position_quotes(
@@ -1434,6 +1529,22 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
                 latest_quote if latest_quote else None,
             )
         )
+        latest_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
+        trade_day = (
+            latest_timestamp.date()
+            if latest_timestamp is not None
+            else get_shanghai_now().date()
+        )
+        intraday_cost_price, intraday_total_cost = _same_day_buy_cost_basis(
+            state,
+            symbol=symbol,
+            trade_day=trade_day,
+            current_quantity=quantity,
+        )
+        if intraday_cost_price is not None:
+            baseline_price = intraday_cost_price
+            baseline_timestamp = trade_day.isoformat()
+            baseline_source = "intraday_trade_cost"
         avg_cost = float(pos.avg_cost)
         market_value = float(pos.market_value)
         cost_basis = quantity * avg_cost
@@ -1445,8 +1556,17 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
             reference_price = (
                 latest_price_value if latest_price_value is not None else avg_cost
             )
-            today_change = quantity * (reference_price - baseline_price)
-            today_change_pct = (reference_price / baseline_price) - 1
+            if intraday_total_cost is not None:
+                current_value = quantity * reference_price
+                today_change = current_value - intraday_total_cost
+                today_change_pct = (
+                    current_value / intraday_total_cost - 1
+                    if intraday_total_cost
+                    else None
+                )
+            else:
+                today_change = quantity * (reference_price - baseline_price)
+                today_change_pct = (reference_price / baseline_price) - 1
 
         groups[metadata.asset_class].append(
             LiveHoldingItemResponse(
@@ -1644,10 +1764,10 @@ def _load_intraday_price_points(
     start: datetime,
     end: datetime,
     latest_quote: dict | None,
-) -> list[tuple[datetime, float]]:
+) -> tuple[list[tuple[datetime, float]], bool]:
     mapped_asset_class = _INTRADAY_ASSET_CLASS_MAP.get(asset_class)
     if source is None or mapped_asset_class is None:
-        return []
+        return [], False
 
     try:
         bars = source.fetch_bars(
@@ -1667,6 +1787,7 @@ def _load_intraday_price_points(
         bars = None
 
     points: list[tuple[datetime, float]] = []
+    source_points: list[tuple[datetime, float]] = []
     if (
         bars is not None
         and len(bars) > 0
@@ -1680,7 +1801,8 @@ def _load_intraday_price_points(
             close = getattr(row, "close", None)
             if timestamp is None or close in {None, ""}:
                 continue
-            points.append((timestamp, float(close)))
+            source_points.append((timestamp, float(close)))
+    points.extend(source_points)
 
     latest_price = latest_quote.get("price") if latest_quote else None
     latest_timestamp = _normalize_intraday_timestamp(
@@ -1702,7 +1824,7 @@ def _load_intraday_price_points(
             deduped[-1] = (timestamp, close)
             continue
         deduped.append((timestamp, close))
-    return deduped
+    return deduped, bool(source_points)
 
 
 def _build_intraday_equity_curve_series(
@@ -1754,8 +1876,22 @@ def _build_intraday_equity_curve_series(
                 baseline_price = float(latest_price)
             else:
                 baseline_price = float(getattr(position, "avg_cost", 0.0) or 0.0)
+        latest_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
+        trade_day = (
+            latest_timestamp.date()
+            if latest_timestamp is not None
+            else get_shanghai_now().date()
+        )
+        intraday_cost_price, _ = _same_day_buy_cost_basis(
+            state,
+            symbol=symbol,
+            trade_day=trade_day,
+            current_quantity=quantity,
+        )
+        if intraday_cost_price is not None:
+            baseline_price = intraday_cost_price
 
-        price_points = _load_intraday_price_points(
+        price_points, has_source_intraday_prices = _load_intraday_price_points(
             intraday_source,
             symbol=symbol,
             asset_class=asset_class,
@@ -1763,7 +1899,7 @@ def _build_intraday_equity_curve_series(
             end=session_close,
             latest_quote=latest_quote if latest_quote else None,
         )
-        has_intraday_prices = has_intraday_prices or len(price_points) > 0
+        has_intraday_prices = has_intraday_prices or has_source_intraday_prices
         holdings.append(
             {
                 "asset_class": asset_class,
@@ -1774,7 +1910,19 @@ def _build_intraday_equity_curve_series(
             }
         )
 
-    ticks = live_ticks if has_intraday_prices else full_session_ticks
+    sparse_quote_ticks = {session_start}
+    if not has_intraday_prices:
+        for holding in holdings:
+            for point_timestamp, _ in holding["price_points"]:
+                if session_start <= point_timestamp <= session_close:
+                    sparse_quote_ticks.add(point_timestamp)
+    ticks = (
+        live_ticks
+        if has_intraday_prices
+        else sorted(sparse_quote_ticks)
+        if len(sparse_quote_ticks) > 1
+        else full_session_ticks
+    )
     cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
     series: list[dict] = []
 
@@ -2350,6 +2498,136 @@ def _flat_intraday_equity_series_from_current(
     ]
 
 
+def _synthetic_intraday_equity_series_from_current_quotes(
+    state,
+    portfolio,
+    instruments: dict,
+    current: EquitySeriesPoint | None,
+) -> list[EquitySeriesPoint]:
+    if portfolio is None:
+        return []
+
+    now = get_shanghai_now()
+    trade_day = now.date()
+    session_ticks = _build_cn_session_ticks(
+        trade_day, now.tzinfo or _SH_TZ, full_session=True
+    )
+    if not session_ticks:
+        return [] if current is None else [current]
+    session_start = session_ticks[0]
+    session_close = session_ticks[-1]
+
+    latest_quotes = _collect_latest_quotes(state)
+    cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
+    holdings: list[dict] = []
+    sparse_quote_ticks = {session_start}
+
+    for sym, position in getattr(portfolio, "positions", {}).items():
+        quantity = float(getattr(position, "quantity", 0.0) or 0.0)
+        if quantity == 0:
+            continue
+
+        symbol = str(sym)
+        instrument = instruments.get(Symbol(symbol)) if instruments else None
+        latest_quote = latest_quotes.get(symbol, {})
+        asset_class = _normalize_asset_class_value(
+            latest_quote.get("asset_class")
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+        )
+        latest_price = latest_quote.get("price")
+        latest_price_value = (
+            float(latest_price) if latest_price not in {None, ""} else None
+        )
+        baseline_price, _, _ = _resolve_live_holding_baseline(
+            state,
+            symbol,
+            latest_quote if latest_quote else None,
+        )
+        quote_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
+        quote_trade_day = (
+            quote_timestamp.date() if quote_timestamp is not None else trade_day
+        )
+        intraday_cost_price, _ = _same_day_buy_cost_basis(
+            state,
+            symbol=symbol,
+            trade_day=quote_trade_day,
+            current_quantity=quantity,
+        )
+        if intraday_cost_price is not None:
+            baseline_price = intraday_cost_price
+        if baseline_price is None:
+            baseline_price = (
+                latest_price_value
+                if latest_price_value is not None
+                else float(getattr(position, "avg_cost", 0.0) or 0.0)
+            )
+        if (
+            latest_price_value is not None
+            and quote_timestamp is not None
+            and session_start <= quote_timestamp <= session_close
+        ):
+            sparse_quote_ticks.add(quote_timestamp)
+
+        holdings.append(
+            {
+                "asset_class": asset_class,
+                "quantity": quantity,
+                "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
+                "baseline_price": float(baseline_price),
+                "latest_price": latest_price_value,
+                "quote_timestamp": quote_timestamp,
+            }
+        )
+
+    quote_status = "live" if current is None else current.quote_status
+    ticks = (
+        sorted(sparse_quote_ticks)
+        if len(sparse_quote_ticks) > 1
+        else session_ticks
+    )
+    points: list[EquitySeriesPoint] = []
+    for tick in ticks:
+        stocks_value = 0.0
+        funds_value = 0.0
+        others_value = 0.0
+        unrealized_pnl = 0.0
+        for holding in holdings:
+            price = holding["baseline_price"]
+            quote_timestamp = holding["quote_timestamp"]
+            if (
+                holding["latest_price"] is not None
+                and quote_timestamp is not None
+                and quote_timestamp <= tick
+            ):
+                price = holding["latest_price"]
+
+            position_value = holding["quantity"] * price
+            cost_basis = holding["quantity"] * holding["avg_cost"]
+            unrealized_pnl += position_value - cost_basis
+
+            if holding["asset_class"] == "stock":
+                stocks_value += position_value
+            elif holding["asset_class"] in {"fund", "etf"}:
+                funds_value += position_value
+            else:
+                others_value += position_value
+
+        points.append(
+            EquitySeriesPoint(
+                timestamp=tick.isoformat(),
+                total=cash + stocks_value + funds_value + others_value,
+                stocks=stocks_value,
+                funds=funds_value,
+                others=others_value,
+                cash=cash,
+                unrealized_pnl=unrealized_pnl,
+                quote_status=quote_status,
+            )
+        )
+
+    return points
+
+
 def _should_fetch_intraday_equity_curve(now: datetime) -> bool:
     return now.astimezone(_SH_TZ).weekday() < 5
 
@@ -2477,6 +2755,7 @@ def create_router() -> APIRouter:
                     available_qty=float(pos.available_qty),
                     frozen_qty=float(pos.frozen_qty),
                     avg_cost=float(pos.avg_cost),
+                    latest_price=_quote_latest_price(quote),
                     market_value=float(pos.market_value),
                     unrealized_pnl=float(pos.unrealized_pnl),
                     realized_pnl=float(pos.realized_pnl),
@@ -2753,10 +3032,20 @@ def create_router() -> APIRouter:
                     "Timed out building intraday equity curve after %.2fs",
                     timeout_seconds,
                 )
-                return _flat_intraday_equity_series_from_current(current_point)
+                return _synthetic_intraday_equity_series_from_current_quotes(
+                    state,
+                    portfolio,
+                    instruments,
+                    current_point,
+                )
             except Exception:
                 logger.warning("Failed to build intraday equity curve", exc_info=True)
-                return _flat_intraday_equity_series_from_current(current_point)
+                return _synthetic_intraday_equity_series_from_current_quotes(
+                    state,
+                    portfolio,
+                    instruments,
+                    current_point,
+                )
 
             return [
                 _series_point_from_intraday(point, quote_status=quote_status)

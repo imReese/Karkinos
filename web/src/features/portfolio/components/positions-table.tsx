@@ -78,6 +78,67 @@ function handleEntryKeyDown(event: KeyboardEvent<HTMLElement>, href: string) {
   openHoldingDetail(href);
 }
 
+type NumericCellKind = 'quantity' | 'price' | 'amount' | 'percent';
+type NumericCellTone = 'muted' | 'text' | 'success' | 'danger';
+
+const NUMERIC_WIDTH_CLASSES: Record<NumericCellKind, string> = {
+  quantity: 'min-w-24 px-4',
+  price: 'min-w-28 px-5',
+  amount: 'min-w-32 px-4',
+  percent: 'min-w-24 px-4',
+};
+
+const NUMERIC_TONE_CLASSES: Record<NumericCellTone, string> = {
+  muted: 'text-[var(--app-soft)]',
+  text: 'text-[var(--app-text)]',
+  success: 'text-[var(--app-success)]',
+  danger: 'text-[var(--app-danger)]',
+};
+
+function numericHeaderClassName(kind: NumericCellKind) {
+  return `whitespace-nowrap ${NUMERIC_WIDTH_CLASSES[kind]} py-3 text-right`;
+}
+
+function numericDisplayClassName({
+  kind,
+  tone = 'text',
+  emphasis = false,
+  surface = 'metric',
+}: {
+  kind: NumericCellKind;
+  tone?: NumericCellTone;
+  emphasis?: boolean;
+  surface?: 'cell' | 'metric' | 'summary';
+}) {
+  const surfaceClass =
+    surface === 'cell'
+      ? `${NUMERIC_WIDTH_CLASSES[kind]} py-3.5 text-right`
+      : surface === 'summary'
+        ? 'text-sm'
+        : 'mt-2 text-sm';
+
+  return `karkinos-numeric-display whitespace-nowrap ${surfaceClass} font-mono tabular-nums ${
+    emphasis ? 'font-semibold' : ''
+  } ${NUMERIC_TONE_CLASSES[tone]}`;
+}
+
+function numericCellClassName({
+  kind,
+  tone = 'text',
+  emphasis = false,
+}: {
+  kind: NumericCellKind;
+  tone?: NumericCellTone;
+  emphasis?: boolean;
+}) {
+  return `karkinos-numeric-cell ${numericDisplayClassName({
+    kind,
+    tone,
+    emphasis,
+    surface: 'cell',
+  })}`;
+}
+
 export function PositionsTable({
   positions,
   assetClassBySymbol = {},
@@ -99,6 +160,12 @@ export function PositionsTable({
   );
 
   const resolveLatestPrice = (position: Position) => {
+    if (
+      typeof position.latest_price === 'number' &&
+      Number.isFinite(position.latest_price)
+    ) {
+      return position.latest_price;
+    }
     const livePrice = latestPriceBySymbol[position.symbol];
     if (typeof livePrice === 'number' && Number.isFinite(livePrice)) {
       return livePrice;
@@ -138,6 +205,86 @@ export function PositionsTable({
             displayName,
             position.symbol,
           );
+          const latestPrice = resolveLatestPrice(position);
+          const mobileMetrics: Array<{
+            key: string;
+            label: string;
+            value: string;
+            kind: NumericCellKind;
+            tone?: NumericCellTone;
+            emphasis?: boolean;
+          }> = [
+            {
+              key: 'quantity',
+              label: labels.quantity,
+              value: formatQuantity(position.quantity),
+              kind: 'quantity',
+              tone: 'muted',
+            },
+            {
+              key: 'avg-cost',
+              label: labels.avgCost,
+              value: formatPrice(position.avg_cost),
+              kind: 'price',
+              tone: 'muted',
+            },
+            {
+              key: 'latest-price',
+              label: labels.latestPrice,
+              value: formatPrice(latestPrice),
+              kind: 'price',
+              tone: 'text',
+            },
+            {
+              key: 'market-value',
+              label: labels.marketValue,
+              value: formatCurrency(position.market_value),
+              kind: 'amount',
+              tone: 'text',
+              emphasis: true,
+            },
+            {
+              key: 'unrealized',
+              label: labels.unrealized,
+              value: formatCurrency(position.unrealized_pnl),
+              kind: 'amount',
+              tone: pnlPositive ? 'success' : 'danger',
+              emphasis: true,
+            },
+            {
+              key: 'return-pct',
+              label: labels.returnPct,
+              value: formatReturnPercent(resolvePnlPct(position)),
+              kind: 'percent',
+              tone: pnlPositive ? 'success' : 'danger',
+              emphasis: true,
+            },
+            {
+              key: 'quote-age',
+              label: labels.quoteAge,
+              value: formatAge(position.quote_age_seconds),
+              kind: 'quantity',
+              tone: 'muted',
+            },
+            ...(showFullColumns
+              ? [
+                  {
+                    key: 'available-frozen',
+                    label: labels.availFrozen,
+                    value: `${formatQuantity(position.available_qty)} / ${formatQuantity(position.frozen_qty)}`,
+                    kind: 'quantity' as const,
+                    tone: 'text' as const,
+                  },
+                  {
+                    key: 'realized',
+                    label: labels.realized,
+                    value: formatCurrency(position.realized_pnl),
+                    kind: 'amount' as const,
+                    tone: 'text' as const,
+                  },
+                ]
+              : []),
+          ];
           const refreshing =
             refreshQuotes.isPending &&
             refreshQuotes.variables?.symbols?.includes(position.symbol);
@@ -183,7 +330,15 @@ export function PositionsTable({
                   ) : null}
                 </div>
                 <div className="text-right">
-                  <div className="font-mono text-sm font-semibold tabular-nums">
+                  <div
+                    data-testid={`position-mobile-summary-market-value-${position.symbol}`}
+                    className={numericDisplayClassName({
+                      kind: 'amount',
+                      tone: 'text',
+                      emphasis: true,
+                      surface: 'summary',
+                    })}
+                  >
                     {formatCurrency(position.market_value)}
                   </div>
                   <div className="app-muted mt-1 text-xs">
@@ -193,50 +348,23 @@ export function PositionsTable({
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {[
-                  [labels.quantity, formatQuantity(position.quantity)],
-                  [labels.avgCost, formatCurrency(position.avg_cost)],
-                  [
-                    labels.latestPrice,
-                    formatPrice(resolveLatestPrice(position)),
-                  ],
-                  [labels.marketValue, formatCurrency(position.market_value)],
-                  [labels.unrealized, formatCurrency(position.unrealized_pnl)],
-                  [
-                    labels.returnPct,
-                    formatReturnPercent(resolvePnlPct(position)),
-                  ],
-                  [labels.quoteAge, formatAge(position.quote_age_seconds)],
-                  ...(showFullColumns
-                    ? ([
-                        [
-                          labels.availFrozen,
-                          `${formatQuantity(position.available_qty)} / ${formatQuantity(position.frozen_qty)}`,
-                        ],
-                        [
-                          labels.realized,
-                          formatCurrency(position.realized_pnl),
-                        ],
-                      ] as Array<[string, string]>)
-                    : []),
-                ].map(([label, value]) => (
+                {mobileMetrics.map((metric) => (
                   <div
-                    key={label}
+                    key={metric.key}
                     className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3"
                   >
                     <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                      {label}
+                      {metric.label}
                     </div>
                     <div
-                      className={`mt-2 font-mono text-sm font-medium tabular-nums ${
-                        label === labels.unrealized
-                          ? pnlPositive
-                            ? 'text-[var(--app-success)]'
-                            : 'text-[var(--app-danger)]'
-                          : ''
-                      }`}
+                      data-testid={`position-mobile-${metric.key}-${position.symbol}`}
+                      className={numericDisplayClassName({
+                        kind: metric.kind,
+                        tone: metric.tone,
+                        emphasis: metric.emphasis,
+                      })}
                     >
-                      {value}
+                      {metric.value}
                     </div>
                   </div>
                 ))}
@@ -298,17 +426,33 @@ export function PositionsTable({
               <th className="w-24 whitespace-nowrap px-4 py-3">
                 {labels.assetClass}
               </th>
-              <th className="px-4 py-3 text-right">{labels.quantity}</th>
-              <th className="px-4 py-3 text-right">{labels.avgCost}</th>
-              <th className="px-4 py-3 text-right">{labels.latestPrice}</th>
-              <th className="px-4 py-3 text-right">{labels.marketValue}</th>
-              <th className="px-4 py-3 text-right">{labels.unrealized}</th>
-              <th className="px-4 py-3 text-right">{labels.returnPct}</th>
+              <th className={numericHeaderClassName('quantity')}>
+                {labels.quantity}
+              </th>
+              <th className={numericHeaderClassName('price')}>
+                {labels.avgCost}
+              </th>
+              <th className={numericHeaderClassName('price')}>
+                {labels.latestPrice}
+              </th>
+              <th className={numericHeaderClassName('amount')}>
+                {labels.marketValue}
+              </th>
+              <th className={numericHeaderClassName('amount')}>
+                {labels.unrealized}
+              </th>
+              <th className={numericHeaderClassName('percent')}>
+                {labels.returnPct}
+              </th>
               <th className="px-4 py-3">{labels.quoteState}</th>
               {showFullColumns ? (
                 <>
-                  <th className="px-4 py-3 text-right">{labels.availFrozen}</th>
-                  <th className="px-4 py-3 text-right">{labels.realized}</th>
+                  <th className={numericHeaderClassName('quantity')}>
+                    {labels.availFrozen}
+                  </th>
+                  <th className={numericHeaderClassName('amount')}>
+                    {labels.realized}
+                  </th>
                 </>
               ) : null}
               <th className="px-4 py-3 text-right">{labels.actions}</th>
@@ -380,33 +524,60 @@ export function PositionsTable({
                       {assetClassDisplay}
                     </span>
                   </td>
-                  <td className="px-4 py-3.5 text-right font-mono tabular-nums text-[var(--app-soft)]">
+                  <td
+                    data-testid={`position-quantity-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'quantity',
+                      tone: 'muted',
+                    })}
+                  >
                     {formatQuantity(position.quantity)}
                   </td>
-                  <td className="px-4 py-3.5 text-right font-mono tabular-nums text-[var(--app-soft)]">
-                    {formatCurrency(position.avg_cost)}
+                  <td
+                    data-testid={`position-avg-cost-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'price',
+                      tone: 'muted',
+                    })}
+                  >
+                    {formatPrice(position.avg_cost)}
                   </td>
-                  <td className="px-4 py-3.5 text-right font-mono tabular-nums text-[var(--app-text)]">
+                  <td
+                    data-testid={`position-latest-price-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'price',
+                      tone: 'text',
+                    })}
+                  >
                     {formatPrice(resolveLatestPrice(position))}
                   </td>
-                  <td className="px-4 py-3.5 text-right font-mono font-semibold tabular-nums text-[var(--app-text)]">
+                  <td
+                    data-testid={`position-market-value-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'amount',
+                      tone: 'text',
+                      emphasis: true,
+                    })}
+                  >
                     {formatCurrency(position.market_value)}
                   </td>
                   <td
-                    className={`px-4 py-3.5 text-right font-mono font-semibold tabular-nums ${
-                      pnlPositive
-                        ? 'text-[var(--app-success)]'
-                        : 'text-[var(--app-danger)]'
-                    }`}
+                    data-testid={`position-unrealized-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'amount',
+                      tone: pnlPositive ? 'success' : 'danger',
+                      emphasis: true,
+                    })}
                   >
                     {formatCurrency(position.unrealized_pnl)}
                   </td>
                   <td
-                    className={`px-4 py-3.5 text-right font-mono font-semibold tabular-nums ${
-                      pnlPositive
-                        ? 'text-[var(--app-success)]'
-                        : 'text-[var(--app-danger)]'
-                    }`}
+                    data-testid={`position-return-pct-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'percent',
+                      tone: pnlPositive ? 'success' : 'danger',
+                      emphasis: true,
+                    })}
                   >
                     {formatReturnPercent(resolvePnlPct(position))}
                   </td>
@@ -439,11 +610,23 @@ export function PositionsTable({
                   </td>
                   {showFullColumns ? (
                     <>
-                      <td className="px-4 py-3.5 text-right font-mono tabular-nums">
+                      <td
+                        data-testid={`position-available-frozen-${position.symbol}`}
+                        className={numericCellClassName({
+                          kind: 'quantity',
+                          tone: 'text',
+                        })}
+                      >
                         {formatQuantity(position.available_qty)} /{' '}
                         {formatQuantity(position.frozen_qty)}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono tabular-nums">
+                      <td
+                        data-testid={`position-realized-${position.symbol}`}
+                        className={numericCellClassName({
+                          kind: 'amount',
+                          tone: 'text',
+                        })}
+                      >
                         {formatCurrency(position.realized_pnl)}
                       </td>
                     </>

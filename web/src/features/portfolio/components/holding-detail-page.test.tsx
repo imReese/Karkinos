@@ -11,6 +11,7 @@ const position = {
   available_qty: 55,
   frozen_qty: 5,
   avg_cost: 1500,
+  latest_price: 1600,
   market_value: 96000,
   unrealized_pnl: 6000,
   realized_pnl: 1200,
@@ -277,6 +278,8 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
   expect(await screen.findByText('6.67%')).toBeTruthy();
+  expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
   expect(await screen.findByText('CN¥1,640.00')).toBeTruthy();
   expect(screen.queryByText('6.7%')).toBeNull();

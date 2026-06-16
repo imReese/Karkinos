@@ -1,4 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
@@ -440,6 +446,123 @@ test('toggles all equity series off and back on from the all-series chip', async
       ),
     ).toBe('true');
   }
+});
+
+test('does not show portfolio unrealized pnl as cash-line pnl', async () => {
+  const { container } = renderCard({
+    cardPoints: [
+      {
+        timestamp: '2026-04-27T15:00:00+08:00',
+        total: 15367,
+        stocks: 0,
+        funds: 0,
+        others: 0,
+        cash: 13000,
+        unrealized_pnl: 94,
+        quote_status: 'live',
+      },
+      {
+        timestamp: '2026-06-16T09:30:00+08:00',
+        total: 15530,
+        stocks: 0,
+        funds: 0,
+        others: 0,
+        cash: 5800,
+        unrealized_pnl: 98,
+        quote_status: 'live',
+      },
+    ],
+  });
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Total' }));
+
+  const chartSurface = container.querySelector('.recharts-surface');
+  expect(chartSurface).not.toBeNull();
+  fireEvent.mouseMove(chartSurface as Element, {
+    clientX: 360,
+    clientY: 160,
+  });
+
+  await waitFor(() => {
+    const tooltip = container.querySelector('.recharts-tooltip-wrapper');
+    expect(tooltip?.textContent).toContain('Cash');
+    expect(tooltip?.textContent).toContain('CN¥13,000');
+    expect(tooltip?.textContent).not.toContain('Unrealized P/L');
+  });
+});
+
+test('shows category daily change and portfolio context for a single stock or fund line', async () => {
+  const { container } = renderCard({
+    cardPoints: [
+      {
+        timestamp: '2026-06-16T09:30:00+08:00',
+        total: 15400,
+        stocks: 6800,
+        funds: 2800,
+        others: 0,
+        cash: 5800,
+        unrealized_pnl: 100,
+        quote_status: 'live',
+      },
+      {
+        timestamp: '2026-06-16T14:30:00+08:00',
+        total: 15530,
+        stocks: 6920,
+        funds: 2810,
+        others: 0,
+        cash: 5800,
+        unrealized_pnl: 230,
+        quote_status: 'live',
+      },
+    ],
+  });
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Total' }));
+  await user.click(await screen.findByRole('button', { name: 'Cash' }));
+  await user.click(await screen.findByRole('button', { name: 'Funds' }));
+
+  const chartSurface = container.querySelector('.recharts-surface');
+  expect(chartSurface).not.toBeNull();
+  fireEvent.mouseMove(chartSurface as Element, {
+    clientX: 520,
+    clientY: 160,
+  });
+
+  await waitFor(() => {
+    const tooltip = container.querySelector('.recharts-tooltip-wrapper');
+    expect(tooltip?.textContent).toContain('Stocks');
+    expect(tooltip?.textContent).toContain('Stocks daily change');
+    expect(tooltip?.textContent).toContain('CN¥120');
+    expect(tooltip?.textContent).toContain('Portfolio total');
+    expect(tooltip?.textContent).toContain('CN¥15,530');
+    expect(tooltip?.textContent).toContain('Portfolio unrealized P/L');
+    expect(tooltip?.textContent).toContain('CN¥230');
+  });
+});
+
+test('shows intraday category change against the session baseline', async () => {
+  const { container } = renderCard({ cardPoints: intradayPoints });
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
+  await user.click(await screen.findByRole('button', { name: 'Total' }));
+  await user.click(await screen.findByRole('button', { name: 'Cash' }));
+  await user.click(await screen.findByRole('button', { name: 'Funds' }));
+
+  const chartSurface = container.querySelector('.recharts-surface');
+  expect(chartSurface).not.toBeNull();
+  fireEvent.mouseMove(chartSurface as Element, {
+    clientX: 700,
+    clientY: 160,
+  });
+
+  await waitFor(() => {
+    const tooltip = container.querySelector('.recharts-tooltip-wrapper');
+    expect(tooltip?.textContent).toContain('Stocks daily change');
+    expect(tooltip?.textContent).toContain('CN¥100');
+  });
 });
 
 test('shows the highest visible value for every selected equity series in the active range', async () => {

@@ -23,6 +23,7 @@ export type Position = {
   available_qty: number;
   frozen_qty: number;
   avg_cost: number;
+  latest_price?: number | null;
   market_value: number;
   unrealized_pnl: number;
   realized_pnl: number;

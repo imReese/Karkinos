@@ -54,7 +54,7 @@ export function formatPrice(value: number | null | undefined) {
     return '--';
   }
   return new Intl.NumberFormat(resolveLocale(), {
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 4,
     maximumFractionDigits: 4,
   }).format(normalized);
 }

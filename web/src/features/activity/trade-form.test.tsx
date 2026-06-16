@@ -258,6 +258,7 @@ test('renders ledger entries as a user-facing audit table', () => {
           source: 'manual',
           source_ref: 'trade_buy-012710',
           created_at: null,
+          display_name: null,
         },
         {
           id: 2,
@@ -274,6 +275,24 @@ test('renders ledger entries as a user-facing audit table', () => {
           source: 'manual',
           source_ref: 'manual-603659-20260605-143341',
           created_at: null,
+          display_name: null,
+        },
+        {
+          id: 3,
+          entry_type: 'trade_buy',
+          timestamp: '2026-06-16T03:04:56+00:00',
+          amount: 5270,
+          symbol: '600066',
+          direction: 'buy',
+          quantity: 200,
+          price: 26.35,
+          commission: 5,
+          asset_class: 'stock',
+          note: '手工录入持仓：宇通客车 600066 买入，佣金按万1.5，最低5元计收',
+          source: 'manual',
+          source_ref: 'manual-600066-20260616-110456',
+          created_at: null,
+          display_name: '宇通客车',
         },
       ]}
     />,
@@ -289,8 +308,12 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Price CN¥0.98')).toBeTruthy();
   expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
   expect(screen.getByText('璞泰来')).toBeTruthy();
-  expect(screen.getByText('Stock')).toBeTruthy();
+  expect(screen.getByText('宇通客车')).toBeTruthy();
+  expect(screen.queryByText('宇通客车 600066')).toBeNull();
+  expect(screen.queryByText(/宇通客车 600066/)).toBeNull();
+  expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText('603659')).toBeTruthy();
+  expect(screen.getByText('600066')).toBeTruthy();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.queryByText(/gross_amount/)).toBeNull();
   expect(screen.queryByText(/Auto-confirmed/)).toBeNull();

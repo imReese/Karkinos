@@ -14,7 +14,7 @@ from data.source import DataSource, normalize_provider_quote
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_REALTIME_TIMEOUT_SECONDS = 0.8
+_DEFAULT_REALTIME_TIMEOUT_SECONDS = 2.0
 
 
 class TushareSource(DataSource):
