@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from decimal import Decimal
 
 from fastapi import APIRouter
 
+from server.bootstrap import resolve_config_path
 from server.models import (
     AssetMetadataStatusResponse,
     DataSourceSettingsUpdate,
@@ -107,6 +110,48 @@ def _settings_response(state) -> SettingsResponse:
     )
 
 
+def _json_number(value: Decimal | float | int | str) -> float:
+    return float(Decimal(str(value)))
+
+
+def _read_persisted_config() -> dict:
+    config_path = resolve_config_path()
+    if not config_path.exists():
+        return {}
+    with config_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _write_persisted_config(persisted: dict) -> None:
+    config_path = resolve_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(persisted, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _persist_runtime_config(
+    updates: dict,
+    *,
+    remove_fields: tuple[str, ...] = (),
+) -> None:
+    persisted = _read_persisted_config()
+    for field in remove_fields:
+        persisted.pop(field, None)
+    persisted.update(updates)
+    _write_persisted_config(persisted)
+
+
+def _persist_account_cost_settings(config) -> None:
+    _persist_runtime_config(
+        {
+            "account_commission_rate": _json_number(config.account_commission_rate),
+            "account_min_commission": _json_number(config.account_min_commission),
+        }
+    )
+
+
 def _data_source_next_action(
     *,
     provider_name: str,
@@ -174,7 +219,7 @@ def create_router() -> APIRouter:
 
     @r.put("", response_model=SettingsResponse)
     async def update_settings(settings: SettingsResponse) -> SettingsResponse:
-        """Update in-memory runtime settings without writing config.json."""
+        """Update runtime settings and persist account commission rules."""
         from server.app import get_app_state
 
         state = get_app_state()
@@ -197,12 +242,9 @@ def create_router() -> APIRouter:
             config.tushare_token = new_token
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
-        config.account_commission_rate = __import__("decimal").Decimal(
-            str(settings.account_commission_rate)
-        )
-        config.account_min_commission = __import__("decimal").Decimal(
-            str(settings.account_min_commission)
-        )
+        config.account_commission_rate = Decimal(str(settings.account_commission_rate))
+        config.account_min_commission = Decimal(str(settings.account_min_commission))
+        _persist_account_cost_settings(config)
 
         return _settings_response(state)
 
@@ -226,16 +268,27 @@ def create_router() -> APIRouter:
     async def update_data_source_settings(
         payload: DataSourceSettingsUpdate,
     ) -> SettingsResponse:
-        """Update in-memory data-source settings without writing config.json."""
+        """Update data-source runtime settings and persist local config."""
         from server.app import get_app_state
 
         state = get_app_state()
         config = state.config
 
         config.data_source = payload.data_source
-        if not payload.tushare_token.startswith(_MASK):
+        token_changed = not payload.tushare_token.startswith(_MASK)
+        if token_changed:
             config.tushare_token = payload.tushare_token
         config.live_poll_interval = payload.live_poll_interval
+        updates = {
+            "data_source": config.data_source,
+            "live_poll_interval": config.live_poll_interval,
+        }
+        remove_fields: tuple[str, ...] = ()
+        if config.data_source == "akshare":
+            remove_fields = ("tushare_token",)
+        elif token_changed:
+            updates["tushare_token"] = config.tushare_token
+        _persist_runtime_config(updates, remove_fields=remove_fields)
 
         return _settings_response(state)
 

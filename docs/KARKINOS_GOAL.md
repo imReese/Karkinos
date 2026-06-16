@@ -362,6 +362,26 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-16: Confirmed the v0.2/v0.3/v0.4 acceptance checkboxes in this goal
+  document have no remaining unchecked items, then added the next data
+  integrity slice for provider reconciliation. `data.market_data_reconciliation`
+  now produces deterministic local-cache-vs-provider OHLCV comparison reports
+  with matched/mismatched/missing-local/missing-provider statuses and explicit
+  field-level differences; `scripts/verify_market_bars.py` can fetch one
+  provider range and emit a read-only JSON diff without overwriting the local
+  cache. Deterministic tests cover exact matches, price differences, missing
+  rows, and DataStore/DataSource integration with a fake provider.
+* 2026-06-16: Made historical OHLCV storage explicitly SQLite-first for local
+  audit and query paths. `DataStore.save_bars()` now documents SQLite
+  `market_bars` as the authoritative store with Parquet retained as a local
+  mirror, `DataStore.sync_parquet_bars_to_database()` imports existing
+  `data/store/bars` mirrors into `data/store/meta.db.market_bars`
+  idempotently, and `scripts/sync_market_bars_to_db.py` provides a local,
+  non-network migration command. The current local cache was synced into
+  SQLite for 6 daily-bar symbols / 1805 rows, and docs now state that cached
+  values are auditable but not guaranteed to match every public provider when
+  adjustment mode, delayed NAVs, suspensions, stale source data, or provider
+  corrections differ.
 * 2026-06-15: Added a v0.4 Strategy Lab acceptance audit and marked the v0.4
   acceptance criteria complete. `build_v04_strategy_lab_acceptance_audit()`
   maps all 14 Strategy Lab checkboxes to concrete code, docs, deterministic

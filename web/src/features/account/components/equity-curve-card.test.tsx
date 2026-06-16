@@ -321,10 +321,61 @@ test('renders premium performance dashboard controls', async () => {
   }
 
   expect(
-    (await screen.findByRole('button', { name: 'Range: 1M' })).getAttribute(
+    (await screen.findByRole('button', { name: 'Range: ALL' })).getAttribute(
       'aria-pressed',
     ),
   ).toBe('true');
+  const rangeControls = await screen.findByTestId('equity-range-controls');
+  expect(rangeControls.className).toContain('grid-cols-6');
+  expect(rangeControls.querySelector('[aria-hidden="true"]')).toBeNull();
+});
+
+test('defaults to all range and only data-bearing series selected', async () => {
+  renderCard({
+    cardPoints: [
+      {
+        timestamp: '2026-05-16T09:30:00+08:00',
+        total: 15300,
+        stocks: 6700,
+        funds: 2800,
+        others: 0,
+        cash: 5800,
+      },
+      {
+        timestamp: '2026-06-16T09:30:00+08:00',
+        total: 15530,
+        stocks: 6920,
+        funds: 2847,
+        others: 0,
+        cash: 5763,
+      },
+    ],
+  });
+
+  expect(
+    (await screen.findByRole('button', { name: 'Range: ALL' })).getAttribute(
+      'aria-pressed',
+    ),
+  ).toBe('true');
+  expect(
+    (await screen.findByRole('button', { name: 'All series' })).getAttribute(
+      'aria-pressed',
+    ),
+  ).toBe('false');
+
+  for (const label of ['Total', 'Cash', 'Stocks', 'Funds']) {
+    expect(
+      (await screen.findByRole('button', { name: label })).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true');
+  }
+  expect(
+    (await screen.findByRole('button', { name: 'Others' })).getAttribute(
+      'aria-pressed',
+    ),
+  ).toBe('false');
+  expect(screen.queryByTestId('equity-series-high-marker-others')).toBeNull();
 });
 
 test('toggles category chips without removing the control', async () => {
@@ -395,17 +446,24 @@ test('shows the highest visible value for every selected equity series in the ac
   renderCard({ cardPoints: updatedPoints });
   const user = userEvent.setup();
 
-  expect(await screen.findByText('Range high')).toBeTruthy();
-  const highPanel = screen.getByTestId('equity-series-highs');
-  expect(within(highPanel).getByText('Total')).toBeTruthy();
-  expect(within(highPanel).getByText('CN¥104,200')).toBeTruthy();
-  expect(within(highPanel).getByText('Stocks')).toBeTruthy();
-  expect(within(highPanel).getByText('CN¥12,600')).toBeTruthy();
+  expect(screen.queryByTestId('equity-series-highs')).toBeNull();
+  const totalHighMarker = await screen.findByTestId(
+    'equity-series-high-marker-total',
+  );
+  expect(within(totalHighMarker).getByText('Total')).toBeTruthy();
+  expect(within(totalHighMarker).getByText('05/11')).toBeTruthy();
+  expect(within(totalHighMarker).getByText('CN¥104,200')).toBeTruthy();
+
+  const stocksHighMarker = await screen.findByTestId(
+    'equity-series-high-marker-stocks',
+  );
+  expect(within(stocksHighMarker).getByText('Stocks')).toBeTruthy();
+  expect(within(stocksHighMarker).getByText('05/11')).toBeTruthy();
+  expect(within(stocksHighMarker).getByText('CN¥12,600')).toBeTruthy();
 
   await user.click(await screen.findByRole('button', { name: 'Stocks' }));
 
-  expect(within(highPanel).queryByText('Stocks')).toBeNull();
-  expect(within(highPanel).queryByText('CN¥12,600')).toBeNull();
+  expect(screen.queryByTestId('equity-series-high-marker-stocks')).toBeNull();
 });
 
 test('updates the active range and notifies the parent query layer', async () => {

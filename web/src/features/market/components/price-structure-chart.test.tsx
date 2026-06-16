@@ -57,6 +57,11 @@ test('renders OHLC price range as a K-line chart', () => {
   expect(
     container.querySelector('[data-testid="close-price-trend"]'),
   ).toBeNull();
+  const chartScroll = screen.getByTestId('price-structure-chart-scroll');
+  const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
+  expect(chartScroll.className).toContain('overflow-x-auto');
+  expect(chartScroll.className).toContain('pb-2');
+  expect(chartCanvas.className).toContain('min-w-[640px]');
 
   fireEvent.click(screen.getByRole('button', { name: 'Show 1M K-line range' }));
 

@@ -314,23 +314,41 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
         <div className="min-w-0 space-y-5">
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
+          <section className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]">
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+              <div
+                data-testid="holding-summary-header"
+                className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div className="min-w-0">
                   <div className="app-product-mark">{labels.summary}</div>
-                  <h2 className="app-card-title mt-1.5">{displayName}</h2>
+                  <h2
+                    data-testid="holding-summary-title"
+                    className="app-card-title mt-1.5 break-words"
+                  >
+                    {displayName}
+                  </h2>
                   <p className="app-muted mt-2 text-sm">{assetClassDisplay}</p>
                 </div>
-                <div className="font-mono text-sm font-semibold tabular-nums">
+                <div
+                  data-testid="holding-summary-symbol"
+                  className="shrink-0 font-mono text-sm font-semibold tabular-nums"
+                >
                   {position.symbol}
                 </div>
               </div>
-              <MetricGrid metrics={summaryMetrics} />
+              <MetricGrid
+                metrics={summaryMetrics}
+                testId="holding-summary-metrics"
+                metricTestId="holding-summary-metric"
+              />
             </div>
           </section>
 
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
+          <section
+            data-testid="holding-kline-panel"
+            className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+          >
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <PriceStructureChart
                 bars={kline.data ?? []}
@@ -372,7 +390,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
+          <section
+            data-testid="holding-quote-status-panel"
+            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+          >
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <div className="app-product-mark">{labels.quoteStatus}</div>
               <div className="mt-4 grid gap-3">
@@ -438,7 +459,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             </div>
           </section>
 
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
+          <section
+            data-testid="holding-risk-exposure-panel"
+            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+          >
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <div className="app-product-mark">{labels.riskExposure}</div>
               <div className="mt-4 grid gap-3">
@@ -461,7 +485,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             </div>
           </section>
 
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
+          <section
+            data-testid="holding-related-actions-panel"
+            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+          >
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <div className="app-product-mark">{labels.relatedActions}</div>
               <div className="mt-4 grid gap-2">
@@ -478,19 +505,31 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   );
 }
 
-function MetricGrid({ metrics }: { metrics: DetailMetric[] }) {
+function MetricGrid({
+  metrics,
+  testId,
+  metricTestId,
+}: {
+  metrics: DetailMetric[];
+  testId?: string;
+  metricTestId?: string;
+}) {
   return (
-    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div
+      data-testid={testId}
+      className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+    >
       {metrics.map((metric) => (
         <div
           key={metric.label}
-          className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3"
+          data-testid={metricTestId}
+          className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3"
         >
           <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
             {metric.label}
           </div>
           <div
-            className={`mt-2 font-mono text-sm font-semibold tabular-nums ${
+            className={`mt-2 break-words font-mono text-sm font-semibold tabular-nums ${
               metric.tone === 'success'
                 ? 'text-[var(--app-success)]'
                 : metric.tone === 'danger'
@@ -518,10 +557,14 @@ function InfoRow({
   tone?: 'success' | 'danger' | 'warning';
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-4 border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] pb-2 text-sm last:border-b-0 last:pb-0">
-      <span className="app-muted min-w-0 truncate">{label}</span>
+    <div
+      data-testid="holding-info-row"
+      className="grid min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-start gap-3 border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] pb-2 text-sm last:border-b-0 last:pb-0"
+    >
+      <span className="app-muted min-w-0 break-words">{label}</span>
       <span
-        className={`font-mono font-semibold tabular-nums ${
+        data-testid="holding-info-row-value"
+        className={`min-w-0 break-words text-right font-mono font-semibold tabular-nums ${
           tone === 'success'
             ? 'text-[var(--app-success)]'
             : tone === 'danger'
@@ -580,8 +623,14 @@ function LedgerTrace({
   }
 
   return (
-    <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
-      <table className="app-data-table w-full min-w-[760px] text-left text-sm">
+    <div
+      data-testid="holding-ledger-scroll"
+      className="mt-5 min-w-0 max-w-full overflow-x-scroll overscroll-x-contain pb-2 [scrollbar-gutter:stable]"
+    >
+      <table
+        data-testid="holding-ledger-table"
+        className="app-data-table w-[880px] min-w-max text-left text-sm"
+      >
         <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
           <tr>
             <th className="px-4 py-3">{labels.entryType}</th>
@@ -626,7 +675,8 @@ function ActionLink({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
-      className="app-button-secondary rounded-2xl px-4 py-2.5 text-center text-sm font-semibold"
+      data-testid="holding-related-action-link"
+      className="app-button-secondary min-w-0 break-words rounded-2xl px-4 py-2.5 text-center text-sm font-semibold"
       aria-label={label}
     >
       {label}

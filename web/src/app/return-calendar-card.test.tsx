@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -176,6 +176,9 @@ test('switches the return calendar between monthly days, yearly months, and year
 
   await user.click(screen.getByRole('button', { name: 'Week' }));
 
+  const calendarLayout = screen.getByTestId('return-calendar-layout');
+  expect(calendarLayout.className).toContain('return-calendar-layout-week');
+  expect(calendarLayout.className).toContain('xl:grid-cols-1');
   const weekGrid = await screen.findByTestId('return-calendar-week-grid');
   expect(weekGrid.className).toContain('md:grid-cols-3');
   expect(weekGrid.className).toContain('overflow-y-auto');
@@ -193,6 +196,19 @@ test('switches the return calendar between monthly days, yearly months, and year
   await user.click(screen.getByRole('button', { name: 'Month' }));
 
   const yearGrid = await screen.findByTestId('return-calendar-year-grid');
+  const januaryCell = within(yearGrid).getByRole('button', {
+    name: '2026-01 · CN¥200.00',
+  });
+  expect(within(januaryCell).getByText('01 Month')).toBeTruthy();
+  expect(within(januaryCell).queryByText('01')).toBeNull();
+  expect(within(januaryCell).queryByText('Month')).toBeNull();
+  const januaryCellValue = within(januaryCell).getByTestId(
+    'return-calendar-cell-value',
+  );
+  expect(januaryCellValue.textContent).toBe('CN¥200.00');
+  expect(januaryCellValue.className).toContain('self-end');
+  expect(januaryCellValue.className).toContain('text-right');
+  expect(januaryCellValue.className).toContain('text-base');
   expect(
     within(yearGrid).getByRole('button', { name: '2026-01 · CN¥200.00' }),
   ).toBeTruthy();
@@ -243,20 +259,48 @@ test('renders axes when the return calendar switches to curve view', async () =>
 
   await userEvent.click(screen.getByRole('button', { name: 'Curve' }));
 
+  const chart = await screen.findByTestId('return-curve-chart');
+  expect(chart.getAttribute('viewBox')).toBe('0 0 760 340');
+  expect(chart.getAttribute('class')).toContain('h-[280px]');
   expect(await screen.findByTestId('return-curve-x-axis')).toBeTruthy();
   expect(screen.getByTestId('return-curve-y-axis')).toBeTruthy();
+  expect(screen.getByTestId('return-curve-zero-axis')).toBeTruthy();
   expect(screen.getByText('2026-02-11')).toBeTruthy();
   expect(screen.getByText('CN¥600.00')).toBeTruthy();
+
+  const point = screen.getByTestId('return-curve-point-0');
+  fireEvent.mouseEnter(point);
+
+  const tooltip = await screen.findByTestId('return-curve-tooltip');
+  expect(within(tooltip).getByText('2026-02-10')).toBeTruthy();
+  expect(within(tooltip).getByText('CN¥600.00')).toBeTruthy();
+
+  fireEvent.mouseLeave(point);
+  fireEvent.pointerMove(point);
+  const pointerTooltip = await screen.findByTestId('return-curve-tooltip');
+  expect(within(pointerTooltip).getByText('2026-02-10')).toBeTruthy();
 });
 
 test('supports a compact cockpit layout for the overview page', async () => {
   renderCalendar({ compact: true });
+  const user = userEvent.setup();
 
   const panel = await screen.findByTestId('return-calendar-card');
   expect(panel.className).toContain('p-4');
   expect(panel.className).not.toContain('rounded-2xl');
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(screen.getByText('Selected period')).toBeTruthy();
+
+  await user.click(screen.getByRole('button', { name: 'Month' }));
+
+  const yearGrid = await screen.findByTestId('return-calendar-year-grid');
+  const januaryCell = within(yearGrid).getByRole('button', {
+    name: '2026-01 · CN¥200.00',
+  });
+  const januaryCellValue = within(januaryCell).getByTestId(
+    'return-calendar-cell-value',
+  );
+  expect(januaryCellValue.className).toContain('text-sm');
 });
 
 test('shows a current-position fallback when daily attribution is not available', async () => {

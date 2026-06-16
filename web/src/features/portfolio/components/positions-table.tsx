@@ -286,16 +286,18 @@ export function PositionsTable({
 
       <div
         data-testid="positions-table-scroll"
-        className="hidden min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] md:block"
+        className="hidden min-w-0 max-w-full overflow-x-scroll overscroll-x-contain rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] pb-2 [scrollbar-gutter:stable] md:block"
       >
         <table
           data-testid="positions-table-desktop"
-          className="app-data-table w-full min-w-[1180px] text-left text-sm"
+          className="app-data-table w-[1280px] min-w-max text-left text-sm"
         >
           <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
             <tr>
-              <th className="px-4 py-3">{labels.symbol}</th>
-              <th className="px-4 py-3">{labels.assetClass}</th>
+              <th className="w-60 px-4 py-3">{labels.symbol}</th>
+              <th className="w-24 whitespace-nowrap px-4 py-3">
+                {labels.assetClass}
+              </th>
               <th className="px-4 py-3 text-right">{labels.quantity}</th>
               <th className="px-4 py-3 text-right">{labels.avgCost}</th>
               <th className="px-4 py-3 text-right">{labels.latestPrice}</th>
@@ -370,8 +372,11 @@ export function PositionsTable({
                       </span>
                     </span>
                   </td>
-                  <td className="px-4 py-3.5 text-[var(--app-muted)]">
-                    <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-2.5 py-1 text-xs">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-[var(--app-muted)]">
+                    <span
+                      data-testid={`position-asset-class-${position.symbol}`}
+                      className="inline-flex whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-2.5 py-1 text-xs"
+                    >
                       {assetClassDisplay}
                     </span>
                   </td>

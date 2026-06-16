@@ -4,6 +4,8 @@
     "live_auto_start": true,
     "data_source": "akshare",
     "tushare_token": "",
+    "account_commission_rate": 0.0001,
+    "account_min_commission": 5.0,
     "notification": {
         "type": "console"
     },

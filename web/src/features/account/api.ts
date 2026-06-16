@@ -231,7 +231,7 @@ export function useEquityCurveQuery() {
   });
 }
 
-export function useEquityCurveSeriesQuery(range: EquityCurveRange = '1m') {
+export function useEquityCurveSeriesQuery(range: EquityCurveRange = 'all') {
   return useQuery({
     queryKey: ['account-equity-curve-series', range],
     queryFn: () =>

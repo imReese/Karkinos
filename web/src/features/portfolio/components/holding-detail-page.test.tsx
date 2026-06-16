@@ -23,6 +23,11 @@ const position = {
   refresh_policy: 'cache_only',
 };
 
+const longProviderName =
+  'tushare_realtime_quote_with_cn_market_fallback_and_manual_reconciliation_provider';
+const longStaleReason =
+  'quote_older_than_expected_session_because_current_session_realtime_permission_is_limited_and_cached_quote_is_used';
+
 const ledgerEntry = {
   id: 11,
   entry_type: 'trade_buy',
@@ -52,12 +57,21 @@ function installHoldingFetchMock({
   includePosition = true,
   includeLedger = true,
   failCore = false,
+  positionOverride = {},
+  liveItemOverride = {},
+  healthQuoteOverride = {},
+  marketHealthOverride = {},
 }: {
   includePosition?: boolean;
   includeLedger?: boolean;
   failCore?: boolean;
+  positionOverride?: Partial<typeof position>;
+  liveItemOverride?: Record<string, unknown>;
+  healthQuoteOverride?: Record<string, unknown>;
+  marketHealthOverride?: Record<string, unknown>;
 } = {}) {
-  const positions = includePosition ? [position] : [];
+  const resolvedPosition = { ...position, ...positionOverride };
+  const positions = includePosition ? [resolvedPosition] : [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
       typeof input === 'string'
@@ -103,6 +117,7 @@ function installHoldingFetchMock({
                     quote_age_seconds: 2_246_400,
                     stale_reason: 'market_closed_cache_only',
                     refresh_policy: 'cache_only',
+                    ...liveItemOverride,
                   },
                 ]
               : [],
@@ -167,6 +182,7 @@ function installHoldingFetchMock({
             stale_reason: 'market_closed_cache_only',
             last_refresh_attempt: null,
             last_refresh_error: null,
+            ...healthQuoteOverride,
           },
         ],
         provider_status: 'stale',
@@ -185,6 +201,7 @@ function installHoldingFetchMock({
         last_refresh_error: null,
         stale_symbols_count: includePosition ? 1 : 0,
         stale_symbols_sample: includePosition ? ['600519'] : [],
+        ...marketHealthOverride,
       });
     }
     if (url.includes('/api/market/kline/600519')) {
@@ -246,7 +263,7 @@ afterEach(() => {
 });
 
 test('renders holding detail with cached quote status and ledger trace', async () => {
-  renderHoldingDetail();
+  const { container } = renderHoldingDetail();
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
   expect(await screen.findByText('Cached quote')).toBeTruthy();
@@ -267,6 +284,45 @@ test('renders holding detail with cached quote status and ledger trace', async (
     await screen.findByText('Market closed; using cached quote'),
   ).toBeTruthy();
   expect(document.body.textContent).not.toMatch(/real-time|latest price|NaN/i);
+
+  const ledgerScroll = await screen.findByTestId('holding-ledger-scroll');
+  const ledgerTable = container.querySelector(
+    '[data-testid="holding-ledger-table"]',
+  );
+  expect(ledgerScroll.className).toContain('overflow-x-scroll');
+  expect(ledgerScroll.className).toContain('pb-2');
+  expect(ledgerTable?.className).toContain('w-[880px]');
+  expect(ledgerTable?.className).toContain('min-w-max');
+});
+
+test('keeps holding summary and kline regions responsive on narrow screens', async () => {
+  const { container } = renderHoldingDetail();
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const summaryHeader = screen.getByTestId('holding-summary-header');
+  const summaryTitle = screen.getByTestId('holding-summary-title');
+  const summarySymbol = screen.getByTestId('holding-summary-symbol');
+  const summaryGrid = screen.getByTestId('holding-summary-metrics');
+  const metricCards = container.querySelectorAll(
+    '[data-testid="holding-summary-metric"]',
+  );
+  const chartPanel = screen.getByTestId('holding-kline-panel');
+  const chartScroll = screen.getByTestId('price-structure-chart-scroll');
+  const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
+
+  expect(summaryHeader.className).toContain('min-w-0');
+  expect(summaryTitle.className).toContain('break-words');
+  expect(summarySymbol.className).toContain('shrink-0');
+  expect(summaryGrid.className).toContain('grid-cols-1');
+  expect(summaryGrid.className).toContain('min-w-0');
+  expect(metricCards.length).toBeGreaterThan(0);
+  for (const card of metricCards) {
+    expect(card.className).toContain('min-w-0');
+  }
+  expect(chartPanel.className).toContain('overflow-hidden');
+  expect(chartScroll.className).toContain('overflow-x-auto');
+  expect(chartCanvas.className).toContain('min-w-[640px]');
 });
 
 test('keeps the holding detail header compact and non-duplicative', async () => {
@@ -285,6 +341,62 @@ test('keeps the holding detail header compact and non-duplicative', async () => 
   expect(
     header?.querySelector('[data-testid="holding-header-status-card"]'),
   ).toBeNull();
+});
+
+test('keeps quote status and action panels readable with long runtime values', async () => {
+  const { container } = renderHoldingDetail({
+    positionOverride: {
+      quote_timestamp: '2026-06-16T11:04:56.000000+08:00',
+      quote_source: longProviderName,
+      stale_reason: longStaleReason,
+      refresh_policy: 'cache_only_after_market_data_permission_fallback',
+    },
+    liveItemOverride: {
+      quote_timestamp: '2026-06-16T11:04:56.000000+08:00',
+      quote_source: longProviderName,
+      stale_reason: longStaleReason,
+      refresh_policy: 'cache_only_after_market_data_permission_fallback',
+    },
+    healthQuoteOverride: {
+      timestamp: '2026-06-16T11:04:56.000000+08:00',
+      quote_source: longProviderName,
+      stale_reason: longStaleReason,
+    },
+    marketHealthOverride: {
+      provider_name: longProviderName,
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const quotePanel = screen.getByTestId('holding-quote-status-panel');
+  const riskPanel = screen.getByTestId('holding-risk-exposure-panel');
+  const actionsPanel = screen.getByTestId('holding-related-actions-panel');
+  const infoRows = container.querySelectorAll(
+    '[data-testid="holding-info-row"]',
+  );
+  const values = container.querySelectorAll(
+    '[data-testid="holding-info-row-value"]',
+  );
+  const actionLinks = container.querySelectorAll(
+    '[data-testid="holding-related-action-link"]',
+  );
+
+  expect(quotePanel.className).toContain('min-w-0');
+  expect(riskPanel.className).toContain('min-w-0');
+  expect(actionsPanel.className).toContain('min-w-0');
+  expect(infoRows.length).toBeGreaterThan(0);
+  for (const row of infoRows) {
+    expect(row.className).toContain('grid');
+    expect(row.className).toContain('min-w-0');
+  }
+  for (const value of values) {
+    expect(value.className).toContain('break-words');
+    expect(value.className).toContain('min-w-0');
+  }
+  for (const link of actionLinks) {
+    expect(link.className).toContain('break-words');
+  }
 });
 
 test('shows not found state when the symbol is absent', async () => {

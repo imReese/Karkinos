@@ -85,7 +85,13 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 
 `http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/decision`, `/market`, and `/settings` can be refreshed without returning home.
 
-The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider.
+The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web cockpit persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file.
+
+Use this storage boundary:
+
+- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, and the current account commission rule.
+- SQLite under `data/store/`: mutable financial facts and cache state, including watchlists, instrument metadata, ledger entries, quotes, bars, portfolio snapshots, trading controls, and saved backtest indexes.
+- `reports/`: human-readable generated artifacts such as backtest JSON reports and data reconciliation outputs. Reports are runtime evidence, not source code.
 
 Initial screens do not seed portfolio assets, trades, or fund names. Effective
 portfolio data comes from the local database or explicit private runtime
@@ -103,6 +109,20 @@ checks can query them. Each saved backtest also writes a human-readable JSON
 artifact under `reports/backtest/backtest-result-<id>.json` by default. Set
 `KARKINOS_BACKTEST_REPORT_DIR` to place those local report files elsewhere.
 The report directory is runtime data and should stay out of git.
+
+Historical OHLCV market bars are stored in the local SQLite table
+`data/store/meta.db.market_bars`; Parquet files under `data/store/bars/` are a
+local mirror for compatibility and inspection. To import existing Parquet
+mirrors into SQLite without fetching remote data, run
+`uv run python scripts/sync_market_bars_to_db.py`. Cached data is auditable by
+provider, fetch time, range, row count, and diagnostics, but it is not a
+guarantee that every provider or public website will show identical values;
+differences can come from adjustment mode, delayed fund NAVs, suspended
+sessions, stale source data, or provider corrections.
+For an explicit one-symbol reconciliation report, run for example:
+`uv run python scripts/verify_market_bars.py --symbol 603659 --start 2026-06-12 --end 2026-06-15`.
+The verifier fetches provider bars for comparison and returns JSON differences;
+it does not overwrite the local cache.
 
 In `dev` mode the script also starts Vite at `http://localhost:5173` for hot-reload frontend editing. Treat `5173` as a developer-only URL; use `8000` for product-like demos and customer flow checks.
 

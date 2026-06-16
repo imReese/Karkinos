@@ -3538,7 +3538,7 @@ def test_market_watchlist_add_and_remove(monkeypatch):
     assert json.loads(config_path.read_text(encoding="utf-8")) == original_config
 
 
-def test_update_data_source_settings_does_not_persist_business_state(monkeypatch):
+def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
     from server.bootstrap import resolve_config_path
     from server.routes import settings as settings_routes
 
@@ -3580,7 +3580,12 @@ def test_update_data_source_settings_does_not_persist_business_state(monkeypatch
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
     config_path = resolve_config_path()
-    original_config = {"data_source": "akshare", "sentinel": "do-not-overwrite"}
+    original_config = {
+        "data_source": "akshare",
+        "tushare_token": "old-token",
+        "assets": [{"symbol": "600519", "asset_class": "stock"}],
+        "sentinel": "do-not-overwrite",
+    }
     config_path.write_text(json.dumps(original_config), encoding="utf-8")
 
     response = asyncio.run(
@@ -3606,7 +3611,90 @@ def test_update_data_source_settings_does_not_persist_business_state(monkeypatch
         },
         {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
     ]
-    assert json.loads(config_path.read_text(encoding="utf-8")) == original_config
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert persisted == {
+        "data_source": "tushare",
+        "tushare_token": "token-1234",
+        "live_poll_interval": 120,
+        "assets": [{"symbol": "600519", "asset_class": "stock"}],
+        "sentinel": "do-not-overwrite",
+    }
+
+
+def test_update_settings_persists_account_commission_without_overwriting_token(
+    monkeypatch,
+):
+    from server.bootstrap import resolve_config_path
+    from server.routes import settings as settings_routes
+
+    router = settings_routes.create_router()
+    update_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/settings"
+        and "PUT" in route.methods
+    )
+
+    config = SimpleNamespace(
+        host="0.0.0.0",
+        port=8000,
+        live_auto_start=False,
+        initial_cash=Decimal("4000"),
+        start_date="2025-01-02",
+        end_date="2026-04-18",
+        assets=[],
+        strategy="dual_ma",
+        short_period=5,
+        long_period=20,
+        data_source="akshare",
+        tushare_token="secret-token",
+        notification={"type": "console"},
+        live_poll_interval=60,
+        account_commission_rate=Decimal("0.0001"),
+        account_min_commission=Decimal("5"),
+    )
+    fake_state = SimpleNamespace(config=config)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    config_path = resolve_config_path()
+    original_config = {
+        "data_source": "akshare",
+        "tushare_token": "secret-token",
+        "sentinel": "preserve-me",
+    }
+    config_path.write_text(json.dumps(original_config), encoding="utf-8")
+
+    response = asyncio.run(
+        update_route.endpoint(
+            settings_routes.SettingsResponse(
+                host="0.0.0.0",
+                port=8000,
+                live_auto_start=False,
+                initial_cash=4000,
+                start_date="2025-01-02",
+                end_date="2026-04-18",
+                assets=[],
+                strategy="dual_ma",
+                short_period=5,
+                long_period=20,
+                data_source="akshare",
+                tushare_token="****oken",
+                notification={"type": "console"},
+                live_poll_interval=60,
+                account_commission_rate=0.00015,
+                account_min_commission=5.0,
+            )
+        )
+    )
+
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert response.account_commission_rate == pytest.approx(0.00015)
+    assert persisted["account_commission_rate"] == 0.00015
+    assert persisted["account_min_commission"] == 5.0
+    assert persisted["data_source"] == "akshare"
+    assert persisted["tushare_token"] == "secret-token"
+    assert persisted["sentinel"] == "preserve-me"
 
 
 def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
