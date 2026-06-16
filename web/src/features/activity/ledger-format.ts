@@ -109,14 +109,15 @@ function isTechnicalNoteSegment(segment: string) {
     /(^|\s)[a-z][a-z0-9_]*=/i.test(segment) ||
     /auto-confirmed/i.test(segment) ||
     /confirmed_(trade_date|nav|quantity)/i.test(segment) ||
-    /gross_amount/i.test(segment)
+    /gross_amount/i.test(segment) ||
+    /^RMB cash (deposit|withdrawal) recorded from user request$/i.test(segment)
   );
 }
 
 function stripLedgerNotePrefix(segment: string) {
   return segment
     .replace(/^用户记录[:：]\s*/, '')
-    .replace(/^手工录入(?:持仓|基金申购)[:：]\s*/, '');
+    .replace(/^手工录入(?:持仓|基金申购|现金入金|现金出金)[:：]\s*/, '');
 }
 
 function looksLikeInstrumentNameOnly(segment: string) {

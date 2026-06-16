@@ -59,6 +59,7 @@ import {
 import {
   calculateLedgerEntryAmount,
   formatLedgerInstrumentLabel,
+  formatLedgerPublicNote,
 } from '../features/activity/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
@@ -2511,9 +2512,12 @@ function ExplainabilityWorkspace({
           detail: string;
         }>;
         recent_drivers: Array<{
+          kind?: string;
           title: string;
           detail: string;
           timestamp: string;
+          symbol?: string | null;
+          amount?: number | null;
         }>;
         positions: Array<{
           symbol: string;
@@ -2535,7 +2539,10 @@ function ExplainabilityWorkspace({
             impact_source: string;
             kind: string;
             title: string;
+            detail?: string;
             timestamp: string;
+            symbol?: string | null;
+            amount?: number | null;
           }>;
         }>;
       }
@@ -2564,7 +2571,10 @@ function ExplainabilityWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+      <div
+        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]"
+        data-testid="risk-explainability-top-grid"
+      >
         <div className="app-panel rounded-2xl p-4 sm:p-5">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {title}
@@ -2607,7 +2617,10 @@ function ExplainabilityWorkspace({
             <div className="app-kicker text-xs uppercase tracking-[0.18em]">
               {stateLabelRecent}
             </div>
-            <div className="mt-4 grid gap-3">
+            <div
+              className="mt-4 grid max-h-[620px] gap-3 overflow-y-auto pr-1"
+              data-testid="risk-recent-impact-list"
+            >
               {(explainability?.recent_drivers?.length
                 ? explainability.recent_drivers
                 : [{ title: emptyLabel, detail: '', timestamp: '' }]
@@ -2616,13 +2629,32 @@ function ExplainabilityWorkspace({
                   key={`${item.title}-${item.timestamp}`}
                   className="app-panel-strong rounded-2xl px-4 py-4"
                 >
-                  <div className="text-sm font-semibold">{item.title}</div>
-                  {item.detail ? (
-                    <div className="app-muted mt-2 text-sm">{item.detail}</div>
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0 text-sm font-semibold leading-6">
+                      {item.title}
+                    </div>
+                    {typeof item.amount === 'number' ? (
+                      <div
+                        className={`shrink-0 text-right text-sm font-semibold tabular-nums ${
+                          item.amount < 0
+                            ? 'text-rose-300'
+                            : item.amount > 0
+                              ? 'text-emerald-300'
+                              : 'app-muted'
+                        }`}
+                      >
+                        {formatCurrency(item.amount)}
+                      </div>
+                    ) : null}
+                  </div>
+                  {formatExplainabilityPublicDetail(item) ? (
+                    <div className="app-muted mt-2 break-words text-sm leading-6">
+                      {formatExplainabilityPublicDetail(item)}
+                    </div>
                   ) : null}
                   {item.timestamp ? (
-                    <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
-                      {item.timestamp}
+                    <div className="app-kicker mt-3 text-[11px] tracking-[0.08em]">
+                      {formatAuditTimestamp(item.timestamp)}
                     </div>
                   ) : null}
                 </div>
@@ -2653,8 +2685,8 @@ function ExplainabilityWorkspace({
                     {formatCurrency(item.unrealized_pnl)}
                   </div>
                   {item.last_activity_at ? (
-                    <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
-                      {item.last_activity_at}
+                    <div className="app-kicker mt-3 text-[11px] tracking-[0.08em]">
+                      {formatAuditTimestamp(item.last_activity_at)}
                     </div>
                   ) : null}
                 </div>
@@ -2713,11 +2745,19 @@ function ExplainabilityWorkspace({
                       {point.events.map((event) => (
                         <div
                           key={`${event.timestamp}-${event.title}`}
-                          className="app-kicker text-[11px] uppercase tracking-[0.16em]"
+                          className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2"
                         >
-                          {event.title} · {getEventKindLabel(copy, event.kind)}{' '}
-                          · {getEventCategoryLabel(copy, event.category)} ·{' '}
-                          {getImpactSourceLabel(copy, event.impact_source)}
+                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                            {event.title} ·{' '}
+                            {getEventKindLabel(copy, event.kind)} ·{' '}
+                            {getEventCategoryLabel(copy, event.category)} ·{' '}
+                            {getImpactSourceLabel(copy, event.impact_source)}
+                          </div>
+                          {formatExplainabilityPublicDetail(event) ? (
+                            <div className="app-muted mt-1 text-xs leading-5">
+                              {formatExplainabilityPublicDetail(event)}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -3776,6 +3816,74 @@ function formatPercent(value: number) {
 
 function formatCurrency(value: number) {
   return formatCurrencyValue(value);
+}
+
+function formatAuditTimestamp(timestamp: string) {
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp;
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(parsed);
+}
+
+type ExplainabilityPublicDetailInput = {
+  kind?: string;
+  detail?: string;
+  timestamp?: string;
+  symbol?: string | null;
+  amount?: number | null;
+};
+
+function formatExplainabilityPublicDetail(
+  item: ExplainabilityPublicDetailInput,
+) {
+  const entry: LedgerEntry = {
+    id: 0,
+    entry_type: item.kind ?? 'other',
+    timestamp: item.timestamp ?? '',
+    amount: item.amount ?? null,
+    symbol: item.symbol ?? null,
+    display_name: null,
+    direction:
+      item.kind === 'trade_buy'
+        ? 'buy'
+        : item.kind === 'trade_sell'
+          ? 'sell'
+          : null,
+    quantity: null,
+    price: null,
+    commission: 0,
+    asset_class: 'other',
+    note: item.detail ?? '',
+    source: 'explainability',
+    source_ref: null,
+    created_at: null,
+  };
+  const publicNote = formatLedgerPublicNote(entry);
+  if (publicNote) {
+    return publicNote;
+  }
+
+  switch (item.kind) {
+    case 'cash_deposit':
+      return '现金流入组合。';
+    case 'cash_withdrawal':
+      return '现金流出组合。';
+    case 'dividend':
+      return '持仓现金收入。';
+    case 'manual_adjustment':
+      return '手工账本调整。';
+    default:
+      return item.detail || null;
+  }
 }
 
 function ReturnCalendarGrid({

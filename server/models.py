@@ -567,6 +567,10 @@ class EquitySeriesPoint(BaseModel):
     others: float
     cash: float
     unrealized_pnl: float | None = None
+    total_daily_change: float | None = None
+    stocks_daily_change: float | None = None
+    funds_daily_change: float | None = None
+    others_daily_change: float | None = None
     quote_status: str = "live"
     missing_price_symbols: list[str] = []
 

@@ -51,6 +51,18 @@ describe('ledger formatter', () => {
     ).toBe('initial allocation');
   });
 
+  test('suppresses legacy internal cash-deposit notes', () => {
+    expect(
+      formatLedgerPublicNote({
+        ...yutongBuy,
+        entry_type: 'cash_deposit',
+        symbol: null,
+        display_name: null,
+        note: 'RMB cash deposit recorded from user request',
+      }),
+    ).toBeNull();
+  });
+
   test('summarizes cash impact consistently for buy trades', () => {
     expect(summarizeLedgerEntry(yutongBuy)).toMatchObject({
       kind: 'trade_buy',

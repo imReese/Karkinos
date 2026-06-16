@@ -110,6 +110,9 @@ const intradayPoints: EquitySeriesPoint[] = [
     others: 0,
     cash: 76000,
     unrealized_pnl: 0,
+    stocks_daily_change: 0,
+    funds_daily_change: 0,
+    total_daily_change: 0,
   },
   {
     timestamp: '2026-04-18T09:35:00+08:00',
@@ -119,6 +122,9 @@ const intradayPoints: EquitySeriesPoint[] = [
     others: 0,
     cash: 76000,
     unrealized_pnl: 150,
+    stocks_daily_change: 50,
+    funds_daily_change: 100,
+    total_daily_change: 150,
   },
   {
     timestamp: '2026-04-18T09:40:00+08:00',
@@ -128,6 +134,9 @@ const intradayPoints: EquitySeriesPoint[] = [
     others: 0,
     cash: 76000,
     unrealized_pnl: 300,
+    stocks_daily_change: 100,
+    funds_daily_change: 200,
+    total_daily_change: 300,
   },
 ];
 
@@ -492,7 +501,7 @@ test('does not show portfolio unrealized pnl as cash-line pnl', async () => {
   });
 });
 
-test('shows category daily change and portfolio context for a single stock or fund line', async () => {
+test('shows category point-in-time change and portfolio context for a single stock or fund line', async () => {
   const { container } = renderCard({
     cardPoints: [
       {
@@ -503,6 +512,9 @@ test('shows category daily change and portfolio context for a single stock or fu
         others: 0,
         cash: 5800,
         unrealized_pnl: 100,
+        stocks_daily_change: 0,
+        funds_daily_change: 0,
+        total_daily_change: 0,
         quote_status: 'live',
       },
       {
@@ -513,6 +525,9 @@ test('shows category daily change and portfolio context for a single stock or fu
         others: 0,
         cash: 5800,
         unrealized_pnl: 230,
+        stocks_daily_change: 98,
+        funds_daily_change: 10,
+        total_daily_change: 108,
         quote_status: 'live',
       },
     ],
@@ -533,8 +548,9 @@ test('shows category daily change and portfolio context for a single stock or fu
   await waitFor(() => {
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
     expect(tooltip?.textContent).toContain('Stocks');
-    expect(tooltip?.textContent).toContain('Stocks daily change');
-    expect(tooltip?.textContent).toContain('CN¥120');
+    expect(tooltip?.textContent).toContain('Stocks change at this point');
+    expect(tooltip?.textContent).toContain('CN¥98');
+    expect(tooltip?.textContent).not.toContain('CN¥120');
     expect(tooltip?.textContent).toContain('Portfolio total');
     expect(tooltip?.textContent).toContain('CN¥15,530');
     expect(tooltip?.textContent).toContain('Portfolio unrealized P/L');
@@ -560,7 +576,7 @@ test('shows intraday category change against the session baseline', async () => 
 
   await waitFor(() => {
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
-    expect(tooltip?.textContent).toContain('Stocks daily change');
+    expect(tooltip?.textContent).toContain('Stocks change at this point');
     expect(tooltip?.textContent).toContain('CN¥100');
   });
 });
@@ -587,6 +603,26 @@ test('shows the highest visible value for every selected equity series in the ac
   await user.click(await screen.findByRole('button', { name: 'Stocks' }));
 
   expect(screen.queryByTestId('equity-series-high-marker-stocks')).toBeNull();
+});
+
+test('keeps high point dots but makes high labels collapse on chart hover', async () => {
+  const { container } = renderCard({ cardPoints: updatedPoints });
+
+  const chartFrame = await screen.findByTestId('equity-chart-frame');
+  expect(chartFrame.className).toContain('group/equity-chart');
+
+  const marker = await screen.findByTestId('equity-series-high-marker-total');
+  expect(within(marker).getByText('Total')).toBeTruthy();
+
+  const markerGroups = Array.from(marker.querySelectorAll('g'));
+  expect(
+    markerGroups.some((group) =>
+      group
+        .getAttribute('class')
+        ?.includes('group-hover/equity-chart:opacity-0'),
+    ),
+  ).toBe(true);
+  expect(container.querySelectorAll('circle').length).toBeGreaterThan(0);
 });
 
 test('updates the active range and notifies the parent query layer', async () => {

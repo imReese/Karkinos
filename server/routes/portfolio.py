@@ -419,33 +419,61 @@ def _build_activity_items(
     return items
 
 
-def _build_recent_drivers(entries: list[dict]) -> list[ExplainabilityDriver]:
+def _ledger_entry_display_label(state, entry: dict) -> str | None:
+    symbol = entry.get("symbol")
+    if not symbol:
+        return None
+    symbol_text = str(symbol)
+    display_name = _resolve_display_name(
+        state,
+        symbol_text,
+        fallback=entry.get("display_name") or symbol_text,
+    )
+    if display_name and display_name != symbol_text:
+        return f"{display_name} {symbol_text}"
+    return symbol_text
+
+
+def _build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDriver]:
     drivers: list[ExplainabilityDriver] = []
     for entry in entries:
         entry_type = entry.get("entry_type")
         symbol = entry.get("symbol")
+        instrument_label = _ledger_entry_display_label(state, entry) or symbol
         amount = entry.get("amount")
         title = entry_type or "ledger"
-        detail = entry.get("note") or "Ledger activity"
+        detail = entry.get("note") or "账本活动。"
 
         if entry_type == "cash_deposit":
-            title = "Cash deposited"
-            detail = entry.get("note") or "Capital added to the portfolio."
+            title = "资金转入"
+            detail = entry.get("note") or "现金流入组合。"
         elif entry_type == "cash_withdrawal":
-            title = "Cash withdrawn"
-            detail = entry.get("note") or "Capital removed from the portfolio."
+            title = "资金转出"
+            detail = entry.get("note") or "现金流出组合。"
         elif entry_type == "trade_buy":
-            title = f"Bought {symbol}"
-            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+            quantity = float(entry.get("quantity") or 0.0)
+            price = float(entry.get("price") or 0.0)
+            commission = float(entry.get("commission") or 0.0)
+            title = f"买入 {instrument_label}"
+            detail = (
+                f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
+            )
+            amount = -(_ledger_entry_notional(entry) + commission)
         elif entry_type == "trade_sell":
-            title = f"Sold {symbol}"
-            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+            quantity = float(entry.get("quantity") or 0.0)
+            price = float(entry.get("price") or 0.0)
+            commission = float(entry.get("commission") or 0.0)
+            title = f"卖出 {instrument_label}"
+            detail = (
+                f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
+            )
+            amount = _ledger_entry_notional(entry) - commission
         elif entry_type == "dividend":
-            title = f"Dividend from {symbol}"
-            detail = entry.get("note") or "Cash income recorded from holdings."
+            title = f"分红 {instrument_label}"
+            detail = entry.get("note") or "持仓现金收入。"
         elif entry_type == "manual_adjustment":
-            title = "Manual adjustment"
-            detail = entry.get("note") or "Manual valuation or position adjustment."
+            title = "手工调整"
+            detail = entry.get("note") or "手工估值或持仓调整。"
 
         drivers.append(
             ExplainabilityDriver(
@@ -514,6 +542,7 @@ def _build_timeline(
     equity_curve: list[EquityPoint],
     entries: list[dict],
     *,
+    state=None,
     event_kind: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
@@ -542,45 +571,48 @@ def _build_timeline(
         if event_kind and entry_type != event_kind:
             continue
         symbol = entry.get("symbol")
+        instrument_label = _ledger_entry_display_label(state, entry) or symbol
         amount = float(entry.get("amount") or 0.0)
         asset_class = _normalize_asset_class(entry.get("asset_class"))
         category = "portfolio"
         impact_source = "market"
 
         title = entry_type.replace("_", " ").title()
-        detail = entry.get("note") or "Ledger activity"
+        detail = entry.get("note") or "账本活动。"
         if entry_type == "cash_deposit":
-            title = "Cash deposited"
-            detail = entry.get("note") or "Capital added to the portfolio."
+            title = "资金转入"
+            detail = entry.get("note") or "现金流入组合。"
             external_flow_by_date[event_date] += amount
             external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "capital"
             impact_source = "external"
         elif entry_type == "cash_withdrawal":
-            title = "Cash withdrawn"
-            detail = entry.get("note") or "Capital removed from the portfolio."
+            title = "资金转出"
+            detail = entry.get("note") or "现金流出组合。"
             external_flow_by_date[event_date] -= abs(amount)
             external_flow_breakdown_by_date[event_date][entry_type] -= abs(amount)
             amount = -abs(amount)
             category = "capital"
             impact_source = "external"
         elif entry_type == "dividend":
-            title = f"Dividend from {symbol}"
-            detail = entry.get("note") or "Cash income recorded from holdings."
+            title = f"分红 {instrument_label}"
+            detail = entry.get("note") or "持仓现金收入。"
             external_flow_by_date[event_date] += amount
             external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "income"
             impact_source = "cash"
         elif entry_type == "manual_adjustment":
-            title = "Manual adjustment"
-            detail = entry.get("note") or "Manual ledger override applied."
+            title = "手工调整"
+            detail = entry.get("note") or "手工账本覆盖。"
             external_flow_by_date[event_date] += amount
             external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "override"
             impact_source = "manual"
         elif entry_type == "trade_buy":
-            title = f"Bought {symbol}"
-            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+            quantity = float(entry.get("quantity") or 0.0)
+            price = float(entry.get("price") or 0.0)
+            title = f"买入 {instrument_label}"
+            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f}"
             amount = None
             category = "trade"
             impact_source = "positioning"
@@ -588,8 +620,10 @@ def _build_timeline(
                 entry
             )
         elif entry_type == "trade_sell":
-            title = f"Sold {symbol}"
-            detail = f"{entry.get('quantity') or 0:g} @ {entry.get('price') or 0:g}"
+            quantity = float(entry.get("quantity") or 0.0)
+            price = float(entry.get("price") or 0.0)
+            title = f"卖出 {instrument_label}"
+            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f}"
             amount = None
             category = "trade"
             impact_source = "positioning"
@@ -1486,6 +1520,62 @@ def _same_day_buy_cost_basis(
     return total_cost / total_quantity, total_cost
 
 
+def _same_day_buy_lots(
+    state,
+    *,
+    symbol: str,
+    trade_day: date,
+) -> list[dict[str, float | datetime]]:
+    db = state.db
+    if db is None or not hasattr(db, "get_ledger_entries_sync"):
+        return []
+
+    lots: list[dict[str, float | datetime]] = []
+    batch_size = 500
+    offset = 0
+    while True:
+        entries = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not entries:
+            break
+        for entry in entries:
+            if (
+                str(entry.get("symbol") or "") != symbol
+                or str(entry.get("entry_type") or "").lower() != "trade_buy"
+                or _ledger_entry_shanghai_date(entry) != trade_day
+            ):
+                continue
+            quantity = entry.get("quantity")
+            price = entry.get("price")
+            if quantity in {None, ""} or price in {None, ""}:
+                continue
+            quantity_value = float(quantity)
+            if quantity_value <= 0:
+                continue
+            timestamp = _parse_quote_timestamp(entry.get("timestamp"))
+            if timestamp is None:
+                continue
+            amount = entry.get("amount")
+            trade_cost = (
+                float(amount)
+                if amount not in {None, ""}
+                else quantity_value * float(price)
+            )
+            trade_cost += float(entry.get("commission") or 0.0)
+            lots.append(
+                {
+                    "timestamp": timestamp.astimezone(_SH_TZ),
+                    "quantity": quantity_value,
+                    "total_cost": trade_cost,
+                    "avg_cost": trade_cost / quantity_value,
+                }
+            )
+        if len(entries) < batch_size:
+            break
+        offset += batch_size
+
+    return sorted(lots, key=lambda lot: lot["timestamp"])
+
+
 def _build_live_holdings_response(state) -> LiveHoldingsResponse:
     portfolio, instruments = _resolve_projection_sources(state)
     portfolio, instruments, _ = _hydrate_missing_position_quotes(
@@ -1756,9 +1846,51 @@ def _normalize_intraday_timestamp(timestamp, tzinfo) -> datetime | None:
     return timestamp.astimezone(tzinfo)
 
 
+def _load_local_intraday_quote_points(
+    db,
+    *,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+) -> list[tuple[datetime, float]]:
+    get_snapshots = getattr(db, "get_recent_quote_snapshots_sync", None)
+    if not callable(get_snapshots):
+        return []
+
+    try:
+        snapshots = get_snapshots(symbol, limit=1000)
+    except Exception:
+        logger.warning(
+            "Failed to load local intraday quote snapshots for %s",
+            symbol,
+            exc_info=True,
+        )
+        return []
+
+    points: list[tuple[datetime, float]] = []
+    for snapshot in snapshots:
+        quote_status = str(snapshot.get("quote_status") or "").strip().lower()
+        if quote_status in {"missing", "error"}:
+            continue
+        timestamp = _normalize_intraday_timestamp(
+            snapshot.get("timestamp"),
+            start.tzinfo,
+        )
+        price = snapshot.get("price")
+        if timestamp is None or price in {None, ""}:
+            continue
+        if timestamp.date() != start.date() or timestamp < start or timestamp > end:
+            continue
+        points.append((timestamp, float(price)))
+
+    points.sort(key=lambda item: item[0])
+    return points
+
+
 def _load_intraday_price_points(
     source,
     *,
+    db,
     symbol: str,
     asset_class: str,
     start: datetime,
@@ -1766,27 +1898,35 @@ def _load_intraday_price_points(
     latest_quote: dict | None,
 ) -> tuple[list[tuple[datetime, float]], bool]:
     mapped_asset_class = _INTRADAY_ASSET_CLASS_MAP.get(asset_class)
-    if source is None or mapped_asset_class is None:
-        return [], False
+    points: list[tuple[datetime, float]] = []
+    local_points = _load_local_intraday_quote_points(
+        db,
+        symbol=symbol,
+        start=start,
+        end=end,
+    )
+    points.extend(local_points)
 
-    try:
-        bars = source.fetch_bars(
-            Symbol(symbol),
-            start,
-            end,
-            frequency=BarFrequency.MIN_5,
-            asset_class=mapped_asset_class,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to load intraday bars for %s (%s)",
-            symbol,
-            asset_class,
-            exc_info=True,
-        )
+    if len(local_points) < 2 and source is not None and mapped_asset_class is not None:
+        try:
+            bars = source.fetch_bars(
+                Symbol(symbol),
+                start,
+                end,
+                frequency=BarFrequency.MIN_5,
+                asset_class=mapped_asset_class,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to load intraday bars for %s (%s)",
+                symbol,
+                asset_class,
+                exc_info=True,
+            )
+            bars = None
+    else:
         bars = None
 
-    points: list[tuple[datetime, float]] = []
     source_points: list[tuple[datetime, float]] = []
     if (
         bars is not None
@@ -1824,7 +1964,7 @@ def _load_intraday_price_points(
             deduped[-1] = (timestamp, close)
             continue
         deduped.append((timestamp, close))
-    return deduped, bool(source_points)
+    return deduped, bool(source_points or local_points)
 
 
 def _build_intraday_equity_curve_series(
@@ -1882,17 +2022,31 @@ def _build_intraday_equity_curve_series(
             if latest_timestamp is not None
             else get_shanghai_now().date()
         )
-        intraday_cost_price, _ = _same_day_buy_cost_basis(
+        same_day_buy_lots = _same_day_buy_lots(
             state,
             symbol=symbol,
             trade_day=trade_day,
-            current_quantity=quantity,
+        )
+        same_day_buy_quantity = min(
+            quantity,
+            sum(float(lot["quantity"]) for lot in same_day_buy_lots),
+        )
+        overnight_quantity = max(quantity - same_day_buy_quantity, 0.0)
+        intraday_total_cost = sum(
+            float(lot["total_cost"]) for lot in same_day_buy_lots
+        )
+        intraday_cost_price = (
+            intraday_total_cost / same_day_buy_quantity
+            if same_day_buy_quantity > 0
+            else None
         )
         if intraday_cost_price is not None:
             baseline_price = intraday_cost_price
+        overnight_baseline_value = overnight_quantity * float(baseline_price)
 
         price_points, has_source_intraday_prices = _load_intraday_price_points(
             intraday_source,
+            db=state.db,
             symbol=symbol,
             asset_class=asset_class,
             start=session_start,
@@ -1904,33 +2058,52 @@ def _build_intraday_equity_curve_series(
             {
                 "asset_class": asset_class,
                 "quantity": quantity,
+                "overnight_quantity": overnight_quantity,
                 "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
                 "baseline_price": float(baseline_price),
+                "overnight_baseline_value": overnight_baseline_value,
+                "same_day_buy_lots": same_day_buy_lots,
                 "price_points": price_points,
             }
         )
 
     sparse_quote_ticks = {session_start}
-    if not has_intraday_prices:
-        for holding in holdings:
+    trade_ticks = set()
+    for holding in holdings:
+        for lot in holding["same_day_buy_lots"]:
+            lot_timestamp = lot["timestamp"]
+            if isinstance(lot_timestamp, datetime):
+                if session_start <= lot_timestamp <= session_close:
+                    trade_ticks.add(lot_timestamp)
+                    sparse_quote_ticks.add(lot_timestamp)
+        if not has_intraday_prices:
             for point_timestamp, _ in holding["price_points"]:
                 if session_start <= point_timestamp <= session_close:
                     sparse_quote_ticks.add(point_timestamp)
-    ticks = (
-        live_ticks
-        if has_intraday_prices
-        else sorted(sparse_quote_ticks)
-        if len(sparse_quote_ticks) > 1
-        else full_session_ticks
-    )
-    cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
+    if has_intraday_prices:
+        ticks = sorted(set(live_ticks) | trade_ticks)
+    elif len(sparse_quote_ticks) > 1:
+        ticks = sorted(sparse_quote_ticks)
+    else:
+        ticks = full_session_ticks
+    current_cash = float(getattr(portfolio, "cash", 0.0) or 0.0)
     series: list[dict] = []
 
     for tick in ticks:
+        pending_trade_cost = sum(
+            float(lot["total_cost"])
+            for holding in holdings
+            for lot in holding["same_day_buy_lots"]
+            if isinstance(lot["timestamp"], datetime) and lot["timestamp"] > tick
+        )
+        cash = current_cash + pending_trade_cost
         stocks_value = 0.0
         funds_value = 0.0
         others_value = 0.0
         unrealized_pnl = 0.0
+        stocks_daily_change = 0.0
+        funds_daily_change = 0.0
+        others_daily_change = 0.0
 
         for holding in holdings:
             price = holding["baseline_price"]
@@ -1940,18 +2113,43 @@ def _build_intraday_equity_curve_series(
                     continue
                 break
 
-            position_value = holding["quantity"] * price
-            cost_basis = holding["quantity"] * holding["avg_cost"]
+            active_same_day_quantity = sum(
+                float(lot["quantity"])
+                for lot in holding["same_day_buy_lots"]
+                if isinstance(lot["timestamp"], datetime) and lot["timestamp"] <= tick
+            )
+            active_quantity = min(
+                holding["quantity"],
+                holding["overnight_quantity"] + active_same_day_quantity,
+            )
+            position_value = active_quantity * price
+            cost_basis = active_quantity * holding["avg_cost"]
             unrealized_pnl += position_value - cost_basis
+            active_same_day_baseline_value = sum(
+                float(lot["total_cost"])
+                for lot in holding["same_day_buy_lots"]
+                if isinstance(lot["timestamp"], datetime) and lot["timestamp"] <= tick
+            )
+            baseline_value = (
+                holding["overnight_baseline_value"]
+                + active_same_day_baseline_value
+            )
+            daily_change = position_value - baseline_value
 
             if holding["asset_class"] == "stock":
                 stocks_value += position_value
+                stocks_daily_change += daily_change
             elif holding["asset_class"] in {"fund", "etf"}:
                 funds_value += position_value
+                funds_daily_change += daily_change
             else:
                 others_value += position_value
+                others_daily_change += daily_change
 
         total = cash + stocks_value + funds_value + others_value
+        total_daily_change = (
+            stocks_daily_change + funds_daily_change + others_daily_change
+        )
         series.append(
             {
                 "timestamp": tick,
@@ -1961,6 +2159,10 @@ def _build_intraday_equity_curve_series(
                 "others": others_value,
                 "cash": cash,
                 "unrealized_pnl": unrealized_pnl,
+                "total_daily_change": total_daily_change,
+                "stocks_daily_change": stocks_daily_change,
+                "funds_daily_change": funds_daily_change,
+                "others_daily_change": others_daily_change,
             }
         )
 
@@ -1976,6 +2178,10 @@ def _build_intraday_equity_curve_series(
             "others": 0.0,
             "cash": cash,
             "unrealized_pnl": 0.0,
+            "total_daily_change": 0.0,
+            "stocks_daily_change": 0.0,
+            "funds_daily_change": 0.0,
+            "others_daily_change": 0.0,
         }
         for tick in full_session_ticks
     ]
@@ -2547,7 +2753,7 @@ def _synthetic_intraday_equity_series_from_current_quotes(
         quote_trade_day = (
             quote_timestamp.date() if quote_timestamp is not None else trade_day
         )
-        intraday_cost_price, _ = _same_day_buy_cost_basis(
+        intraday_cost_price, intraday_total_cost = _same_day_buy_cost_basis(
             state,
             symbol=symbol,
             trade_day=quote_trade_day,
@@ -2574,6 +2780,11 @@ def _synthetic_intraday_equity_series_from_current_quotes(
                 "quantity": quantity,
                 "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
                 "baseline_price": float(baseline_price),
+                "baseline_value": (
+                    float(intraday_total_cost)
+                    if intraday_total_cost is not None
+                    else quantity * float(baseline_price)
+                ),
                 "latest_price": latest_price_value,
                 "quote_timestamp": quote_timestamp,
             }
@@ -2591,6 +2802,9 @@ def _synthetic_intraday_equity_series_from_current_quotes(
         funds_value = 0.0
         others_value = 0.0
         unrealized_pnl = 0.0
+        stocks_daily_change = 0.0
+        funds_daily_change = 0.0
+        others_daily_change = 0.0
         for holding in holdings:
             price = holding["baseline_price"]
             quote_timestamp = holding["quote_timestamp"]
@@ -2604,14 +2818,21 @@ def _synthetic_intraday_equity_series_from_current_quotes(
             position_value = holding["quantity"] * price
             cost_basis = holding["quantity"] * holding["avg_cost"]
             unrealized_pnl += position_value - cost_basis
+            daily_change = position_value - holding["baseline_value"]
 
             if holding["asset_class"] == "stock":
                 stocks_value += position_value
+                stocks_daily_change += daily_change
             elif holding["asset_class"] in {"fund", "etf"}:
                 funds_value += position_value
+                funds_daily_change += daily_change
             else:
                 others_value += position_value
+                others_daily_change += daily_change
 
+        total_daily_change = (
+            stocks_daily_change + funds_daily_change + others_daily_change
+        )
         points.append(
             EquitySeriesPoint(
                 timestamp=tick.isoformat(),
@@ -2621,6 +2842,10 @@ def _synthetic_intraday_equity_series_from_current_quotes(
                 others=others_value,
                 cash=cash,
                 unrealized_pnl=unrealized_pnl,
+                total_daily_change=total_daily_change,
+                stocks_daily_change=stocks_daily_change,
+                funds_daily_change=funds_daily_change,
+                others_daily_change=others_daily_change,
                 quote_status=quote_status,
             )
         )
@@ -2643,6 +2868,26 @@ def _series_point_from_intraday(
         others=float(point["others"]),
         cash=float(point["cash"]),
         unrealized_pnl=float(point["unrealized_pnl"]),
+        total_daily_change=(
+            None
+            if point.get("total_daily_change") is None
+            else float(point["total_daily_change"])
+        ),
+        stocks_daily_change=(
+            None
+            if point.get("stocks_daily_change") is None
+            else float(point["stocks_daily_change"])
+        ),
+        funds_daily_change=(
+            None
+            if point.get("funds_daily_change") is None
+            else float(point["funds_daily_change"])
+        ),
+        others_daily_change=(
+            None
+            if point.get("others_daily_change") is None
+            else float(point["others_daily_change"])
+        ),
         quote_status=quote_status,
     )
 
@@ -3150,11 +3395,12 @@ def create_router() -> APIRouter:
 
         return ExplainabilityResponse(
             equity_bridge=_build_equity_bridge(snapshot, summary),
-            recent_drivers=_build_recent_drivers(entries),
+            recent_drivers=_build_recent_drivers(state, entries),
             positions=_build_position_drivers(snapshot, entries),
             timeline=_build_timeline(
                 equity_curve,
                 entries,
+                state=state,
                 event_kind=event_kind,
                 from_date=from_date,
                 to_date=to_date,
