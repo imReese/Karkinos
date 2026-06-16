@@ -3,6 +3,10 @@ import { useMemo } from 'react';
 import { useAccountOverviewQuery } from '../../account/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
+  calculateLedgerEntryAmount,
+  formatLedgerPublicNote,
+} from '../../activity/ledger-format';
+import {
   useMarketDataHealthQuery,
   useKlineQuery,
   useRefreshMarketQuotesMutation,
@@ -45,6 +49,12 @@ function safeDecodeSymbol(symbol: string) {
 }
 
 function resolveQuotePrice(position: Position, livePrice: number | null) {
+  if (
+    typeof position.latest_price === 'number' &&
+    Number.isFinite(position.latest_price)
+  ) {
+    return position.latest_price;
+  }
   if (typeof livePrice === 'number' && Number.isFinite(livePrice)) {
     return livePrice;
   }
@@ -70,21 +80,6 @@ function formatAge(seconds: number | null | undefined) {
     return `${hours}h`;
   }
   return `${Math.round(hours / 24)}d`;
-}
-
-function entryAmount(entry: LedgerEntry) {
-  if (typeof entry.amount === 'number' && Number.isFinite(entry.amount)) {
-    return entry.amount;
-  }
-  if (
-    typeof entry.quantity === 'number' &&
-    Number.isFinite(entry.quantity) &&
-    typeof entry.price === 'number' &&
-    Number.isFinite(entry.price)
-  ) {
-    return entry.quantity * entry.price;
-  }
-  return null;
 }
 
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
@@ -244,7 +239,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
   const valuationMetrics: DetailMetric[] = [
     { label: labels.costBasis, value: formatCurrency(costBasis) },
-    { label: labels.avgCost, value: formatCurrency(position.avg_cost) },
+    { label: labels.avgCost, value: formatPrice(position.avg_cost) },
     { label: labels.quotePrice, value: formatPrice(quotePrice) },
     { label: labels.realizedPnl, value: formatCurrency(position.realized_pnl) },
     {
@@ -656,11 +651,11 @@ function LedgerTrace({
                 {formatPrice(entry.price)}
               </td>
               <td className="px-4 py-3.5 text-right font-mono tabular-nums">
-                {formatCurrency(entryAmount(entry))}
+                {formatCurrency(calculateLedgerEntryAmount(entry))}
               </td>
               <td className="max-w-[280px] px-4 py-3.5 text-[var(--app-muted)]">
                 <span className="line-clamp-2 break-words">
-                  {entry.note || '--'}
+                  {formatLedgerPublicNote(entry) ?? '--'}
                 </span>
               </td>
             </tr>

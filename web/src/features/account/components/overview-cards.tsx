@@ -8,13 +8,44 @@ import type { AccountOverview } from '../api';
 
 type OverviewCardMetrics = AccountOverview & {
   today_pnl?: number | null;
+  today_pnl_breakdown?: {
+    stocks?: number | null;
+    funds?: number | null;
+    total?: number | null;
+  } | null;
   current_drawdown?: number | null;
 };
+
+type OverviewCardItem = {
+  label: string;
+  value: string;
+  tone: 'anchor' | 'positive' | 'negative' | 'neutral';
+  breakdown?: Array<{
+    label: string;
+    value: number;
+    emphasis?: boolean;
+  }>;
+};
+
+function moneyTone(value: number) {
+  if (value < 0) {
+    return 'text-[var(--app-danger)]';
+  }
+  if (value > 0) {
+    return 'text-[var(--app-success)]';
+  }
+  return 'text-[var(--app-soft)]';
+}
 
 export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
   const copy = useCopy();
   const isStale = overview.quote_status === 'stale';
-  const items = [
+  const todayBreakdown = {
+    stocks: overview.today_pnl_breakdown?.stocks ?? 0,
+    funds: overview.today_pnl_breakdown?.funds ?? 0,
+    total: overview.today_pnl_breakdown?.total ?? overview.today_pnl ?? 0,
+  };
+  const items: OverviewCardItem[] = [
     {
       label: copy.overview.cards.totalAssets,
       value: formatCurrency(overview.total_equity),
@@ -22,8 +53,23 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
     },
     {
       label: copy.overview.cards.todayPnl,
-      value: formatCurrency(overview.today_pnl ?? 0),
-      tone: (overview.today_pnl ?? 0) >= 0 ? 'positive' : 'negative',
+      value: formatCurrency(todayBreakdown.total),
+      tone: todayBreakdown.total >= 0 ? 'positive' : 'negative',
+      breakdown: [
+        {
+          label: copy.overview.cards.todayStocks,
+          value: todayBreakdown.stocks,
+        },
+        {
+          label: copy.overview.cards.todayFunds,
+          value: todayBreakdown.funds,
+        },
+        {
+          label: copy.overview.cards.todayTotal,
+          value: todayBreakdown.total,
+          emphasis: true,
+        },
+      ],
     },
     {
       label: copy.overview.cards.unrealizedPnl,
@@ -64,21 +110,43 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
           <div className="app-kicker app-tier-4-label text-[10px] font-bold text-[var(--app-subtext-0)]">
             {item.label}
           </div>
-          <div
-            className={`mt-2 truncate font-semibold tracking-[-0.035em] ${
-              index === 0
-                ? 'text-3xl text-[var(--app-text)] sm:text-[2.15rem]'
-                : 'text-lg sm:text-xl'
-            } ${
-              item.tone === 'positive'
-                ? 'text-[var(--app-success)]'
-                : item.tone === 'negative'
-                  ? 'text-[var(--app-danger)]'
-                  : 'text-[var(--app-soft)]'
-            }`}
-          >
-            {item.value}
-          </div>
+          {item.breakdown ? (
+            <div className="mt-2 grid min-w-0 gap-1.5">
+              {item.breakdown.map((row) => (
+                <div
+                  key={row.label}
+                  className="flex min-w-0 items-baseline justify-between gap-3 text-xs"
+                >
+                  <span className="min-w-0 truncate text-[var(--app-subtext-0)]">
+                    {row.label}
+                  </span>
+                  <span
+                    className={`shrink-0 font-semibold tabular-nums ${moneyTone(
+                      row.value,
+                    )} ${row.emphasis ? 'text-sm' : ''}`}
+                  >
+                    {formatCurrency(row.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div
+              className={`mt-2 truncate font-semibold tracking-[-0.035em] ${
+                index === 0
+                  ? 'text-3xl text-[var(--app-text)] sm:text-[2.15rem]'
+                  : 'text-lg sm:text-xl'
+              } ${
+                item.tone === 'positive'
+                  ? 'text-[var(--app-success)]'
+                  : item.tone === 'negative'
+                    ? 'text-[var(--app-danger)]'
+                    : 'text-[var(--app-soft)]'
+              }`}
+            >
+              {item.value}
+            </div>
+          )}
           {index === 0 ? (
             <>
               <div className="mt-3 h-px w-28 bg-gradient-to-r from-[var(--app-accent)] to-transparent opacity-60" />

@@ -1800,7 +1800,9 @@ def create_router() -> APIRouter:
                 _maybe_schedule_quote_refresh(
                     state, background_tasks, symbol, asset_class
                 )
-                return MarketQuote(symbol=symbol, **q)
+                payload = dict(q)
+                payload.setdefault("symbol", symbol)
+                return MarketQuote(**payload)
 
         if state.db is not None:
             cached = await state.db.get_latest_quote(symbol)

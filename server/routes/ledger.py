@@ -93,17 +93,38 @@ def _build_adjustment_entry(body: LedgerAdjustmentCreate) -> LedgerEntry:
     )
 
 
+def _ledger_display_name(db, entry: LedgerEntry) -> str | None:
+    if not entry.symbol:
+        return None
+    get_metadata = getattr(db, "get_instrument_metadata_sync", None)
+    if not callable(get_metadata):
+        return None
+    metadata = get_metadata(entry.symbol, entry.asset_class)
+    if not metadata:
+        return None
+    display_name = str(metadata.get("display_name") or "").strip()
+    return display_name or None
+
+
+def _entry_response(db, entry: LedgerEntry) -> LedgerEntryResponse:
+    payload = asdict(entry)
+    payload["display_name"] = _ledger_display_name(db, entry)
+    return LedgerEntryResponse(**payload)
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
     @r.get("/entries", response_model=list[LedgerEntryResponse])
-    async def list_entries(limit: int = 50, offset: int = 0) -> list[LedgerEntryResponse]:
+    async def list_entries(
+        limit: int = 50, offset: int = 0
+    ) -> list[LedgerEntryResponse]:
         from server.app import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
         entries = repo.list_entries(limit=limit, offset=offset)
-        return [LedgerEntryResponse(**asdict(entry)) for entry in entries]
+        return [_entry_response(state.db, entry) for entry in entries]
 
     @r.post("/trades", response_model=LedgerEntryCreatedResponse)
     async def create_trade_entry(body: LedgerTradeCreate) -> LedgerEntryCreatedResponse:

@@ -174,6 +174,7 @@ class PositionResponse(BaseModel):
     available_qty: float
     frozen_qty: float
     avg_cost: float
+    latest_price: float | None = None
     market_value: float
     unrealized_pnl: float
     realized_pnl: float
@@ -591,6 +592,7 @@ class LedgerEntryResponse(BaseModel):
     timestamp: str
     amount: float | None = None
     symbol: str | None = None
+    display_name: str | None = None
     direction: str | None = None
     quantity: float | None = None
     price: float | None = None

@@ -153,6 +153,40 @@ def test_tushare_fetch_latest_stock_times_out_realtime_and_falls_back_to_daily(
     assert result["symbol"] == "601985"
 
 
+def test_tushare_default_realtime_timeout_waits_for_slow_valid_quote(monkeypatch):
+    source = TushareSource(token="token-1234")
+
+    def slow_realtime(ts_code):
+        time.sleep(1.0)
+        return {
+            "price": 26.08,
+            "timestamp": "2026-06-16T13:12:13",
+            "quote_source": "tushare_realtime_quote",
+            "display_name": "宇通客车",
+            "previous_close": 28.26,
+        }
+
+    monkeypatch.setattr(source, "_fetch_realtime_quote", slow_realtime)
+    monkeypatch.setattr(
+        source,
+        "_fetch_daily_latest",
+        lambda ts_code: {
+            "price": 28.26,
+            "timestamp": "2026-06-15",
+            "quote_source": "tushare_daily",
+            "previous_close": 28.85,
+        },
+    )
+
+    result = source.fetch_latest(Symbol("600066"), AssetClass.STOCK)
+
+    assert result is not None
+    assert result["price"] == 26.08
+    assert result["timestamp"] == "2026-06-16T13:12:13"
+    assert result["quote_source"] == "tushare_realtime_quote"
+    assert result["display_name"] == "宇通客车"
+
+
 def test_tushare_fetch_latest_fund_uses_fund_nav(monkeypatch):
     calls: dict[str, object] = {}
 
