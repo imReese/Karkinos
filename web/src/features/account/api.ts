@@ -44,6 +44,10 @@ export type EquitySeriesPoint = {
   others: number;
   cash: number;
   unrealized_pnl?: number | null;
+  total_daily_change?: number | null;
+  stocks_daily_change?: number | null;
+  funds_daily_change?: number | null;
+  others_daily_change?: number | null;
   quote_status?: string;
   quote_source?: string | null;
   quote_age_seconds?: number | null;

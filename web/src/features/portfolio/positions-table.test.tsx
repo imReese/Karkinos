@@ -149,6 +149,8 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
     />,
   );
 
+  expect(screen.getAllByText('Realized PnL').length).toBeGreaterThan(0);
+
   for (const testId of [
     'position-quantity-600066',
     'position-avg-cost-600066',
@@ -199,6 +201,8 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
       ]}
     />,
   );
+
+  expect(screen.getAllByText('Realized PnL').length).toBeGreaterThan(0);
 
   for (const testId of [
     'position-mobile-quantity-600066',

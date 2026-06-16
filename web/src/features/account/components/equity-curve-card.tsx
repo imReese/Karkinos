@@ -27,7 +27,6 @@ type SeriesKey = 'total' | 'stocks' | 'funds' | 'others' | 'cash';
 
 type ChartPoint = EquitySeriesPoint & {
   timestampMs: number;
-  seriesChange: Partial<Record<SeriesKey, number>>;
 };
 
 type TooltipPayload = {
@@ -242,44 +241,9 @@ function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
     .map((point) => ({
       ...point,
       timestampMs: new Date(point.timestamp).getTime(),
-      seriesChange: {},
     }))
     .filter((point) => Number.isFinite(point.timestampMs))
     .sort((a, b) => a.timestampMs - b.timestampMs);
-}
-
-function withSeriesChangeFromBaseline(points: ChartPoint[]): ChartPoint[] {
-  const baselinePoint = points[0];
-  if (!baselinePoint) {
-    return points;
-  }
-  return points.map((point, index) => {
-    if (index === 0) {
-      return point;
-    }
-
-    const seriesChange = SERIES_META.reduce<Partial<Record<SeriesKey, number>>>(
-      (changes, series) => {
-        const currentValue = point[series.key];
-        const baselineValue = baselinePoint[series.key];
-        if (
-          typeof currentValue === 'number' &&
-          Number.isFinite(currentValue) &&
-          typeof baselineValue === 'number' &&
-          Number.isFinite(baselineValue)
-        ) {
-          changes[series.key] = currentValue - baselineValue;
-        }
-        return changes;
-      },
-      {},
-    );
-
-    return {
-      ...point,
-      seriesChange,
-    };
-  });
 }
 
 function resolveTooltipSeriesKey(
@@ -291,6 +255,16 @@ function resolveTooltipSeriesKey(
   return SERIES_META.some((series) => series.key === dataKey)
     ? (dataKey as SeriesKey)
     : null;
+}
+
+function resolveDailyChange(point: ChartPoint, seriesKey: SeriesKey) {
+  if (seriesKey === 'cash') {
+    return null;
+  }
+
+  const dailyChangeKey = `${seriesKey}_daily_change` as keyof ChartPoint;
+  const value = point[dailyChangeKey];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function resolveDefaultVisibleSeries(points: EquitySeriesPoint[]) {
@@ -535,42 +509,44 @@ function renderHighPointDot({
           strokeOpacity="0.38"
           strokeWidth="1.5"
         />
-        <line
-          x1="0"
-          y1={isNearTop ? 8 : -8}
-          x2="0"
-          y2={labelY + (isNearTop ? 0 : labelHeight)}
-          stroke={high.color}
-          strokeOpacity="0.42"
-          strokeDasharray="3 4"
-        />
-        <rect
-          x={labelX}
-          y={labelY}
-          width={labelWidth}
-          height={labelHeight}
-          rx="10"
-          fill="var(--app-panel-strong)"
-          stroke={high.color}
-          strokeOpacity="0.54"
-        />
-        <text
-          x={textX}
-          y={labelY + 14}
-          className="fill-current text-[10px] font-semibold"
-        >
-          <tspan>{high.label}</tspan>
-          <tspan dx="7" className="opacity-70">
-            {displayDate}
-          </tspan>
-        </text>
-        <text
-          x={textX}
-          y={labelY + 30}
-          className="fill-current text-[11px] font-semibold"
-        >
-          {displayValue}
-        </text>
+        <g className="transition-opacity duration-150 group-hover/equity-chart:opacity-0">
+          <line
+            x1="0"
+            y1={isNearTop ? 8 : -8}
+            x2="0"
+            y2={labelY + (isNearTop ? 0 : labelHeight)}
+            stroke={high.color}
+            strokeOpacity="0.42"
+            strokeDasharray="3 4"
+          />
+          <rect
+            x={labelX}
+            y={labelY}
+            width={labelWidth}
+            height={labelHeight}
+            rx="10"
+            fill="var(--app-panel-strong)"
+            stroke={high.color}
+            strokeOpacity="0.54"
+          />
+          <text
+            x={textX}
+            y={labelY + 14}
+            className="fill-current text-[10px] font-semibold"
+          >
+            <tspan>{high.label}</tspan>
+            <tspan dx="7" className="opacity-70">
+              {displayDate}
+            </tspan>
+          </text>
+          <text
+            x={textX}
+            y={labelY + 30}
+            className="fill-current text-[11px] font-semibold"
+          >
+            {displayValue}
+          </text>
+        </g>
       </g>
     );
   };
@@ -588,19 +564,28 @@ function CustomTooltip({
     return null;
   }
 
-  const point = payload[0]?.payload;
+  const validPayload = payload.filter(
+    (item): item is TooltipPayload => item !== undefined && item !== null,
+  );
+  if (!validPayload.length) {
+    return null;
+  }
+
+  const point = validPayload[0]?.payload;
   if (!point) {
     return null;
   }
 
-  const includesTotalSeries = payload.some((item) => item.dataKey === 'total');
-  const categoryChangeRows = payload.flatMap((item) => {
+  const includesTotalSeries = validPayload.some(
+    (item) => item.dataKey === 'total',
+  );
+  const categoryChangeRows = validPayload.flatMap((item) => {
     const seriesKey = resolveTooltipSeriesKey(item.dataKey);
     if (seriesKey !== 'stocks' && seriesKey !== 'funds') {
       return [];
     }
-    const change = point.seriesChange[seriesKey];
-    if (typeof change !== 'number' || !Number.isFinite(change)) {
+    const change = resolveDailyChange(point, seriesKey);
+    if (change === null) {
       return [];
     }
     return [
@@ -620,7 +605,7 @@ function CustomTooltip({
         {formatChartTimestamp(point.timestamp)}
       </div>
       <div className="space-y-1.5">
-        {payload.map((item) => {
+        {validPayload.map((item) => {
           if (typeof item.value !== 'number') {
             return null;
           }
@@ -759,9 +744,7 @@ export function EquityCurveCard({
     }
   }, [defaultVisibleSeries, hasManualSeriesSelection]);
 
-  const chartPoints = withSeriesChangeFromBaseline(
-    filterByRange(toChartPoints(points), range),
-  );
+  const chartPoints = filterByRange(toChartPoints(points), range);
   const hasUsableData = chartPoints.length >= 2;
   const xAxisTicks = resolveXAxisTicks(chartPoints, range);
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
@@ -899,7 +882,7 @@ export function EquityCurveCard({
         <div
           ref={chartContainerRef}
           data-testid="equity-chart-frame"
-          className="h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]"
+          className="group/equity-chart h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]"
         >
           {chartSize ? (
             <LineChart

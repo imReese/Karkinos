@@ -362,6 +362,38 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+* 2026-06-16: Cleaned Risk explainability notes and top-panel layout. Risk
+  recent impact cards and timeline events now route their details through the
+  shared Web ledger public-note formatter, suppressing legacy internal notes
+  like `RMB cash deposit recorded from user request` while preserving
+  user-authored English notes elsewhere. The Risk explainability top grid now
+  aligns panels at the top and keeps the recent-impact list in a local
+  scrollable region so a long audit list no longer stretches the net-equity
+  bridge into a large empty panel. Deterministic frontend tests cover note
+  suppression, timeline fallback text, and the layout contract.
+* 2026-06-16: Fixed Risk explainability event readability so recent impact
+  events and timeline trade events use the shared instrument identity metadata
+  path instead of rendering raw symbols or English `Bought`/`Sold` strings.
+  Trade cards now show localized action titles such as `买入 宇通客车 600066`,
+  structured quantity/price/fee details, local audit timestamps, and signed
+  cash impact including commission. Frontend Risk coverage verifies raw ISO
+  timestamps are not exposed in recent/position driver cards, and backend route
+  coverage verifies DB `instrument_metadata` drives event names and timeline
+  titles.
+* 2026-06-16: Fixed the Overview 1D equity-curve cash path so same-day buys are
+  replayed at their ledger timestamp instead of being projected back to the
+  market open. The intraday series now adds future same-day buy cost back into
+  cash before the trade, includes a trade-time tick, and only activates the
+  bought quantity after that timestamp. Deterministic route coverage verifies a
+  `trade_buy` at 11:04 lowers cash and introduces stock exposure at 11:04 while
+  preserving same-day buy cost as the category-change baseline.
+* 2026-06-16: Fixed the Overview 1D equity-curve tooltip path so category
+  point-in-time changes are supplied by backend `*_daily_change` fields instead
+  of being inferred from the first visible chart point. Local quote snapshots now
+  drive denser intraday curve points, same-day buy cost is preserved in
+  intraday category change, and high-value labels collapse on chart hover to
+  avoid overlapping the active tooltip. Added deterministic backend and
+  frontend coverage for the 1D series fields and tooltip contract.
 * 2026-06-16: Confirmed the v0.2/v0.3/v0.4 acceptance checkboxes in this goal
   document have no remaining unchecked items, then added the next data
   integrity slice for provider reconciliation. `data.market_data_reconciliation`

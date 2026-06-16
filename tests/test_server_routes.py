@@ -4447,6 +4447,13 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
             get_latest_quotes_sync=lambda: [],
+            get_instrument_metadata_sync=lambda symbol, asset_class=None: {
+                "symbol": symbol,
+                "asset_type": asset_class or "stock",
+                "display_name": "贵州茅台",
+            }
+            if symbol == "600519"
+            else None,
             get_ledger_entries_sync=lambda limit=12, offset=0: [
                 {
                     "id": 1,
@@ -4457,6 +4464,7 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
                     "quantity": 100.0,
                     "price": 10.0,
                     "commission": 3.0,
+                    "amount": 1000.0,
                     "asset_class": "stock",
                     "note": "first build",
                     "source": "manual",
@@ -4490,9 +4498,13 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert response.equity_bridge[-1].label == "Total Equity"
-    assert response.recent_drivers[0].title == "Bought 600519"
+    assert response.recent_drivers[0].title == "买入 贵州茅台 600519"
+    assert response.recent_drivers[0].detail == "数量 100 · 价格 ¥10.00 · 手续费 ¥3.00"
+    assert response.recent_drivers[0].amount == pytest.approx(-1003.0)
     assert response.positions[0].symbol == "600519"
     assert response.timeline[-1].date == "2026-04-18"
+    assert response.timeline[-1].events[0].title == "买入 贵州茅台 600519"
+    assert response.timeline[-1].events[0].detail == "数量 100 · 价格 ¥10.00"
     assert response.timeline[-1].market_pnl == 600
 
 
@@ -7936,6 +7948,9 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
     assert series[2].total == pytest.approx(89300.0)
     assert series[-1].total == pytest.approx(89300.0)
     assert series[-1].unrealized_pnl == pytest.approx(300.0)
+    assert series[-1].stocks_daily_change == pytest.approx(100.0)
+    assert series[-1].funds_daily_change == pytest.approx(200.0)
+    assert series[-1].total_daily_change == pytest.approx(300.0)
 
 
 def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
@@ -8134,6 +8149,129 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
     assert series[-1].total == pytest.approx(60100.0)
 
 
+def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    curve_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+    endpoint = curve_route.endpoint
+
+    class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 1030.0,
+                    "timestamp": "2026-04-20T10:00:00+08:00",
+                    "previous_close": 1000.0,
+                    "previous_close_date": "2026-04-17",
+                }
+            ]
+
+        def get_recent_quote_snapshots_sync(self, symbol: str, limit=500):
+            assert symbol == "600519"
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 1030.0,
+                    "timestamp": "2026-04-20T10:00:00+08:00",
+                },
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 1020.0,
+                    "timestamp": "2026-04-20T09:45:00+08:00",
+                },
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 1010.0,
+                    "timestamp": "2026-04-20T09:40:00+08:00",
+                },
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": 1005.0,
+                    "timestamp": "2026-04-20T09:35:00+08:00",
+                },
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    fake_portfolio = SimpleNamespace(
+        cash=50000.0,
+        positions={"600519": SimpleNamespace(quantity=10.0, avg_cost=1000.0)},
+    )
+    fake_instruments = {
+        Symbol("600519"): SimpleNamespace(asset_class=SimpleNamespace(value="stock")),
+    }
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            assets=[],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            instruments=fake_instruments,
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    class EmptySource:
+        def fetch_bars(self, symbol, start, end, frequency, asset_class):
+            raise AssertionError("local quote snapshots should avoid remote bars")
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": EmptySource()},
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    series = asyncio.run(endpoint("1d"))
+
+    assert [point.timestamp[11:16] for point in series] == [
+        "09:30",
+        "09:35",
+        "09:40",
+        "09:45",
+        "09:50",
+        "09:55",
+        "10:00",
+    ]
+    assert [point.stocks for point in series] == pytest.approx(
+        [10000.0, 10050.0, 10100.0, 10200.0, 10200.0, 10200.0, 10300.0]
+    )
+    assert series[-1].total == pytest.approx(60300.0)
+    assert series[-1].stocks_daily_change == pytest.approx(300.0)
+    assert series[-1].total_daily_change == pytest.approx(300.0)
+
+
 def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
     monkeypatch,
 ):
@@ -8173,6 +8311,22 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
             return [
+                {
+                    "id": 14,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-06-16T01:30:00+00:00",
+                    "amount": 5763.0,
+                    "symbol": None,
+                    "direction": None,
+                    "quantity": None,
+                    "price": None,
+                    "commission": 0.0,
+                    "asset_class": "cash",
+                    "note": "",
+                    "source": "manual",
+                    "source_ref": "cash-before-buy",
+                    "created_at": "2026-06-16T09:30:00+08:00",
+                },
                 {
                     "id": 15,
                     "entry_type": "trade_buy",
@@ -8232,9 +8386,23 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
 
     series = asyncio.run(endpoint("1d"))
 
-    assert series[0].stocks == pytest.approx(5275.0)
+    assert [point.timestamp[11:16] for point in series] == [
+        "09:30",
+        "11:04",
+        "14:56",
+    ]
+    assert series[0].cash == pytest.approx(5763.0)
+    assert series[0].stocks == pytest.approx(0.0)
+    assert series[0].total == pytest.approx(5763.0)
+    assert series[1].cash == pytest.approx(488.0)
+    assert series[1].stocks == pytest.approx(5275.0)
+    assert series[1].total == pytest.approx(5763.0)
+    assert series[1].stocks_daily_change == pytest.approx(0.0)
     assert series[-1].stocks == pytest.approx(5272.0)
+    assert series[-1].cash == pytest.approx(488.0)
     assert series[-1].total - series[0].total == pytest.approx(-3.0)
+    assert series[-1].stocks_daily_change == pytest.approx(-3.0)
+    assert series[-1].total_daily_change == pytest.approx(-3.0)
 
 
 def test_portfolio_equity_curve_series_1d_skips_intraday_source_when_market_closed(

@@ -86,9 +86,54 @@ const riskWorkspace = {
 
 const explainability = {
   equity_bridge: [],
-  recent_drivers: [],
-  positions: [],
-  timeline: [],
+  recent_drivers: [
+    {
+      kind: 'trade_buy',
+      title: '买入 宇通客车 600066',
+      detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
+      timestamp: '2026-06-16T03:04:56+00:00',
+      symbol: '600066',
+      amount: -5275,
+    },
+    {
+      kind: 'cash_deposit',
+      title: '资金转入',
+      detail: 'RMB cash deposit recorded from user request',
+      timestamp: '2026-04-01T00:00:00+00:00',
+      symbol: null,
+      amount: 3000,
+    },
+  ],
+  positions: [
+    {
+      symbol: '600066',
+      quantity: 200,
+      market_value: 5272,
+      unrealized_pnl: -3.16,
+      last_activity_at: '2026-06-16T03:04:56+00:00',
+    },
+  ],
+  timeline: [
+    {
+      date: '2026-04-01',
+      equity: 3000,
+      delta: 0,
+      external_flow: 3000,
+      market_pnl: 0,
+      events: [
+        {
+          category: 'capital',
+          impact_source: 'external',
+          kind: 'cash_deposit',
+          title: '资金转入',
+          detail: 'RMB cash deposit recorded from user request',
+          timestamp: '2026-04-01T00:00:00+00:00',
+          symbol: null,
+          amount: 3000,
+        },
+      ],
+    },
+  ],
 };
 
 function installRiskFetchMock() {
@@ -201,4 +246,32 @@ test('renders risk boundaries and blocking register without execution controls',
     within(blockRegister).getByText('Cash buffer is close to the floor'),
   ).toBeTruthy();
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('renders recent risk drivers as readable audit events', async () => {
+  renderRiskPage();
+
+  const recentDrivers = await screen.findByText('Recent impact events');
+  expect(recentDrivers).toBeTruthy();
+  expect(await screen.findByText('买入 宇通客车 600066')).toBeTruthy();
+  expect(
+    await screen.findByText('数量 200 · 价格 ¥26.35 · 手续费 ¥5.00'),
+  ).toBeTruthy();
+  expect(await screen.findByText(/-.*¥5,275\.00/)).toBeTruthy();
+  expect(await screen.findAllByText('现金流入组合。')).toHaveLength(2);
+  expect(
+    screen.queryByText('RMB cash deposit recorded from user request'),
+  ).toBeNull();
+  expect(screen.queryByText('2026-06-16T03:04:56+00:00')).toBeNull();
+});
+
+test('keeps explainability columns compact with local event scrolling', async () => {
+  renderRiskPage();
+
+  const topGrid = await screen.findByTestId('risk-explainability-top-grid');
+  expect(topGrid.className).toContain('items-start');
+
+  const recentList = await screen.findByTestId('risk-recent-impact-list');
+  expect(recentList.className).toContain('max-h');
+  expect(recentList.className).toContain('overflow-y-auto');
 });
