@@ -28,6 +28,7 @@ def test_ci_uses_node24_compatible_github_actions() -> None:
     assert "actions/checkout@v6" in workflow
     assert "actions/setup-python@v6" in workflow
     assert "actions/setup-node@v6" in workflow
+    assert 'node-version: "24"' in workflow
     assert "actions/checkout@v4" not in workflow
     assert "actions/setup-python@v5" not in workflow
     assert "actions/setup-node@v4" not in workflow
