@@ -98,6 +98,8 @@ test('renders cost and quote prices with four decimal places', () => {
           avg_cost: 26.375,
           latest_price: 26.3608,
           market_value: 5272,
+          today_change: -3,
+          today_change_pct: -0.00057,
           unrealized_pnl: -3,
           realized_pnl: 0,
           commission_paid: 5,
@@ -108,6 +110,8 @@ test('renders cost and quote prices with four decimal places', () => {
 
   expect(screen.getAllByText('26.3750').length).toBeGreaterThan(0);
   expect(screen.getAllByText('26.3608').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Today PnL').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('-CN¥3.00').length).toBeGreaterThan(0);
   expect(screen.getByTestId('position-avg-cost-600066').textContent).toBe(
     '26.3750',
   );
@@ -141,6 +145,8 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
           avg_cost: 26.375,
           latest_price: 26.3608,
           market_value: 5272,
+          today_change: -3,
+          today_change_pct: -0.00057,
           unrealized_pnl: -3,
           realized_pnl: 0,
           commission_paid: 5,
@@ -156,6 +162,7 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
     'position-avg-cost-600066',
     'position-latest-price-600066',
     'position-market-value-600066',
+    'position-today-change-600066',
     'position-unrealized-600066',
     'position-return-pct-600066',
     'position-available-frozen-600066',
@@ -194,6 +201,8 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
           avg_cost: 26.375,
           latest_price: 26.3608,
           market_value: 5272,
+          today_change: -3,
+          today_change_pct: -0.00057,
           unrealized_pnl: -3,
           realized_pnl: 0,
           commission_paid: 5,
@@ -209,6 +218,7 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
     'position-mobile-avg-cost-600066',
     'position-mobile-latest-price-600066',
     'position-mobile-market-value-600066',
+    'position-mobile-today-change-600066',
     'position-mobile-unrealized-600066',
     'position-mobile-return-pct-600066',
     'position-mobile-available-frozen-600066',
@@ -228,6 +238,12 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
   expect(
     screen.getByTestId('position-mobile-market-value-600066').textContent,
   ).toBe('CN¥5,272.00');
+  expect(
+    screen.getByTestId('position-mobile-today-change-600066').textContent,
+  ).toBe('-CN¥3.00');
+  expect(
+    screen.getByTestId('position-mobile-today-change-600066').className,
+  ).toContain('text-[var(--app-danger)]');
   expect(
     screen.getByTestId('position-mobile-return-pct-600066').className,
   ).toContain('text-[var(--app-danger)]');
@@ -297,7 +313,7 @@ test('contains the desktop positions table in a local horizontal scroller', () =
   expect(scrollRegion.className).toContain('overflow-x-scroll');
   expect(scrollRegion.className).toContain('overscroll-x-contain');
   expect(scrollRegion.className).toContain('pb-2');
-  expect(table.className).toContain('w-[1280px]');
+  expect(table.className).toContain('w-[1400px]');
   expect(table.className).toContain('min-w-max');
 });
 

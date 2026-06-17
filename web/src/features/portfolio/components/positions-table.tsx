@@ -54,6 +54,13 @@ function resolvePnlPct(position: Position) {
   return position.unrealized_pnl / costBasis;
 }
 
+function resolveTone(value: number | null | undefined): NumericCellTone {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) {
+    return 'text';
+  }
+  return value > 0 ? 'success' : 'danger';
+}
+
 function detailAriaLabel(
   labels: ReturnType<typeof useCopy>['portfolio']['table'],
   displayName: string,
@@ -244,6 +251,14 @@ export function PositionsTable({
               emphasis: true,
             },
             {
+              key: 'today-change',
+              label: labels.todayChange,
+              value: formatCurrency(position.today_change),
+              kind: 'amount',
+              tone: resolveTone(position.today_change),
+              emphasis: true,
+            },
+            {
               key: 'unrealized',
               label: labels.unrealized,
               value: formatCurrency(position.unrealized_pnl),
@@ -418,7 +433,7 @@ export function PositionsTable({
       >
         <table
           data-testid="positions-table-desktop"
-          className="app-data-table w-[1280px] min-w-max text-left text-sm"
+          className="app-data-table w-[1400px] min-w-max text-left text-sm"
         >
           <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
             <tr>
@@ -437,6 +452,9 @@ export function PositionsTable({
               </th>
               <th className={numericHeaderClassName('amount')}>
                 {labels.marketValue}
+              </th>
+              <th className={numericHeaderClassName('amount')}>
+                {labels.todayChange}
               </th>
               <th className={numericHeaderClassName('amount')}>
                 {labels.unrealized}
@@ -560,6 +578,16 @@ export function PositionsTable({
                     })}
                   >
                     {formatCurrency(position.market_value)}
+                  </td>
+                  <td
+                    data-testid={`position-today-change-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'amount',
+                      tone: resolveTone(position.today_change),
+                      emphasis: true,
+                    })}
+                  >
+                    {formatCurrency(position.today_change)}
                   </td>
                   <td
                     data-testid={`position-unrealized-${position.symbol}`}

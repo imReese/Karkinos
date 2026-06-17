@@ -5168,7 +5168,7 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
     assert quote["price"] == pytest.approx(0.9194)
 
 
-def test_quote_status_allows_live_fund_estimate_provider_lag():
+def test_quote_status_allows_live_provider_lag_with_asset_specific_windows():
     from zoneinfo import ZoneInfo
 
     from server.routes import portfolio as portfolio_routes
@@ -5183,19 +5183,35 @@ def test_quote_status_allows_live_fund_estimate_provider_lag():
         "quote_source": "eastmoney_fund_estimate",
         "quote_status": "live",
     }
-    stock_quote = {
+    stock_quote_within_window = {
         "price": 28.71,
         "timestamp": "2026-06-15T11:07:00+08:00",
         "asset_class": "stock",
         "quote_source": "tushare_realtime_quote",
         "quote_status": "live",
     }
+    stale_stock_quote = {
+        **stock_quote_within_window,
+        "timestamp": "2026-06-15T11:06:00+08:00",
+    }
 
     assert portfolio_routes._quote_status(fake_state, fund_quote, now=now) == "live"
     assert portfolio_routes._quote_stale_reason(fake_state, fund_quote, now=now) is None
-    assert portfolio_routes._quote_status(fake_state, stock_quote, now=now) == "stale"
     assert (
-        portfolio_routes._quote_stale_reason(fake_state, stock_quote, now=now)
+        portfolio_routes._quote_status(fake_state, stock_quote_within_window, now=now)
+        == "live"
+    )
+    assert (
+        portfolio_routes._quote_stale_reason(
+            fake_state,
+            stock_quote_within_window,
+            now=now,
+        )
+        is None
+    )
+    assert portfolio_routes._quote_status(fake_state, stale_stock_quote, now=now) == "stale"
+    assert (
+        portfolio_routes._quote_stale_reason(fake_state, stale_stock_quote, now=now)
         == "quote_older_than_expected_session"
     )
 
@@ -8572,7 +8588,7 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
     assert response.groups[0].items[0].today_change_pct == 12.0 / 11.5 - 1
     assert response.groups[0].items[0].since_buy_pnl == 200.0
     assert response.groups[0].items[0].since_buy_pnl_pct == 0.2
-    assert response.groups[0].items[0].baseline_source == "previous_close"
+    assert response.groups[0].items[0].baseline_source == "daily_close"
 
 
 def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatch):
@@ -8705,6 +8721,8 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
                     "symbol": "600066",
                     "asset_type": "stock",
                     "price": 26.3608,
+                    "previous_close": 26.0,
+                    "previous_close_date": "2026-06-15",
                     "quote_timestamp": "2026-06-16T14:56:37+08:00",
                     "quote_source": "tushare_realtime_quote",
                     "provider_name": "tushare",
@@ -8738,6 +8756,11 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
     response = asyncio.run(positions_route.endpoint())
 
     assert response[0].latest_price == pytest.approx(26.3608)
+    assert response[0].today_change == pytest.approx(72.16)
+    assert response[0].today_change_pct == pytest.approx(26.3608 / 26.0 - 1)
+    assert response[0].baseline_price == pytest.approx(26.0)
+    assert response[0].baseline_timestamp == "2026-06-15"
+    assert response[0].baseline_source == "previous_close"
 
 
 def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch):
@@ -8823,6 +8846,99 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
     assert item.baseline_source == "previous_close"
     assert item.today_change == pytest.approx(-1.0)
     assert item.today_change_pct == pytest.approx(9.25 / 9.26 - 1)
+
+
+def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_close(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=200.0,
+        available_qty=200.0,
+        frozen_qty=0.0,
+        avg_cost=26.3758,
+        market_value=5406.0,
+        unrealized_pnl=130.84,
+        realized_pnl=0.0,
+        commission_paid=5.16,
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_latest_market_bar_before_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "600066"
+            assert trade_date == "2026-06-17"
+            return {
+                "trade_date": "2026-06-16",
+                "close": 26.36,
+                "source": "market_bars",
+            }
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return {
+                "trade_date": "2026-06-16",
+                "close_price": 28.26,
+                "source": "reported_previous_close",
+            }
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 0.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"600066": fake_position}),
+            instruments={
+                "600066": SimpleNamespace(
+                    name="宇通客车",
+                    asset_class=SimpleNamespace(value="stock"),
+                )
+            },
+            watchlist=[],
+            latest_quotes={
+                "600066": {
+                    "symbol": "600066",
+                    "asset_class": "stock",
+                    "price": 27.03,
+                    "timestamp": "2026-06-17T14:20:25+08:00",
+                    "quote_source": "tushare_realtime_quote",
+                    "previous_close": 28.26,
+                    "previous_close_date": "2026-06-16",
+                }
+            },
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(live_holdings_route.endpoint())
+    item = response.groups[0].items[0]
+
+    assert item.baseline_source == "market_bar_close"
+    assert item.baseline_timestamp == "2026-06-16"
+    assert item.baseline_price == pytest.approx(26.36)
+    assert item.today_change == pytest.approx(134.0)
+    assert item.today_change_pct == pytest.approx(27.03 / 26.36 - 1)
 
 
 def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):

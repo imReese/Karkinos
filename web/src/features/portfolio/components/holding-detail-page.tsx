@@ -198,6 +198,22 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     position,
     liveItem?.latest_price ?? null,
   );
+  const todayChange = position.today_change ?? liveItem?.today_change ?? null;
+  const todayChangePct =
+    position.today_change_pct ?? liveItem?.today_change_pct ?? null;
+  const baselinePrice = position.baseline_price ?? liveItem?.baseline_price;
+  const baselineSource =
+    position.baseline_source ?? liveItem?.baseline_source ?? 'unavailable';
+  const baselineSourceLabel =
+    {
+      daily_close: labels.baselineSources.dailyClose,
+      market_bar_close: labels.baselineSources.marketBarClose,
+      previous_close: labels.baselineSources.previousClose,
+      previous_quote: labels.baselineSources.previousQuote,
+      intraday_trade_cost: labels.baselineSources.intradayTradeCost,
+      fallback_close: labels.baselineSources.fallbackClose,
+      unavailable: labels.baselineSources.unavailable,
+    }[baselineSource] ?? baselineSource;
   const costBasis = position.avg_cost * position.quantity;
   const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : null;
   const displayName =
@@ -230,6 +246,26 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       value: formatCurrency(position.market_value),
     },
     {
+      label: labels.todayChange,
+      value: formatCurrency(todayChange),
+      tone:
+        typeof todayChange === 'number' && todayChange !== 0
+          ? todayChange > 0
+            ? 'success'
+            : 'danger'
+          : undefined,
+    },
+    {
+      label: labels.todayChangePct,
+      value: formatReturnPercent(todayChangePct),
+      tone:
+        typeof todayChange === 'number' && todayChange !== 0
+          ? todayChange > 0
+            ? 'success'
+            : 'danger'
+          : undefined,
+    },
+    {
       label: labels.unrealizedPnl,
       value: formatCurrency(position.unrealized_pnl),
       tone: position.unrealized_pnl >= 0 ? 'success' : 'danger',
@@ -241,6 +277,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     { label: labels.costBasis, value: formatCurrency(costBasis) },
     { label: labels.avgCost, value: formatPrice(position.avg_cost) },
     { label: labels.quotePrice, value: formatPrice(quotePrice) },
+    { label: labels.baselinePrice, value: formatPrice(baselinePrice) },
+    { label: labels.baselineSource, value: baselineSourceLabel },
     { label: labels.realizedPnl, value: formatCurrency(position.realized_pnl) },
     {
       label: labels.commissionPaid,

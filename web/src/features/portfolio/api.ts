@@ -28,6 +28,11 @@ export type Position = {
   unrealized_pnl: number;
   realized_pnl: number;
   commission_paid: number;
+  today_change?: number | null;
+  today_change_pct?: number | null;
+  baseline_price?: number | null;
+  baseline_timestamp?: string | null;
+  baseline_source?: string;
   quote_timestamp?: string | null;
   quote_status?: string;
   quote_source?: string | null;

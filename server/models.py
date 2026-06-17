@@ -179,6 +179,11 @@ class PositionResponse(BaseModel):
     unrealized_pnl: float
     realized_pnl: float
     commission_paid: float
+    today_change: float | None = None
+    today_change_pct: float | None = None
+    baseline_price: float | None = None
+    baseline_timestamp: str | None = None
+    baseline_source: str = "unavailable"
     quote_timestamp: str | None = None
     quote_status: str = "stale"
     quote_source: str | None = None
