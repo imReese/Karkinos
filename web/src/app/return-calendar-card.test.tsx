@@ -125,7 +125,10 @@ test('renders a month calendar with selectable daily return cells by default', a
     within(toolbar).queryByTestId('return-calendar-status-chip'),
   ).toBeNull();
   expect(screen.getByTestId('return-calendar-period-select')).toBeTruthy();
-  expect(screen.getByTestId('return-calendar-status-chip')).toBeTruthy();
+  const statusChip = screen.getByTestId('return-calendar-status-chip');
+  expect(statusChip).toBeTruthy();
+  expect(statusChip.className).toContain('text-[var(--app-warning)]');
+  expect(statusChip.className).not.toMatch(/text-(amber|emerald|sky)-100/);
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-02-10 · CN¥600.00' }),
