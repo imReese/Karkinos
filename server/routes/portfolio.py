@@ -1058,7 +1058,7 @@ def _quote_live_ttl_seconds(
     source = _quote_source_name(quote)
     if asset_class in {"fund", "etf"} and source in _FUND_ESTIMATE_QUOTE_SOURCES:
         return max(base_seconds * 10, 600)
-    return base_seconds * 3
+    return max(base_seconds * 5, 300)
 
 
 def _quote_is_stale(
@@ -1400,6 +1400,32 @@ def _get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict
 def _resolve_live_holding_baseline(
     state, symbol: str, latest_quote: dict | None
 ) -> tuple[float | None, str | None, str]:
+    latest_timestamp = latest_quote.get("timestamp") if latest_quote else None
+    trade_date = (
+        str(latest_timestamp).split("T")[0]
+        if latest_timestamp
+        else datetime.now().date().isoformat()
+    )
+
+    if state.db is not None and hasattr(state.db, "get_latest_market_bar_before_date_sync"):
+        market_bar = state.db.get_latest_market_bar_before_date_sync(symbol, trade_date)
+        if market_bar:
+            return (
+                float(market_bar.get("close", market_bar.get("price"))),
+                market_bar.get("trade_date")
+                or str(market_bar.get("timestamp", "")).split("T")[0],
+                "market_bar_close",
+            )
+
+    if state.db is not None and hasattr(state.db, "get_latest_daily_close_before_sync"):
+        daily_close = state.db.get_latest_daily_close_before_sync(symbol, trade_date)
+        if daily_close:
+            return (
+                float(daily_close["close_price"]),
+                daily_close.get("trade_date"),
+                "daily_close",
+            )
+
     if latest_quote:
         previous_close = latest_quote.get("previous_close")
         previous_close_date = latest_quote.get("previous_close_date")
@@ -1410,22 +1436,6 @@ def _resolve_live_holding_baseline(
             return (
                 float(previous_close),
                 str(previous_close_date),
-                "previous_close",
-            )
-
-    latest_timestamp = latest_quote.get("timestamp") if latest_quote else None
-    trade_date = (
-        str(latest_timestamp).split("T")[0]
-        if latest_timestamp
-        else datetime.now().date().isoformat()
-    )
-
-    if state.db is not None and hasattr(state.db, "get_latest_daily_close_before_sync"):
-        daily_close = state.db.get_latest_daily_close_before_sync(symbol, trade_date)
-        if daily_close:
-            return (
-                float(daily_close["close_price"]),
-                daily_close.get("trade_date"),
                 "previous_close",
             )
 
@@ -1576,6 +1586,64 @@ def _same_day_buy_lots(
     return sorted(lots, key=lambda lot: lot["timestamp"])
 
 
+def _resolve_position_today_change(
+    state,
+    *,
+    symbol: str,
+    quantity: float,
+    avg_cost: float,
+    latest_quote: dict | None,
+    latest_price_value: float | None,
+) -> tuple[float | None, float | None, float | None, str | None, str]:
+    baseline_price, baseline_timestamp, baseline_source = (
+        _resolve_live_holding_baseline(state, symbol, latest_quote)
+    )
+    latest_timestamp = _parse_quote_timestamp(
+        None if latest_quote is None else latest_quote.get("timestamp")
+    )
+    trade_day = (
+        latest_timestamp.date()
+        if latest_timestamp is not None
+        else get_shanghai_now().date()
+    )
+    intraday_cost_price, intraday_total_cost = _same_day_buy_cost_basis(
+        state,
+        symbol=symbol,
+        trade_day=trade_day,
+        current_quantity=quantity,
+    )
+    if intraday_cost_price is not None:
+        baseline_price = intraday_cost_price
+        baseline_timestamp = trade_day.isoformat()
+        baseline_source = "intraday_trade_cost"
+
+    today_change = None
+    today_change_pct = None
+    if baseline_price not in {None, 0}:
+        reference_price = (
+            latest_price_value if latest_price_value is not None else avg_cost
+        )
+        if intraday_total_cost is not None:
+            current_value = quantity * reference_price
+            today_change = current_value - intraday_total_cost
+            today_change_pct = (
+                current_value / intraday_total_cost - 1
+                if intraday_total_cost
+                else None
+            )
+        else:
+            today_change = quantity * (reference_price - baseline_price)
+            today_change_pct = (reference_price / baseline_price) - 1
+
+    return (
+        today_change,
+        today_change_pct,
+        baseline_price,
+        baseline_timestamp,
+        baseline_source,
+    )
+
+
 def _build_live_holdings_response(state) -> LiveHoldingsResponse:
     portfolio, instruments = _resolve_projection_sources(state)
     portfolio, instruments, _ = _hydrate_missing_position_quotes(
@@ -1612,51 +1680,25 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         latest_price_value = (
             float(latest_price) if latest_price not in {None, ""} else None
         )
-        baseline_price, baseline_timestamp, baseline_source = (
-            _resolve_live_holding_baseline(
-                state,
-                symbol,
-                latest_quote if latest_quote else None,
-            )
-        )
-        latest_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
-        trade_day = (
-            latest_timestamp.date()
-            if latest_timestamp is not None
-            else get_shanghai_now().date()
-        )
-        intraday_cost_price, intraday_total_cost = _same_day_buy_cost_basis(
+        (
+            today_change,
+            today_change_pct,
+            baseline_price,
+            baseline_timestamp,
+            baseline_source,
+        ) = _resolve_position_today_change(
             state,
             symbol=symbol,
-            trade_day=trade_day,
-            current_quantity=quantity,
+            quantity=quantity,
+            avg_cost=float(pos.avg_cost),
+            latest_quote=latest_quote if latest_quote else None,
+            latest_price_value=latest_price_value,
         )
-        if intraday_cost_price is not None:
-            baseline_price = intraday_cost_price
-            baseline_timestamp = trade_day.isoformat()
-            baseline_source = "intraday_trade_cost"
         avg_cost = float(pos.avg_cost)
         market_value = float(pos.market_value)
         cost_basis = quantity * avg_cost
         since_buy_pnl = market_value - cost_basis
         since_buy_pnl_pct = None if cost_basis == 0 else since_buy_pnl / cost_basis
-        today_change = None
-        today_change_pct = None
-        if baseline_price not in {None, 0}:
-            reference_price = (
-                latest_price_value if latest_price_value is not None else avg_cost
-            )
-            if intraday_total_cost is not None:
-                current_value = quantity * reference_price
-                today_change = current_value - intraday_total_cost
-                today_change_pct = (
-                    current_value / intraday_total_cost - 1
-                    if intraday_total_cost
-                    else None
-                )
-            else:
-                today_change = quantity * (reference_price - baseline_price)
-                today_change_pct = (reference_price / baseline_price) - 1
 
         groups[metadata.asset_class].append(
             LiveHoldingItemResponse(
@@ -2990,21 +3032,43 @@ def create_router() -> APIRouter:
                 quote=quote,
                 fallback_name=getattr(instrument, "name", None) or symbol,
             )
+            quantity = float(pos.quantity)
+            avg_cost = float(pos.avg_cost)
+            latest_price_value = _quote_latest_price(quote)
+            (
+                today_change,
+                today_change_pct,
+                baseline_price,
+                baseline_timestamp,
+                baseline_source,
+            ) = _resolve_position_today_change(
+                state,
+                symbol=symbol,
+                quantity=quantity,
+                avg_cost=avg_cost,
+                latest_quote=quote,
+                latest_price_value=latest_price_value,
+            )
             positions.append(
                 PositionResponse(
                     symbol=symbol,
                     name=metadata.display_name,
                     display_name=metadata.display_name,
                     asset_class=metadata.asset_class,
-                    quantity=float(pos.quantity),
+                    quantity=quantity,
                     available_qty=float(pos.available_qty),
                     frozen_qty=float(pos.frozen_qty),
-                    avg_cost=float(pos.avg_cost),
-                    latest_price=_quote_latest_price(quote),
+                    avg_cost=avg_cost,
+                    latest_price=latest_price_value,
                     market_value=float(pos.market_value),
                     unrealized_pnl=float(pos.unrealized_pnl),
                     realized_pnl=float(pos.realized_pnl),
                     commission_paid=float(pos.commission_paid),
+                    today_change=today_change,
+                    today_change_pct=today_change_pct,
+                    baseline_price=baseline_price,
+                    baseline_timestamp=baseline_timestamp,
+                    baseline_source=baseline_source,
                     quote_timestamp=None if quote is None else quote.get("timestamp"),
                     quote_status=_response_quote_status(state, quote),
                     quote_source=_quote_source(state, quote),

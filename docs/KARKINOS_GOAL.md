@@ -362,6 +362,65 @@ v0.4 should make it possible to answer:
 <!-- codex-progress:start -->
 ## Codex Progress
 
+### External Project Research Notes — 2026-06-17
+
+Reviewed mature open-source quant projects for ideas Karkinos can borrow while
+preserving its personal cockpit and safety boundaries:
+
+* QuantConnect LEAN (`https://github.com/QuantConnect/Lean`): borrow the
+  modular engine shape where data, brokerage adapters, indicators, reports,
+  optimizers, and research tooling are separate plug-in points. For Karkinos,
+  this should become explicit run manifests and adapter interfaces rather than
+  one-off page-specific code paths.
+* VeighNa / vn.py (`https://github.com/vnpy/vnpy`): borrow the gateway/app/
+  datafeed/database separation, local paper account concept, data manager,
+  risk manager, portfolio manager, and RPC-style routing discipline. For
+  Karkinos, the near-term slice should be read-only broker statement / holding /
+  cash-flow import plus reconciliation, not broker-side order submission.
+* Microsoft Qlib (`https://github.com/microsoft/qlib`): borrow the
+  data-driven research workflow discipline: data preparation, feature
+  generation, model or strategy execution, backtest, evaluation, and graphical
+  report review. Karkinos should strengthen point-in-time dataset manifests,
+  feature-set manifests, and reproducible experiment records before expanding
+  strategy complexity.
+* Freqtrade (`https://github.com/freqtrade/freqtrade`): borrow practical
+  operations ergonomics: validated config files, resolved-config inspection,
+  data download/list commands, saved backtest analysis, dry-run-first
+  operation, and lookahead / recursive-formula diagnostics. Karkinos should
+  add similar bias and config diagnostics for China-market research and
+  paper/shadow operation.
+
+Next data-driven iteration backlog:
+
+* Broker evidence ingestion: import sanitized local broker statements,
+  positions, cash balances, fills, fees, taxes, transfer events, and asset
+  metadata into the database through one audited ingestion path with duplicate
+  detection and source-file fingerprints. Keep private raw exports out of git.
+* Reconciliation layer: compare broker-imported positions/cash/fills against
+  Karkinos ledger, portfolio snapshots, quote cache, and computed cost basis;
+  surface mismatches by symbol, date, fee component, and cash impact.
+* Per-instrument daily PnL cockpit: expose stock/fund-level daily market move,
+  since-buy PnL, cost basis, fees, and data freshness from the unified
+  portfolio/explainability path so Overview totals can be traced to each
+  holding.
+* Data quality command center: add provider-vs-local bar/quote verification,
+  missing-bar repair tasks, adjustment-mode diagnostics, fund NAV lag
+  explanations, and reproducible reconciliation reports under `reports/`.
+* Strategy evidence pipeline: persist feature manifests, dataset snapshot ids,
+  parameter payloads, bias diagnostics, after-cost/OOS evidence, and promotion
+  status as one queryable scorecard.
+* Paper/shadow operation lane: convert approved research signals into
+  paper/shadow action records and manual-confirmation tickets. This roadmap
+  deliberately keeps broker order submission outside the documented goal until
+  data integrity, reconciliation, risk gates, and audit review are trustworthy.
+
+* 2026-06-17: Added a per-instrument daily PnL entry point. Portfolio positions
+  now carry `today_change`, `today_change_pct`, daily baseline price, baseline
+  timestamp, and baseline source through the same API used by the holdings
+  table and holding detail page. The Web cockpit shows single-stock/fund daily
+  PnL beside quote price, market value, since-buy PnL, and baseline evidence,
+  so account-level daily movement can be traced back to individual holdings
+  without adding broker submission or execution behavior.
 * 2026-06-16: Cleaned Risk explainability notes and top-panel layout. Risk
   recent impact cards and timeline events now route their details through the
   shared Web ledger public-note formatter, suppressing legacy internal notes
@@ -847,4 +906,8 @@ v0.4 should make it possible to answer:
   Month and year views now label the selected-period change as monthly or
   annual instead of reusing the daily-change label, without changing
   attribution values or trading behavior.
+* 2026-06-17: Documented portfolio return-accounting semantics. Added a
+  Chinese guide for daily PnL, since-buy floating PnL, realized PnL, cash-flow
+  treatment, and baseline-price priority so future cockpit and API work can
+  keep cost basis, market movement, and external flows separated.
 <!-- codex-progress:end -->

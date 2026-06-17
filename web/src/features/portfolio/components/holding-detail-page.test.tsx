@@ -13,6 +13,11 @@ const position = {
   avg_cost: 1500,
   latest_price: 1600,
   market_value: 96000,
+  today_change: 240,
+  today_change_pct: 0.0025,
+  baseline_price: 1596,
+  baseline_timestamp: '2026-04-20',
+  baseline_source: 'previous_close',
   unrealized_pnl: 6000,
   realized_pnl: 1200,
   commission_paid: 30,
@@ -108,11 +113,11 @@ function installHoldingFetchMock({
                     quote_timestamp: '2026-04-21T14:30:00+08:00',
                     since_buy_pnl: 6000,
                     since_buy_pnl_pct: 0.0667,
-                    today_change: 0,
-                    today_change_pct: null,
-                    baseline_price: null,
-                    baseline_timestamp: null,
-                    baseline_source: 'unavailable',
+                    today_change: 240,
+                    today_change_pct: 0.0025,
+                    baseline_price: 1596,
+                    baseline_timestamp: '2026-04-20',
+                    baseline_source: 'previous_close',
                     quote_status: 'stale',
                     quote_source: 'akshare',
                     quote_age_seconds: 2_246_400,
@@ -278,6 +283,11 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
   expect(await screen.findByText('6.67%')).toBeTruthy();
+  expect(await screen.findByText('Today PnL')).toBeTruthy();
+  expect(await screen.findByText('CN¥240.00')).toBeTruthy();
+  expect(await screen.findByText('0.25%')).toBeTruthy();
+  expect(await screen.findByText('1,596.0000')).toBeTruthy();
+  expect(await screen.findByText('Reported previous close')).toBeTruthy();
   expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
   expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();

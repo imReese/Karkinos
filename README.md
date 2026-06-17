@@ -57,6 +57,7 @@ public demos and development.
 - React + TanStack Query + TanStack Router portfolio workspace
 - Responsive cockpit layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
 - Portfolio quote board summarizes asset classes; instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research workspace.
+- Portfolio holdings and detail pages expose per-instrument daily PnL, daily return, quote price, cost basis, and baseline source so account-level changes can be traced back to individual stocks or funds.
 - Return calendar cockpit view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
 - Read-only decision cockpit APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
@@ -119,6 +120,8 @@ provider, fetch time, range, row count, and diagnostics, but it is not a
 guarantee that every provider or public website will show identical values;
 differences can come from adjustment mode, delayed fund NAVs, suspended
 sessions, stale source data, or provider corrections.
+The portfolio cockpit's return, cost-basis, cash-flow, and baseline-price
+semantics are documented in [docs/return-accounting.zh.md](docs/return-accounting.zh.md).
 For an explicit one-symbol reconciliation report, run for example:
 `uv run python scripts/verify_market_bars.py --symbol 603659 --start 2026-06-12 --end 2026-06-15`.
 The verifier fetches provider bars for comparison and returns JSON differences;
