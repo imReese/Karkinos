@@ -390,6 +390,196 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
     assert calls[1][1]["end"].date().isoformat() == "2026-05-30"
 
 
+def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
+    monkeypatch, tmp_path
+):
+    from server import scheduler as scheduler_module
+
+    config = SimpleNamespace(
+        data_source="akshare",
+        live_poll_interval=120,
+        initial_cash=Decimal("100000"),
+        start_date="2026-01-01",
+    )
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    scheduler._watchlist = [
+        (Symbol("601985"), AssetClass.STOCK),
+        (Symbol("018125"), AssetClass.FUND),
+    ]
+    fund_sync_calls = []
+    bar_calls = []
+
+    def fake_refresh_fund_nav_quotes(config, db, watchlist, latest_quotes):
+        fund_sync_calls.append((list(watchlist), dict(latest_quotes)))
+        return SimpleNamespace(
+            refreshed=["018125"],
+            skipped=[],
+            failed={},
+            quotes={
+                "018125": {
+                    "price": 2.2527,
+                    "timestamp": "2026-06-17 15:30",
+                    "asset_class": "fund",
+                }
+            },
+        )
+
+    class FakeManager:
+        def get_bars(self, *args, **kwargs):
+            bar_calls.append((args, kwargs))
+            return SimpleNamespace(total_bars=1)
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "refresh_fund_nav_quotes",
+        fake_refresh_fund_nav_quotes,
+    )
+
+    manager = FakeManager()
+    before_cutoff = datetime(2026, 6, 17, 15, 30)
+    stock_cutoff = datetime(2026, 6, 17, 16, 0)
+    fund_cutoff = datetime(2026, 6, 17, 21, 30)
+
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=before_cutoff,
+        )
+        is False
+    )
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=stock_cutoff,
+        )
+        is True
+    )
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=datetime(2026, 6, 17, 16, 30),
+        )
+        is False
+    )
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(
+            manager,
+            now=fund_cutoff,
+        )
+        is True
+    )
+
+    assert len(fund_sync_calls) == 1
+    assert len(bar_calls) == 2
+    assert {call[0][0] for call in bar_calls} == {
+        Symbol("601985"),
+        Symbol("018125"),
+    }
+    assert {call[1]["end"].date().isoformat() for call in bar_calls} == {
+        "2026-06-17"
+    }
+
+
+def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_path):
+    from server import scheduler as scheduler_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    config = SimpleNamespace(
+        data_source="akshare",
+        live_poll_interval=120,
+        initial_cash=Decimal("100000"),
+        start_date="2026-01-01",
+    )
+    runtime = SimpleNamespace(
+        sources={"akshare": object()},
+        watchlist=[(Symbol("601985"), AssetClass.STOCK)],
+        instruments={},
+        data_manager=SimpleNamespace(),
+    )
+    market_refresh_calls = []
+    stop_waits = []
+    now_values = iter(
+        [
+            datetime(2026, 6, 17, 15, 30),
+            datetime(2026, 6, 17, 16, 0),
+        ]
+    )
+
+    class FakeLiveDataFeed:
+        def __init__(self, source, event_bus, fallback_source=None) -> None:
+            pass
+
+    class FakeStopEvent:
+        def set(self):
+            pass
+
+        def wait(self, timeout=None):
+            stop_waits.append(timeout)
+            if len(stop_waits) >= 2:
+                holder["scheduler"]._running.clear()
+            return False
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "create_runtime_context",
+        lambda config: runtime,
+    )
+    monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
+    monkeypatch.setattr(
+        scheduler_module,
+        "build_strategy",
+        lambda config, bus: FakeStrategy(),
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_warmup_strategy",
+        lambda self, data_manager, strategy: None,
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_is_market_open",
+        staticmethod(lambda: False),
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_maybe_backfill_historical_bars",
+        lambda self, data_manager, now=None: market_refresh_calls.append(now),
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_sync_fund_nav_quotes",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "rebuild_portfolio_from_ledger",
+        lambda config, db, latest_quotes: None,
+    )
+
+    class FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = next(now_values)
+            if tz is not None:
+                return current.replace(tzinfo=tz)
+            return current
+
+    monkeypatch.setattr(scheduler_module, "datetime", FakeDateTime)
+
+    holder = {}
+    scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    holder["scheduler"] = scheduler
+    scheduler._stop_requested = FakeStopEvent()
+    scheduler._running.set()
+    scheduler._run_loop()
+
+    assert stop_waits == [30, 30]
+    assert market_refresh_calls == [datetime(2026, 6, 17, 16, 0)]
+
+
 def test_scheduler_strategy_warmup_does_not_fetch_remote_bars(monkeypatch):
     from server import scheduler as scheduler_module
 

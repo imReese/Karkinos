@@ -173,6 +173,14 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
     assert bar["close"] == 9.24
     assert bar["price"] == 9.24
 
+    same_day_bar = db.get_market_bar_on_date_sync("601985", "2026-06-12")
+
+    assert same_day_bar is not None
+    assert same_day_bar["trade_date"] == "2026-06-12"
+    assert same_day_bar["close"] == 9.24
+    assert same_day_bar["price"] == 9.24
+    assert db.get_market_bar_on_date_sync("601985", "2026-06-13") is None
+
 
 def test_app_database_initializes_instrument_metadata_table(tmp_path):
     db = AppDatabase(tmp_path / "app.db")

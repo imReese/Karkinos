@@ -8,6 +8,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import BackgroundTasks
@@ -9350,6 +9351,217 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
     assert item.baseline_price == pytest.approx(26.36)
     assert item.today_change == pytest.approx(134.0)
     assert item.today_change_pct == pytest.approx(27.03 / 26.36 - 1)
+
+
+def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=100.0,
+        available_qty=100.0,
+        frozen_qty=0.0,
+        avg_cost=8.7401,
+        market_value=931.0,
+        unrealized_pnl=56.99,
+        realized_pnl=0.0,
+        commission_paid=5.01,
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_latest_market_bar_before_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "601985"
+            assert trade_date == "2026-06-17"
+            return {
+                "trade_date": "2026-06-16",
+                "close": 9.23,
+                "source": "market_bars",
+            }
+
+        def get_market_bar_on_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "601985"
+            assert trade_date == "2026-06-17"
+            return {
+                "trade_date": "2026-06-17",
+                "close": 9.30,
+                "source": "market_bars",
+            }
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 0.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"601985": fake_position}),
+            instruments={
+                "601985": SimpleNamespace(
+                    name="中国核电",
+                    asset_class=SimpleNamespace(value="stock"),
+                )
+            },
+            watchlist=[],
+            latest_quotes={
+                "601985": {
+                    "symbol": "601985",
+                    "asset_class": "stock",
+                    "price": 9.31,
+                    "timestamp": "2026-06-17T14:59:15+08:00",
+                    "quote_source": "tushare_realtime_quote",
+                    "previous_close": 9.23,
+                    "previous_close_date": "2026-06-16",
+                }
+            },
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.portfolio.get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    response = asyncio.run(live_holdings_route.endpoint())
+    item = response.groups[0].items[0]
+
+    assert item.latest_price == pytest.approx(9.30)
+    assert item.baseline_source == "market_bar_close"
+    assert item.baseline_timestamp == "2026-06-16"
+    assert item.baseline_price == pytest.approx(9.23)
+    assert item.today_change == pytest.approx(7.0)
+    assert item.today_change_pct == pytest.approx(9.30 / 9.23 - 1)
+
+
+def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=898.3130777502869,
+        available_qty=898.3130777502869,
+        frozen_qty=0.0,
+        avg_cost=1.0019,
+        market_value=792.94,
+        unrealized_pnl=-107.06,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_latest_market_bar_before_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "012710"
+            assert trade_date == "2026-06-17"
+            return {
+                "trade_date": "2026-06-16",
+                "close": 0.8926,
+                "source": "market_bars",
+            }
+
+        def get_market_bar_on_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "012710"
+            assert trade_date == "2026-06-17"
+            return {
+                "trade_date": "2026-06-17",
+                "close": 0.8847,
+                "source": "market_bars",
+            }
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 0.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"012710": fake_position}),
+            instruments={
+                "012710": SimpleNamespace(
+                    name="华夏核心成长混合C",
+                    asset_class=SimpleNamespace(value="fund"),
+                )
+            },
+            watchlist=[],
+            latest_quotes={
+                "012710": {
+                    "symbol": "012710",
+                    "asset_class": "fund",
+                    "price": 0.8827,
+                    "timestamp": "2026-06-17 15:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                }
+            },
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.portfolio.get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    response = asyncio.run(live_holdings_route.endpoint())
+    item = response.groups[0].items[0]
+
+    assert item.latest_price == pytest.approx(0.8847)
+    assert item.baseline_price == pytest.approx(0.8926)
+    assert item.baseline_timestamp == "2026-06-16"
+    assert item.today_change == pytest.approx(-7.10, abs=0.01)
+    assert item.today_change_pct == pytest.approx(0.8847 / 0.8926 - 1)
 
 
 def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
