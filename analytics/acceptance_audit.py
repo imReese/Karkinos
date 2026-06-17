@@ -491,3 +491,212 @@ def build_strategy_lab_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_research_evidence_acceptance_audit() -> AcceptanceAudit:
+    """Return research evidence hardening criteria mapped to evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="versioned_research_evidence_single_backtests",
+                checkbox_text=(
+                    "* [x] `ResearchEvidenceBundle` exists as a versioned "
+                    "backend artifact and is\n  generated for single backtests."
+                ),
+                evidence_paths=(
+                    "analytics/research_evidence.py",
+                    "server/routes/backtest.py",
+                    "tests/analytics/test_research_evidence.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_research_evidence.py",
+                    "uv run python -m pytest tests/test_server_routes.py -k research_evidence",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="sweeps_and_comparisons_expose_bundle_contract",
+                checkbox_text=(
+                    "* [x] Parameter sweeps and strategy comparisons persist "
+                    "and expose the same\n  evidence-bundle contract for each "
+                    "constituent run."
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "server/models.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k 'backtest_sweep or backtest_compare or research_evidence'",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="explicit_analyzer_contract",
+                checkbox_text=(
+                    "* [x] Analyzer outputs are produced through an explicit "
+                    "contract rather than\n  ad hoc report fields."
+                ),
+                evidence_paths=(
+                    "analytics/research_evidence.py",
+                    "analytics/backtest_metrics.py",
+                    "tests/analytics/test_research_evidence.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_research_evidence.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="data_quality_gate_blocks_promotion",
+                checkbox_text=(
+                    "* [x] Data-quality analyzer status can mark experiments "
+                    "`pass`, `degraded`, or\n  `blocked`, and blocked data "
+                    "prevents promotion readiness."
+                ),
+                evidence_paths=(
+                    "analytics/research_evidence.py",
+                    "analytics/strategy_promotion_readiness.py",
+                    "tests/analytics/test_research_evidence.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_research_evidence.py tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="bundle_references_core_evidence",
+                checkbox_text=(
+                    "* [x] Evidence bundles reference dataset snapshot id, "
+                    "strategy metadata,\n  after-cost evidence, OOS evidence, "
+                    "cost summary, fills/trade statistics, and\n  limitations "
+                    "when available."
+                ),
+                evidence_paths=(
+                    "analytics/research_evidence.py",
+                    "analytics/dataset_snapshot.py",
+                    "analytics/backtest_metrics.py",
+                    "tests/analytics/test_research_evidence.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_research_evidence.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_rolling_oos_evidence",
+                checkbox_text=(
+                    "* [x] Walk-forward or rolling OOS evidence can be "
+                    "generated deterministically\n  for at least one strategy "
+                    "fixture."
+                ),
+                evidence_paths=(
+                    "analytics/oos_validation.py",
+                    "server/routes/backtest.py",
+                    "tests/analytics/test_oos_validation.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_oos_validation.py",
+                    "uv run python -m pytest tests/test_server_routes.py -k rolling_oos",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="parameter_sweep_robustness_evidence",
+                checkbox_text=(
+                    "* [x] Parameter sweep reports include stability or "
+                    "sensitivity evidence and\n  overfitting warnings grounded "
+                    "in the tested grid."
+                ),
+                evidence_paths=(
+                    "analytics/sweep_robustness.py",
+                    "server/routes/backtest.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k backtest_sweep",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="china_market_assumptions_recorded",
+                checkbox_text=(
+                    "* [x] China-market assumptions are recorded in each "
+                    "evidence bundle, including\n  which assumptions are "
+                    "modeled and which are known gaps."
+                ),
+                evidence_paths=(
+                    "analytics/research_evidence.py",
+                    "docs/return-accounting.zh.md",
+                    "tests/analytics/test_research_evidence.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_research_evidence.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="promotion_readiness_consumes_evidence_gate",
+                checkbox_text=(
+                    "* [x] Strategy promotion readiness consumes "
+                    "evidence-bundle gate status and\n  cannot mark a strategy "
+                    "ready when required evidence is missing or blocked."
+                ),
+                evidence_paths=(
+                    "analytics/strategy_promotion_readiness.py",
+                    "analytics/research_evidence.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="api_and_reports_do_not_enable_execution",
+                checkbox_text=(
+                    "* [x] API and saved report files expose the evidence "
+                    "bundle without changing\n  live-like execution defaults "
+                    "or enabling automatic real-money trading."
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "server/models.py",
+                    "analytics/report.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k research_evidence",
+                    "uv run python -m pytest tests/server/test_trading_controls.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backend_deterministic_research_evidence_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover bundle "
+                    "generation, analyzer contract,\n  data-quality "
+                    "degraded/blocked states, and promotion-gate consumption."
+                ),
+                evidence_paths=(
+                    "tests/analytics/test_research_evidence.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_research_evidence.py tests/analytics/test_strategy_promotion_readiness.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="docs_explain_research_evidence_boundary",
+                checkbox_text=(
+                    "* [x] README/docs explain how to interpret the evidence "
+                    "bundle and keep it as\n  research evidence rather than "
+                    "investment advice."
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                ),
+                validation_commands=(
+                    'rg -n "research_evidence_bundle|研究证据包|not investment advice|不是投资建议" README.md docs',
+                    "uv run python -m pytest tests/test_acceptance_audit.py",
+                ),
+            ),
+        )
+    )
