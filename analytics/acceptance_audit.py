@@ -233,7 +233,7 @@ def build_acceptance_audit() -> AcceptanceAudit:
     )
 
 
-def build_v04_strategy_lab_acceptance_audit() -> AcceptanceAudit:
+def build_strategy_lab_acceptance_audit() -> AcceptanceAudit:
     """Return v0.4 Strategy Lab criteria mapped to deterministic evidence."""
     return AcceptanceAudit(
         criteria=(
