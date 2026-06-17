@@ -687,7 +687,11 @@ class BacktestRequest(BaseModel):
     long_period: int = 20
     params: dict[str, Any] | None = None
     assets: list[dict[str, str]] | None = None
+    oos_mode: str = "single_split"
     oos_split_date: str | None = None
+    oos_min_train_points: int = 4
+    oos_test_window_points: int = 3
+    oos_step_points: int = 1
     benchmark_return: float | None = None
 
 
@@ -728,6 +732,7 @@ class BacktestResponse(BaseModel):
     metrics: BacktestMetrics
     equity_curve: list[EquityPoint]
     metrics_json: dict[str, Any] = Field(default_factory=dict)
+    research_evidence_bundle: dict[str, Any] = Field(default_factory=dict)
     cost_summary_json: dict[str, Any] = Field(default_factory=dict)
     evidence_json: dict[str, Any] = Field(default_factory=dict)
     fills: list[BacktestFill] = Field(default_factory=list)
@@ -760,6 +765,7 @@ class BacktestSweepResponse(BaseModel):
     rank_by: str
     tested_count: int
     results: list[BacktestSweepResult]
+    robustness_evidence: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 

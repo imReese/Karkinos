@@ -28,8 +28,9 @@ public demos and development.
   use validated generic `params` while preserving legacy moving-average fields
 - Backtest parameter sweeps run bounded typed grids, persist each tested
   configuration, and return deterministic rankings with multiple-testing
-  warnings; the Web Strategy Lab can run the same bounded sweep and review the
-  ranked configurations without approving execution
+  warnings plus a versioned robustness artifact for local-neighbor stability
+  and per-parameter sensitivity; the Web Strategy Lab can run the same bounded
+  sweep and review the ranked configurations without approving execution
 - Backtest strategy comparisons can run multiple strategies or parameter sets
   against one frozen dataset snapshot, reject mismatched snapshots, and return
   saved result ids for audit; the Web Strategy Lab can submit same-strategy
@@ -47,9 +48,10 @@ public demos and development.
   requirements so saved reports remain auditable when the registry changes; Web
   reports render the snapshot with readable strategy and parameter labels while
   keeping API keys as secondary audit fields
-- Web Backtest reports surface after-cost evidence, out-of-sample split status,
-  benchmark comparison, structured cost/slippage assumptions, and limitations
-  without turning research output into execution approval
+- Web Backtest reports surface after-cost evidence, single-split or rolling
+  out-of-sample status, benchmark comparison, structured cost/slippage
+  assumptions, and limitations without turning research output into execution
+  approval
 - Web Backtest Strategy Lab selects registry strategies, renders typed
   parameter controls with readable labels, exposes strategy metadata and
   validation requirements, and can run a single-symbol research backtest from
@@ -114,6 +116,17 @@ checks can query them. Each saved backtest also writes a human-readable JSON
 artifact under `reports/backtest/backtest-result-<id>.json` by default. Set
 `KARKINOS_BACKTEST_REPORT_DIR` to place those local report files elsewhere.
 The report directory is runtime data and should stay out of git.
+
+Every Strategy Lab run should be read through its `research_evidence_bundle`.
+Treat `gate_status` as the research review state: `pass` means the attached
+evidence is internally consistent enough for human review, `degraded` means a
+data/OOS/cost/analyzer warning needs review, and `blocked` means the run should
+not be promoted until the blocking evidence gap is fixed. The bundle records
+the dataset snapshot id, strategy metadata, analyzer outputs, after-cost and
+OOS availability, fills/trade statistics, China-market assumptions, known
+limitations, and `promotion_gate.does_not_enable_execution=true`. It is
+evidence for review, not investment advice, not a profitability claim, and not
+authorization to submit broker orders.
 
 Historical OHLCV market bars are stored in the local SQLite table
 `data/store/meta.db.market_bars`; Parquet files under `data/store/bars/` are a

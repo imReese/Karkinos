@@ -62,3 +62,55 @@ def test_research_evidence_bundle_blocks_when_dataset_has_no_rows():
     assert analyzers["oos"]["status"] == "pass"
     assert "T+1" in bundle["china_market_assumptions"]["known_gaps"][0]
     assert bundle["promotion_gate"]["does_not_enable_execution"] is True
+
+
+def test_research_evidence_bundle_summarizes_rolling_oos_details():
+    bundle = build_research_evidence_bundle(
+        metrics_json={
+            "dataset_snapshot": {
+                "schema_version": "karkinos.dataset_snapshot.v1",
+                "snapshot_id": "sha256:rolling",
+                "row_count": 12,
+                "data_quality": {"status": "ok", "issues": []},
+                "symbol_universe": [{"symbol": "FIXTURE", "row_count": 12}],
+            },
+            "oos_validation": {
+                "validation_mode": "rolling",
+                "fold_count": 3,
+                "validation_status": "benchmark_passed",
+                "aggregate": {
+                    "mean_out_of_sample_return": 0.032,
+                    "worst_out_of_sample_return": -0.01,
+                    "pass_rate": 0.67,
+                    "total_oos_cost": 8.5,
+                },
+                "limitations": [
+                    "Rolling OOS evidence does not refit parameters per fold."
+                ],
+            },
+        },
+        cost_summary_json={"total_trades": 2},
+        evidence_json={"total_cost": 8.5, "fill_count": 2},
+        strategy_metadata={
+            "strategy_id": "fixture_strategy",
+            "name": "fixture_strategy",
+            "display_name": "Fixture Strategy",
+            "params": {"window": 5},
+        },
+    )
+
+    analyzers = {item["name"]: item for item in bundle["analyzers"]}
+    assert analyzers["oos"]["status"] == "pass"
+    assert analyzers["oos"]["details"] == {
+        "oos_available": True,
+        "validation_mode": "rolling",
+        "validation_status": "benchmark_passed",
+        "split_timestamp": None,
+        "fold_count": 3,
+        "aggregate": {
+            "mean_out_of_sample_return": 0.032,
+            "worst_out_of_sample_return": -0.01,
+            "pass_rate": 0.67,
+            "total_oos_cost": 8.5,
+        },
+    }

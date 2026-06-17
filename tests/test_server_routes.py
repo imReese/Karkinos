@@ -309,6 +309,7 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
     assert response.metrics.total_commission == 12.5
     assert response.metrics_json["gross_turnover"] == 24000.0
     research_bundle = response.metrics_json["research_evidence_bundle"]
+    assert response.research_evidence_bundle == research_bundle
     assert research_bundle["schema_version"] == "karkinos.research_evidence.v1"
     assert research_bundle["gate_status"] == "pass"
     assert research_bundle["dataset_snapshot_id"] == "sha256:test-snapshot"
@@ -368,6 +369,16 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
     assert (
         report_payload["metrics_json"]["research_evidence_bundle"]["schema_version"]
         == "karkinos.research_evidence.v1"
+    )
+    assert (
+        report_payload["research_evidence_bundle"]["schema_version"]
+        == "karkinos.research_evidence.v1"
+    )
+    assert (
+        report_payload["research_evidence_bundle"]["promotion_gate"][
+            "does_not_enable_execution"
+        ]
+        is True
     )
     assert report_payload["cost_summary"]["total_trades"] == 2
     assert report_payload["fills"][0]["fill_id"] == "FILL-1"
@@ -464,6 +475,88 @@ def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
     assert oos["out_of_sample"]["fill_count"] >= 1
     assert oos["validation_status"] in {"benchmark_passed", "benchmark_failed"}
     assert "not investment advice" in oos["limitations"][0]
+
+
+def test_run_single_backtest_attaches_rolling_oos_validation(monkeypatch):
+    import pandas as pd
+
+    from core.types import AssetClass, BarFrequency, Symbol
+    from data.handler import DataHandler
+    from domain.instrument import make_etf
+    from server.routes import backtest as backtest_routes
+
+    class FakeStore:
+        pass
+
+    class FakeDataManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def get_instrument(symbol, asset_class):
+            assert symbol == Symbol("510300")
+            assert asset_class == AssetClass.FUND
+            return make_etf("510300", "沪深300ETF")
+
+        def get_bars(self, symbol, start, end, asset_class):
+            prices = [10, 9, 8, 7, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            dates = pd.bdate_range("2026-01-05", periods=len(prices))
+            df = pd.DataFrame(
+                {
+                    "timestamp": dates,
+                    "open": prices,
+                    "high": [price + 0.2 for price in prices],
+                    "low": [price - 0.2 for price in prices],
+                    "close": prices,
+                    "volume": [1_000_000.0] * len(prices),
+                }
+            )
+            return DataHandler(
+                df,
+                symbol,
+                frequency=BarFrequency.DAILY,
+                asset_class=asset_class,
+            )
+
+    monkeypatch.setattr("data.store.DataStore", FakeStore)
+    monkeypatch.setattr("data.manager.DataManager", FakeDataManager)
+    monkeypatch.setattr(
+        "data.manager.build_sources", lambda **kwargs: {"fixture": object()}
+    )
+
+    result = backtest_routes._run_single_backtest(
+        backtest_routes.BacktestRequest(
+            start_date="2026-01-05",
+            end_date="2026-01-23",
+            initial_cash=100000,
+            strategy="dual_ma",
+            short_period=3,
+            long_period=5,
+            assets=[{"symbol": "510300", "asset_class": "etf"}],
+            oos_mode="rolling",
+            oos_min_train_points=4,
+            oos_test_window_points=3,
+            oos_step_points=2,
+            benchmark_return=0.0,
+        ),
+        SimpleNamespace(
+            assets=[],
+            data_source="fixture",
+            tushare_token="",
+        ),
+    )
+
+    oos = result["metrics_json"]["oos_validation"]
+
+    assert oos["strategy_id"] == "dual_ma"
+    assert oos["benchmark_role"] == "etf_rotation_trend_following"
+    assert oos["validation_mode"] == "rolling"
+    assert oos["fold_count"] >= 2
+    assert oos["folds"][0]["split_timestamp"]
+    assert oos["folds"][0]["out_of_sample"]["fill_count"] >= 0
+    assert oos["aggregate"]["pass_rate"] is not None
+    assert oos["validation_status"] in {"benchmark_passed", "benchmark_failed"}
+    assert "not refit parameters per fold" in oos["limitations"][1]
 
 
 def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
@@ -7250,6 +7343,96 @@ def test_backtest_sweep_runs_bounded_grid_and_persists_each_configuration(
         json.loads(str(payload["config_json"])) for payload in saved_payloads
     ]
     assert [config["params"] for config in saved_configs] == captured_params
+
+
+def test_backtest_sweep_returns_parameter_robustness_evidence(monkeypatch):
+    from server.routes import backtest as backtest_routes
+
+    router = backtest_routes.create_router()
+    endpoint = _backtest_route(router, "/api/backtest/sweep", "POST").endpoint
+
+    class FakeDb:
+        async def save_backtest_result(self, **kwargs):
+            return 1000 + len(kwargs["config_json"])
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    returns_by_short_period = {3: 0.04, 5: 0.05, 7: 0.01}
+
+    def fake_run_backtest(request, config, db=None):
+        short_period = int(request.params["short_period"])
+        total_return = returns_by_short_period[short_period]
+        return {
+            "initial_cash": 100000.0,
+            "final_equity": 100000.0 * (1 + total_return),
+            "total_return": total_return,
+            "annual_return": total_return,
+            "sharpe": float(short_period),
+            "sortino": float(short_period) / 2,
+            "max_drawdown": 0.01,
+            "win_rate": 0.5,
+            "duration_days": 10,
+            "equity_curve": [{"timestamp": "2026-01-01T00:00:00", "equity": 100000.0}],
+            "metrics_json": {"total_trades": short_period},
+            "cost_summary_json": {"total_trades": short_period},
+            "evidence_json": {},
+            "fills": [],
+        }
+
+    monkeypatch.setattr(backtest_routes, "_run_backtest", fake_run_backtest)
+
+    async def run_inline(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(backtest_routes.asyncio, "to_thread", run_inline)
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.BacktestSweepRequest(
+                strategy="dual_ma",
+                param_grid={"short_period": [3, 5, 7], "long_period": [9]},
+                max_combinations=4,
+                rank_by="total_return",
+            )
+        )
+    )
+
+    evidence = response.robustness_evidence
+    assert evidence["schema_version"] == "karkinos.sweep_robustness.v1"
+    assert evidence["rank_by"] == "total_return"
+    assert evidence["tested_count"] == 3
+    assert evidence["best_params"] == {"short_period": 5, "long_period": 9}
+    assert evidence["local_stability"] == {
+        "best_score": 0.05,
+        "neighbor_count": 2,
+        "mean_neighbor_score": 0.025,
+        "stability_ratio": 0.5,
+    }
+    assert evidence["parameter_sensitivity"] == [
+        {
+            "parameter": "short_period",
+            "tested_values": [3, 5, 7],
+            "best_value": 5,
+            "score_range": 0.04,
+            "score_span": {"min": 0.01, "max": 0.05},
+        },
+        {
+            "parameter": "long_period",
+            "tested_values": [9],
+            "best_value": 9,
+            "score_range": 0.0,
+            "score_span": {"min": 0.01, "max": 0.05},
+        },
+    ]
+    assert {
+        "code": "local_peak_risk",
+        "message": "Best parameter set is materially stronger than nearby tested neighbors; require OOS or rolling validation before promotion.",
+    } in evidence["overfitting_warnings"]
+    assert any("not investment advice" in item for item in evidence["limitations"])
 
 
 def test_backtest_sweep_rejects_unbounded_grid_before_execution(monkeypatch):
