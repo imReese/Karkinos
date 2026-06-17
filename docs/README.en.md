@@ -87,8 +87,7 @@ Karkinos/
 │   └── limits.py           # Position limit / max drawdown / concentration rules
 ├── backtest/               # Backtest engine
 │   ├── engine.py           # BacktestEngine (main loop)
-│   ├── result.py           # BacktestResult (result container)
-│   └── viewer.py           # matplotlib equity curve visualization
+│   └── result.py           # BacktestResult (result container)
 ├── analytics/              # Analytics layer
 │   ├── metrics.py          # Sharpe / Sortino / max drawdown / win rate / annualized return
 │   ├── report.py           # Report generation

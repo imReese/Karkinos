@@ -102,8 +102,7 @@ Karkinos/
 │   └── limits.py           # 仓位上限/最大回撤/集中度规则
 ├── backtest/               # 回测引擎
 │   ├── engine.py           # BacktestEngine（主循环）
-│   ├── result.py           # BacktestResult（结果容器）
-│   └── viewer.py           # matplotlib 资金曲线可视化
+│   └── result.py           # BacktestResult（结果容器）
 ├── analytics/              # 分析层
 │   ├── metrics.py          # Sharpe/Sortino/最大回撤/胜率/年化收益
 │   ├── report.py           # 报告生成
