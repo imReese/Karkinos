@@ -1,6 +1,6 @@
 # Karkinos Design System
 
-Karkinos uses a Catppuccin cockpit system: **Latte** for light mode and **Mocha** for dark mode. The product should feel calm enough for daily portfolio review, dense enough for financial operation, and clear enough that money, risk, and data freshness never require visual effort to parse.
+Karkinos uses a Catppuccin platform system: **Latte** for light mode and **Mocha** for dark mode. The product should feel calm enough for daily portfolio review, dense enough for financial operation, and clear enough that money, risk, and data freshness never require visual effort to parse.
 
 This document is the source of truth for UI direction. If implementation and this document disagree, update the implementation or explicitly record the drift before moving on.
 
@@ -12,7 +12,7 @@ Conforming:
 
 - The active theme is Catppuccin Latte with `--app-bg: #eff1f5`, `--app-text: #4c4f69`, and `--app-muted: #6c6f85`.
 - The codebase already exposes most app colors through `--app-*` tokens instead of one-off page colors.
-- The shell, panels, charts, and controls use a restrained cockpit density rather than a marketing layout.
+- The shell, panels, charts, and controls use a restrained financial-app density rather than a marketing layout.
 
 Needs correction:
 
@@ -24,7 +24,7 @@ Needs correction:
 
 ## North Star
 
-Karkinos is a financial cockpit for one operator. It is not a brokerage clone, a marketing dashboard, or a toy backtester UI.
+Karkinos is a personal quant research and trading platform for one operator. It is not a brokerage clone, a marketing dashboard, or a toy backtester UI.
 
 The first screen should quickly answer:
 
@@ -60,7 +60,7 @@ Palette rules:
 
 - Do not introduce generic Tailwind palette colors for product surfaces when a Catppuccin or `--app-*` token exists.
 - Do not use `emerald-100`, `sky-100`, `amber-100`, or similar pale dark-mode text colors on Latte surfaces.
-- Accent purple is for selected controls, focus, and cockpit emphasis. It is not a decorative background theme.
+- Accent purple is for selected controls, focus, and platform emphasis. It is not a decorative background theme.
 - Green, red, amber, blue, and teal are semantic. They should explain data state, PnL, risk, or action state.
 
 ## Contrast And Eye Comfort
@@ -145,7 +145,7 @@ Financial calendar:
 
 ## Layout
 
-Karkinos should behave like a cockpit:
+Karkinos should behave like a focused financial platform:
 
 - Main content owns the primary decision area.
 - Secondary rails hold action queues, recent activity, or diagnostics.
@@ -195,4 +195,4 @@ Recommended cleanup backlog from this audit:
 - Define or remove `--app-warning-bg`, `--app-warning-border`, and `--app-accent-strong`.
 - Add text-specific semantic tokens for Latte/Mocha if raw Catppuccin colors remain below contrast requirements.
 - Replace remaining unscoped white utilities on routine surfaces.
-- Add a lightweight contrast audit for key cockpit surfaces.
+- Add a lightweight contrast audit for key platform surfaces.

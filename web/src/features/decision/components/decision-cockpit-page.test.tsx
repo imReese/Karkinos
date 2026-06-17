@@ -117,7 +117,7 @@ const dailyDecision = {
     },
   ],
   no_action_reasons: [],
-  limitations: ['Decision cockpit output is research and portfolio tooling.'],
+  limitations: ['Decision platform output is research and portfolio evidence.'],
 };
 
 const intradayDecision = {
@@ -190,7 +190,7 @@ afterEach(() => {
 test('renders daily and intraday decision cockpit evidence without execution', async () => {
   renderDecisionCockpit();
 
-  expect(await screen.findByText('Decision cockpit')).toBeTruthy();
+  expect(await screen.findByText('Decision platform')).toBeTruthy();
   expect(await screen.findByText('Decision command register')).toBeTruthy();
   expect(
     await screen.findByLabelText('Decision register item: Candidate actions 1'),
@@ -243,7 +243,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {
   renderDecisionCockpit();
 
-  expect(await screen.findByText('Decision cockpit')).toBeTruthy();
+  expect(await screen.findByText('Decision platform')).toBeTruthy();
 
   const candidateCard = await screen.findByTestId(
     'decision-candidate-card-600519',

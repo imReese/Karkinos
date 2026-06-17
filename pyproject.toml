@@ -1,7 +1,7 @@
 [project]
 name = "karkinos"
 version = "0.1.0"
-description = "个人量化交易辅助系统 - 面向中国市场"
+description = "面向中国市场的个人量化投研与交易平台"
 requires-python = ">=3.12"
 dependencies = [
     "akshare>=1.14",
@@ -40,6 +40,7 @@ include = [
     "risk", "risk.*",
     "backtest", "backtest.*",
     "analytics", "analytics.*",
+    "account_truth", "account_truth.*",
     "notification", "notification.*",
     "server", "server.*",
 ]
@@ -62,7 +63,7 @@ dev-dependencies = [
 [tool.isort]
 profile = "black"
 line_length = 88
-known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "server"]
+known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", "backtest", "analytics", "account_truth", "server"]
 
 # === black 配置 ===
 [tool.black]

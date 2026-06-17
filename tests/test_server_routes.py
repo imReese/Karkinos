@@ -6434,6 +6434,14 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
                 "quote_source": "fixture",
             }
 
+        def get_account_truth_score_sync(self):
+            return {
+                "score": 100,
+                "gate_status": "pass",
+                "data_freshness_status": "fresh",
+                "unresolved_mismatch_count": 0,
+            }
+
     fake_state = SimpleNamespace(db=FakeDb())
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
@@ -6450,6 +6458,7 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
     assert candidate["evidence"]["strategy"]["strategy_id"] == "dual_ma"
     assert candidate["evidence"]["signal"]["id"] == 1
     assert candidate["evidence"]["risk_gate"]["status"] == "passed"
+    assert candidate["evidence"]["account_truth"]["gate_status"] == "pass"
     assert candidate["evidence"]["data_freshness"]["status"] == "live"
     assert candidate["evidence"]["manual_confirmation"]["required"] is True
     assert candidate["evidence"]["journal"]["latest_event_type"] == (
@@ -6552,6 +6561,142 @@ def test_decision_today_attaches_latest_after_cost_oos_validation(monkeypatch):
     assert validation["after_cost"]["net_return"] == 0.08
     assert validation["oos_validation"]["validation_status"] == "passed"
     assert "not a profitability claim" in validation["limitations"][0]
+
+
+def test_decision_today_blocks_when_account_truth_score_is_missing(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "strategy_id": "dual_ma",
+                    "asset_class": "stock",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                }
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return []
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "price": 123.45,
+                "quote_status": "live",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+            }
+
+        async def get_backtest_results(self):
+            return []
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb()),
+    )
+
+    response = asyncio.run(endpoint())
+
+    assert response["decision"] == "review_required"
+    assert response["summary"]["account_truth"]["gate_status"] == "blocked"
+    assert response["summary"]["account_truth"]["has_evidence"] is False
+    assert response["summary"]["account_truth"]["blocking_reasons"] == [
+        "account_truth_score_unavailable"
+    ]
+    candidate = response["candidates"][0]
+    assert candidate["manual_confirmation_status"] == "blocked_by_account_truth"
+    assert candidate["evidence"]["account_truth"]["gate_status"] == "blocked"
+    assert candidate["evidence"]["account_truth"]["required_actions"] == [
+        "preview_import_and_reconcile_broker_evidence"
+    ]
+
+
+def test_decision_today_degrades_when_account_truth_score_degrades(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "strategy_id": "dual_ma",
+                    "asset_class": "stock",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                }
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return []
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "price": 123.45,
+                "quote_status": "live",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+            }
+
+        async def get_backtest_results(self):
+            return []
+
+        def get_account_truth_score_sync(self):
+            return {
+                "score": 65,
+                "gate_status": "degraded",
+                "data_freshness_status": "stale",
+                "unresolved_mismatch_count": 0,
+                "blocking_reasons": [],
+                "required_actions": ["refresh_broker_evidence"],
+                "limitations": ["Synthetic account-truth fixture."],
+            }
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb()),
+    )
+
+    response = asyncio.run(endpoint())
+
+    assert response["decision"] == "review_required"
+    assert response["summary"]["account_truth"]["gate_status"] == "degraded"
+    assert response["summary"]["account_truth"]["score"] == 65
+    candidate = response["candidates"][0]
+    assert candidate["manual_confirmation_status"] == "account_truth_review_required"
+    assert candidate["evidence"]["account_truth"]["data_freshness_status"] == "stale"
+    assert candidate["evidence"]["account_truth"]["required_actions"] == [
+        "refresh_broker_evidence"
+    ]
 
 
 def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
@@ -6832,6 +6977,14 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
                 "quote_status": "live",
                 "quote_timestamp": "2026-04-18T09:34:00+08:00",
                 "quote_source": "fixture",
+            }
+
+        def get_account_truth_score_sync(self):
+            return {
+                "score": 100,
+                "gate_status": "pass",
+                "data_freshness_status": "fresh",
+                "unresolved_mismatch_count": 0,
             }
 
     fake_state = SimpleNamespace(db=FakeDb())
@@ -7796,6 +7949,11 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
     assert all(
         row.promotion_status == "promotable_for_paper_review" for row in response.rows
     )
+    assert all(row.has_account_truth_evidence for row in response.rows)
+    assert all(
+        row.account_truth_gate_status == "not_evaluated" for row in response.rows
+    )
+    assert all(row.account_truth_score is None for row in response.rows)
     assert "manual confirmation" in response.limitations[1]
 
 

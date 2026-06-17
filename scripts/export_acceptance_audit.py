@@ -17,10 +17,10 @@ if str(REPO_ROOT) not in sys.path:
 from analytics.acceptance_audit import (
     AcceptanceAudit,
     build_acceptance_audit,
+    build_account_truth_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_strategy_lab_acceptance_audit,
 )
-
 
 AuditBuilder = Callable[[], AcceptanceAudit]
 
@@ -33,6 +33,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "research_evidence": (
         "Research Evidence acceptance audit",
         build_research_evidence_acceptance_audit,
+    ),
+    "account_truth": (
+        "Account Truth acceptance audit",
+        build_account_truth_acceptance_audit,
     ),
 }
 
@@ -49,7 +53,9 @@ def build_acceptance_audit_export(
         selected_keys = (selected_audit,)
 
     audits = [
-        _audit_to_export(key=key, name=AUDIT_REGISTRY[key][0], audit=AUDIT_REGISTRY[key][1]())
+        _audit_to_export(
+            key=key, name=AUDIT_REGISTRY[key][0], audit=AUDIT_REGISTRY[key][1]()
+        )
         for key in selected_keys
     ]
     return {

@@ -273,7 +273,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Karkinos Server",
-        description="个人量化交易辅助系统",
+        description="面向中国市场的个人量化投研与交易平台",
         version="0.1.0",
         lifespan=lifespan,
     )

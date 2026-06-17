@@ -259,6 +259,17 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
     assert actions[0]["risk_gate_status"] == "passed"
     assert actions[0]["manual_confirmation_status"] == ("ready_for_manual_confirmation")
     assert journal[0]["latest_event"]["event_type"] == "risk.signal.recorded"
+    monkeypatch.setattr(
+        db,
+        "get_account_truth_score_sync",
+        lambda: {
+            "score": 100,
+            "gate_status": "pass",
+            "data_freshness_status": "fresh",
+            "unresolved_mismatch_count": 0,
+        },
+        raising=False,
+    )
 
     fake_portfolio = SimpleNamespace(
         cash=80400.0,
@@ -302,6 +313,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
     assert candidate["evidence"]["signal"]["id"] == 1
     assert candidate["evidence"]["risk_gate"]["status"] == "passed"
     assert candidate["evidence"]["risk_gate"]["passed"] is True
+    assert candidate["evidence"]["account_truth"]["gate_status"] == "pass"
     assert candidate["evidence"]["data_freshness"]["status"] == "live"
     assert candidate["evidence"]["manual_confirmation"]["required"] is True
     assert candidate["evidence"]["journal"]["has_journal_entry"] is True

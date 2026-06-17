@@ -159,3 +159,93 @@ def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_degrade
 
     assert row.is_promotable is False
     assert row.missing_requirements == ["research_evidence_gate_pass"]
+
+
+def test_strategy_promotion_readiness_blocks_when_account_truth_gate_blocks():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [
+            _backtest_row("dual_ma"),
+            _backtest_row("monthly_rebalance"),
+            _backtest_row("bollinger"),
+        ],
+        [
+            _risk_decision("dual_ma", passed=False),
+            _risk_decision("monthly_rebalance", passed=False),
+            _risk_decision("bollinger", passed=False),
+        ],
+        [
+            _shadow_order("dual_ma", divergence_status="within_expectations"),
+            _shadow_order(
+                "monthly_rebalance",
+                divergence_status="within_expectations",
+            ),
+            _shadow_order("bollinger", divergence_status="within_expectations"),
+        ],
+        account_truth_scores=[
+            {
+                "gate_status": "blocked",
+                "score": 40,
+                "blocking_reasons": ["unresolved_account_truth_mismatch"],
+            }
+        ],
+    )
+
+    by_strategy = {row.strategy_id: row for row in readiness.rows}
+
+    assert readiness.required_strategy_count == 3
+    assert readiness.promotable_strategy_count == 0
+    assert readiness.is_complete is False
+    assert all(row.account_truth_gate_status == "blocked" for row in readiness.rows)
+    assert all(row.account_truth_score == 40 for row in readiness.rows)
+    assert by_strategy["dual_ma"].has_account_truth_evidence is False
+    assert by_strategy["dual_ma"].missing_requirements == ["account_truth_gate_pass"]
+
+
+def test_strategy_promotion_readiness_blocks_when_account_truth_gate_is_enabled_but_missing():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [_backtest_row("dual_ma")],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+        account_truth_scores=[],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+
+    assert row.is_promotable is False
+    assert row.has_account_truth_evidence is False
+    assert row.account_truth_gate_status == "blocked"
+    assert row.account_truth_score is None
+    assert row.missing_requirements == ["account_truth_gate_pass"]
+
+
+def test_strategy_promotion_readiness_allows_when_account_truth_gate_passes():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [
+            _backtest_row("dual_ma"),
+            _backtest_row("monthly_rebalance"),
+            _backtest_row("bollinger"),
+        ],
+        [
+            _risk_decision("dual_ma", passed=False),
+            _risk_decision("monthly_rebalance", passed=False),
+            _risk_decision("bollinger", passed=False),
+        ],
+        [
+            _shadow_order("dual_ma", divergence_status="within_expectations"),
+            _shadow_order(
+                "monthly_rebalance",
+                divergence_status="within_expectations",
+            ),
+            _shadow_order("bollinger", divergence_status="within_expectations"),
+        ],
+        account_truth_scores=[{"gate_status": "pass", "score": 100}],
+    )
+
+    assert readiness.promotable_strategy_count == 3
+    assert readiness.is_complete is True
+    assert all(row.has_account_truth_evidence for row in readiness.rows)
+    assert all(row.account_truth_gate_status == "pass" for row in readiness.rows)
+    assert all(row.account_truth_score == 100 for row in readiness.rows)

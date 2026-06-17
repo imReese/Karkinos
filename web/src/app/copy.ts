@@ -3,9 +3,9 @@ import { usePreferences, type Locale } from './preferences';
 export const copy = {
   en: {
     shell: {
-      title: 'Portfolio OS',
+      title: 'Quant platform',
       description:
-        'Portfolio workspace for holdings, cash, activity, and valuation.',
+        'Personal finance app for holdings, cash, activity, and valuation.',
       language: 'Language',
       theme: 'Theme',
       navigation: 'Navigation',
@@ -106,7 +106,7 @@ export const copy = {
     },
     overview: {
       kicker: 'Overview',
-      title: 'Portfolio workspace',
+      title: 'Portfolio platform',
       subtitle:
         'Track capital structure, return breakdown, and equity movement in one place.',
       modeHelper:
@@ -255,7 +255,7 @@ export const copy = {
     },
     portfolio: {
       kicker: 'Portfolio',
-      title: 'Holdings and allocation workspace',
+      title: 'Holdings and allocation platform',
       subtitle:
         'Filter holdings by symbol, asset class, and PnL focus while keeping allocation and return structure in view.',
       positionsLoading: 'Loading positions.',
@@ -370,7 +370,7 @@ export const copy = {
         refreshingQuote: 'Refreshing quote…',
         refreshDone: 'Quote refresh request completed.',
         refreshFailed: 'Quote refresh failed. Check market data state.',
-        actionMarket: 'Open Market workspace',
+        actionMarket: 'Open Market research',
         actionTrading: 'Open Trading approvals',
         actionActivity: 'Record activity',
         actionPortfolio: 'View all holdings',
@@ -410,11 +410,11 @@ export const copy = {
     },
     riskPage: {
       kicker: 'Risk',
-      title: 'Risk workspace',
+      title: 'Risk control center',
       subtitle:
         'Review current alerts, capital pressure, and equity attribution in one place.',
-      loading: 'Loading risk workspace.',
-      error: 'Failed to load risk workspace.',
+      loading: 'Loading risk control center.',
+      error: 'Failed to load risk control center.',
       alerts: 'Active alerts',
       blockingRegister: 'Blocking register',
       blockingRegisterDetail:
@@ -455,11 +455,11 @@ export const copy = {
     },
     decision: {
       kicker: 'Decision',
-      title: 'Decision cockpit',
+      title: 'Decision platform',
       subtitle:
         'Review daily and intraday candidates with risk gates, strategy evidence, quote health, and manual-confirmation readiness.',
-      loading: 'Loading decision cockpit.',
-      error: 'Failed to load decision cockpit.',
+      loading: 'Loading decision platform.',
+      error: 'Failed to load decision platform.',
       commandRegister: 'Decision command register',
       commandRegisterTitle: 'Today operating posture',
       commandRegisterDetail:
@@ -861,7 +861,7 @@ export const copy = {
     },
     market: {
       kicker: 'Market',
-      title: 'Research workspace',
+      title: 'Market research',
       subtitle:
         'Track coverage, quote health, price structure, and research records for each symbol.',
       loading: 'Loading research board.',
@@ -1269,7 +1269,7 @@ export const copy = {
         'Scheduler and interface state come from the backend live status endpoint.',
       preferences: 'Preferences',
       preferencesDetail:
-        'Theme and language are local browser preferences for this workspace.',
+        'Theme and language are local browser preferences for this platform.',
       notifications: 'Notifications',
       notificationsDetail:
         'Current notification configuration is read from backend settings.',
@@ -1421,7 +1421,7 @@ export const copy = {
       safetyCachedQuotes:
         'Cached quote labels mean the latest known price is stored locally and may not match the current market.',
       safetyNoAdvice:
-        'Karkinos is an analysis workspace, not investment advice or execution guarantee.',
+        'Karkinos is a personal quant research and trading platform, not investment advice or execution guarantee.',
       safetyPrivateData:
         'Keep broker tokens, account exports, and real statements out of public repositories.',
       deferred: 'Deferred',
@@ -1432,8 +1432,8 @@ export const copy = {
   },
   zh: {
     shell: {
-      title: '组合工作台',
-      description: '覆盖持仓、现金、活动与估值的组合工作台。',
+      title: '量化投研平台',
+      description: '覆盖持仓、现金、活动与估值的个人金融应用。',
       language: '语言',
       theme: '主题',
       navigation: '导航',
@@ -1532,7 +1532,7 @@ export const copy = {
     },
     overview: {
       kicker: '总览',
-      title: '资产工作台',
+      title: '资产平台',
       subtitle: '同时查看资金结构、收益拆解和净值走势，快速判断组合当前状态。',
       modeHelper: '账户视角看资本结构，策略视角看收益质量和执行结果。',
       loading: '正在加载账户总览和组合快照。',
@@ -1673,7 +1673,7 @@ export const copy = {
     },
     portfolio: {
       kicker: '组合',
-      title: '持仓与配置工作台',
+      title: '持仓与配置平台',
       subtitle:
         '支持按标的检索、收益筛选和资产类别过滤，右侧持续给出配置和收益拆解。',
       positionsLoading: '正在加载持仓明细。',
@@ -1785,7 +1785,7 @@ export const copy = {
         refreshingQuote: '正在刷新行情…',
         refreshDone: '行情刷新请求已完成。',
         refreshFailed: '行情刷新失败，请检查市场数据状态。',
-        actionMarket: '打开市场工作台',
+        actionMarket: '打开市场研究',
         actionTrading: '打开交易审批',
         actionActivity: '记录流水',
         actionPortfolio: '查看全部持仓',
@@ -1821,10 +1821,10 @@ export const copy = {
     },
     riskPage: {
       kicker: '风险',
-      title: '风险工作台',
+      title: '风控中心',
       subtitle: '统一查看风险提示、资金压力与净值归因。',
-      loading: '正在加载风险工作台。',
-      error: '风险工作台加载失败。',
+      loading: '正在加载风控中心。',
+      error: '风控中心加载失败。',
       alerts: '当前风险提示',
       blockingRegister: '阻断登记',
       blockingRegisterDetail:
@@ -1860,11 +1860,11 @@ export const copy = {
     },
     decision: {
       kicker: '决策',
-      title: '决策驾驶舱',
+      title: '决策平台',
       subtitle:
         '查看日级与盘中候选动作、风控闸门、策略证据、行情健康和人工确认状态。',
-      loading: '正在加载决策驾驶舱。',
-      error: '决策驾驶舱加载失败。',
+      loading: '正在加载决策平台。',
+      error: '决策平台加载失败。',
       commandRegister: '决策指令登记',
       commandRegisterTitle: '今日运行姿态',
       commandRegisterDetail: '汇总日级与盘中候选动作，先于任何人工审批路径。',
@@ -2258,10 +2258,10 @@ export const copy = {
     },
     market: {
       kicker: '市场',
-      title: '研究工作台',
+      title: '市场研究',
       subtitle: '围绕关注列表、行情健康度、价格结构与研究记录组织研究输入。',
-      loading: '正在加载研究工作台。',
-      error: '研究工作台加载失败。',
+      loading: '正在加载市场研究。',
+      error: '市场研究加载失败。',
       watchlist: '研究看板',
       health: '数据健康度',
       chart: '价格结构',
@@ -2695,7 +2695,7 @@ export const copy = {
       providerConfigurationDetail: '数据源变更保持显式，不改变交易执行行为。',
       metadataReadiness: '元数据就绪',
       metadataReadinessDetail:
-        '资产名称和 provider_symbol 在进入驾驶舱展示前需要可追溯。',
+        '资产名称和 provider_symbol 在进入平台展示前需要可追溯。',
       dataSourceOperations: '数据源运营',
       dataSourceOperationsDetail:
         '集中查看供应商能力、权限缺口、fallback 路由和 TuShare 手工任务。',
@@ -2798,7 +2798,7 @@ export const copy = {
       notificationFailed: '测试通知失败',
       safetyCachedQuotes:
         '缓存行情表示最新已知价格来自本地存储，可能不等于当前市场价格。',
-      safetyNoAdvice: 'Karkinos 是分析工作台，不构成投资建议或成交保证。',
+      safetyNoAdvice: 'Karkinos 是个人量化投研与交易平台，不构成投资建议或成交保证。',
       safetyPrivateData: '券商 token、账户导出和真实对账单不应进入公开仓库。',
       deferred: '暂缓项',
       deferredDetail:

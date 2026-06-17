@@ -3,21 +3,30 @@
 Karkinos: Investing is a chronic condition. Here is your scalpel.
 （Karkinos：投资是一种慢性病。这是你的手术刀。）
 
-个人量化交易辅助系统 — 面向中国市场的回测 + 实时监控 + Web 仪表盘
+Karkinos：面向中国市场的个人量化投研与交易平台。
+
+一个集回测、策略实验、账户事实、风控、信号、对账与复盘于一体的个人金融应用。
+
+Karkinos: A China-market personal quant research and trading platform.
+
+An integrated personal finance app for backtesting, strategy research, account
+truth, risk control, signals, reconciliation, and review.
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
-Roadmap, acceptance criteria, and planning history live in
-[docs/KARKINOS_GOAL.md](docs/KARKINOS_GOAL.md).
+Strategic goal, roadmap, and implementation history live in
+[docs/KARKINOS_GOAL.md](docs/KARKINOS_GOAL.md),
+[docs/ROADMAP.md](docs/ROADMAP.md), and
+[docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md).
 
 ---
 
 **Disclaimer**
 
-Karkinos is research and portfolio tooling, not investment advice. Market data,
-portfolio valuation, backtest results, and trading outcomes are not guaranteed
-to be accurate or complete. Do not use this project as the sole basis for
-investment decisions.
+Karkinos is a personal quant research and trading platform, not investment
+advice. Market data, portfolio valuation, backtest results, and trading
+outcomes are not guaranteed to be accurate or complete. Do not use this project
+as the sole basis for investment decisions.
 
 Do not commit real account data, brokerage credentials, transaction exports,
 personal financial data, runtime databases, logs, or screenshots containing
@@ -63,12 +72,13 @@ public demos and development.
 - Target-weight signals — strategy outputs 0~1, Portfolio handles share counts
 - T+1 freeze/thaw built into Position
 - Live monitoring with Telegram / WeChat push notifications
-- React + TanStack Query + TanStack Router portfolio workspace
-- Responsive cockpit layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
-- Portfolio quote board summarizes asset classes; instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research workspace.
+- React + TanStack Query + TanStack Router personal finance app
+- Responsive platform layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
+- Portfolio quote board summarizes asset classes; instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page.
 - Portfolio holdings and detail pages expose per-instrument daily PnL, daily return, quote price, cost basis, and baseline source so account-level changes can be traced back to individual stocks or funds.
-- Return calendar cockpit view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
-- Read-only decision cockpit APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
+- Account Truth import preview documents a canonical broker statement CSV format and provides a read-only parser, staged broker evidence store, and reconciliation report core that validates, normalizes, fingerprints, duplicate-checks, persists local CSV rows, and compares broker evidence against cash, positions, fees, taxes, and cost basis without mutating the production ledger.
+- Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
+- Read-only decision APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
 
 **Architecture**
@@ -95,7 +105,7 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 
 `http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/decision`, `/market`, and `/settings` can be refreshed without returning home.
 
-The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web cockpit persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file.
+The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file.
 
 Use this storage boundary:
 
@@ -108,13 +118,34 @@ portfolio data comes from the local database or explicit private runtime
 configuration; for example, Activity batch fund candidates are derived from
 held fund positions instead of built-in defaults.
 
-The web cockpit localizes portfolio asset classes in the selected UI language
+The Web app localizes portfolio asset classes in the selected UI language
 and keeps ledger rows auditable: trade activity surfaces the instrument name
 and symbol when present, amount, quantity, price, and commission without
 exposing technical confirmation metadata.
 
+Account Truth import preview can parse the canonical broker statement CSV
+format documented in
+[docs/account-truth-import.zh.md](docs/account-truth-import.zh.md). The preview
+validates rows, computes file and row fingerprints, marks duplicate rows, and
+returns broker evidence objects. Valid previews can be staged through
+`BrokerEvidenceRepository.save_preview()`, which records import-run metadata and
+broker evidence events while detecting duplicate files.
+`build_reconciliation_report()` compares staged broker evidence with Karkinos
+cash, position, fee, tax, and cost-basis facts and returns pass, warning,
+mismatch, or blocked review evidence. `ManualReviewRepository.record_decision()`
+can persist accepted, ignored, known-difference, ledger-candidate, or
+needs-investigation review states for reconciliation items.
+`build_account_truth_score()` converts reconciliation state, manual review
+state, freshness, and unresolved differences into a 0-100 score plus pass,
+degraded, or blocked gate status. These paths do not write production ledger
+entries, change holdings, or submit broker orders.
+Decision review and strategy promotion readiness consume this score as gate
+evidence; degraded, blocked, or missing account-truth evidence prevents
+live-like manual-confirm readiness or promotion readiness without authorizing
+execution.
+
 Backtest results are indexed in the local SQLite database at
-`data/store/app.db` so the Web cockpit, risk workspace, and strategy promotion
+`data/store/app.db` so the Web app, risk review surface, and strategy promotion
 checks can query them. Each saved backtest also writes a human-readable JSON
 artifact under `reports/backtest/backtest-result-<id>.json` by default. Set
 `KARKINOS_BACKTEST_REPORT_DIR` to place those local report files elsewhere.
@@ -137,6 +168,7 @@ acceptance audit manifests as JSON:
 ```bash
 uv run python scripts/export_acceptance_audit.py --audit all --pretty
 uv run python scripts/export_acceptance_audit.py --audit research_evidence
+uv run python scripts/export_acceptance_audit.py --audit account_truth
 uv run python scripts/export_acceptance_audit.py --audit all --output reports/acceptance-audit.json
 ```
 
@@ -152,7 +184,7 @@ provider, fetch time, range, row count, and diagnostics, but it is not a
 guarantee that every provider or public website will show identical values;
 differences can come from adjustment mode, delayed fund NAVs, suspended
 sessions, stale source data, or provider corrections.
-The portfolio cockpit's return, cost-basis, cash-flow, and baseline-price
+The portfolio return, cost-basis, cash-flow, and baseline-price
 semantics are documented in [docs/return-accounting.zh.md](docs/return-accounting.zh.md).
 For an explicit one-symbol reconciliation report, run for example:
 `uv run python scripts/verify_market_bars.py --symbol 603659 --start 2026-06-12 --end 2026-06-15`.
