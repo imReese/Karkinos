@@ -432,20 +432,21 @@ Next data-driven iteration backlog:
   suppression, timeline fallback text, and the layout contract.
 * 2026-06-16: Fixed Risk explainability event readability so recent impact
   events and timeline trade events use the shared instrument identity metadata
-  path instead of rendering raw symbols or English `Bought`/`Sold` strings.
-  Trade cards now show localized action titles such as `买入 宇通客车 600066`,
-  structured quantity/price/fee details, local audit timestamps, and signed
-  cash impact including commission. Frontend Risk coverage verifies raw ISO
-  timestamps are not exposed in recent/position driver cards, and backend route
-  coverage verifies DB `instrument_metadata` drives event names and timeline
-  titles.
-* 2026-06-16: Fixed the Overview 1D equity-curve cash path so same-day buys are
-  replayed at their ledger timestamp instead of being projected back to the
-  market open. The intraday series now adds future same-day buy cost back into
-  cash before the trade, includes a trade-time tick, and only activates the
-  bought quantity after that timestamp. Deterministic route coverage verifies a
-  `trade_buy` at 11:04 lowers cash and introduces stock exposure at 11:04 while
-  preserving same-day buy cost as the category-change baseline.
+  path instead of rendering raw symbols or internal action strings.
+  Trade cards now show localized action titles with instrument display name and
+  symbol, structured quantity/price/fee details, local audit timestamps, and
+  signed cash impact including commission. Frontend Risk coverage verifies raw
+  ISO timestamps are not exposed in recent/position driver cards, and backend
+  route coverage verifies DB `instrument_metadata` drives event names and
+  timeline titles.
+* 2026-06-16: Fixed the Overview 1D equity-curve cash path so same-day ledger
+  events are replayed at their ledger timestamp instead of being projected back
+  to the market open. The intraday series now adds future same-day event cost
+  back into cash before the event, includes an event-time tick, and only
+  activates the affected quantity after that timestamp. Deterministic route
+  coverage verifies a same-day ledger event lowers cash and introduces asset
+  exposure at the event timestamp while preserving same-day cost as the
+  category-change baseline.
 * 2026-06-16: Fixed the Overview 1D equity-curve tooltip path so category
   point-in-time changes are supplied by backend `*_daily_change` fields instead
   of being inferred from the first visible chart point. Local quote snapshots now
