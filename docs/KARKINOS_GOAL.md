@@ -416,19 +416,19 @@ boundaries.
 * [x] Evidence bundles reference dataset snapshot id, strategy metadata,
   after-cost evidence, OOS evidence, cost summary, fills/trade statistics, and
   limitations when available.
-* [ ] Walk-forward or rolling OOS evidence can be generated deterministically
+* [x] Walk-forward or rolling OOS evidence can be generated deterministically
   for at least one strategy fixture.
-* [ ] Parameter sweep reports include stability or sensitivity evidence and
+* [x] Parameter sweep reports include stability or sensitivity evidence and
   overfitting warnings grounded in the tested grid.
-* [ ] China-market assumptions are recorded in each evidence bundle, including
+* [x] China-market assumptions are recorded in each evidence bundle, including
   which assumptions are modeled and which are known gaps.
 * [x] Strategy promotion readiness consumes evidence-bundle gate status and
   cannot mark a strategy ready when required evidence is missing or blocked.
-* [ ] API and saved report files expose the evidence bundle without changing
+* [x] API and saved report files expose the evidence bundle without changing
   live-like execution defaults or enabling automatic real-money trading.
-* [ ] Backend deterministic tests cover bundle generation, analyzer contract,
+* [x] Backend deterministic tests cover bundle generation, analyzer contract,
   data-quality degraded/blocked states, and promotion-gate consumption.
-* [ ] README/docs explain how to interpret the evidence bundle and keep it as
+* [x] README/docs explain how to interpret the evidence bundle and keep it as
   research evidence rather than investment advice.
 
 <!-- codex-progress:start -->
@@ -464,6 +464,24 @@ boundaries.
   availability, cost-summary availability, fill and trade counts, turnover,
   commission, slippage, and limitation counts so saved reports can be audited
   from one versioned artifact without enabling execution behavior.
+* 2026-06-17: Added deterministic rolling OOS evidence for Strategy Lab
+  experiments. Backtest requests can now ask for rolling OOS folds over a
+  frozen equity curve, producing fold-level train/test evidence, aggregate
+  pass rate, worst and mean out-of-sample return, and total OOS cost. The
+  research evidence bundle's OOS analyzer summarizes rolling mode, fold count,
+  and aggregate fields while explicitly noting that rolling evidence does not
+  refit parameters per fold or enable execution behavior.
+* 2026-06-17: Added parameter sweep robustness evidence. Sweep responses now
+  include a versioned robustness artifact with the best parameter set, local
+  neighbor stability, per-parameter sensitivity ranges, grid-grounded
+  overfitting warnings, and limitations requiring after-cost, OOS, risk, and
+  data-quality review before any promotion consideration.
+* 2026-06-17: Exposed research evidence bundles as first-class API and report
+  artifacts. Single backtest responses and saved JSON reports now surface the
+  same `research_evidence_bundle` at top level while retaining the nested
+  `metrics_json` copy for compatibility. README and Chinese docs now explain
+  `pass`, `degraded`, and `blocked` gate states, required review evidence, and
+  the boundary that evidence does not enable broker order submission.
 
 ### External Project Research Notes — 2026-06-17
 

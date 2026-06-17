@@ -5,7 +5,10 @@ from decimal import Decimal
 
 import pytest
 
-from analytics.oos_validation import build_out_of_sample_validation
+from analytics.oos_validation import (
+    build_out_of_sample_validation,
+    build_rolling_out_of_sample_validation,
+)
 from backtest.result import BacktestResult
 from core.events import FillEvent
 from core.types import OrderSide, Symbol
@@ -96,3 +99,58 @@ def test_build_out_of_sample_validation_rejects_split_without_oos_points():
             result=result,
             split_timestamp=datetime(2026, 1, 30),
         )
+
+
+def test_build_rolling_out_of_sample_validation_generates_fold_evidence():
+    result = BacktestResult(
+        equity_curve=[
+            (datetime(2026, 1, 2), Decimal("100000")),
+            (datetime(2026, 1, 9), Decimal("102000")),
+            (datetime(2026, 1, 16), Decimal("101000")),
+            (datetime(2026, 1, 23), Decimal("105000")),
+            (datetime(2026, 1, 30), Decimal("108000")),
+        ],
+        positions={},
+        initial_cash=Decimal("100000"),
+        final_equity=Decimal("108000"),
+        fills=[
+            _fill(datetime(2026, 1, 17), "4", "1"),
+            _fill(datetime(2026, 1, 24), "6", "2"),
+        ],
+    )
+
+    evidence = build_rolling_out_of_sample_validation(
+        strategy_id="dual_ma",
+        benchmark_role="etf_rotation_trend_following",
+        result=result,
+        min_train_points=2,
+        test_window_points=2,
+        step_points=1,
+        benchmark_return=Decimal("0.015"),
+    )
+
+    assert evidence.validation_mode == "rolling"
+    assert evidence.validation_status == "benchmark_passed"
+    assert evidence.fold_count == 2
+    assert evidence.pass_rate == Decimal("1")
+    assert evidence.total_oos_cost == Decimal("13")
+    assert evidence.worst_out_of_sample_return == pytest.approx(
+        Decimal("0.02941176470588235294117647059")
+    )
+    assert evidence.mean_out_of_sample_return == pytest.approx(
+        Decimal("0.04935934769947582993593476995")
+    )
+    assert [fold.fold_index for fold in evidence.folds] == [1, 2]
+    assert evidence.folds[0].split_timestamp == datetime(2026, 1, 16)
+    assert evidence.folds[0].train_segment.end_timestamp == datetime(2026, 1, 9)
+    assert evidence.folds[0].out_of_sample.start_timestamp == datetime(2026, 1, 16)
+    assert evidence.folds[0].out_of_sample.end_timestamp == datetime(2026, 1, 23)
+    assert evidence.folds[0].out_of_sample.total_cost == Decimal("5")
+    assert evidence.folds[1].out_of_sample.total_cost == Decimal("8")
+
+    payload = evidence.to_json_dict()
+    assert payload["validation_mode"] == "rolling"
+    assert payload["fold_count"] == 2
+    assert payload["folds"][0]["out_of_sample"]["fill_count"] == 1
+    assert payload["aggregate"]["pass_rate"] == 1.0
+    assert "not refit parameters per fold" in payload["limitations"][1]

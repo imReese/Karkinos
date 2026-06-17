@@ -175,8 +175,11 @@ class OosAnalyzer:
             summary="OOS validation evidence is attached.",
             details={
                 "oos_available": True,
+                "validation_mode": oos.get("validation_mode") or "single_split",
                 "validation_status": validation_status,
                 "split_timestamp": oos.get("split_timestamp"),
+                "fold_count": oos.get("fold_count"),
+                "aggregate": _json_object(oos.get("aggregate")),
             },
             limitations=list(oos.get("limitations") or []),
         )

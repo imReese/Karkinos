@@ -306,6 +306,9 @@ def _build_oos_validation_payload(
     request: BacktestRequest,
     result: Any,
 ) -> dict[str, Any]:
+    if request.oos_mode == "rolling":
+        return _build_rolling_oos_validation_payload(request, result)
+
     if not request.oos_split_date:
         return {}
 
@@ -327,6 +330,33 @@ def _build_oos_validation_payload(
         benchmark_role=benchmark_role,
         result=result,
         split_timestamp=datetime.strptime(request.oos_split_date, "%Y-%m-%d"),
+        benchmark_return=benchmark_return,
+    )
+    return evidence.to_json_dict()
+
+
+def _build_rolling_oos_validation_payload(
+    request: BacktestRequest,
+    result: Any,
+) -> dict[str, Any]:
+    import strategy.examples  # noqa: F401
+    from analytics.oos_validation import build_rolling_out_of_sample_validation
+    from strategy.registry import StrategyRegistry
+
+    strategy_info = StrategyRegistry.get(request.strategy) or {}
+    benchmark_role = strategy_info.get("benchmark_role") or request.strategy
+    benchmark_return = (
+        Decimal(str(request.benchmark_return))
+        if request.benchmark_return is not None
+        else None
+    )
+    evidence = build_rolling_out_of_sample_validation(
+        strategy_id=request.strategy,
+        benchmark_role=benchmark_role,
+        result=result,
+        min_train_points=request.oos_min_train_points,
+        test_window_points=request.oos_test_window_points,
+        step_points=request.oos_step_points,
         benchmark_return=benchmark_return,
     )
     return evidence.to_json_dict()
@@ -509,6 +539,9 @@ def _write_backtest_report_file(
         ).model_dump(mode="json"),
         "equity_curve": bt_result["equity_curve"],
         "metrics_json": metrics_json,
+        "research_evidence_bundle": _json_object(
+            metrics_json.get("research_evidence_bundle")
+        ),
         "cost_summary": bt_result["cost_summary_json"],
         "evidence": _backtest_evidence_from_payload(
             {**bt_result, "metrics_json": metrics_json}
@@ -744,6 +777,9 @@ def create_router() -> APIRouter:
             metrics=_backtest_metrics_from_payload(bt_result),
             equity_curve=[EquityPoint(**p) for p in bt_result["equity_curve"]],
             metrics_json=metrics_json,
+            research_evidence_bundle=_json_object(
+                metrics_json.get("research_evidence_bundle")
+            ),
             cost_summary_json=bt_result["cost_summary_json"],
             evidence_json=_backtest_evidence_from_payload(bt_result),
             fills=[BacktestFill(**fill) for fill in bt_result.get("fills", [])],
@@ -833,11 +869,25 @@ def create_router() -> APIRouter:
             result.model_copy(update={"rank": index})
             for index, result in enumerate(ranked_results, start=1)
         ]
+        from analytics.sweep_robustness import build_sweep_robustness_evidence
+
+        robustness_evidence = build_sweep_robustness_evidence(
+            results=[
+                {
+                    "params": dict(result.params),
+                    "score": result.score,
+                }
+                for result in ranked_results
+            ],
+            rank_by=request.rank_by,
+            rank_direction=_SWEEP_RANK_DIRECTIONS[request.rank_by],
+        )
         return BacktestSweepResponse(
             strategy=request.strategy,
             rank_by=request.rank_by,
             tested_count=len(ranked_results),
             results=ranked_results,
+            robustness_evidence=robustness_evidence,
             warnings=list(_SWEEP_WARNINGS),
         )
 
@@ -908,6 +958,9 @@ def create_router() -> APIRouter:
             metrics=_backtest_metrics_from_payload(metrics_payload),
             equity_curve=[EquityPoint(**p) for p in equity_data],
             metrics_json=metrics_json,
+            research_evidence_bundle=_json_object(
+                metrics_json.get("research_evidence_bundle")
+            ),
             cost_summary_json=cost_summary_json,
             evidence_json=evidence_json,
             fills=[],
