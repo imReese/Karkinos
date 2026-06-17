@@ -436,6 +436,11 @@ boundaries.
 
 ### v0.5 Progress
 
+* 2026-06-17: Added a research evidence acceptance audit manifest.
+  `build_research_evidence_acceptance_audit()` maps all completed
+  Quant Research Quality & Production Evidence Hardening checkboxes to
+  concrete code, docs, deterministic tests, and validation commands without
+  changing execution defaults or schema versions.
 * 2026-06-17: Started v0.5 by adding target, scope, acceptance criteria, and a
   dedicated progress section for research evidence hardening. The first backend
   implementation slice is a minimal versioned `ResearchEvidenceBundle` and

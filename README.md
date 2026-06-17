@@ -131,6 +131,18 @@ limitations, and `promotion_gate.does_not_enable_execution=true`. It is
 evidence for review, not investment advice, not a profitability claim, and not
 authorization to submit broker orders.
 
+For CI, release review, or manual acceptance checks, export the current
+acceptance audit manifests as JSON:
+
+```bash
+uv run python scripts/export_acceptance_audit.py --audit all --pretty
+uv run python scripts/export_acceptance_audit.py --audit research_evidence
+uv run python scripts/export_acceptance_audit.py --audit all --output reports/acceptance-audit.json
+```
+
+The command writes to stdout by default and only creates a file when `--output`
+is provided.
+
 Historical OHLCV market bars are stored in the local SQLite table
 `data/store/meta.db.market_bars`; Parquet files under `data/store/bars/` are a
 local mirror for compatibility and inspection. To import existing Parquet
