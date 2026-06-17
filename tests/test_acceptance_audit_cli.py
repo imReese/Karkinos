@@ -5,7 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "export_acceptance_audit.py"
 
@@ -46,6 +45,20 @@ def test_acceptance_audit_cli_research_evidence_filter_outputs_one_audit() -> No
     assert audit["criteria"]
 
 
+def test_acceptance_audit_cli_account_truth_filter_outputs_one_audit() -> None:
+    result = _run_cli("--audit", "account_truth")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "account_truth"
+    assert [audit["key"] for audit in payload["audits"]] == ["account_truth"]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 15
+    assert audit["completed_count"] == audit["required_count"]
+    assert audit["criteria"]
+
+
 def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     result = _run_cli("--audit", "all")
 
@@ -56,6 +69,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "profit_discipline",
         "strategy_lab",
         "research_evidence",
+        "account_truth",
     ]
     assert all(audit["is_complete"] for audit in payload["audits"])
 

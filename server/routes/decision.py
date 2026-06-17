@@ -1,4 +1,4 @@
-"""Decision cockpit routes — /api/decision/*"""
+"""Decision platform routes — /api/decision/*"""
 
 from __future__ import annotations
 
@@ -22,8 +22,15 @@ def create_router() -> APIRouter:
         actions = _read_action_tasks(db)
         journal_by_signal = _journal_by_signal_id(db)
         validation_by_strategy = await _validation_by_strategy_id(db)
+        account_truth = _account_truth_gate_evidence(db)
         candidates = [
-            _decision_candidate(action, journal_by_signal, validation_by_strategy, db)
+            _decision_candidate(
+                action,
+                journal_by_signal,
+                validation_by_strategy,
+                db,
+                account_truth,
+            )
             for action in actions
         ]
         no_action_reasons = [] if candidates else ["no_pending_action_tasks"]
@@ -40,11 +47,12 @@ def create_router() -> APIRouter:
                 actions=actions,
                 candidates=candidates,
                 journal_by_signal=journal_by_signal,
+                account_truth=account_truth,
             ),
             "candidates": candidates,
             "no_action_reasons": no_action_reasons,
             "limitations": [
-                "Decision cockpit output is research and portfolio tooling, not investment advice.",
+                "Decision platform output is research and portfolio evidence, not investment advice.",
                 "Live-like execution remains manual-confirmation only by default.",
             ],
         }
@@ -62,8 +70,15 @@ def create_router() -> APIRouter:
         ]
         journal_by_signal = _journal_by_signal_id(db)
         validation_by_strategy = await _validation_by_strategy_id(db)
+        account_truth = _account_truth_gate_evidence(db)
         candidates = [
-            _decision_candidate(action, journal_by_signal, validation_by_strategy, db)
+            _decision_candidate(
+                action,
+                journal_by_signal,
+                validation_by_strategy,
+                db,
+                account_truth,
+            )
             for action in intraday_actions
         ]
         no_action_reasons = (
@@ -84,6 +99,7 @@ def create_router() -> APIRouter:
                     actions=actions,
                     candidates=candidates,
                     journal_by_signal=journal_by_signal,
+                    account_truth=account_truth,
                 ),
                 "excluded_daily_count": len(daily_actions),
             },
@@ -93,8 +109,8 @@ def create_router() -> APIRouter:
             ],
             "no_action_reasons": no_action_reasons,
             "limitations": [
-                "Intraday decisions are polling/minute-level cockpit candidates, not high-frequency trading instructions.",
-                "Decision cockpit output is research and portfolio tooling, not investment advice.",
+                "Intraday decisions are polling/minute-level platform candidates, not high-frequency trading instructions.",
+                "Decision platform output is research and portfolio evidence, not investment advice.",
                 "Live-like execution remains manual-confirmation only by default.",
             ],
         }
@@ -130,6 +146,7 @@ def _decision_summary(
     actions: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
     journal_by_signal: dict[int, dict[str, Any]],
+    account_truth: dict[str, Any],
 ) -> dict[str, Any]:
     risk_blocked_count = sum(
         1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
@@ -145,6 +162,7 @@ def _decision_summary(
         ),
         "portfolio": _portfolio_state_summary(state),
         "market_data": _market_data_summary(state, actions),
+        "account_truth": account_truth,
         "action_tasks": _action_task_summary(actions),
         "audit": _audit_summary(actions, candidates, journal_by_signal),
     }
@@ -404,9 +422,16 @@ def _decision_candidate(
     journal_by_signal: dict[int, dict[str, Any]],
     validation_by_strategy: dict[str, dict[str, Any]],
     db: Any,
+    account_truth: dict[str, Any],
 ) -> dict[str, Any]:
     signal_id = action.get("source_signal_id")
     journal = journal_by_signal.get(int(signal_id)) if signal_id is not None else None
+    account_truth_gate_status = str(account_truth.get("gate_status") or "blocked")
+    manual_confirmation_status = (
+        action.get("manual_confirmation_status", "awaiting_risk_gate")
+        if account_truth_gate_status == "pass"
+        else _account_truth_manual_confirmation_status(account_truth_gate_status)
+    )
     return {
         "action_id": action.get("id"),
         "action": _normalize_decision_action(action),
@@ -421,9 +446,7 @@ def _decision_candidate(
         "manual_confirmation_required": bool(
             action.get("manual_confirmation_required", True)
         ),
-        "manual_confirmation_status": action.get(
-            "manual_confirmation_status", "awaiting_risk_gate"
-        ),
+        "manual_confirmation_status": manual_confirmation_status,
         "evidence": {
             "strategy": {"strategy_id": action.get("strategy_id")},
             "signal": _signal_evidence(action, journal),
@@ -432,7 +455,11 @@ def _decision_candidate(
                 action, validation_by_strategy
             ),
             "data_freshness": _data_freshness_evidence(action, db),
-            "manual_confirmation": _manual_confirmation_evidence(action),
+            "account_truth": account_truth,
+            "manual_confirmation": _manual_confirmation_evidence(
+                action,
+                manual_confirmation_status=manual_confirmation_status,
+            ),
             "journal": _journal_evidence(journal),
         },
     }
@@ -481,12 +508,71 @@ def _overall_decision(candidates: list[dict[str, Any]]) -> str:
         return "no_action"
     if any(candidate["risk_gate_status"] != "passed" for candidate in candidates):
         return "review_required"
+    if any(
+        candidate["evidence"]["account_truth"]["gate_status"] != "pass"
+        for candidate in candidates
+    ):
+        return "review_required"
     actions = {candidate["action"] for candidate in candidates}
     if len(actions) == 1:
         return next(iter(actions))
     if actions <= {"buy", "sell", "rebalance"}:
         return "rebalance"
     return "review_required"
+
+
+def _account_truth_gate_evidence(db: Any) -> dict[str, Any]:
+    score_payload = _latest_account_truth_score(db)
+    if not score_payload:
+        return {
+            "status": "missing",
+            "gate_status": "blocked",
+            "score": None,
+            "has_evidence": False,
+            "data_freshness_status": "missing",
+            "unresolved_mismatch_count": None,
+            "blocking_reasons": ["account_truth_score_unavailable"],
+            "required_actions": ["preview_import_and_reconcile_broker_evidence"],
+            "limitations": [
+                "Decision platform requires Account Truth evidence before live-like manual confirmation."
+            ],
+        }
+
+    gate_status = str(
+        score_payload.get("gate_status") or score_payload.get("status") or "blocked"
+    ).lower()
+    return {
+        "status": "available",
+        "gate_status": gate_status,
+        "score": _int_or_none(score_payload.get("score")),
+        "has_evidence": True,
+        "data_freshness_status": score_payload.get("data_freshness_status"),
+        "unresolved_mismatch_count": _int_or_none(
+            score_payload.get("unresolved_mismatch_count")
+        ),
+        "blocking_reasons": list(score_payload.get("blocking_reasons") or []),
+        "required_actions": list(score_payload.get("required_actions") or []),
+        "limitations": list(score_payload.get("limitations") or []),
+    }
+
+
+def _latest_account_truth_score(db: Any) -> dict[str, Any]:
+    reader = getattr(db, "get_account_truth_score_sync", None)
+    if callable(reader):
+        return _json_object(reader())
+
+    list_reader = getattr(db, "list_account_truth_scores_sync", None)
+    if callable(list_reader):
+        rows = list_reader(limit=1)
+        if rows:
+            return _json_object(rows[0])
+    return {}
+
+
+def _account_truth_manual_confirmation_status(gate_status: str) -> str:
+    if gate_status == "degraded":
+        return "account_truth_review_required"
+    return "blocked_by_account_truth"
 
 
 def _signal_evidence(
@@ -571,10 +657,14 @@ def _data_freshness_evidence(action: dict[str, Any], db: Any) -> dict[str, Any]:
     }
 
 
-def _manual_confirmation_evidence(action: dict[str, Any]) -> dict[str, Any]:
+def _manual_confirmation_evidence(
+    action: dict[str, Any],
+    *,
+    manual_confirmation_status: str,
+) -> dict[str, Any]:
     return {
         "required": bool(action.get("manual_confirmation_required", True)),
-        "status": action.get("manual_confirmation_status", "awaiting_risk_gate"),
+        "status": manual_confirmation_status,
         "reason": action.get("manual_confirmation_reason"),
     }
 
@@ -635,3 +725,12 @@ def _json_object(raw: Any) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _int_or_none(raw: Any) -> int | None:
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None

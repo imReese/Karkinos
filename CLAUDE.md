@@ -108,11 +108,11 @@ This section is maintained by the project owner. GitNexus may refresh its own bl
 Before making Karkinos code changes, read:
 
 - `docs/KARKINOS_GOAL.md`
-- GitHub Issue #1: "Goal: Financial-grade personal quant investment cockpit for China markets"
+- GitHub Issue #1: "Goal: China-market personal quant research and trading platform"
 - `README.md`
 - `docs/README.zh.md`
 
-Karkinos is a financial-grade China-market personal investment cockpit, not a toy backtester.
+Karkinos is a China-market personal quant research and trading platform, not a toy backtester.
 
 When coding, prioritize:
 

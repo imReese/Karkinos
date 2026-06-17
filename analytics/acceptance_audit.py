@@ -218,14 +218,14 @@ def build_acceptance_audit() -> AcceptanceAudit:
             ),
             AcceptanceCriterion(
                 key="research_tooling_not_advice_docs",
-                checkbox_text="* [x] README and docs make clear that Karkinos is research and portfolio tooling, not investment advice.",
+                checkbox_text="* [x] README and docs make clear that Karkinos is a personal quant research and trading platform, not investment advice.",
                 evidence_paths=(
                     "README.md",
                     "docs/README.en.md",
                     "docs/README.zh.md",
                 ),
                 validation_commands=(
-                    'rg -n "not investment advice|不构成投资建议|research and portfolio tooling" README.md docs',
+                    'rg -n "not investment advice|不构成投资建议|personal quant research and trading platform|个人量化投研与交易平台" README.md docs',
                     "uv run python -m pytest",
                 ),
             ),
@@ -696,6 +696,270 @@ def build_research_evidence_acceptance_audit() -> AcceptanceAudit:
                 validation_commands=(
                     'rg -n "research_evidence_bundle|研究证据包|not investment advice|不是投资建议" README.md docs',
                     "uv run python -m pytest tests/test_acceptance_audit.py",
+                ),
+            ),
+        )
+    )
+
+
+def build_account_truth_acceptance_audit() -> AcceptanceAudit:
+    """Return Account Truth and reconciliation criteria mapped to evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="canonical_broker_statement_csv_docs",
+                checkbox_text=(
+                    "* [x] A canonical broker statement CSV format is documented "
+                    "with safe\n  synthetic examples."
+                ),
+                evidence_paths=(
+                    "docs/account-truth-import.zh.md",
+                    "README.md",
+                    "docs/README.zh.md",
+                ),
+                validation_commands=(
+                    'rg -n "canonical broker statement CSV|安全合成样例|broker evidence" README.md docs',
+                    "uv run python -m pytest tests/test_acceptance_audit.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="import_preview_parse_validate_fingerprint",
+                checkbox_text=(
+                    "* [x] Import preview parses, normalizes, validates, and "
+                    "fingerprints local CSV\n  rows without writing production "
+                    "ledger entries."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_statement.py",
+                    "tests/account_truth/test_broker_statement.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_broker_statement.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="import_runs_store_metadata",
+                checkbox_text=(
+                    "* [x] Import runs store source type, file fingerprint, row "
+                    "counts, validation\n  status, duplicate counts, timestamps, "
+                    "and limitations."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_evidence.py",
+                    "tests/account_truth/test_broker_evidence_repository.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_broker_evidence_repository.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="typed_broker_evidence_events",
+                checkbox_text=(
+                    "* [x] Imported rows normalize into typed broker evidence "
+                    "events: trade\n  buy/sell, dividend, fee, tax, transfer, "
+                    "position snapshot, and cash snapshot."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_statement.py",
+                    "account_truth/broker_evidence.py",
+                    "tests/account_truth/test_broker_statement.py",
+                    "tests/account_truth/test_broker_evidence_repository.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_broker_statement.py tests/account_truth/test_broker_evidence_repository.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_duplicate_detection",
+                checkbox_text=(
+                    "* [x] File-level and row-level duplicate detection exists "
+                    "and is deterministic."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_statement.py",
+                    "account_truth/broker_evidence.py",
+                    "tests/account_truth/test_broker_statement.py",
+                    "tests/account_truth/test_broker_evidence_repository.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_broker_statement.py tests/account_truth/test_broker_evidence_repository.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="persist_broker_evidence_without_ledger_mutation",
+                checkbox_text=(
+                    "* [x] Valid imports can be persisted as broker evidence "
+                    "without auto-mutating\n  existing ledger entries."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_evidence.py",
+                    "tests/account_truth/test_broker_evidence_repository.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_broker_evidence_repository.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="reconciliation_compares_account_facts",
+                checkbox_text=(
+                    "* [x] Reconciliation compares broker evidence against "
+                    "Karkinos ledger, cash,\n  positions, fees, taxes, and cost basis."
+                ),
+                evidence_paths=(
+                    "account_truth/reconciliation.py",
+                    "tests/account_truth/test_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_reconciliation.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="reconciliation_report_exposes_differences",
+                checkbox_text=(
+                    "* [x] Reconciliation reports expose "
+                    "pass/warning/mismatch/blocked status,\n  per-symbol "
+                    "differences, cash differences, fee/tax differences, "
+                    "cost-basis\n  differences, and suggested review actions."
+                ),
+                evidence_paths=(
+                    "account_truth/reconciliation.py",
+                    "tests/account_truth/test_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_reconciliation.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_review_decisions",
+                checkbox_text=(
+                    "* [x] Manual review can mark reconciliation items as "
+                    "accepted, ignored, known\n  difference, ledger candidate, "
+                    "or needs investigation."
+                ),
+                evidence_paths=(
+                    "account_truth/manual_review.py",
+                    "tests/account_truth/test_manual_review.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_manual_review.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_truth_score_report_gate",
+                checkbox_text=(
+                    "* [x] Account Truth Score is exposed through API/report "
+                    "and reflects cash,\n  position, fee, cost-basis, data "
+                    "freshness, and unresolved mismatch state."
+                ),
+                evidence_paths=(
+                    "account_truth/score.py",
+                    "tests/account_truth/test_account_truth_score.py",
+                    "server/routes/decision.py",
+                    "analytics/strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_account_truth_score.py",
+                    "uv run python -m pytest tests/test_server_routes.py -k account_truth_score",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="decision_and_promotion_truth_gate",
+                checkbox_text=(
+                    "* [x] Decision platform and promotion readiness degrade or "
+                    "block when account\n  truth is insufficient."
+                ),
+                evidence_paths=(
+                    "server/routes/decision.py",
+                    "analytics/strategy_promotion_readiness.py",
+                    "tests/test_server_routes.py",
+                    "tests/test_decision_cockpit_acceptance.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py -k account_truth_score",
+                    "uv run python -m pytest tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="no_broker_login_or_order_submission",
+                checkbox_text=(
+                    "* [x] No broker login, broker password storage, broker "
+                    "order submission, or\n  default real-money automation is "
+                    "introduced."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_statement.py",
+                    "account_truth/broker_evidence.py",
+                    "account_truth/reconciliation.py",
+                    "account_truth/manual_review.py",
+                    "account_truth/score.py",
+                    "server/routes/decision.py",
+                    "analytics/strategy_promotion_readiness.py",
+                    "README.md",
+                    "docs/README.zh.md",
+                ),
+                validation_commands=(
+                    'rg -n "broker password|broker order submission|automatic real-money|自动真钱|券商订单" README.md docs account_truth server/routes/decision.py analytics/strategy_promotion_readiness.py',
+                    "uv run python -m pytest tests/account_truth tests/analytics/test_strategy_promotion_readiness.py",
+                    "uv run python -m pytest tests/test_server_routes.py -k decision",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backend_deterministic_account_truth_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover parser, validation, "
+                    "duplicate\n  detection, staging, reconciliation, review "
+                    "decisions, account truth score,\n  and decision-platform "
+                    "degradation."
+                ),
+                evidence_paths=(
+                    "tests/account_truth/test_broker_statement.py",
+                    "tests/account_truth/test_broker_evidence_repository.py",
+                    "tests/account_truth/test_reconciliation.py",
+                    "tests/account_truth/test_manual_review.py",
+                    "tests/account_truth/test_account_truth_score.py",
+                    "tests/test_server_routes.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth tests/analytics/test_strategy_promotion_readiness.py",
+                    "uv run python -m pytest tests/test_server_routes.py -k account_truth_score",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_truth_docs_boundary",
+                checkbox_text=(
+                    "* [x] README/docs explain the import workflow, privacy "
+                    "boundary, and that\n  broker evidence is audit tooling, "
+                    "not investment advice."
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.zh.md",
+                    "docs/account-truth-import.zh.md",
+                ),
+                validation_commands=(
+                    'rg -n "Account Truth|privacy|隐私|audit tooling|not investment advice|不是投资建议" README.md docs',
+                    "uv run python -m pytest tests/test_acceptance_audit.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_truth_acceptance_audit_cli",
+                checkbox_text=(
+                    "* [x] Acceptance audit manifest and CLI include the "
+                    "account truth /\n  reconciliation capability using "
+                    "capability-based naming."
+                ),
+                evidence_paths=(
+                    "analytics/acceptance_audit.py",
+                    "scripts/export_acceptance_audit.py",
+                    "tests/test_acceptance_audit.py",
+                    "tests/test_acceptance_audit_cli.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
+                    "uv run python scripts/export_acceptance_audit.py --audit account_truth",
                 ),
             ),
         )

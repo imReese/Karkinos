@@ -103,6 +103,9 @@ class StrategyPromotionReadinessRowResponse(BaseModel):
     has_risk_block_evidence: bool
     has_paper_shadow_evidence: bool
     has_paper_shadow_divergence_review: bool
+    has_account_truth_evidence: bool = True
+    account_truth_gate_status: str = "not_evaluated"
+    account_truth_score: int | None = None
     missing_requirements: list[str] = Field(default_factory=list)
     promotion_status: str
     is_promotable: bool

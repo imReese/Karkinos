@@ -1,12 +1,16 @@
-# Karkinos — Personal Quantitative Trading Assistant
+# Karkinos: A China-market personal quant research and trading platform
 
-[中文](README.zh.md) | [Back to Summary](../README.md)
+[中文](README.zh.md) | [Back to Summary](../README.md) | [Goal and Roadmap](KARKINOS_GOAL.md)
 
 ---
 
 ## Overview
 
-Karkinos is a personal quantitative trading system designed for the Chinese market. It features an event-driven architecture with a backtest-first, daily-bar-oriented design, supporting A-shares, ETFs, gold spot, and exchange-traded bonds.
+Karkinos is an integrated personal finance app for backtesting, strategy
+research, account truth, risk control, signals, reconciliation, and review.
+It is designed for the Chinese market with an event-driven architecture,
+backtest-first workflow, and daily-bar-oriented assumptions, supporting
+A-shares, ETFs, gold spot, and exchange-traded bonds.
 
 Key Features:
 
@@ -16,9 +20,9 @@ Key Features:
 - **T+1 Support** — Built-in freeze/thaw mechanism in Position, auto-advanced on settlement day
 - **Live Monitoring** — Standalone Live mode + built-in Scheduler in Web service, with signal push notifications
 - **Notifications** — Console / Telegram / WeChat (ServerChan) channels
-- **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts workspace
-- **Holdings and market detail** — the Portfolio quote board summarizes asset classes, while instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research workspace
-- **Responsive Cockpit Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
+- **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts personal finance app
+- **Holdings and market detail** — the Portfolio quote board summarizes asset classes, while instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page
+- **Responsive Platform Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
 - **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data
 - **Docker One-Click Deploy** — Multi-stage build, all-in-one frontend + backend image
 
@@ -339,7 +343,7 @@ Standalone compatibility monitor, independent of the Web server. It reads `confi
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/portfolio` | Get portfolio snapshot (cash/equity/positions/allocation) |
-| GET | `/api/portfolio/cockpit` | Get cockpit weights, actual weights, drift, action queue, and risk alerts |
+| GET | `/api/portfolio/cockpit` | Get portfolio platform weights, actual weights, drift, action queue, and risk alerts |
 | GET | `/api/portfolio/state` | Get account overview, snapshot, risk summary, and next step |
 | GET | `/api/portfolio/risk-summary` | Get portfolio risk summary |
 | GET | `/api/portfolio/live-holdings` | Get live holdings grouped by asset class |
@@ -383,13 +387,13 @@ create orders, submit to a broker, or change the manual-confirmation default.
 
 The decision `summary` also includes portfolio cash / holdings / equity,
 latest quote cache health, action-task status counts, and signal / journal /
-risk-gate audit counts so the cockpit can explain why it is acting or staying
+risk-gate audit counts so the decision view can explain why it is acting or staying
 still.
 
 `GET /api/decision/intraday` uses the same evidence-bundle shape but only admits
 stock and common exchange-traded ETF candidates. Open-end fund and long-horizon
 allocation actions stay in the daily lane. The endpoint is for polling/minute-
-level cockpit review, not high-frequency or millisecond trading, and it never
+level decision review, not high-frequency or millisecond trading, and it never
 executes automatically.
 
 #### Trading Controls — /api/trading

@@ -224,7 +224,7 @@ afterEach(() => {
 test('renders risk boundaries and blocking register without execution controls', async () => {
   renderRiskPage();
 
-  expect(await screen.findByText('Risk workspace')).toBeTruthy();
+  expect(await screen.findByText('Risk control center')).toBeTruthy();
   expect(await screen.findByText('Risk boundary register')).toBeTruthy();
   expect(await screen.findByText('Blocking register')).toBeTruthy();
 

@@ -265,7 +265,7 @@ test('uses stronger chinese typography in the sidebar', async () => {
   await user.click(await screen.findByRole('button', { name: 'Language' }));
   await user.click(await screen.findByRole('menuitemradio', { name: '中文' }));
 
-  const workspaceTitle = await screen.findByText('组合工作台');
+  const workspaceTitle = await screen.findByText('量化投研平台');
   const overviewNav = await screen.findByTestId('sidebar-nav-overview');
 
   expect(workspaceTitle.className).not.toContain('tracking-[-0.02em]');
