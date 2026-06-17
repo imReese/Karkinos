@@ -32,6 +32,9 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --extra server --extra dev --frozen
 
+      - name: Run acceptance audit report
+        run: uv run python scripts/export_acceptance_audit.py --audit all
+
       - name: Run server route tests
         run: uv run python -m pytest tests/test_server_routes.py
 
