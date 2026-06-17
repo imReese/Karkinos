@@ -38,6 +38,10 @@ public demos and development.
   requested range, symbol universe, row counts, adjustment mode when available,
   and data-quality diagnostics, and the Web report exposes that audit panel for
   saved and freshly run results
+- Backtest runs attach a versioned `research_evidence_bundle` with analyzer
+  outputs, data-quality gate status, after-cost evidence references,
+  China-market assumption gaps, and a manual-review promotion gate that does
+  not enable execution
 - Backtest results persist a strategy metadata snapshot with strategy identity,
   parameter schema, normalized params, benchmark role, and validation
   requirements so saved reports remain auditable when the registry changes; Web

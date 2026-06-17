@@ -381,9 +381,19 @@ def _backtest_report_metrics_json(
     request: BacktestRequest,
     bt_result: dict[str, Any],
 ) -> dict[str, Any]:
+    from analytics.research_evidence import build_research_evidence_bundle
+
     metrics_json = dict(bt_result.get("metrics_json") or {})
     metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
-    metrics_json["strategy_metadata"] = _strategy_metadata_snapshot(request)
+    strategy_metadata = _strategy_metadata_snapshot(request)
+    metrics_json["strategy_metadata"] = strategy_metadata
+    metrics_json["research_evidence_bundle"] = build_research_evidence_bundle(
+        metrics_json=metrics_json,
+        cost_summary_json=dict(bt_result.get("cost_summary_json") or {}),
+        evidence_json=metrics_json["evidence_bundle"],
+        strategy_metadata=strategy_metadata,
+        fills=list(bt_result.get("fills") or []),
+    )
     return metrics_json
 
 
@@ -807,6 +817,9 @@ def create_router() -> APIRouter:
                     params=dict(bt_request.params or {}),
                     metrics=metrics,
                     score=_sweep_score(metrics, request.rank_by),
+                    research_evidence_bundle=_json_object(
+                        metrics_json.get("research_evidence_bundle")
+                    ),
                 )
             )
 
@@ -1048,6 +1061,9 @@ def create_router() -> APIRouter:
                     params=dict(bt_request.params or {}),
                     dataset_snapshot_id=dataset_snapshot_id,
                     dataset_snapshot=dataset_snapshot,
+                    research_evidence_bundle=_json_object(
+                        metrics_json.get("research_evidence_bundle")
+                    ),
                     metrics=_backtest_metrics_from_payload(bt_result),
                     equity_curve=[EquityPoint(**p) for p in bt_result["equity_curve"]],
                 )

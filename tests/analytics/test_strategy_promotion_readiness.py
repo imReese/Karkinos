@@ -42,6 +42,22 @@ def _shadow_order(strategy_id: str, *, divergence_status: str | None = None) -> 
     }
 
 
+def _with_research_gate(row: dict, *, status: str) -> dict:
+    updated = dict(row)
+    metrics_json = json.loads(str(updated["metrics_json"]))
+    metrics_json["research_evidence_bundle"] = {
+        "schema_version": "karkinos.research_evidence.v1",
+        "gate_status": status,
+        "promotion_gate": {
+            "status": status,
+            "manual_confirmation_required": True,
+            "does_not_enable_execution": True,
+        },
+    }
+    updated["metrics_json"] = json.dumps(metrics_json)
+    return updated
+
+
 def test_strategy_promotion_readiness_requires_risk_shadow_and_divergence_evidence():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
@@ -96,3 +112,50 @@ def test_strategy_promotion_readiness_marks_strategy_promotable_only_when_all_ga
         row.promotion_status == "promotable_for_paper_review" for row in readiness.rows
     )
     assert "not investment advice" in readiness.limitations[0]
+
+
+def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_blocks():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [
+            _with_research_gate(_backtest_row("dual_ma"), status="blocked"),
+            _backtest_row("monthly_rebalance"),
+            _backtest_row("bollinger"),
+        ],
+        [
+            _risk_decision("dual_ma", passed=False),
+            _risk_decision("monthly_rebalance", passed=False),
+            _risk_decision("bollinger", passed=False),
+        ],
+        [
+            _shadow_order("dual_ma", divergence_status="within_expectations"),
+            _shadow_order(
+                "monthly_rebalance",
+                divergence_status="within_expectations",
+            ),
+            _shadow_order("bollinger", divergence_status="within_expectations"),
+        ],
+    )
+
+    by_strategy = {row.strategy_id: row for row in readiness.rows}
+    row = by_strategy["dual_ma"]
+
+    assert row.is_promotable is False
+    assert row.promotion_status == "not_promotable"
+    assert row.missing_requirements == ["research_evidence_gate_pass"]
+    assert readiness.promotable_strategy_count == 2
+    assert readiness.is_complete is False
+
+
+def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_degrades():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [_with_research_gate(_backtest_row("dual_ma"), status="degraded")],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+
+    assert row.is_promotable is False
+    assert row.missing_requirements == ["research_evidence_gate_pass"]

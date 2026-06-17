@@ -239,6 +239,19 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
             "total_slippage": 3.5,
             "total_trades": 2,
             "gross_turnover": 24000.0,
+            "dataset_snapshot": {
+                "schema_version": "karkinos.dataset_snapshot.v1",
+                "snapshot_id": "sha256:test-snapshot",
+                "row_count": 2,
+                "data_quality": {"status": "ok", "issues": []},
+                "symbol_universe": [
+                    {
+                        "symbol": "TEST",
+                        "row_count": 2,
+                        "data_quality": {"status": "ok", "issues": []},
+                    }
+                ],
+            },
         },
         "cost_summary_json": {
             "total_commission": 12.5,
@@ -295,6 +308,36 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
     assert response.metrics.volatility == 0.21
     assert response.metrics.total_commission == 12.5
     assert response.metrics_json["gross_turnover"] == 24000.0
+    research_bundle = response.metrics_json["research_evidence_bundle"]
+    assert research_bundle["schema_version"] == "karkinos.research_evidence.v1"
+    assert research_bundle["gate_status"] == "pass"
+    assert research_bundle["dataset_snapshot_id"] == "sha256:test-snapshot"
+    assert research_bundle["strategy"]["strategy_id"] == "dual_ma"
+    assert [item["name"] for item in research_bundle["analyzers"]] == [
+        "data_quality",
+        "after_cost",
+        "oos",
+    ]
+    assert research_bundle["analyzers"][0]["status"] == "pass"
+    assert research_bundle["analyzers"][1]["details"]["total_cost"] == 16.0
+    assert research_bundle["evidence_references"] == {
+        "dataset_snapshot_id": "sha256:test-snapshot",
+        "strategy_metadata_available": True,
+        "after_cost_evidence_available": True,
+        "oos_evidence_available": False,
+        "cost_summary_available": True,
+        "fill_count": 1,
+        "trade_count": 2,
+        "limitation_count": 6,
+    }
+    assert research_bundle["trade_statistics"] == {
+        "fill_count": 1,
+        "trade_count": 2,
+        "gross_turnover": 24000.0,
+        "total_commission": 12.5,
+        "total_slippage": 3.5,
+    }
+    assert "T+1" in research_bundle["china_market_assumptions"]["known_gaps"][0]
     assert response.cost_summary_json["total_trades"] == 2
     assert response.evidence_json["total_cost"] == 16.0
     assert response.evidence_json["limitations"] == [
@@ -311,6 +354,8 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
     assert captured_runner_args["db"] is fake_state.db
     assert '"calmar": 2.25' in str(saved_payload["metrics_json"])
     assert '"evidence_bundle":' in str(saved_payload["metrics_json"])
+    assert '"research_evidence_bundle":' in str(saved_payload["metrics_json"])
+    assert '"gate_status": "pass"' in str(saved_payload["metrics_json"])
     assert '"slippage_assumptions":' in str(saved_payload["metrics_json"])
     assert '"total_commission": 12.5' in str(saved_payload["cost_summary_json"])
     report_file = report_dir / "backtest-result-42.json"
@@ -320,6 +365,10 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
     assert report_payload["id"] == 42
     assert report_payload["config"]["strategy"] == "dual_ma"
     assert report_payload["metrics"]["final_equity"] == 112000.0
+    assert (
+        report_payload["metrics_json"]["research_evidence_bundle"]["schema_version"]
+        == "karkinos.research_evidence.v1"
+    )
     assert report_payload["cost_summary"]["total_trades"] == 2
     assert report_payload["fills"][0]["fill_id"] == "FILL-1"
 
@@ -4447,13 +4496,15 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
         db=SimpleNamespace(
             get_total_deposits=fake_get_total_deposits,
             get_latest_quotes_sync=lambda: [],
-            get_instrument_metadata_sync=lambda symbol, asset_class=None: {
-                "symbol": symbol,
-                "asset_type": asset_class or "stock",
-                "display_name": "贵州茅台",
-            }
-            if symbol == "600519"
-            else None,
+            get_instrument_metadata_sync=lambda symbol, asset_class=None: (
+                {
+                    "symbol": symbol,
+                    "asset_type": asset_class or "stock",
+                    "display_name": "贵州茅台",
+                }
+                if symbol == "600519"
+                else None
+            ),
             get_ledger_entries_sync=lambda limit=12, offset=0: [
                 {
                     "id": 1,
@@ -5209,7 +5260,10 @@ def test_quote_status_allows_live_provider_lag_with_asset_specific_windows():
         )
         is None
     )
-    assert portfolio_routes._quote_status(fake_state, stale_stock_quote, now=now) == "stale"
+    assert (
+        portfolio_routes._quote_status(fake_state, stale_stock_quote, now=now)
+        == "stale"
+    )
     assert (
         portfolio_routes._quote_stale_reason(fake_state, stale_stock_quote, now=now)
         == "quote_older_than_expected_session"
@@ -7175,6 +7229,14 @@ def test_backtest_sweep_runs_bounded_grid_and_persists_each_configuration(
     assert response.results[0].params == {"short_period": 5, "long_period": 9}
     assert response.results[0].result_id == 902
     assert response.results[0].metrics.total_return == 0.05
+    assert (
+        response.results[0].research_evidence_bundle["schema_version"]
+        == "karkinos.research_evidence.v1"
+    )
+    assert response.results[0].research_evidence_bundle["gate_status"] in {
+        "pass",
+        "degraded",
+    }
     assert response.results[1].params == {"short_period": 3, "long_period": 9}
     assert response.warnings == [
         "Parameter sweep rankings are research evidence, not investment advice.",
@@ -7343,6 +7405,14 @@ def test_backtest_compare_runs_parameter_sets_on_one_dataset_snapshot(monkeypatc
 
     assert response.dataset_snapshot_id == "snapshot-shared"
     assert response.compared_count == 2
+    assert (
+        response.results[0].research_evidence_bundle["schema_version"]
+        == "karkinos.research_evidence.v1"
+    )
+    assert (
+        response.results[0].research_evidence_bundle["dataset_snapshot_id"]
+        == "snapshot-shared"
+    )
     assert [item.result_id for item in response.results] == [1201, 1202]
     assert [item.params for item in response.results] == [
         {"short_period": 3, "long_period": 9},
@@ -8358,7 +8428,7 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
                     "source": "manual",
                     "source_ref": "manual-600066-20260616-110456",
                     "created_at": "2026-06-16T12:35:51+08:00",
-                }
+                },
             ]
 
     fake_state = SimpleNamespace(

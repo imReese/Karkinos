@@ -101,17 +101,24 @@ def build_strategy_promotion_readiness(
     shadow_strategies, divergence_reviewed_strategies = _paper_shadow_evidence(
         order_facts
     )
+    research_gate_status_by_strategy = _research_evidence_gate_statuses(
+        backtest_results
+    )
 
     rows: list[StrategyPromotionReadinessRow] = []
     for validation_row in validation_matrix.rows:
         strategy_id = validation_row.strategy_id
         has_validation = validation_row.is_ready
+        research_gate_status = research_gate_status_by_strategy.get(strategy_id)
+        has_research_gate = research_gate_status in {None, "pass"}
         has_risk_block = strategy_id in blocked_risk_strategies
         has_shadow = strategy_id in shadow_strategies
         has_divergence_review = strategy_id in divergence_reviewed_strategies
         missing_requirements: list[str] = []
         if not has_validation:
             missing_requirements.extend(validation_row.missing_requirements)
+        if not has_research_gate:
+            missing_requirements.append("research_evidence_gate_pass")
         if not has_risk_block:
             missing_requirements.append("risk_gate_block_evidence")
         if not has_shadow:
@@ -133,6 +140,24 @@ def build_strategy_promotion_readiness(
         )
 
     return StrategyPromotionReadiness(rows=rows)
+
+
+def _research_evidence_gate_statuses(
+    backtest_results: list[dict[str, Any]],
+) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for row in backtest_results:
+        config = _json_object(row.get("config_json") or row.get("config"))
+        strategy_id = config.get("strategy")
+        if not strategy_id:
+            continue
+        metrics = _json_object(row.get("metrics_json"))
+        bundle = _json_object(metrics.get("research_evidence_bundle"))
+        gate = _json_object(bundle.get("promotion_gate"))
+        status = str(gate.get("status") or bundle.get("gate_status") or "")
+        if status:
+            statuses[str(strategy_id)] = status
+    return statuses
 
 
 def _strategies_with_blocked_risk_decision(

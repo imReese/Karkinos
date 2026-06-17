@@ -752,6 +752,7 @@ class BacktestSweepResult(BaseModel):
     params: dict[str, Any]
     metrics: BacktestMetrics
     score: float
+    research_evidence_bundle: dict[str, Any] = Field(default_factory=dict)
 
 
 class BacktestSweepResponse(BaseModel):
@@ -783,6 +784,7 @@ class StrategyCompareItem(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     dataset_snapshot_id: str | None = None
     dataset_snapshot: dict[str, Any] = Field(default_factory=dict)
+    research_evidence_bundle: dict[str, Any] = Field(default_factory=dict)
     metrics: BacktestMetrics
     equity_curve: list[EquityPoint]
 
