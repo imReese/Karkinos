@@ -3230,22 +3230,20 @@ function ReturnCalendarDataStatus({
         : copy.explainability.confirmedValuation;
   const tone =
     status === 'missing'
-      ? 'border-amber-400/30 bg-amber-400/10 text-amber-100'
+      ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
       : status === 'partial'
-        ? 'border-sky-400/30 bg-sky-400/10 text-sky-100'
-        : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100';
+        ? 'border-[color-mix(in_srgb,var(--app-accent-secondary)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-accent-secondary)_10%,transparent)] text-[var(--app-accent-secondary)]'
+        : 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]';
 
   return (
     <div
       className={`${compact ? 'px-3 py-1.5' : 'px-3 py-2'} flex min-w-0 items-center gap-2 rounded-full border ${tone}`}
       data-testid="return-calendar-status-chip"
     >
-      <div className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] opacity-85">
+      <div className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]">
         {copy.explainability.dataStatus}
       </div>
-      <div className="min-w-0 truncate text-xs font-medium opacity-95">
-        {detail}
-      </div>
+      <div className="min-w-0 truncate text-xs font-semibold">{detail}</div>
     </div>
   );
 }

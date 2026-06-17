@@ -1,275 +1,198 @@
-# Design System Inspiration of Karkinos
+# Karkinos Design System
 
-## 1. Visual Theme & Atmosphere
+Karkinos uses a Catppuccin cockpit system: **Latte** for light mode and **Mocha** for dark mode. The product should feel calm enough for daily portfolio review, dense enough for financial operation, and clear enough that money, risk, and data freshness never require visual effort to parse.
 
-Karkinos's current interface is a restrained portfolio workbench built for long-running daily use rather than short-lived campaign impact. The visual language combines an airy, near-white financial canvas with a graphite navigation rail and one dense dark “balance slab” used for the highest-signal financial number on the page. The result sits somewhere between Apple’s premium calm, GPT’s low-noise product surfaces, and a private-banking dashboard that has been simplified for a single operator.
+This document is the source of truth for UI direction. If implementation and this document disagree, update the implementation or explicitly record the drift before moving on.
 
-This is not a trading terminal, and it should never drift into brokerage clutter. The homepage is intentionally quiet: large whitespace, few chromatic signals, clear numeric hierarchy, and compact operational modules. Most surfaces use translucent white with soft blur and low-contrast borders, allowing the background gradient to provide atmosphere without turning the UI into a decorative landing page. The dark sidebar and dark hero balance card create two anchors: navigation on the left, net-worth orientation on the right.
+## Current Audit
 
-Typography is part of that restraint. The primary sans stack starts with Avenir Next and Chinese-native system fallbacks, which keeps headings refined and slightly more editorial than standard SaaS defaults. Monospace numbers use IBM Plex Mono / SFMono / JetBrains Mono so financial values feel instrument-like and stable. Financial numbers should feel machined; labels should feel quiet and supportive.
+Checked on 2026-06-17 against the in-app browser Overview route and a static token scan.
 
-**Key Characteristics:**
-- Cool light canvas with subtle radial haze and no aggressive gradients
-- Graphite-black sidebar (`rgba(16, 17, 20, 0.92)`) as the persistent structural frame
-- Frosted white cards (`rgba(255, 255, 255, 0.72–0.74)`) with soft shadows and minimal border contrast
-- Single saturated action color: Karkinos Blue (`#2563eb`) used for primary actions and focus
-- Controlled semantic accents only: teal cash, green profit, amber warning, red loss
-- Large financial numerals presented in monospace, especially in the dark hero slab
-- Dense but calm workspace layout: main action column + secondary state rail
-- “Private terminal” mood rather than public marketing mood
+Conforming:
 
-## 2. Color Palette & Roles
+- The active theme is Catppuccin Latte with `--app-bg: #eff1f5`, `--app-text: #4c4f69`, and `--app-muted: #6c6f85`.
+- The codebase already exposes most app colors through `--app-*` tokens instead of one-off page colors.
+- The shell, panels, charts, and controls use a restrained cockpit density rather than a marketing layout.
 
-### Core Backgrounds
+Needs correction:
 
-- **Page Gray** (`#f5f5f7`): The base application canvas. Soft, slightly warm-neutral, never stark white.
-- **Canvas White** (`#fbfbfc`): Top gradient stop in the body background. Used to create the luminous upper atmosphere.
-- **Canvas Fog** (`#eef1f4`): Lower gradient stop in the body background. Prevents the app from feeling flat.
-- **Sidebar Graphite** (`rgba(16, 17, 20, 0.92)`): The left navigation rail. Dense, quiet, premium.
-- **Hero Dark Slab** (`#16181d` with layered dark gradients): Used for the total-assets block and other maximum-emphasis surfaces.
+- The previous design spec described a white-glass/blue product system, which no longer matches the implemented Catppuccin Latte/Mocha direction.
+- Raw Catppuccin Latte semantic colors can be too low-contrast for small financial text. For example, Latte green `#40a02b` on light surfaces is pleasant but not always readable enough for 12-14px values.
+- Some components reference missing tokens: `--app-warning-bg`, `--app-warning-border`, and `--app-accent-strong`. These should be defined centrally or replaced with existing tokenized color mixes.
+- Hard-coded theme colors should be rare. Current examples include `text-white`, `border-white/8`, and `bg-white/[0.03]`; they are acceptable only on controlled Mocha-like surfaces or active accent fills after contrast checks.
+- Status chips, tooltips, chart labels, and tiny metadata need explicit Latte and Mocha contrast review, not only visual approval in one theme.
 
-### Surface Layers
+## North Star
 
-- **Glass Card** (`rgba(255, 255, 255, 0.74)`): Standard card surface with blur, used across modules.
-- **Glass Card Soft** (`rgba(255, 255, 255, 0.72)`): Section panels and compact workspace surfaces.
-- **Strong White** (`#ffffff`): High-clarity surface for the strongest light-mode contained moments.
-- **Input White** (`rgba(255, 255, 255, 0.84)`): Form controls and entry surfaces.
+Karkinos is a financial cockpit for one operator. It is not a brokerage clone, a marketing dashboard, or a toy backtester UI.
 
-### Text
-
-- **Primary Ink** (`#111317`): Primary headings, strong values, table text.
-- **Secondary Slate** (`#4b5563`): Supporting copy, descriptions, medium-emphasis labels.
-- **Muted Gray-Blue** (`#8a94a6`): Eyebrows, metadata, timestamps, low-priority labels.
-- **Hero White** (`#f5f7fa`): Text on the dark balance slab.
-- **Hero Muted White** (`rgba(245, 247, 250, 0.48–0.68)`): Supporting text on dark hero surfaces.
-
-### Primary and Semantic Colors
-
-- **Karkinos Blue** (`#2563eb`): The single primary interactive color. Buttons, focus states, strong navigation/action emphasis.
-- **Karkinos Blue Hover** (`#1d4ed8`): Hover/pressed state for primary actions.
-- **Cash Teal** (`#0f6f8f`): Cash-related values and icons.
-- **Profit Green** (`#1f8a70`): Positive PnL, healthy status states.
-- **Warning Amber** (`#d08700`): Alerts, caution, degraded state.
-- **Loss Red** (`#c2413b`): Negative PnL, destructive actions, error states.
-
-### Border, Overlay, and Interaction Tints
-
-- **Border Soft** (`rgba(15, 23, 42, 0.08)`): Default border throughout the product.
-- **Border Strong** (`rgba(15, 23, 42, 0.14)`): Hover/strong separation border.
-- **Primary Subtle** (`rgba(37, 99, 235, 0.10)`): Icon wells and selected/soft highlighted states.
-- **Surface Hover** (`rgba(37, 99, 235, 0.06)`): Row hover, secondary button hover, light active tint.
-- **Overlay** (`rgba(15, 23, 42, 0.34)`): Drawer and modal dimmer.
-
-### Role Guidance
-
-- Color must never replace hierarchy. Use typography and spacing first.
-- Blue belongs to action, not decoration.
-- Semantic colors appear mostly in values, pills, badges, and compact indicators.
-- The dark slab is reserved for top-level account figures, not routine content panels.
-
-### Do / Don't
-
-- **Do** keep the app overwhelmingly neutral and let action blue appear only when the user can do something.
-- **Do** use semantic colors on values, compact status chips, and micro indicators.
-- **Do** keep the dark slab exclusive to top-level balance orientation.
-- **Don't** introduce warm beige, gold, or luxury-finance tones into routine controls.
-- **Don't** use multiple accent families on the same surface.
-- **Don't** color entire modules by status; color the signal, not the container.
-
-## 3. Typography Rules
-
-### Font Family
-
-- **Primary Sans**: `Avenir Next`, with fallbacks `PingFang SC, Noto Sans SC, Helvetica Neue, sans-serif`
-- **Monospace**: `IBM Plex Mono`, with fallbacks `SFMono-Regular, JetBrains Mono, monospace`
-
-### Hierarchy
-
-| Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
-|------|------|------|--------|-------------|----------------|-------|
-| Hero Display | Avenir Next | 38px max via clamp | 600 | 1.02 | -0.04em | Homepage hero title, compact and authoritative |
-| Balance Display | IBM Plex Mono | 42px max via clamp | 500–600 | 1.00 | -0.04em | Total assets, top-level financial slab |
-| Surface Title | Avenir Next | 18px | 600 | 1.15 | -0.03em | Panel headings |
-| Nav Brand | Avenir Next | 18px | 700 | 1.20 | 0.02em | Sidebar brand lockup |
-| Metric Value | Avenir Next / Mono | 18px | 600 | 1.20 | normal | Compact summary metrics |
-| Body | Avenir Next | 13px | 400 | 1.50–1.60 | normal | Standard UI copy |
-| Label | Avenir Next | 12px | 500–600 | 1.40 | 0.06em | Form labels, metadata, table headings |
-| Eyebrow | Avenir Next | 11px | 600 | 1.20 | 0.08em–0.12em | Section overlines, uppercase utility labels |
-| Micro | Avenir Next | 10–11px | 400–500 | 1.30 | normal | Timestamps, compact helper text |
-| Financial Mono | IBM Plex Mono | 13px–42px | 400–600 | 1.00–1.45 | normal to slight negative | Numeric values, price, cash, PnL |
+The first screen should quickly answer:
 
-### Principles
-
-- Headings are compact, not loud. Avoid marketing-scale display type unless used for net-worth orientation.
-- Negative tracking belongs to hero and major financial values only.
-- Most UI text should live at 12–14px and remain extremely scannable.
-- Use monospace whenever the user is comparing amounts, ratios, timestamps, or codes.
-- Chinese copy should stay operational and concise; do not use decorative brand slogans in product surfaces.
-
-### Do / Don't
-
-- **Do** write headings like product UI: `账户状态`, `待处理任务`, `交易与资金流水`.
-- **Do** keep support copy to one short operational sentence.
-- **Do** default to monospace for money, ratios, codes, and timestamps.
-- **Don't** write homepage copy like a marketing hero or internal design commentary.
-- **Don't** stack multiple long explanatory sentences inside operational panels.
-
-## 4. Component Stylings
-
-### Buttons
-
-**Primary Button**
-- Background: `#2563eb`
-- Text: `#ffffff`
-- Padding: `8px 16px`
-- Radius: `6px`
-- Shadow: `0 10px 20px rgba(37, 99, 235, 0.16)`
-- Hover: darkens to `#1d4ed8`
-- Use: Primary decision or submission action
-
-**Secondary Button**
-- Background: `rgba(255, 250, 242, 0.7)` or lightly tinted glass
-- Text: `#111317`
-- Border: `1px solid rgba(15, 23, 42, 0.08)`
-- Hover: `rgba(37, 99, 235, 0.06)`
-- Use: Secondary actions and low-risk navigation
-
-**Danger Button**
-- Background: `rgba(239, 68, 68, 0.12)`
-- Text: `#c2413b`
-- Border: `1px solid rgba(239, 68, 68, 0.25)`
-- Hover: darker red tint
-- Use: destructive or reversing actions
-
-### Cards & Panels
-
-- Default surface: translucent white glass card with subtle blur and soft shadow
-- Border radius scale:
-  - Small control: `6px`
-  - Standard input/icon well: `10px–12px`
-  - Metric tile: `18px`
-  - Section panel: `20px`
-  - Hero panel: `24px–30px`
-- Borders are present but understated; never heavy or dark
-- Cards should feel contained and premium, but the app should avoid card-mosaic overload
-
-### Navigation
-
-- Sidebar is fixed, dark, and slightly translucent
-- Active item uses a soft white background fill plus a narrow cool highlight rail
-- Hover states brighten text rather than introducing new color
-- The sidebar should feel infrastructural, not decorative
-
-### Forms
-
-- Inputs use semi-opaque white backgrounds with subtle borders
-- Focus state uses a 1px blue ring and border shift to primary blue
-- Form surfaces should look financial and calm, not enterprise-heavy
-
-### Data Modules
-
-**Summary Tiles**
-- Compact metric cards with small icon wells, short labels, and one dominant value
-- Prefer a single line of interpretation, not paragraphs
-
-**Action Center**
-- Clear task rows with symbol, price, recommendation title, supporting detail, and concise controls
-- This is the most important operational component after the asset summary
-
-**Risk Cluster**
-- Risk items should be compact stacks with level badges, title, and one-line explanation
-- Warnings should be visually restrained; avoid alarm-dashboard red walls
-
-**Recent Activity**
-- A compressed timeline/list of trades and cash flows
-- Emphasis should be on timestamp + action type + amount, not verbose narratives
-
-**Hero Balance Slab**
-- Dark, high-contrast, minimal chrome
-- Used for total assets and relative performance only
-- Never overload this surface with secondary metrics
-
-### Floating Action Button
-
-- Circular blue FAB pinned at bottom-right
-- Use sparingly as a convenience launcher for cash flow and trade entry
-- Should feel like a utility affordance, not the center of the page
-
-### Do / Don't
-
-- **Do** make cards and panels feel compact, operational, and scannable.
-- **Do** keep action controls inline and close to the data they affect.
-- **Do** let the sidebar feel infrastructural and calm.
-- **Don't** build a homepage out of equal-weight card mosaics.
-- **Don't** put process commentary such as “place secondary information correctly” into user-visible UI.
-- **Don't** make secondary buttons feel warm or promotional.
-
-## 5. Layout Principles
-
-### Structure
-
-- Application shell = fixed sidebar + full-height content workspace
-- Content width is viewport-driven, not narrow marketing-container driven
-- Homepage should resolve into:
-  - top orientation strip
-  - primary action/work area
-  - secondary state rail
-
-### Page Composition
-
-- The page is a workbench, not a story page
-- The first screen should answer:
-  - how much is the account worth
-  - what the cash/holding state is
-  - what needs action now
-  - whether there is immediate risk
-- Deeper analytics should move to secondary pages rather than inflate the homepage
-
-### Spacing System
-
-- Base unit: `8px`
-- Common application spacing: `8px, 10px, 12px, 14px, 16px, 18px, 20px, 24px, 30px, 48px`
-- Internal card spacing is compact
-- Inter-section spacing should be clear but never wasteful
-
-### Grid
-
-- Sidebar width: `236px`
-- Collapsed sidebar width: `64px`
-- Homepage hero: `minmax(0, 1.6fr)` content + `minmax(280px, 0.9fr)` balance slab
-- Main workspace: `minmax(0, 1.45fr)` primary column + `minmax(300px, 0.72fr)` secondary rail
-- Metric strip: 4-up desktop grid
-- At tablet and below, workspace collapses to single column
-
-### Whitespace Philosophy
-
-- Use whitespace to clarify decisions, not to imitate luxury branding
-- The UI should feel breathable, but every large empty area must still earn its place
-- Information density should be moderate: tighter than a marketing site, calmer than a trading terminal
-
-### Do / Don't
-
-- **Do** prioritize a first screen that answers account value, task state, and risk state without scrolling.
-- **Do** compress spacing before removing information hierarchy.
-- **Do** maintain a main-workspace / side-rail split on desktop.
-- **Don't** leave large decorative empty zones that do not improve readability.
-- **Don't** let the homepage become a generic dashboard or a landing page.
-
-## 6. Depth & Elevation
-
-| Level | Treatment | Use |
-|-------|-----------|-----|
-| Page Canvas | layered radial + linear light gradient, no border | Global background atmosphere |
-| Flat Glass | `rgba(255,255,255,0.72)` + `1px` soft border | Standard panels |
-| Card Lift | `0 12px 30px rgba(15, 23, 42, 0.05)` | Tiles, drawers, floating controls |
-| Soft Hero Lift | `0 30px 60px rgba(15, 23, 42, 0.06)` | Homepage hero container |
-| Sidebar Depth | `30px 0 80px rgba(15, 23, 42, 0.16)` | Persistent navigation rail |
-| Primary Action | blue shadow bloom at low opacity | Primary CTA only |
-| Dark Slab Inset | `inset 0 1px 0 rgba(255,255,255,0.05)` | Hero total-assets panel |
-
-### Elevation Principles
-
-- Most depth comes from translucency and gentle shadows, not thick borders
-- The UI should never look like layered neon glass; shadows must stay soft and cool
-- Elevated surfaces should appear only where interaction or emphasis justifies them
-- The darkest surfaces belong to navigation and top-level balance emphasis, not to routine content blocks
+- What is the account worth?
+- What changed today?
+- Which data is fresh, stale, cached, or missing?
+- What requires attention before any action?
+- Where can I inspect the instrument-level evidence?
+
+The interface should reduce eye strain during repeated daily use. Visual atmosphere is useful only when it improves orientation; it must never reduce legibility.
+
+## Palette
+
+Use Catppuccin names in design discussion and `--app-*` variables in code.
+
+| Role         | Mocha     | Latte     | Token                             |
+| ------------ | --------- | --------- | --------------------------------- |
+| Base canvas  | `#1e1e2e` | `#eff1f5` | `--app-base`, `--app-bg`          |
+| Mantle       | `#181825` | `#e6e9ef` | `--app-mantle`                    |
+| Crust        | `#11111b` | `#dce0e8` | `--app-crust`                     |
+| Panel        | `#313244` | `#ccd0da` | `--app-panel`, `--app-surface-0`  |
+| Surface      | `#45475a` | `#bcc0cc` | `--app-surface-1`, `--app-border` |
+| Primary text | `#cdd6f4` | `#4c4f69` | `--app-text`, `--app-foreground`  |
+| Muted text   | `#a6adc8` | `#6c6f85` | `--app-muted`, `--app-subtext-0`  |
+| Accent       | `#cba6f7` | `#8839ef` | `--app-accent`                    |
+| Info accent  | `#89b4fa` | `#1e66f5` | `--app-accent-secondary`          |
+| Success      | `#a6e3a1` | `#40a02b` | `--app-success`                   |
+| Danger       | `#f38ba8` | `#d20f39` | `--app-danger`                    |
+| Warning      | `#f9e2af` | `#df8e1d` | `--app-warning`                   |
+| Teal         | `#94e2d5` | `#179299` | `--app-teal`                      |
+
+Palette rules:
+
+- Do not introduce generic Tailwind palette colors for product surfaces when a Catppuccin or `--app-*` token exists.
+- Do not use `emerald-100`, `sky-100`, `amber-100`, or similar pale dark-mode text colors on Latte surfaces.
+- Accent purple is for selected controls, focus, and cockpit emphasis. It is not a decorative background theme.
+- Green, red, amber, blue, and teal are semantic. They should explain data state, PnL, risk, or action state.
+
+## Contrast And Eye Comfort
+
+Legibility rules:
+
+- Body text, table text, status text, and small financial numbers should target WCAG AA contrast of 4.5:1 or better.
+- Large financial values may use 3:1 or better only when size and weight make them unmistakable.
+- Do not reduce text contrast with opacity when a proper token can express hierarchy.
+- `--app-muted` is for secondary labels, not important values.
+- Use `--app-text` for default readable text; use semantic colors only when the meaning matters.
+
+Semantic color rules:
+
+- Raw semantic colors can be used for icons, dots, chart strokes, borders, and heatmap fills.
+- For small text on Latte, prefer a future `--app-success-text`, `--app-danger-text`, `--app-warning-text`, and `--app-info-text` if raw Catppuccin colors fail contrast.
+- Positive or negative money should remain readable before it is colorful.
+- Warning badges must be readable in both Latte and Mocha; missing or stale data should never look decorative.
+
+Surface rules:
+
+- Latte should not feel like pure white paper. Use Base, Mantle, Crust, and Surface layers.
+- Mocha should not feel like pure black. Keep panels lifted from Base with border and surface tokens.
+- Transparent backgrounds must be checked against the effective parent background, not only their declared color.
+- Avoid large empty decorative zones; empty space should support scanning, not luxury branding.
+
+## Typography
+
+Use system-native readability over decorative branding.
+
+Font stack:
+
+- Sans: `-apple-system`, `BlinkMacSystemFont`, `SF Pro Text`, `Segoe UI`, `PingFang SC`, `Microsoft YaHei`, `Noto Sans CJK SC`, sans-serif
+- Numeric and instrument-like values: tabular numerals through `font-variant-numeric: tabular-nums`
+
+Rules:
+
+- Chinese UI text should be concise and operational.
+- Do not use negative letter spacing except on major financial display values where it has been visually checked.
+- Do not scale type with viewport width.
+- Numbers that users compare side by side should align visually and use stable decimals.
+- Buttons and chips should use clear labels or icons with accessible names; they should not compress Chinese labels into ambiguous shapes.
+
+## Components
+
+Panels:
+
+- Use app panel tokens and 8px-based spacing.
+- Cards are for repeated items, modals, and framed tools. Avoid cards inside cards unless the inner object is a genuine repeated item.
+- Panel content should be dense but not cramped. If a value needs explanation, add a compact label rather than a paragraph.
+
+Buttons and segmented controls:
+
+- Active selected controls may use the accent fill, but text contrast must be verified in both Latte and Mocha.
+- Do not rely on `text-white` unless the active fill is known to be dark enough in Latte and Mocha.
+- Icon-only controls require accessible names and should have visible selected state.
+
+Status chips:
+
+- Must show the label and the reason clearly.
+- Use tokenized semantic backgrounds and borders.
+- Never use pale dark-theme text on Latte.
+- Long Chinese status text should truncate only when the full meaning is available elsewhere or the chip is non-critical.
+
+Tables:
+
+- Wide tables scroll locally, never by stretching the whole app shell.
+- Numeric cells use consistent alignment, width, and currency formatting.
+- Chinese asset-class labels must not wrap character-by-character.
+
+Charts:
+
+- Axes, grid lines, tooltips, and selected markers must be readable in Latte and Mocha.
+- Tooltips should show exact values and context, not only decorative hover dots.
+- Chart stroke colors may use Catppuccin semantic colors, but labels and tooltip text must use readable text tokens.
+
+Financial calendar:
+
+- Calendar cells should prioritize date, period label, and amount.
+- Positive/negative fill intensity can communicate direction, but amount text must stay readable.
+- Week, month, and year cards should use stable layout rules so values do not drift between views.
+
+## Layout
+
+Karkinos should behave like a cockpit:
+
+- Main content owns the primary decision area.
+- Secondary rails hold action queues, recent activity, or diagnostics.
+- On narrow screens, content should reflow by priority rather than shrink globally.
+- Root and shell containers must not silently clip important content.
+- Wide tables, grids, and charts should scroll inside local containers.
+
+Breakpoints:
+
+- Desktop: two-column workbench where the secondary rail remains useful.
+- Tablet: single-column with high-priority cards first.
+- Mobile: compact cards and local scrolling; no horizontal page overflow.
+
+## Copy
+
+The UI should sound like an operating instrument, not a marketing page.
+
+Use:
+
+- `行情缓存`
+- `估值可用`
+- `待确认`
+- `风险阻断`
+- `买入`
+- `卖出`
+- `资金转入`
+
+Avoid:
+
+- Internal reason codes without localization.
+- English fallback in Chinese mode.
+- Design commentary in the product UI.
+- Phrases that imply guaranteed profit or investment advice.
+
+## Implementation Guardrails
+
+Before merging UI changes:
+
+- Check Latte and Mocha.
+- Check at least one common desktop viewport and one narrower viewport when layout changes.
+- Scan for new hard-coded colors and replace them with `--app-*` tokens unless there is a documented reason.
+- Run frontend tests and build for user-visible frontend changes.
+- Add deterministic tests for contracts that previously regressed, such as status chip contrast classes, local overflow, or chart tooltip behavior.
+
+Recommended cleanup backlog from this audit:
+
+- Define or remove `--app-warning-bg`, `--app-warning-border`, and `--app-accent-strong`.
+- Add text-specific semantic tokens for Latte/Mocha if raw Catppuccin colors remain below contrast requirements.
+- Replace remaining unscoped white utilities on routine surfaces.
+- Add a lightweight contrast audit for key cockpit surfaces.
