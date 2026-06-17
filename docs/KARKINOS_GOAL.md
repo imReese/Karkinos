@@ -359,8 +359,111 @@ v0.4 should make it possible to answer:
   Web, interpret reports, and keep the output as research rather than
   investment advice.
 
+## Target for v0.5
+
+Karkinos v0.5 — Quant Research Quality & Production Evidence Hardening —
+should turn Strategy Lab output into a stronger research-evidence pipeline
+before any shadow or paper review.
+
+v0.5 should make every experiment answer:
+
+> Which strategy and parameter set was tested, on which frozen data, under
+> which cost, slippage, market, data-quality, OOS, walk-forward, and risk
+> assumptions, and what evidence says it deserves further review or should be
+> paused?
+
+The goal is not to add broker automation. v0.5 hardens reproducibility,
+anti-overfitting checks, data-quality gates, analyzer composition, and
+promotion evidence while preserving manual confirmation and research-only
+boundaries.
+
+### v0.5 Scope
+
+* Each backtest, sweep, and comparison run produces a unified
+  `ResearchEvidenceBundle` that references the dataset snapshot, strategy
+  metadata, cost evidence, OOS evidence, analyzer outputs, assumptions,
+  limitations, and gate status.
+* Data quality can degrade or block research evidence when bars, cache
+  metadata, provider reconciliation, adjustment mode, or source freshness are
+  insufficient.
+* OOS validation supports stronger split structures such as rolling,
+  walk-forward, and regime-aware summaries, with explicit limitations when the
+  configured experiment lacks enough data.
+* Parameter sweeps include stability and sensitivity evidence rather than
+  ranking only by headline return.
+* Analyzer contracts are explicit and composable, covering return, risk, cost,
+  drawdown, turnover, exposure, trade statistics, benchmark, data quality, and
+  China-market assumptions over time.
+* China-market assumptions are visible in research output, including T+1,
+  limit behavior, suspension or special-treatment gaps, trading calendar,
+  taxes and fees, and fund or NAV latency where relevant.
+* Promotion into shadow or paper review is blocked or degraded unless the
+  evidence gate sees enough data-quality, after-cost, OOS, risk, and audit
+  evidence.
+* Web reports explain pass, degraded, blocked, and review-required outcomes in
+  plain language without presenting research output as investment advice.
+
+### Acceptance Criteria for v0.5
+
+* [x] `ResearchEvidenceBundle` exists as a versioned backend artifact and is
+  generated for single backtests.
+* [x] Parameter sweeps and strategy comparisons persist and expose the same
+  evidence-bundle contract for each constituent run.
+* [x] Analyzer outputs are produced through an explicit contract rather than
+  ad hoc report fields.
+* [x] Data-quality analyzer status can mark experiments `pass`, `degraded`, or
+  `blocked`, and blocked data prevents promotion readiness.
+* [x] Evidence bundles reference dataset snapshot id, strategy metadata,
+  after-cost evidence, OOS evidence, cost summary, fills/trade statistics, and
+  limitations when available.
+* [ ] Walk-forward or rolling OOS evidence can be generated deterministically
+  for at least one strategy fixture.
+* [ ] Parameter sweep reports include stability or sensitivity evidence and
+  overfitting warnings grounded in the tested grid.
+* [ ] China-market assumptions are recorded in each evidence bundle, including
+  which assumptions are modeled and which are known gaps.
+* [x] Strategy promotion readiness consumes evidence-bundle gate status and
+  cannot mark a strategy ready when required evidence is missing or blocked.
+* [ ] API and saved report files expose the evidence bundle without changing
+  live-like execution defaults or enabling automatic real-money trading.
+* [ ] Backend deterministic tests cover bundle generation, analyzer contract,
+  data-quality degraded/blocked states, and promotion-gate consumption.
+* [ ] README/docs explain how to interpret the evidence bundle and keep it as
+  research evidence rather than investment advice.
+
 <!-- codex-progress:start -->
 ## Codex Progress
+
+### v0.5 Progress
+
+* 2026-06-17: Started v0.5 by adding target, scope, acceptance criteria, and a
+  dedicated progress section for research evidence hardening. The first backend
+  implementation slice is a minimal versioned `ResearchEvidenceBundle` and
+  analyzer contract for existing backtest runs, without changing Web UI or
+  execution behavior.
+* 2026-06-17: Implemented the first v0.5 backend evidence slice. Single
+  backtest runs now attach `research_evidence_bundle` to `metrics_json` and
+  saved report files. The bundle is versioned, includes deterministic analyzer
+  outputs for data quality, after-cost evidence, and OOS presence, records
+  China-market assumption gaps, and keeps promotion status as human review
+  evidence without enabling execution behavior.
+* 2026-06-17: Extended the evidence bundle surface to Strategy Lab sweeps and
+  comparisons. Each sweep result and comparison item now exposes the same
+  `research_evidence_bundle` contract that is persisted in the saved
+  `metrics_json`, so multi-run research outputs can be audited without looking
+  up each saved result manually.
+* 2026-06-17: Connected research evidence gates to promotion readiness.
+  Strategy promotion readiness now reads each saved backtest result's
+  `research_evidence_bundle.promotion_gate.status`; degraded or blocked
+  evidence adds a `research_evidence_gate_pass` missing requirement even when
+  after-cost/OOS, risk, paper/shadow, and divergence evidence are otherwise
+  present. This keeps shadow/paper eligibility behind the v0.5 evidence gate.
+* 2026-06-17: Added explicit evidence references and trade statistics to the
+  research evidence bundle. Backtest evidence now records dataset snapshot
+  references, strategy metadata availability, after-cost and OOS evidence
+  availability, cost-summary availability, fill and trade counts, turnover,
+  commission, slippage, and limitation counts so saved reports can be audited
+  from one versioned artifact without enabling execution behavior.
 
 ### External Project Research Notes — 2026-06-17
 

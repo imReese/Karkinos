@@ -56,7 +56,7 @@ def test_v04_goal_acceptance_checkboxes_match_strategy_lab_audit() -> None:
     audit = build_v04_strategy_lab_acceptance_audit()
     goal_text = Path("docs/KARKINOS_GOAL.md").read_text()
     v04_acceptance = goal_text.split("### Acceptance Criteria for v0.4", 1)[1].split(
-        "<!-- codex-progress:start -->", 1
+        "## Target for v0.5", 1
     )[0]
 
     assert audit.is_complete is True
