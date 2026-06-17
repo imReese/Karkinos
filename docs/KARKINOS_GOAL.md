@@ -596,7 +596,7 @@ Next data-driven iteration backlog:
   adjustment mode, delayed NAVs, suspensions, stale source data, or provider
   corrections differ.
 * 2026-06-15: Added a v0.4 Strategy Lab acceptance audit and marked the v0.4
-  acceptance criteria complete. `build_v04_strategy_lab_acceptance_audit()`
+  acceptance criteria complete. `build_strategy_lab_acceptance_audit()`
   maps all 14 Strategy Lab checkboxes to concrete code, docs, deterministic
   tests, and validation commands covering extension strategy discovery,
   generic params, Web one-symbol runs, dataset snapshots, after-cost/OOS

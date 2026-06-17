@@ -435,8 +435,8 @@ fill.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/backtest/strategies` | List strategies with typed parameter schemas and v0.2 benchmark / OOS / after-cost requirements |
-| GET | `/api/backtest/strategy-validation` | Get the v0.2 benchmark strategy after-cost / OOS evidence matrix |
+| GET | `/api/backtest/strategies` | List strategies with typed parameter schemas and benchmark / OOS / after-cost requirements |
+| GET | `/api/backtest/strategy-validation` | Get the benchmark strategy after-cost / OOS evidence matrix |
 | GET | `/api/backtest/strategy-promotion-readiness` | Get promotion-readiness gates for benchmark strategies |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
 | POST | `/api/backtest/sweep` | Run bounded parameter grids, persist each tested configuration, and return deterministic rankings with multiple-testing warnings |
@@ -469,8 +469,8 @@ slippage assumptions, general assumptions, and limitations.
 These panels are research evidence only and do not approve execution.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports
-whether each v0.2 benchmark strategy has after-cost and out-of-sample evidence.
-It is for audit and promotion checks, not investment advice.
+whether each registered benchmark strategy has after-cost and out-of-sample
+evidence. It is for audit and promotion checks, not investment advice.
 
 The Web Backtest Strategy Lab renders registry strategy metadata, asset
 universe, supported frequencies, benchmark role, validation requirements, and

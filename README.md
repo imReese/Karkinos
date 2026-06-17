@@ -7,6 +7,9 @@ Karkinos: Investing is a chronic condition. Here is your scalpel.
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
+Roadmap, acceptance criteria, and planning history live in
+[docs/KARKINOS_GOAL.md](docs/KARKINOS_GOAL.md).
+
 ---
 
 **Disclaimer**
