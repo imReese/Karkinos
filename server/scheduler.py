@@ -37,6 +37,8 @@ _MORNING_OPEN = time(9, 30)
 _MORNING_CLOSE = time(11, 30)
 _AFTERNOON_OPEN = time(13, 0)
 _AFTERNOON_CLOSE = time(15, 0)
+_POST_CLOSE_MARKET_REFRESH_TIME = time(16, 0)
+_POST_CLOSE_FUND_NAV_REFRESH_TIME = time(21, 30)
 
 
 class TradingScheduler:
@@ -69,6 +71,8 @@ class TradingScheduler:
         self._instruments: dict[Symbol, Instrument] = {}
         self._latest_quotes: dict[str, dict] = {}  # 报价缓存
         self._last_historical_bar_backfill_key: str | None = None
+        self._last_post_close_market_refresh_date: str | None = None
+        self._last_post_close_fund_nav_refresh_date: str | None = None
         self._stop_requested = threading.Event()
 
         # Bug 3: 线程安全锁
@@ -247,6 +251,60 @@ class TradingScheduler:
             updated,
             failed,
         )
+
+    @staticmethod
+    def _is_post_close_valuation_refresh_window(now: datetime) -> bool:
+        """Return whether same-day close data should wait for fixed refresh."""
+        return now.weekday() < 5 and now.time() >= _AFTERNOON_CLOSE
+
+    def _should_refresh_post_close_market_data(self, now: datetime) -> bool:
+        if now.weekday() >= 5:
+            return False
+        if now.time() < _POST_CLOSE_MARKET_REFRESH_TIME:
+            return False
+        run_date = now.date().isoformat()
+        return self._last_post_close_market_refresh_date != run_date
+
+    def _should_refresh_post_close_fund_nav_data(self, now: datetime) -> bool:
+        if now.weekday() >= 5:
+            return False
+        if now.time() < _POST_CLOSE_FUND_NAV_REFRESH_TIME:
+            return False
+        run_date = now.date().isoformat()
+        return self._last_post_close_fund_nav_refresh_date != run_date
+
+    def _maybe_refresh_post_close_valuation_data(
+        self,
+        data_manager,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        """Refresh close-driven valuation inputs once after the fixed close time."""
+        current = now or datetime.now()
+        run_date = current.date().isoformat()
+        refreshed = False
+
+        if self._should_refresh_post_close_market_data(current):
+            self._maybe_backfill_historical_bars(data_manager, now=current)
+            self._last_post_close_market_refresh_date = run_date
+            logger.info(
+                "收盘后行情刷新完成: date=%s, scheduled_time=%s",
+                run_date,
+                _POST_CLOSE_MARKET_REFRESH_TIME.isoformat(timespec="minutes"),
+            )
+            refreshed = True
+
+        if self._should_refresh_post_close_fund_nav_data(current):
+            self._sync_fund_nav_quotes()
+            self._last_post_close_fund_nav_refresh_date = run_date
+            logger.info(
+                "收盘后基金净值确认刷新完成: date=%s, scheduled_time=%s",
+                run_date,
+                _POST_CLOSE_FUND_NAV_REFRESH_TIME.isoformat(timespec="minutes"),
+            )
+            refreshed = True
+
+        return refreshed
 
     def _scheduler_quote_fetch_asset_type(self) -> str | None:
         asset_types = {asset_class.value for _, asset_class in self._watchlist}
@@ -616,13 +674,21 @@ class TradingScheduler:
 
         # 主循环
         while self._running.is_set():
-            self._sync_fund_nav_quotes()
+            current = datetime.now()
 
             # Bug 7: 非交易时段跳过轮询
             if not self._is_market_open():
-                self._maybe_backfill_historical_bars(data_manager)
+                if self._is_post_close_valuation_refresh_window(current):
+                    self._maybe_refresh_post_close_valuation_data(
+                        data_manager,
+                        now=current,
+                    )
+                else:
+                    self._maybe_backfill_historical_bars(data_manager, now=current)
                 self._stop_requested.wait(timeout=30)
                 continue
+
+            self._sync_fund_nav_quotes()
 
             try:
                 events = self._poll_watchlist_quotes(feed)

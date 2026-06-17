@@ -1125,6 +1125,55 @@ def _quote_latest_price(quote: dict | None) -> float | None:
     return float(quote["price"])
 
 
+def _session_closed_market_bar_price(
+    state,
+    *,
+    symbol: str,
+    latest_quote: dict | None,
+) -> tuple[float | None, str | None]:
+    latest_timestamp = _parse_quote_timestamp(
+        None if latest_quote is None else latest_quote.get("timestamp")
+    )
+    trade_day = (
+        latest_timestamp.date()
+        if latest_timestamp is not None
+        else get_shanghai_now().date()
+    )
+    now = get_shanghai_now()
+    if trade_day != now.date() or is_cn_trading_session(now):
+        return None, None
+    if state.db is None or not hasattr(state.db, "get_market_bar_on_date_sync"):
+        return None, None
+    market_bar = state.db.get_market_bar_on_date_sync(symbol, trade_day.isoformat())
+    if not market_bar:
+        return None, None
+    close = market_bar.get("close", market_bar.get("price"))
+    if close in {None, ""}:
+        return None, None
+    return (
+        float(close),
+        market_bar.get("trade_date")
+        or str(market_bar.get("timestamp", "")).split("T")[0],
+    )
+
+
+def _resolve_live_holding_latest_price(
+    state,
+    *,
+    symbol: str,
+    latest_quote: dict | None,
+    latest_price_value: float | None,
+) -> float | None:
+    session_close_price, _ = _session_closed_market_bar_price(
+        state,
+        symbol=symbol,
+        latest_quote=latest_quote,
+    )
+    if session_close_price is not None:
+        return session_close_price
+    return latest_price_value
+
+
 def _quote_source(state, quote: dict | None) -> str | None:
     if not quote:
         return None
@@ -1400,10 +1449,12 @@ def _get_recent_quote_snapshots(state, symbol: str, limit: int = 2) -> list[dict
 def _resolve_live_holding_baseline(
     state, symbol: str, latest_quote: dict | None
 ) -> tuple[float | None, str | None, str]:
-    latest_timestamp = latest_quote.get("timestamp") if latest_quote else None
+    latest_timestamp = _parse_quote_timestamp(
+        None if latest_quote is None else latest_quote.get("timestamp")
+    )
     trade_date = (
-        str(latest_timestamp).split("T")[0]
-        if latest_timestamp
+        latest_timestamp.date().isoformat()
+        if latest_timestamp is not None
         else datetime.now().date().isoformat()
     )
 
@@ -1680,6 +1731,12 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         latest_price_value = (
             float(latest_price) if latest_price not in {None, ""} else None
         )
+        latest_price_value = _resolve_live_holding_latest_price(
+            state,
+            symbol=symbol,
+            latest_quote=latest_quote if latest_quote else None,
+            latest_price_value=latest_price_value,
+        )
         (
             today_change,
             today_change_pct,
@@ -1695,7 +1752,11 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
             latest_price_value=latest_price_value,
         )
         avg_cost = float(pos.avg_cost)
-        market_value = float(pos.market_value)
+        market_value = (
+            quantity * latest_price_value
+            if latest_price_value is not None
+            else float(pos.market_value)
+        )
         cost_basis = quantity * avg_cost
         since_buy_pnl = market_value - cost_basis
         since_buy_pnl_pct = None if cost_basis == 0 else since_buy_pnl / cost_basis
