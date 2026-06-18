@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
+import type { DecisionResponse } from '../api';
 import { DecisionCockpitPage } from './decision-cockpit-page';
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -13,7 +14,7 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
-const dailyDecision = {
+const dailyDecision: DecisionResponse = {
   lane: 'daily',
   decision_date: '2026-06-12',
   generated_at: '2026-06-12T09:31:00+08:00',
@@ -51,6 +52,21 @@ const dailyDecision = {
       journal_entry_count: 1,
       risk_checked_count: 1,
       risk_blocked_count: 0,
+    },
+    account_truth: {
+      gate_status: 'pass',
+      score: 98,
+      has_evidence: true,
+      unresolved_mismatch_count: 0,
+      required_actions: [],
+      blocking_reasons: [],
+      limitations: [],
+      components: {
+        cash: { status: 'pass' },
+        position: { status: 'pass' },
+        fee: { status: 'pass' },
+        cost_basis: { status: 'pass' },
+      },
     },
   },
   candidates: [
@@ -113,6 +129,21 @@ const dailyDecision = {
           latest_event_source: 'risk_decisions',
           latest_event_ref: 'RISK-1',
         },
+        account_truth: {
+          gate_status: 'pass',
+          score: 98,
+          has_evidence: true,
+          unresolved_mismatch_count: 0,
+          required_actions: [],
+          blocking_reasons: [],
+          limitations: [],
+          components: {
+            cash: { status: 'pass' },
+            position: { status: 'pass' },
+            fee: { status: 'pass' },
+            cost_basis: { status: 'pass' },
+          },
+        },
       },
     },
   ],
@@ -120,7 +151,7 @@ const dailyDecision = {
   limitations: ['Decision platform output is research and portfolio evidence.'],
 };
 
-const intradayDecision = {
+const intradayDecision: DecisionResponse = {
   ...dailyDecision,
   lane: 'intraday',
   decision: 'no_action',
@@ -136,7 +167,13 @@ const intradayDecision = {
   no_action_reasons: ['no_intraday_stock_or_etf_action_tasks'],
 };
 
-function installDecisionFetchMock() {
+function installDecisionFetchMock({
+  todayResponse = dailyDecision,
+  intradayResponse = intradayDecision,
+}: {
+  todayResponse?: DecisionResponse;
+  intradayResponse?: DecisionResponse;
+} = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
       typeof input === 'string'
@@ -146,10 +183,10 @@ function installDecisionFetchMock() {
           : input.toString();
 
     if (url.includes('/api/decision/today')) {
-      return jsonResponse(dailyDecision);
+      return jsonResponse(todayResponse);
     }
     if (url.includes('/api/decision/intraday')) {
-      return jsonResponse(intradayDecision);
+      return jsonResponse(intradayResponse);
     }
     if (url.includes('/api/signals/actions')) {
       return jsonResponse([
@@ -209,7 +246,9 @@ function installDecisionFetchMock() {
   return fetchMock;
 }
 
-function renderDecisionCockpit() {
+function renderDecisionCockpit(
+  options?: Parameters<typeof installDecisionFetchMock>[0],
+) {
   window.localStorage.clear();
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
@@ -217,7 +256,7 @@ function renderDecisionCockpit() {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  installDecisionFetchMock();
+  installDecisionFetchMock(options);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -276,6 +315,8 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   ).toBeTruthy();
   expect(await screen.findByText('After-cost/OOS: attached')).toBeTruthy();
   expect(await screen.findByText('Data freshness: live')).toBeTruthy();
+  expect(await screen.findByText('Account truth: pass')).toBeTruthy();
+  expect(await screen.findByText('Account truth score: 98')).toBeTruthy();
   expect(await screen.findByText('Journal: risk.signal.recorded')).toBeTruthy();
   expect(await screen.findByText('Signal action queue')).toBeTruthy();
   expect(await screen.findByText('Prepare manual order')).toBeTruthy();
@@ -293,6 +334,97 @@ test('renders daily and intraday decision cockpit evidence without execution', a
       .getAttribute('href'),
   ).toBe('/trading');
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('surfaces degraded and blocked account-truth gates in decision summaries', async () => {
+  const degradedToday = {
+    ...dailyDecision,
+    summary: {
+      ...dailyDecision.summary,
+      account_truth: {
+        ...dailyDecision.summary.account_truth,
+        gate_status: 'degraded',
+        score: 64,
+        unresolved_mismatch_count: 2,
+        required_actions: ['review_position_difference'],
+        blocking_reasons: [],
+        limitations: ['Broker evidence is stale.'],
+        components: {
+          ...(dailyDecision.summary.account_truth?.components ?? {}),
+          position: { status: 'warning' },
+        },
+      },
+    },
+    candidates: [
+      {
+        ...dailyDecision.candidates[0],
+        manual_confirmation_status: 'account_truth_review_required',
+        evidence: {
+          ...dailyDecision.candidates[0].evidence,
+          account_truth: {
+            ...dailyDecision.candidates[0].evidence.account_truth,
+            gate_status: 'degraded',
+            score: 64,
+            unresolved_mismatch_count: 2,
+            required_actions: ['review_position_difference'],
+            limitations: ['Broker evidence is stale.'],
+            components: {
+              ...(dailyDecision.candidates[0].evidence.account_truth
+                ?.components ?? {}),
+              position: { status: 'warning' },
+            },
+          },
+        },
+      },
+    ],
+  };
+  const blockedIntraday = {
+    ...intradayDecision,
+    summary: {
+      ...intradayDecision.summary,
+      account_truth: {
+        ...dailyDecision.summary.account_truth,
+        gate_status: 'blocked',
+        score: 32,
+        has_evidence: false,
+        unresolved_mismatch_count: 4,
+        required_actions: ['import_and_reconcile_broker_evidence'],
+        blocking_reasons: ['account_truth_score_unavailable'],
+        limitations: ['Account Truth evidence is missing.'],
+        components: {
+          cash: { status: 'missing' },
+          position: { status: 'missing' },
+          fee: { status: 'missing' },
+          cost_basis: { status: 'missing' },
+        },
+      },
+    },
+  };
+
+  renderDecisionCockpit({
+    todayResponse: degradedToday,
+    intradayResponse: blockedIntraday,
+  });
+
+  expect(
+    (await screen.findAllByText('Account truth gate')).length,
+  ).toBeGreaterThan(0);
+  expect((await screen.findAllByText('degraded · 64')).length).toBeGreaterThan(
+    0,
+  );
+  expect((await screen.findAllByText('blocked · 32')).length).toBeGreaterThan(
+    0,
+  );
+  expect(await screen.findByText(/2 unresolved differences/)).toBeTruthy();
+  expect(await screen.findByText(/4 unresolved differences/)).toBeTruthy();
+  expect(await screen.findByText(/review_position_difference/)).toBeTruthy();
+  expect(
+    await screen.findByText(/import_and_reconcile_broker_evidence/),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText('Manual: account truth review required'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Account truth: degraded')).toBeTruthy();
 });
 
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {

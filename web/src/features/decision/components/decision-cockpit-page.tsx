@@ -14,6 +14,7 @@ import {
   useSignalJournalQuery,
   useTodayDecisionQuery,
   type ActionCard,
+  type AccountTruthGateEvidence,
   type DecisionCandidate,
   type DecisionResponse,
   type SignalJournalEntry,
@@ -49,6 +50,23 @@ function manualStatus(candidate: DecisionCandidate) {
     return 'ready for confirmation';
   }
   return normalizeStatus(candidate.manual_confirmation_status);
+}
+
+function accountTruthScore(value: AccountTruthGateEvidence | null | undefined) {
+  if (value?.score === null || value?.score === undefined) {
+    return '--';
+  }
+  return String(value.score);
+}
+
+function accountTruthValue(value: AccountTruthGateEvidence | null | undefined) {
+  const status = value?.gate_status ?? 'not_evaluated';
+  return `${normalizeStatus(status)} · ${accountTruthScore(value)}`;
+}
+
+function accountTruthTone(value: AccountTruthGateEvidence | null | undefined) {
+  const status = value?.gate_status ?? 'not_evaluated';
+  return decisionTone(status);
 }
 
 export function DecisionCockpitPage() {
@@ -126,6 +144,11 @@ export function DecisionCockpitPage() {
         value: labels.manualConfirmationRequired,
         tone: 'success',
       },
+      {
+        label: labels.accountTruthGate,
+        value: accountTruthValue(today.data?.summary.account_truth),
+        tone: accountTruthTone(today.data?.summary.account_truth),
+      },
     ] satisfies Array<{
       label: string;
       value: string;
@@ -197,6 +220,12 @@ export function DecisionCockpitPage() {
       >
         {lanes.map((lane) => (
           <LaneStatusTile key={lane.lane} lane={lane} />
+        ))}
+        {lanes.map((lane) => (
+          <AccountTruthGateTile
+            key={`${lane.lane}-account-truth`}
+            lane={lane}
+          />
         ))}
         <SummaryTile
           label={labels.marketHealth}
@@ -477,6 +506,32 @@ function LaneStatusTile({ lane }: { lane: DecisionResponse }) {
   );
 }
 
+function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
+  const labels = useCopy().decision;
+  const accountTruth = lane.summary.account_truth;
+  const requiredActions = accountTruth?.required_actions ?? [];
+  const blockingReasons = accountTruth?.blocking_reasons ?? [];
+  const unresolvedDetail = labels.accountTruthUnresolved(
+    accountTruth?.unresolved_mismatch_count ?? 0,
+  );
+  const actionDetail =
+    requiredActions.length > 0
+      ? requiredActions.join(' · ')
+      : blockingReasons.join(' · ');
+  const detail =
+    actionDetail.length > 0
+      ? `${unresolvedDetail} · ${actionDetail}`
+      : unresolvedDetail;
+
+  return (
+    <SummaryTile
+      label={labels.accountTruthGate}
+      value={accountTruthValue(accountTruth)}
+      detail={detail}
+    />
+  );
+}
+
 function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
   const laneLabel =
@@ -603,6 +658,18 @@ function DecisionCandidateCard({
           label={labels.dataFreshness}
           value={candidate.evidence.data_freshness.status}
           tone={decisionTone(candidate.evidence.data_freshness.status)}
+        />
+        <EvidenceLine
+          label={labels.accountTruth}
+          value={
+            candidate.evidence.account_truth?.gate_status ?? 'not_evaluated'
+          }
+          tone={accountTruthTone(candidate.evidence.account_truth)}
+        />
+        <EvidenceLine
+          label={labels.accountTruthScore}
+          value={accountTruthScore(candidate.evidence.account_truth)}
+          tone={accountTruthTone(candidate.evidence.account_truth)}
         />
         <EvidenceLine
           label={labels.journal}

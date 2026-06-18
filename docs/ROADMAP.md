@@ -12,6 +12,7 @@ user manual; current usage guidance belongs in the README files.
 | v0.4 | Completed | Strategy Lab Backtesting Engine |
 | v0.5 | Completed | Quant Research Quality & Production Evidence Hardening |
 | v0.6 | Completed | Account Truth & Reconciliation Engine |
+| v0.7 | Completed | Account Truth Review Center |
 
 ## v0.2 Completed Summary
 
@@ -270,6 +271,62 @@ v0.6 answers:
 * [x] Acceptance audit manifest and CLI include the account truth /
   reconciliation capability using capability-based naming.
 
+## Target for v0.7
+
+Karkinos v0.7 — Account Truth Review Center — should turn account-truth and
+reconciliation evidence into a usable review workflow for the financial app.
+
+### v0.7 Goal
+
+v0.7 answers:
+
+> Which account-truth differences still need human review, what evidence
+> supports each difference, what action was taken, and should decision or
+> promotion workflows be degraded or blocked until the issue is resolved?
+
+### v0.7 Scope
+
+* User-facing Account Truth review surface.
+* Import-run listing with validation, duplicate, timestamp, source, and
+  limitation metadata.
+* Reconciliation report listing, filtering, and detail inspection.
+* Reconciliation item review actions with explicit state transitions.
+* Ledger-candidate safety: review can prepare candidates, but production
+  ledger mutation still requires explicit user confirmation.
+* Account Truth Score visibility with component-level reasons in API and Web
+  UI.
+* Decision and strategy-promotion gates that surface account-truth degradation
+  or blocking state.
+* Capability-based acceptance audit manifest and CLI registry coverage.
+
+### Acceptance Criteria for v0.7
+
+* [x] A user-facing Account Truth review surface exists.
+* [x] Import runs can be listed with row counts, validation status, duplicate
+  counts, source type, timestamps, and limitations.
+* [x] Reconciliation reports can be listed and inspected by status: pass,
+  warning, mismatch, blocked.
+* [x] Reconciliation items show broker value, Karkinos value, difference,
+  severity, suggested action, symbol, and evidence references.
+* [x] Manual review actions can mark differences as accepted, ignored, known
+  difference, ledger candidate, or needs investigation.
+* [x] Ledger candidates do not mutate the production ledger without explicit
+  user confirmation.
+* [x] Account Truth Score is visible in API and Web UI with component-level
+  reasons.
+* [x] Decision summaries degrade or block when unresolved account-truth issues
+  are material.
+* [x] Strategy promotion readiness shows account-truth gate status.
+* [x] Backend deterministic tests cover import-run listing, reconciliation
+  report detail, review actions, ledger-candidate safety, score computation,
+  decision degradation, and promotion gate integration.
+* [x] Frontend tests cover Account Truth review rendering, status filters,
+  review action submission, score display, and blocked/degraded states.
+* [x] README/docs explain the review workflow as audit tooling, not investment
+  advice.
+* [x] Acceptance audit manifest and CLI include the account-truth review
+  capability using capability-based naming.
+
 ## Future Candidate Milestones
 
 Future roadmap candidates should stay subordinate to data integrity, account
@@ -277,7 +334,6 @@ truth, risk gates, paper/shadow review, and manual confirmation:
 
 * Data repair and provider reconciliation command center.
 * Richer broker-statement import templates for additional sanitized formats.
-* Account-truth review UI for reconciliation differences and manual decisions.
 * Strategy promotion scorecards that combine research evidence, account truth,
   risk evidence, and paper/shadow divergence.
 * Paper/shadow operations improvements that do not introduce broker order

@@ -51,17 +51,17 @@ research idea
 → strategy improvement
 ```
 
-## Current Active Roadmap
+## Current Roadmap Status
 
 The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
-Current milestone:
+Latest completed milestone:
 
-* **v0.6 — Account Truth & Reconciliation Engine**
-* Status: completed in the local acceptance checklist and acceptance-audit CLI.
-* Purpose: make local account facts auditable before Decision Cockpit,
-  promotion readiness, paper/shadow review, or manual-confirm workflows rely on
-  them.
+* **v0.7 — Account Truth Review Center**
+* Status: completed roadmap milestone.
+* Purpose: turn account-truth and reconciliation evidence into a usable review
+  workflow before decision summaries, promotion readiness, paper/shadow review,
+  or manual-confirm workflows rely on unresolved account differences.
 
 ## Documentation Map
 

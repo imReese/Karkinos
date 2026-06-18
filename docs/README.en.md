@@ -24,6 +24,19 @@ Key Features:
 - **Holdings and market detail** — the Portfolio quote board summarizes asset classes, while instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page
 - **Responsive Platform Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
 - **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data
+- **Account Truth review API** — Read-only endpoints list staged import runs
+  and computed reconciliation reports with row counts, validation status,
+  duplicate counts, source metadata, report status, unresolved differences,
+  suggested review actions, and broker evidence references; a manual review
+  endpoint records item decisions such as `ledger_candidate` without mutating
+  the production ledger
+- **Account Truth Review Center** — Web `/account-truth` shows Account Truth
+  Score, import runs, status-filtered reconciliation reports, per-item
+  broker/Karkinos differences, evidence references, and manual review actions
+  without mutating the production ledger
+- **Account Truth gate linkage** — Decision and Strategy Lab promotion review
+  surfaces show Account Truth gate status, score, unresolved-difference
+  context, and evidence availability before manual review or research promotion
 - **Docker One-Click Deploy** — Multi-stage build, all-in-one frontend + backend image
 
 ## Architecture

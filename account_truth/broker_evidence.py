@@ -169,6 +169,34 @@ class BrokerEvidenceRepository:
             ).fetchall()
         return [self._event_from_row(row) for row in rows]
 
+    def list_import_runs(self, *, limit: int = 50) -> list[BrokerImportRun]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM broker_import_runs
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._import_run_from_row(row) for row in rows]
+
+    def get_import_run(self, import_run_id: str) -> BrokerImportRun | None:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT *
+                FROM broker_import_runs
+                WHERE import_run_id = ?
+                LIMIT 1
+                """,
+                (import_run_id,),
+            ).fetchone()
+        return self._import_run_from_row(row) if row else None
+
     def _ensure_schema(self) -> None:
         with sqlite3.connect(self._path) as conn:
             conn.executescript("""
@@ -306,6 +334,25 @@ class BrokerEvidenceRepository:
             note=str(row["note"]),
             is_row_duplicate=bool(row["is_row_duplicate"]),
             duplicate_of_row_number=row["duplicate_of_row_number"],
+        )
+
+    @staticmethod
+    def _import_run_from_row(row: sqlite3.Row) -> BrokerImportRun:
+        return BrokerImportRun(
+            import_run_id=str(row["import_run_id"]),
+            schema_version=str(row["schema_version"]),
+            source_type=str(row["source_type"]),
+            source_name=str(row["source_name"] or ""),
+            file_fingerprint=str(row["file_fingerprint"]),
+            row_count=int(row["row_count"]),
+            valid_row_count=int(row["valid_row_count"]),
+            invalid_row_count=int(row["invalid_row_count"]),
+            row_duplicate_count=int(row["row_duplicate_count"]),
+            file_duplicate_count=int(row["file_duplicate_count"]),
+            validation_status=str(row["validation_status"]),  # type: ignore[arg-type]
+            limitations=json.loads(str(row["limitations_json"] or "[]")),
+            duplicate_of_import_run_id=row["duplicate_of_import_run_id"],
+            created_at=str(row["created_at"]),
         )
 
 

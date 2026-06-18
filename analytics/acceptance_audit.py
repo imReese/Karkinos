@@ -964,3 +964,230 @@ def build_account_truth_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_account_truth_review_acceptance_audit() -> AcceptanceAudit:
+    """Return Account Truth review-center criteria mapped to evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="account_truth_review_surface",
+                checkbox_text=(
+                    "* [x] A user-facing Account Truth review surface exists."
+                ),
+                evidence_paths=(
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                    "web/src/app/router.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- account-truth-review-page",
+                    "npm --prefix web run build",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="import_runs_listing",
+                checkbox_text=(
+                    "* [x] Import runs can be listed with row counts, "
+                    "validation status, duplicate"
+                ),
+                evidence_paths=(
+                    "server/routes/account_truth.py",
+                    "account_truth/broker_evidence.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_truth_routes.py",
+                    "npm --prefix web test -- account-truth-review-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="reconciliation_report_listing_detail",
+                checkbox_text=(
+                    "* [x] Reconciliation reports can be listed and inspected "
+                    "by status: pass,"
+                ),
+                evidence_paths=(
+                    "server/routes/account_truth.py",
+                    "account_truth/reconciliation.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_truth_routes.py",
+                    "npm --prefix web test -- account-truth-review-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="reconciliation_item_evidence_fields",
+                checkbox_text=(
+                    "* [x] Reconciliation items show broker value, Karkinos "
+                    "value, difference,"
+                ),
+                evidence_paths=(
+                    "account_truth/reconciliation.py",
+                    "server/routes/account_truth.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_reconciliation.py tests/server/test_account_truth_routes.py",
+                    "npm --prefix web test -- account-truth-review-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_review_actions",
+                checkbox_text=(
+                    "* [x] Manual review actions can mark differences as "
+                    "accepted, ignored,"
+                ),
+                evidence_paths=(
+                    "account_truth/manual_review.py",
+                    "server/routes/account_truth.py",
+                    "tests/account_truth/test_manual_review.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_manual_review.py tests/server/test_account_truth_routes.py",
+                    "npm --prefix web test -- account-truth-review-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="ledger_candidate_safety",
+                checkbox_text=(
+                    "* [x] Ledger candidates do not mutate the production "
+                    "ledger without explicit"
+                ),
+                evidence_paths=(
+                    "server/routes/account_truth.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "account_truth/manual_review.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_truth_routes.py -k ledger_candidate",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="score_api_web_component_reasons",
+                checkbox_text=(
+                    "* [x] Account Truth Score is visible in API and Web UI "
+                    "with component-level"
+                ),
+                evidence_paths=(
+                    "account_truth/score.py",
+                    "server/routes/account_truth.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_truth_routes.py -k score",
+                    "npm --prefix web test -- account-truth-review-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="decision_degraded_blocked_surface",
+                checkbox_text=(
+                    "* [x] Decision summaries degrade or block when unresolved "
+                    "account-truth issues"
+                ),
+                evidence_paths=(
+                    "server/routes/decision.py",
+                    "web/src/features/decision/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_decision_cockpit_acceptance.py",
+                    "npm --prefix web test -- decision-cockpit-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="promotion_readiness_account_truth_gate",
+                checkbox_text=(
+                    "* [x] Strategy promotion readiness shows account-truth "
+                    "gate status."
+                ),
+                evidence_paths=(
+                    "analytics/strategy_promotion_readiness.py",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_strategy_promotion_readiness.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backend_deterministic_review_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover import-run "
+                    "listing, reconciliation"
+                ),
+                evidence_paths=(
+                    "tests/server/test_account_truth_routes.py",
+                    "tests/account_truth/test_manual_review.py",
+                    "tests/account_truth/test_account_truth_score.py",
+                    "tests/test_decision_cockpit_acceptance.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_truth_routes.py tests/account_truth/test_manual_review.py tests/account_truth/test_account_truth_score.py tests/test_decision_cockpit_acceptance.py tests/analytics/test_strategy_promotion_readiness.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frontend_account_truth_review_tests",
+                checkbox_text=(
+                    "* [x] Frontend tests cover Account Truth review rendering, "
+                    "status filters,"
+                ),
+                evidence_paths=(
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- account-truth-review-page decision-cockpit-page backtest-page",
+                    "npm --prefix web test",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="review_workflow_docs_boundary",
+                checkbox_text=(
+                    "* [x] README/docs explain the review workflow as audit "
+                    "tooling, not investment"
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    'rg -n "Account Truth Review Center|Account Truth 复核中心|audit tooling|不构成投资建议|not investment advice" README.md docs',
+                    "uv run python -m pytest tests/test_acceptance_audit.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_truth_review_acceptance_audit_cli",
+                checkbox_text=(
+                    "* [x] Acceptance audit manifest and CLI include the "
+                    "account-truth review"
+                ),
+                evidence_paths=(
+                    "analytics/acceptance_audit.py",
+                    "scripts/export_acceptance_audit.py",
+                    "tests/test_acceptance_audit.py",
+                    "tests/test_acceptance_audit_cli.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
+                    "uv run python scripts/export_acceptance_audit.py --audit account_truth_review",
+                ),
+            ),
+        )
+    )

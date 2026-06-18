@@ -210,6 +210,10 @@ function resultSummary(report: BacktestReport | null) {
   };
 }
 
+function formatGateScore(score: number | null) {
+  return score === null ? '--' : String(score);
+}
+
 export function BacktestPage() {
   const copy = useCopy();
   const labels = copy.backtest.page;
@@ -631,7 +635,7 @@ function StrategyEvidenceGatePanel({
           </div>
         ) : (
           <div className="mt-4 min-w-0 overflow-x-auto overscroll-x-contain">
-            <table className="min-w-[760px] table-fixed text-left text-sm">
+            <table className="min-w-[900px] table-fixed text-left text-sm">
               <thead>
                 <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[11px] uppercase tracking-[0.16em]">
                   <th className="w-[190px] px-3 py-3">{labels.strategy}</th>
@@ -640,6 +644,9 @@ function StrategyEvidenceGatePanel({
                   </th>
                   <th className="w-[170px] px-3 py-3">
                     {labels.promotionReadiness}
+                  </th>
+                  <th className="w-[170px] px-3 py-3">
+                    {labels.accountTruthGate}
                   </th>
                   <th className="px-3 py-3">{labels.missingRequirements}</th>
                 </tr>
@@ -672,6 +679,21 @@ function StrategyEvidenceGatePanel({
                         >
                           {readinessRow?.promotion_status ?? labels.notDeclared}
                         </EvidenceBadge>
+                      </td>
+                      <td className="px-3 py-3 text-xs leading-5">
+                        <div className="font-semibold text-[var(--app-text)]">
+                          {readinessRow?.account_truth_gate_status ??
+                            labels.notDeclared}{' '}
+                          ·{' '}
+                          {formatGateScore(
+                            readinessRow?.account_truth_score ?? null,
+                          )}
+                        </div>
+                        <div className="app-muted mt-1">
+                          {readinessRow?.has_account_truth_evidence
+                            ? labels.accountTruthEvidencePresent
+                            : labels.accountTruthEvidenceMissing}
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-xs leading-5 text-[var(--app-muted)]">
                         {missing.length > 0

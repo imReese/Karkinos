@@ -210,6 +210,7 @@ test('renders portfolio workspace navigation', async () => {
   expect(await screen.findByText('Portfolio')).toBeTruthy();
   expect(await screen.findByText('Activity')).toBeTruthy();
   expect(await screen.findByText('Risk')).toBeTruthy();
+  expect(screen.queryByText('Account Truth')).toBeNull();
   expect(await screen.findByText('Decision')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(await screen.findByText('Trading')).toBeTruthy();

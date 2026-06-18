@@ -31,6 +31,7 @@ import {
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
 import { DashboardQuickActions } from '../features/account/components/dashboard-quick-actions';
+import { AccountTruthReviewPage } from '../features/account-truth/components/account-truth-review-page';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
 import { DecisionCockpitPage } from '../features/decision/components/decision-cockpit-page';
 import {
@@ -181,6 +182,12 @@ const riskRoute = createRoute({
   component: RiskPage,
 });
 
+const accountTruthRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account-truth',
+  component: AccountTruthReviewPage,
+});
+
 const decisionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/decision',
@@ -217,6 +224,7 @@ const routeTree = rootRoute.addChildren([
   holdingDetailRoute,
   activityRoute,
   riskRoute,
+  accountTruthRoute,
   decisionRoute,
   marketRoute,
   tradingRoute,
