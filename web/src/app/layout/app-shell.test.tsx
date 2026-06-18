@@ -355,6 +355,7 @@ test('keeps app shell overflow from clipping responsive content', async () => {
   expect(content?.className).toContain('min-w-0');
   expect(content?.className).toContain('overflow-y-auto');
   expect(content?.className).toContain('overflow-x-auto');
+  expect(content?.className).toContain('[contain:layout_paint]');
   expect(contentInner?.className).toContain('min-w-0');
 });
 

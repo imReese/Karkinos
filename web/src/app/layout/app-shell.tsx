@@ -544,7 +544,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
+          <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto [contain:layout_paint]">
             <div className="mx-auto min-w-0 w-full max-w-[1880px] px-4 py-5 sm:px-5 sm:py-6 lg:px-6 xl:px-7 2xl:px-8">
               {children}
             </div>
