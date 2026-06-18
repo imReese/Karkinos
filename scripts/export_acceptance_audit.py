@@ -20,6 +20,7 @@ from analytics.acceptance_audit import (
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
     build_research_evidence_acceptance_audit,
+    build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
 )
 
@@ -42,6 +43,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "account_truth_review": (
         "Account Truth Review Center acceptance audit",
         build_account_truth_review_acceptance_audit,
+    ),
+    "strategy_assignment": (
+        "Strategy Assignment acceptance audit",
+        build_strategy_assignment_acceptance_audit,
     ),
 }
 

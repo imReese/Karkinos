@@ -812,6 +812,73 @@ class BacktestSummary(BaseModel):
     max_drawdown: float
 
 
+# ---------- Account Strategy ----------
+
+
+class AccountStrategyAssignment(BaseModel):
+    strategy_id: str = "dual_ma"
+    strategy_name: str = "dual_ma"
+    status: str = "research_only"
+    scope: str = "account"
+    asset_class: str | None = None
+    symbol: str | None = None
+    effective_from: str | None = None
+    auto_trade_enabled: bool = False
+    attribution_status: str = "not_started"
+    attributed_pnl: float | None = None
+    realized_pnl: float | None = None
+    unrealized_pnl: float | None = None
+    total_fees: float | None = None
+    notes: str = ""
+    updated_at: str | None = None
+    limitations: list[str] = Field(default_factory=list)
+
+
+class AccountStrategyAssignmentUpdate(BaseModel):
+    strategy_id: str
+    status: str = "research_only"
+    scope: str = "account"
+    asset_class: str | None = None
+    symbol: str | None = None
+    effective_from: str | None = None
+    notes: str = ""
+
+
+class AccountStrategyAttributionSummary(BaseModel):
+    strategy_id: str
+    attribution_status: str
+    signal_count: int = 0
+    action_count: int = 0
+    risk_decision_count: int = 0
+    order_count: int = 0
+    fill_count: int = 0
+    unattributed_fill_count: int = 0
+    total_fees: float = 0.0
+    attributed_pnl: float | None = None
+    realized_pnl: float | None = None
+    unrealized_pnl: float | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class AccountStrategyContributionReport(BaseModel):
+    strategy_id: str
+    contribution_status: str
+    linked_fill_count: int = 0
+    gross_realized_pnl: float = 0.0
+    gross_unrealized_pnl: float = 0.0
+    total_commission: float = 0.0
+    total_slippage: float = 0.0
+    total_tax: float = 0.0
+    net_contribution: float = 0.0
+    unattributed_account_pnl: float | None = None
+    manual_unattributed_pnl: float | None = None
+    cash_flow_pnl: float | None = None
+    missing_valuation_symbols: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
 # ---------- Settings ----------
 
 

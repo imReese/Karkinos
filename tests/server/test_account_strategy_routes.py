@@ -1,0 +1,443 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from fastapi.routing import APIRoute
+
+from core.events import OrderIntentEvent, RiskDecisionEvent
+from core.types import OrderSide, Symbol
+from server.db import AppDatabase
+
+
+def _route(router, path: str, method: str = "GET"):
+    return next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == path
+        and method in route.methods
+    )
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_defaults_to_research_only_config_strategy(monkeypatch):
+    from server.routes import account_strategy as account_strategy_routes
+
+    router = account_strategy_routes.create_router()
+    endpoint = _route(router, "/api/account-strategy", "GET").endpoint
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(strategy="dual_ma"),
+        db=SimpleNamespace(get_runtime_control_sync=lambda key: None),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+
+    response = await endpoint()
+
+    assert response.strategy_id == "dual_ma"
+    assert response.status == "research_only"
+    assert response.scope == "account"
+    assert response.auto_trade_enabled is False
+    assert response.attribution_status == "not_started"
+    assert response.limitations == [
+        "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_update_persists_manual_confirm_assignment(monkeypatch):
+    from server.models import AccountStrategyAssignmentUpdate
+    from server.routes import account_strategy as account_strategy_routes
+
+    router = account_strategy_routes.create_router()
+    endpoint = _route(router, "/api/account-strategy", "PUT").endpoint
+    persisted: dict[str, object] = {}
+
+    class FakeDb:
+        def get_runtime_control_sync(self, key):
+            return persisted.get(key)
+
+        def set_runtime_control_sync(self, key, value):
+            persisted[key] = value
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+
+    response = await endpoint(
+        AccountStrategyAssignmentUpdate(
+            strategy_id="bollinger",
+            status="paper_review",
+            scope="symbol",
+            symbol="603659",
+            effective_from="2026-06-18",
+            notes="observe before manual confirmation",
+        )
+    )
+
+    assert response.strategy_id == "bollinger"
+    assert response.status == "paper_review"
+    assert response.scope == "symbol"
+    assert response.symbol == "603659"
+    assert response.auto_trade_enabled is False
+    assert response.attribution_status == "assignment_only"
+    assert persisted["account_strategy_assignment"]["strategy_id"] == "bollinger"
+    assert persisted["account_strategy_assignment"]["auto_trade_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_asset_class_scope_filters_attribution(monkeypatch):
+    from server.models import AccountStrategyAssignmentUpdate
+    from server.routes import account_strategy as account_strategy_routes
+
+    router = account_strategy_routes.create_router()
+    update_endpoint = _route(router, "/api/account-strategy", "PUT").endpoint
+    attribution_endpoint = _route(
+        router, "/api/account-strategy/attribution", "GET"
+    ).endpoint
+    persisted: dict[str, object] = {}
+
+    class FakeDb:
+        def get_runtime_control_sync(self, key):
+            return persisted.get(key)
+
+        def set_runtime_control_sync(self, key, value):
+            persisted[key] = value
+
+        def list_signal_journal_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "signal": {
+                        "id": 1,
+                        "strategy_id": "dual_ma",
+                        "symbol": "600519",
+                        "asset_class": "stock",
+                    }
+                },
+                {
+                    "signal": {
+                        "id": 2,
+                        "strategy_id": "dual_ma",
+                        "symbol": "018125",
+                        "asset_class": "fund",
+                    }
+                },
+            ]
+
+        def list_orders_sync(self, limit=1000, offset=0):
+            return []
+
+        def list_fills_sync(self, limit=1000, offset=0):
+            return []
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+
+    response = await update_endpoint(
+        AccountStrategyAssignmentUpdate(
+            strategy_id="dual_ma",
+            status="paper_review",
+            scope="asset_class",
+            asset_class="stock",
+            effective_from="2026-06-18",
+            notes="stock lane only",
+        )
+    )
+    attribution = await attribution_endpoint()
+
+    assert response.scope == "asset_class"
+    assert response.asset_class == "stock"
+    assert persisted["account_strategy_assignment"]["asset_class"] == "stock"
+    assert attribution.signal_count == 1
+    assert attribution.evidence_refs == ["signal:1"]
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_attribution_links_signal_order_and_fill_without_claiming_pnl(
+    monkeypatch, tmp_path
+):
+    from datetime import datetime
+    from decimal import Decimal
+
+    from server.routes import account_strategy as account_strategy_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.set_runtime_control_sync(
+        "account_strategy_assignment",
+        {
+            "strategy_id": "dual_ma",
+            "strategy_name": "dual_ma",
+            "status": "research_only",
+            "scope": "account",
+            "symbol": None,
+            "effective_from": "2026-06-18",
+            "auto_trade_enabled": False,
+            "attribution_status": "assignment_only",
+            "attributed_pnl": None,
+            "realized_pnl": None,
+            "unrealized_pnl": None,
+            "total_fees": None,
+            "notes": "fixture assignment",
+            "updated_at": "2026-06-18T10:00:00",
+            "limitations": [
+                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+            ],
+        },
+    )
+    db.save_signal_sync(
+        timestamp="2026-06-18T09:30:00",
+        strategy_id="dual_ma",
+        symbol="510300",
+        direction="buy",
+        target_weight=0.2,
+        price=4.56,
+        asset_class="fund",
+    )
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="510300",
+        title="研究信号",
+        detail="dual_ma 触发",
+        direction="buy",
+        urgency="medium",
+        target_weight=0.2,
+        price=4.56,
+        strategy_id="dual_ma",
+        timestamp="2026-06-18T09:31:00",
+        asset_class="fund",
+    )
+    intent = OrderIntentEvent(
+        timestamp=datetime(2026, 6, 18, 9, 32),
+        intent_id="INTENT-ATTR-1",
+        strategy_id="dual_ma",
+        symbol=Symbol("510300"),
+        side=OrderSide.BUY,
+        target_weight=Decimal("0.20"),
+        quantity=Decimal("100"),
+        reference_price=Decimal("4.56"),
+        source_signal_id="1",
+        reason="attribution fixture",
+    )
+    decision = RiskDecisionEvent(
+        timestamp=datetime(2026, 6, 18, 9, 33),
+        decision_id="RISK-ATTR-1",
+        intent_id=intent.intent_id,
+        passed=True,
+        symbol=intent.symbol,
+        side=intent.side,
+        reasons=[],
+        severity="info",
+    )
+    db.save_risk_decision_sync(intent=intent, decision=decision)
+    db.record_signal_review_sync(
+        signal_id=1,
+        reviewed_at="2026-06-18T09:33:30",
+        user_decision="accepted",
+        outcome="paper_order_prepared",
+        review_notes="Research-only review accepted the candidate for paper execution.",
+        reviewer="local",
+    )
+    db.record_order_sync(
+        order_id="ORD-ATTR-1",
+        timestamp="2026-06-18T09:34:00",
+        symbol="510300",
+        side="buy",
+        order_type="market",
+        quantity=100,
+        price=4.57,
+        asset_class="fund",
+        intent_id="INTENT-ATTR-1",
+        risk_decision_id="RISK-ATTR-1",
+        execution_mode="paper",
+        status="filled",
+        source="paper_execution",
+        source_ref="ORD-ATTR-1",
+        payload={"strategy_id": "dual_ma", "source_signal_id": 1},
+    )
+    db.record_fill_sync(
+        fill_id="FILL-ATTR-1",
+        order_id="ORD-ATTR-1",
+        timestamp="2026-06-18T09:35:00",
+        symbol="510300",
+        side="buy",
+        fill_price=4.57,
+        fill_quantity=100,
+        commission=5.0,
+        slippage=1.5,
+        asset_class="fund",
+        execution_mode="paper",
+        source="paper_execution",
+        source_ref="FILL-ATTR-1",
+        metadata={"strategy_id": "dual_ma", "source_signal_id": 1},
+    )
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    router = account_strategy_routes.create_router()
+    endpoint = _route(router, "/api/account-strategy/attribution", "GET").endpoint
+
+    response = await endpoint()
+
+    assert response.strategy_id == "dual_ma"
+    assert response.attribution_status == "evidence_linked_pnl_pending"
+    assert response.signal_count == 1
+    assert response.action_count == 1
+    assert response.risk_decision_count == 1
+    assert response.order_count == 1
+    assert response.fill_count == 1
+    assert response.total_fees == 6.5
+    assert response.attributed_pnl is None
+    assert response.unattributed_fill_count == 0
+    assert response.evidence_refs == [
+        "signal:1",
+        "action:1",
+        "risk:RISK-ATTR-1",
+        "review:1",
+        "order:ORD-ATTR-1",
+        "fill:FILL-ATTR-1",
+    ]
+    assert response.limitations == [
+        "P/L contribution is not calculated until fills are reconciled with position and valuation history."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
+    monkeypatch, tmp_path
+):
+    from datetime import datetime
+    from decimal import Decimal
+
+    from server.routes import account_strategy as account_strategy_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.set_runtime_control_sync(
+        "account_strategy_assignment",
+        {
+            "strategy_id": "dual_ma",
+            "strategy_name": "dual_ma",
+            "status": "research_only",
+            "scope": "account",
+            "auto_trade_enabled": False,
+            "attribution_status": "assignment_only",
+            "limitations": [
+                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+            ],
+        },
+    )
+    db.save_signal_sync(
+        timestamp="2026-06-18T09:30:00",
+        strategy_id="dual_ma",
+        symbol="510300",
+        direction="buy",
+        target_weight=0.2,
+        price=4.56,
+        asset_class="fund",
+    )
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="510300",
+        title="研究信号",
+        detail="dual_ma 触发",
+        direction="buy",
+        urgency="medium",
+        target_weight=0.2,
+        price=4.56,
+        strategy_id="dual_ma",
+        timestamp="2026-06-18T09:31:00",
+        asset_class="fund",
+    )
+    intent = OrderIntentEvent(
+        timestamp=datetime(2026, 6, 18, 9, 32),
+        intent_id="INTENT-CONTRIB-1",
+        strategy_id="dual_ma",
+        symbol=Symbol("510300"),
+        side=OrderSide.BUY,
+        target_weight=Decimal("0.20"),
+        quantity=Decimal("100"),
+        reference_price=Decimal("4.56"),
+        source_signal_id="1",
+        reason="contribution fixture",
+    )
+    db.save_risk_decision_sync(
+        intent=intent,
+        decision=RiskDecisionEvent(
+            timestamp=datetime(2026, 6, 18, 9, 33),
+            decision_id="RISK-CONTRIB-1",
+            intent_id=intent.intent_id,
+            passed=True,
+            symbol=intent.symbol,
+            side=intent.side,
+            reasons=[],
+            severity="info",
+        ),
+    )
+    db.record_order_sync(
+        order_id="ORD-CONTRIB-1",
+        timestamp="2026-06-18T09:34:00",
+        symbol="510300",
+        side="buy",
+        order_type="market",
+        quantity=100,
+        price=4.57,
+        asset_class="fund",
+        intent_id="INTENT-CONTRIB-1",
+        risk_decision_id="RISK-CONTRIB-1",
+        execution_mode="paper",
+        status="filled",
+        source="paper_execution",
+        source_ref="ORD-CONTRIB-1",
+        payload={"strategy_id": "dual_ma", "source_signal_id": 1},
+    )
+    db.record_fill_sync(
+        fill_id="FILL-CONTRIB-1",
+        order_id="ORD-CONTRIB-1",
+        timestamp="2026-06-18T09:35:00",
+        symbol="510300",
+        side="buy",
+        fill_price=4.57,
+        fill_quantity=100,
+        commission=5.0,
+        slippage=1.5,
+        asset_class="fund",
+        execution_mode="paper",
+        source="paper_execution",
+        source_ref="FILL-CONTRIB-1",
+        metadata={"strategy_id": "dual_ma", "source_signal_id": 1},
+    )
+    db.upsert_latest_quote_sync(
+        symbol="510300",
+        asset_type="fund",
+        price=4.8,
+        quote_timestamp="2026-06-18T15:00:00+08:00",
+        quote_source="fixture",
+        provider_name="fixture",
+        provider_status="ok",
+        quote_status="confirmed",
+    )
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    router = account_strategy_routes.create_router()
+    endpoint = _route(router, "/api/account-strategy/contribution", "GET").endpoint
+
+    response = await endpoint()
+
+    assert response.strategy_id == "dual_ma"
+    assert response.contribution_status == "estimated_from_linked_fills"
+    assert response.linked_fill_count == 1
+    assert response.gross_realized_pnl == 0
+    assert response.gross_unrealized_pnl == 23
+    assert response.total_commission == 5
+    assert response.total_slippage == 1.5
+    assert response.total_tax == 0
+    assert response.net_contribution == 16.5
+    assert response.unattributed_account_pnl is None
+    assert response.manual_unattributed_pnl is None
+    assert response.cash_flow_pnl is None
+    assert response.missing_valuation_symbols == []
+    assert response.limitations == [
+        "Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded."
+    ]

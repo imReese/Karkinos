@@ -59,6 +59,7 @@ export type DecisionSummary = {
     risk_blocked_count: number;
   };
   account_truth?: AccountTruthGateEvidence;
+  strategy_attribution?: StrategyAttributionGateEvidence;
 };
 
 export type AccountTruthGateEvidence = {
@@ -71,6 +72,23 @@ export type AccountTruthGateEvidence = {
   limitations?: string[];
   components?: Record<string, { status?: string; reason?: string }>;
   data_freshness_status?: string;
+};
+
+export type StrategyAttributionGateEvidence = {
+  gate_status: string;
+  strategy_id?: string | null;
+  assignment_status?: string;
+  attribution_status?: string;
+  contribution_status?: string;
+  has_evidence?: boolean;
+  signal_count?: number;
+  order_count?: number;
+  fill_count?: number;
+  linked_fill_count?: number;
+  net_contribution?: number | null;
+  required_actions?: string[];
+  blocking_reasons?: string[];
+  limitations?: string[];
 };
 
 export type DecisionCandidate = {
@@ -135,6 +153,7 @@ export type DecisionCandidate = {
       latest_event_ref: string | number | null;
     };
     account_truth?: AccountTruthGateEvidence;
+    strategy_attribution?: StrategyAttributionGateEvidence;
   };
 };
 

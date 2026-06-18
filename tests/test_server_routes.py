@@ -6700,6 +6700,99 @@ def test_decision_today_degrades_when_account_truth_score_degrades(monkeypatch):
     ]
 
 
+def test_decision_today_requires_strategy_attribution_for_assigned_strategy(
+    monkeypatch,
+):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "strategy_id": "dual_ma",
+                    "asset_class": "stock",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                }
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return []
+
+        def list_orders_sync(self, limit=1000, offset=0):
+            return []
+
+        def list_fills_sync(self, limit=1000, offset=0):
+            return []
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "price": 123.45,
+                "quote_status": "live",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+            }
+
+        async def get_backtest_results(self):
+            return []
+
+        def get_account_truth_score_sync(self):
+            return {
+                "score": 100,
+                "gate_status": "pass",
+                "data_freshness_status": "fresh",
+                "unresolved_mismatch_count": 0,
+            }
+
+        def get_runtime_control_sync(self, key):
+            assert key == "account_strategy_assignment"
+            return {
+                "strategy_id": "dual_ma",
+                "strategy_name": "Dual Moving Average",
+                "status": "active",
+                "scope": "account",
+                "auto_trade_enabled": False,
+                "attribution_status": "assignment_only",
+            }
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(strategy="dual_ma"),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response["decision"] == "review_required"
+    assert response["summary"]["strategy_attribution"]["gate_status"] == "blocked"
+    assert response["summary"]["strategy_attribution"]["strategy_id"] == "dual_ma"
+    candidate = response["candidates"][0]
+    assert candidate["manual_confirmation_status"] == (
+        "strategy_attribution_review_required"
+    )
+    assert candidate["evidence"]["strategy_attribution"]["attribution_status"] == (
+        "not_started"
+    )
+    assert candidate["evidence"]["strategy_attribution"]["required_actions"] == [
+        "link_strategy_signals_orders_fills_and_contribution"
+    ]
+
+
 def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
     monkeypatch,
 ):
@@ -7107,7 +7200,7 @@ def test_backtest_strategies_route_returns_extension_strategy_metadata(
                 "strategy_id": "local_mean_reversion",
                 "display_name": "Local Mean Reversion",
                 "description": "Local transparent mean-reversion research strategy.",
-                "class_path": "strategy.examples.rsi:RSIStrategy",
+                "class_path": "strategy.builtins.rsi:RSIStrategy",
                 "asset_universe": ["stock", "etf"],
                 "supported_frequencies": ["1d"],
                 "benchmark_role": "local_research_mean_reversion",
@@ -7956,6 +8049,84 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
     )
     assert all(row.account_truth_score is None for row in response.rows)
     assert "manual confirmation" in response.limitations[1]
+
+
+def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_without_attribution(
+    monkeypatch,
+):
+    from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
+    from server.routes import backtest as backtest_routes
+
+    class FakeDb:
+        async def get_backtest_results(self):
+            return build_benchmark_fixture_backtest_rows()
+
+        def get_risk_decisions_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "decision_id": f"RISK-{strategy_id}",
+                    "passed": 0,
+                    "payload_json": json.dumps(
+                        {
+                            "intent": {"strategy_id": strategy_id},
+                            "decision": {"passed": False, "reasons": ["fixture"]},
+                        }
+                    ),
+                }
+                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+            ]
+
+        def list_orders_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "order_id": f"SHADOW-{strategy_id}",
+                    "execution_mode": "paper_shadow",
+                    "status": "shadow_recorded",
+                    "payload_json": json.dumps(
+                        {
+                            "strategy_id": strategy_id,
+                            "divergence_status": "within_expectations",
+                        }
+                    ),
+                }
+                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+            ]
+
+        def get_runtime_control_sync(self, key):
+            if key != "account_strategy_assignment":
+                return None
+            return {
+                "strategy_id": "dual_ma",
+                "status": "research_only",
+                "scope": "account",
+                "auto_trade_enabled": False,
+                "attribution_status": "assignment_only",
+            }
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb(), config=SimpleNamespace(strategy="dual_ma")),
+    )
+
+    router = backtest_routes.create_router()
+    promotion_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/backtest/strategy-promotion-readiness"
+    )
+
+    response = asyncio.run(promotion_route.endpoint())
+    by_strategy = {row.strategy_id: row for row in response.rows}
+
+    assert response.promotable_strategy_count == 2
+    assert by_strategy["dual_ma"].is_promotable is False
+    assert by_strategy["dual_ma"].has_strategy_attribution_evidence is False
+    assert by_strategy["dual_ma"].strategy_attribution_status == "no_linked_fills"
+    assert by_strategy["dual_ma"].missing_requirements == [
+        "strategy_attribution_ready"
+    ]
+    assert by_strategy["monthly_rebalance"].is_promotable is True
 
 
 def test_signal_action_status_update_returns_updated_task(monkeypatch):

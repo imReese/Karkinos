@@ -215,6 +215,27 @@ function installOverviewFetchMock() {
         stale_symbols_sample: [],
       });
     }
+    if (url.includes('/api/account-strategy/contribution')) {
+      return jsonResponse({
+        strategy_id: 'dual_ma',
+        contribution_status: 'estimated_from_linked_fills',
+        linked_fill_count: 2,
+        gross_realized_pnl: 0,
+        gross_unrealized_pnl: 128.5,
+        total_commission: 5,
+        total_slippage: 1.5,
+        total_tax: 0,
+        net_contribution: 122,
+        unattributed_account_pnl: null,
+        manual_unattributed_pnl: null,
+        cash_flow_pnl: null,
+        missing_valuation_symbols: [],
+        evidence_refs: ['fill:FILL-1', 'fill:FILL-2'],
+        limitations: [
+          'Contribution is estimated only from linked strategy fills and latest local quotes.',
+        ],
+      });
+    }
     if (url.includes('/api/portfolio/explainability')) {
       return jsonResponse(explainability);
     }
@@ -300,6 +321,14 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getByText('CN¥98.85')).toBeTruthy();
   expect(within(metricsRail).getByText('-CN¥10.68')).toBeTruthy();
   expect(within(metricsRail).getByText('CN¥88.17')).toBeTruthy();
+});
+
+test('shows evidence-gated strategy contribution on overview', async () => {
+  renderOverviewPage();
+
+  expect(await screen.findByText('Strategy contribution')).toBeTruthy();
+  expect(await screen.findByText('Evidence-linked')).toBeTruthy();
+  expect(await screen.findByText('CN¥122.00')).toBeTruthy();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {

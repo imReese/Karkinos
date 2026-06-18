@@ -59,6 +59,13 @@ subscribes by priority but EventBus handlers do not consume or stop propagation.
 - **Backtest First**: Synchronous event bus with SimulatedClock for reproducibility
 - **T+1 Support**: Built-in freeze/thaw mechanism in Position, auto-advanced on settlement day
 
+For plain-language explanations of built-in strategies, see the
+[Strategy Primer](strategy/README.en.md). It covers Dual Moving Average,
+Monthly Rebalance, Bollinger Mean Reversion, and RSI reversal semantics,
+including current signal rules, parameters, failure modes, and evidence
+boundaries. It is research documentation, not investment advice or a return
+claim.
+
 ## Project Structure
 
 ```
@@ -515,6 +522,22 @@ drawdowns, costs, warnings, and shared snapshot id without approving execution.
 validation, blocked-risk evidence, paper/shadow order facts, and explicit
 paper/shadow divergence review evidence. It never promotes a strategy
 automatically and does not change execution defaults.
+
+#### Account Strategy — /api/account-strategy
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/account-strategy` | Read the current account research strategy assignment without enabling auto trading |
+| PUT | `/api/account-strategy` | Save the research-context strategy assignment; the server forces `auto_trade_enabled=false` |
+| GET | `/api/account-strategy/attribution` | Summarize signals, actions, risk decisions, orders, and fills linked to the current strategy |
+| GET | `/api/account-strategy/contribution` | Estimate strategy contribution from linked fills and latest local valuation |
+
+Account strategy assignment is research and audit context only; it does not
+mutate orders, fills, positions, or ledger entries. The contribution report
+estimates realized/unrealized P/L, commission, slippage, and net contribution
+only from fills that can be linked to the assigned strategy. Manual trades,
+cash flows, and market movement without evidence are not attributed to strategy
+returns by default.
 
 #### Settings — /api/settings
 

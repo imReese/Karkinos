@@ -10,7 +10,7 @@ import pytest
 from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
 from core.types import Symbol
-from strategy.examples.rsi import RSIStrategy
+from strategy.builtins.rsi import RSIStrategy
 
 
 def _make_event(symbol: Symbol, price: float, day: int) -> MarketEvent:

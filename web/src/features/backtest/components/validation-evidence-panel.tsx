@@ -36,12 +36,25 @@ function validationTone(status?: string) {
   return 'text-[#f9e2af]';
 }
 
+function translatedBenchmarkRole(
+  role: string | null | undefined,
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+  fallback: string,
+) {
+  if (!role) {
+    return fallback;
+  }
+  return (labels.benchmarkRoleNames as Record<string, string>)[role] ?? role;
+}
+
 export function ValidationEvidencePanel({
   report,
 }: {
   report: BacktestReport;
 }) {
-  const labels = useCopy().backtest.validationEvidence;
+  const copy = useCopy();
+  const labels = copy.backtest.validationEvidence;
+  const pageLabels = copy.backtest.page;
   const afterCost = afterCostFromReport(report);
   const oos = oosFromReport(report);
 
@@ -116,7 +129,11 @@ export function ValidationEvidencePanel({
               />
               <EvidenceStat
                 label={labels.benchmarkRole}
-                value={oos.benchmark_role ?? labels.unknown}
+                value={translatedBenchmarkRole(
+                  oos.benchmark_role,
+                  pageLabels,
+                  labels.unknown,
+                )}
               />
               <EvidenceStat
                 label={labels.split}

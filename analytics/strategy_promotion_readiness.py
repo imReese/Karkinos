@@ -13,6 +13,13 @@ _DIVERGENCE_PASS_STATUSES = {
     "reviewed_within_expectations",
 }
 
+_ATTRIBUTION_READY_STATUSES = {
+    "partial",
+    "complete",
+    "attributed",
+    "estimated_from_linked_fills",
+}
+
 
 @dataclass(frozen=True)
 class StrategyPromotionReadinessRow:
@@ -27,6 +34,8 @@ class StrategyPromotionReadinessRow:
     has_account_truth_evidence: bool = True
     account_truth_gate_status: str = "not_evaluated"
     account_truth_score: int | None = None
+    has_strategy_attribution_evidence: bool = True
+    strategy_attribution_status: str = "not_evaluated"
 
     @property
     def is_promotable(self) -> bool:
@@ -50,6 +59,10 @@ class StrategyPromotionReadinessRow:
             "has_account_truth_evidence": self.has_account_truth_evidence,
             "account_truth_gate_status": self.account_truth_gate_status,
             "account_truth_score": self.account_truth_score,
+            "has_strategy_attribution_evidence": (
+                self.has_strategy_attribution_evidence
+            ),
+            "strategy_attribution_status": self.strategy_attribution_status,
             "missing_requirements": list(self.missing_requirements),
             "promotion_status": self.promotion_status,
             "is_promotable": self.is_promotable,
@@ -98,6 +111,8 @@ def build_strategy_promotion_readiness(
     risk_decisions: list[dict[str, Any]],
     order_facts: list[dict[str, Any]],
     account_truth_scores: list[dict[str, Any]] | None = None,
+    account_strategy_assignments: list[dict[str, Any]] | None = None,
+    account_strategy_attributions: list[dict[str, Any]] | None = None,
 ) -> StrategyPromotionReadiness:
     """Combine validation, risk, and paper/shadow evidence into promotion gates."""
     validation_matrix = build_strategy_validation_matrix(
@@ -112,6 +127,10 @@ def build_strategy_promotion_readiness(
         backtest_results
     )
     account_truth_gate = _account_truth_gate_evidence(account_truth_scores)
+    account_strategy_gate = _account_strategy_attribution_gates(
+        account_strategy_assignments,
+        account_strategy_attributions,
+    )
 
     rows: list[StrategyPromotionReadinessRow] = []
     for validation_row in validation_matrix.rows:
@@ -124,6 +143,11 @@ def build_strategy_promotion_readiness(
         has_divergence_review = strategy_id in divergence_reviewed_strategies
         has_account_truth = (
             not account_truth_gate["enabled"] or account_truth_gate["status"] == "pass"
+        )
+        strategy_attribution_gate = account_strategy_gate.get(strategy_id)
+        has_strategy_attribution = (
+            strategy_attribution_gate is None
+            or strategy_attribution_gate["status"] in _ATTRIBUTION_READY_STATUSES
         )
         missing_requirements: list[str] = []
         if not has_validation:
@@ -138,6 +162,8 @@ def build_strategy_promotion_readiness(
             missing_requirements.append("paper_shadow_divergence_review")
         if account_truth_gate["enabled"] and not has_account_truth:
             missing_requirements.append("account_truth_gate_pass")
+        if strategy_attribution_gate is not None and not has_strategy_attribution:
+            missing_requirements.append("strategy_attribution_ready")
 
         rows.append(
             StrategyPromotionReadinessRow(
@@ -151,6 +177,12 @@ def build_strategy_promotion_readiness(
                 has_account_truth_evidence=has_account_truth,
                 account_truth_gate_status=str(account_truth_gate["status"]),
                 account_truth_score=account_truth_gate["score"],
+                has_strategy_attribution_evidence=has_strategy_attribution,
+                strategy_attribution_status=(
+                    "not_evaluated"
+                    if strategy_attribution_gate is None
+                    else str(strategy_attribution_gate["status"])
+                ),
                 missing_requirements=missing_requirements,
             )
         )
@@ -172,6 +204,38 @@ def _account_truth_gate_evidence(
     ).lower()
     score = _int_or_none(latest_score.get("score"))
     return {"enabled": True, "status": status, "score": score}
+
+
+def _account_strategy_attribution_gates(
+    assignments: list[dict[str, Any]] | None,
+    attributions: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    if not assignments:
+        return {}
+    attribution_by_strategy = {
+        str(row.get("strategy_id")): _json_object(row)
+        for row in attributions or []
+        if row.get("strategy_id")
+    }
+    gates: dict[str, dict[str, Any]] = {}
+    for assignment in assignments:
+        payload = _json_object(assignment)
+        strategy_id = payload.get("strategy_id")
+        if not strategy_id:
+            continue
+        if payload.get("status") in {"disabled", "retired"}:
+            continue
+        strategy_id = str(strategy_id)
+        attribution = attribution_by_strategy.get(strategy_id, {})
+        gates[strategy_id] = {
+            "status": str(
+                attribution.get("contribution_status")
+                or attribution.get("attribution_status")
+                or payload.get("attribution_status")
+                or "not_started"
+            )
+        }
+    return gates
 
 
 def _research_evidence_gate_statuses(

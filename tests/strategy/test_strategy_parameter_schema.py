@@ -4,7 +4,7 @@ import pytest
 
 
 def test_registry_exposes_typed_strategy_parameter_schema():
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
 
     info_by_id = {entry["strategy_id"]: entry for entry in StrategyRegistry.get_info()}
@@ -36,7 +36,7 @@ def test_registry_exposes_typed_strategy_parameter_schema():
 
 
 def test_strategy_params_validate_defaults_types_unknowns_and_cross_fields():
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
     from strategy.schema import StrategyParameterValidationError
 

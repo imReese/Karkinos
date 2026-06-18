@@ -23,11 +23,11 @@ const navItems = [
   { to: '/', key: 'overview', icon: OverviewNavIcon },
   { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
   { to: '/activity', key: 'activity', icon: ActivityNavIcon },
+  { to: '/market', key: 'market', icon: MarketNavIcon },
+  { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
   { to: '/risk', key: 'risk', icon: RiskNavIcon },
   { to: '/decision', key: 'decision', icon: DecisionNavIcon },
-  { to: '/market', key: 'market', icon: MarketNavIcon },
   { to: '/trading', key: 'trading', icon: TradingNavIcon },
-  { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
   { to: '/settings', key: 'settings', icon: SettingsNavIcon },
 ] as const;
 

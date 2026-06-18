@@ -11,8 +11,8 @@ from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
 from core.types import BarFrequency, Symbol
 from strategy.base import Strategy
-from strategy.examples.dual_ma import DualMAStrategy
-from strategy.examples.monthly_rebalance import MonthlyRebalanceStrategy
+from strategy.builtins.dual_ma import DualMAStrategy
+from strategy.builtins.monthly_rebalance import MonthlyRebalanceStrategy
 
 
 class ConcreteStrategy(Strategy):

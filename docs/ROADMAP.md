@@ -13,6 +13,7 @@ user manual; current usage guidance belongs in the README files.
 | v0.5 | Completed | Quant Research Quality & Production Evidence Hardening |
 | v0.6 | Completed | Account Truth & Reconciliation Engine |
 | v0.7 | Completed | Account Truth Review Center |
+| v0.8 | Active | Strategy Assignment & Attribution Engine |
 
 ## v0.2 Completed Summary
 
@@ -338,3 +339,77 @@ truth, risk gates, paper/shadow review, and manual confirmation:
   risk evidence, and paper/shadow divergence.
 * Paper/shadow operations improvements that do not introduce broker order
   submission or default real-money automation.
+
+## Target for v0.8
+
+Karkinos v0.8 — Strategy Assignment & Attribution Engine — should connect
+research strategies to account context without pretending that every portfolio
+change was strategy-driven.
+
+### v0.8 Goal
+
+v0.8 answers:
+
+> Which strategy is currently assigned to my account or a subset of assets,
+> what evidence supports that assignment, which signals and manual reviews came
+> from it, which orders or fills can be attributed to it, and what contribution
+> can be stated without mixing in manual trades, cash flows, or unattributed
+> market movement?
+
+### v0.8 Scope
+
+* Account strategy assignment for the whole account, an asset class, or one
+  symbol.
+* Explicit assignment states such as research-only, paper review, shadow
+  review, manual-confirmation review, disabled, and retired.
+* Strategy assignment must be auditable and must not enable broker submission
+  or default real-money automation.
+* Backtest and strategy pages should show available strategies, current account
+  strategy assignment, latest research evidence, and whether attribution is
+  available.
+* Signals, action candidates, risk decisions, manual confirmations, paper or
+  shadow orders, fills, fees, taxes, and ledger entries should carry enough
+  references to attribute downstream effects to a strategy when the evidence is
+  present.
+* Strategy contribution reports should separate realized P/L, unrealized P/L,
+  fees, taxes, slippage, unattributed account movement, manual trades, and cash
+  flows.
+* Decision and promotion views should show when a strategy is assigned but
+  attribution is incomplete, stale, or blocked.
+
+### Acceptance Criteria for v0.8
+
+* [x] A capability-based account strategy assignment API exists and can read
+  the current assignment without enabling automatic trading.
+* [x] Account strategy assignment can be updated for account, asset-class, or
+  symbol scope with status, effective date, notes, timestamps, and limitations.
+* [x] Assignment storage is auditable and does not mutate ledger entries,
+  broker evidence, orders, fills, or positions.
+* [x] Backtest Web shows available strategies first, then run configuration,
+  latest result, current account strategy assignment, and research gates in a
+  user-readable order.
+* [x] Backtest Web clearly states when strategy P/L attribution is not started,
+  partial, stale, blocked, or complete.
+* [x] Strategy IDs remain internal audit keys while Web surfaces localized
+  strategy names and explanations.
+* [x] Signals, action candidates, risk decisions, review decisions, orders, and
+  fills retain deterministic references required for strategy attribution.
+* [x] Strategy contribution report separates realized P/L, unrealized P/L,
+  fees, taxes, slippage, manual/unattributed movement, and cash flows.
+* [x] Strategy contribution API never assigns cash deposits, withdrawals,
+  manual trades, or missing-evidence movements to a strategy by default.
+* [x] Overview, Portfolio, Backtest, Decision, and review surfaces expose
+  strategy contribution only when the attribution chain is supported by
+  evidence.
+* [x] Decision summaries degrade or block strategy-driven recommendations when
+  the assigned strategy lacks required account-truth, research, or attribution
+  evidence.
+* [x] Backend deterministic tests cover assignment defaults, updates,
+  attribution references, contribution separation, and degraded decision state.
+* [x] Frontend tests cover strategy catalog first-screen rendering, current
+  account strategy assignment, no-auto-trading wording, attribution status, and
+  contribution estimate visibility.
+* [x] README/docs explain strategy assignment and contribution reporting as
+  audit tooling and research evidence, not investment advice.
+* [x] Acceptance audit manifest and CLI include the strategy assignment and
+  attribution capability using capability-based naming.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import strategy.examples  # noqa: F401
+import strategy.builtins  # noqa: F401
 
 from analytics.strategy_validation_matrix import build_strategy_validation_matrix
 from strategy.registry import StrategyRegistry
