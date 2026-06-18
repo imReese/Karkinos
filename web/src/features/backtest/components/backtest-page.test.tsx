@@ -585,7 +585,7 @@ const strategyPromotionReadiness = {
       has_paper_shadow_divergence_review: true,
       has_account_truth_evidence: true,
       account_truth_gate_status: 'pass',
-      account_truth_score: 0.98,
+      account_truth_score: 98,
       missing_requirements: [],
       promotion_status: 'ready',
       is_promotable: true,
@@ -601,7 +601,10 @@ const strategyPromotionReadiness = {
       has_account_truth_evidence: false,
       account_truth_gate_status: 'unknown',
       account_truth_score: null,
-      missing_requirements: ['paper_shadow_evidence'],
+      missing_requirements: [
+        'paper_shadow_evidence',
+        'account_truth_gate_pass',
+      ],
       promotion_status: 'blocked',
       is_promotable: false,
     },
@@ -734,6 +737,18 @@ test('renders the backtest workspace and saved report history', async () => {
   ).toBeTruthy();
   expect(await screen.findByText('Report selection')).toBeTruthy();
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
+});
+
+test('shows account-truth gate status in strategy promotion readiness', async () => {
+  renderBacktestPage({ results: [] });
+
+  expect(
+    await screen.findByText('Validation and promotion readiness'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Account truth gate')).toBeTruthy();
+  expect(await screen.findByText('pass · 98')).toBeTruthy();
+  expect(await screen.findByText('unknown · --')).toBeTruthy();
+  expect(await screen.findByText(/account_truth_gate_pass/)).toBeTruthy();
 });
 
 test('defaults strategy parameters to chinese for chinese browser locales', async () => {

@@ -47,6 +47,7 @@ def _is_api_contract_test(path: str) -> bool:
         and filename
         in {
             "test_bridge.py",
+            "test_account_truth_routes.py",
             "test_fund_nav_sync.py",
             "test_ledger_repository.py",
             "test_ledger_routes.py",

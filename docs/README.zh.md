@@ -25,6 +25,14 @@ Karkinos 是一个面向中国市场的个人量化投研与交易平台。
 - **单只标的收益追踪** — Portfolio 持仓列表和持仓详情页展示每只股票/基金的今日收益、今日涨跌幅、行情价、成本与日内基准来源，方便把组合级变化追溯到具体标的
 - **收盘后估值刷新** — Web 服务内建 Scheduler 在交易日 16:00 刷新收盘行情与日线缓存，用于今日盈亏复核；21:30 再刷新基金净值确认数据。若数据源尚未发布确认值，页面会继续保留待确认或缓存状态。
 - **Account Truth 导入预览与暂存证据** — 提供 canonical broker statement CSV 规范和只读解析入口，能校验、标准化、指纹化本地券商 CSV 行并报告重复行；合法预览可暂存为 broker evidence，不写入生产账本
+- **Account Truth 复核 API** — 只读列出 staged import runs 与 computed
+  reconciliation reports，展示行数、校验状态、重复计数、来源、报告状态、未解决差异、
+  建议复核动作和 broker evidence 引用，不自动修改生产账本
+- **Account Truth 复核中心** — Web `/account-truth` 页面展示 Account Truth
+  Score、导入批次、按状态筛选的对账报告、差异项中的券商值/Karkinos 值/差额、证据引用和
+  人工复核动作；这些动作只记录审计状态，不会写入生产账本
+- **账户事实闸门联动** — Decision 与 Strategy Lab 晋级复核界面展示 Account
+  Truth gate 状态、分数、未解决差异和证据可用性，帮助在人工复核或研究晋级前看清账户事实边界
 - **收益日历** — 基于审计归因数据按日、周、月、年查看收益分布，支持日历/曲线/表格视图和金额/收益率切换；周日作为每周第一列，日历主口径使用市场盈亏，历史日收盘优先读取本地 `market_bars` OHLC 缓存再回退到 daily-close 快照，当日市场变动会拆成股票/基金/其他资产，入金、出金、分红和手工调整作为外部资金事件展示，非交易日、陈旧或盘中终端行情不生成日历收益，相邻估值覆盖不足的周期会标记为缺价而不是展示成伪造收益，曲线视图保留横纵坐标
 - **收益与成本口径** — 今日盈亏、买入以来收益、已实现收益、现金事件和基准价优先级记录在 [收益与成本口径](return-accounting.zh.md)，避免页面和后端对同一数字使用不同解释
 - **研究证据包** — Strategy Lab 回测会生成版本化 `research_evidence_bundle`，记录 analyzer 输出、数据质量 gate、after-cost 证据引用、single split 或 rolling OOS 证据、中国市场假设缺口和人工复核晋级状态；该证据包不启用自动交易
@@ -62,6 +70,21 @@ ledger 费用、税费和成本基础，输出 `pass` / `warning` / `mismatch` /
 Decision Cockpit 和策略晋级 readiness 会把该分数作为 gate 证据；Account Truth
 证据为 `degraded`、`blocked` 或缺失时，会阻止 live-like 人工确认 ready 状态或策略
 晋级 readiness，但不会授权执行或下单。
+
+v0.7 的第一组只读复核接口已经可用于 Web 或本地工具：
+
+- `GET /api/account-truth/import-runs`
+- `GET /api/account-truth/reconciliation-reports`
+- `GET /api/account-truth/reconciliation-reports/{import_run_id}`
+- `GET /api/account-truth/score`
+- `POST /api/account-truth/reconciliation-reports/{import_run_id}/items/{item_key}/review`
+
+列表和报告接口会列出 staged broker import 元数据，并基于当前 Karkinos ledger、
+现金、持仓、费用、税费和成本基础计算 reconciliation report。review 接口只记录
+`accepted`、`ignored`、`known_difference`、`ledger_candidate` 或
+`needs_investigation` 等人工复核状态。`ledger_candidate` 只是审计标签，不会写入
+production ledger，不会修改持仓，不保存券商凭证，也不会提交券商订单。
+Web 复核中心消费同一组接口，用于人工审计和复盘，不是投资建议，也不是执行授权。
 
 CSV 格式、安全合成样例和隐私边界见
 [Account Truth 导入预览](account-truth-import.zh.md)。

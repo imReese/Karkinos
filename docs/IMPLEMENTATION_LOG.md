@@ -4,6 +4,47 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v0.7 Progress
+
+* 2026-06-18: Started Account Truth Review Center with read-only review APIs.
+  `/api/account-truth/import-runs` lists staged broker import metadata, while
+  `/api/account-truth/reconciliation-reports` and
+  `/api/account-truth/reconciliation-reports/{import_run_id}` compute report
+  summaries and details against current Karkinos ledger, cash, positions,
+  fees, taxes, and cost basis. Reconciliation items include item keys,
+  severity, broker value, Karkinos value, difference, suggested review action,
+  symbol, detail, and broker evidence references. The routes do not mutate the
+  production ledger, holdings, broker state, or credentials.
+* 2026-06-18: Added the first manual review action API for Account Truth
+  differences. `POST
+  /api/account-truth/reconciliation-reports/{import_run_id}/items/{item_key}/review`
+  records `accepted`, `ignored`, `known_difference`, `ledger_candidate`, or
+  `needs_investigation` decisions and returns the persisted audit state. Report
+  detail responses include the latest review decision per item. Deterministic
+  tests verify that recording a `ledger_candidate` does not create production
+  ledger entries.
+* 2026-06-18: Added the first Web Account Truth Review Center. `/account-truth`
+  shows Account Truth Score component reasons, staged import runs, status
+  filters for reconciliation reports, per-item broker/Karkinos differences,
+  evidence references, and manual review action buttons. `GET
+  /api/account-truth/score` exposes the same component-level score evidence to
+  the Web UI. Frontend tests cover rendering, status filtering, review action
+  submission, score display, and blocked-state presentation; backend tests
+  cover the score endpoint and ledger-candidate non-mutation safety.
+* 2026-06-18: Surfaced Account Truth gate evidence in Decision and Strategy
+  Promotion review surfaces. Decision summaries and candidates now show pass,
+  degraded, blocked, or not-evaluated account-truth state with score and
+  unresolved-difference context; Strategy Lab promotion readiness shows the
+  same gate status and evidence availability. Frontend tests cover degraded and
+  blocked decision states plus promotion-gate rendering without changing broker
+  submission, production ledger mutation, or manual-confirmation defaults.
+* 2026-06-18: Added Account Truth Review Center acceptance audit coverage.
+  `build_account_truth_review_acceptance_audit()` maps the v0.7 review
+  workflow checklist to deterministic backend, frontend, documentation, and CLI
+  evidence. `scripts/export_acceptance_audit.py --audit account_truth_review`
+  exports the manifest through the shared capability registry without using a
+  roadmap version in function, file, or CLI names.
+
 ## v0.6 Progress
 
 * 2026-06-17: Started Account Truth with a canonical broker statement CSV

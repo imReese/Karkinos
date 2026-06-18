@@ -58,6 +58,19 @@ export type DecisionSummary = {
     risk_checked_count: number;
     risk_blocked_count: number;
   };
+  account_truth?: AccountTruthGateEvidence;
+};
+
+export type AccountTruthGateEvidence = {
+  gate_status: string;
+  score?: number | null;
+  has_evidence?: boolean;
+  unresolved_mismatch_count?: number;
+  required_actions?: string[];
+  blocking_reasons?: string[];
+  limitations?: string[];
+  components?: Record<string, { status?: string; reason?: string }>;
+  data_freshness_status?: string;
 };
 
 export type DecisionCandidate = {
@@ -121,6 +134,7 @@ export type DecisionCandidate = {
       latest_event_source: string | null;
       latest_event_ref: string | number | null;
     };
+    account_truth?: AccountTruthGateEvidence;
   };
 };
 

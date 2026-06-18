@@ -77,6 +77,17 @@ public demos and development.
 - Portfolio quote board summarizes asset classes; instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page.
 - Portfolio holdings and detail pages expose per-instrument daily PnL, daily return, quote price, cost basis, and baseline source so account-level changes can be traced back to individual stocks or funds.
 - Account Truth import preview documents a canonical broker statement CSV format and provides a read-only parser, staged broker evidence store, and reconciliation report core that validates, normalizes, fingerprints, duplicate-checks, persists local CSV rows, and compares broker evidence against cash, positions, fees, taxes, and cost basis without mutating the production ledger.
+- Account Truth review APIs expose staged import runs and computed reconciliation
+  reports for local review, including row counts, validation status, duplicate
+  counts, source metadata, report status, unresolved counts, per-item
+  differences, suggested review actions, and broker evidence references.
+- Web Account Truth Review Center at `/account-truth` surfaces the latest
+  Account Truth Score, import runs, status-filtered reconciliation reports,
+  per-item broker/Karkinos differences, evidence references, and manual review
+  actions without mutating the production ledger.
+- Decision and Strategy Lab promotion review surfaces show Account Truth gate
+  status, score, unresolved-difference context, and evidence availability so
+  account-truth issues are visible before manual review or research promotion.
 - Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
 - Read-only decision APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
@@ -143,6 +154,23 @@ Decision review and strategy promotion readiness consume this score as gate
 evidence; degraded, blocked, or missing account-truth evidence prevents
 live-like manual-confirm readiness or promotion readiness without authorizing
 execution.
+
+The Account Truth review API exposes the same evidence for Web and local review
+workflows:
+
+- `GET /api/account-truth/import-runs`
+- `GET /api/account-truth/reconciliation-reports`
+- `GET /api/account-truth/reconciliation-reports/{import_run_id}`
+- `GET /api/account-truth/score`
+- `POST /api/account-truth/reconciliation-reports/{import_run_id}/items/{item_key}/review`
+
+The listing and report routes are read-only. The review route records a manual
+review decision such as `accepted`, `ignored`, `known_difference`,
+`ledger_candidate`, or `needs_investigation` for a reconciliation item.
+`ledger_candidate` is an audit label only: it does not mutate production ledger
+entries, change holdings, store broker credentials, or submit broker orders.
+The Web Review Center consumes the same endpoints and keeps those actions as
+manual audit decisions, not execution approval.
 
 Backtest results are indexed in the local SQLite database at
 `data/store/app.db` so the Web app, risk review surface, and strategy promotion
