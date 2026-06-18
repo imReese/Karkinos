@@ -10,7 +10,7 @@ import pytest
 from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
 from core.types import Symbol
-from strategy.examples.bollinger import BollingerStrategy
+from strategy.builtins.bollinger import BollingerStrategy
 
 
 def _make_event(symbol: Symbol, price: float, day: int) -> MarketEvent:

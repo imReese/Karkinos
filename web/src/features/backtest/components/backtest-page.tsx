@@ -11,10 +11,17 @@ import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
+  useAccountStrategyAssignmentQuery,
+  useAccountStrategyAttributionQuery,
+  useAccountStrategyContributionQuery,
+  useUpdateAccountStrategyAssignmentMutation,
   useRunBacktestMutation,
   useBacktestStrategiesQuery,
   useStrategyPromotionReadinessQuery,
   useStrategyValidationQuery,
+  type AccountStrategyAssignment,
+  type AccountStrategyAttributionSummary,
+  type AccountStrategyContributionReport,
   type BacktestReport,
   type BacktestRunRequest,
   type BacktestStrategyInfo,
@@ -132,6 +139,17 @@ function strategyDescription(
   );
 }
 
+function benchmarkRoleDisplayName(
+  role: string | null | undefined,
+  localizedRoles: Record<string, string>,
+  fallback: string,
+) {
+  if (!role) {
+    return fallback;
+  }
+  return localizedRoles[role] ?? role;
+}
+
 function humanizeParameterName(name: string) {
   return name
     .split('_')
@@ -214,12 +232,65 @@ function formatGateScore(score: number | null) {
   return score === null ? '--' : String(score);
 }
 
+function lookupLabel<T extends Record<string, string>>(
+  labels: T,
+  key: string,
+  fallback: string,
+) {
+  return labels[key] ?? fallback;
+}
+
+function accountStrategyPnlAttributionTier(
+  attribution: AccountStrategyAttributionSummary | null,
+  contribution: AccountStrategyContributionReport | null,
+) {
+  const attributionStatus = attribution?.attribution_status ?? 'not_started';
+  const contributionStatus =
+    contribution?.contribution_status ?? 'no_linked_fills';
+  const linkedEvidenceCount =
+    (attribution?.signal_count ?? 0) +
+    (attribution?.action_count ?? 0) +
+    (attribution?.risk_decision_count ?? 0) +
+    (attribution?.order_count ?? 0) +
+    (attribution?.fill_count ?? 0) +
+    (contribution?.linked_fill_count ?? 0);
+  const hasMissingValuation =
+    contributionStatus === 'valuation_missing' ||
+    Boolean(contribution?.missing_valuation_symbols.length);
+
+  if (
+    attributionStatus === 'blocked' ||
+    attributionStatus === 'failed' ||
+    contributionStatus === 'blocked' ||
+    contributionStatus === 'failed'
+  ) {
+    return 'blocked';
+  }
+  if (hasMissingValuation) {
+    return 'stale';
+  }
+  if (attributionStatus === 'complete' || attributionStatus === 'attributed') {
+    return 'complete';
+  }
+  if (
+    linkedEvidenceCount === 0 &&
+    ['not_started', 'assignment_only'].includes(attributionStatus)
+  ) {
+    return 'not_started';
+  }
+  return 'partial';
+}
+
 export function BacktestPage() {
   const copy = useCopy();
   const labels = copy.backtest.page;
   const common = copy.common;
   const runBacktest = useRunBacktestMutation();
   const strategies = useBacktestStrategiesQuery();
+  const accountStrategy = useAccountStrategyAssignmentQuery();
+  const accountStrategyAttribution = useAccountStrategyAttributionQuery();
+  const accountStrategyContribution = useAccountStrategyContributionQuery();
+  const updateAccountStrategy = useUpdateAccountStrategyAssignmentMutation();
   const validation = useStrategyValidationQuery();
   const readiness = useStrategyPromotionReadinessQuery();
   const [startDate, setStartDate] = useState('2025-01-02');
@@ -298,6 +369,15 @@ export function BacktestPage() {
     }
   };
 
+  const assignSelectedStrategy = async () => {
+    await updateAccountStrategy.mutateAsync({
+      strategy_id: selectedStrategy.name,
+      status: 'research_only',
+      scope: 'account',
+      notes: 'Assigned from Backtest page for research review.',
+    });
+  };
+
   return (
     <section className="space-y-5 sm:space-y-6">
       <header className="app-page-header pb-1">
@@ -312,11 +392,27 @@ export function BacktestPage() {
         </div>
       </header>
 
-      <StrategyEvidenceGatePanel
-        validation={validation.data ?? null}
-        readiness={readiness.data ?? null}
-        loading={validation.isLoading || readiness.isLoading}
-        error={validation.isError || readiness.isError}
+      <StrategyCatalogPanel
+        strategyCatalog={strategyCatalog}
+        selectedStrategyName={strategy}
+        onSelect={setStrategy}
+      />
+
+      <AccountStrategyPanel
+        assignment={accountStrategy.data ?? null}
+        attribution={accountStrategyAttribution.data ?? null}
+        contribution={accountStrategyContribution.data ?? null}
+        selectedStrategy={selectedStrategy}
+        strategyCatalog={strategyCatalog}
+        loading={accountStrategy.isLoading}
+        error={accountStrategy.isError}
+        attributionLoading={accountStrategyAttribution.isLoading}
+        attributionError={accountStrategyAttribution.isError}
+        contributionLoading={accountStrategyContribution.isLoading}
+        contributionError={accountStrategyContribution.isError}
+        assigning={updateAccountStrategy.isPending}
+        assignError={updateAccountStrategy.isError}
+        onAssignSelected={assignSelectedStrategy}
       />
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(360px,0.72fr)_minmax(0,1.28fr)]">
@@ -567,8 +663,452 @@ export function BacktestPage() {
         </section>
       </div>
 
+      <StrategyEvidenceGatePanel
+        validation={validation.data ?? null}
+        readiness={readiness.data ?? null}
+        loading={validation.isLoading || readiness.isLoading}
+        error={validation.isError || readiness.isError}
+      />
+
       <BacktestReportView />
     </section>
+  );
+}
+
+function StrategyCatalogPanel({
+  strategyCatalog,
+  selectedStrategyName,
+  onSelect,
+}: {
+  strategyCatalog: BacktestStrategyInfo[];
+  selectedStrategyName: string;
+  onSelect: (strategyName: string) => void;
+}) {
+  const labels = useCopy().backtest.page;
+
+  return (
+    <section className="app-terminal-panel rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">
+              {labels.strategyCatalogKicker}
+            </div>
+            <h2 className="app-card-title mt-1.5">
+              {labels.strategyCatalogTitle}
+            </h2>
+            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+              {labels.strategyCatalogDetail}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
+          {strategyCatalog.map((item) => {
+            const name = strategyDisplayName(item, labels.strategyNames);
+            const description = strategyDescription(
+              item,
+              labels.strategyDescriptions,
+            );
+            const selected = item.name === selectedStrategyName;
+            const badges = [
+              item.requires_out_of_sample_validation
+                ? labels.oosRequired
+                : null,
+              item.requires_after_cost_report ? labels.afterCostRequired : null,
+            ].filter(Boolean);
+            return (
+              <button
+                aria-label={labels.selectStrategy(name)}
+                className={`min-w-0 rounded-3xl border px-4 py-4 text-left transition ${
+                  selected
+                    ? 'border-[var(--app-accent)] bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--app-accent)_30%,transparent)]'
+                    : 'border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))]'
+                }`}
+                key={item.strategy_id}
+                onClick={() => onSelect(item.name)}
+                type="button"
+              >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-semibold text-[var(--app-text)]">
+                      {name}
+                    </div>
+                    <div className="app-muted mt-1 line-clamp-2 text-sm leading-5">
+                      {description}
+                    </div>
+                  </div>
+                  {selected ? (
+                    <span className="shrink-0 rounded-full bg-[var(--app-accent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-base)]">
+                      {labels.selectedStrategy}
+                    </span>
+                  ) : null}
+                </div>
+                {badges.length ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {badges.map((badge) => (
+                      <span
+                        className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-muted)]"
+                        key={badge}
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AccountStrategyPanel({
+  assignment,
+  attribution,
+  contribution,
+  selectedStrategy,
+  strategyCatalog,
+  loading,
+  error,
+  attributionLoading,
+  attributionError,
+  contributionLoading,
+  contributionError,
+  assigning,
+  assignError,
+  onAssignSelected,
+}: {
+  assignment: AccountStrategyAssignment | null;
+  attribution: AccountStrategyAttributionSummary | null;
+  contribution: AccountStrategyContributionReport | null;
+  selectedStrategy: BacktestStrategyInfo;
+  strategyCatalog: BacktestStrategyInfo[];
+  loading: boolean;
+  error: boolean;
+  attributionLoading: boolean;
+  attributionError: boolean;
+  contributionLoading: boolean;
+  contributionError: boolean;
+  assigning: boolean;
+  assignError: boolean;
+  onAssignSelected: () => void;
+}) {
+  const labels = useCopy().backtest.page;
+  const strategyInfo =
+    strategyCatalog.find(
+      (item) =>
+        item.strategy_id === assignment?.strategy_id ||
+        item.name === assignment?.strategy_id,
+    ) ?? null;
+  const strategyName = strategyInfo
+    ? strategyDisplayName(strategyInfo, labels.strategyNames)
+    : assignment?.strategy_name ||
+      assignment?.strategy_id ||
+      labels.notDeclared;
+  const status = assignment
+    ? lookupLabel(
+        labels.accountStrategyStatus,
+        assignment.status,
+        assignment.status,
+      )
+    : labels.notDeclared;
+  const assignmentAttributionStatus = assignment
+    ? lookupLabel(
+        labels.accountStrategyAttribution,
+        assignment.attribution_status,
+        assignment.attribution_status,
+      )
+    : labels.notDeclared;
+  const scope = assignment
+    ? lookupLabel(
+        labels.accountStrategyScope,
+        assignment.scope,
+        assignment.scope,
+      )
+    : labels.notDeclared;
+  const scopeValue =
+    assignment?.symbol && assignment.scope === 'symbol'
+      ? `${scope} · ${assignment.symbol}`
+      : scope;
+  const selectedStrategyName = strategyDisplayName(
+    selectedStrategy,
+    labels.strategyNames,
+  );
+  const selectedIsAssigned =
+    assignment?.strategy_id === selectedStrategy.name ||
+    assignment?.strategy_id === selectedStrategy.strategy_id;
+  const pnlAttributionTier = accountStrategyPnlAttributionTier(
+    attribution,
+    contribution,
+  );
+  const rawAttributionStatus = attribution?.attribution_status ?? 'not_started';
+  const rawContributionStatus =
+    contribution?.contribution_status ?? 'no_linked_fills';
+  const rawAttributionLabel = lookupLabel(
+    labels.accountStrategyAttribution,
+    rawAttributionStatus,
+    rawAttributionStatus,
+  );
+  const rawContributionLabel = lookupLabel(
+    labels.accountStrategyContributionStatusMap,
+    rawContributionStatus,
+    rawContributionStatus,
+  );
+
+  return (
+    <section className="app-terminal-panel rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">
+              {labels.accountStrategyKicker}
+            </div>
+            <h2 className="app-card-title mt-1.5">
+              {labels.accountStrategyTitle}
+            </h2>
+            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+              {labels.accountStrategyDetail}
+            </p>
+          </div>
+          <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
+            {labels.accountStrategyAutoTradeOff}
+          </span>
+        </div>
+
+        <div className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="app-muted min-w-0 text-sm leading-6">
+            {labels.accountStrategySelectedHint(selectedStrategyName)}
+          </p>
+          <button
+            className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loading || error || assigning || selectedIsAssigned}
+            onClick={onAssignSelected}
+            type="button"
+          >
+            {selectedIsAssigned
+              ? labels.accountStrategyAssigned
+              : assigning
+                ? labels.accountStrategyAssigning
+                : labels.accountStrategyAssignSelected}
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="app-muted mt-4 text-sm">
+            {labels.accountStrategyLoading}
+          </p>
+        ) : error ? (
+          <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+            {labels.accountStrategyUnavailable}
+          </p>
+        ) : (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <StatusTile label={labels.strategy} value={strategyName} />
+            <StatusTile label={labels.promotionReadiness} value={status} />
+            <StatusTile label={labels.assetUniverse} value={scopeValue} />
+            <StatusTile
+              label={labels.totalReturn}
+              value={assignmentAttributionStatus}
+            />
+          </div>
+        )}
+
+        {assignError ? (
+          <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+            {labels.accountStrategyAssignFailed}
+          </p>
+        ) : null}
+
+        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {labels.accountStrategyPnlAttributionStatus}
+          </div>
+          <div className="mt-2 text-lg font-semibold text-[var(--app-text)]">
+            {lookupLabel(
+              labels.accountStrategyPnlAttributionTier,
+              pnlAttributionTier,
+              pnlAttributionTier,
+            )}
+          </div>
+          <p className="app-muted mt-1 text-sm leading-6">
+            {lookupLabel(
+              labels.accountStrategyPnlAttributionTierDetail,
+              pnlAttributionTier,
+              pnlAttributionTier,
+            )}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-1.5 text-[var(--app-muted)]">
+              {labels.accountStrategyAttributionSourceStatus}:{' '}
+              {rawAttributionStatus}
+            </span>
+            <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-1.5 text-[var(--app-muted)]">
+              {labels.accountStrategyContributionSourceStatus}:{' '}
+              {rawContributionLabel}
+            </span>
+            {rawContributionStatus === 'valuation_missing' ? (
+              <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1.5 text-[var(--app-warning)]">
+                {labels.accountStrategyValuationStale}
+              </span>
+            ) : null}
+            {rawAttributionStatus === 'blocked' ? (
+              <span className="rounded-full border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-3 py-1.5 text-[var(--app-danger)]">
+                {rawAttributionLabel}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+              {labels.accountStrategyAttributionEvidence}
+            </div>
+            {attributionLoading ? (
+              <span className="app-muted text-xs">
+                {labels.accountStrategyAttributionLoading}
+              </span>
+            ) : null}
+          </div>
+          {attributionError ? (
+            <p className="mt-3 text-sm text-[var(--app-warning)]">
+              {labels.accountStrategyAttributionUnavailable}
+            </p>
+          ) : attribution ? (
+            <>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <StatusTile
+                  label={labels.accountStrategySignalActionRisk}
+                  value={`${attribution.signal_count} / ${attribution.action_count} / ${attribution.risk_decision_count}`}
+                />
+                <StatusTile
+                  label={labels.accountStrategyOrdersFills}
+                  value={`${attribution.order_count} / ${attribution.fill_count}`}
+                />
+                <StatusTile
+                  label={labels.accountStrategyPnlStatus}
+                  value={lookupLabel(
+                    labels.accountStrategyAttribution,
+                    attribution.attribution_status,
+                    attribution.attribution_status,
+                  )}
+                />
+                <StatusTile
+                  label={labels.totalCost}
+                  value={formatCurrency(attribution.total_fees)}
+                />
+              </div>
+              {attribution.limitations.length ? (
+                <div className="mt-3 grid gap-2">
+                  {attribution.limitations.map((limitation) => (
+                    <p
+                      className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+                      key={limitation}
+                    >
+                      {limitation}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+              {labels.accountStrategyContributionReport}
+            </div>
+            {contributionLoading ? (
+              <span className="app-muted text-xs">
+                {labels.accountStrategyContributionLoading}
+              </span>
+            ) : null}
+          </div>
+          {contributionError ? (
+            <p className="mt-3 text-sm text-[var(--app-warning)]">
+              {labels.accountStrategyContributionUnavailable}
+            </p>
+          ) : contribution ? (
+            <>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <StatusTile
+                  label={labels.accountStrategyContributionStatus}
+                  value={lookupLabel(
+                    labels.accountStrategyContributionStatusMap,
+                    contribution.contribution_status,
+                    contribution.contribution_status,
+                  )}
+                />
+                <StatusTile
+                  label={labels.accountStrategyGrossUnrealizedPnl}
+                  value={formatCurrency(contribution.gross_unrealized_pnl)}
+                />
+                <StatusTile
+                  label={labels.accountStrategyCommissionSlippage}
+                  value={`${formatCurrency(contribution.total_commission)} / ${formatCurrency(contribution.total_slippage)}`}
+                />
+                <StatusTile
+                  label={labels.accountStrategyTaxExcludedMovement}
+                  value={`${formatCurrency(contribution.total_tax)} / ${formatCurrency(contribution.unattributed_account_pnl)}`}
+                />
+                <StatusTile
+                  label={labels.accountStrategyNetContribution}
+                  value={formatCurrency(contribution.net_contribution)}
+                />
+              </div>
+              {contribution.missing_valuation_symbols.length ? (
+                <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+                  {labels.accountStrategyMissingValuation(
+                    contribution.missing_valuation_symbols.join(', '),
+                  )}
+                </p>
+              ) : null}
+              {contribution.limitations.length ? (
+                <div className="mt-3 grid gap-2">
+                  {contribution.limitations.map((limitation) => (
+                    <p
+                      className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+                      key={limitation}
+                    >
+                      {limitation}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid gap-2">
+          <p className="app-muted text-sm">
+            {labels.accountStrategyPnlPending}
+          </p>
+          {assignment?.limitations?.map((limitation) => (
+            <p
+              className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+              key={limitation}
+            >
+              {limitation}
+            </p>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatusTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3">
+      <div className="app-muted text-xs font-semibold">{label}</div>
+      <div className="mt-1.5 truncate text-base font-semibold text-[var(--app-text)]">
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -635,7 +1175,7 @@ function StrategyEvidenceGatePanel({
           </div>
         ) : (
           <div className="mt-4 min-w-0 overflow-x-auto overscroll-x-contain">
-            <table className="min-w-[900px] table-fixed text-left text-sm">
+            <table className="min-w-[1060px] table-fixed text-left text-sm">
               <thead>
                 <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[11px] uppercase tracking-[0.16em]">
                   <th className="w-[190px] px-3 py-3">{labels.strategy}</th>
@@ -647,6 +1187,9 @@ function StrategyEvidenceGatePanel({
                   </th>
                   <th className="w-[170px] px-3 py-3">
                     {labels.accountTruthGate}
+                  </th>
+                  <th className="w-[170px] px-3 py-3">
+                    {labels.strategyAttributionGate}
                   </th>
                   <th className="px-3 py-3">{labels.missingRequirements}</th>
                 </tr>
@@ -693,6 +1236,17 @@ function StrategyEvidenceGatePanel({
                           {readinessRow?.has_account_truth_evidence
                             ? labels.accountTruthEvidencePresent
                             : labels.accountTruthEvidenceMissing}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-xs leading-5">
+                        <div className="break-words font-semibold text-[var(--app-text)]">
+                          {readinessRow?.strategy_attribution_status ??
+                            labels.notDeclared}
+                        </div>
+                        <div className="app-muted mt-1">
+                          {readinessRow?.has_strategy_attribution_evidence
+                            ? labels.strategyAttributionReady
+                            : labels.strategyAttributionPending}
                         </div>
                       </td>
                       <td className="px-3 py-3 text-xs leading-5 text-[var(--app-muted)]">
@@ -779,7 +1333,11 @@ function StrategyMetadataPanel({
         />
         <MetadataItem
           label={labels.benchmarkRole}
-          value={strategy.benchmark_role ?? labels.notDeclared}
+          value={benchmarkRoleDisplayName(
+            strategy.benchmark_role,
+            labels.benchmarkRoleNames,
+            labels.notDeclared,
+          )}
         />
         <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
           <div className="app-muted text-[11px]">

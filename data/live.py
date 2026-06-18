@@ -33,7 +33,7 @@ class LiveDataFeed:
         self.source = source
         self.fallback_source = fallback_source
         self.event_bus = event_bus
-        self.poll_timeout_seconds = max(float(poll_timeout_seconds), 0.1)
+        self.poll_timeout_seconds = max(float(poll_timeout_seconds), 0.01)
         self._executor = ThreadPoolExecutor(
             max_workers=max(int(max_workers), 1),
             thread_name_prefix="karkinos-live-feed",

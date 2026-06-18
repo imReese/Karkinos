@@ -5,9 +5,13 @@ from __future__ import annotations
 import inspect
 import json
 from datetime import date, datetime
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter
+
+_ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
+_STRATEGY_ATTRIBUTION_READY_STATUSES = {"estimated_from_linked_fills"}
 
 
 def create_router() -> APIRouter:
@@ -23,6 +27,11 @@ def create_router() -> APIRouter:
         journal_by_signal = _journal_by_signal_id(db)
         validation_by_strategy = await _validation_by_strategy_id(db)
         account_truth = _account_truth_gate_evidence(db)
+        strategy_attribution = _strategy_attribution_gate_evidence(
+            state,
+            db,
+            actions,
+        )
         candidates = [
             _decision_candidate(
                 action,
@@ -30,6 +39,7 @@ def create_router() -> APIRouter:
                 validation_by_strategy,
                 db,
                 account_truth,
+                strategy_attribution,
             )
             for action in actions
         ]
@@ -48,6 +58,7 @@ def create_router() -> APIRouter:
                 candidates=candidates,
                 journal_by_signal=journal_by_signal,
                 account_truth=account_truth,
+                strategy_attribution=strategy_attribution,
             ),
             "candidates": candidates,
             "no_action_reasons": no_action_reasons,
@@ -71,6 +82,11 @@ def create_router() -> APIRouter:
         journal_by_signal = _journal_by_signal_id(db)
         validation_by_strategy = await _validation_by_strategy_id(db)
         account_truth = _account_truth_gate_evidence(db)
+        strategy_attribution = _strategy_attribution_gate_evidence(
+            state,
+            db,
+            actions,
+        )
         candidates = [
             _decision_candidate(
                 action,
@@ -78,6 +94,7 @@ def create_router() -> APIRouter:
                 validation_by_strategy,
                 db,
                 account_truth,
+                strategy_attribution,
             )
             for action in intraday_actions
         ]
@@ -100,6 +117,7 @@ def create_router() -> APIRouter:
                     candidates=candidates,
                     journal_by_signal=journal_by_signal,
                     account_truth=account_truth,
+                    strategy_attribution=strategy_attribution,
                 ),
                 "excluded_daily_count": len(daily_actions),
             },
@@ -147,6 +165,7 @@ def _decision_summary(
     candidates: list[dict[str, Any]],
     journal_by_signal: dict[int, dict[str, Any]],
     account_truth: dict[str, Any],
+    strategy_attribution: dict[str, Any],
 ) -> dict[str, Any]:
     risk_blocked_count = sum(
         1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
@@ -163,6 +182,7 @@ def _decision_summary(
         "portfolio": _portfolio_state_summary(state),
         "market_data": _market_data_summary(state, actions),
         "account_truth": account_truth,
+        "strategy_attribution": strategy_attribution,
         "action_tasks": _action_task_summary(actions),
         "audit": _audit_summary(actions, candidates, journal_by_signal),
     }
@@ -423,6 +443,7 @@ def _decision_candidate(
     validation_by_strategy: dict[str, dict[str, Any]],
     db: Any,
     account_truth: dict[str, Any],
+    strategy_attribution: dict[str, Any],
 ) -> dict[str, Any]:
     signal_id = action.get("source_signal_id")
     journal = journal_by_signal.get(int(signal_id)) if signal_id is not None else None
@@ -432,6 +453,14 @@ def _decision_candidate(
         if account_truth_gate_status == "pass"
         else _account_truth_manual_confirmation_status(account_truth_gate_status)
     )
+    strategy_attribution_gate_status = str(
+        strategy_attribution.get("gate_status") or "pass"
+    )
+    if (
+        account_truth_gate_status == "pass"
+        and strategy_attribution_gate_status != "pass"
+    ):
+        manual_confirmation_status = "strategy_attribution_review_required"
     return {
         "action_id": action.get("id"),
         "action": _normalize_decision_action(action),
@@ -456,6 +485,7 @@ def _decision_candidate(
             ),
             "data_freshness": _data_freshness_evidence(action, db),
             "account_truth": account_truth,
+            "strategy_attribution": strategy_attribution,
             "manual_confirmation": _manual_confirmation_evidence(
                 action,
                 manual_confirmation_status=manual_confirmation_status,
@@ -513,6 +543,11 @@ def _overall_decision(candidates: list[dict[str, Any]]) -> str:
         for candidate in candidates
     ):
         return "review_required"
+    if any(
+        candidate["evidence"]["strategy_attribution"]["gate_status"] != "pass"
+        for candidate in candidates
+    ):
+        return "review_required"
     actions = {candidate["action"] for candidate in candidates}
     if len(actions) == 1:
         return next(iter(actions))
@@ -567,6 +602,104 @@ def _latest_account_truth_score(db: Any) -> dict[str, Any]:
         if rows:
             return _json_object(rows[0])
     return {}
+
+
+def _strategy_attribution_gate_evidence(
+    state: Any,
+    db: Any,
+    actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    reader = getattr(db, "get_runtime_control_sync", None)
+    payload = reader(_ACCOUNT_STRATEGY_CONTROL_KEY) if callable(reader) else None
+    if not isinstance(payload, dict):
+        return {
+            "status": "not_configured",
+            "gate_status": "pass",
+            "strategy_id": None,
+            "assignment_status": "not_configured",
+            "attribution_status": "not_configured",
+            "contribution_status": "not_configured",
+            "has_evidence": True,
+            "required_actions": [],
+            "blocking_reasons": [],
+            "limitations": [
+                "No account strategy assignment is configured for this decision lane."
+            ],
+        }
+
+    from server.routes.account_strategy import (
+        _assignment_from_payload,
+        _build_attribution_summary,
+        _build_contribution_report,
+    )
+
+    fallback_config = getattr(
+        state,
+        "config",
+        SimpleNamespace(strategy=_first_action_strategy_id(actions)),
+    )
+    assignment = _assignment_from_payload(payload, fallback_config=fallback_config)
+    if assignment.status in {"disabled", "inactive", "retired"}:
+        return {
+            "status": "disabled",
+            "gate_status": "pass",
+            "strategy_id": assignment.strategy_id,
+            "assignment_status": assignment.status,
+            "attribution_status": "not_required",
+            "contribution_status": "not_required",
+            "has_evidence": True,
+            "required_actions": [],
+            "blocking_reasons": [],
+            "limitations": list(assignment.limitations),
+        }
+
+    attribution = _build_attribution_summary(db, assignment)
+    contribution = _build_contribution_report(db, assignment)
+    contribution_status = contribution.contribution_status
+    is_ready = contribution_status in _STRATEGY_ATTRIBUTION_READY_STATUSES
+    has_linked_evidence = any(
+        [
+            attribution.signal_count,
+            attribution.order_count,
+            attribution.fill_count,
+            contribution.linked_fill_count,
+        ]
+    )
+    gate_status = "pass" if is_ready else "degraded" if has_linked_evidence else "blocked"
+    return {
+        "status": "available",
+        "gate_status": gate_status,
+        "strategy_id": assignment.strategy_id,
+        "assignment_status": assignment.status,
+        "attribution_status": attribution.attribution_status,
+        "contribution_status": contribution_status,
+        "has_evidence": is_ready,
+        "signal_count": attribution.signal_count,
+        "order_count": attribution.order_count,
+        "fill_count": attribution.fill_count,
+        "linked_fill_count": contribution.linked_fill_count,
+        "net_contribution": contribution.net_contribution,
+        "required_actions": (
+            []
+            if is_ready
+            else ["link_strategy_signals_orders_fills_and_contribution"]
+        ),
+        "blocking_reasons": (
+            [] if is_ready else ["strategy_attribution_not_ready"]
+        ),
+        "limitations": [
+            *list(attribution.limitations),
+            *list(contribution.limitations),
+        ],
+    }
+
+
+def _first_action_strategy_id(actions: list[dict[str, Any]]) -> str:
+    for action in actions:
+        strategy_id = action.get("strategy_id")
+        if strategy_id:
+            return str(strategy_id)
+    return "dual_ma"
 
 
 def _account_truth_manual_confirmation_status(gate_status: str) -> str:

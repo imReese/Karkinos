@@ -248,7 +248,7 @@ copied private strategy scripts and manifests stay ignored by git.
 
 For private scripts stored directly in the extension directory, `class_path`
 may point to the local module in `module:ClassName` form, for example
-`local_momentum:LocalMomentumStrategy`. Karkinos loads that class only when a
+`my_strategy:MyStrategy`. Karkinos loads that class only when a
 registered extension is instantiated for a research backtest, then validates
 its declared params before constructing the strategy.
 
@@ -256,6 +256,24 @@ Extension manifests cannot declare live trading, broker submission, or
 real-money execution capabilities. Strategy Lab runs remain research evidence
 and do not bypass risk gates, paper/shadow review, signal journaling, or manual
 confirmation.
+
+For plain-language explanations of the built-in strategies, see the bilingual
+strategy primer: [中文](docs/strategy/README.zh.md) /
+[English](docs/strategy/README.en.md). It covers Dual Moving Average, Monthly
+Rebalance, Bollinger Mean Reversion, and RSI reversal semantics without making
+investment-advice or return claims.
+
+**Account Strategy Context**
+
+The Backtest page can show and save the current research-only account strategy
+assignment through `/api/account-strategy`. The assignment never enables
+automatic trading. Its attribution and contribution endpoints summarize linked
+signals, actions, risk decisions, orders, fills, commissions, slippage, and the
+latest local valuation evidence when those references exist.
+
+Contribution reporting excludes manual trades, cash flows, and missing-evidence
+market movement by default. It is audit tooling and research evidence, not
+investment advice or execution approval.
 
 **Docker**
 

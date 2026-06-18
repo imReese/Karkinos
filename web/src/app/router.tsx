@@ -31,6 +31,8 @@ import {
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
 import { DashboardQuickActions } from '../features/account/components/dashboard-quick-actions';
+import { useAccountStrategyContributionQuery } from '../features/account-strategy/api';
+import { StrategyContributionGateCard } from '../features/account-strategy/components/strategy-contribution-gate-card';
 import { AccountTruthReviewPage } from '../features/account-truth/components/account-truth-review-page';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
 import { DecisionCockpitPage } from '../features/decision/components/decision-cockpit-page';
@@ -252,6 +254,7 @@ export function OverviewPage() {
   const ledgerEntries = useLedgerEntriesQuery(8);
   const pendingOrders = usePendingManualOrdersQuery();
   const marketHealth = useMarketDataHealthQuery();
+  const strategyContribution = useAccountStrategyContributionQuery();
 
   const liveGroups = useMemo(
     () => liveHoldings.data?.groups ?? [],
@@ -392,36 +395,44 @@ export function OverviewPage() {
               </div>
             </section>
 
-            <aside className="app-terminal-panel rounded-[2rem] p-1.5">
-              <div className="app-terminal-inner h-full p-4 sm:p-5">
-                <div className="mb-5 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="app-product-mark">
-                      {copy.overview.dashboard.opsPanel}
+            <aside className="min-w-0 space-y-5">
+              <div className="app-terminal-panel rounded-[2rem] p-1.5">
+                <div className="app-terminal-inner h-full p-4 sm:p-5">
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="app-product-mark">
+                        {copy.overview.dashboard.opsPanel}
+                      </div>
+                      <div className="app-card-title mt-1.5 text-xl">
+                        {copy.overview.dashboard.pendingApprovals}
+                      </div>
                     </div>
-                    <div className="app-card-title mt-1.5 text-xl">
-                      {copy.overview.dashboard.pendingApprovals}
+                    <div className="rounded-full border border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] px-3 py-1.5 text-xs font-semibold text-[var(--app-accent)] tabular-nums">
+                      {copy.overview.dashboard.pendingCount(
+                        pendingOrders.data?.length ?? 0,
+                      )}
                     </div>
                   </div>
-                  <div className="rounded-full border border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] px-3 py-1.5 text-xs font-semibold text-[var(--app-accent)] tabular-nums">
-                    {copy.overview.dashboard.pendingCount(
-                      pendingOrders.data?.length ?? 0,
-                    )}
-                  </div>
+                  <DashboardPendingOrders
+                    orders={pendingOrders.data ?? []}
+                    isLoading={pendingOrders.isLoading}
+                    isError={pendingOrders.isError}
+                    copy={copy}
+                  />
+                  <DashboardLedger
+                    entries={ledgerEntries.data ?? []}
+                    isLoading={ledgerEntries.isLoading}
+                    isError={ledgerEntries.isError}
+                    copy={copy}
+                  />
                 </div>
-                <DashboardPendingOrders
-                  orders={pendingOrders.data ?? []}
-                  isLoading={pendingOrders.isLoading}
-                  isError={pendingOrders.isError}
-                  copy={copy}
-                />
-                <DashboardLedger
-                  entries={ledgerEntries.data ?? []}
-                  isLoading={ledgerEntries.isLoading}
-                  isError={ledgerEntries.isError}
-                  copy={copy}
-                />
               </div>
+              <StrategyContributionGateCard
+                report={strategyContribution.data}
+                isLoading={strategyContribution.isLoading}
+                isError={strategyContribution.isError}
+                onRetry={() => void strategyContribution.refetch()}
+              />
             </aside>
           </div>
 
@@ -668,7 +679,7 @@ function formatLedgerEntryAmount(entry: LedgerEntry) {
   return formatCurrencyValue(calculateLedgerEntryAmount(entry));
 }
 
-function PortfolioPage() {
+export function PortfolioPage() {
   const copy = useCopy();
   const navigate = useNavigate();
   const searchState = portfolioRoute.useSearch();
@@ -677,6 +688,7 @@ function PortfolioPage() {
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
+  const strategyContribution = useAccountStrategyContributionQuery();
   const search = searchState.q;
   const assetClassFilter = searchState.assetClass;
   const pnlFilter = searchState.pnl as 'all' | 'winners' | 'losers';
@@ -866,6 +878,12 @@ function PortfolioPage() {
                 onModeChange={setMode}
                 accountLabel={copy.mode.account}
                 strategyLabel={copy.mode.strategy}
+              />
+              <StrategyContributionGateCard
+                report={strategyContribution.data}
+                isLoading={strategyContribution.isLoading}
+                isError={strategyContribution.isError}
+                onRetry={() => void strategyContribution.refetch()}
               />
               <RiskSummaryCard
                 overview={overview.data}

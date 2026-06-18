@@ -427,6 +427,70 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
   expect(await screen.findByText('Account truth: degraded')).toBeTruthy();
 });
 
+test('surfaces strategy-attribution gate status in decision summaries', async () => {
+  const blockedToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    summary: {
+      ...dailyDecision.summary,
+      ready_for_manual_confirmation_count: 0,
+      strategy_attribution: {
+        gate_status: 'blocked',
+        strategy_id: 'dual_ma',
+        assignment_status: 'active',
+        attribution_status: 'not_started',
+        contribution_status: 'no_linked_fills',
+        has_evidence: false,
+        required_actions: [
+          'link_strategy_signals_orders_fills_and_contribution',
+        ],
+        blocking_reasons: ['strategy_attribution_not_ready'],
+        limitations: [],
+      },
+    },
+    candidates: [
+      {
+        ...dailyDecision.candidates[0],
+        manual_confirmation_status: 'strategy_attribution_review_required',
+        evidence: {
+          ...dailyDecision.candidates[0].evidence,
+          strategy_attribution: {
+            gate_status: 'blocked',
+            strategy_id: 'dual_ma',
+            assignment_status: 'active',
+            attribution_status: 'not_started',
+            contribution_status: 'no_linked_fills',
+            has_evidence: false,
+            required_actions: [
+              'link_strategy_signals_orders_fills_and_contribution',
+            ],
+            blocking_reasons: ['strategy_attribution_not_ready'],
+            limitations: [],
+          },
+        },
+      },
+    ],
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: blockedToday });
+
+  expect(
+    (await screen.findAllByText('Strategy attribution gate')).length,
+  ).toBeGreaterThan(0);
+  expect(
+    (await screen.findAllByText('blocked · dual_ma')).length,
+  ).toBeGreaterThan(0);
+  expect(
+    await screen.findByText(
+      /link_strategy_signals_orders_fills_and_contribution/,
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText('Manual: strategy attribution review required'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Strategy attribution: blocked')).toBeTruthy();
+});
+
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {
   renderDecisionCockpit();
 

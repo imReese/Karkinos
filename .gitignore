@@ -163,6 +163,9 @@ docs/*
 !docs/ROADMAP.md
 !docs/IMPLEMENTATION_LOG.md
 !docs/BENCHMARKS.md
+!docs/strategy/
+!docs/strategy/README.en.md
+!docs/strategy/README.zh.md
 
 # Node.js
 node_modules/
@@ -171,6 +174,7 @@ web/dist/
 
 # Local build / tool caches
 .uv-cache/
+.playwright-mcp/
 .run/
 logs/
 reports/

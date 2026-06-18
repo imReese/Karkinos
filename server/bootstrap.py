@@ -101,7 +101,7 @@ def build_watchlist(
 
 def build_strategy(config: BacktestConfig, event_bus: Any) -> Any:
     """Create a registered strategy with config-backed parameters."""
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
 
     strategy_info = StrategyRegistry.get(config.strategy) or {}

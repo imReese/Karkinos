@@ -80,6 +80,17 @@ function translatedValidationNote(
   return (labels.validationNotes as Record<string, string>)[note] ?? note;
 }
 
+function translatedBenchmarkRole(
+  role: string | null | undefined,
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+  fallback: string,
+) {
+  if (!role) {
+    return fallback;
+  }
+  return (labels.benchmarkRoleNames as Record<string, string>)[role] ?? role;
+}
+
 function boundsLabel(
   parameter: StrategyParameterSchema,
   labels: ReturnType<typeof useCopy>['backtest']['strategySnapshot'],
@@ -146,7 +157,11 @@ export function StrategyMetadataSnapshotPanel({
         />
         <SnapshotStat
           label={labels.benchmarkRole}
-          value={snapshot.benchmark_role ?? labels.notDeclared}
+          value={translatedBenchmarkRole(
+            snapshot.benchmark_role,
+            pageLabels,
+            labels.notDeclared,
+          )}
         />
         <SnapshotStat
           label={labels.universe}

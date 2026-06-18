@@ -73,6 +73,20 @@ def test_acceptance_audit_cli_account_truth_review_filter_outputs_one_audit() ->
     assert audit["criteria"]
 
 
+def test_acceptance_audit_cli_strategy_assignment_filter_outputs_one_audit() -> None:
+    result = _run_cli("--audit", "strategy_assignment")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "strategy_assignment"
+    assert [audit["key"] for audit in payload["audits"]] == ["strategy_assignment"]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 15
+    assert audit["completed_count"] == audit["required_count"]
+    assert audit["criteria"]
+
+
 def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     result = _run_cli("--audit", "all")
 
@@ -85,6 +99,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "research_evidence",
         "account_truth",
         "account_truth_review",
+        "strategy_assignment",
     ]
     assert all(audit["is_complete"] for audit in payload["audits"])
 

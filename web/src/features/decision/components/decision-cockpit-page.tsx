@@ -18,6 +18,7 @@ import {
   type DecisionCandidate,
   type DecisionResponse,
   type SignalJournalEntry,
+  type StrategyAttributionGateEvidence,
 } from '../api';
 
 function normalizeStatus(value: string | null | undefined) {
@@ -67,6 +68,20 @@ function accountTruthValue(value: AccountTruthGateEvidence | null | undefined) {
 function accountTruthTone(value: AccountTruthGateEvidence | null | undefined) {
   const status = value?.gate_status ?? 'not_evaluated';
   return decisionTone(status);
+}
+
+function strategyAttributionValue(
+  value: StrategyAttributionGateEvidence | null | undefined,
+) {
+  const status = value?.gate_status ?? 'not_configured';
+  return `${normalizeStatus(status)} · ${value?.strategy_id ?? '--'}`;
+}
+
+function strategyAttributionTone(
+  value: StrategyAttributionGateEvidence | null | undefined,
+) {
+  const status = value?.gate_status ?? 'not_configured';
+  return status === 'not_configured' ? 'neutral' : decisionTone(status);
 }
 
 export function DecisionCockpitPage() {
@@ -149,6 +164,13 @@ export function DecisionCockpitPage() {
         value: accountTruthValue(today.data?.summary.account_truth),
         tone: accountTruthTone(today.data?.summary.account_truth),
       },
+      {
+        label: labels.strategyAttributionGate,
+        value: strategyAttributionValue(
+          today.data?.summary.strategy_attribution,
+        ),
+        tone: strategyAttributionTone(today.data?.summary.strategy_attribution),
+      },
     ] satisfies Array<{
       label: string;
       value: string;
@@ -224,6 +246,12 @@ export function DecisionCockpitPage() {
         {lanes.map((lane) => (
           <AccountTruthGateTile
             key={`${lane.lane}-account-truth`}
+            lane={lane}
+          />
+        ))}
+        {lanes.map((lane) => (
+          <StrategyAttributionGateTile
+            key={`${lane.lane}-strategy-attribution`}
             lane={lane}
           />
         ))}
@@ -532,6 +560,36 @@ function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
   );
 }
 
+function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
+  const labels = useCopy().decision;
+  const strategyAttribution = lane.summary.strategy_attribution;
+  const requiredActions = strategyAttribution?.required_actions ?? [];
+  const blockingReasons = strategyAttribution?.blocking_reasons ?? [];
+  const detailItems = [
+    strategyAttribution?.attribution_status
+      ? `${labels.strategyAttributionStatus}: ${normalizeStatus(
+          strategyAttribution.attribution_status,
+        )}`
+      : '',
+    strategyAttribution?.contribution_status
+      ? `${labels.strategyContributionStatus}: ${normalizeStatus(
+          strategyAttribution.contribution_status,
+        )}`
+      : '',
+    requiredActions.length > 0
+      ? requiredActions.join(' · ')
+      : blockingReasons.join(' · '),
+  ].filter(Boolean);
+
+  return (
+    <SummaryTile
+      label={labels.strategyAttributionGate}
+      value={strategyAttributionValue(strategyAttribution)}
+      detail={detailItems.length > 0 ? detailItems.join(' · ') : labels.none}
+    />
+  );
+}
+
 function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
   const laneLabel =
@@ -672,6 +730,16 @@ function DecisionCandidateCard({
           tone={accountTruthTone(candidate.evidence.account_truth)}
         />
         <EvidenceLine
+          label={labels.strategyAttribution}
+          value={
+            candidate.evidence.strategy_attribution?.gate_status ??
+            'not_configured'
+          }
+          tone={strategyAttributionTone(
+            candidate.evidence.strategy_attribution,
+          )}
+        />
+        <EvidenceLine
           label={labels.journal}
           value={candidate.evidence.journal.latest_event_type ?? '--'}
           tone={
@@ -723,7 +791,7 @@ function EvidenceLine({
 }: {
   label: string;
   value: string;
-  tone?: 'success' | 'warning' | 'danger';
+  tone?: 'success' | 'warning' | 'danger' | 'neutral';
 }) {
   const textColor =
     tone === 'success'

@@ -246,8 +246,8 @@ def build_strategy_lab_acceptance_audit() -> AcceptanceAudit:
                 evidence_paths=(
                     "strategy/extensions/README.md",
                     "strategy/extensions/.gitignore",
-                    "strategy/extensions/examples/local_momentum.py.example",
-                    "strategy/extensions/examples/local_momentum.strategy.json.example",
+                    "strategy/extensions/template.py.example",
+                    "strategy/extensions/template.strategy.json.example",
                     "docs/README.zh.md",
                 ),
                 validation_commands=(
@@ -328,8 +328,8 @@ def build_strategy_lab_acceptance_audit() -> AcceptanceAudit:
                     "locally, discovered"
                 ),
                 evidence_paths=(
-                    "strategy/extensions/examples/local_momentum.py.example",
-                    "strategy/extensions/examples/local_momentum.strategy.json.example",
+                    "strategy/extensions/template.py.example",
+                    "strategy/extensions/template.strategy.json.example",
                     "tests/strategy/test_extension_strategy_registry.py",
                     "tests/test_server_routes.py",
                     "web/src/features/backtest/components/backtest-page.test.tsx",
@@ -1187,6 +1187,248 @@ def build_account_truth_review_acceptance_audit() -> AcceptanceAudit:
                 validation_commands=(
                     "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
                     "uv run python scripts/export_acceptance_audit.py --audit account_truth_review",
+                ),
+            ),
+        )
+    )
+
+
+def build_strategy_assignment_acceptance_audit() -> AcceptanceAudit:
+    """Return completed v0.8 Strategy Assignment criteria evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="account_strategy_assignment_api",
+                checkbox_text=(
+                    "* [x] A capability-based account strategy assignment API "
+                    "exists and can read"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "server/models.py",
+                    "tests/server/test_account_strategy_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_strategy_assignment_scope_updates",
+                checkbox_text=(
+                    "* [x] Account strategy assignment can be updated for "
+                    "account, asset-class, or"
+                ),
+                evidence_paths=(
+                    "server/models.py",
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "web/src/features/backtest/api.ts",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                    "npm --prefix web run build",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="assignment_storage_is_audit_only",
+                checkbox_text=(
+                    "* [x] Assignment storage is auditable and does not mutate "
+                    "ledger entries,"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backtest_strategy_assignment_surface",
+                checkbox_text=(
+                    "* [x] Backtest Web shows available strategies first, then "
+                    "run configuration,"
+                ),
+                evidence_paths=(
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/backtest/api.ts",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- backtest-page",
+                    "npm --prefix web test",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backtest_strategy_pnl_attribution_status",
+                checkbox_text=(
+                    "* [x] Backtest Web clearly states when strategy P/L "
+                    "attribution is not started,"
+                ),
+                evidence_paths=(
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/app/copy.ts",
+                ),
+                validation_commands=("npm --prefix web test -- backtest-page",),
+            ),
+            AcceptanceCriterion(
+                key="localized_strategy_names",
+                checkbox_text=(
+                    "* [x] Strategy IDs remain internal audit keys while Web "
+                    "surfaces localized"
+                ),
+                evidence_paths=(
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/strategy-metadata-snapshot-panel.tsx",
+                    "web/src/app/copy.ts",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=("npm --prefix web test -- backtest-page",),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_strategy_attribution_refs",
+                checkbox_text=(
+                    "* [x] Signals, action candidates, risk decisions, review "
+                    "decisions, orders, and"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "server/db.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_contribution_separation",
+                checkbox_text=(
+                    "* [x] Strategy contribution report separates realized "
+                    "P/L, unrealized P/L,"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_contribution_excludes_unattributed",
+                checkbox_text=(
+                    "* [x] Strategy contribution API never assigns cash "
+                    "deposits, withdrawals,"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_contribution_evidence_gated_surfaces",
+                checkbox_text=(
+                    "* [x] Overview, Portfolio, Backtest, Decision, and "
+                    "review surfaces expose"
+                ),
+                evidence_paths=(
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.tsx",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.test.tsx",
+                    "web/src/app/router.tsx",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- strategy-contribution-gate-card overview-page backtest-page decision-cockpit-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="decision_degrades_on_missing_attribution",
+                checkbox_text=(
+                    "* [x] Decision summaries degrade or block strategy-driven "
+                    "recommendations when"
+                ),
+                evidence_paths=(
+                    "server/routes/decision.py",
+                    "tests/test_server_routes.py",
+                    "web/src/features/decision/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_server_routes.py::test_decision_today_requires_strategy_attribution_for_assigned_strategy",
+                    "npm --prefix web test -- decision-cockpit-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backend_strategy_assignment_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover assignment "
+                    "defaults, updates,"
+                ),
+                evidence_paths=(
+                    "tests/server/test_account_strategy_routes.py",
+                    "tests/test_server_routes.py",
+                    "tests/analytics/test_strategy_promotion_readiness.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py tests/analytics/test_strategy_promotion_readiness.py",
+                    "uv run python -m pytest tests/test_server_routes.py::test_decision_today_requires_strategy_attribution_for_assigned_strategy",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frontend_strategy_assignment_tests",
+                checkbox_text=(
+                    "* [x] Frontend tests cover strategy catalog first-screen "
+                    "rendering, current"
+                ),
+                evidence_paths=(
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- backtest-page decision-cockpit-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_assignment_docs_boundary",
+                checkbox_text=(
+                    "* [x] README/docs explain strategy assignment and "
+                    "contribution reporting as"
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    'rg -n "strategy assignment|策略分配|not investment advice|不构成投资建议" README.md docs',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_assignment_acceptance_audit_cli",
+                checkbox_text=(
+                    "* [x] Acceptance audit manifest and CLI include the "
+                    "strategy assignment and"
+                ),
+                evidence_paths=(
+                    "analytics/acceptance_audit.py",
+                    "scripts/export_acceptance_audit.py",
+                    "tests/test_acceptance_audit.py",
+                    "tests/test_acceptance_audit_cli.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
+                    "uv run python scripts/export_acceptance_audit.py --audit strategy_assignment",
                 ),
             ),
         )

@@ -1,6 +1,6 @@
-"""Sanitized local strategy extension example.
+"""Sanitized local strategy extension template.
 
-Copy this file to strategy/extensions/local_momentum.py before editing.
+Copy this file to strategy/extensions/my_strategy.py before editing.
 Do not commit private strategy code or account data.
 """
 
@@ -14,14 +14,14 @@ from core.types import Symbol
 from strategy.base import Strategy
 
 
-class LocalMomentumStrategy(Strategy):
-    """Transparent close-above-average research strategy example."""
+class MyStrategy(Strategy):
+    """Transparent close-above-average research strategy template."""
 
     def __init__(
         self,
         event_bus: EventBus,
         lookback: int = 20,
-        strategy_id: str = "local_momentum",
+        strategy_id: str = "my_strategy",
     ) -> None:
         super().__init__(strategy_id, event_bus)
         self.lookback = lookback

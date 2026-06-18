@@ -106,6 +106,8 @@ class StrategyPromotionReadinessRowResponse(BaseModel):
     has_account_truth_evidence: bool = True
     account_truth_gate_status: str = "not_evaluated"
     account_truth_score: int | None = None
+    has_strategy_attribution_evidence: bool = True
+    strategy_attribution_status: str = "not_evaluated"
     missing_requirements: list[str] = Field(default_factory=list)
     promotion_status: str
     is_promotable: bool
@@ -180,7 +182,7 @@ def _backtest_evidence_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _validate_backtest_strategy_params(request: BacktestRequest) -> BacktestRequest:
     """Return a request copy with validated generic strategy params."""
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
     from strategy.schema import StrategyParameterValidationError
 
@@ -317,7 +319,7 @@ def _build_oos_validation_payload(
 
     from datetime import datetime
 
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from analytics.oos_validation import build_out_of_sample_validation
     from strategy.registry import StrategyRegistry
 
@@ -342,7 +344,7 @@ def _build_rolling_oos_validation_payload(
     request: BacktestRequest,
     result: Any,
 ) -> dict[str, Any]:
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from analytics.oos_validation import build_rolling_out_of_sample_validation
     from strategy.registry import StrategyRegistry
 
@@ -367,7 +369,7 @@ def _build_rolling_oos_validation_payload(
 
 def _strategy_metadata_snapshot(request: BacktestRequest) -> dict[str, Any]:
     """Build a persisted strategy metadata snapshot for backtest audit."""
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
 
     strategies = StrategyRegistry.get_info()
@@ -682,7 +684,7 @@ def create_router() -> APIRouter:
     @r.get("/strategies", response_model=list[StrategyInfoResponse])
     async def list_strategies() -> list[StrategyInfoResponse]:
         """获取所有已注册策略及参数信息。"""
-        import strategy.examples  # noqa: F401
+        import strategy.builtins  # noqa: F401
         from strategy.registry import StrategyRegistry
 
         return [StrategyInfoResponse(**s) for s in StrategyRegistry.get_info()]
@@ -693,7 +695,7 @@ def create_router() -> APIRouter:
     )
     async def get_strategy_validation() -> StrategyValidationMatrixResponse:
         """获取 v0.2 基准策略 after-cost / OOS 证据矩阵。"""
-        import strategy.examples  # noqa: F401
+        import strategy.builtins  # noqa: F401
         from analytics.strategy_validation_matrix import (
             build_strategy_validation_matrix,
         )
@@ -711,22 +713,54 @@ def create_router() -> APIRouter:
     )
     async def get_strategy_promotion_readiness() -> StrategyPromotionReadinessResponse:
         """获取 v0.2 策略晋级证据闸门，不自动晋级或执行。"""
-        import strategy.examples  # noqa: F401
+        import strategy.builtins  # noqa: F401
         from analytics.strategy_promotion_readiness import (
             build_strategy_promotion_readiness,
         )
         from server.app import get_app_state
+        from server.routes.account_strategy import (
+            _assignment_from_payload,
+            _build_attribution_summary,
+            _build_contribution_report,
+        )
         from strategy.registry import StrategyRegistry
 
         state = get_app_state()
         rows = await state.db.get_backtest_results()
         risk_decisions = state.db.get_risk_decisions_sync(limit=500)
         order_facts = state.db.list_orders_sync(limit=500)
+        runtime_reader = getattr(state.db, "get_runtime_control_sync", None)
+        assignment_payload = (
+            runtime_reader("account_strategy_assignment")
+            if callable(runtime_reader)
+            else None
+        )
+        account_strategy_assignments: list[dict[str, Any]] = []
+        account_strategy_attributions: list[dict[str, Any]] = []
+        if isinstance(assignment_payload, dict):
+            assignment = _assignment_from_payload(
+                assignment_payload,
+                fallback_config=state.config,
+            )
+            account_strategy_assignments.append(assignment.model_dump())
+            attribution_payload = _build_attribution_summary(
+                state.db,
+                assignment,
+            ).model_dump()
+            contribution_payload = _build_contribution_report(
+                state.db,
+                assignment,
+            ).model_dump()
+            account_strategy_attributions.append(
+                {**attribution_payload, **contribution_payload}
+            )
         readiness = build_strategy_promotion_readiness(
             StrategyRegistry.get_info(),
             rows,
             risk_decisions,
             order_facts,
+            account_strategy_assignments=account_strategy_assignments,
+            account_strategy_attributions=account_strategy_attributions,
         )
         return StrategyPromotionReadinessResponse(**readiness.to_json_dict())
 
@@ -974,7 +1008,7 @@ def create_router() -> APIRouter:
         """Compare strategies or parameter sets on one frozen dataset snapshot."""
         from server.app import get_app_state
 
-        import strategy.examples  # noqa: F401
+        import strategy.builtins  # noqa: F401
         from strategy.registry import StrategyRegistry
 
         state = get_app_state()

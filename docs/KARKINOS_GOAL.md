@@ -55,6 +55,14 @@ research idea
 
 The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
+Current active milestone:
+
+* **v0.8 — Strategy Assignment & Attribution Engine**
+* Status: active roadmap milestone.
+* Purpose: make account strategy assignment explicit, then connect strategy
+  signals, manual review, orders, fills, fees, and position changes into an
+  auditable contribution view before claiming strategy-level account returns.
+
 Latest completed milestone:
 
 * **v0.7 — Account Truth Review Center**

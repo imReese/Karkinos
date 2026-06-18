@@ -205,18 +205,37 @@ function renderShell(options: ShellStatusMockOptions = {}) {
 
 test('renders portfolio workspace navigation', async () => {
   renderShell();
+  const navigation = await screen.findByLabelText('Navigation');
 
-  expect(await screen.findByText('Overview')).toBeTruthy();
-  expect(await screen.findByText('Portfolio')).toBeTruthy();
-  expect(await screen.findByText('Activity')).toBeTruthy();
-  expect(await screen.findByText('Risk')).toBeTruthy();
-  expect(screen.queryByText('Account Truth')).toBeNull();
-  expect(await screen.findByText('Decision')).toBeTruthy();
+  expect(await within(navigation).findByText('Overview')).toBeTruthy();
+  expect(await within(navigation).findByText('Portfolio')).toBeTruthy();
+  expect(await within(navigation).findByText('Ledger')).toBeTruthy();
+  expect(await within(navigation).findByText('Market')).toBeTruthy();
+  expect(await within(navigation).findByText('Backtest')).toBeTruthy();
+  expect(await within(navigation).findByText('Risk')).toBeTruthy();
+  expect(within(navigation).queryByText('Account Truth')).toBeNull();
+  expect(await within(navigation).findByText('Decision')).toBeTruthy();
+  expect(await within(navigation).findByText('Execution')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
-  expect(await screen.findByText('Trading')).toBeTruthy();
-  expect(await screen.findByText('Backtest')).toBeTruthy();
   expect(await screen.findByText('Workspace toolbar')).toBeTruthy();
   expect(await screen.findByLabelText('Account Status')).toBeTruthy();
+
+  const navOrder = Array.from(
+    document.querySelectorAll('[data-testid^="sidebar-nav-"]'),
+  )
+    .map((element) => element.getAttribute('data-testid') ?? '')
+    .filter((testId) => !testId.endsWith('-icon'));
+  expect(navOrder).toEqual([
+    'sidebar-nav-overview',
+    'sidebar-nav-portfolio',
+    'sidebar-nav-activity',
+    'sidebar-nav-market',
+    'sidebar-nav-backtest',
+    'sidebar-nav-risk',
+    'sidebar-nav-decision',
+    'sidebar-nav-trading',
+    'sidebar-nav-settings',
+  ]);
 });
 
 test('uses minimalist sidebar active styling and subtext icons', async () => {
@@ -249,12 +268,17 @@ test('switches interface language from english to chinese', async () => {
 
   await user.click(await screen.findByRole('button', { name: 'Language' }));
   await user.click(await screen.findByRole('menuitemradio', { name: '中文' }));
+  const navigation = await screen.findByLabelText('导航');
 
-  expect(await screen.findByText('总览')).toBeTruthy();
-  expect(await screen.findByText('组合')).toBeTruthy();
-  expect(await screen.findByText('流水')).toBeTruthy();
-  expect(await screen.findByText('风险')).toBeTruthy();
-  expect(await screen.findByText('决策')).toBeTruthy();
+  expect(await within(navigation).findByText('总览')).toBeTruthy();
+  expect(await within(navigation).findByText('组合')).toBeTruthy();
+  expect(await within(navigation).findByText('账本')).toBeTruthy();
+  expect(await within(navigation).findByText('行情')).toBeTruthy();
+  expect(await within(navigation).findByText('回测')).toBeTruthy();
+  expect(await within(navigation).findByText('风控')).toBeTruthy();
+  expect(within(navigation).queryByText('账户事实')).toBeNull();
+  expect(await within(navigation).findByText('决策')).toBeTruthy();
+  expect(await within(navigation).findByText('执行')).toBeTruthy();
   expect(await screen.findByText('全局工具栏')).toBeTruthy();
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
 });

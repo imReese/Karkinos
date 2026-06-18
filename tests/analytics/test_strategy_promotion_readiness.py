@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-import strategy.examples  # noqa: F401
+import strategy.builtins  # noqa: F401
 
 from analytics.strategy_promotion_readiness import (
     build_strategy_promotion_readiness,
@@ -249,3 +249,66 @@ def test_strategy_promotion_readiness_allows_when_account_truth_gate_passes():
     assert all(row.has_account_truth_evidence for row in readiness.rows)
     assert all(row.account_truth_gate_status == "pass" for row in readiness.rows)
     assert all(row.account_truth_score == 100 for row in readiness.rows)
+
+
+def test_strategy_promotion_readiness_blocks_assigned_strategy_when_attribution_is_pending():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [_backtest_row("dual_ma")],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+        account_strategy_assignments=[
+            {
+                "strategy_id": "dual_ma",
+                "status": "research_only",
+                "scope": "account",
+                "auto_trade_enabled": False,
+            }
+        ],
+        account_strategy_attributions=[
+            {
+                "strategy_id": "dual_ma",
+                "attribution_status": "evidence_linked_pnl_pending",
+                "fill_count": 1,
+            }
+        ],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+
+    assert row.has_strategy_attribution_evidence is False
+    assert row.strategy_attribution_status == "evidence_linked_pnl_pending"
+    assert row.missing_requirements == ["strategy_attribution_ready"]
+    assert row.promotion_status == "not_promotable"
+
+
+def test_strategy_promotion_readiness_allows_assigned_strategy_when_contribution_is_estimated():
+    readiness = build_strategy_promotion_readiness(
+        StrategyRegistry.get_info(),
+        [_backtest_row("dual_ma")],
+        [_risk_decision("dual_ma", passed=False)],
+        [_shadow_order("dual_ma", divergence_status="within_expectations")],
+        account_strategy_assignments=[
+            {
+                "strategy_id": "dual_ma",
+                "status": "research_only",
+                "scope": "account",
+                "auto_trade_enabled": False,
+            }
+        ],
+        account_strategy_attributions=[
+            {
+                "strategy_id": "dual_ma",
+                "attribution_status": "evidence_linked_pnl_pending",
+                "contribution_status": "estimated_from_linked_fills",
+                "linked_fill_count": 1,
+            }
+        ],
+    )
+
+    row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
+
+    assert row.has_strategy_attribution_evidence is True
+    assert row.strategy_attribution_status == "estimated_from_linked_fills"
+    assert row.missing_requirements == []
+    assert row.promotion_status == "promotable_for_paper_review"

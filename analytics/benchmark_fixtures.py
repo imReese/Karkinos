@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-import strategy.examples  # noqa: F401
+import strategy.builtins  # noqa: F401
 from analytics.oos_validation import build_out_of_sample_validation
 from backtest.engine import BacktestEngine
 from core.event_bus import EventBus

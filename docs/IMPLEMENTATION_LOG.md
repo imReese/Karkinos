@@ -4,6 +4,35 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v0.8 Progress
+
+* 2026-06-18: Added the first account strategy assignment and attribution loop.
+  `/api/account-strategy` can read and update a research-only assignment while
+  forcing `auto_trade_enabled=false`; attribution and contribution endpoints
+  link available signal, risk, order, fill, fee, and valuation evidence without
+  mutating ledger, broker, order, fill, or position state. Backtest Web now
+  starts with the strategy catalog, shows the current account assignment, and
+  surfaces attribution/contribution status as audit evidence rather than a
+  profitability claim.
+* 2026-06-18: Connected strategy attribution readiness into promotion and
+  decision gates. Strategy promotion readiness blocks an assigned strategy when
+  attribution evidence is pending; Decision summaries and candidate cards now
+  surface the strategy-attribution gate and fall back to review-required when
+  a strategy-driven candidate lacks linked contribution evidence. Backend and
+  frontend deterministic tests cover the degraded decision state and visible
+  gate status without changing broker submission, trading defaults, or manual
+  confirmation requirements.
+* 2026-06-18: Added Strategy Assignment acceptance audit coverage to the shared
+  capability registry. `build_strategy_assignment_acceptance_audit()` and
+  `scripts/export_acceptance_audit.py --audit strategy_assignment` map the
+  completed v0.8 checklist items to deterministic backend, frontend, and
+  documentation evidence while leaving unfinished roadmap items visible in
+  `docs/ROADMAP.md`.
+* 2026-06-18: Completed account, asset-class, and symbol scope handling for
+  account strategy assignment updates. Asset-class assignments now persist the
+  selected class and filter attribution evidence by matching signal asset
+  class, with deterministic route tests covering the boundary.
+
 ## v0.7 Progress
 
 * 2026-06-18: Started Account Truth Review Center with read-only review APIs.
@@ -297,3 +326,15 @@ roadmap promises.
 * 2026-06-15: Tightened the holding-detail page header.
 * 2026-06-15: Added account-level manual trade commission configuration.
 * 2026-06-15: Fixed return-calendar detail labels for aggregated periods.
+* 2026-06-18: Added research-only account strategy assignment and attribution
+  evidence surfaces without enabling automatic trading.
+* 2026-06-18: Added a strategy contribution estimate API and Backtest surface
+  that separates linked-fill unrealized P/L, commission, slippage, and net
+  contribution while excluding manual trades, cash flows, and missing-evidence
+  movement by default.
+* 2026-06-18: Added five-tier Backtest P/L attribution status copy for account
+  strategy evidence: not started, partial, stale, blocked, and complete.
+* 2026-06-18: Extended account strategy attribution evidence references across
+  signal, action, risk, review, order, and fill records.
+* 2026-06-18: Added evidence-gated strategy contribution surfaces to Overview
+  and Portfolio while reusing Backtest and Decision attribution gates.

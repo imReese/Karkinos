@@ -499,9 +499,9 @@ const strategyCatalog = [
 ];
 
 const extensionStrategy = {
-  strategy_id: 'local_momentum',
-  name: 'local_momentum',
-  display_name: 'Local Momentum Extension',
+  strategy_id: 'custom_momentum',
+  name: 'custom_momentum',
+  display_name: 'Custom Momentum Extension',
   description: 'Private local extension strategy loaded from a manifest.',
   params: [
     {
@@ -586,6 +586,8 @@ const strategyPromotionReadiness = {
       has_account_truth_evidence: true,
       account_truth_gate_status: 'pass',
       account_truth_score: 98,
+      has_strategy_attribution_evidence: false,
+      strategy_attribution_status: 'evidence_linked_pnl_pending',
       missing_requirements: [],
       promotion_status: 'ready',
       is_promotable: true,
@@ -601,6 +603,8 @@ const strategyPromotionReadiness = {
       has_account_truth_evidence: false,
       account_truth_gate_status: 'unknown',
       account_truth_score: null,
+      has_strategy_attribution_evidence: true,
+      strategy_attribution_status: 'not_evaluated',
       missing_requirements: [
         'paper_shadow_evidence',
         'account_truth_gate_pass',
@@ -625,15 +629,74 @@ function installBacktestFetchMock({
   compareFails = false,
   results = [savedSummary],
   strategies = strategyCatalog,
+  accountStrategy = {
+    strategy_id: 'dual_ma',
+    strategy_name: 'dual_ma',
+    status: 'research_only',
+    scope: 'account',
+    symbol: null,
+    effective_from: null,
+    auto_trade_enabled: false,
+    attribution_status: 'not_started',
+    attributed_pnl: null,
+    realized_pnl: null,
+    unrealized_pnl: null,
+    total_fees: null,
+    notes: '',
+    updated_at: '2026-06-18T10:00:00+08:00',
+    limitations: [
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    ],
+  },
+  accountStrategyAttribution = {
+    strategy_id: 'dual_ma',
+    attribution_status: 'evidence_linked_pnl_pending',
+    signal_count: 1,
+    action_count: 1,
+    risk_decision_count: 1,
+    order_count: 1,
+    fill_count: 1,
+    unattributed_fill_count: 0,
+    total_fees: 6.5,
+    attributed_pnl: null,
+    realized_pnl: null,
+    unrealized_pnl: null,
+    evidence_refs: ['signal:1', 'order:ORD-ATTR-1', 'fill:FILL-ATTR-1'],
+    limitations: [
+      'P/L contribution is not calculated until fills are reconciled with position and valuation history.',
+    ],
+  },
+  accountStrategyContribution = {
+    strategy_id: 'dual_ma',
+    contribution_status: 'estimated_from_linked_fills',
+    linked_fill_count: 1,
+    gross_realized_pnl: 0,
+    gross_unrealized_pnl: 23,
+    total_commission: 5,
+    total_slippage: 1.5,
+    total_tax: 0,
+    net_contribution: 16.5,
+    unattributed_account_pnl: null,
+    manual_unattributed_pnl: null,
+    cash_flow_pnl: null,
+    missing_valuation_symbols: [],
+    evidence_refs: ['fill:FILL-ATTR-1'],
+    limitations: [
+      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+    ],
+  },
 }: {
   runFails?: boolean;
   sweepFails?: boolean;
   compareFails?: boolean;
   results?: unknown[];
   strategies?: unknown[];
+  accountStrategy?: unknown;
+  accountStrategyAttribution?: unknown;
+  accountStrategyContribution?: unknown;
 } = {}) {
   const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, _init?: RequestInit) => {
+    async (input: RequestInfo | URL, init?: RequestInit) => {
       const url =
         typeof input === 'string'
           ? input
@@ -649,6 +712,37 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/backtest/strategy-promotion-readiness')) {
         return jsonResponse(strategyPromotionReadiness);
+      }
+      if (url.includes('/api/account-strategy/attribution')) {
+        return jsonResponse(accountStrategyAttribution);
+      }
+      if (url.includes('/api/account-strategy/contribution')) {
+        return jsonResponse(accountStrategyContribution);
+      }
+      if (url.includes('/api/account-strategy')) {
+        if (init?.method === 'PUT') {
+          const payload = JSON.parse(String(init.body ?? '{}'));
+          return jsonResponse({
+            strategy_id: payload.strategy_id,
+            strategy_name: payload.strategy_id,
+            status: payload.status ?? 'research_only',
+            scope: payload.scope ?? 'account',
+            symbol: payload.symbol ?? null,
+            effective_from: payload.effective_from ?? null,
+            auto_trade_enabled: false,
+            attribution_status: 'assignment_only',
+            attributed_pnl: null,
+            realized_pnl: null,
+            unrealized_pnl: null,
+            total_fees: null,
+            notes: payload.notes ?? '',
+            updated_at: '2026-06-18T11:00:00+08:00',
+            limitations: [
+              'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+            ],
+          });
+        }
+        return jsonResponse(accountStrategy);
       }
       if (url.includes('/api/backtest/run')) {
         return runFails
@@ -739,6 +833,186 @@ test('renders the backtest workspace and saved report history', async () => {
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
 });
 
+test('shows current account strategy without claiming live attribution', async () => {
+  renderBacktestPage({
+    accountStrategy: {
+      strategy_id: 'dual_ma',
+      strategy_name: 'dual_ma',
+      status: 'research_only',
+      scope: 'account',
+      symbol: null,
+      effective_from: null,
+      auto_trade_enabled: false,
+      attribution_status: 'not_started',
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      total_fees: null,
+      notes: '',
+      updated_at: '2026-06-18T10:00:00+08:00',
+      limitations: [
+        'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Current account strategy')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Dual Moving Average')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(await screen.findByText('Research only')).toBeTruthy();
+  expect(await screen.findByText('Auto trading off')).toBeTruthy();
+  expect(await screen.findByText('Attribution not started')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    ),
+  ).toBeTruthy();
+});
+
+test('shows account strategy attribution evidence without claiming pnl', async () => {
+  renderBacktestPage({ results: [] });
+
+  expect(await screen.findByText('Attribution evidence')).toBeTruthy();
+  expect(await screen.findByText('Signal / action / risk')).toBeTruthy();
+  expect(await screen.findByText('1 / 1 / 1')).toBeTruthy();
+  expect(await screen.findByText('Orders / fills')).toBeTruthy();
+  expect(await screen.findByText('1 / 1')).toBeTruthy();
+  expect(await screen.findByText('Evidence linked, P/L pending')).toBeTruthy();
+  expect((await screen.findAllByText(/6\.50/)).length).toBeGreaterThan(0);
+  expect(
+    await screen.findByText(
+      'P/L contribution is not calculated until fills are reconciled with position and valuation history.',
+    ),
+  ).toBeTruthy();
+});
+
+test('shows account strategy contribution estimates with explicit exclusions', async () => {
+  renderBacktestPage({ results: [] });
+
+  expect(await screen.findByText('Contribution report')).toBeTruthy();
+  expect(await screen.findByText('Gross unrealized P/L')).toBeTruthy();
+  expect(await screen.findByText(/23\.00/)).toBeTruthy();
+  expect(await screen.findByText('Commission / slippage')).toBeTruthy();
+  expect(await screen.findByText(/5\.00 \/ .*1\.50/)).toBeTruthy();
+  expect(await screen.findByText('Tax / excluded movement')).toBeTruthy();
+  expect(await screen.findByText(/0\.00 \/ --/)).toBeTruthy();
+  expect(await screen.findByText('Net contribution')).toBeTruthy();
+  expect(await screen.findByText(/16\.50/)).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+    ),
+  ).toBeTruthy();
+});
+
+test('explains account strategy pnl attribution tier and source statuses', async () => {
+  renderBacktestPage({
+    results: [],
+    accountStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      attribution_status: 'blocked',
+      signal_count: 1,
+      action_count: 1,
+      risk_decision_count: 1,
+      order_count: 1,
+      fill_count: 0,
+      unattributed_fill_count: 0,
+      total_fees: 0,
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      evidence_refs: ['signal:1', 'order:ORD-PENDING'],
+      limitations: ['Order evidence is present, but fills are blocked.'],
+    },
+    accountStrategyContribution: {
+      strategy_id: 'dual_ma',
+      contribution_status: 'valuation_missing',
+      linked_fill_count: 0,
+      gross_realized_pnl: 0,
+      gross_unrealized_pnl: 0,
+      total_commission: 0,
+      total_slippage: 0,
+      total_tax: 0,
+      net_contribution: 0,
+      unattributed_account_pnl: null,
+      manual_unattributed_pnl: null,
+      cash_flow_pnl: null,
+      missing_valuation_symbols: ['600519'],
+      evidence_refs: [],
+      limitations: ['Local valuation is missing for linked evidence.'],
+    },
+  });
+
+  expect(await screen.findByText('P/L attribution status')).toBeTruthy();
+  expect(await screen.findByText('Blocked attribution')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Attribution blocked')).length,
+  ).toBeGreaterThan(0);
+  expect(await screen.findByText('Valuation stale / missing')).toBeTruthy();
+  expect(await screen.findByText('Source status: blocked')).toBeTruthy();
+  expect(
+    await screen.findByText('Contribution status: Valuation missing'),
+  ).toBeTruthy();
+});
+
+test('selects a strategy from the visible strategy catalog', async () => {
+  renderBacktestPage({ results: [] });
+
+  expect(await screen.findByText('Available strategies')).toBeTruthy();
+  const selectBollinger = await screen.findByRole('button', {
+    name: 'Select Bollinger Mean Reversion',
+  });
+  fireEvent.click(selectBollinger);
+
+  expect(
+    await screen.findByLabelText('Bollinger lookback window'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Standard-deviation multiplier'),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText('Short moving-average window')).toBeNull();
+});
+
+test('assigns the selected strategy as research-only account context', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Select Bollinger Mean Reversion',
+    }),
+  );
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Set as account research strategy',
+    }),
+  );
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([url, init]) => {
+        if (!String(url).includes('/api/account-strategy')) {
+          return false;
+        }
+        const method = (init as RequestInit | undefined)?.method;
+        if (method !== 'PUT') {
+          return false;
+        }
+        const payload = JSON.parse(
+          String((init as RequestInit | undefined)?.body ?? '{}'),
+        );
+        return (
+          payload.strategy_id === 'bollinger' &&
+          payload.status === 'research_only' &&
+          payload.scope === 'account'
+        );
+      }),
+    ).toBe(true);
+  });
+  expect(await screen.findByText('Assignment only')).toBeTruthy();
+  expect(screen.getByText('Auto trading off')).toBeTruthy();
+});
+
 test('shows account-truth gate status in strategy promotion readiness', async () => {
   renderBacktestPage({ results: [] });
 
@@ -749,6 +1023,14 @@ test('shows account-truth gate status in strategy promotion readiness', async ()
   expect(await screen.findByText('pass · 98')).toBeTruthy();
   expect(await screen.findByText('unknown · --')).toBeTruthy();
   expect(await screen.findByText(/account_truth_gate_pass/)).toBeTruthy();
+});
+
+test('shows strategy attribution gate status in strategy promotion readiness', async () => {
+  renderBacktestPage({ results: [] });
+
+  expect(await screen.findByText('Strategy attribution gate')).toBeTruthy();
+  expect(await screen.findByText('evidence_linked_pnl_pending')).toBeTruthy();
+  expect(await screen.findByText('Attribution pending')).toBeTruthy();
 });
 
 test('defaults strategy parameters to chinese for chinese browser locales', async () => {
@@ -769,7 +1051,9 @@ test('defaults strategy parameters to chinese for chinese browser locales', asyn
 test('switches strategy schema controls from the registry', async () => {
   renderBacktestPage({ results: [] });
 
-  await screen.findByText('Bollinger Mean Reversion');
+  expect(
+    (await screen.findAllByText('Bollinger Mean Reversion')).length,
+  ).toBeGreaterThanOrEqual(1);
   const strategySelect = screen.getByLabelText('Strategy');
   fireEvent.change(strategySelect, { target: { value: 'bollinger' } });
 
@@ -788,15 +1072,20 @@ test('renders extension strategy metadata and submits its typed params', async (
     strategies: [...strategyCatalog, extensionStrategy],
   });
 
-  await screen.findByText('Local Momentum Extension');
+  expect(
+    (await screen.findAllByText('Custom Momentum Extension')).length,
+  ).toBeGreaterThanOrEqual(1);
   const strategySelect = screen.getByLabelText('Strategy');
-  fireEvent.change(strategySelect, { target: { value: 'local_momentum' } });
+  fireEvent.change(strategySelect, { target: { value: 'custom_momentum' } });
 
   expect(await screen.findByLabelText('Lookback Window')).toBeTruthy();
   expect(await screen.findByText('Strategy metadata')).toBeTruthy();
   expect(await screen.findByText('stock, etf')).toBeTruthy();
   expect((await screen.findAllByText('1d')).length).toBeGreaterThanOrEqual(1);
-  expect(await screen.findByText('custom_momentum_research')).toBeTruthy();
+  expect(
+    await screen.findByText('Custom momentum research benchmark'),
+  ).toBeTruthy();
+  expect(screen.queryByText('custom_momentum_research')).toBeNull();
   expect(
     (await screen.findAllByText('OOS required')).length,
   ).toBeGreaterThanOrEqual(1);
@@ -830,7 +1119,7 @@ test('renders extension strategy metadata and submits its typed params', async (
     String(url).includes('/api/backtest/run'),
   );
   const payload = JSON.parse(String(runCall?.[1]?.body));
-  expect(payload.strategy).toBe('local_momentum');
+  expect(payload.strategy).toBe('custom_momentum');
   expect(payload.params).toEqual({ lookback_window: 21 });
   expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
 });
@@ -851,7 +1140,9 @@ test('localizes built-in strategy names without changing strategy ids', async ()
 
   expect(await screen.findByText('策略回放')).toBeTruthy();
   expect(await screen.findByDisplayValue('双均线策略')).toBeTruthy();
-  expect(await screen.findByText('布林带均值回归')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('布林带均值回归')).length,
+  ).toBeGreaterThanOrEqual(1);
   expect(
     await screen.findByText(
       '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
@@ -991,7 +1282,7 @@ test('renders persisted strategy metadata for saved reports', async () => {
     1,
   );
   expect(
-    (await screen.findAllByText('etf_rotation_trend_following')).length,
+    (await screen.findAllByText('ETF trend-following benchmark')).length,
   ).toBeGreaterThanOrEqual(1);
   expect((await screen.findAllByText('etf')).length).toBeGreaterThanOrEqual(1);
   expect((await screen.findAllByText('1d')).length).toBeGreaterThanOrEqual(1);
@@ -1062,7 +1353,7 @@ test('renders after-cost and out-of-sample evidence for saved reports', async ()
   expect(await screen.findByText('After-cost evidence')).toBeTruthy();
   expect(await screen.findByText('Out-of-sample split')).toBeTruthy();
   expect(
-    (await screen.findAllByText('etf_rotation_trend_following')).length,
+    (await screen.findAllByText('ETF trend-following benchmark')).length,
   ).toBeGreaterThanOrEqual(1);
   expect(await screen.findByText('Benchmark passed')).toBeTruthy();
   expect(await screen.findByText('2025-09-01 00:00')).toBeTruthy();

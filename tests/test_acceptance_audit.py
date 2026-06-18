@@ -7,6 +7,7 @@ from analytics.acceptance_audit import (
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
     build_research_evidence_acceptance_audit,
+    build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
 )
 
@@ -170,6 +171,43 @@ def test_account_truth_review_goal_checkboxes_match_audit() -> None:
     completed_checkboxes = [
         line
         for line in account_truth_review_acceptance.splitlines()
+        if line.startswith("* [x]")
+    ]
+    assert audit.required_count == len(completed_checkboxes)
+
+
+def test_strategy_assignment_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
+    None
+):
+    audit = build_strategy_assignment_acceptance_audit()
+
+    assert audit.required_count == 15
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert "not investment advice" in audit.limitations[0]
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_strategy_assignment_goal_completed_checkboxes_match_audit() -> None:
+    audit = build_strategy_assignment_acceptance_audit()
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    strategy_assignment_acceptance = roadmap_text.split(
+        "### Acceptance Criteria for v0.8", 1
+    )[1]
+
+    assert audit.is_complete is True
+    for criterion in audit.criteria:
+        assert criterion.checkbox_text in strategy_assignment_acceptance
+
+    completed_checkboxes = [
+        line
+        for line in strategy_assignment_acceptance.splitlines()
         if line.startswith("* [x]")
     ]
     assert audit.required_count == len(completed_checkboxes)

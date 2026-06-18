@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_registry_exposes_benchmark_strategy_metadata():
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
 
     info_by_name = {entry["name"]: entry for entry in StrategyRegistry.get_info()}
@@ -30,7 +30,7 @@ def test_registry_exposes_benchmark_strategy_metadata():
 
 
 def test_unmapped_strategy_metadata_has_no_benchmark_role():
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
 
     info_by_name = {entry["name"]: entry for entry in StrategyRegistry.get_info()}

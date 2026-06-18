@@ -6,22 +6,22 @@ import pytest
 
 
 def test_discovers_extension_manifest_with_typed_metadata(tmp_path):
-    import strategy.examples  # noqa: F401
+    import strategy.builtins  # noqa: F401
     from strategy.registry import StrategyRegistry
 
     extension_dir = tmp_path / "extensions"
     extension_dir.mkdir()
-    (extension_dir / "local_momentum.strategy.json").write_text(
+    (extension_dir / "custom_momentum.strategy.json").write_text(
         json.dumps(
             {
                 "schema_version": "karkinos.strategy.v1",
-                "strategy_id": "local_momentum",
-                "display_name": "Local Momentum",
+                "strategy_id": "custom_momentum",
+                "display_name": "Custom Momentum",
                 "description": "Local transparent momentum research strategy.",
-                "class_path": "strategy.examples.rsi:RSIStrategy",
+                "class_path": "strategy.builtins.rsi:RSIStrategy",
                 "asset_universe": ["stock"],
                 "supported_frequencies": ["1d"],
-                "benchmark_role": "local_research_momentum",
+                "benchmark_role": "custom_research_momentum",
                 "benchmark_universe": ["stock"],
                 "requires_out_of_sample_validation": True,
                 "requires_after_cost_report": True,
@@ -55,14 +55,14 @@ def test_discovers_extension_manifest_with_typed_metadata(tmp_path):
     StrategyRegistry.discover_extensions(extension_dir, force=True)
 
     info_by_id = {entry["strategy_id"]: entry for entry in StrategyRegistry.get_info()}
-    local_momentum = info_by_id["local_momentum"]
-    params = {param["name"]: param for param in local_momentum["parameter_schema"]}
+    custom_momentum = info_by_id["custom_momentum"]
+    params = {param["name"]: param for param in custom_momentum["parameter_schema"]}
 
-    assert local_momentum["display_name"] == "Local Momentum"
-    assert local_momentum["asset_universe"] == ["stock"]
-    assert local_momentum["supported_frequencies"] == ["1d"]
-    assert local_momentum["benchmark_role"] == "local_research_momentum"
-    assert local_momentum["requires_out_of_sample_validation"] is True
+    assert custom_momentum["display_name"] == "Custom Momentum"
+    assert custom_momentum["asset_universe"] == ["stock"]
+    assert custom_momentum["supported_frequencies"] == ["1d"]
+    assert custom_momentum["benchmark_role"] == "custom_research_momentum"
+    assert custom_momentum["requires_out_of_sample_validation"] is True
     assert params["lookback"] == {
         "name": "lookback",
         "type": "int",
@@ -74,7 +74,7 @@ def test_discovers_extension_manifest_with_typed_metadata(tmp_path):
         "description": "Momentum lookback window in trading bars.",
     }
     assert StrategyRegistry.validate_params(
-        "local_momentum",
+        "custom_momentum",
         {"lookback": "30", "signal_mode": "breakout"},
     ) == {"lookback": 30, "signal_mode": "breakout"}
 
@@ -94,7 +94,7 @@ def test_rejects_extension_manifest_that_requests_live_execution(tmp_path):
                 "strategy_id": "unsafe_extension",
                 "display_name": "Unsafe Extension",
                 "description": "Should never register.",
-                "class_path": "strategy.examples.rsi:RSIStrategy",
+                "class_path": "strategy.builtins.rsi:RSIStrategy",
                 "allow_live_trading": True,
                 "parameters": [],
             }
