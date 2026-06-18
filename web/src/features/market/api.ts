@@ -122,6 +122,41 @@ export type MarketQuoteRefreshResponse = {
   has_persistent_cache?: boolean;
 };
 
+export type QuoteFetchRun = {
+  run_id: string;
+  trigger: string;
+  provider: string | null;
+  asset_type: string | null;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  symbol_count: number;
+  success_count: number;
+  failure_count: number;
+  cache_hit_count: number;
+  error_message: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+export type InstrumentMetadataBackfillResponse = {
+  provider: string;
+  requested_count: number;
+  updated_count: number;
+  skipped_count: number;
+  failed_count: number;
+};
+
+export type MarketBarsBackfillResponse = {
+  provider: string;
+  interval: string;
+  start: string;
+  end: string;
+  requested_count: number;
+  updated_count: number;
+  cached_count: number;
+  failed_count: number;
+};
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -224,6 +259,52 @@ export function useRefreshMarketQuotesMutation() {
           queryKey: ['account-equity-curve-series'],
         }),
         queryClient.invalidateQueries({ queryKey: ['account-state'] }),
+      ]);
+    },
+  });
+}
+
+export function useQuoteFetchRunsQuery() {
+  return useQuery({
+    queryKey: ['market-quote-fetch-runs'],
+    queryFn: () =>
+      apiClient<QuoteFetchRun[]>('/api/market/quote-fetch-runs?limit=8'),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useInstrumentMetadataBackfillMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<InstrumentMetadataBackfillResponse>(
+        '/api/market/instrument-metadata/backfill',
+        { force: false },
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+        queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
+      ]);
+    },
+  });
+}
+
+export function useMarketBarsBackfillMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<MarketBarsBackfillResponse>('/api/market/bars/backfill', {
+        interval: '1d',
+        force: false,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['market-kline'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['market-quote-fetch-runs'],
+        }),
       ]);
     },
   });

@@ -49,6 +49,93 @@ def _market_event(
     )
 
 
+def _scheduler_config(**overrides):
+    values = {
+        "data_source": "akshare",
+        "live_poll_interval": 0,
+        "initial_cash": Decimal("100000"),
+        "start_date": "2026-01-01",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def _scheduler_runtime(
+    *,
+    data_source: str = "akshare",
+    watchlist: list[tuple[Symbol, AssetClass]] | None = None,
+    instruments: dict | None = None,
+    data_manager=None,
+):
+    return SimpleNamespace(
+        sources={
+            data_source: object(),
+            "akshare": object(),
+        },
+        watchlist=(
+            [(Symbol("600519"), AssetClass.STOCK)]
+            if watchlist is None
+            else watchlist
+        ),
+        instruments={} if instruments is None else instruments,
+        data_manager=data_manager if data_manager is not None else SimpleNamespace(),
+    )
+
+
+def _empty_fund_nav_sync(config, db, watchlist, latest_quotes):
+    return SimpleNamespace(
+        refreshed=[],
+        skipped=[],
+        failed={},
+        quotes={},
+    )
+
+
+def _stub_scheduler_dependencies(
+    monkeypatch,
+    scheduler_module,
+    *,
+    runtime,
+    strategy_factory=None,
+    market_open: bool = True,
+    rebuild_portfolio=None,
+    fund_nav_sync=None,
+):
+    monkeypatch.setattr(
+        scheduler_module,
+        "create_runtime_context",
+        lambda config: runtime,
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "build_strategy",
+        lambda config, bus: (
+            strategy_factory(bus) if strategy_factory is not None else FakeStrategy()
+        ),
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_warmup_strategy",
+        lambda self, data_manager, strategy: None,
+    )
+    monkeypatch.setattr(
+        scheduler_module.TradingScheduler,
+        "_is_market_open",
+        staticmethod(lambda: market_open),
+    )
+    if rebuild_portfolio is not None:
+        monkeypatch.setattr(
+            scheduler_module,
+            "rebuild_portfolio_from_ledger",
+            rebuild_portfolio,
+        )
+    monkeypatch.setattr(
+        scheduler_module,
+        "refresh_fund_nav_quotes",
+        fund_nav_sync or _empty_fund_nav_sync,
+    )
+
+
 def _run_scheduler_once(
     monkeypatch,
     tmp_path,
@@ -69,21 +156,8 @@ def _run_scheduler_once(
     events = events or []
     snapshots = snapshots or {}
 
-    config = SimpleNamespace(
-        data_source=data_source,
-        live_poll_interval=0,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
-    runtime = SimpleNamespace(
-        sources={
-            data_source: object(),
-            "akshare": object(),
-        },
-        watchlist=watchlist,
-        instruments={},
-        data_manager=SimpleNamespace(),
-    )
+    config = _scheduler_config(data_source=data_source)
+    runtime = _scheduler_runtime(data_source=data_source, watchlist=watchlist)
 
     holder = {}
 
@@ -103,46 +177,13 @@ def _run_scheduler_once(
         def get_last_snapshot(self, symbol, asset_class=AssetClass.STOCK):
             return snapshots.get((str(symbol), asset_class), {})
 
-    monkeypatch.setattr(
-        scheduler_module,
-        "create_runtime_context",
-        lambda config: runtime,
-    )
     monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
-    monkeypatch.setattr(
+    _stub_scheduler_dependencies(
+        monkeypatch,
         scheduler_module,
-        "build_strategy",
-        lambda config, bus: (
-            strategy_factory(bus) if strategy_factory is not None else FakeStrategy()
-        ),
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_warmup_strategy",
-        lambda self, data_manager, strategy: None,
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_is_market_open",
-        staticmethod(lambda: True),
-    )
-    monkeypatch.setattr(
-        scheduler_module,
-        "rebuild_portfolio_from_ledger",
-        lambda config, db, latest_quotes: None,
-    )
-    monkeypatch.setattr(
-        scheduler_module,
-        "refresh_fund_nav_quotes",
-        fund_nav_sync
-        or (
-            lambda config, db, watchlist, latest_quotes: SimpleNamespace(
-                refreshed=[],
-                skipped=[],
-                failed={},
-                quotes={},
-            )
-        ),
+        runtime=runtime,
+        strategy_factory=strategy_factory,
+        fund_nav_sync=fund_nav_sync,
     )
 
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
@@ -344,12 +385,7 @@ def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(
 def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
     from server.scheduler import TradingScheduler
 
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=120,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
+    config = _scheduler_config(live_poll_interval=120)
     scheduler = TradingScheduler(config, FakeBridge())
     scheduler._watchlist = [(Symbol("601985"), AssetClass.STOCK)]
     calls = []
@@ -395,12 +431,7 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
 ):
     from server import scheduler as scheduler_module
 
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=120,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
+    config = _scheduler_config(live_poll_interval=120)
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
@@ -487,17 +518,9 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=120,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
-    runtime = SimpleNamespace(
-        sources={"akshare": object()},
+    config = _scheduler_config(live_poll_interval=120)
+    runtime = _scheduler_runtime(
         watchlist=[(Symbol("601985"), AssetClass.STOCK)],
-        instruments={},
-        data_manager=SimpleNamespace(),
     )
     market_refresh_calls = []
     stop_waits = []
@@ -522,26 +545,12 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
                 holder["scheduler"]._running.clear()
             return False
 
-    monkeypatch.setattr(
-        scheduler_module,
-        "create_runtime_context",
-        lambda config: runtime,
-    )
     monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
-    monkeypatch.setattr(
+    _stub_scheduler_dependencies(
+        monkeypatch,
         scheduler_module,
-        "build_strategy",
-        lambda config, bus: FakeStrategy(),
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_warmup_strategy",
-        lambda self, data_manager, strategy: None,
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_is_market_open",
-        staticmethod(lambda: False),
+        runtime=runtime,
+        market_open=False,
     )
     monkeypatch.setattr(
         scheduler_module.TradingScheduler,
@@ -553,12 +562,6 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
         "_sync_fund_nav_quotes",
         lambda self: None,
     )
-    monkeypatch.setattr(
-        scheduler_module,
-        "rebuild_portfolio_from_ledger",
-        lambda config, db, latest_quotes: None,
-    )
-
     class FakeDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -583,12 +586,7 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
 def test_scheduler_strategy_warmup_does_not_fetch_remote_bars(monkeypatch):
     from server import scheduler as scheduler_module
 
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=120,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
+    config = _scheduler_config(live_poll_interval=120)
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge())
     scheduler._watchlist = [(Symbol("018125"), AssetClass.FUND)]
     calls = []
@@ -618,17 +616,9 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=0.2,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
-    runtime = SimpleNamespace(
-        sources={"akshare": object()},
+    config = _scheduler_config(live_poll_interval=0.2)
+    runtime = _scheduler_runtime(
         watchlist=[(Symbol("601985"), AssetClass.STOCK)],
-        instruments={},
-        data_manager=SimpleNamespace(),
     )
     calls = []
 
@@ -640,31 +630,11 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
             calls.append(tuple(current_watchlist))
             return []
 
-    monkeypatch.setattr(
-        scheduler_module,
-        "create_runtime_context",
-        lambda config: runtime,
-    )
     monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
-    monkeypatch.setattr(
+    _stub_scheduler_dependencies(
+        monkeypatch,
         scheduler_module,
-        "build_strategy",
-        lambda config, bus: FakeStrategy(),
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_warmup_strategy",
-        lambda self, data_manager, strategy: None,
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_is_market_open",
-        staticmethod(lambda: True),
-    )
-    monkeypatch.setattr(
-        scheduler_module,
-        "rebuild_portfolio_from_ledger",
-        lambda config, db, latest_quotes: None,
+        runtime=runtime,
     )
 
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
@@ -692,15 +662,10 @@ def test_scheduler_prefers_persistent_watchlist_over_config_assets(
         asset_class="etf",
         display_name="沪深300ETF",
     )
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=0,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
+    config = _scheduler_config(
         assets=[{"symbol": "600519", "asset_class": "stock"}],
     )
-    runtime = SimpleNamespace(
-        sources={"akshare": object()},
+    runtime = _scheduler_runtime(
         watchlist=[(Symbol("600519"), AssetClass.STOCK)],
         instruments={Symbol("600519"): object()},
         data_manager=SimpleNamespace(
@@ -718,31 +683,12 @@ def test_scheduler_prefers_persistent_watchlist_over_config_assets(
             assert current_watchlist == [(Symbol("510300"), AssetClass.FUND)]
             return []
 
-    monkeypatch.setattr(
-        scheduler_module,
-        "create_runtime_context",
-        lambda config: runtime,
-    )
     monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
-    monkeypatch.setattr(
+    _stub_scheduler_dependencies(
+        monkeypatch,
         scheduler_module,
-        "build_strategy",
-        lambda config, bus: FakeStrategy(),
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_warmup_strategy",
-        lambda self, data_manager, strategy: None,
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_is_market_open",
-        staticmethod(lambda: True),
-    )
-    monkeypatch.setattr(
-        scheduler_module,
-        "rebuild_portfolio_from_ledger",
-        lambda config, db, latest_quotes: None,
+        runtime=runtime,
+        rebuild_portfolio=lambda config, db, latest_quotes: None,
     )
 
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
@@ -771,17 +717,9 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
         note="璞泰来买入 1 手",
         source_ref="manual-603659-20260529-1416",
     )
-    config = SimpleNamespace(
-        data_source="akshare",
-        live_poll_interval=0,
-        initial_cash=Decimal("100000"),
-        start_date="2026-01-01",
-    )
-    runtime = SimpleNamespace(
-        sources={"akshare": object()},
+    config = _scheduler_config()
+    runtime = _scheduler_runtime(
         watchlist=[],
-        instruments={},
-        data_manager=SimpleNamespace(),
     )
     holder = {}
 
@@ -794,26 +732,11 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
             assert current_watchlist == [(Symbol("603659"), AssetClass.STOCK)]
             return []
 
-    monkeypatch.setattr(
-        scheduler_module,
-        "create_runtime_context",
-        lambda config: runtime,
-    )
     monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
-    monkeypatch.setattr(
+    _stub_scheduler_dependencies(
+        monkeypatch,
         scheduler_module,
-        "build_strategy",
-        lambda config, bus: FakeStrategy(),
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_warmup_strategy",
-        lambda self, data_manager, strategy: None,
-    )
-    monkeypatch.setattr(
-        scheduler_module.TradingScheduler,
-        "_is_market_open",
-        staticmethod(lambda: True),
+        runtime=runtime,
     )
 
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)

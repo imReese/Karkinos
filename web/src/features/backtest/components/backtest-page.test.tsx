@@ -536,6 +536,78 @@ const extensionStrategy = {
   validation_notes: ['Requires paper/shadow review before promotion.'],
 };
 
+const strategyValidation = {
+  required_strategy_count: 2,
+  ready_strategy_count: 1,
+  is_complete: false,
+  limitations: ['Research evidence is not a profitability guarantee.'],
+  rows: [
+    {
+      strategy_id: 'dual_ma',
+      benchmark_role: 'etf_rotation_trend_following',
+      requires_out_of_sample_validation: true,
+      requires_after_cost_report: true,
+      has_out_of_sample_validation: true,
+      has_after_cost_report: true,
+      validation_status: 'benchmark_passed',
+      backtest_result_id: 1,
+      missing_requirements: [],
+      is_ready: true,
+    },
+    {
+      strategy_id: 'bollinger',
+      benchmark_role: 'a_share_or_etf_mean_reversion',
+      requires_out_of_sample_validation: true,
+      requires_after_cost_report: true,
+      has_out_of_sample_validation: false,
+      has_after_cost_report: false,
+      validation_status: null,
+      backtest_result_id: null,
+      missing_requirements: ['after_cost_report', 'out_of_sample_validation'],
+      is_ready: false,
+    },
+  ],
+};
+
+const strategyPromotionReadiness = {
+  required_strategy_count: 2,
+  promotable_strategy_count: 1,
+  is_complete: false,
+  limitations: ['Promotion readiness is an audit signal only.'],
+  rows: [
+    {
+      strategy_id: 'dual_ma',
+      benchmark_role: 'etf_rotation_trend_following',
+      backtest_result_id: 1,
+      has_after_cost_and_oos_evidence: true,
+      has_risk_block_evidence: true,
+      has_paper_shadow_evidence: true,
+      has_paper_shadow_divergence_review: true,
+      has_account_truth_evidence: true,
+      account_truth_gate_status: 'pass',
+      account_truth_score: 0.98,
+      missing_requirements: [],
+      promotion_status: 'ready',
+      is_promotable: true,
+    },
+    {
+      strategy_id: 'bollinger',
+      benchmark_role: 'a_share_or_etf_mean_reversion',
+      backtest_result_id: null,
+      has_after_cost_and_oos_evidence: false,
+      has_risk_block_evidence: false,
+      has_paper_shadow_evidence: false,
+      has_paper_shadow_divergence_review: false,
+      has_account_truth_evidence: false,
+      account_truth_gate_status: 'unknown',
+      account_truth_score: null,
+      missing_requirements: ['paper_shadow_evidence'],
+      promotion_status: 'blocked',
+      is_promotable: false,
+    },
+  ],
+};
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -568,6 +640,12 @@ function installBacktestFetchMock({
 
       if (url.includes('/api/backtest/strategies')) {
         return jsonResponse(strategies);
+      }
+      if (url.includes('/api/backtest/strategy-validation')) {
+        return jsonResponse(strategyValidation);
+      }
+      if (url.includes('/api/backtest/strategy-promotion-readiness')) {
+        return jsonResponse(strategyPromotionReadiness);
       }
       if (url.includes('/api/backtest/run')) {
         return runFails
@@ -645,6 +723,10 @@ test('renders the backtest workspace and saved report history', async () => {
   renderBacktestPage();
 
   expect(await screen.findByText('Strategy replay')).toBeTruthy();
+  expect(
+    await screen.findByText('Validation and promotion readiness'),
+  ).toBeTruthy();
+  expect(await screen.findAllByText('1/2')).toHaveLength(2);
   expect(await screen.findByText('Backtest configuration')).toBeTruthy();
   expect(await screen.findByDisplayValue('Dual Moving Average')).toBeTruthy();
   expect(

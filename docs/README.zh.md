@@ -66,6 +66,17 @@ Decision Cockpit 和策略晋级 readiness 会把该分数作为 gate 证据；A
 CSV 格式、安全合成样例和隐私边界见
 [Account Truth 导入预览](account-truth-import.zh.md)。
 
+后端测试按 pytest marker 分层，便于本地聚焦验证：
+
+```bash
+uv run python -m pytest -m unit
+uv run python -m pytest -m api_contract
+uv run python -m pytest -m acceptance
+uv run python -m pytest -m "not slow"
+```
+
+完整验证仍使用 `uv run python -m pytest`。
+
 ## 架构
 
 ```

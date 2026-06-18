@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import {
@@ -8,10 +8,15 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import {
+  useCreateManualOrderFromActionMutation,
   useIntradayDecisionQuery,
+  useSignalActionsQuery,
+  useSignalJournalQuery,
   useTodayDecisionQuery,
+  type ActionCard,
   type DecisionCandidate,
   type DecisionResponse,
+  type SignalJournalEntry,
 } from '../api';
 
 function normalizeStatus(value: string | null | undefined) {
@@ -51,6 +56,8 @@ export function DecisionCockpitPage() {
   const labels = copy.decision;
   const today = useTodayDecisionQuery();
   const intraday = useIntradayDecisionQuery();
+  const signalActions = useSignalActionsQuery();
+  const signalJournal = useSignalJournalQuery();
   const loading = today.isLoading || intraday.isLoading;
   const error = today.error ?? intraday.error;
   const lanes = useMemo(
@@ -177,6 +184,13 @@ export function DecisionCockpitPage() {
         </div>
       </section>
 
+      <SignalQueuePanel
+        actions={signalActions.data ?? []}
+        journal={signalJournal.data ?? []}
+        loading={signalActions.isLoading || signalJournal.isLoading}
+        error={signalActions.isError || signalJournal.isError}
+      />
+
       <div
         data-testid="decision-summary-grid"
         className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4"
@@ -240,6 +254,155 @@ function StatePanel({ title, detail }: { title: string; detail: string }) {
       <div className="app-terminal-inner rounded-[27px] p-5">
         <h2 className="app-card-title">{title}</h2>
         <p className="app-muted mt-2 text-sm">{detail}</p>
+      </div>
+    </section>
+  );
+}
+
+function SignalQueuePanel({
+  actions,
+  journal,
+  loading,
+  error,
+}: {
+  actions: ActionCard[];
+  journal: SignalJournalEntry[];
+  loading: boolean;
+  error: boolean;
+}) {
+  const labels = useCopy().decision;
+  const createManualOrder = useCreateManualOrderFromActionMutation();
+  const [quantities, setQuantities] = useState<Record<number, string>>({});
+  const latestJournal = journal.slice(0, 4);
+
+  const prepareManualOrder = async (action: ActionCard) => {
+    if (action.id === null) {
+      return;
+    }
+    const quantity = Number(quantities[action.id] ?? '100');
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return;
+    }
+    await createManualOrder.mutateAsync({
+      actionId: action.id,
+      quantity,
+      price: action.price,
+      note: `Prepared from signal action ${action.id}.`,
+    });
+  };
+
+  return (
+    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.signalQueue}</div>
+            <h2 className="app-card-title mt-1.5">{labels.signalQueueTitle}</h2>
+          </div>
+          <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
+            {labels.signalQueueDetail}
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="app-muted mt-4 text-sm">{labels.loading}</div>
+        ) : error ? (
+          <div className="app-error-text mt-4 text-sm">{labels.error}</div>
+        ) : (
+          <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+            <div className="grid min-w-0 gap-2">
+              {actions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-5 text-sm text-[var(--app-muted)]">
+                  {labels.noSignalActions}
+                </div>
+              ) : (
+                actions.slice(0, 4).map((action) => (
+                  <div
+                    key={action.id ?? action.symbol}
+                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                  >
+                    <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-[var(--app-text)]">
+                          {action.title || action.symbol}
+                        </div>
+                        <div className="app-muted mt-1 break-words text-xs">
+                          {action.symbol} · {normalizeStatus(action.direction)}{' '}
+                          · {normalizeStatus(action.risk_gate_status)} ·{' '}
+                          {normalizeStatus(action.manual_confirmation_status)}
+                        </div>
+                        <div className="app-muted mt-2 break-words text-xs leading-5">
+                          {action.detail}
+                        </div>
+                      </div>
+                      {action.id !== null &&
+                      action.manual_confirmation_status ===
+                        'ready_for_manual_confirmation' ? (
+                        <div className="grid shrink-0 gap-2 sm:grid-cols-[92px_132px]">
+                          <input
+                            className="app-field rounded-2xl px-3 py-2 text-xs tabular-nums"
+                            type="number"
+                            min="1"
+                            value={quantities[action.id] ?? '100'}
+                            aria-label={`${labels.orderQuantity}: ${action.symbol}`}
+                            onChange={(event) =>
+                              setQuantities((current) => ({
+                                ...current,
+                                [action.id as number]: event.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="app-button-primary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={createManualOrder.isPending}
+                            onClick={() => void prepareManualOrder(action)}
+                          >
+                            {labels.prepareManualOrder}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4">
+              <div className="app-product-mark">{labels.signalJournal}</div>
+              <div className="mt-3 grid gap-2">
+                {latestJournal.length === 0 ? (
+                  <div className="app-muted text-sm">
+                    {labels.noSignalJournal}
+                  </div>
+                ) : (
+                  latestJournal.map((entry) => (
+                    <div
+                      key={`${entry.signal.id}-${entry.signal.timestamp}`}
+                      className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
+                    >
+                      <div className="font-semibold text-[var(--app-soft)]">
+                        {entry.signal.symbol} · {entry.signal.strategy_id}
+                      </div>
+                      <div className="app-muted mt-1 break-words">
+                        {entry.latest_event?.event_type ??
+                          entry.review?.outcome ??
+                          normalizeStatus(entry.action_task?.status)}
+                      </div>
+                      <div className="app-muted mt-1 font-mono tabular-nums">
+                        {formatTimestamp(
+                          entry.latest_event?.timestamp ??
+                            entry.review?.reviewed_at ??
+                            entry.signal.timestamp,
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

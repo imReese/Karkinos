@@ -107,7 +107,13 @@ export function EquityDrawdownChart({
 
       <div className="mt-5 grid gap-4">
         <div className="h-[320px] min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)]">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            minWidth={1}
+            minHeight={320}
+            initialDimension={{ width: 1, height: 320 }}
+          >
             <LineChart
               data={data}
               margin={{ top: 18, right: 18, bottom: 8, left: 8 }}
@@ -149,7 +155,13 @@ export function EquityDrawdownChart({
         </div>
 
         <div className="h-[150px] min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)]">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer
+            width="100%"
+            height="100%"
+            minWidth={1}
+            minHeight={150}
+            initialDimension={{ width: 1, height: 150 }}
+          >
             <AreaChart
               data={data}
               margin={{ top: 16, right: 18, bottom: 4, left: 8 }}

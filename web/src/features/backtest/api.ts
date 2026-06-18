@@ -285,6 +285,51 @@ export type BacktestReport = {
   equity_curve: BacktestEquityPoint[];
 };
 
+export type StrategyValidationRow = {
+  strategy_id: string;
+  benchmark_role: string;
+  requires_out_of_sample_validation: boolean;
+  requires_after_cost_report: boolean;
+  has_out_of_sample_validation: boolean;
+  has_after_cost_report: boolean;
+  validation_status: string | null;
+  backtest_result_id: number | null;
+  missing_requirements: string[];
+  is_ready: boolean;
+};
+
+export type StrategyValidationMatrix = {
+  required_strategy_count: number;
+  ready_strategy_count: number;
+  is_complete: boolean;
+  rows: StrategyValidationRow[];
+  limitations: string[];
+};
+
+export type StrategyPromotionReadinessRow = {
+  strategy_id: string;
+  benchmark_role: string;
+  backtest_result_id: number | null;
+  has_after_cost_and_oos_evidence: boolean;
+  has_risk_block_evidence: boolean;
+  has_paper_shadow_evidence: boolean;
+  has_paper_shadow_divergence_review: boolean;
+  has_account_truth_evidence: boolean;
+  account_truth_gate_status: string;
+  account_truth_score: number | null;
+  missing_requirements: string[];
+  promotion_status: string;
+  is_promotable: boolean;
+};
+
+export type StrategyPromotionReadiness = {
+  required_strategy_count: number;
+  promotable_strategy_count: number;
+  is_complete: boolean;
+  rows: StrategyPromotionReadinessRow[];
+  limitations: string[];
+};
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -364,6 +409,26 @@ export function useBacktestResultQuery(resultId: number | null) {
     queryFn: () =>
       apiClient<BacktestReport>(`/api/backtest/results/${resultId}`),
     enabled: resultId !== null,
+    staleTime: 10_000,
+  });
+}
+
+export function useStrategyValidationQuery() {
+  return useQuery({
+    queryKey: ['backtest-strategy-validation'],
+    queryFn: () =>
+      apiClient<StrategyValidationMatrix>('/api/backtest/strategy-validation'),
+    staleTime: 10_000,
+  });
+}
+
+export function useStrategyPromotionReadinessQuery() {
+  return useQuery({
+    queryKey: ['backtest-strategy-promotion-readiness'],
+    queryFn: () =>
+      apiClient<StrategyPromotionReadiness>(
+        '/api/backtest/strategy-promotion-readiness',
+      ),
     staleTime: 10_000,
   });
 }

@@ -8,6 +8,7 @@ type StaleReasonLabels = {
   providerUnavailable: string;
   sourceUnavailable: string;
   tushareFundNavPermissionDenied: string;
+  confirmedFundNavMissingEstimateOnly: string;
 };
 
 const STALE_REASON_KEYS: Record<string, keyof StaleReasonLabels> = {
@@ -20,6 +21,8 @@ const STALE_REASON_KEYS: Record<string, keyof StaleReasonLabels> = {
   provider_unavailable: 'providerUnavailable',
   source_unavailable: 'sourceUnavailable',
   tushare_fund_nav_permission_denied: 'tushareFundNavPermissionDenied',
+  confirmed_fund_nav_missing_estimate_only:
+    'confirmedFundNavMissingEstimateOnly',
 };
 
 export function formatStaleReason(

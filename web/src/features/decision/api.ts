@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
 
@@ -138,6 +138,87 @@ export type DecisionResponse = {
   limitations: string[];
 };
 
+export type SignalResponse = {
+  id: number | null;
+  timestamp: string;
+  strategy_id: string;
+  symbol: string;
+  direction: string;
+  target_weight: number;
+  price: number | null;
+  asset_class: string;
+};
+
+export type ActionCard = {
+  id: number | null;
+  source_signal_id: number | null;
+  symbol: string;
+  title: string;
+  detail: string;
+  direction: string;
+  urgency: string;
+  target_weight: number;
+  price: number | null;
+  strategy_id: string;
+  timestamp: string;
+  asset_class: string;
+  status: string;
+  risk_decision_id: string | null;
+  risk_gate_passed: boolean | null;
+  risk_gate_status: string;
+  risk_gate_severity: string | null;
+  risk_gate_reasons: string[];
+  manual_confirmation_required: boolean;
+  manual_confirmation_status: string;
+  manual_confirmation_reason: string;
+};
+
+export type SignalJournalEntry = {
+  signal: SignalResponse;
+  action_task: ActionCard | null;
+  risk_decision: {
+    decision_id: string;
+    passed: boolean;
+    symbol: string;
+    side: string;
+    severity: string;
+    timestamp: string;
+    reasons: string[];
+  } | null;
+  review: {
+    signal_id: number;
+    reviewed_at: string;
+    user_decision: string;
+    outcome: string;
+    review_notes: string;
+    reviewer: string | null;
+  } | null;
+  latest_event: {
+    event_type: string;
+    timestamp: string;
+    source: string;
+    source_ref: string | null;
+  } | null;
+};
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 function decisionQuery(path: string, key: readonly string[]) {
   return useQuery({
     queryKey: key,
@@ -154,4 +235,50 @@ export function useTodayDecisionQuery() {
 
 export function useIntradayDecisionQuery() {
   return decisionQuery('/api/decision/intraday', ['decision', 'intraday']);
+}
+
+export function useSignalActionsQuery() {
+  return useQuery({
+    queryKey: ['signal-actions'],
+    queryFn: () => apiClient<ActionCard[]>('/api/signals/actions'),
+    staleTime: 5_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSignalJournalQuery() {
+  return useQuery({
+    queryKey: ['signal-journal'],
+    queryFn: () => apiClient<SignalJournalEntry[]>('/api/signals/journal'),
+    staleTime: 10_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useCreateManualOrderFromActionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      actionId: number;
+      quantity: number;
+      price?: number | null;
+      order_type?: string;
+      note?: string;
+    }) =>
+      postJson(`/api/trading/actions/${payload.actionId}/manual-order`, {
+        quantity: payload.quantity,
+        price: payload.price ?? null,
+        order_type: payload.order_type ?? 'market',
+        note: payload.note ?? 'Prepared from Decision action queue.',
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['signal-actions'] }),
+        queryClient.invalidateQueries({ queryKey: ['signal-journal'] }),
+        queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
+      ]);
+    },
+  });
 }
