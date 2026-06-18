@@ -96,6 +96,8 @@ export const copy = {
         sourceUnavailable: 'Data source unavailable; using cached quote',
         tushareFundNavPermissionDenied:
           'TuShare fund_nav permission denied; using Eastmoney fund estimate',
+        confirmedFundNavMissingEstimateOnly:
+          'Confirmed fund NAV missing; using estimate',
       },
     },
     mode: {
@@ -153,6 +155,10 @@ export const copy = {
         staleReason: 'Stale reason',
         refreshPolicy: 'Refresh policy',
         quoteSource: 'Quote source',
+        affectedHoldings: 'Affected holdings',
+        affectedCount: (count: number) => `${count} holdings need review`,
+        usingEstimate: 'Using estimate',
+        waitingConfirmedNav: 'Waiting for confirmed NAV',
         checkDataSource: 'Check data source',
         refreshFailed: 'Quote refresh failed',
         refreshDone: 'Quote refresh completed',
@@ -500,6 +506,15 @@ export const copy = {
       price: 'Price',
       riskDecision: 'Risk decision',
       openTradingApprovals: 'Open Trading approvals',
+      signalQueue: 'Signal action queue',
+      signalQueueTitle: 'Signals, action tasks, and manual-order handoff',
+      signalQueueDetail:
+        'Review persisted signal actions and prepare manual orders only after risk gates mark an action ready for confirmation.',
+      signalJournal: 'Signal journal',
+      noSignalActions: 'No pending signal actions are available.',
+      noSignalJournal: 'No signal audit journal entries are available.',
+      orderQuantity: 'Order quantity',
+      prepareManualOrder: 'Prepare manual order',
     },
     trading: {
       page: {
@@ -534,6 +549,21 @@ export const copy = {
         statusRejected: 'Rejected',
         statusCanceled: 'Canceled',
         rejectConfirm: 'Reject with reason',
+        executionAudit: 'Execution audit',
+        executionAuditTitle: 'Order facts, fills, and shadow review',
+        executionAuditDetail:
+          'Review normalized order/fill evidence and manually trigger a shadow review without sending broker orders.',
+        auditLoading: 'Loading execution evidence.',
+        auditLoadFailed: 'Execution evidence is unavailable.',
+        orderFacts: 'Order facts',
+        fills: 'Fill facts',
+        noOrderFacts: 'No normalized order facts yet.',
+        noFills: 'No fill facts have been recorded yet.',
+        commission: 'Commission',
+        runShadowReview: 'Run daily shadow review',
+        runningShadowReview: 'Running shadow review',
+        shadowRunResult: (processed: number, reused: number) =>
+          `Shadow review prepared ${processed} orders and reused ${reused}.`,
       },
       killSwitch: {
         kicker: 'Trading controls',
@@ -661,6 +691,19 @@ export const copy = {
         maxDrawdown: 'Max drawdown',
         totalCost: 'Total cost',
         fillsCount: 'Fills',
+        evidenceGate: 'Research gates',
+        evidenceGateTitle: 'Validation and promotion readiness',
+        evidenceGateDetail:
+          'Review after-cost, out-of-sample, risk, paper/shadow, and account-truth evidence before treating a strategy as promotable.',
+        evidenceGateLoading: 'Loading strategy evidence gates.',
+        evidenceGateFailed: 'Strategy evidence gates are unavailable.',
+        validationMatrix: 'Validation matrix',
+        promotionReadiness: 'Promotion readiness',
+        missingRequirements: 'Missing requirements',
+        complete: 'Complete',
+        incomplete: 'Incomplete',
+        noEvidenceRows: 'No strategy evidence rows are available yet.',
+        none: 'None',
       },
       sweep: {
         kicker: 'Parameter sweep',
@@ -974,6 +1017,23 @@ export const copy = {
         'Confirm whether position size still fits conviction and cash buffer.',
         'Check whether the symbol adds opportunity or concentration risk.',
       ],
+      dataOperations: 'Data operations',
+      dataOperationsDetail:
+        'Inspect recent quote fetch runs and manually backfill metadata or daily bars when local cache coverage is incomplete.',
+      metadataBackfill: 'Backfill metadata',
+      barsBackfill: 'Backfill daily bars',
+      backfilling: 'Backfilling',
+      metadataBackfillComplete: 'Metadata backfill completed',
+      metadataBackfillFailed: 'Metadata backfill failed',
+      barsBackfillComplete: 'Daily bars backfill completed',
+      barsBackfillFailed: 'Daily bars backfill failed',
+      backfillResult: (updated: number, failed: number) =>
+        `${updated} updated, ${failed} failed`,
+      quoteFetchRunsFailed: 'Quote fetch runs are unavailable.',
+      noQuoteFetchRuns: 'No quote fetch runs have been recorded yet.',
+      successCount: 'Success',
+      failedCount: 'Failed',
+      cacheHitCount: 'Cache hits',
     },
     explainability: {
       title: 'Explainability snapshot',
@@ -1522,6 +1582,7 @@ export const copy = {
         sourceUnavailable: '数据源不可用，使用缓存行情',
         tushareFundNavPermissionDenied:
           'TuShare fund_nav 权限不足，已切换 Eastmoney 基金估算源',
+        confirmedFundNavMissingEstimateOnly: '确认净值缺失/估算中',
       },
     },
     mode: {
@@ -1575,6 +1636,10 @@ export const copy = {
         staleReason: '缓存原因',
         refreshPolicy: '刷新策略',
         quoteSource: '行情来源',
+        affectedHoldings: '影响标的',
+        affectedCount: (count: number) => `${count} 个标的需要确认`,
+        usingEstimate: '使用估算',
+        waitingConfirmedNav: '等待确认净值',
         checkDataSource: '检查数据源',
         refreshFailed: '行情刷新失败',
         refreshDone: '行情刷新完成',
@@ -1904,6 +1969,15 @@ export const copy = {
       price: '价格',
       riskDecision: '风控决策',
       openTradingApprovals: '打开交易审批',
+      signalQueue: '信号动作队列',
+      signalQueueTitle: '信号、动作任务与人工订单交接',
+      signalQueueDetail:
+        '查看已落库的信号动作；只有风控闸门标记为可人工确认后，才允许手动准备订单。',
+      signalJournal: '信号审计日志',
+      noSignalActions: '当前没有待处理的信号动作。',
+      noSignalJournal: '当前没有信号审计日志。',
+      orderQuantity: '订单数量',
+      prepareManualOrder: '准备人工订单',
     },
     trading: {
       page: {
@@ -1937,6 +2011,21 @@ export const copy = {
         statusRejected: '已拒绝',
         statusCanceled: '已取消',
         rejectConfirm: '填写原因并拒绝',
+        executionAudit: '执行审计',
+        executionAuditTitle: '订单事实、成交事实与 shadow 复核',
+        executionAuditDetail:
+          '查看归一化订单/成交证据，并手动触发 shadow 复核；不会提交券商订单。',
+        auditLoading: '正在加载执行证据。',
+        auditLoadFailed: '执行证据暂不可用。',
+        orderFacts: '订单事实',
+        fills: '成交事实',
+        noOrderFacts: '当前还没有归一化订单事实。',
+        noFills: '当前还没有成交事实。',
+        commission: '手续费',
+        runShadowReview: '运行当日 shadow 复核',
+        runningShadowReview: 'shadow 复核中',
+        shadowRunResult: (processed: number, reused: number) =>
+          `shadow 复核准备 ${processed} 笔订单，复用 ${reused} 笔。`,
       },
       killSwitch: {
         kicker: '交易控制',
@@ -2060,6 +2149,19 @@ export const copy = {
         maxDrawdown: '最大回撤',
         totalCost: '总成本',
         fillsCount: '成交数',
+        evidenceGate: '研究门槛',
+        evidenceGateTitle: '验证矩阵与晋级 readiness',
+        evidenceGateDetail:
+          '在策略可晋级前，集中查看 after-cost、样本外、风控、paper/shadow 与账户事实证据。',
+        evidenceGateLoading: '正在加载策略证据门槛。',
+        evidenceGateFailed: '策略证据门槛暂不可用。',
+        validationMatrix: '验证矩阵',
+        promotionReadiness: '晋级 readiness',
+        missingRequirements: '缺失要求',
+        complete: '已完成',
+        incomplete: '未完成',
+        noEvidenceRows: '当前还没有策略证据行。',
+        none: '无',
       },
       sweep: {
         kicker: '参数扫描',
@@ -2368,6 +2470,23 @@ export const copy = {
         '确认当前仓位是否仍匹配判断与现金缓冲。',
         '判断该标的是新增机会还是集中度来源。',
       ],
+      dataOperations: '数据运维',
+      dataOperationsDetail:
+        '查看最近行情抓取批次；当本地缓存覆盖不足时，可手动补齐元数据或日线数据。',
+      metadataBackfill: '补齐元数据',
+      barsBackfill: '补齐日线',
+      backfilling: '补齐中',
+      metadataBackfillComplete: '元数据补齐完成',
+      metadataBackfillFailed: '元数据补齐失败',
+      barsBackfillComplete: '日线补齐完成',
+      barsBackfillFailed: '日线补齐失败',
+      backfillResult: (updated: number, failed: number) =>
+        `${updated} 条更新，${failed} 条失败`,
+      quoteFetchRunsFailed: '行情抓取批次暂不可用。',
+      noQuoteFetchRuns: '当前还没有记录行情抓取批次。',
+      successCount: '成功',
+      failedCount: '失败',
+      cacheHitCount: '缓存命中',
     },
     explainability: {
       title: '解释层快照',
@@ -2798,7 +2917,8 @@ export const copy = {
       notificationFailed: '测试通知失败',
       safetyCachedQuotes:
         '缓存行情表示最新已知价格来自本地存储，可能不等于当前市场价格。',
-      safetyNoAdvice: 'Karkinos 是个人量化投研与交易平台，不构成投资建议或成交保证。',
+      safetyNoAdvice:
+        'Karkinos 是个人量化投研与交易平台，不构成投资建议或成交保证。',
       safetyPrivateData: '券商 token、账户导出和真实对账单不应进入公开仓库。',
       deferred: '暂缓项',
       deferredDetail:

@@ -91,6 +91,46 @@ test('surfaces cached quote status and homepage action paths', () => {
   ).toBe('/trading');
 });
 
+test('lists concrete holdings when fund NAV is still estimate-only', () => {
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 1,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        valuation_timestamp: '2026-06-17T22:21:00+08:00',
+        quote_status: 'stale',
+        stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+        refresh_policy: 'cache_only',
+      }}
+      quoteDiagnostics={[
+        {
+          symbol: '018125',
+          name: 'Everwin Advanced Manufacturing Fund C',
+          asset_class: 'fund',
+          quote_status: 'stale',
+          quote_source: 'eastmoney_fund_estimate',
+          stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+          quote_timestamp: '2026-06-17 15:00',
+        },
+      ]}
+      symbols={['018125']}
+    />,
+  );
+
+  expect(screen.getByText('Affected holdings')).toBeTruthy();
+  expect(
+    screen.getByText('Everwin Advanced Manufacturing Fund C'),
+  ).toBeTruthy();
+  expect(screen.getByText('018125 · Fund')).toBeTruthy();
+  expect(screen.getByText('Using estimate')).toBeTruthy();
+  expect(screen.getByText('Waiting for confirmed NAV')).toBeTruthy();
+});
+
 test('refresh action calls the market refresh endpoint with dashboard symbols', async () => {
   const user = userEvent.setup();
   const fetchMock = vi.fn().mockResolvedValue({

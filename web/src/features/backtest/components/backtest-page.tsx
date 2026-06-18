@@ -13,10 +13,14 @@ import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
   useRunBacktestMutation,
   useBacktestStrategiesQuery,
+  useStrategyPromotionReadinessQuery,
+  useStrategyValidationQuery,
   type BacktestReport,
   type BacktestRunRequest,
   type BacktestStrategyInfo,
+  type StrategyPromotionReadiness,
   type StrategyParameterSchema,
+  type StrategyValidationMatrix,
 } from '../api';
 
 function todayDate() {
@@ -212,6 +216,8 @@ export function BacktestPage() {
   const common = copy.common;
   const runBacktest = useRunBacktestMutation();
   const strategies = useBacktestStrategiesQuery();
+  const validation = useStrategyValidationQuery();
+  const readiness = useStrategyPromotionReadinessQuery();
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());
   const [initialCash, setInitialCash] = useState('100000');
@@ -301,6 +307,13 @@ export function BacktestPage() {
           </p>
         </div>
       </header>
+
+      <StrategyEvidenceGatePanel
+        validation={validation.data ?? null}
+        readiness={readiness.data ?? null}
+        loading={validation.isLoading || readiness.isLoading}
+        error={validation.isError || readiness.isError}
+      />
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(360px,0.72fr)_minmax(0,1.28fr)]">
         <section className="app-terminal-panel rounded-[28px] p-[1px]">
@@ -552,6 +565,159 @@ export function BacktestPage() {
 
       <BacktestReportView />
     </section>
+  );
+}
+
+function StrategyEvidenceGatePanel({
+  validation,
+  readiness,
+  loading,
+  error,
+}: {
+  validation: StrategyValidationMatrix | null;
+  readiness: StrategyPromotionReadiness | null;
+  loading: boolean;
+  error: boolean;
+}) {
+  const labels = useCopy().backtest.page;
+  const rows = validation?.rows ?? [];
+  const readinessRows = readiness?.rows ?? [];
+  const visibleRows = rows.slice(0, 4);
+
+  return (
+    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.evidenceGate}</div>
+            <h2 className="app-card-title mt-1.5">
+              {labels.evidenceGateTitle}
+            </h2>
+            <p className="app-muted mt-2 max-w-3xl break-words text-sm leading-6">
+              {labels.evidenceGateDetail}
+            </p>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 gap-2 text-right text-xs tabular-nums sm:min-w-72">
+            <EvidenceCount
+              label={labels.validationMatrix}
+              value={
+                validation
+                  ? `${validation.ready_strategy_count}/${validation.required_strategy_count}`
+                  : '--'
+              }
+            />
+            <EvidenceCount
+              label={labels.promotionReadiness}
+              value={
+                readiness
+                  ? `${readiness.promotable_strategy_count}/${readiness.required_strategy_count}`
+                  : '--'
+              }
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="app-muted mt-4 text-sm">
+            {labels.evidenceGateLoading}
+          </div>
+        ) : error ? (
+          <div className="app-error-text mt-4 text-sm">
+            {labels.evidenceGateFailed}
+          </div>
+        ) : visibleRows.length === 0 ? (
+          <div className="app-muted mt-4 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-5 text-sm">
+            {labels.noEvidenceRows}
+          </div>
+        ) : (
+          <div className="mt-4 min-w-0 overflow-x-auto overscroll-x-contain">
+            <table className="min-w-[760px] table-fixed text-left text-sm">
+              <thead>
+                <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[11px] uppercase tracking-[0.16em]">
+                  <th className="w-[190px] px-3 py-3">{labels.strategy}</th>
+                  <th className="w-[150px] px-3 py-3">
+                    {labels.validationMatrix}
+                  </th>
+                  <th className="w-[170px] px-3 py-3">
+                    {labels.promotionReadiness}
+                  </th>
+                  <th className="px-3 py-3">{labels.missingRequirements}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row) => {
+                  const readinessRow = readinessRows.find(
+                    (item) => item.strategy_id === row.strategy_id,
+                  );
+                  const missing = [
+                    ...row.missing_requirements,
+                    ...(readinessRow?.missing_requirements ?? []),
+                  ];
+                  return (
+                    <tr
+                      key={row.strategy_id}
+                      className="border-b border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] align-top"
+                    >
+                      <td className="px-3 py-3 font-semibold">
+                        {row.strategy_id}
+                      </td>
+                      <td className="px-3 py-3">
+                        <EvidenceBadge complete={row.is_ready}>
+                          {row.is_ready ? labels.complete : labels.incomplete}
+                        </EvidenceBadge>
+                      </td>
+                      <td className="px-3 py-3">
+                        <EvidenceBadge
+                          complete={Boolean(readinessRow?.is_promotable)}
+                        >
+                          {readinessRow?.promotion_status ?? labels.notDeclared}
+                        </EvidenceBadge>
+                      </td>
+                      <td className="px-3 py-3 text-xs leading-5 text-[var(--app-muted)]">
+                        {missing.length > 0
+                          ? Array.from(new Set(missing)).join(' · ')
+                          : labels.none}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function EvidenceCount({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2">
+      <div className="app-muted text-[11px]">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceBadge({
+  complete,
+  children,
+}: {
+  complete: boolean;
+  children: string;
+}) {
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+        complete
+          ? 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
+          : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]'
+      }`}
+    >
+      {children}
+    </span>
   );
 }
 

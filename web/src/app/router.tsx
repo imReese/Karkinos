@@ -101,11 +101,15 @@ import {
   useCreateResearchNoteMutation,
   useUpdateResearchNoteMutation,
   useDeleteResearchNoteMutation,
+  useInstrumentMetadataBackfillMutation,
   useKlineQuery,
+  useMarketBarsBackfillMutation,
   useMarketDataHealthQuery,
+  useQuoteFetchRunsQuery,
   useResearchBoardQuery,
   useResearchNotesQuery,
   useRemoveWatchlistItemMutation,
+  type QuoteFetchRun,
 } from '../features/market/api';
 import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
 import { PriceStructureChart } from '../features/market/components/price-structure-chart';
@@ -344,6 +348,7 @@ export function OverviewPage() {
             overview={enhancedOverview}
             marketHealth={marketHealth.data}
             symbols={positions.map((position) => position.symbol)}
+            quoteDiagnostics={positions}
           />
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -1158,13 +1163,16 @@ export function RiskPage() {
   );
 }
 
-function MarketPage() {
+export function MarketPage() {
   const copy = useCopy();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const board = useResearchBoardQuery();
   const addWatchlistItem = useAddWatchlistItemMutation();
   const removeWatchlistItem = useRemoveWatchlistItemMutation();
   const createResearchNote = useCreateResearchNoteMutation();
+  const quoteFetchRuns = useQuoteFetchRunsQuery();
+  const metadataBackfill = useInstrumentMetadataBackfillMutation();
+  const barsBackfill = useMarketBarsBackfillMutation();
   const [selectedSymbol, setSelectedSymbol] = useState('');
   const [newSymbol, setNewSymbol] = useState('');
   const [newAssetClass, setNewAssetClass] = useState('stock');
@@ -1650,6 +1658,51 @@ function MarketPage() {
                     ))}
                   </div>
                 </div>
+                <MarketDataOperationsPanel
+                  runs={quoteFetchRuns.data ?? []}
+                  loading={quoteFetchRuns.isLoading}
+                  error={quoteFetchRuns.isError}
+                  metadataPending={metadataBackfill.isPending}
+                  barsPending={barsBackfill.isPending}
+                  onMetadataBackfill={async () => {
+                    try {
+                      const result = await metadataBackfill.mutateAsync();
+                      pushToast(
+                        'success',
+                        copy.market.metadataBackfillComplete,
+                        copy.market.backfillResult(
+                          result.updated_count,
+                          result.failed_count,
+                        ),
+                      );
+                    } catch (error) {
+                      pushToast(
+                        'error',
+                        copy.market.metadataBackfillFailed,
+                        getErrorMessage(error),
+                      );
+                    }
+                  }}
+                  onBarsBackfill={async () => {
+                    try {
+                      const result = await barsBackfill.mutateAsync();
+                      pushToast(
+                        'success',
+                        copy.market.barsBackfillComplete,
+                        copy.market.backfillResult(
+                          result.updated_count,
+                          result.failed_count,
+                        ),
+                      );
+                    } catch (error) {
+                      pushToast(
+                        'error',
+                        copy.market.barsBackfillFailed,
+                        getErrorMessage(error),
+                      );
+                    }
+                  }}
+                />
               </div>
             </div>
 
@@ -2776,6 +2829,100 @@ function ExplainabilityWorkspace({
       {showReturnCalendar ? (
         <ReturnCalendarCard timeline={explainability?.timeline ?? []} />
       ) : null}
+    </div>
+  );
+}
+
+function MarketDataOperationsPanel({
+  runs,
+  loading,
+  error,
+  metadataPending,
+  barsPending,
+  onMetadataBackfill,
+  onBarsBackfill,
+}: {
+  runs: QuoteFetchRun[];
+  loading: boolean;
+  error: boolean;
+  metadataPending: boolean;
+  barsPending: boolean;
+  onMetadataBackfill: () => Promise<void>;
+  onBarsBackfill: () => Promise<void>;
+}) {
+  const copy = useCopy();
+  return (
+    <div className="app-panel rounded-2xl p-4 sm:p-5">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {copy.market.dataOperations}
+          </div>
+          <p className="app-muted mt-2 break-words text-sm leading-6">
+            {copy.market.dataOperationsDetail}
+          </p>
+        </div>
+        <div className="grid shrink-0 grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="app-button-secondary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={metadataPending}
+            onClick={() => void onMetadataBackfill()}
+          >
+            {metadataPending
+              ? copy.market.backfilling
+              : copy.market.metadataBackfill}
+          </button>
+          <button
+            type="button"
+            className="app-button-secondary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={barsPending}
+            onClick={() => void onBarsBackfill()}
+          >
+            {barsPending ? copy.market.backfilling : copy.market.barsBackfill}
+          </button>
+        </div>
+      </div>
+      {loading ? (
+        <div className="app-muted mt-4 text-sm">{copy.states.loading}</div>
+      ) : error ? (
+        <div className="app-error-text mt-4 text-sm">
+          {copy.market.quoteFetchRunsFailed}
+        </div>
+      ) : runs.length === 0 ? (
+        <div className="app-muted mt-4 text-sm">
+          {copy.market.noQuoteFetchRuns}
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-2">
+          {runs.slice(0, 4).map((run) => (
+            <div
+              key={run.run_id}
+              className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
+            >
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-[var(--app-text)]">
+                  {run.trigger} · {run.status}
+                </span>
+                <span className="app-muted font-mono tabular-nums">
+                  {formatTimestamp(run.started_at)}
+                </span>
+              </div>
+              <div className="app-muted mt-1 break-words">
+                {copy.market.provider}: {run.provider ?? copy.market.unknown} ·{' '}
+                {copy.market.successCount}: {run.success_count} ·{' '}
+                {copy.market.failedCount}: {run.failure_count} ·{' '}
+                {copy.market.cacheHitCount}: {run.cache_hit_count}
+              </div>
+              {run.error_message ? (
+                <div className="app-error-text mt-1 break-words">
+                  {run.error_message}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

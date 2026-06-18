@@ -7,6 +7,17 @@ import {
   type MarketDataHealthResponse,
 } from '../../market/api';
 
+export type QuoteDiagnosticItem = {
+  symbol: string;
+  name?: string | null;
+  display_name?: string | null;
+  asset_class?: string | null;
+  quote_status?: string | null;
+  quote_source?: string | null;
+  quote_timestamp?: string | null;
+  stale_reason?: string | null;
+};
+
 function formatAge(seconds: number | null | undefined) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
     return '--';
@@ -29,14 +40,64 @@ function normalizeStatus(value: string | null | undefined) {
   return value && value.trim().length > 0 ? value : '--';
 }
 
+function isActionableQuoteDiagnostic(item: QuoteDiagnosticItem) {
+  const quoteStatus = item.quote_status?.toLowerCase();
+  const quoteSource = item.quote_source?.toLowerCase();
+  return (
+    Boolean(item.stale_reason) ||
+    quoteStatus === 'stale' ||
+    quoteStatus === 'missing' ||
+    quoteStatus === 'error' ||
+    quoteSource === 'eastmoney_fund_estimate'
+  );
+}
+
+function assetClassLabel(
+  value: string | null | undefined,
+  labels: ReturnType<typeof useCopy>,
+) {
+  if (value === 'stock') {
+    return labels.common.assetClassStock;
+  }
+  if (value === 'fund') {
+    return labels.common.assetClassFund;
+  }
+  if (value === 'etf') {
+    return labels.common.assetClassEtf;
+  }
+  if (value === 'gold') {
+    return labels.common.assetClassGold;
+  }
+  if (value === 'bond') {
+    return labels.common.assetClassBond;
+  }
+  return normalizeStatus(value);
+}
+
+function diagnosticActionLabel(
+  item: QuoteDiagnosticItem,
+  labels: ReturnType<typeof useCopy>['overview']['dashboard'],
+  staleReasons: ReturnType<typeof useCopy>['common']['staleReasons'],
+) {
+  if (
+    item.stale_reason === 'confirmed_fund_nav_missing_estimate_only' ||
+    item.quote_source === 'eastmoney_fund_estimate'
+  ) {
+    return labels.waitingConfirmedNav;
+  }
+  return formatStaleReason(item.stale_reason, staleReasons);
+}
+
 export function DashboardQuickActions({
   overview,
   marketHealth,
   symbols,
+  quoteDiagnostics = [],
 }: {
   overview: AccountOverview;
   marketHealth?: MarketDataHealthResponse;
   symbols: string[];
+  quoteDiagnostics?: QuoteDiagnosticItem[];
 }) {
   const copy = useCopy();
   const labels = copy.overview.dashboard;
@@ -95,6 +156,9 @@ export function DashboardQuickActions({
       marketHealth?.last_refresh_error,
     copy.common.staleReasons,
   );
+  const actionableDiagnostics = quoteDiagnostics
+    .filter(isActionableQuoteDiagnostic)
+    .slice(0, 4);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
@@ -140,6 +204,61 @@ export function DashboardQuickActions({
             ))}
           </div>
         </div>
+        {actionableDiagnostics.length > 0 ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="app-product-mark">{labels.affectedHoldings}</div>
+              <div className="app-muted text-xs">
+                {labels.affectedCount(actionableDiagnostics.length)}
+              </div>
+            </div>
+            <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
+              {actionableDiagnostics.map((item) => {
+                const displayName =
+                  item.display_name ?? item.name ?? item.symbol;
+                const quoteSource =
+                  item.quote_source === 'eastmoney_fund_estimate'
+                    ? labels.usingEstimate
+                    : normalizeStatus(item.quote_source);
+                return (
+                  <div
+                    key={`${item.symbol}-${item.quote_source ?? 'quote'}`}
+                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2"
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
+                          {displayName}
+                        </div>
+                        <div className="mt-1 text-xs text-[var(--app-subtext-0)]">
+                          {item.symbol} ·{' '}
+                          {assetClassLabel(item.asset_class, copy)}
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_26%,transparent)] px-2 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
+                        {quoteSource}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-subtext-0)]">
+                      <span>
+                        {diagnosticActionLabel(
+                          item,
+                          labels,
+                          copy.common.staleReasons,
+                        )}
+                      </span>
+                      {item.quote_timestamp ? (
+                        <span className="font-mono tabular-nums">
+                          {formatTimestamp(item.quote_timestamp)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         {marketHealth?.last_refresh_attempt ||
         marketHealth?.last_refresh_error ? (
           <div className="app-muted mt-3 text-xs">

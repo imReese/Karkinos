@@ -29,3 +29,12 @@ test('formats tushare fund permission fallback reason for chinese cockpit copy',
     ),
   ).toBe('TuShare fund_nav 权限不足，已切换 Eastmoney 基金估算源');
 });
+
+test('formats unconfirmed fund estimate reason for chinese cockpit copy', () => {
+  expect(
+    formatStaleReason(
+      'confirmed_fund_nav_missing_estimate_only',
+      copy.zh.common.staleReasons,
+    ),
+  ).toBe('确认净值缺失/估算中');
+});

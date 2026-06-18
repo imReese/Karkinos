@@ -175,6 +175,17 @@ uv run python scripts/export_acceptance_audit.py --audit all --output reports/ac
 The command writes to stdout by default and only creates a file when `--output`
 is provided.
 
+Backend tests are grouped with pytest markers so local runs can stay focused:
+
+```bash
+uv run python -m pytest -m unit
+uv run python -m pytest -m api_contract
+uv run python -m pytest -m acceptance
+uv run python -m pytest -m "not slow"
+```
+
+Full verification remains `uv run python -m pytest`.
+
 Historical OHLCV market bars are stored in the local SQLite table
 `data/store/meta.db.market_bars`; Parquet files under `data/store/bars/` are a
 local mirror for compatibility and inspection. To import existing Parquet

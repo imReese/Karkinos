@@ -151,6 +151,58 @@ function installDecisionFetchMock() {
     if (url.includes('/api/decision/intraday')) {
       return jsonResponse(intradayDecision);
     }
+    if (url.includes('/api/signals/actions')) {
+      return jsonResponse([
+        {
+          id: 9,
+          source_signal_id: 1,
+          symbol: '600519',
+          title: 'Increase 600519',
+          detail: 'Risk gate passed; prepare a manual order only if approved.',
+          direction: 'buy',
+          urgency: 'high',
+          target_weight: 0.2,
+          price: 123.45,
+          strategy_id: 'dual_ma',
+          timestamp: '2026-06-12T09:31:00+08:00',
+          asset_class: 'stock',
+          status: 'pending',
+          risk_decision_id: 'RISK-1',
+          risk_gate_passed: true,
+          risk_gate_status: 'passed',
+          risk_gate_severity: 'info',
+          risk_gate_reasons: [],
+          manual_confirmation_required: true,
+          manual_confirmation_status: 'ready_for_manual_confirmation',
+          manual_confirmation_reason: 'Risk gate passed.',
+        },
+      ]);
+    }
+    if (url.includes('/api/signals/journal')) {
+      return jsonResponse([
+        {
+          signal: {
+            id: 1,
+            timestamp: '2026-06-12T09:30:00+08:00',
+            strategy_id: 'dual_ma',
+            symbol: '600519',
+            direction: 'buy',
+            target_weight: 0.2,
+            price: 123.45,
+            asset_class: 'stock',
+          },
+          action_task: null,
+          risk_decision: null,
+          review: null,
+          latest_event: {
+            event_type: 'risk.signal.recorded',
+            timestamp: '2026-06-12T09:31:00+08:00',
+            source: 'risk_decisions',
+            source_ref: 'RISK-1',
+          },
+        },
+      ]);
+    }
     return new Response('Not found', { status: 404 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -225,6 +277,9 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect(await screen.findByText('After-cost/OOS: attached')).toBeTruthy();
   expect(await screen.findByText('Data freshness: live')).toBeTruthy();
   expect(await screen.findByText('Journal: risk.signal.recorded')).toBeTruthy();
+  expect(await screen.findByText('Signal action queue')).toBeTruthy();
+  expect(await screen.findByText('Prepare manual order')).toBeTruthy();
+  expect(await screen.findByText('Signal journal')).toBeTruthy();
   expect(await screen.findByText('Market health: partial')).toBeTruthy();
   expect(
     await screen.findByText('Portfolio equity: CN¥40,000.00'),

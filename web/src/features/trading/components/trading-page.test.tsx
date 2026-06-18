@@ -42,6 +42,31 @@ const confirmedOrder = {
   updated_at: '2026-05-16T10:30:00+08:00',
 };
 
+const orderFact = {
+  order_id: 'ORD-FACT-1',
+  timestamp: '2026-05-16T10:45:00+08:00',
+  symbol: '600519',
+  side: 'buy',
+  order_type: 'limit',
+  quantity: 100,
+  price: 1720.25,
+  asset_class: 'stock',
+  execution_mode: 'manual',
+  status: 'confirmed',
+};
+
+const fillFact = {
+  fill_id: 'FILL-1',
+  order_id: 'ORD-FACT-1',
+  timestamp: '2026-05-16T10:46:00+08:00',
+  symbol: '600519',
+  side: 'buy',
+  fill_price: 1720.25,
+  fill_quantity: 100,
+  commission: 5,
+  slippage: 0,
+};
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -80,6 +105,24 @@ function installTradingFetchMock({
           kill_switch_enabled: false,
           reason: '',
           updated_at: '2026-05-16T10:00:00+08:00',
+        });
+      }
+      if (url.includes('/api/trading/order-facts')) {
+        return jsonResponse([orderFact]);
+      }
+      if (url.includes('/api/trading/fills')) {
+        return jsonResponse([fillFact]);
+      }
+      if (url.includes('/api/trading/shadow-runs/daily')) {
+        return jsonResponse({
+          run_id: 'shadow-2026-05-16',
+          run_date: '2026-05-16',
+          processed_count: 1,
+          reused_count: 0,
+          skipped_count: 0,
+          orders: [orderFact],
+          reused_orders: [],
+          skipped: [],
         });
       }
       if (url.includes('/api/trading/orders/ORD-PENDING/confirm')) {
@@ -156,9 +199,32 @@ test('renders the trading approvals workspace', async () => {
 
   expect(await screen.findByText('Trading approvals')).toBeTruthy();
   expect(await screen.findByText('Global kill switch')).toBeTruthy();
+  expect(await screen.findByText('Execution audit')).toBeTruthy();
+  expect(await screen.findByText('Order facts')).toBeTruthy();
+  expect(await screen.findByText('Fill facts')).toBeTruthy();
   expect(await screen.findByText('Order queue')).toBeTruthy();
   expect(await screen.findByText('600519')).toBeTruthy();
   expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('runs daily shadow review from the execution audit panel', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderTradingPage();
+
+  await screen.findByText('Execution audit');
+  await user.click(
+    screen.getByRole('button', { name: 'Run daily shadow review' }),
+  );
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/trading/shadow-runs/daily',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  expect(
+    await screen.findByText(/Shadow review prepared 1 orders/),
+  ).toBeTruthy();
 });
 
 test('confirms a pending manual order and refreshes the queue', async () => {

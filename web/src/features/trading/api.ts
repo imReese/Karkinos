@@ -82,6 +82,56 @@ export type ManualOrderStatus =
   | 'rejected'
   | 'canceled';
 
+export type OrderFact = {
+  id?: number;
+  order_id: string;
+  timestamp: string;
+  symbol: string;
+  side: string;
+  order_type: string;
+  quantity: number;
+  price: number | null;
+  asset_class?: string | null;
+  execution_mode: string;
+  status: string;
+  source?: string | null;
+  source_ref?: string | null;
+  intent_id?: string | null;
+  risk_decision_id?: string | null;
+  note?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type FillFact = {
+  id?: number;
+  fill_id?: string | null;
+  order_id: string;
+  timestamp: string;
+  symbol: string;
+  side: string;
+  fill_price: number;
+  fill_quantity: number;
+  commission: number;
+  slippage: number;
+};
+
+export type ShadowRunResponse = {
+  run_id: string;
+  run_date: string;
+  data_quality?: {
+    passed_count: number;
+    blocked_count: number;
+    issues: unknown[];
+  };
+  processed_count: number;
+  reused_count: number;
+  skipped_count: number;
+  orders: OrderFact[];
+  reused_orders: OrderFact[];
+  skipped: unknown[];
+};
+
 export function useKillSwitchQuery() {
   return useQuery({
     queryKey: ['trading-kill-switch'],
@@ -158,4 +208,42 @@ export function useConfirmManualOrderMutation() {
 
 export function useRejectManualOrderMutation() {
   return useManualOrderStatusMutation('reject');
+}
+
+export function useOrderFactsQuery() {
+  return useQuery({
+    queryKey: ['trading-order-facts'],
+    queryFn: () => apiClient<OrderFact[]>('/api/trading/order-facts?limit=20'),
+    staleTime: 5_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useFillFactsQuery() {
+  return useQuery({
+    queryKey: ['trading-fill-facts'],
+    queryFn: () => apiClient<FillFact[]>('/api/trading/fills?limit=20'),
+    staleTime: 5_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useDailyShadowRunMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      requestJson<ShadowRunResponse>('/api/trading/shadow-runs/daily', {
+        method: 'POST',
+        body: {},
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['trading-order-facts'] }),
+        queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
+      ]);
+    },
+  });
 }

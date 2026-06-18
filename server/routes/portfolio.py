@@ -1157,6 +1157,58 @@ def _session_closed_market_bar_price(
     )
 
 
+def _is_unconfirmed_fund_estimate(
+    state,
+    *,
+    symbol: str,
+    asset_class: str | None,
+    quote: dict | None,
+) -> bool:
+    """Return whether a fund quote is an estimate without confirmed same-day NAV."""
+    if _normalize_asset_class(asset_class) != "fund":
+        return False
+    if not quote or quote.get("price") in {None, ""}:
+        return False
+
+    source = str(
+        quote.get("quote_source") or quote.get("source") or ""
+    ).strip().lower()
+    if source != "eastmoney_fund_estimate":
+        return False
+
+    quote_timestamp = _parse_quote_timestamp(quote.get("timestamp"))
+    if quote_timestamp is None:
+        return True
+    trade_date = quote_timestamp.date().isoformat()
+
+    if state.db is None or not hasattr(state.db, "get_market_bar_on_date_sync"):
+        return True
+    market_bar = state.db.get_market_bar_on_date_sync(symbol, trade_date)
+    if not market_bar:
+        return True
+    close = market_bar.get("close", market_bar.get("price"))
+    return close in {None, ""}
+
+
+def _position_quote_presentation(
+    state,
+    *,
+    symbol: str,
+    asset_class: str | None,
+    quote: dict | None,
+) -> tuple[str, str | None]:
+    quote_status = _response_quote_status(state, quote)
+    stale_reason = _quote_stale_reason(state, quote)
+    if _is_unconfirmed_fund_estimate(
+        state,
+        symbol=symbol,
+        asset_class=asset_class,
+        quote=quote,
+    ):
+        return "stale", "confirmed_fund_nav_missing_estimate_only"
+    return quote_status, stale_reason
+
+
 def _resolve_live_holding_latest_price(
     state,
     *,
@@ -1760,6 +1812,12 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
         cost_basis = quantity * avg_cost
         since_buy_pnl = market_value - cost_basis
         since_buy_pnl_pct = None if cost_basis == 0 else since_buy_pnl / cost_basis
+        quote_status, stale_reason = _position_quote_presentation(
+            state,
+            symbol=symbol,
+            asset_class=metadata.asset_class,
+            quote=latest_quote,
+        )
 
         groups[metadata.asset_class].append(
             LiveHoldingItemResponse(
@@ -1779,10 +1837,10 @@ def _build_live_holdings_response(state) -> LiveHoldingsResponse:
                 baseline_price=baseline_price,
                 baseline_timestamp=baseline_timestamp,
                 baseline_source=baseline_source,
-                quote_status=_response_quote_status(state, latest_quote),
+                quote_status=quote_status,
                 quote_source=_quote_source(state, latest_quote),
                 quote_age_seconds=_quote_age_seconds(latest_quote),
-                stale_reason=_quote_stale_reason(state, latest_quote),
+                stale_reason=stale_reason,
                 refresh_policy=_refresh_policy(),
                 using_persistent_cache=_using_persistent_cache(latest_quote),
                 nav_date=latest_quote.get("nav_date"),
@@ -3110,6 +3168,12 @@ def create_router() -> APIRouter:
                 latest_quote=quote,
                 latest_price_value=latest_price_value,
             )
+            quote_status, stale_reason = _position_quote_presentation(
+                state,
+                symbol=symbol,
+                asset_class=metadata.asset_class,
+                quote=quote,
+            )
             positions.append(
                 PositionResponse(
                     symbol=symbol,
@@ -3131,10 +3195,10 @@ def create_router() -> APIRouter:
                     baseline_timestamp=baseline_timestamp,
                     baseline_source=baseline_source,
                     quote_timestamp=None if quote is None else quote.get("timestamp"),
-                    quote_status=_response_quote_status(state, quote),
+                    quote_status=quote_status,
                     quote_source=_quote_source(state, quote),
                     quote_age_seconds=_quote_age_seconds(quote),
-                    stale_reason=_quote_stale_reason(state, quote),
+                    stale_reason=stale_reason,
                     refresh_policy=_refresh_policy(),
                     using_persistent_cache=_using_persistent_cache(quote),
                     nav_date=None if quote is None else quote.get("nav_date"),

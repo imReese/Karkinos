@@ -9564,6 +9564,107 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
     assert item.today_change_pct == pytest.approx(0.8847 / 0.8926 - 1)
 
 
+def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    live_holdings_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=442.3704,
+        available_qty=442.3704,
+        frozen_qty=0.0,
+        avg_cost=1.3563,
+        market_value=877.49,
+        unrealized_pnl=277.49,
+        realized_pnl=0.0,
+        commission_paid=0.0,
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+        def get_latest_market_bar_before_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "026539"
+            assert trade_date == "2026-06-17"
+            return {
+                "trade_date": "2026-06-16",
+                "close": 1.9651,
+                "source": "market_bars",
+            }
+
+        def get_market_bar_on_date_sync(
+            self,
+            symbol: str,
+            trade_date: str,
+        ):
+            assert symbol == "026539"
+            assert trade_date == "2026-06-17"
+            return None
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+        async def get_total_deposits(self):
+            return 0.0
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(cash=0.0, positions={"026539": fake_position}),
+            instruments={
+                "026539": SimpleNamespace(
+                    name="基金C",
+                    asset_class=SimpleNamespace(value="fund"),
+                )
+            },
+            watchlist=[],
+            latest_quotes={
+                "026539": {
+                    "symbol": "026539",
+                    "asset_class": "fund",
+                    "price": 1.9836,
+                    "timestamp": "2026-06-17 15:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                    "provider_status": "fallback",
+                    "quote_status": "live",
+                }
+            },
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.portfolio.get_shanghai_now",
+        lambda now=None: datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    response = asyncio.run(live_holdings_route.endpoint())
+    item = response.groups[0].items[0]
+
+    assert item.latest_price == pytest.approx(1.9836)
+    assert item.today_change == pytest.approx(442.3704 * (1.9836 - 1.9651))
+    assert item.quote_status == "stale"
+    assert item.stale_reason == "confirmed_fund_nav_missing_estimate_only"
+
+
 def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
