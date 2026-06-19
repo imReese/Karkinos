@@ -592,6 +592,7 @@ test('shows the highest visible value for every selected equity series in the ac
   expect(within(totalHighMarker).getByText('Total')).toBeTruthy();
   expect(within(totalHighMarker).getByText('05/11')).toBeTruthy();
   expect(within(totalHighMarker).getByText('CN¥104,200')).toBeTruthy();
+  expect(totalHighMarker.getAttribute('data-label-side')).toBe('left');
 
   const stocksHighMarker = await screen.findByTestId(
     'equity-series-high-marker-stocks',
@@ -610,6 +611,7 @@ test('keeps high point dots but makes high labels collapse on chart hover', asyn
 
   const chartFrame = await screen.findByTestId('equity-chart-frame');
   expect(chartFrame.className).toContain('group/equity-chart');
+  expect(chartFrame.className).toContain('overflow-visible');
 
   const marker = await screen.findByTestId('equity-series-high-marker-total');
   expect(within(marker).getByText('Total')).toBeTruthy();

@@ -247,8 +247,9 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     });
   });
   expect(
-    await screen.findByText('Review saved: known_difference'),
+    await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
+  expect(screen.queryByText('Review saved: known_difference')).toBeNull();
 });
 
 test('explains the blocked empty state without exposing internal action codes', async () => {

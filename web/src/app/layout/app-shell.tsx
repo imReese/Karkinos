@@ -18,6 +18,7 @@ import {
   type Locale,
   type ThemePreference,
 } from '../preferences';
+import { formatPublicStatus } from '../../shared/public-labels';
 
 const navItems = [
   { to: '/', key: 'overview', icon: OverviewNavIcon },
@@ -115,9 +116,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     locale,
   );
   const isQuoteStale = overview?.quote_status === 'stale';
-  const quoteStatus = overview?.quote_status ?? copy.shell.statusUnknown;
-  const refreshPolicy =
-    marketHealth.data?.refresh_policy ?? copy.shell.statusUnknown;
+  const quoteStatus = overview?.quote_status
+    ? formatPublicStatus(overview.quote_status, locale)
+    : copy.shell.statusUnknown;
+  const refreshPolicy = marketHealth.data?.refresh_policy
+    ? formatPublicStatus(marketHealth.data.refresh_policy, locale)
+    : copy.shell.statusUnknown;
   const marketOpenText =
     marketHealth.data?.market_open === undefined
       ? copy.shell.statusUnknown

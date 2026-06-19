@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCurrency,
   formatPrice,
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatPublicStatus } from '../../../shared/public-labels';
 import { KillSwitchPanel } from './kill-switch-panel';
 import {
   useConfirmManualOrderMutation,
@@ -20,8 +22,10 @@ import {
   type ManualOrderStatus,
   type OrderFact,
 } from '../api';
+import { usePositionsQuery } from '../../portfolio/api';
 
 type SideFilter = 'all' | 'buy' | 'sell';
+type InstrumentNameLookup = Map<string, string>;
 
 const STATUS_OPTIONS: ManualOrderStatus[] = [
   'all',
@@ -34,6 +38,7 @@ const STATUS_OPTIONS: ManualOrderStatus[] = [
 function statusLabel(
   status: string,
   labels: ReturnType<typeof useCopy>['trading']['page'],
+  locale?: Locale,
 ) {
   if (status === 'pending_confirm') {
     return labels.statusPendingConfirm;
@@ -47,7 +52,7 @@ function statusLabel(
   if (status === 'canceled') {
     return labels.statusCanceled;
   }
-  return status;
+  return locale ? formatPublicStatus(status, locale) : status;
 }
 
 function getLatestOrderTimestamp(orders: ManualOrder[]) {
@@ -76,8 +81,32 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function instrumentDisplayLabel(
+  symbol: string,
+  instrumentNames: InstrumentNameLookup,
+) {
+  const name = instrumentNames.get(symbol)?.trim();
+  return name && name !== symbol ? `${name} ${symbol}` : symbol;
+}
+
+function sideLabel(
+  side: string,
+  labels: ReturnType<typeof useCopy>['trading']['page'],
+  locale?: Locale,
+) {
+  const normalized = side.toLowerCase();
+  if (normalized === 'buy') {
+    return labels.buy;
+  }
+  if (normalized === 'sell') {
+    return labels.sell;
+  }
+  return locale ? formatPublicStatus(side, locale) : side;
+}
+
 export function TradingPage() {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.trading.page;
   const orderLabels = copy.trading.orders;
   const [status, setStatus] = useState<ManualOrderStatus>('pending_confirm');
@@ -95,6 +124,7 @@ export function TradingPage() {
   const allOrders = useManualOrdersQuery('all');
   const orderFacts = useOrderFactsQuery();
   const fillFacts = useFillFactsQuery();
+  const positions = usePositionsQuery();
   const shadowRun = useDailyShadowRunMutation();
   const confirmOrder = useConfirmManualOrderMutation();
   const rejectOrder = useRejectManualOrderMutation();
@@ -133,6 +163,16 @@ export function TradingPage() {
     [allOrderRows],
   );
   const latestTimestamp = getLatestOrderTimestamp(allOrderRows);
+  const instrumentNames = useMemo(
+    () =>
+      new Map(
+        (positions.data ?? []).map((position) => [
+          position.symbol,
+          position.display_name ?? position.name ?? position.symbol,
+        ]),
+      ),
+    [positions.data],
+  );
   const busy = confirmOrder.isPending || rejectOrder.isPending;
 
   const handleConfirm = async (orderId: string) => {
@@ -203,6 +243,7 @@ export function TradingPage() {
         fills={fillFacts.data ?? []}
         loading={orderFacts.isLoading || fillFacts.isLoading}
         error={orderFacts.isError || fillFacts.isError}
+        instrumentNames={instrumentNames}
         shadowRunPending={shadowRun.isPending}
         shadowRunResult={shadowRun.data ?? null}
         onRunShadowReview={() => void shadowRun.mutate()}
@@ -233,7 +274,7 @@ export function TradingPage() {
                     <option key={option} value={option}>
                       {option === 'all'
                         ? labels.allStatuses
-                        : statusLabel(option, labels)}
+                        : statusLabel(option, labels, locale)}
                     </option>
                   ))}
                 </select>
@@ -280,6 +321,7 @@ export function TradingPage() {
             onRejectReasonChange={(orderId, value) =>
               setRejectReasons((current) => ({ ...current, [orderId]: value }))
             }
+            instrumentNames={instrumentNames}
           />
 
           {rowError ? (
@@ -314,7 +356,11 @@ export function TradingPage() {
           ) : (
             <div className="mt-5 grid gap-2">
               {completedOrders.slice(0, 8).map((order) => (
-                <AuditRow key={order.order_id} order={order} />
+                <AuditRow
+                  key={order.order_id}
+                  order={order}
+                  instrumentNames={instrumentNames}
+                />
               ))}
             </div>
           )}
@@ -329,6 +375,7 @@ function ExecutionAuditPanel({
   fills,
   loading,
   error,
+  instrumentNames,
   shadowRunPending,
   shadowRunResult,
   onRunShadowReview,
@@ -337,11 +384,13 @@ function ExecutionAuditPanel({
   fills: FillFact[];
   loading: boolean;
   error: boolean;
+  instrumentNames: InstrumentNameLookup;
   shadowRunPending: boolean;
   shadowRunResult: { processed_count: number; reused_count: number } | null;
   onRunShadowReview: () => void;
 }) {
   const labels = useCopy().trading.page;
+  const { locale } = usePreferences();
   const latestOrders = orders.slice(0, 4);
   const latestFills = fills.slice(0, 4);
 
@@ -392,8 +441,11 @@ function ExecutionAuditPanel({
               empty={labels.noOrderFacts}
               rows={latestOrders.map((order) => ({
                 id: order.order_id,
-                title: `${order.symbol} · ${statusLabel(order.status, labels)}`,
-                detail: `${order.side} ${formatQuantity(order.quantity)} @ ${
+                title: `${instrumentDisplayLabel(
+                  order.symbol,
+                  instrumentNames,
+                )} · ${statusLabel(order.status, labels, locale)}`,
+                detail: `${sideLabel(order.side, labels, locale)} ${formatQuantity(order.quantity)} @ ${
                   order.price == null ? '--' : formatPrice(order.price)
                 }`,
                 timestamp: order.timestamp,
@@ -404,7 +456,10 @@ function ExecutionAuditPanel({
               empty={labels.noFills}
               rows={latestFills.map((fill) => ({
                 id: fill.fill_id ?? fill.order_id,
-                title: `${fill.symbol} · ${fill.side}`,
+                title: `${instrumentDisplayLabel(
+                  fill.symbol,
+                  instrumentNames,
+                )} · ${sideLabel(fill.side, labels, locale)}`,
                 detail: `${formatQuantity(fill.fill_quantity)} @ ${formatPrice(
                   fill.fill_price,
                 )} · ${labels.commission} ${formatCurrency(fill.commission)}`,
@@ -477,6 +532,7 @@ function OrderQueue({
   onConfirm,
   onReject,
   onRejectReasonChange,
+  instrumentNames,
 }: {
   orders: ManualOrder[];
   loading: boolean;
@@ -487,6 +543,7 @@ function OrderQueue({
   onConfirm: (orderId: string) => Promise<void>;
   onReject: (orderId: string) => Promise<void>;
   onRejectReasonChange: (orderId: string, value: string) => void;
+  instrumentNames: InstrumentNameLookup;
 }) {
   const copy = useCopy();
   const labels = copy.trading.orders;
@@ -538,6 +595,7 @@ function OrderQueue({
               onRejectReasonChange={(value) =>
                 onRejectReasonChange(order.order_id, value)
               }
+              instrumentNames={instrumentNames}
             />
           ))}
         </tbody>
@@ -554,6 +612,7 @@ function OrderRow({
   onConfirm,
   onReject,
   onRejectReasonChange,
+  instrumentNames,
 }: {
   order: ManualOrder;
   busy: boolean;
@@ -562,6 +621,7 @@ function OrderRow({
   onConfirm: () => Promise<void>;
   onReject: () => Promise<void>;
   onRejectReasonChange: (value: string) => void;
+  instrumentNames: InstrumentNameLookup;
 }) {
   const copy = useCopy();
   const labels = copy.trading.orders;
@@ -571,11 +631,12 @@ function OrderRow({
   const decisionId =
     order.risk_decision_id ?? payload?.risk_decision_id ?? null;
   const intentId = order.intent_id ?? payload?.intent_id ?? null;
+  const displayLabel = instrumentDisplayLabel(order.symbol, instrumentNames);
 
   return (
     <tr className="border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] align-top transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]">
       <td className="px-3 py-4">
-        <div className="font-semibold">{order.symbol}</div>
+        <div className="font-semibold">{displayLabel}</div>
         <div className="app-muted mt-1 text-xs">
           {formatTimestamp(order.timestamp)}
         </div>
@@ -614,7 +675,7 @@ function OrderRow({
           onChange={(event) => onRejectReasonChange(event.target.value)}
           placeholder={labels.rejectReasonPlaceholder}
           className="app-field w-full rounded-2xl px-4 py-2.5 text-sm"
-          aria-label={`${labels.rejectReason}: ${order.symbol}`}
+          aria-label={`${labels.rejectReason}: ${displayLabel}`}
           disabled={!isPending}
         />
       </td>
@@ -626,7 +687,7 @@ function OrderRow({
               disabled={busy}
               onClick={() => void onConfirm()}
               className="app-button-primary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              aria-label={`${labels.confirm}: ${order.symbol}`}
+              aria-label={`${labels.confirm}: ${displayLabel}`}
             >
               {labels.confirm}
             </button>
@@ -635,7 +696,7 @@ function OrderRow({
               disabled={busy}
               onClick={() => void onReject()}
               className="app-button-secondary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              aria-label={`${labels.reject}: ${order.symbol}`}
+              aria-label={`${labels.reject}: ${displayLabel}`}
             >
               {confirmingReject ? pageLabels.rejectConfirm : labels.reject}
             </button>
@@ -651,6 +712,7 @@ function OrderRow({
 function SideBadge({ side }: { side: string }) {
   const copy = useCopy();
   const labels = copy.trading.page;
+  const { locale } = usePreferences();
   const normalized = side.toLowerCase();
   const isBuy = normalized === 'buy';
 
@@ -662,13 +724,18 @@ function SideBadge({ side }: { side: string }) {
           : 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
       }`}
     >
-      {isBuy ? labels.buy : normalized === 'sell' ? labels.sell : side}
+      {isBuy
+        ? labels.buy
+        : normalized === 'sell'
+          ? labels.sell
+          : formatPublicStatus(side, locale)}
     </span>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
   const labels = useCopy().trading.page;
+  const { locale } = usePreferences();
   const warning = status === 'pending_confirm';
   const danger = status === 'rejected' || status === 'canceled';
   return (
@@ -681,15 +748,22 @@ function StatusBadge({ status }: { status: string }) {
             : 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
       }`}
     >
-      {statusLabel(status, labels)}
+      {statusLabel(status, labels, locale)}
     </span>
   );
 }
 
-function AuditRow({ order }: { order: ManualOrder }) {
+function AuditRow({
+  order,
+  instrumentNames,
+}: {
+  order: ManualOrder;
+  instrumentNames: InstrumentNameLookup;
+}) {
+  const displayLabel = instrumentDisplayLabel(order.symbol, instrumentNames);
   return (
     <div className="grid gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm sm:grid-cols-[120px_90px_minmax(0,1fr)_160px] sm:items-center">
-      <div className="font-semibold">{order.symbol}</div>
+      <div className="font-semibold">{displayLabel}</div>
       <SideBadge side={order.side} />
       <div className="app-muted min-w-0 truncate text-xs">
         {order.note || order.order_id}

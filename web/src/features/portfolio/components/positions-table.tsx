@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import {
   formatCurrency,
@@ -10,6 +11,7 @@ import {
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { useRefreshMarketQuotesMutation } from '../../market/api';
 import type { Position } from '../api';
+import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 
 function holdingDetailHref(symbol: string) {
@@ -158,6 +160,7 @@ export function PositionsTable({
   variant?: 'full' | 'dashboard';
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.portfolio.table;
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const showFullColumns = variant === 'full';
@@ -493,6 +496,9 @@ export function PositionsTable({
                 position.stale_reason,
                 copy.common.staleReasons,
               );
+              const quoteStatusLabel = position.quote_status
+                ? formatPublicStatus(position.quote_status, locale)
+                : '--';
               const detailHref = holdingDetailHref(position.symbol);
               const detailLabel = detailAriaLabel(
                 labels,
@@ -623,7 +629,7 @@ export function PositionsTable({
                           ? labels.cachedQuoteAt(
                               formatTimestamp(position.quote_timestamp),
                             )
-                          : (position.quote_status ?? '--')}
+                          : quoteStatusLabel}
                       </span>
                       <span className="app-muted text-[10px]">
                         {labels.quoteAge}:{' '}

@@ -158,6 +158,31 @@ test('renders a month calendar with selectable daily return cells by default', a
   ).toBeGreaterThan(0);
 });
 
+test('keeps the compact calendar toolbar and day cells readable on narrow viewports', async () => {
+  renderCalendar({ compact: true });
+
+  const toolbar = await screen.findByTestId('return-calendar-toolbar');
+  expect(toolbar.className).toContain('rounded-2xl');
+  expect(toolbar.className.split(/\s+/)).not.toContain('rounded-full');
+  expect(toolbar.className).toContain('sm:rounded-full');
+
+  const periodControl = within(toolbar).getByLabelText('Period mode');
+  expect(periodControl.className).toContain('w-full');
+  expect(periodControl.className).toContain('sm:justify-between');
+
+  const populatedValue = screen.getByRole('button', {
+    name: '2026-02-10 · CN¥600.00',
+  });
+  expect(populatedValue.className).toContain('overflow-hidden');
+  const cellValue = within(populatedValue).getByTestId(
+    'return-calendar-cell-value',
+  );
+  expect(cellValue.className).toContain('whitespace-nowrap');
+  expect(cellValue.className).toContain('text-[10px]');
+  expect(cellValue.className).toContain('sm:text-[11px]');
+  expect(cellValue.textContent).toBe('+600.00');
+});
+
 test('uses Sunday as the first weekday column in the return calendar', async () => {
   renderCalendar();
 
@@ -263,8 +288,9 @@ test('renders axes when the return calendar switches to curve view', async () =>
   await userEvent.click(screen.getByRole('button', { name: 'Curve' }));
 
   const chart = await screen.findByTestId('return-curve-chart');
-  expect(chart.getAttribute('viewBox')).toBe('0 0 760 340');
-  expect(chart.getAttribute('class')).toContain('h-[280px]');
+  expect(chart.getAttribute('viewBox')).toBe('0 0 820 420');
+  expect(chart.getAttribute('class')).toContain('h-[360px]');
+  expect(chart.getAttribute('class')).toContain('sm:h-[420px]');
   expect(await screen.findByTestId('return-curve-x-axis')).toBeTruthy();
   expect(screen.getByTestId('return-curve-y-axis')).toBeTruthy();
   expect(screen.getByTestId('return-curve-zero-axis')).toBeTruthy();
@@ -303,7 +329,8 @@ test('supports a compact cockpit layout for the overview page', async () => {
   const januaryCellValue = within(januaryCell).getByTestId(
     'return-calendar-cell-value',
   );
-  expect(januaryCellValue.className).toContain('text-sm');
+  expect(januaryCellValue.className).toContain('text-[10px]');
+  expect(januaryCellValue.className).toContain('sm:text-[11px]');
 });
 
 test('shows a current-position fallback when daily attribution is not available', async () => {

@@ -16,6 +16,10 @@ import {
   type ThemePreference,
 } from '../../../app/preferences';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
+import {
+  formatPublicCode,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import {
   useDataSourceStatusQuery,
@@ -109,7 +113,13 @@ export function SettingsPage() {
     );
   }, [manualTasksDone, taskStorageKey]);
 
-  const quoteStatus = overview.data?.quote_status ?? copy.shell.statusUnknown;
+  const quoteStatus = overview.data?.quote_status ?? null;
+  const quoteStatusLabel = quoteStatus
+    ? formatPublicStatus(quoteStatus, locale)
+    : copy.shell.statusUnknown;
+  const refreshPolicyLabel = marketHealth.data?.refresh_policy
+    ? formatPublicStatus(marketHealth.data.refresh_policy, locale)
+    : copy.shell.statusUnknown;
   const valuationTime = overview.data?.valuation_timestamp
     ? formatTimestamp(overview.data.valuation_timestamp)
     : copy.settings.noValuationTime;
@@ -148,7 +158,9 @@ export function SettingsPage() {
       ? copy.market.providerActions[
           providerNextAction as keyof typeof copy.market.providerActions
         ]
-      : providerNextAction;
+      : providerNextAction
+        ? formatPublicCode(providerNextAction, locale)
+        : null;
   const providerTimedOut =
     marketHealth.data?.provider_last_error === 'provider_timeout' ||
     marketHealth.data?.last_refresh_error === 'provider_timeout';
@@ -510,8 +522,7 @@ export function SettingsPage() {
                 value={
                   marketHealth.isLoading
                     ? copy.shell.checking
-                    : (marketHealth.data?.refresh_policy ??
-                      copy.shell.statusUnknown)
+                    : refreshPolicyLabel
                 }
                 tone={isCacheOnly ? 'warning' : 'success'}
               />
@@ -522,7 +533,7 @@ export function SettingsPage() {
                     ? copy.shell.checking
                     : isStaleQuote
                       ? copy.settings.cachedQuotes
-                      : quoteStatus
+                      : quoteStatusLabel
                 }
                 tone={isStaleQuote ? 'warning' : 'success'}
               />

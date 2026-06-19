@@ -16,11 +16,13 @@ import {
 } from 'recharts';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCompactNumber,
   formatCurrency,
   formatDateTime,
 } from '../../../shared/format';
+import { formatPublicStatus } from '../../../shared/public-labels';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 
 type SeriesKey = 'total' | 'stocks' | 'funds' | 'others' | 'cash';
@@ -40,6 +42,7 @@ type TooltipPayload = {
 type CustomTooltipProps = {
   active?: boolean;
   categoryDailyChangeLabel: (label: string) => string;
+  locale: Locale;
   portfolioTotalLabel: string;
   quoteStatusLabel: string;
   realtimeUnrealizedPnlLabel: string;
@@ -452,11 +455,13 @@ function renderHighPointDot({
   range,
   seriesIndex,
   pointCount,
+  chartWidth,
 }: {
   high: ReturnType<typeof resolveSeriesHighs>[number];
   range: EquityCurveRange;
   seriesIndex: number;
   pointCount: number;
+  chartWidth: number;
 }) {
   return ({
     cx,
@@ -479,12 +484,16 @@ function renderHighPointDot({
       return null;
     }
 
-    const isNearRightEdge = high.pointIndex >= Math.max(pointCount - 2, 0);
+    const labelWidth = 116;
+    const edgePadding = 20;
+    const isNearRightEdge =
+      cx > chartWidth - labelWidth - edgePadding ||
+      high.pointIndex >= Math.max(pointCount - 1, 0);
     const isNearTop = cy < 96;
-    const labelWidth = 138;
     const labelHeight = 38;
     const laneOffset = (seriesIndex % 3) * 28;
-    const labelX = isNearRightEdge ? -labelWidth - 10 : 10;
+    const labelSide = isNearRightEdge ? 'left' : 'right';
+    const labelX = labelSide === 'left' ? -labelWidth - 10 : 10;
     const labelY = isNearTop ? 12 + laneOffset : -labelHeight - 8 - laneOffset;
     const textX = labelX + 9;
     const displayDate = formatAxisTimestamp(high.timestampMs, range);
@@ -493,6 +502,7 @@ function renderHighPointDot({
     return (
       <g
         data-testid={`equity-series-high-marker-${high.key}`}
+        data-label-side={labelSide}
         transform={`translate(${cx} ${cy})`}
         pointerEvents="none"
       >
@@ -556,6 +566,7 @@ function CustomTooltip({
   active,
   payload,
   categoryDailyChangeLabel,
+  locale,
   portfolioTotalLabel,
   quoteStatusLabel,
   realtimeUnrealizedPnlLabel,
@@ -600,7 +611,7 @@ function CustomTooltip({
     includesTotalSeries || categoryChangeRows.length > 0;
 
   return (
-    <div className="z-[90] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_92%,transparent)] px-3 py-2.5 text-xs shadow-[0_18px_54px_color-mix(in_srgb,var(--app-mantle)_54%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] backdrop-blur-md tabular-nums">
+    <div className="z-[90] max-w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_92%,transparent)] px-3 py-2.5 text-xs shadow-[0_18px_54px_color-mix(in_srgb,var(--app-mantle)_54%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] backdrop-blur-md tabular-nums">
       <div className="mb-2 font-medium text-[var(--app-text)]">
         {formatChartTimestamp(point.timestamp)}
       </div>
@@ -669,7 +680,7 @@ function CustomTooltip({
           <div className="mt-2 flex min-w-36 items-center justify-between gap-5 border-t border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] pt-2">
             <span className="text-[var(--app-muted)]">{quoteStatusLabel}</span>
             <span className="font-mono text-[var(--app-text)]">
-              {point.quote_status}
+              {formatPublicStatus(point.quote_status, locale)}
             </span>
           </div>
         ) : null}
@@ -725,6 +736,7 @@ export function EquityCurveCard({
   onRangeChange?: (range: EquityCurveRange) => void;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.overview.equityCurve;
   const [uncontrolledRange, setUncontrolledRange] =
     useState<EquityCurveRange>('all');
@@ -882,14 +894,14 @@ export function EquityCurveCard({
         <div
           ref={chartContainerRef}
           data-testid="equity-chart-frame"
-          className="group/equity-chart h-[340px] w-full overflow-hidden rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]"
+          className="group/equity-chart h-[340px] w-full overflow-visible rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[linear-gradient(color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--app-text)_2%,transparent)_1px,transparent_1px),color-mix(in_srgb,var(--app-panel-strong)_26%,transparent)] bg-[length:44px_44px,44px_44px,auto] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] sm:h-[410px]"
         >
           {chartSize ? (
             <LineChart
               width={chartSize.width}
               height={chartSize.height}
               data={chartPoints}
-              margin={{ left: 10, right: 30, top: 18, bottom: 34 }}
+              margin={{ left: 14, right: 72, top: 22, bottom: 36 }}
             >
               <defs>
                 {SERIES_META.map((series) => (
@@ -949,6 +961,7 @@ export function EquityCurveCard({
                 content={
                   <CustomTooltip
                     categoryDailyChangeLabel={labels.categoryDailyChange}
+                    locale={locale}
                     portfolioTotalLabel={labels.portfolioTotal}
                     quoteStatusLabel={labels.quoteStatus}
                     realtimeUnrealizedPnlLabel={labels.realtimeUnrealizedPnl}
@@ -960,6 +973,7 @@ export function EquityCurveCard({
                   strokeWidth: 1,
                 }}
                 wrapperStyle={{ zIndex: 90, outline: 'none' }}
+                allowEscapeViewBox={{ x: false, y: true }}
               />
               {SERIES_META.map((series) => {
                 const active = visibleSeries[series.key];
@@ -992,6 +1006,7 @@ export function EquityCurveCard({
                               (item) => item.key === series.key,
                             ),
                             pointCount: chartPoints.length,
+                            chartWidth: chartSize.width,
                           })
                         : false
                     }
@@ -1026,7 +1041,9 @@ export function EquityCurveCard({
                   {formatChartTimestamp(latestPoint.timestamp)}
                 </span>
                 {latestPoint.quote_status ? (
-                  <span className="font-mono">{latestPoint.quote_status}</span>
+                  <span className="font-mono">
+                    {formatPublicStatus(latestPoint.quote_status, locale)}
+                  </span>
                 ) : null}
               </div>
             ) : null}

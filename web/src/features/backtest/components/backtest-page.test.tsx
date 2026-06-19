@@ -573,7 +573,7 @@ const strategyPromotionReadiness = {
   required_strategy_count: 2,
   promotable_strategy_count: 1,
   is_complete: false,
-  limitations: ['Promotion readiness is an audit signal only.'],
+  limitations: ['Review status is an audit signal only.'],
   rows: [
     {
       strategy_id: 'dual_ma',
@@ -821,7 +821,7 @@ test('renders the backtest workspace and saved report history', async () => {
 
   expect(await screen.findByText('Strategy replay')).toBeTruthy();
   expect(
-    await screen.findByText('Validation and promotion readiness'),
+    await screen.findByText('Strategy validation and review status'),
   ).toBeTruthy();
   expect(await screen.findAllByText('1/2')).toHaveLength(2);
   expect(await screen.findByText('Backtest configuration')).toBeTruthy();
@@ -865,9 +865,14 @@ test('shows current account strategy without claiming live attribution', async (
   expect(await screen.findByText('Attribution not started')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      'The selected strategy is only research context until signals, reviews, and fills are attributed.',
     ),
   ).toBeTruthy();
+  expect(
+    screen.queryByText(
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    ),
+  ).toBeNull();
 });
 
 test('shows account strategy attribution evidence without claiming pnl', async () => {
@@ -878,11 +883,13 @@ test('shows account strategy attribution evidence without claiming pnl', async (
   expect(await screen.findByText('1 / 1 / 1')).toBeTruthy();
   expect(await screen.findByText('Orders / fills')).toBeTruthy();
   expect(await screen.findByText('1 / 1')).toBeTruthy();
-  expect(await screen.findByText('Evidence linked, P/L pending')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Evidence linked, P/L pending')).length,
+  ).toBeGreaterThan(0);
   expect((await screen.findAllByText(/6\.50/)).length).toBeGreaterThan(0);
   expect(
     await screen.findByText(
-      'P/L contribution is not calculated until fills are reconciled with position and valuation history.',
+      'P/L contribution is waiting for fills to be reconciled with position and valuation history.',
     ),
   ).toBeTruthy();
 });
@@ -901,7 +908,7 @@ test('shows account strategy contribution estimates with explicit exclusions', a
   expect(await screen.findByText(/16\.50/)).toBeTruthy();
   expect(
     await screen.findByText(
-      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+      'Contribution is estimated from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
     ),
   ).toBeTruthy();
 });
@@ -950,7 +957,9 @@ test('explains account strategy pnl attribution tier and source statuses', async
     (await screen.findAllByText('Attribution blocked')).length,
   ).toBeGreaterThan(0);
   expect(await screen.findByText('Valuation stale / missing')).toBeTruthy();
-  expect(await screen.findByText('Source status: blocked')).toBeTruthy();
+  expect(
+    await screen.findByText('Source status: Attribution blocked'),
+  ).toBeTruthy();
   expect(
     await screen.findByText('Contribution status: Valuation missing'),
   ).toBeTruthy();
@@ -1013,23 +1022,27 @@ test('assigns the selected strategy as research-only account context', async () 
   expect(screen.getByText('Auto trading off')).toBeTruthy();
 });
 
-test('shows account-truth gate status in strategy promotion readiness', async () => {
+test('shows account-truth gate status in strategy review status', async () => {
   renderBacktestPage({ results: [] });
 
   expect(
-    await screen.findByText('Validation and promotion readiness'),
+    await screen.findByText('Strategy validation and review status'),
   ).toBeTruthy();
   expect(await screen.findByText('Account truth gate')).toBeTruthy();
-  expect(await screen.findByText('pass · 98')).toBeTruthy();
-  expect(await screen.findByText('unknown · --')).toBeTruthy();
-  expect(await screen.findByText(/account_truth_gate_pass/)).toBeTruthy();
+  expect(await screen.findByText('Pass · 98')).toBeTruthy();
+  expect(await screen.findByText('Unknown · --')).toBeTruthy();
+  expect(await screen.findByText(/Account truth gate must pass/)).toBeTruthy();
+  expect(screen.queryByText(/account_truth_gate_pass/)).toBeNull();
 });
 
-test('shows strategy attribution gate status in strategy promotion readiness', async () => {
+test('shows strategy attribution gate status in strategy review status', async () => {
   renderBacktestPage({ results: [] });
 
   expect(await screen.findByText('Strategy attribution gate')).toBeTruthy();
-  expect(await screen.findByText('evidence_linked_pnl_pending')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Evidence linked, P/L pending')).length,
+  ).toBeGreaterThan(0);
+  expect(screen.queryByText('evidence_linked_pnl_pending')).toBeNull();
   expect(await screen.findByText('Attribution pending')).toBeTruthy();
 });
 
@@ -1097,7 +1110,9 @@ test('renders extension strategy metadata and submits its typed params', async (
   ).toBeTruthy();
   expect(screen.queryByText('lookback_window candidates')).toBeNull();
   expect(
-    await screen.findByText('Requires paper/shadow review before promotion.'),
+    await screen.findByText(
+      'Requires paper/simulation review before manual review.',
+    ),
   ).toBeTruthy();
 
   fireEvent.change(await screen.findByLabelText('Symbol'), {
@@ -1139,13 +1154,15 @@ test('localizes built-in strategy names without changing strategy ids', async ()
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
   expect(await screen.findByText('策略回放')).toBeTruthy();
+  expect(await screen.findByText('策略验证与复核状态')).toBeTruthy();
+  expect(screen.getAllByText('复核状态').length).toBeGreaterThan(0);
   expect(await screen.findByDisplayValue('双均线策略')).toBeTruthy();
   expect(
     (await screen.findAllByText('布林带均值回归')).length,
   ).toBeGreaterThanOrEqual(1);
   expect(
     await screen.findByText(
-      '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
+      '进入复核前需要完成扣除成本后与样本外 ETF 趋势跟踪验证。',
     ),
   ).toBeTruthy();
   expect(
@@ -1337,7 +1354,7 @@ test('localizes persisted strategy metadata for chinese reports', async () => {
   expect(
     (
       await screen.findAllByText(
-        '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
+        '进入复核前需要完成扣除成本后与样本外 ETF 趋势跟踪验证。',
       )
     ).length,
   ).toBeGreaterThanOrEqual(1);

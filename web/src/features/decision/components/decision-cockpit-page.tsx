@@ -1,12 +1,17 @@
 import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCurrency,
   formatPercent,
   formatPrice,
   formatTimestamp,
 } from '../../../shared/format';
+import {
+  formatPublicCode,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
 import {
   useCreateManualOrderFromActionMutation,
   useIntradayDecisionQuery,
@@ -21,8 +26,8 @@ import {
   type StrategyAttributionGateEvidence,
 } from '../api';
 
-function normalizeStatus(value: string | null | undefined) {
-  return (value ?? 'unknown').replace(/_/g, ' ');
+function normalizeStatus(value: string | null | undefined, locale: Locale) {
+  return formatPublicStatus(value ?? 'unknown', locale);
 }
 
 function decisionTone(value: string) {
@@ -44,13 +49,13 @@ function evidenceStatus(candidate: DecisionCandidate) {
   return candidate.evidence.after_cost_oos_validation.status;
 }
 
-function manualStatus(candidate: DecisionCandidate) {
+function manualStatus(candidate: DecisionCandidate, locale: Locale) {
   if (
     candidate.manual_confirmation_status === 'ready_for_manual_confirmation'
   ) {
-    return 'ready for confirmation';
+    return formatPublicStatus(candidate.manual_confirmation_status, locale);
   }
-  return normalizeStatus(candidate.manual_confirmation_status);
+  return normalizeStatus(candidate.manual_confirmation_status, locale);
 }
 
 function accountTruthScore(value: AccountTruthGateEvidence | null | undefined) {
@@ -60,9 +65,12 @@ function accountTruthScore(value: AccountTruthGateEvidence | null | undefined) {
   return String(value.score);
 }
 
-function accountTruthValue(value: AccountTruthGateEvidence | null | undefined) {
+function accountTruthValue(
+  value: AccountTruthGateEvidence | null | undefined,
+  locale: Locale,
+) {
   const status = value?.gate_status ?? 'not_evaluated';
-  return `${normalizeStatus(status)} · ${accountTruthScore(value)}`;
+  return `${normalizeStatus(status, locale)} · ${accountTruthScore(value)}`;
 }
 
 function accountTruthTone(value: AccountTruthGateEvidence | null | undefined) {
@@ -72,9 +80,10 @@ function accountTruthTone(value: AccountTruthGateEvidence | null | undefined) {
 
 function strategyAttributionValue(
   value: StrategyAttributionGateEvidence | null | undefined,
+  locale: Locale,
 ) {
   const status = value?.gate_status ?? 'not_configured';
-  return `${normalizeStatus(status)} · ${value?.strategy_id ?? '--'}`;
+  return `${normalizeStatus(status, locale)} · ${value?.strategy_id ?? '--'}`;
 }
 
 function strategyAttributionTone(
@@ -84,9 +93,17 @@ function strategyAttributionTone(
   return status === 'not_configured' ? 'neutral' : decisionTone(status);
 }
 
+function gateRequirementLabels(
+  values: string[],
+  labels: ReturnType<typeof useCopy>['decision'],
+) {
+  return values.map((value) => labels.gateRequirementLabel(value));
+}
+
 export function DecisionCockpitPage() {
   const copy = useCopy();
   const labels = copy.decision;
+  const { locale } = usePreferences();
   const today = useTodayDecisionQuery();
   const intraday = useIntradayDecisionQuery();
   const signalActions = useSignalActionsQuery();
@@ -148,7 +165,10 @@ export function DecisionCockpitPage() {
       },
       {
         label: labels.marketData,
-        value: today.data?.summary.market_data?.source_health ?? '--',
+        value: formatPublicStatus(
+          today.data?.summary.market_data?.source_health ?? '--',
+          locale,
+        ),
         tone:
           today.data?.summary.market_data?.source_health === 'live'
             ? 'success'
@@ -161,13 +181,14 @@ export function DecisionCockpitPage() {
       },
       {
         label: labels.accountTruthGate,
-        value: accountTruthValue(today.data?.summary.account_truth),
+        value: accountTruthValue(today.data?.summary.account_truth, locale),
         tone: accountTruthTone(today.data?.summary.account_truth),
       },
       {
         label: labels.strategyAttributionGate,
         value: strategyAttributionValue(
           today.data?.summary.strategy_attribution,
+          locale,
         ),
         tone: strategyAttributionTone(today.data?.summary.strategy_attribution),
       },
@@ -176,7 +197,7 @@ export function DecisionCockpitPage() {
       value: string;
       tone: 'success' | 'warning' | 'danger' | 'neutral';
     }>;
-  }, [lanes, labels, today.data]);
+  }, [lanes, labels, locale, today.data]);
 
   if (loading) {
     return (
@@ -257,9 +278,10 @@ export function DecisionCockpitPage() {
         ))}
         <SummaryTile
           label={labels.marketHealth}
-          value={`Market health: ${
-            today.data?.summary.market_data?.source_health ?? '--'
-          }`}
+          value={`${labels.marketHealth}: ${formatPublicStatus(
+            today.data?.summary.market_data?.source_health ?? '--',
+            locale,
+          )}`}
           detail={labels.quotesDetail(
             today.data?.summary.market_data?.live_quote_count ?? 0,
             today.data?.summary.market_data?.stale_quote_count ?? 0,
@@ -328,6 +350,7 @@ function SignalQueuePanel({
   error: boolean;
 }) {
   const labels = useCopy().decision;
+  const { locale } = usePreferences();
   const createManualOrder = useCreateManualOrderFromActionMutation();
   const [quantities, setQuantities] = useState<Record<number, string>>({});
   const latestJournal = journal.slice(0, 4);
@@ -384,9 +407,14 @@ function SignalQueuePanel({
                           {action.title || action.symbol}
                         </div>
                         <div className="app-muted mt-1 break-words text-xs">
-                          {action.symbol} · {normalizeStatus(action.direction)}{' '}
-                          · {normalizeStatus(action.risk_gate_status)} ·{' '}
-                          {normalizeStatus(action.manual_confirmation_status)}
+                          {action.symbol} ·{' '}
+                          {formatPublicStatus(action.direction, locale)} ·{' '}
+                          {formatPublicStatus(action.risk_gate_status, locale)}{' '}
+                          ·{' '}
+                          {formatPublicStatus(
+                            action.manual_confirmation_status,
+                            locale,
+                          )}
                         </div>
                         <div className="app-muted mt-2 break-words text-xs leading-5">
                           {action.detail}
@@ -444,7 +472,7 @@ function SignalQueuePanel({
                       <div className="app-muted mt-1 break-words">
                         {entry.latest_event?.event_type ??
                           entry.review?.outcome ??
-                          normalizeStatus(entry.action_task?.status)}
+                          normalizeStatus(entry.action_task?.status, locale)}
                       </div>
                       <div className="app-muted mt-1 font-mono tabular-nums">
                         {formatTimestamp(
@@ -536,6 +564,7 @@ function LaneStatusTile({ lane }: { lane: DecisionResponse }) {
 
 function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
+  const { locale } = usePreferences();
   const accountTruth = lane.summary.account_truth;
   const requiredActions = accountTruth?.required_actions ?? [];
   const blockingReasons = accountTruth?.blocking_reasons ?? [];
@@ -544,8 +573,8 @@ function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
   );
   const actionDetail =
     requiredActions.length > 0
-      ? requiredActions.join(' · ')
-      : blockingReasons.join(' · ');
+      ? gateRequirementLabels(requiredActions, labels).join(' · ')
+      : gateRequirementLabels(blockingReasons, labels).join(' · ');
   const detail =
     actionDetail.length > 0
       ? `${unresolvedDetail} · ${actionDetail}`
@@ -554,7 +583,7 @@ function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
   return (
     <SummaryTile
       label={labels.accountTruthGate}
-      value={accountTruthValue(accountTruth)}
+      value={accountTruthValue(accountTruth, locale)}
       detail={detail}
     />
   );
@@ -562,29 +591,32 @@ function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
 
 function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
+  const { locale } = usePreferences();
   const strategyAttribution = lane.summary.strategy_attribution;
   const requiredActions = strategyAttribution?.required_actions ?? [];
   const blockingReasons = strategyAttribution?.blocking_reasons ?? [];
   const detailItems = [
     strategyAttribution?.attribution_status
-      ? `${labels.strategyAttributionStatus}: ${normalizeStatus(
+      ? `${labels.strategyAttributionStatus}: ${formatPublicCode(
           strategyAttribution.attribution_status,
+          locale,
         )}`
       : '',
     strategyAttribution?.contribution_status
-      ? `${labels.strategyContributionStatus}: ${normalizeStatus(
+      ? `${labels.strategyContributionStatus}: ${formatPublicCode(
           strategyAttribution.contribution_status,
+          locale,
         )}`
       : '',
     requiredActions.length > 0
-      ? requiredActions.join(' · ')
-      : blockingReasons.join(' · '),
+      ? gateRequirementLabels(requiredActions, labels).join(' · ')
+      : gateRequirementLabels(blockingReasons, labels).join(' · '),
   ].filter(Boolean);
 
   return (
     <SummaryTile
       label={labels.strategyAttributionGate}
-      value={strategyAttributionValue(strategyAttribution)}
+      value={strategyAttributionValue(strategyAttribution, locale)}
       detail={detailItems.length > 0 ? detailItems.join(' · ') : labels.none}
     />
   );
@@ -652,7 +684,7 @@ function NoActionReasons({ reasons }: { reasons: string[] }) {
               key={reason}
               className="min-w-0 rounded-full border border-[var(--app-accent-border)] px-3 py-1 text-xs text-[var(--app-muted)]"
             >
-              {reason}
+              {labels.gateRequirementLabel(reason)}
             </span>
           ),
         )}
@@ -667,6 +699,7 @@ function DecisionCandidateCard({
   candidate: DecisionCandidate;
 }) {
   const labels = useCopy().decision;
+  const { locale } = usePreferences();
   const readyForManual =
     candidate.manual_confirmation_status === 'ready_for_manual_confirmation';
   return (
@@ -704,24 +737,28 @@ function DecisionCandidateCard({
       <div className="mt-4 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
         <EvidenceLine
           label={labels.manual}
-          value={manualStatus(candidate)}
+          value={manualStatus(candidate, locale)}
           tone={readyForManual ? 'success' : 'warning'}
         />
         <EvidenceLine
           label={labels.afterCostOos}
-          value={evidenceStatus(candidate)}
+          value={formatPublicStatus(evidenceStatus(candidate), locale)}
           tone={decisionTone(evidenceStatus(candidate))}
         />
         <EvidenceLine
           label={labels.dataFreshness}
-          value={candidate.evidence.data_freshness.status}
+          value={formatPublicStatus(
+            candidate.evidence.data_freshness.status,
+            locale,
+          )}
           tone={decisionTone(candidate.evidence.data_freshness.status)}
         />
         <EvidenceLine
           label={labels.accountTruth}
-          value={
-            candidate.evidence.account_truth?.gate_status ?? 'not_evaluated'
-          }
+          value={formatPublicStatus(
+            candidate.evidence.account_truth?.gate_status ?? 'not_evaluated',
+            locale,
+          )}
           tone={accountTruthTone(candidate.evidence.account_truth)}
         />
         <EvidenceLine
@@ -731,10 +768,11 @@ function DecisionCandidateCard({
         />
         <EvidenceLine
           label={labels.strategyAttribution}
-          value={
+          value={formatPublicStatus(
             candidate.evidence.strategy_attribution?.gate_status ??
-            'not_configured'
-          }
+              'not_configured',
+            locale,
+          )}
           tone={strategyAttributionTone(
             candidate.evidence.strategy_attribution,
           )}
@@ -768,7 +806,9 @@ function DecisionCandidateCard({
 }
 
 function StatusPill({ value, prefix }: { value: string; prefix?: string }) {
+  const { locale } = usePreferences();
   const tone = decisionTone(value);
+  const label = normalizeStatus(value, locale);
   return (
     <span
       className={`min-w-0 rounded-full border px-2.5 py-1 text-xs font-semibold break-words ${
@@ -779,7 +819,7 @@ function StatusPill({ value, prefix }: { value: string; prefix?: string }) {
             : 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
       }`}
     >
-      {prefix ? `${prefix}: ${normalizeStatus(value)}` : normalizeStatus(value)}
+      {prefix ? `${prefix}: ${label}` : label}
     </span>
   );
 }

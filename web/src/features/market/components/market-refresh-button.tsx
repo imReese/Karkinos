@@ -1,6 +1,9 @@
 import { useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
+import { formatPublicStatus } from '../../../shared/public-labels';
+import { formatStaleReason } from '../../../shared/stale-reason';
 import {
   useRefreshMarketQuotesMutation,
   type MarketQuoteRefreshResponse,
@@ -37,6 +40,7 @@ export function MarketRefreshButton({
   onError,
 }: MarketRefreshButtonProps) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const [lastResponse, setLastResponse] =
     useState<MarketQuoteRefreshResponse | null>(null);
@@ -94,18 +98,25 @@ export function MarketRefreshButton({
             ...lastResponse.failed,
           ]
             .slice(0, 5)
-            .map((item) => (
-              <div
-                key={`${item.symbol}-${item.status}`}
-                className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-2 text-[var(--app-muted)]"
-              >
-                <span className="font-mono font-semibold text-[var(--app-text)]">
-                  {item.symbol}
-                </span>{' '}
-                {item.status}
-                {item.reason ? ` · ${item.reason}` : ''}
-              </div>
-            ))}
+            .map((item) => {
+              const statusLabel = formatPublicStatus(item.status, locale);
+              const reasonLabel = formatStaleReason(
+                item.reason,
+                copy.common.staleReasons,
+              );
+              return (
+                <div
+                  key={`${item.symbol}-${item.status}`}
+                  className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-2 text-[var(--app-muted)]"
+                >
+                  <span className="font-mono font-semibold text-[var(--app-text)]">
+                    {item.symbol}
+                  </span>{' '}
+                  {statusLabel}
+                  {item.reason ? ` · ${reasonLabel}` : ''}
+                </div>
+              );
+            })}
         </div>
       ) : null}
     </div>

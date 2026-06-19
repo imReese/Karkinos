@@ -1,4 +1,5 @@
 import { usePreferences, type Locale } from './preferences';
+import { formatPublicCode, formatPublicStatus } from '../shared/public-labels';
 
 export const copy = {
   en: {
@@ -486,6 +487,7 @@ export const copy = {
       strategyContributionStatus: 'Contribution status',
       accountTruthUnresolved: (count: number) =>
         `${count} unresolved differences`,
+      gateRequirementLabel: (code: string) => formatPublicCode(code, 'en'),
       readyCount: (count: number) => `${count} ready`,
       blockedCount: (count: number) => `${count} blocked`,
       dailyLane: 'Daily lane',
@@ -560,9 +562,9 @@ export const copy = {
         statusCanceled: 'Canceled',
         rejectConfirm: 'Reject with reason',
         executionAudit: 'Execution audit',
-        executionAuditTitle: 'Order facts, fills, and shadow review',
+        executionAuditTitle: 'Order facts, fills, and simulation review',
         executionAuditDetail:
-          'Review normalized order/fill evidence and manually trigger a shadow review without sending broker orders.',
+          'Review normalized order/fill evidence and manually trigger a simulated review without sending broker orders.',
         auditLoading: 'Loading execution evidence.',
         auditLoadFailed: 'Execution evidence is unavailable.',
         orderFacts: 'Order facts',
@@ -570,10 +572,10 @@ export const copy = {
         noOrderFacts: 'No normalized order facts yet.',
         noFills: 'No fill facts have been recorded yet.',
         commission: 'Commission',
-        runShadowReview: 'Run daily shadow review',
-        runningShadowReview: 'Running shadow review',
+        runShadowReview: 'Run daily simulation review',
+        runningShadowReview: 'Running simulation review',
         shadowRunResult: (processed: number, reused: number) =>
-          `Shadow review prepared ${processed} orders and reused ${reused}.`,
+          `Simulation review prepared ${processed} orders and reused ${reused}.`,
       },
       killSwitch: {
         kicker: 'Trading controls',
@@ -704,7 +706,7 @@ export const copy = {
         accountStrategyStatus: {
           research_only: 'Research only',
           paper_review: 'Paper review',
-          shadow_review: 'Shadow review',
+          shadow_review: 'Simulation review',
           manual_confirm: 'Manual confirmation',
           disabled: 'Disabled',
         },
@@ -808,13 +810,13 @@ export const copy = {
         totalCost: 'Total cost',
         fillsCount: 'Fills',
         evidenceGate: 'Research gates',
-        evidenceGateTitle: 'Validation and promotion readiness',
+        evidenceGateTitle: 'Strategy validation and review status',
         evidenceGateDetail:
-          'Review after-cost, out-of-sample, risk, paper/shadow, and account-truth evidence before treating a strategy as promotable.',
+          'Review after-cost, out-of-sample, risk, paper/simulation, and account-truth evidence before a strategy can enter manual review or paper/simulation. This does not enable trading.',
         evidenceGateLoading: 'Loading strategy evidence gates.',
         evidenceGateFailed: 'Strategy evidence gates are unavailable.',
-        validationMatrix: 'Validation matrix',
-        promotionReadiness: 'Promotion readiness',
+        validationMatrix: 'Validation coverage',
+        promotionReadiness: 'Review status',
         accountTruthGate: 'Account truth gate',
         accountTruthEvidencePresent: 'Evidence available',
         accountTruthEvidenceMissing: 'Evidence missing',
@@ -921,7 +923,7 @@ export const copy = {
         rowsValue: (count: number) => `${count} rows`,
         quality: 'Quality',
         qualityValue: (status: string) =>
-          status === 'ok' ? 'OK' : status.toUpperCase(),
+          status === 'ok' ? 'OK' : formatPublicStatus(status, 'en'),
         cacheStore: 'Cache store',
         cacheMetadata: 'Cache metadata',
         adjustmentMode: 'Adjustment',
@@ -999,7 +1001,7 @@ export const copy = {
           if (status === 'benchmark_not_supplied') {
             return 'Benchmark not supplied';
           }
-          return status ?? 'Unknown';
+          return formatPublicStatus(status, 'en');
         },
       },
       chart: {
@@ -2070,6 +2072,7 @@ export const copy = {
       strategyAttributionStatus: '归因状态',
       strategyContributionStatus: '贡献状态',
       accountTruthUnresolved: (count: number) => `${count} 个未解决差异`,
+      gateRequirementLabel: (code: string) => formatPublicCode(code, 'zh'),
       readyCount: (count: number) => `${count} 个就绪`,
       blockedCount: (count: number) => `${count} 个阻断`,
       dailyLane: '日级通道',
@@ -2091,7 +2094,7 @@ export const copy = {
       noDetail: '暂无详情。',
       riskGate: '风控闸门',
       manual: '人工确认',
-      afterCostOos: '成本后/OOS',
+      afterCostOos: '扣除成本后/样本外',
       dataFreshness: '行情新鲜度',
       journal: '审计日志',
       strategy: '策略',
@@ -2143,9 +2146,9 @@ export const copy = {
         statusCanceled: '已取消',
         rejectConfirm: '填写原因并拒绝',
         executionAudit: '执行审计',
-        executionAuditTitle: '订单事实、成交事实与 shadow 复核',
+        executionAuditTitle: '订单事实、成交事实与模拟复盘',
         executionAuditDetail:
-          '查看归一化订单/成交证据，并手动触发 shadow 复核；不会提交券商订单。',
+          '查看归一化订单/成交证据，并手动触发模拟复盘；不会提交券商订单。',
         auditLoading: '正在加载执行证据。',
         auditLoadFailed: '执行证据暂不可用。',
         orderFacts: '订单事实',
@@ -2153,10 +2156,10 @@ export const copy = {
         noOrderFacts: '当前还没有归一化订单事实。',
         noFills: '当前还没有成交事实。',
         commission: '手续费',
-        runShadowReview: '运行当日 shadow 复核',
-        runningShadowReview: 'shadow 复核中',
+        runShadowReview: '运行当日模拟复盘',
+        runningShadowReview: '模拟复盘中',
         shadowRunResult: (processed: number, reused: number) =>
-          `shadow 复核准备 ${processed} 笔订单，复用 ${reused} 笔。`,
+          `模拟复盘准备 ${processed} 笔订单，复用 ${reused} 笔。`,
       },
       killSwitch: {
         kicker: '交易控制',
@@ -2236,11 +2239,11 @@ export const copy = {
         },
         validationNotes: {
           'Requires after-cost, out-of-sample ETF trend-following validation before promotion.':
-            '晋级前需要完成 after-cost 与样本外 ETF 趋势跟踪验证。',
+            '进入复核前需要完成扣除成本后与样本外 ETF 趋势跟踪验证。',
           'Requires after-cost, out-of-sample validation across equity ETF, bond, gold, and cash proxy allocations.':
-            '晋级前需要覆盖股票 ETF、债券、黄金和现金代理配置的 after-cost 与样本外验证。',
+            '进入复核前需要覆盖股票 ETF、债券、黄金和现金代理配置的扣除成本后与样本外验证。',
           'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.':
-            '晋级前需要在 A 股或 ETF fixture 上完成 after-cost 与样本外均值回归验证。',
+            '进入复核前需要在 A 股或 ETF 样本上完成扣除成本后与样本外均值回归验证。',
         },
         parameterLabels: {
           short_period: '短期均线周期',
@@ -2263,14 +2266,14 @@ export const copy = {
         benchmarkRole: '基准角色',
         validationRequirements: '验证要求',
         oosRequired: '需要样本外验证',
-        afterCostRequired: '需要 after-cost 报告',
+        afterCostRequired: '需要扣除成本后报告',
         notDeclared: '未声明',
         strategyRegistryLoading: '正在加载策略注册表。',
         strategyRegistryFailed: '策略注册表不可用；暂用默认基准策略。',
         strategyCatalogKicker: '策略库',
         strategyCatalogTitle: '可用回测策略',
         strategyCatalogDetail:
-          '先选择研究策略，再指定标的运行回测并查看 after-cost 证据。',
+          '先选择研究策略，再指定标的运行回测并查看扣除成本后证据。',
         selectStrategy: (name: string) => `选择${name}`,
         selectedStrategy: '已选',
         accountStrategyKicker: '账户策略',
@@ -2282,8 +2285,8 @@ export const copy = {
           '账户策略绑定暂不可用；回测仍可作为研究证据运行。',
         accountStrategyStatus: {
           research_only: '仅研究',
-          paper_review: 'Paper 复核',
-          shadow_review: 'Shadow 复核',
+          paper_review: '纸面复核',
+          shadow_review: '模拟复盘',
           manual_confirm: '人工确认',
           disabled: '已停用',
         },
@@ -2378,13 +2381,13 @@ export const copy = {
         totalCost: '总成本',
         fillsCount: '成交数',
         evidenceGate: '研究门槛',
-        evidenceGateTitle: '验证矩阵与晋级 readiness',
+        evidenceGateTitle: '策略验证与复核状态',
         evidenceGateDetail:
-          '在策略可晋级前，集中查看 after-cost、样本外、风控、paper/shadow 与账户事实证据。',
+          '查看扣除成本后、样本外、风控、纸面/模拟与账户事实证据，判断策略是否具备进入人工复核或纸面/模拟流程的条件；不会自动上线或下单。',
         evidenceGateLoading: '正在加载策略证据门槛。',
         evidenceGateFailed: '策略证据门槛暂不可用。',
-        validationMatrix: '验证矩阵',
-        promotionReadiness: '晋级 readiness',
+        validationMatrix: '验证覆盖',
+        promotionReadiness: '复核状态',
         accountTruthGate: '账户事实闸门',
         accountTruthEvidencePresent: '已有证据',
         accountTruthEvidenceMissing: '缺少证据',
@@ -2401,7 +2404,7 @@ export const copy = {
         kicker: '参数扫描',
         title: '有界参数扫描',
         subtitle:
-          '对当前策略运行小规模 typed grid。排名只作为研究证据，仍需样本外、after-cost、风控和人工复核。',
+          '对当前策略运行小规模参数网格。排名只作为研究证据，仍需样本外、扣除成本后、风控和人工复核。',
         candidateLabel: (label: string) => `${label}候选值`,
         rankBy: '排序指标',
         rankTotalReturn: '总收益',
@@ -2489,7 +2492,8 @@ export const copy = {
         rows: '行数',
         rowsValue: (count: number) => `${count} 行`,
         quality: '质量',
-        qualityValue: (status: string) => (status === 'ok' ? '正常' : status),
+        qualityValue: (status: string) =>
+          status === 'ok' ? '正常' : formatPublicStatus(status, 'zh'),
         cacheStore: '缓存存储',
         cacheMetadata: '缓存元数据',
         adjustmentMode: '复权',
@@ -2523,7 +2527,7 @@ export const copy = {
         description: '说明',
         validationNotes: '验证备注',
         oosRequired: '需要样本外验证',
-        afterCostRequired: '需要 after-cost 报告',
+        afterCostRequired: '需要扣除成本后报告',
         unknown: '未知',
         notDeclared: '未声明',
         noBounds: '无范围限制',
@@ -2534,8 +2538,8 @@ export const copy = {
         kicker: '研究证据',
         title: '验证证据',
         subtitle:
-          '本次运行的 after-cost 与样本外证据。用于研究复核，不代表执行审批。',
-        afterCostTitle: '扣成本后证据',
+          '本次运行的扣除成本后与样本外证据。用于研究复核，不代表执行审批。',
+        afterCostTitle: '扣除成本后证据',
         oosTitle: '样本外切分',
         netReturn: '净收益率',
         grossReturn: '扣成本前收益',
@@ -2567,7 +2571,7 @@ export const copy = {
           if (status === 'benchmark_not_supplied') {
             return '未提供基准';
           }
-          return status ?? '未知';
+          return formatPublicStatus(status, 'zh');
         },
       },
       chart: {

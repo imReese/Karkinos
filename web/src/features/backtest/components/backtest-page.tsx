@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import { formatCurrency, formatPercent } from '../../../shared/format';
+import {
+  formatPublicCode,
+  formatPublicCodeList,
+  formatPublicNote,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
 import { BacktestReportView } from './backtest-report-view';
 import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
@@ -797,6 +804,7 @@ function AccountStrategyPanel({
   onAssignSelected: () => void;
 }) {
   const labels = useCopy().backtest.page;
+  const { locale } = usePreferences();
   const strategyInfo =
     strategyCatalog.find(
       (item) =>
@@ -812,21 +820,21 @@ function AccountStrategyPanel({
     ? lookupLabel(
         labels.accountStrategyStatus,
         assignment.status,
-        assignment.status,
+        formatPublicStatus(assignment.status, locale),
       )
     : labels.notDeclared;
   const assignmentAttributionStatus = assignment
     ? lookupLabel(
         labels.accountStrategyAttribution,
         assignment.attribution_status,
-        assignment.attribution_status,
+        formatPublicStatus(assignment.attribution_status, locale),
       )
     : labels.notDeclared;
   const scope = assignment
     ? lookupLabel(
         labels.accountStrategyScope,
         assignment.scope,
-        assignment.scope,
+        formatPublicStatus(assignment.scope, locale),
       )
     : labels.notDeclared;
   const scopeValue =
@@ -850,12 +858,12 @@ function AccountStrategyPanel({
   const rawAttributionLabel = lookupLabel(
     labels.accountStrategyAttribution,
     rawAttributionStatus,
-    rawAttributionStatus,
+    formatPublicStatus(rawAttributionStatus, locale),
   );
   const rawContributionLabel = lookupLabel(
     labels.accountStrategyContributionStatusMap,
     rawContributionStatus,
-    rawContributionStatus,
+    formatPublicCode(rawContributionStatus, locale),
   );
 
   return (
@@ -943,7 +951,7 @@ function AccountStrategyPanel({
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
             <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-1.5 text-[var(--app-muted)]">
               {labels.accountStrategyAttributionSourceStatus}:{' '}
-              {rawAttributionStatus}
+              {rawAttributionLabel}
             </span>
             <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-1.5 text-[var(--app-muted)]">
               {labels.accountStrategyContributionSourceStatus}:{' '}
@@ -993,7 +1001,7 @@ function AccountStrategyPanel({
                   value={lookupLabel(
                     labels.accountStrategyAttribution,
                     attribution.attribution_status,
-                    attribution.attribution_status,
+                    formatPublicStatus(attribution.attribution_status, locale),
                   )}
                 />
                 <StatusTile
@@ -1008,7 +1016,7 @@ function AccountStrategyPanel({
                       className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
                       key={limitation}
                     >
-                      {limitation}
+                      {formatPublicNote(limitation, locale)}
                     </p>
                   ))}
                 </div>
@@ -1040,7 +1048,7 @@ function AccountStrategyPanel({
                   value={lookupLabel(
                     labels.accountStrategyContributionStatusMap,
                     contribution.contribution_status,
-                    contribution.contribution_status,
+                    formatPublicCode(contribution.contribution_status, locale),
                   )}
                 />
                 <StatusTile
@@ -1074,7 +1082,7 @@ function AccountStrategyPanel({
                       className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
                       key={limitation}
                     >
-                      {limitation}
+                      {formatPublicNote(limitation, locale)}
                     </p>
                   ))}
                 </div>
@@ -1092,7 +1100,7 @@ function AccountStrategyPanel({
               className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
               key={limitation}
             >
-              {limitation}
+              {formatPublicNote(limitation, locale)}
             </p>
           ))}
         </div>
@@ -1124,6 +1132,7 @@ function StrategyEvidenceGatePanel({
   error: boolean;
 }) {
   const labels = useCopy().backtest.page;
+  const { locale } = usePreferences();
   const rows = validation?.rows ?? [];
   const readinessRows = readiness?.rows ?? [];
   const visibleRows = rows.slice(0, 4);
@@ -1220,13 +1229,22 @@ function StrategyEvidenceGatePanel({
                         <EvidenceBadge
                           complete={Boolean(readinessRow?.is_promotable)}
                         >
-                          {readinessRow?.promotion_status ?? labels.notDeclared}
+                          {readinessRow
+                            ? formatPublicStatus(
+                                readinessRow.promotion_status,
+                                locale,
+                              )
+                            : labels.notDeclared}
                         </EvidenceBadge>
                       </td>
                       <td className="px-3 py-3 text-xs leading-5">
                         <div className="font-semibold text-[var(--app-text)]">
-                          {readinessRow?.account_truth_gate_status ??
-                            labels.notDeclared}{' '}
+                          {readinessRow
+                            ? formatPublicStatus(
+                                readinessRow.account_truth_gate_status,
+                                locale,
+                              )
+                            : labels.notDeclared}{' '}
                           ·{' '}
                           {formatGateScore(
                             readinessRow?.account_truth_score ?? null,
@@ -1240,8 +1258,12 @@ function StrategyEvidenceGatePanel({
                       </td>
                       <td className="px-3 py-3 text-xs leading-5">
                         <div className="break-words font-semibold text-[var(--app-text)]">
-                          {readinessRow?.strategy_attribution_status ??
-                            labels.notDeclared}
+                          {readinessRow
+                            ? formatPublicCode(
+                                readinessRow.strategy_attribution_status,
+                                locale,
+                              )
+                            : labels.notDeclared}
                         </div>
                         <div className="app-muted mt-1">
                           {readinessRow?.has_strategy_attribution_evidence
@@ -1251,7 +1273,10 @@ function StrategyEvidenceGatePanel({
                       </td>
                       <td className="px-3 py-3 text-xs leading-5 text-[var(--app-muted)]">
                         {missing.length > 0
-                          ? Array.from(new Set(missing)).join(' · ')
+                          ? formatPublicCodeList(
+                              Array.from(new Set(missing)),
+                              locale,
+                            ).join(' · ')
                           : labels.none}
                       </td>
                     </tr>
@@ -1306,6 +1331,7 @@ function StrategyMetadataPanel({
   description: string;
   labels: ReturnType<typeof useCopy>['backtest']['page'];
 }) {
+  const { locale } = usePreferences();
   const assetUniverse = strategy.asset_universe ?? strategy.benchmark_universe;
   const frequencies = strategy.supported_frequencies;
   const validationBadges = [
@@ -1364,7 +1390,9 @@ function StrategyMetadataPanel({
       {strategy.validation_notes?.length ? (
         <ul className="mt-3 space-y-1 text-xs leading-5 text-[var(--app-muted)]">
           {strategy.validation_notes.map((note) => (
-            <li key={note}>{validationNoteLabels[note] ?? note}</li>
+            <li key={note}>
+              {validationNoteLabels[note] ?? formatPublicNote(note, locale)}
+            </li>
           ))}
         </ul>
       ) : null}
