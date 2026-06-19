@@ -17,6 +17,7 @@ import {
 import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import { AppShell } from './layout/app-shell';
+import { usePreferences } from './preferences';
 import {
   useAccountOverviewQuery,
   type EquityCurveRange,
@@ -125,6 +126,7 @@ import {
   formatTimestamp,
 } from '../shared/format';
 import { formatAssetClassLabel } from '../shared/asset-class';
+import { formatPublicCode, formatPublicStatus } from '../shared/public-labels';
 import { formatStaleReason } from '../shared/stale-reason';
 
 type PortfolioSearchState = {
@@ -1191,6 +1193,7 @@ export function RiskPage() {
 
 export function MarketPage() {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const board = useResearchBoardQuery();
   const addWatchlistItem = useAddWatchlistItemMutation();
@@ -1230,8 +1233,18 @@ export function MarketPage() {
       ? copy.market.providerActions[
           health.next_action as keyof typeof copy.market.providerActions
         ]
-      : (health?.next_action ?? null);
-  const sourceHealthLabel = health?.source_health ?? copy.market.unknown;
+      : health?.next_action
+        ? formatPublicCode(health.next_action, locale)
+        : null;
+  const sourceHealthLabel = health?.source_health
+    ? formatPublicStatus(health.source_health, locale)
+    : copy.market.unknown;
+  const refreshPolicyLabel = health?.refresh_policy
+    ? formatPublicStatus(health.refresh_policy, locale)
+    : '--';
+  const providerStatusLabel = health?.provider_status
+    ? formatPublicStatus(health.provider_status, locale)
+    : copy.market.unknown;
   const providerConfiguredLabel = health
     ? health.provider_configured
       ? copy.market.configured
@@ -1336,7 +1349,7 @@ export function MarketPage() {
                   {sourceHealthLabel}
                 </div>
                 <div className="app-muted mt-1 text-xs">
-                  {health?.refresh_policy ?? '--'}
+                  {refreshPolicyLabel}
                 </div>
               </div>
               <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
@@ -1446,6 +1459,9 @@ export function MarketPage() {
                     const itemHealth = healthBySymbol.get(item.symbol);
                     const isActive = activeSymbol === item.symbol;
                     const quoteStatus = itemHealth?.quote_status ?? '--';
+                    const quoteStatusLabel = itemHealth?.quote_status
+                      ? formatPublicStatus(itemHealth.quote_status, locale)
+                      : '--';
                     return (
                       <div
                         key={item.symbol}
@@ -1509,7 +1525,7 @@ export function MarketPage() {
                                     : 'bg-[var(--app-danger)]'
                               }`}
                             />
-                            {quoteStatus}
+                            {quoteStatusLabel}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-3 md:justify-end">
@@ -1591,7 +1607,7 @@ export function MarketPage() {
                     />
                     <MetricBlock
                       label={copy.market.providerStatus}
-                      value={health?.provider_status ?? copy.market.unknown}
+                      value={providerStatusLabel}
                     />
                     <MetricBlock
                       label={copy.market.providerConfigured}
@@ -1629,7 +1645,7 @@ export function MarketPage() {
                     />
                     <MetricBlock
                       label={copy.market.refreshPolicy}
-                      value={health?.refresh_policy ?? '--'}
+                      value={refreshPolicyLabel}
                     />
                     <MetricBlock
                       label={copy.market.latestQuote}
@@ -2484,6 +2500,7 @@ function PendingFundOrdersCard({
   onRetry: () => void;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
 
   if (loading) {
     return (
@@ -2540,7 +2557,7 @@ function PendingFundOrdersCard({
                   {formatCurrency(order.amount)}
                 </div>
                 <div className="app-muted mt-1 text-xs">
-                  {formatPendingStatus(order.status, copy)}
+                  {formatPendingStatus(order.status, copy, locale)}
                 </div>
               </div>
             </div>
@@ -2554,7 +2571,11 @@ function PendingFundOrdersCard({
   );
 }
 
-function formatPendingStatus(status: string, copy: AppCopy) {
+function formatPendingStatus(
+  status: string,
+  copy: AppCopy,
+  locale: 'en' | 'zh',
+) {
   const normalized = status.trim().toLowerCase();
   if (normalized === 'pending') {
     return copy.activity.pending.status.pending;
@@ -2565,7 +2586,7 @@ function formatPendingStatus(status: string, copy: AppCopy) {
   if (normalized === 'rejected') {
     return copy.activity.pending.status.rejected;
   }
-  return status;
+  return formatPublicStatus(status, locale);
 }
 
 function ExplainabilityWorkspace({
@@ -2877,6 +2898,7 @@ function MarketDataOperationsPanel({
   onBarsBackfill: () => Promise<void>;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   return (
     <div className="app-panel rounded-2xl p-4 sm:p-5">
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2928,7 +2950,8 @@ function MarketDataOperationsPanel({
             >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <span className="font-semibold text-[var(--app-text)]">
-                  {run.trigger} · {run.status}
+                  {formatPublicCode(run.trigger, locale)} ·{' '}
+                  {formatPublicStatus(run.status, locale)}
                 </span>
                 <span className="app-muted font-mono tabular-nums">
                   {formatTimestamp(run.started_at)}
@@ -3137,7 +3160,7 @@ export function ReturnCalendarCard({
       {hasTimeline ? (
         <div className={`${compact ? 'mt-3' : 'mt-4'} min-w-0`}>
           <div
-            className="grid min-w-0 items-center gap-3 rounded-full bg-[color-mix(in_srgb,var(--app-surface-1)_62%,transparent)] p-1.5 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-border)_36%,transparent)] sm:grid-cols-[auto_minmax(14rem,1fr)_auto]"
+            className="grid min-w-0 items-center gap-3 rounded-2xl bg-[color-mix(in_srgb,var(--app-surface-1)_62%,transparent)] p-1.5 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-border)_36%,transparent)] sm:grid-cols-[auto_minmax(14rem,1fr)_auto] sm:rounded-full"
             data-testid="return-calendar-toolbar"
           >
             <ReturnCalendarSegmentedControl
@@ -3346,7 +3369,7 @@ function ReturnCalendarSegmentedControl({
 }) {
   const groupClass =
     compactMode === 'period'
-      ? 'inline-flex min-w-0 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_70%,transparent)] p-1 sm:w-full sm:justify-between'
+      ? 'inline-flex w-full min-w-0 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_70%,transparent)] p-1 sm:justify-between'
       : 'inline-flex w-fit min-w-0 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_70%,transparent)] p-1';
   const buttonClass =
     compactMode === 'period'
@@ -3575,12 +3598,12 @@ function ReturnCurveChart({
   if (points.length === 0) {
     return null;
   }
-  const width = 760;
-  const height = 340;
-  const left = 84;
-  const right = 28;
-  const top = 26;
-  const bottom = 58;
+  const width = 820;
+  const height = 420;
+  const left = 96;
+  const right = 36;
+  const top = 30;
+  const bottom = 68;
   const chartWidth = width - left - right;
   const chartHeight = height - top - bottom;
   const values = points.map((point) => point.value);
@@ -3613,7 +3636,7 @@ function ReturnCurveChart({
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      className="h-[280px] w-full sm:h-[320px]"
+      className="h-[360px] w-full sm:h-[420px]"
       data-testid="return-curve-chart"
     >
       <line
@@ -3623,7 +3646,8 @@ function ReturnCurveChart({
         x2={left}
         y2={top + chartHeight}
         stroke="currentColor"
-        strokeOpacity="0.32"
+        strokeOpacity="0.48"
+        strokeWidth="1.2"
       />
       <line
         data-testid="return-curve-x-axis"
@@ -3632,7 +3656,8 @@ function ReturnCurveChart({
         x2={left + chartWidth}
         y2={top + chartHeight}
         stroke="currentColor"
-        strokeOpacity="0.32"
+        strokeOpacity="0.48"
+        strokeWidth="1.2"
       />
       <line
         data-testid="return-curve-zero-axis"
@@ -3642,7 +3667,8 @@ function ReturnCurveChart({
         y2={zeroY}
         stroke="currentColor"
         strokeDasharray="4 5"
-        strokeOpacity="0.22"
+        strokeOpacity="0.34"
+        strokeWidth="1.2"
       />
       {ticks.map((tick) => {
         const y = top + chartHeight - ((tick - min) / range) * chartHeight;
@@ -3654,13 +3680,13 @@ function ReturnCurveChart({
               x2={left + chartWidth}
               y2={y}
               stroke="currentColor"
-              strokeOpacity="0.1"
+              strokeOpacity="0.16"
             />
             <text
-              x={left - 8}
-              y={y + 4}
+              x={left - 10}
+              y={y + 5}
               textAnchor="end"
-              className="fill-current text-[11px] opacity-70"
+              className="fill-current text-[13px] font-semibold opacity-85"
             >
               {formatCurrency(tick)}
             </text>
@@ -3669,24 +3695,24 @@ function ReturnCurveChart({
       })}
       <text
         x={left}
-        y={height - 12}
+        y={height - 16}
         textAnchor="start"
-        className="fill-current text-[11px] opacity-70"
+        className="fill-current text-[13px] font-semibold opacity-85"
       >
         {firstLabel}
       </text>
       <text
         x={left + chartWidth}
-        y={height - 12}
+        y={height - 16}
         textAnchor="end"
-        className="fill-current text-[11px] opacity-70"
+        className="fill-current text-[13px] font-semibold opacity-85"
       >
         {lastLabel}
       </text>
       <polyline
         fill="none"
         stroke="currentColor"
-        strokeWidth="3"
+        strokeWidth="4"
         points={line}
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -3696,14 +3722,14 @@ function ReturnCurveChart({
           key={point.label}
           cx={point.x}
           cy={point.y}
-          r={activeIndex === index ? 5 : 3.5}
+          r={activeIndex === index ? 6 : 4}
           tabIndex={0}
           role="img"
           aria-label={`${point.label} · ${formatCurrency(point.value)}`}
           data-testid={`return-curve-point-${index}`}
           fill="var(--app-text)"
           stroke="var(--app-mantle)"
-          strokeWidth="2"
+          strokeWidth="2.4"
           opacity={activeIndex === null || activeIndex === index ? 1 : 0.56}
           onClick={() => setActiveIndex(index)}
           onFocus={() => setActiveIndex(index)}
@@ -3725,19 +3751,19 @@ function ReturnCurveChart({
             rx="10"
             fill="var(--app-panel-strong)"
             stroke="var(--app-border)"
-            opacity="0.96"
+            opacity="0.98"
           />
           <text
             x={tooltipX + 12}
             y={tooltipY + 18}
-            className="fill-current text-[11px]"
+            className="fill-current text-[12px] font-semibold"
           >
             {activePoint.label}
           </text>
           <text
             x={tooltipX + 12}
             y={tooltipY + 36}
-            className="fill-current text-[12px] font-semibold"
+            className="fill-current text-[13px] font-bold"
           >
             {formatCurrency(activePoint.value)}
           </text>
@@ -3987,6 +4013,14 @@ function formatPercent(value: number) {
 
 function formatCurrency(value: number) {
   return formatCurrencyValue(value);
+}
+
+function formatCompactReturnCurrency(value: number) {
+  if (value === 0) {
+    return '0.00';
+  }
+  const sign = value > 0 ? '+' : '-';
+  return `${sign}${Math.abs(value).toFixed(2)}`;
 }
 
 function formatAuditTimestamp(timestamp: string) {
@@ -4401,17 +4435,21 @@ function ReturnCalendarCell({
         ? formatCurrency(row.marketPnl)
         : formatPercent(row.percentChange)
     : '--';
+  const cellDisplayValue =
+    compact && row && !hasMissingValuation && metric === 'amount'
+      ? formatCompactReturnCurrency(row.marketPnl)
+      : displayValue;
   const tone = row
     ? hasMissingValuation
       ? 'border-dashed border-[color-mix(in_srgb,var(--app-border)_72%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_64%,transparent)] text-[var(--app-muted)]'
       : getHeatmapTone(value, maxMagnitude)
     : 'border-[color-mix(in_srgb,var(--app-border)_54%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_42%,transparent)] text-[var(--app-muted)]';
   const cellClass = compact
-    ? 'flex min-h-[4.25rem] flex-col rounded-md px-2 py-2'
-    : 'flex min-h-[5.75rem] flex-col rounded-lg px-3 py-3';
+    ? 'flex min-h-[4.25rem] min-w-0 flex-col overflow-hidden rounded-md px-1.5 py-2'
+    : 'flex min-h-[5.75rem] min-w-0 flex-col overflow-hidden rounded-lg px-3 py-3';
   const valueClass = compact
-    ? 'mt-auto self-end text-right text-sm font-semibold leading-5'
-    : 'mt-auto self-end text-right text-base font-semibold';
+    ? 'mt-auto self-end whitespace-nowrap text-right text-[10px] font-semibold leading-4 sm:text-[11px]'
+    : 'mt-auto max-w-full self-end break-words text-right text-base font-semibold leading-tight';
   const metaClass = compact
     ? 'mt-1 self-end text-right text-[10px] opacity-80'
     : 'mt-2 self-end text-right text-[11px] opacity-80';
@@ -4433,7 +4471,7 @@ function ReturnCalendarCell({
           <div className="app-muted mt-1 text-[11px]">{sublabelText}</div>
         ) : null}
         <div className={valueClass} data-testid="return-calendar-cell-value">
-          {displayValue}
+          {cellDisplayValue}
         </div>
       </div>
     );
@@ -4459,7 +4497,7 @@ function ReturnCalendarCell({
         <div className="mt-1 text-[11px] opacity-70">{sublabelText}</div>
       ) : null}
       <div className={valueClass} data-testid="return-calendar-cell-value">
-        {displayValue}
+        {cellDisplayValue}
       </div>
       {hasMissingValuation && row.missingPriceSymbols.length > 0 ? (
         <div className={metaClass}>

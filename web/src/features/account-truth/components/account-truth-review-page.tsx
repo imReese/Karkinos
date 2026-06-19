@@ -3,6 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePreferences } from '../../../app/preferences';
 import { formatDateTime } from '../../../shared/format';
 import {
+  formatPublicCode,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
+import {
   useAccountTruthImportRunsQuery,
   useAccountTruthScoreQuery,
   useReconciliationReportDetailQuery,
@@ -83,29 +87,11 @@ const labels = {
     reviewFailed: 'Review failed',
     safety:
       'Ledger candidate is an audit label only. It does not mutate the production ledger or submit broker orders.',
-    statusLabels: {
-      pass: 'Pass',
-      warning: 'Warning',
-      mismatch: 'Mismatch',
-      degraded: 'Degraded',
-      blocked: 'Blocked',
-      missing: 'Missing',
-      fresh: 'Fresh',
-      available: 'Available',
-    },
     componentLabels: {
       cash: 'Cash',
       position: 'Position',
       fee: 'Fee',
       costBasis: 'Cost basis',
-    },
-    codeLabels: {
-      account_truth_score_unavailable:
-        'Account Truth score is unavailable because no broker evidence has been staged.',
-      import_and_reconcile_broker_evidence:
-        'Import broker evidence and run reconciliation first.',
-      review_position_difference: 'Review position difference',
-      unresolved_position_difference: 'Unresolved position difference',
     },
   },
   zh: {
@@ -153,28 +139,11 @@ const labels = {
     reviewSaved: '复核已保存',
     reviewFailed: '复核保存失败',
     safety: '账本候选只是审计标签，不会修改生产账本，也不会提交券商订单。',
-    statusLabels: {
-      pass: '通过',
-      warning: '警告',
-      mismatch: '不一致',
-      degraded: '降级',
-      blocked: '阻断',
-      missing: '缺失',
-      fresh: '已更新',
-      available: '可用',
-    },
     componentLabels: {
       cash: '现金',
       position: '持仓',
       fee: '费用',
       costBasis: '成本价',
-    },
-    codeLabels: {
-      account_truth_score_unavailable:
-        '缺少已暂存的券商证据，暂时无法计算账户事实分。',
-      import_and_reconcile_broker_evidence: '先导入券商证据并完成对账。',
-      review_position_difference: '复核持仓差异',
-      unresolved_position_difference: '存在未解决的持仓差异',
     },
   },
 } as const;
@@ -497,7 +466,8 @@ export function AccountTruthReviewPage() {
 
               {savedReviewStatus ? (
                 <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_12%,transparent)] px-4 py-3 text-sm font-bold text-[var(--app-success)]">
-                  {text.reviewSaved}: {savedReviewStatus}
+                  {text.reviewSaved}:{' '}
+                  {formatPublicStatus(savedReviewStatus, locale)}
                 </div>
               ) : null}
               {reviewMutation.isError ? (
@@ -690,7 +660,8 @@ function ReviewItemCard({
 
       {item.latest_review ? (
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] p-3 text-sm font-bold text-[var(--app-success)]">
-          {text.latestReview}: {item.latest_review.review_status}
+          {text.latestReview}:{' '}
+          {formatPublicStatus(item.latest_review.review_status, locale)}
         </div>
       ) : null}
 
@@ -742,26 +713,7 @@ function formatCode(
   locale: 'en' | 'zh',
   kind: 'status' | 'code',
 ) {
-  if (value === '--') {
-    return value;
-  }
-  const text = labels[locale];
-  if (kind === 'status') {
-    return (
-      text.statusLabels[value as keyof typeof text.statusLabels] ??
-      humanizeCode(value)
-    );
-  }
-  return (
-    text.codeLabels[value as keyof typeof text.codeLabels] ??
-    humanizeCode(value)
-  );
-}
-
-function humanizeCode(value: string) {
-  return value
-    .split('_')
-    .filter(Boolean)
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join(' ');
+  return kind === 'status'
+    ? formatPublicStatus(value, locale)
+    : formatPublicCode(value, locale);
 }

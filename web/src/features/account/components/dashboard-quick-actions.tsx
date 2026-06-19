@@ -1,5 +1,10 @@
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import { formatDateTime, formatTimestamp } from '../../../shared/format';
+import {
+  formatPublicCode,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import type { AccountOverview } from '../api';
 import {
@@ -100,6 +105,7 @@ export function DashboardQuickActions({
   quoteDiagnostics?: QuoteDiagnosticItem[];
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.overview.dashboard;
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const quoteStatus = overview.quote_status ?? 'unknown';
@@ -130,8 +136,9 @@ export function DashboardQuickActions({
     },
     {
       label: labels.refreshPolicy,
-      value: normalizeStatus(
+      value: formatPublicStatus(
         overview.refresh_policy ?? marketHealth?.refresh_policy,
+        locale,
       ),
     },
     {
@@ -146,7 +153,9 @@ export function DashboardQuickActions({
           ? copy.market.providerActions[
               marketHealth.next_action as keyof typeof copy.market.providerActions
             ]
-          : marketHealth?.next_action,
+          : marketHealth?.next_action
+            ? formatPublicCode(marketHealth.next_action, locale)
+            : null,
       ),
     },
   ];

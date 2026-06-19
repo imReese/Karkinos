@@ -1,5 +1,7 @@
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import { formatCurrency } from '../../../shared/format';
+import { formatPublicCode } from '../../../shared/public-labels';
 import type { AccountStrategyContributionReport } from '../api';
 
 type Props = {
@@ -28,14 +30,14 @@ export function StrategyContributionGateCard({
   onRetry,
 }: Props) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.backtest.page;
   const isSupported = canShowContribution(report);
   const contributionStatus = (report?.contribution_status ??
     'no_linked_fills') as keyof typeof labels.accountStrategyContributionStatusMap;
   const statusLabel =
     labels.accountStrategyContributionStatusMap[contributionStatus] ??
-    report?.contribution_status ??
-    '--';
+    formatPublicCode(report?.contribution_status, locale);
 
   return (
     <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">

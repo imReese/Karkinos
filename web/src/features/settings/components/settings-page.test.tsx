@@ -254,7 +254,7 @@ test('renders backend data status and service state', async () => {
   expect(
     await screen.findByLabelText('Market state: Market open'),
   ).toBeTruthy();
-  expect(await screen.findByLabelText('Refresh policy: live')).toBeTruthy();
+  expect(await screen.findByLabelText('Refresh policy: Live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
   expect(await screen.findByText('Runtime boundary')).toBeTruthy();
   expect(

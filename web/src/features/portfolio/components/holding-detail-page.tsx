@@ -13,6 +13,7 @@ import {
 } from '../../market/api';
 import { PriceStructureChart } from '../../market/components/price-structure-chart';
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import {
   formatCurrency,
   formatPercent,
@@ -22,6 +23,7 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
+import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import {
   useLiveHoldingsQuery,
@@ -84,6 +86,7 @@ function formatAge(seconds: number | null | undefined) {
 
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.portfolio.detail;
   const decodedSymbol = safeDecodeSymbol(symbol);
   const normalizedSymbol = normalizeSymbol(decodedSymbol);
@@ -194,6 +197,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     copy.common.staleReasons,
   );
   const isStale = quoteStatus === 'stale';
+  const quoteStatusLabel = quoteStatus
+    ? formatPublicStatus(quoteStatus, locale)
+    : '--';
   const quotePrice = resolveQuotePrice(
     position,
     liveItem?.latest_price ?? null,
@@ -231,6 +237,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const portfolioWeight = allocation?.weight ?? null;
   const marketOpen = marketHealth.data?.market_open;
   const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
+  const refreshPolicyLabel = marketHealth.data?.refresh_policy
+    ? formatPublicStatus(marketHealth.data.refresh_policy, locale)
+    : '--';
   const refreshStatus = refreshQuote.isPending
     ? labels.refreshingQuote
     : refreshQuote.isError
@@ -431,6 +440,11 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
               <div className="app-product-mark">{labels.quoteStatus}</div>
               <div className="mt-4 grid gap-3">
                 <InfoRow
+                  label={labels.quoteStatus}
+                  value={quoteStatusLabel}
+                  tone={isStale ? 'warning' : undefined}
+                />
+                <InfoRow
                   label={labels.quoteTimestamp}
                   value={formatTimestamp(quoteTimestamp)}
                 />
@@ -448,7 +462,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   label={labels.valuationTimestamp}
                   value={formatTimestamp(overview.data?.valuation_timestamp)}
                 />
-                <InfoRow label={labels.refreshPolicy} value={refreshPolicy} />
+                <InfoRow
+                  label={labels.refreshPolicy}
+                  value={refreshPolicyLabel}
+                />
                 <InfoRow
                   label={labels.marketOpen}
                   value={

@@ -309,25 +309,28 @@ test('renders daily and intraday decision cockpit evidence without execution', a
     0,
   );
   expect(await screen.findByText('600519')).toBeTruthy();
-  expect(await screen.findByText('Risk gate: passed')).toBeTruthy();
+  expect(await screen.findByText('Risk gate: Passed')).toBeTruthy();
   expect(
-    await screen.findByText('Manual: ready for confirmation'),
+    await screen.findByText('Manual: Ready for manual confirmation'),
   ).toBeTruthy();
-  expect(await screen.findByText('After-cost/OOS: attached')).toBeTruthy();
-  expect(await screen.findByText('Data freshness: live')).toBeTruthy();
-  expect(await screen.findByText('Account truth: pass')).toBeTruthy();
+  expect(await screen.findByText('After-cost/OOS: Attached')).toBeTruthy();
+  expect(await screen.findByText('Data freshness: Live')).toBeTruthy();
+  expect(await screen.findByText('Account truth: Pass')).toBeTruthy();
   expect(await screen.findByText('Account truth score: 98')).toBeTruthy();
   expect(await screen.findByText('Journal: risk.signal.recorded')).toBeTruthy();
   expect(await screen.findByText('Signal action queue')).toBeTruthy();
   expect(await screen.findByText('Prepare manual order')).toBeTruthy();
   expect(await screen.findByText('Signal journal')).toBeTruthy();
-  expect(await screen.findByText('Market health: partial')).toBeTruthy();
+  expect(await screen.findByText('Market health: Partial')).toBeTruthy();
   expect(
     await screen.findByText('Portfolio equity: CN¥40,000.00'),
   ).toBeTruthy();
   expect(
-    await screen.findByText('no_intraday_stock_or_etf_action_tasks'),
+    await screen.findByText('No intraday stock or ETF action candidates'),
   ).toBeTruthy();
+  expect(
+    screen.queryByText('no_intraday_stock_or_etf_action_tasks'),
+  ).toBeNull();
   expect(
     screen
       .getByRole('link', { name: 'Open Trading approvals: 600519' })
@@ -409,22 +412,24 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
   expect(
     (await screen.findAllByText('Account truth gate')).length,
   ).toBeGreaterThan(0);
-  expect((await screen.findAllByText('degraded · 64')).length).toBeGreaterThan(
+  expect((await screen.findAllByText('Degraded · 64')).length).toBeGreaterThan(
     0,
   );
-  expect((await screen.findAllByText('blocked · 32')).length).toBeGreaterThan(
+  expect((await screen.findAllByText('Blocked · 32')).length).toBeGreaterThan(
     0,
   );
   expect(await screen.findByText(/2 unresolved differences/)).toBeTruthy();
   expect(await screen.findByText(/4 unresolved differences/)).toBeTruthy();
-  expect(await screen.findByText(/review_position_difference/)).toBeTruthy();
+  expect(await screen.findByText(/Review position difference/)).toBeTruthy();
   expect(
-    await screen.findByText(/import_and_reconcile_broker_evidence/),
+    await screen.findByText(/Import broker evidence and run reconciliation/),
   ).toBeTruthy();
+  expect(screen.queryByText(/review_position_difference/)).toBeNull();
+  expect(screen.queryByText(/import_and_reconcile_broker_evidence/)).toBeNull();
   expect(
-    await screen.findByText('Manual: account truth review required'),
+    await screen.findByText('Manual: Account truth review required'),
   ).toBeTruthy();
-  expect(await screen.findByText('Account truth: degraded')).toBeTruthy();
+  expect(await screen.findByText('Account truth: Degraded')).toBeTruthy();
 });
 
 test('surfaces strategy-attribution gate status in decision summaries', async () => {
@@ -478,17 +483,20 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
     (await screen.findAllByText('Strategy attribution gate')).length,
   ).toBeGreaterThan(0);
   expect(
-    (await screen.findAllByText('blocked · dual_ma')).length,
+    (await screen.findAllByText('Blocked · dual_ma')).length,
   ).toBeGreaterThan(0);
   expect(
     await screen.findByText(
-      /link_strategy_signals_orders_fills_and_contribution/,
+      /Link strategy signals, reviews, orders, fills, and contribution evidence/,
     ),
   ).toBeTruthy();
   expect(
-    await screen.findByText('Manual: strategy attribution review required'),
+    screen.queryByText(/link_strategy_signals_orders_fills_and_contribution/),
+  ).toBeNull();
+  expect(
+    await screen.findByText('Manual: Strategy attribution review required'),
   ).toBeTruthy();
-  expect(await screen.findByText('Strategy attribution: blocked')).toBeTruthy();
+  expect(await screen.findByText('Strategy attribution: Blocked')).toBeTruthy();
 });
 
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {
