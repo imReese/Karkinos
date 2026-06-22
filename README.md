@@ -120,7 +120,7 @@ The data-source setup command writes ignored local `config.json` for you. It hid
 
 Use this storage boundary:
 
-- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, and the current account commission rule.
+- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, the current account commission rule, and read-only broker connector client paths/account aliases. Broker passwords, tokens, and secrets do not belong in broker connector config.
 - SQLite under `data/store/`: mutable financial facts and cache state, including watchlists, instrument metadata, ledger entries, quotes, bars, portfolio snapshots, trading controls, and saved backtest indexes.
 - `reports/`: human-readable generated artifacts such as backtest JSON reports and data reconciliation outputs. Reports are runtime evidence, not source code.
 

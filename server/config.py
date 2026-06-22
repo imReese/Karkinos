@@ -9,6 +9,32 @@ from decimal import Decimal
 from pathlib import Path
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+_BROKER_CONNECTOR_ALLOWED_FIELDS = frozenset(
+    {
+        "connector_id",
+        "connector_type",
+        "enabled",
+        "client_path",
+        "account_alias",
+    }
+)
+_BROKER_CONNECTOR_SENSITIVE_KEY_PARTS = (
+    "password",
+    "secret",
+    "token",
+    "credential",
+)
+
+
+@dataclass(frozen=True)
+class BrokerConnectorConfig:
+    """Read-only broker connector runtime config stored only in local config."""
+
+    connector_id: str
+    connector_type: str = "qmt_readonly"
+    enabled: bool = False
+    client_path: str = ""
+    account_alias: str = ""
 
 
 @dataclass
@@ -32,6 +58,7 @@ class BacktestConfig:
     tushare_token: str = ""
     notification: dict = field(default_factory=lambda: {"type": "console"})
     live_poll_interval: int = 60
+    broker_connectors: list[BrokerConnectorConfig] = field(default_factory=list)
 
     @classmethod
     def from_json(cls, path: str | Path) -> BacktestConfig:
@@ -63,6 +90,10 @@ class BacktestConfig:
         # 空字符串视为"使用默认值"（config.example.json 中 end_date 为 ""）
         if data.get("end_date") == "":
             del data["end_date"]
+        if "broker_connectors" in data:
+            data["broker_connectors"] = _parse_broker_connector_configs(
+                data["broker_connectors"]
+            )
 
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
@@ -80,3 +111,62 @@ class ServerConfig(BacktestConfig):
             "http://127.0.0.1:5173",
         ]
     )
+
+
+def _parse_broker_connector_configs(value: object) -> list[BrokerConnectorConfig]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("broker connector config must be a list")
+
+    configs: list[BrokerConnectorConfig] = []
+    for index, raw_entry in enumerate(value):
+        if not isinstance(raw_entry, dict):
+            raise ValueError(
+                f"broker connector config at index {index} must be an object"
+            )
+        if _contains_sensitive_connector_key(raw_entry):
+            raise ValueError(
+                "broker connector config must not contain password, secret, "
+                "token, or credential fields"
+            )
+        unknown_fields = sorted(set(raw_entry) - _BROKER_CONNECTOR_ALLOWED_FIELDS)
+        if unknown_fields:
+            raise ValueError(
+                "broker connector config contains unsupported fields: "
+                + ", ".join(unknown_fields)
+            )
+        connector_id = str(raw_entry.get("connector_id", "")).strip()
+        if not connector_id:
+            raise ValueError("broker connector config requires connector_id")
+        enabled = raw_entry.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("broker connector config enabled must be boolean")
+        configs.append(
+            BrokerConnectorConfig(
+                connector_id=connector_id,
+                connector_type=str(
+                    raw_entry.get("connector_type", "qmt_readonly")
+                ).strip()
+                or "qmt_readonly",
+                enabled=enabled,
+                client_path=str(raw_entry.get("client_path", "")).strip(),
+                account_alias=str(raw_entry.get("account_alias", "")).strip(),
+            )
+        )
+    return configs
+
+
+def _contains_sensitive_connector_key(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(
+            any(
+                part in str(key).lower()
+                for part in _BROKER_CONNECTOR_SENSITIVE_KEY_PARTS
+            )
+            or _contains_sensitive_connector_key(nested)
+            for key, nested in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_sensitive_connector_key(item) for item in value)
+    return False

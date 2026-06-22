@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -16,7 +17,7 @@ from server.bootstrap import (
     resolve_config_path,
     resolve_data_dir,
 )
-from server.config import BacktestConfig, ServerConfig
+from server.config import BacktestConfig, BrokerConnectorConfig, ServerConfig
 
 
 def test_runtime_config_defaults_do_not_seed_real_cash():
@@ -196,6 +197,95 @@ def test_load_runtime_config_supports_env_config_path(tmp_path, monkeypatch):
     assert config.initial_cash == Decimal("555000")
 
 
+def test_server_config_loads_local_read_only_broker_connector_config(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_connectors": [
+                    {
+                        "connector_id": "local-qmt-readonly",
+                        "connector_type": "qmt_readonly",
+                        "enabled": True,
+                        "client_path": "/Applications/QMT",
+                        "account_alias": "personal-review",
+                    }
+                ]
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.broker_connectors == [
+        BrokerConnectorConfig(
+            connector_id="local-qmt-readonly",
+            connector_type="qmt_readonly",
+            enabled=True,
+            client_path="/Applications/QMT",
+            account_alias="personal-review",
+        )
+    ]
+
+
+def test_server_config_rejects_broker_connector_credential_fields(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_connectors": [
+                    {
+                        "connector_id": "local-qmt-readonly",
+                        "connector_type": "qmt_readonly",
+                        "client_path": "/Applications/QMT",
+                        "account_alias": "personal-review",
+                        "broker_password": "do-not-store",
+                    }
+                ]
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="broker connector config"):
+        ServerConfig.from_json(config_path)
+
+
+def test_server_config_rejects_non_boolean_broker_connector_enabled(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_connectors": [
+                    {
+                        "connector_id": "local-qmt-readonly",
+                        "enabled": "false",
+                    }
+                ]
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="enabled must be boolean"):
+        ServerConfig.from_json(config_path)
+
+
+def test_example_broker_connector_config_contains_no_credentials() -> None:
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
+    example = json.loads(Path("config.example.json").read_text(encoding="utf-8"))
+
+    assert "config.json" in gitignore
+    assert example["broker_connectors"] == [
+        {
+            "connector_id": "local-qmt-readonly",
+            "connector_type": "qmt_readonly",
+            "enabled": False,
+            "client_path": "",
+            "account_alias": "",
+        }
+    ]
+    assert not _contains_sensitive_key(example["broker_connectors"])
+
+
 def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
     from server import __main__ as server_main
 
@@ -221,6 +311,19 @@ def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
     assert captured["args"] == ("server.app:create_app",)
     assert captured["kwargs"]["reload"] is True
     assert captured["live_auto_start"] == "true"
+
+
+def _contains_sensitive_key(value) -> bool:
+    sensitive_parts = ("password", "secret", "token", "credential")
+    if isinstance(value, dict):
+        return any(
+            any(part in str(key).lower() for part in sensitive_parts)
+            or _contains_sensitive_key(nested)
+            for key, nested in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_sensitive_key(item) for item in value)
+    return False
 
 
 def test_create_runtime_context_supports_env_data_dir(monkeypatch):

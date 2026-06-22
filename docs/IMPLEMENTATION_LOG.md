@@ -591,3 +591,7 @@ roadmap promises.
   read-only connector contract and deterministic fake connector fixtures for
   account, cash, position, order, fill, and health facts. The connector surface
   does not expose broker order submission.
+* 2026-06-22: Added local read-only broker connector configuration parsing for
+  ignored `config.json`. Connector config accepts client path and account alias
+  only, rejects password/secret/token/credential fields, and keeps source
+  examples synthetic.
