@@ -602,7 +602,7 @@ import or read without introducing broker order submission.
   position, order, fill, and health facts without order submission.
 * [x] Connector configuration stays in ignored local config and never stores
   broker passwords or secrets in source control.
-* [ ] Read-only broker facts normalize into broker evidence and reconciliation
+* [x] Read-only broker facts normalize into broker evidence and reconciliation
   inputs without automatically mutating production ledger entries.
 * [ ] Decision and Strategy Lab degrade or block when connector evidence shows
   material unresolved account-truth issues.

@@ -17,6 +17,10 @@ from account_truth.broker_connector import (
     FakeReadOnlyBrokerConnector,
     ReadOnlyBrokerConnector,
 )
+from account_truth.broker_connector_evidence import (
+    BROKER_CONNECTOR_SOURCE_TYPE,
+    build_broker_connector_evidence_preview,
+)
 from account_truth.broker_statement import (
     BROKER_STATEMENT_EVENT_TYPES,
     BROKER_STATEMENT_REQUIRED_COLUMNS,
@@ -50,6 +54,7 @@ from account_truth.score import (
 __all__ = [
     "ACCOUNT_TRUTH_SCHEMA_VERSION",
     "ACCOUNT_TRUTH_SCORE_SCHEMA_VERSION",
+    "BROKER_CONNECTOR_SOURCE_TYPE",
     "BROKER_STATEMENT_EVENT_TYPES",
     "BROKER_STATEMENT_REQUIRED_COLUMNS",
     "BROKER_STATEMENT_SCHEMA_VERSION",
@@ -80,6 +85,7 @@ __all__ = [
     "ReadOnlyBrokerConnector",
     "StoredBrokerEvidenceEvent",
     "build_account_truth_score",
+    "build_broker_connector_evidence_preview",
     "build_reconciliation_report",
     "parse_broker_statement_csv",
 ]

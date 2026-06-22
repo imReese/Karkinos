@@ -595,3 +595,7 @@ roadmap promises.
   ignored `config.json`. Connector config accepts client path and account alias
   only, rejects password/secret/token/credential fields, and keeps source
   examples synthetic.
+* 2026-06-22: Added read-only broker connector evidence normalization. Synthetic
+  connector snapshots now convert fills, cash snapshots, and position snapshots
+  into staged broker evidence that can feed reconciliation without mutating the
+  production ledger or enabling broker order submission.
