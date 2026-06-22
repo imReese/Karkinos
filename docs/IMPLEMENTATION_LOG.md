@@ -4,6 +4,18 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.1 Progress
+
+* 2026-06-22: Added the first Paper Broker & OMS evidence slice. The new
+  `execution.paper_broker` module records paper-only order and fill evidence
+  into the existing order/fill fact tables with
+  `karkinos.paper_broker.v1` payloads, status history, fee/slippage fields, and
+  optional strategy, signal, risk decision, dataset, cost model, and
+  account-truth references. Tests verify that paper evidence does not mutate
+  production ledger entries. This does not introduce broker submission, broker
+  credentials, default real-money automation, or any change to manual
+  confirmation defaults.
+
 ## v1.0 Progress
 
 * 2026-06-22: Completed the v1.0 documentation and backend coverage acceptance

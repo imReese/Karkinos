@@ -567,11 +567,11 @@ ledger or submitting broker orders.
 
 ### Acceptance Criteria for v1.1
 
-* [ ] Paper broker orders and fills are stored as simulation evidence and do
+* [x] Paper broker orders and fills are stored as simulation evidence and do
   not mutate production ledger entries.
 * [ ] OMS state transitions cover staged, submitted, accepted, partially
   filled, filled, rejected, cancelled, expired, and reconciled states.
-* [ ] Paper order evidence references signal, strategy, risk decision,
+* [x] Paper order evidence references signal, strategy, risk decision,
   dataset, cost model, and account-truth context when available.
 * [ ] Shadow review can compare strategy candidates, paper outcomes, and real
   account movement without attributing unsupported differences to a strategy.
