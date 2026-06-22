@@ -604,7 +604,7 @@ import or read without introducing broker order submission.
   broker passwords or secrets in source control.
 * [x] Read-only broker facts normalize into broker evidence and reconciliation
   inputs without automatically mutating production ledger entries.
-* [ ] Decision and Strategy Lab degrade or block when connector evidence shows
+* [x] Decision and Strategy Lab degrade or block when connector evidence shows
   material unresolved account-truth issues.
 * [ ] Backend deterministic tests use fake connector fixtures for healthy,
   disconnected, stale, permission-limited, duplicate, and incomplete broker

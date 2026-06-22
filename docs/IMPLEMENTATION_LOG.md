@@ -599,3 +599,7 @@ roadmap promises.
   connector snapshots now convert fills, cash snapshots, and position snapshots
   into staged broker evidence that can feed reconciliation without mutating the
   production ledger or enabling broker order submission.
+* 2026-06-22: Wired staged broker evidence into shared Account Truth gate
+  construction. Decision summaries and Strategy Lab promotion readiness now
+  block when latest read-only broker evidence reconciles to unresolved material
+  differences, while preserving manual-confirm-only live-like behavior.
