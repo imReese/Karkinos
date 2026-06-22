@@ -49,7 +49,17 @@ const health = {
   stale_symbols_sample: [],
 };
 
-function installMarketFetchMock() {
+function installMarketFetchMock(
+  overrides: {
+    health?: Record<string, unknown>;
+    quotes?: Array<Record<string, unknown>>;
+  } = {},
+) {
+  const boardHealth = {
+    ...health,
+    ...overrides.health,
+    quotes: overrides.quotes ?? health.quotes,
+  };
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url =
@@ -61,7 +71,7 @@ function installMarketFetchMock() {
 
       if (url.includes('/api/market/research-board')) {
         return jsonResponse({
-          health,
+          health: boardHealth,
           items: [
             {
               symbol: '600519',
@@ -144,7 +154,9 @@ function installMarketFetchMock() {
   return fetchMock;
 }
 
-function renderMarketPage() {
+function renderMarketPage(
+  overrides: Parameters<typeof installMarketFetchMock>[0] = {},
+) {
   window.localStorage.clear();
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
@@ -152,7 +164,7 @@ function renderMarketPage() {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  const fetchMock = installMarketFetchMock();
+  const fetchMock = installMarketFetchMock(overrides);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -196,4 +208,51 @@ test('renders market data operations and triggers manual backfills', async () =>
       expect.objectContaining({ method: 'POST' }),
     );
   });
+});
+
+test('counts cache estimated and missing quotes as market data needing confirmation', async () => {
+  renderMarketPage({
+    health: {
+      source_health: 'cache',
+      refresh_policy: 'cache_only',
+      stale_symbols_count: undefined,
+    },
+    quotes: [
+      { ...health.quotes[0], quote_status: 'cache' },
+      { ...health.quotes[0], symbol: '000001', quote_status: 'estimated' },
+      { ...health.quotes[0], symbol: '000002', quote_status: 'missing' },
+    ],
+  });
+
+  expect((await screen.findAllByText('Cached quotes')).length).toBeGreaterThan(
+    0,
+  );
+  expect((await screen.findAllByText('Cache only')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('3 quotes need review')).toBeTruthy();
+});
+
+test('surfaces selected symbol next action without leaking raw data status codes', async () => {
+  renderMarketPage({
+    health: {
+      source_health: 'cache',
+      refresh_policy: 'cache_only',
+      next_action: null,
+    },
+    quotes: [
+      {
+        ...health.quotes[0],
+        quote_status: 'confirmed_nav_missing',
+        quote_source: 'eastmoney_fund_estimate',
+        stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+      },
+    ],
+  });
+
+  expect(await screen.findByText('Confirmed NAV missing')).toBeTruthy();
+  expect(
+    await screen.findByText('Wait for confirmed fund NAV or sync NAV data'),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText('confirmed_fund_nav_missing_estimate_only'),
+  ).toBeNull();
 });

@@ -38,10 +38,10 @@ export type EquityPoint = {
 
 export type EquitySeriesPoint = {
   timestamp: string;
-  total: number;
-  stocks: number;
-  funds: number;
-  others: number;
+  total: number | null;
+  stocks: number | null;
+  funds: number | null;
+  others: number | null;
   cash: number;
   unrealized_pnl?: number | null;
   total_daily_change?: number | null;

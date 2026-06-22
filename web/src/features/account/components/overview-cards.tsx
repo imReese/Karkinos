@@ -1,9 +1,16 @@
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import {
   formatCurrency,
   formatDateTime,
   formatPercent,
 } from '../../../shared/format';
+import {
+  isCacheLikeMarketDataStatus,
+  isConfirmedMarketDataStatus,
+  normalizeMarketDataStatus,
+} from '../../../shared/market-data-status';
+import { formatPublicStatus } from '../../../shared/public-labels';
 import type { AccountOverview } from '../api';
 
 type OverviewCardMetrics = AccountOverview & {
@@ -39,7 +46,16 @@ function moneyTone(value: number) {
 
 export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
   const copy = useCopy();
-  const isStale = overview.quote_status === 'stale';
+  const { locale } = usePreferences();
+  const valuationStatus = normalizeMarketDataStatus(overview.quote_status);
+  const valuationStatusText =
+    valuationStatus && !isConfirmedMarketDataStatus(valuationStatus)
+      ? isCacheLikeMarketDataStatus(valuationStatus)
+        ? copy.overview.cards.cachedValuation
+        : copy.overview.cards.valuationStatus(
+            formatPublicStatus(valuationStatus, locale),
+          )
+      : null;
   const todayBreakdown = {
     stocks: overview.today_pnl_breakdown?.stocks ?? 0,
     funds: overview.today_pnl_breakdown?.funds ?? 0,
@@ -150,11 +166,11 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
           {index === 0 ? (
             <>
               <div className="mt-3 h-px w-28 bg-gradient-to-r from-[var(--app-accent)] to-transparent opacity-60" />
-              {isStale ? (
+              {valuationStatusText ? (
                 <div className="mt-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
                   <span className="truncate">
-                    {copy.overview.cards.cachedValuation}{' '}
+                    {valuationStatusText}{' '}
                     {formatDateTime(overview.valuation_timestamp)}
                   </span>
                 </div>

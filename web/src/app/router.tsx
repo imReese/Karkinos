@@ -128,12 +128,67 @@ import {
 import { formatAssetClassLabel } from '../shared/asset-class';
 import { formatPublicCode, formatPublicStatus } from '../shared/public-labels';
 import { formatStaleReason } from '../shared/stale-reason';
+import {
+  formatMarketDataStatusNextAction,
+  isCacheLikeMarketDataStatus,
+  isConfirmedMarketDataStatus,
+  isUnconfirmedMarketDataStatus,
+  normalizeMarketDataStatus,
+} from '../shared/market-data-status';
 
 type PortfolioSearchState = {
   assetClass: string;
   pnl: 'all' | 'winners' | 'losers';
   q: string;
 };
+
+function marketDataStatusToneClass(status?: string | null) {
+  const normalized = normalizeMarketDataStatus(status);
+  if (!normalized) {
+    return 'text-[var(--app-soft)]';
+  }
+  if (isConfirmedMarketDataStatus(normalized)) {
+    return 'text-[var(--app-success)]';
+  }
+  if (
+    normalized === 'degraded' ||
+    normalized === 'error' ||
+    normalized === 'missing'
+  ) {
+    return 'text-[var(--app-danger)]';
+  }
+  if (
+    isCacheLikeMarketDataStatus(normalized) ||
+    isUnconfirmedMarketDataStatus(normalized)
+  ) {
+    return 'text-[var(--app-warning)]';
+  }
+  return 'text-[var(--app-soft)]';
+}
+
+function marketDataStatusDotClass(status?: string | null) {
+  const normalized = normalizeMarketDataStatus(status);
+  if (!normalized) {
+    return 'bg-[var(--app-muted)]';
+  }
+  if (isConfirmedMarketDataStatus(normalized)) {
+    return 'bg-[var(--app-success)]';
+  }
+  if (
+    normalized === 'degraded' ||
+    normalized === 'error' ||
+    normalized === 'missing'
+  ) {
+    return 'bg-[var(--app-danger)]';
+  }
+  if (
+    isCacheLikeMarketDataStatus(normalized) ||
+    isUnconfirmedMarketDataStatus(normalized)
+  ) {
+    return 'bg-[var(--app-warning)]';
+  }
+  return 'bg-[var(--app-muted)]';
+}
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -1228,7 +1283,7 @@ export function MarketPage() {
   const selectedHealthQuote = selectedItem
     ? (healthBySymbol.get(selectedItem.symbol) ?? null)
     : null;
-  const providerAction =
+  const providerReportedAction =
     health?.next_action && health.next_action in copy.market.providerActions
       ? copy.market.providerActions[
           health.next_action as keyof typeof copy.market.providerActions
@@ -1236,6 +1291,26 @@ export function MarketPage() {
       : health?.next_action
         ? formatPublicCode(health.next_action, locale)
         : null;
+  const specificProviderAction =
+    health?.next_action &&
+    health.next_action !== 'refresh_quotes_or_check_source'
+      ? providerReportedAction
+      : null;
+  const providerAction =
+    specificProviderAction ??
+    formatMarketDataStatusNextAction(health?.source_health, locale) ??
+    formatMarketDataStatusNextAction(health?.refresh_policy, locale) ??
+    providerReportedAction;
+  const selectedQuoteNextAction =
+    formatMarketDataStatusNextAction(
+      selectedHealthQuote?.stale_reason,
+      locale,
+    ) ??
+    formatMarketDataStatusNextAction(
+      selectedHealthQuote?.quote_status,
+      locale,
+    ) ??
+    providerAction;
   const sourceHealthLabel = health?.source_health
     ? formatPublicStatus(health.source_health, locale)
     : copy.market.unknown;
@@ -1257,25 +1332,20 @@ export function MarketPage() {
         ? copy.market.fundSupported
         : copy.market.fundUnsupported;
   const holdingItemsCount = items.filter((item) => item.is_holding).length;
-  const staleCount =
-    health?.stale_symbols_count ??
-    (health?.quotes ?? []).filter((quote) => quote.quote_status === 'stale')
-      .length;
+  const unconfirmedQuoteCount = (health?.quotes ?? []).filter((quote) =>
+    isUnconfirmedMarketDataStatus(quote.quote_status),
+  ).length;
+  const staleCount = Math.max(
+    health?.stale_symbols_count ?? 0,
+    unconfirmedQuoteCount,
+  );
   const latestQuoteLabel = formatTimestamp(health?.latest_quote_timestamp);
   const marketStateLabel = health
     ? health.market_open
       ? copy.market.marketOpen
       : copy.market.marketClosed
     : copy.market.unknown;
-  const sourceHealthTone =
-    health?.source_health === 'healthy'
-      ? 'text-[var(--app-success)]'
-      : health?.source_health === 'stale' ||
-          health?.refresh_policy === 'cache_only'
-        ? 'text-[var(--app-warning)]'
-        : health?.source_health === 'degraded'
-          ? 'text-[var(--app-danger)]'
-          : 'text-[var(--app-soft)]';
+  const sourceHealthTone = marketDataStatusToneClass(health?.source_health);
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -1458,7 +1528,7 @@ export function MarketPage() {
                   {items.map((item) => {
                     const itemHealth = healthBySymbol.get(item.symbol);
                     const isActive = activeSymbol === item.symbol;
-                    const quoteStatus = itemHealth?.quote_status ?? '--';
+                    const quoteStatus = itemHealth?.quote_status ?? null;
                     const quoteStatusLabel = itemHealth?.quote_status
                       ? formatPublicStatus(itemHealth.quote_status, locale)
                       : '--';
@@ -1517,13 +1587,9 @@ export function MarketPage() {
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs text-[var(--app-soft)]">
                             <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                quoteStatus === 'live'
-                                  ? 'bg-[var(--app-success)]'
-                                  : quoteStatus === 'stale'
-                                    ? 'bg-[var(--app-warning)]'
-                                    : 'bg-[var(--app-danger)]'
-                              }`}
+                              className={`h-1.5 w-1.5 rounded-full ${marketDataStatusDotClass(
+                                quoteStatus,
+                              )}`}
                             />
                             {quoteStatusLabel}
                           </div>
@@ -1817,6 +1883,10 @@ export function MarketPage() {
                         selectedHealthQuote?.stale_reason,
                         copy.common.staleReasons,
                       )}
+                    />
+                    <MetricBlock
+                      label={copy.market.providerNextAction}
+                      value={selectedQuoteNextAction ?? '--'}
                     />
                     <MetricBlock
                       label={copy.market.lastResearch}
@@ -3807,8 +3877,11 @@ function aggregateReturnTimeline(
     const label = toReturnBucket(point.date, bucket);
     const existing = groups.get(label);
     const previousEquity = point.equity - point.delta;
-    const valuationStatus = normalizeValuationStatus(point.valuation_status);
     const missingPriceSymbols = point.missing_price_symbols ?? [];
+    const valuationStatus =
+      missingPriceSymbols.length > 0
+        ? 'missing'
+        : normalizeValuationStatus(point.valuation_status);
     if (existing) {
       existing.delta += point.delta;
       existing.externalFlow += point.external_flow;
@@ -3880,10 +3953,28 @@ function mergeBreakdownItems(
 }
 
 function normalizeValuationStatus(status: string | undefined) {
-  if (status === 'missing') {
+  const normalized =
+    status
+      ?.trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_') ?? '';
+  if (['missing', 'unavailable'].includes(normalized)) {
     return 'missing';
   }
-  if (status === 'partial') {
+  if (
+    [
+      'partial',
+      'cache',
+      'cached',
+      'cache_only',
+      'estimated',
+      'estimate',
+      'stale',
+      'quote_older_than_expected_session',
+      'confirmed_nav_missing',
+      'confirmed_fund_nav_missing_estimate_only',
+    ].includes(normalized)
+  ) {
     return 'partial';
   }
   return 'complete';
@@ -4422,7 +4513,10 @@ function ReturnCalendarCell({
   compact: boolean;
 }) {
   const copy = useCopy();
-  const hasMissingValuation = row?.valuationStatus === 'missing';
+  const hasMissingValuation =
+    row !== undefined && row.valuationStatus === 'missing';
+  const hasUnconfirmedValuation =
+    row !== undefined && row.valuationStatus === 'partial';
   const value = row
     ? metric === 'amount'
       ? row.marketPnl
@@ -4504,6 +4598,11 @@ function ReturnCalendarCell({
           {row.missingPriceSymbols.slice(0, 2).join(', ')}
         </div>
       ) : null}
+      {hasUnconfirmedValuation ? (
+        <div className={metaClass}>
+          {copy.explainability.unconfirmedValuationShort}
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -4536,6 +4635,7 @@ function ReturnCalendarDetail({
   }
 
   const hasMissingValuation = row.valuationStatus === 'missing';
+  const hasUnconfirmedValuation = row.valuationStatus === 'partial';
   const returnValue = hasMissingValuation
     ? copy.explainability.missingValuationShort
     : metric === 'amount'
@@ -4596,10 +4696,14 @@ function ReturnCalendarDetail({
             }
           />
         ) : null}
-        {row.valuationStatus === 'missing' ? (
+        {hasMissingValuation || hasUnconfirmedValuation ? (
           <CalendarDetailMetric
             label={copy.explainability.valuationCoverage}
-            value={`${copy.explainability.missingHistoricalPrices}: ${row.missingPriceSymbols.join(', ')}`}
+            value={
+              hasMissingValuation && row.missingPriceSymbols.length > 0
+                ? `${copy.explainability.missingHistoricalPrices}: ${row.missingPriceSymbols.join(', ')}`
+                : copy.explainability.partialValuation
+            }
           />
         ) : null}
       </div>

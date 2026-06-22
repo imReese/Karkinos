@@ -7,7 +7,16 @@ export type MarketHealthQuote = {
   asset_class: string;
   timestamp: string | null;
   price: number | null;
-  quote_status: 'live' | 'stale' | 'missing' | 'error' | 'unknown';
+  quote_status:
+    | 'cache'
+    | 'confirmed'
+    | 'confirmed_nav_missing'
+    | 'estimated'
+    | 'live'
+    | 'missing'
+    | 'stale'
+    | 'error'
+    | 'unknown';
   quote_source: string | null;
   quote_age_seconds: number | null;
   stale_reason: string | null;

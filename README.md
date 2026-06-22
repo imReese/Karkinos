@@ -88,7 +88,7 @@ public demos and development.
 - Decision and Strategy Lab promotion review surfaces show Account Truth gate
   status, score, unresolved-difference context, and evidence availability so
   account-truth issues are visible before manual review or research promotion.
-- Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, marks periods with incomplete adjacent valuation coverage instead of presenting fabricated returns, and includes axes in the curve view.
+- Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, treats estimated, cached, stale, or confirmed-NAV-missing periods as valuation gaps instead of confirmed returns, and includes axes in the curve view.
 - Read-only decision APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
 
@@ -123,6 +123,21 @@ Use this storage boundary:
 - `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, and the current account commission rule.
 - SQLite under `data/store/`: mutable financial facts and cache state, including watchlists, instrument metadata, ledger entries, quotes, bars, portfolio snapshots, trading controls, and saved backtest indexes.
 - `reports/`: human-readable generated artifacts such as backtest JSON reports and data reconciliation outputs. Reports are runtime evidence, not source code.
+
+**Market Data Reliability Workflow**
+
+Karkinos labels market data with the shared statuses `confirmed`, `live`,
+`cache`, `estimated`, `missing`, `stale`, and `confirmed_nav_missing`.
+Overview, return calendar, Backtest data-audit panels, and strategy replay
+evidence use those labels to distinguish confirmed values from local cache,
+estimate-only values, missing quotes, stale quotes, and delayed fund NAVs.
+
+Manual refresh and scheduled refresh flows can update intraday quotes, close
+prices, and fund NAV confirmation without changing trading behavior. Frozen
+market-data datasets can be replayed for research review, paper/shadow
+comparison, and audit evidence. Estimated, cached, stale, missing, or
+confirmed-NAV-missing values are data-quality evidence only; they are not
+investment advice, profitability claims, or execution approval.
 
 Initial screens do not seed portfolio assets, trades, or fund names. Effective
 portfolio data comes from the local database or explicit private runtime
@@ -226,7 +241,7 @@ sessions, stale source data, or provider corrections.
 The portfolio return, cost-basis, cash-flow, and baseline-price
 semantics are documented in [docs/return-accounting.zh.md](docs/return-accounting.zh.md).
 For an explicit one-symbol reconciliation report, run for example:
-`uv run python scripts/verify_market_bars.py --symbol 603659 --start 2026-06-12 --end 2026-06-15`.
+`uv run python scripts/verify_market_bars.py --symbol <symbol> --start 2026-06-12 --end 2026-06-15`.
 The verifier fetches provider bars for comparison and returns JSON differences;
 it does not overwrite the local cache.
 

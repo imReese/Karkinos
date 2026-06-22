@@ -1114,6 +1114,53 @@ def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
     assert response.has_persistent_cache is True
 
 
+def test_market_data_health_preserves_cache_source_health(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_type": "stock",
+                    "price": 125.0,
+                    "quote_timestamp": "2026-05-26T10:31:00+08:00",
+                    "quote_source": "akshare",
+                    "provider_name": "akshare",
+                    "quote_status": "cache_only",
+                }
+            ]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="akshare",
+            live_poll_interval=60,
+        ),
+        scheduler=SimpleNamespace(watchlist=[("600519", "stock")], latest_quotes={}),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(health_route.endpoint())
+
+    assert response.quotes[0].quote_status == "cache"
+    assert response.source_health == "cache"
+    assert response.provider_status == "cache"
+    assert response.next_action == "refresh_quotes_or_check_source"
+
+
 def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
     from server.routes import market as market_routes
 
@@ -5267,6 +5314,50 @@ def test_portfolio_explainability_keeps_daily_close_terminal_point():
     ]
 
 
+def test_portfolio_explainability_skips_nullable_missing_valuation_points():
+    from server.models import EquitySeriesPoint
+    from server.routes.portfolio import (
+        _equity_points_from_series,
+        _equity_series_components_by_date,
+        _equity_series_metadata_by_date,
+    )
+
+    points = [
+        EquitySeriesPoint(
+            timestamp="2026-06-12T15:00:00+08:00",
+            total=15084.30,
+            stocks=6596.0,
+            funds=2718.9,
+            others=0.0,
+            cash=5769.4,
+            unrealized_pnl=760.0,
+            quote_status="live",
+        ),
+        EquitySeriesPoint(
+            timestamp="2026-06-15T10:45:00+08:00",
+            total=None,
+            stocks=None,
+            funds=None,
+            others=None,
+            cash=5769.4,
+            unrealized_pnl=None,
+            quote_status="missing",
+            missing_price_symbols=["600519"],
+        ),
+    ]
+
+    equity_points = _equity_points_from_series(points)
+    components_by_date = _equity_series_components_by_date(points)
+    valuation_status_by_date, missing_symbols_by_date = _equity_series_metadata_by_date(
+        points
+    )
+
+    assert [point.timestamp for point in equity_points] == ["2026-06-12T15:00:00+08:00"]
+    assert list(components_by_date) == ["2026-06-12"]
+    assert valuation_status_by_date["2026-06-15"] == "missing"
+    assert missing_symbols_by_date["2026-06-15"] == ["600519"]
+
+
 def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_attribution():
     from server.routes.portfolio import _historical_quote_for_equity_day
 
@@ -5309,6 +5400,7 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
 
     assert quote is not None
     assert quote["source"] == "market_bars"
+    assert quote["quote_status"] == "confirmed"
     assert quote["timestamp"] == "2026-06-12T15:00:00+08:00"
     assert quote["price"] == pytest.approx(0.9194)
 
@@ -5362,6 +5454,105 @@ def test_quote_status_allows_live_provider_lag_with_asset_specific_windows():
         portfolio_routes._quote_stale_reason(fake_state, stale_stock_quote, now=now)
         == "quote_older_than_expected_session"
     )
+
+
+def test_quote_status_preserves_shared_market_data_statuses():
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    fake_state = SimpleNamespace(config=SimpleNamespace(live_poll_interval=60))
+    now = datetime(2026, 6, 15, 11, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    base_quote = {
+        "price": 2.4062,
+        "timestamp": "2026-06-15T11:09:00+08:00",
+        "asset_class": "fund",
+    }
+
+    assert (
+        portfolio_routes._quote_status(
+            fake_state,
+            {**base_quote, "quote_status": "estimated"},
+            now=now,
+        )
+        == "estimated"
+    )
+    assert (
+        portfolio_routes._quote_status(
+            fake_state,
+            {**base_quote, "quote_status": "cache_only"},
+            now=now,
+        )
+        == "cache"
+    )
+    assert (
+        portfolio_routes._quote_status(
+            fake_state,
+            {**base_quote, "quote_status": "confirmed_nav_missing"},
+            now=now,
+        )
+        == "confirmed_nav_missing"
+    )
+
+
+def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.routes import portfolio as portfolio_routes
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "026539",
+                    "asset_class": "fund",
+                    "price": 1.9836,
+                    "timestamp": "2026-06-17T15:00:00+08:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                    "quote_status": "live",
+                }
+            ]
+
+        def get_market_bar_on_date_sync(self, symbol: str, trade_date: str):
+            assert symbol == "026539"
+            assert trade_date == "2026-06-17"
+            return None
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(live_poll_interval=120),
+        scheduler=SimpleNamespace(latest_quotes={}, instruments={}),
+        db=FakeDb(),
+    )
+    fake_portfolio = SimpleNamespace(
+        cash=0.0,
+        positions={
+            "026539": SimpleNamespace(
+                market_value=877.1646,
+                unrealized_pnl=74.0,
+            )
+        },
+    )
+    fake_instruments = {
+        "026539": SimpleNamespace(asset_class=SimpleNamespace(value="fund"))
+    }
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
+
+    point = portfolio_routes._current_equity_series_point(
+        fake_state,
+        fake_portfolio,
+        fake_instruments,
+    )
+
+    assert point is not None
+    assert point.quote_status == "confirmed_nav_missing"
 
 
 def test_portfolio_explainability_maps_ledger_events_to_shanghai_dates():
@@ -8105,7 +8296,9 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
 
     monkeypatch.setattr(
         "server.app.get_app_state",
-        lambda: SimpleNamespace(db=FakeDb(), config=SimpleNamespace(strategy="dual_ma")),
+        lambda: SimpleNamespace(
+            db=FakeDb(), config=SimpleNamespace(strategy="dual_ma")
+        ),
     )
 
     router = backtest_routes.create_router()
@@ -8123,9 +8316,7 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
     assert by_strategy["dual_ma"].is_promotable is False
     assert by_strategy["dual_ma"].has_strategy_attribution_evidence is False
     assert by_strategy["dual_ma"].strategy_attribution_status == "no_linked_fills"
-    assert by_strategy["dual_ma"].missing_requirements == [
-        "strategy_attribution_ready"
-    ]
+    assert by_strategy["dual_ma"].missing_requirements == ["strategy_attribution_ready"]
     assert by_strategy["monthly_rebalance"].is_promotable is True
 
 
@@ -8746,6 +8937,104 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
     ]
     assert series[-1].stocks == pytest.approx(10100.0)
     assert series[-1].total == pytest.approx(60100.0)
+
+
+def test_portfolio_equity_curve_series_1d_does_not_fabricate_missing_quote_values(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    curve_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+    endpoint = curve_route.endpoint
+
+    class FakeDb:
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": None,
+                    "timestamp": "2026-04-20T09:40:00+08:00",
+                    "quote_status": "missing",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
+            return None
+
+    fake_portfolio = SimpleNamespace(
+        cash=50000.0,
+        positions={
+            "600519": SimpleNamespace(
+                quantity=10.0,
+                avg_cost=1000.0,
+                market_value=10000.0,
+                unrealized_pnl=0.0,
+            )
+        },
+    )
+    fake_instruments = {
+        Symbol("600519"): SimpleNamespace(asset_class=SimpleNamespace(value="stock")),
+    }
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            assets=[],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            instruments=fake_instruments,
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    class FakeSource:
+        def fetch_bars(self, symbol, start, end, frequency, asset_class):
+            return pd.DataFrame(columns=["timestamp", "close"])
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": FakeSource()},
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    series = asyncio.run(endpoint("1d"))
+
+    assert series
+    assert {point.quote_status for point in series} == {"missing"}
+    assert {tuple(point.missing_price_symbols) for point in series} == {("600519",)}
+    assert all(point.cash == pytest.approx(50000.0) for point in series)
+    assert all(point.total is None for point in series)
+    assert all(point.stocks is None for point in series)
+    assert all(point.funds is None for point in series)
+    assert all(point.others is None for point in series)
+    assert all(point.unrealized_pnl is None for point in series)
+    assert all(point.total_daily_change is None for point in series)
+    assert all(point.stocks_daily_change is None for point in series)
 
 
 def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
@@ -9617,7 +9906,9 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: datetime(
+            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -9722,7 +10013,9 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: datetime(
+            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -9824,7 +10117,9 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")),
+        lambda now=None: datetime(
+            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
     )
 
     response = asyncio.run(live_holdings_route.endpoint())

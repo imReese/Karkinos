@@ -307,10 +307,29 @@ test('shows cached quote guidance for cache-only and stale valuation states', as
   ).toBeTruthy();
   expect(
     await screen.findByText(
-      'Current valuation is based on cached market data.',
+      'Current valuation is based on cached market data. Next action: Refresh quotes or check the data source',
     ),
   ).toBeTruthy();
   expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('surfaces non-cache unconfirmed valuation states as needing review', async () => {
+  renderSettingsPage({
+    overview: {
+      ...defaultOverview,
+      quote_status: 'confirmed_nav_missing',
+    },
+  });
+
+  expect(
+    await screen.findByLabelText('Quote state: Confirmed NAV missing'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Valuation requires review')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Quote state is Confirmed NAV missing. Treat valuation and returns as unconfirmed until data is refreshed or reconciled. Next action: Wait for confirmed fund NAV or sync NAV data',
+    ),
+  ).toBeTruthy();
 });
 
 test('does not claim live interface availability when live status fails', async () => {

@@ -103,7 +103,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function installOverviewFetchMock() {
+function installOverviewFetchMock(
+  overviewOverrides: Record<string, unknown> = {},
+) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
       typeof input === 'string'
@@ -123,6 +125,7 @@ function installOverviewFetchMock() {
         cash_ratio: 0.75,
         valuation_timestamp: '2026-02-10T15:00:00+08:00',
         quote_status: 'live',
+        ...overviewOverrides,
       });
     }
     if (url.endsWith('/api/portfolio')) {
@@ -321,6 +324,27 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getByText('CN¥98.85')).toBeTruthy();
   expect(within(metricsRail).getByText('-CN¥10.68')).toBeTruthy();
   expect(within(metricsRail).getByText('CN¥88.17')).toBeTruthy();
+});
+
+test('labels unconfirmed overview valuation status on the total-assets card', async () => {
+  installOverviewFetchMock({
+    quote_status: 'estimated',
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OverviewPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const metricsRail = await screen.findByTestId('account-metrics-rail');
+  expect(
+    within(metricsRail).getByText(/Valuation status: Estimated/),
+  ).toBeTruthy();
 });
 
 test('shows evidence-gated strategy contribution on overview', async () => {

@@ -455,18 +455,14 @@ def _build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDriv
             price = float(entry.get("price") or 0.0)
             commission = float(entry.get("commission") or 0.0)
             title = f"买入 {instrument_label}"
-            detail = (
-                f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
-            )
+            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
             amount = -(_ledger_entry_notional(entry) + commission)
         elif entry_type == "trade_sell":
             quantity = float(entry.get("quantity") or 0.0)
             price = float(entry.get("price") or 0.0)
             commission = float(entry.get("commission") or 0.0)
             title = f"卖出 {instrument_label}"
-            detail = (
-                f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
-            )
+            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
             amount = _ledger_entry_notional(entry) - commission
         elif entry_type == "dividend":
             title = f"分红 {instrument_label}"
@@ -528,6 +524,8 @@ def _equity_series_components_by_date(
     for point in points:
         point_date = str(point.timestamp).split("T")[0]
         if not point_date:
+            continue
+        if point.stocks is None or point.funds is None or point.others is None:
             continue
         components_by_date[point_date] = {
             "stocks": float(point.stocks),
@@ -1094,10 +1092,21 @@ def _quote_status(
     *,
     now: datetime | None = None,
 ) -> str:
-    if quote and quote.get("quote_status") in {"missing", "error"}:
-        return str(quote["quote_status"])
-    if quote and quote.get("quote_status") == "stale":
-        return "stale"
+    raw_status = str(quote.get("quote_status") or "").strip().lower() if quote else ""
+    if raw_status in {"missing", "error", "stale", "estimated"}:
+        return raw_status
+    if raw_status in {
+        "cache",
+        "cached",
+        "cache_only",
+        "cache_only_after_market_data_permission_fallback",
+    }:
+        return "cache"
+    if raw_status in {
+        "confirmed_nav_missing",
+        "confirmed_fund_nav_missing_estimate_only",
+    }:
+        return "confirmed_nav_missing"
     return (
         "stale"
         if _quote_is_stale(
@@ -1107,6 +1116,26 @@ def _quote_status(
         )
         else "live"
     )
+
+
+def _merge_equity_series_quote_status(current: str, candidate: str) -> str:
+    priority = {
+        "missing": 50,
+        "error": 50,
+        "confirmed_nav_missing": 40,
+        "estimated": 30,
+        "stale": 20,
+        "cache": 10,
+        "live": 0,
+        "confirmed": 0,
+    }
+    return (
+        candidate if priority.get(candidate, 0) > priority.get(current, 0) else current
+    )
+
+
+def _is_missing_equity_quote_status(status: str | None) -> bool:
+    return str(status or "").strip().lower() in {"missing", "error"}
 
 
 def _quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int | None:
@@ -1170,9 +1199,7 @@ def _is_unconfirmed_fund_estimate(
     if not quote or quote.get("price") in {None, ""}:
         return False
 
-    source = str(
-        quote.get("quote_source") or quote.get("source") or ""
-    ).strip().lower()
+    source = str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
     if source != "eastmoney_fund_estimate":
         return False
 
@@ -1510,7 +1537,9 @@ def _resolve_live_holding_baseline(
         else datetime.now().date().isoformat()
     )
 
-    if state.db is not None and hasattr(state.db, "get_latest_market_bar_before_date_sync"):
+    if state.db is not None and hasattr(
+        state.db, "get_latest_market_bar_before_date_sync"
+    ):
         market_bar = state.db.get_latest_market_bar_before_date_sync(symbol, trade_date)
         if market_bar:
             return (
@@ -1730,9 +1759,7 @@ def _resolve_position_today_change(
             current_value = quantity * reference_price
             today_change = current_value - intraday_total_cost
             today_change_pct = (
-                current_value / intraday_total_cost - 1
-                if intraday_total_cost
-                else None
+                current_value / intraday_total_cost - 1 if intraday_total_cost else None
             )
         else:
             today_change = quantity * (reference_price - baseline_price)
@@ -2193,9 +2220,7 @@ def _build_intraday_equity_curve_series(
             sum(float(lot["quantity"]) for lot in same_day_buy_lots),
         )
         overnight_quantity = max(quantity - same_day_buy_quantity, 0.0)
-        intraday_total_cost = sum(
-            float(lot["total_cost"]) for lot in same_day_buy_lots
-        )
+        intraday_total_cost = sum(float(lot["total_cost"]) for lot in same_day_buy_lots)
         intraday_cost_price = (
             intraday_total_cost / same_day_buy_quantity
             if same_day_buy_quantity > 0
@@ -2292,8 +2317,7 @@ def _build_intraday_equity_curve_series(
                 if isinstance(lot["timestamp"], datetime) and lot["timestamp"] <= tick
             )
             baseline_value = (
-                holding["overnight_baseline_value"]
-                + active_same_day_baseline_value
+                holding["overnight_baseline_value"] + active_same_day_baseline_value
             )
             daily_change = position_value - baseline_value
 
@@ -2359,6 +2383,7 @@ def _current_equity_series_point(
     buckets = {"stocks": 0.0, "funds": 0.0, "others": 0.0}
     unrealized_pnl = 0.0
     quote_status = "live"
+    missing_price_symbols: set[str] = set()
 
     for sym, position in getattr(portfolio, "positions", {}).items():
         symbol = str(sym)
@@ -2385,18 +2410,36 @@ def _current_equity_series_point(
         market_value = float(getattr(position, "market_value", 0.0) or 0.0)
         buckets[bucket] += market_value
         unrealized_pnl += float(getattr(position, "unrealized_pnl", 0.0) or 0.0)
-        if _quote_status(state, quote) == "stale":
-            quote_status = "stale"
+        position_quote_status, position_stale_reason = _position_quote_presentation(
+            state,
+            symbol=symbol,
+            asset_class=asset_class,
+            quote=quote,
+        )
+        if position_stale_reason == "confirmed_fund_nav_missing_estimate_only":
+            position_quote_status = "confirmed_nav_missing"
+        if _is_missing_equity_quote_status(position_quote_status):
+            missing_price_symbols.add(symbol)
+        quote_status = _merge_equity_series_quote_status(
+            quote_status,
+            position_quote_status,
+        )
 
+    quote_dependent_values_available = not _is_missing_equity_quote_status(quote_status)
     return EquitySeriesPoint(
         timestamp=get_shanghai_now().isoformat(),
-        total=cash + buckets["stocks"] + buckets["funds"] + buckets["others"],
-        stocks=buckets["stocks"],
-        funds=buckets["funds"],
-        others=buckets["others"],
+        total=(
+            cash + buckets["stocks"] + buckets["funds"] + buckets["others"]
+            if quote_dependent_values_available
+            else None
+        ),
+        stocks=buckets["stocks"] if quote_dependent_values_available else None,
+        funds=buckets["funds"] if quote_dependent_values_available else None,
+        others=buckets["others"] if quote_dependent_values_available else None,
         cash=cash,
-        unrealized_pnl=unrealized_pnl,
+        unrealized_pnl=unrealized_pnl if quote_dependent_values_available else None,
         quote_status=quote_status,
+        missing_price_symbols=sorted(missing_price_symbols),
     )
 
 
@@ -2504,6 +2547,8 @@ def _equity_points_from_series(
     for point in points:
         point_date = str(point.timestamp).split("T")[0]
         if not point_date:
+            continue
+        if point.total is None:
             continue
         by_date[point_date] = EquityPoint(
             timestamp=point.timestamp,
@@ -2661,7 +2706,7 @@ def _historical_quote_for_equity_day(
                 "timestamp": market_bar.get("timestamp")
                 or market_bar.get("trade_date")
                 or trade_date.isoformat(),
-                "quote_status": "historical_bar",
+                "quote_status": "confirmed",
                 "source": market_bar.get("source") or "market_bars",
                 "open": market_bar.get("open"),
                 "high": market_bar.get("high"),
@@ -2677,7 +2722,7 @@ def _historical_quote_for_equity_day(
                 "asset_class": daily_close.get("asset_class") or asset_class,
                 "price": daily_close["close_price"],
                 "timestamp": daily_close.get("trade_date"),
-                "quote_status": "historical_close",
+                "quote_status": "confirmed",
                 "source": daily_close.get("source"),
             }
 
@@ -2952,11 +2997,7 @@ def _synthetic_intraday_equity_series_from_current_quotes(
         )
 
     quote_status = "live" if current is None else current.quote_status
-    ticks = (
-        sorted(sparse_quote_ticks)
-        if len(sparse_quote_ticks) > 1
-        else session_ticks
-    )
+    ticks = sorted(sparse_quote_ticks) if len(sparse_quote_ticks) > 1 else session_ticks
     points: list[EquitySeriesPoint] = []
     for tick in ticks:
         stocks_value = 0.0
@@ -3019,8 +3060,27 @@ def _should_fetch_intraday_equity_curve(now: datetime) -> bool:
 
 
 def _series_point_from_intraday(
-    point: dict, quote_status: str = "live"
+    point: dict,
+    quote_status: str = "live",
+    missing_price_symbols: list[str] | None = None,
 ) -> EquitySeriesPoint:
+    if _is_missing_equity_quote_status(quote_status):
+        return EquitySeriesPoint(
+            timestamp=str(point["timestamp"].isoformat()),
+            total=None,
+            stocks=None,
+            funds=None,
+            others=None,
+            cash=float(point["cash"]),
+            unrealized_pnl=None,
+            total_daily_change=None,
+            stocks_daily_change=None,
+            funds_daily_change=None,
+            others_daily_change=None,
+            quote_status=quote_status,
+            missing_price_symbols=sorted(set(missing_price_symbols or [])),
+        )
+
     return EquitySeriesPoint(
         timestamp=str(point["timestamp"].isoformat()),
         total=float(point["total"]),
@@ -3050,6 +3110,7 @@ def _series_point_from_intraday(
             else float(point["others_daily_change"])
         ),
         quote_status=quote_status,
+        missing_price_symbols=sorted(set(missing_price_symbols or [])),
     )
 
 
@@ -3482,7 +3543,15 @@ def create_router() -> APIRouter:
                 )
 
             return [
-                _series_point_from_intraday(point, quote_status=quote_status)
+                _series_point_from_intraday(
+                    point,
+                    quote_status=quote_status,
+                    missing_price_symbols=(
+                        []
+                        if current_point is None
+                        else current_point.missing_price_symbols
+                    ),
+                )
                 for point in intraday_points
             ]
 

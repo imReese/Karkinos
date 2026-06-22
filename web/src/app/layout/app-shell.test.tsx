@@ -469,6 +469,22 @@ test('shows cache-only open-market state without claiming live quotes', async ()
   expect(screen.queryByText('行情实时')).toBeNull();
 });
 
+test('shows cached market status when source health is cache during live policy', async () => {
+  renderShell({
+    locale: 'zh',
+    marketHealth: {
+      market_open: true,
+      refresh_policy: 'live',
+      source_health: 'cache',
+      provider_status: 'cache',
+      stale_symbols_count: 1,
+    },
+  });
+
+  expect(await screen.findByText('缓存行情')).toBeTruthy();
+  expect(screen.queryByText('行情实时')).toBeNull();
+});
+
 test('does not report ready states while status queries are loading', async () => {
   renderShell({
     locale: 'zh',

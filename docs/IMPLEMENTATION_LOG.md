@@ -4,6 +4,174 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.0 Progress
+
+* 2026-06-22: Hardened the Strategy Runtime context boundary. Runtime context
+  now carries account facts, position facts, risk limits, parameters, and
+  metadata as recursively frozen read-only mappings, exposes only a false
+  `broker_order_submission_enabled` safety flag, and does not provide broker,
+  broker-client, or order-submission methods to strategies. Deterministic tests
+  prove context immutability and the absence of broker submit capability. This
+  does not change existing backtest behavior, broker submission, real-money
+  trading defaults, or live-like manual-confirmation requirements.
+* 2026-06-22: Added the capability-based Strategy Runtime lifecycle contract.
+  `strategy.runtime` now exposes the canonical initialize, before-market, bar,
+  tick, after-market, order-update, and fill-update hooks through a deterministic
+  runner and audit trace. The contract is exported from the strategy package and
+  covered by backend tests for hook vocabulary and invocation order. This does
+  not change existing backtest behavior, broker submission, real-money trading
+  defaults, or live-like manual-confirmation requirements.
+
+## v0.9 Progress
+
+* 2026-06-22: Added Market Data Reliability acceptance evidence for frontend
+  market-data tests. The audit manifest now groups tests for shared
+  data-status rendering, Overview estimated valuation labels, return-calendar
+  confirmed versus unconfirmed valuation handling, 1D equity-curve missing and
+  stale observation behavior, dashboard next actions, and Backtest unconfirmed
+  dataset warnings. This is frontend test and audit evidence only; it does not
+  change valuation inputs, broker submission, trading behavior, or manual
+  confirmation defaults.
+* 2026-06-22: Added Market Data Reliability acceptance evidence for backend
+  deterministic tests. The audit manifest now groups the adapter normalization
+  contract tests, freshness diagnostics tests, manual and scheduled refresh
+  boundary tests, and frozen dataset replay determinism tests under the backend
+  coverage criterion. This is test and audit evidence only; it does not change
+  market-data inputs, broker submission, trading behavior, or live-like manual
+  confirmation defaults.
+* 2026-06-22: Added Market Data Reliability acceptance evidence for Web
+  data-status surfaces. The audit manifest now ties the shared localized
+  market-data status formatter to Overview quick actions, Market selected
+  symbol detail, Settings valuation notices, Backtest dataset snapshot warnings,
+  and the global app-shell status indicators, with tests proving user-facing
+  next actions do not leak internal reason codes. This is display and audit
+  evidence only; it does not change valuation inputs, broker submission,
+  trading defaults, or manual-confirmation behavior.
+* 2026-06-21: Tightened the Overview 1D net-value chart missing-observation
+  contract. The Web chart now treats `missing` or `error` quote-status points
+  as gaps for quote-dependent series (`total`, stocks, funds, and other
+  assets) while preserving the cash series and localized quote status in the
+  tooltip. This prevents missing intraday observations from being displayed as
+  confirmed total or stock/fund values and keeps the chart from fabricating a
+  continuous market-data path. This is a display-safety change only; it does
+  not change valuation data, broker submission, trading behavior, or manual
+  confirmation defaults.
+* 2026-06-21: Tightened the backend 1D equity-series missing-observation
+  contract. The portfolio equity-series API can now return `null` for
+  quote-dependent buckets on missing or error quote observations while keeping
+  cash, public quote status, and missing-symbol evidence intact. This prevents
+  the API from materializing average-cost or stale baseline values as if they
+  were intraday market observations. This is a data-contract safety change
+  only; it does not change broker submission, trading behavior, risk gates, or
+  manual confirmation defaults.
+* 2026-06-21: Hardened return-calendar and explainability conversion for
+  nullable valuation points. Equity-series points with missing quote-dependent
+  values are now excluded from numeric equity-curve and component-breakdown
+  conversion while their valuation status and missing-symbol evidence remain
+  available to downstream diagnostics. This prevents missing valuation points
+  from crashing attribution surfaces or being displayed as confirmed returns.
+  This is a reporting-safety change only; it does not change valuation source
+  data, broker submission, trading behavior, risk gates, or manual confirmation
+  defaults.
+* 2026-06-21: Documented the v0.9 market-data reliability workflow and privacy
+  boundary in the user README set. The docs now explain the shared status
+  vocabulary, manual and scheduled refresh boundaries, frozen replay datasets,
+  local storage boundaries, and that estimated, cached, stale, missing, or
+  confirmed-NAV-missing data is data-quality evidence rather than investment
+  advice, return guarantee, or execution approval. The market-data acceptance
+  audit manifest now includes this documentation evidence.
+* 2026-06-21: Extended the shared Web market-data next-action formatter to
+  Overview and Market data-status surfaces. Overview now prefers localized
+  cache/stale/estimated/missing/confirmed-NAV-missing guidance before showing
+  provider fallback actions, while Market exposes the same guidance in both
+  the data-health panel and selected-symbol detail. Provider-specific actions
+  such as continuing with local cached data remain intact. This is a
+  user-facing explanation change only; it does not change valuation data,
+  trading behavior, broker submission, or manual-confirmation defaults.
+* 2026-06-20: Added a shared Web market-data next-action formatter for
+  unconfirmed statuses and connected Settings valuation notices to it. Cache
+  and stale states now guide users to refresh quotes or check the data source,
+  estimated states guide users to wait for confirmation or refresh, missing
+  states guide users to backfill or run first sync, and confirmed-NAV-missing
+  states guide users to wait for or sync fund NAV confirmation. This is a
+  user-facing explanation change only; it does not change valuation data,
+  trading behavior, broker submission, or manual-confirmation defaults.
+* 2026-06-20: Added the capability-based Market Data Reliability acceptance
+  audit manifest and CLI registry entry. `build_market_data_reliability_acceptance_audit()`
+  maps the completed v0.9 data-plane criteria to deterministic evidence paths
+  and validation commands, while `scripts/export_acceptance_audit.py --audit
+  market_data_reliability` exports the manifest through the shared CI-friendly
+  JSON surface. This is audit/reporting evidence only; it does not change
+  trading behavior, broker submission, live-like defaults, or manual
+  confirmation requirements.
+* 2026-06-20: Connected the shared v0.9 market-data status vocabulary to Web
+  public labels and the return calendar valuation guard. The Web formatter now
+  localizes `confirmed`, `live`, `cache`, `estimated`, `missing`, `stale`, and
+  `confirmed_nav_missing` without leaking internal codes, and the return
+  calendar treats estimated, cached, stale, or confirmed-NAV-missing periods as
+  valuation gaps instead of confirmed returns. The Overview 1D equity curve now
+  uses the same localized status text and marks category changes as needing
+  confirmation when the underlying valuation point is estimated, cached,
+  missing, or otherwise unconfirmed. Historical market bars and daily closes now
+  normalize to the shared public `confirmed` status while keeping their source
+  evidence separate. Current valuation points preserve explicit shared
+  statuses such as `estimated`, `cache`, and `confirmed_nav_missing` instead of
+  collapsing them into `live`. Market data health aggregation now preserves a
+  full-cache state as `cache` rather than relabeling it as stale, and the
+  Overview data-status card plus global toolbar treat cache, estimated,
+  missing, partial, stale, and confirmed-NAV-missing states as unconfirmed
+  market data instead of healthy live quotes. This changes display semantics
+  only; it does not change portfolio data, broker submission, trading
+  defaults, or manual-confirmation behavior. The Overview total-assets rail
+  also labels estimated, missing, or confirmed-NAV-missing valuation status
+  with localized public text instead of showing those figures as confirmed.
+  Market research now counts cache, estimated, missing, stale, and
+  confirmed-NAV-missing quotes as data needing review through the shared
+  frontend status helper, and the user-facing summary uses review-oriented
+  wording instead of calling every unconfirmed quote stale. Settings data
+  status now uses the same shared helper so estimated, missing, and
+  confirmed-NAV-missing valuations are shown as review-required rather than
+  healthy confirmed quotes. Backtest dataset snapshots now surface per-symbol
+  data status in the report table and show a research-evidence warning when a
+  saved report contains unconfirmed market data, so estimated rows are not
+  presented as confirmed inputs for after-cost metrics. Frozen replay datasets
+  now provide deterministic replay evidence for Strategy Runtime dry-runs,
+  including status counts, unconfirmed statuses, required action, and safety
+  flags, so estimated replay inputs cannot be treated as confirmed returns.
+* 2026-06-20: Added deterministic frozen market-data replay datasets.
+  `data.market_data_replay` freezes normalized `MarketDataRecord` values into
+  a stable `karkinos.market_data_dataset.v1` payload, computes a deterministic
+  dataset fingerprint, and replays records in canonical order for backtest,
+  strategy-runtime dry-run, paper/shadow review, and audit replay consumers.
+  The frozen dataset carries explicit safety evidence that it does not change
+  trading behavior, enable broker order submission, or alter manual
+  confirmation defaults.
+* 2026-06-20: Added a capability-based market-data refresh contract for manual
+  and scheduled refresh flows. `data.market_data_refresh` builds and runs
+  auditable refresh tasks for intraday quotes, close-price bars, and fund NAV
+  confirmation through the market-data adapter boundary. Each refresh run
+  returns trigger, task, refreshed-symbol, failed-symbol, record-count, and
+  safety evidence showing that trading behavior, broker order submission, and
+  manual-confirmation defaults were not changed.
+* 2026-06-20: Added market-data quality diagnostics to the shared v0.9
+  contract. `build_market_data_quality_report()` now detects missing expected
+  trading sessions, records that appear on configured non-trading days, stale
+  quotes, confirmed fund NAV gaps, mixed adjustment modes, and provider price
+  differences. The diagnostics return localized messages, deterministic
+  pass/degraded/blocked status, and JSON-safe evidence payloads. This is a
+  backend data-quality contract only; it does not change broker submission,
+  trading defaults, refresh behavior, or manual-confirmation requirements.
+* 2026-06-20: Started Data Plane & Market Reliability with a shared market
+  data contract. `data.market_data` defines the capability-based
+  `MarketDataAdapter` boundary for daily bars, intraday bars, snapshots, ticks,
+  and replay records, plus the shared status vocabulary (`confirmed`, `live`,
+  `cache`, `estimated`, `missing`, `stale`, and `confirmed_nav_missing`).
+  `MarketDataRecord` and `MarketDataRecordMetadata` preserve source, source
+  symbol, timestamp, trading session, adjustment mode, freshness metadata, and
+  limitations. Deterministic tests cover status normalization, Chinese labels,
+  event-kind serialization, and the adapter contract without changing broker
+  submission, trading defaults, or manual-confirmation behavior.
+
 ## v0.8 Progress
 
 * 2026-06-18: Added the first account strategy assignment and attribution loop.
@@ -338,3 +506,15 @@ roadmap promises.
   signal, action, risk, review, order, and fill records.
 * 2026-06-18: Added evidence-gated strategy contribution surfaces to Overview
   and Portfolio while reusing Backtest and Decision attribution gates.
+* 2026-06-22: Fixed return-calendar valuation status semantics so live,
+  confirmed, and complete periods display returns normally; cache, stale,
+  estimated, and confirmed-NAV-missing periods display returns with an
+  unconfirmed marker; and only missing or unavailable prices render as
+  valuation gaps.
+* 2026-06-22: Added acceptance-audit evidence for the 1D net-value chart
+  contract. Existing frontend and backend deterministic tests now prove that
+  the 1D chart can show intraday market movement, cash-flow changes,
+  stock/fund movement, fund confirmation state, stale status, and missing
+  quote-dependent observations without fabricating values. This is audit
+  wiring only; it does not change broker submission, trading behavior, risk
+  gates, or manual-confirmation defaults.

@@ -415,9 +415,36 @@ def _provider_next_action(
         return "check_provider_network_or_use_cache"
     if latest_refresh_error:
         return "check_data_source_settings"
-    if source_health in {"stale", "partial"}:
+    if source_health in {
+        "cache",
+        "confirmed_nav_missing",
+        "estimated",
+        "missing",
+        "partial",
+        "stale",
+    }:
         return "refresh_quotes_or_check_source"
     return None
+
+
+def _aggregate_market_data_health_status(
+    health_quotes: list[MarketHealthQuote],
+) -> str:
+    if not health_quotes:
+        return "unknown"
+    statuses = {item.quote_status for item in health_quotes}
+    if statuses == {"live"}:
+        return "live"
+    for status in (
+        "missing",
+        "confirmed_nav_missing",
+        "estimated",
+        "stale",
+        "cache",
+    ):
+        if statuses == {status}:
+            return status
+    return "partial"
 
 
 def _has_live_fund_quotes(health_quotes: list[MarketHealthQuote]) -> bool:
@@ -2015,15 +2042,7 @@ def create_router() -> APIRouter:
         provider_requires_token = _provider_requires_token(provider_name)
         provider_configured = _provider_configured(state, provider_name)
         provider_supports_funds = _provider_supports_funds(provider_name)
-        source_health = (
-            "unknown"
-            if not health_quotes
-            else (
-                "live"
-                if not stale_symbols
-                else "stale" if len(stale_symbols) == len(health_quotes) else "partial"
-            )
-        )
+        source_health = _aggregate_market_data_health_status(health_quotes)
         provider_status = (
             "error"
             if latest_refresh_error

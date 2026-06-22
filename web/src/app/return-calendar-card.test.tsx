@@ -95,6 +95,17 @@ function renderCalendar({ compact = false }: { compact?: boolean } = {}) {
   );
 }
 
+function renderCalendarWithTimeline(
+  customTimeline: typeof timeline,
+  { compact = false }: { compact?: boolean } = {},
+) {
+  return render(
+    <PreferencesProvider>
+      <ReturnCalendarCard timeline={customTimeline} compact={compact} />
+    </PreferencesProvider>,
+  );
+}
+
 test('renders a month calendar with selectable daily return cells by default', async () => {
   renderCalendar();
 
@@ -196,6 +207,80 @@ test('uses Sunday as the first weekday column in the return calendar', async () 
     'Fri',
     'Sat',
   ]);
+});
+
+test('shows live returns normally and only true missing rows as price gaps', async () => {
+  renderCalendarWithTimeline([
+    {
+      date: '2026-06-16',
+      equity: 100300,
+      delta: 300,
+      external_flow: 0,
+      market_pnl: 300,
+      valuation_status: 'live',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-17',
+      equity: 101000,
+      delta: 700,
+      external_flow: 0,
+      market_pnl: 700,
+      valuation_status: 'estimated',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-18',
+      equity: 100900,
+      delta: -100,
+      external_flow: 0,
+      market_pnl: -100,
+      valuation_status: 'confirmed_nav_missing',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-19',
+      equity: 101200,
+      delta: 300,
+      external_flow: 0,
+      market_pnl: 300,
+      valuation_status: 'complete',
+      missing_price_symbols: ['600519'],
+    },
+  ]);
+
+  expect(await screen.findByText('Data status')).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-16 · CN¥300.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-17 · CN¥700.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-18 · -CN¥100.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-19 · Price gap' }),
+  ).toBeTruthy();
+  expect(screen.getAllByText('Unconfirmed').length).toBeGreaterThanOrEqual(2);
+
+  await userEvent.click(
+    screen.getByRole('button', { name: '2026-06-17 · CN¥700.00' }),
+  );
+
+  const selectedPeriod = screen
+    .getByText('Selected period')
+    .closest('div')?.parentElement;
+  expect(selectedPeriod).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('Valuation coverage')).toBeTruthy();
+  expect(
+    within(selectedPeriod!).getByText(
+      'Some return periods are partially covered; review the breakdown before using the result.',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(selectedPeriod!).getAllByText('CN¥700.00').length,
+  ).toBeGreaterThan(0);
 });
 
 test('switches the return calendar between monthly days, yearly months, and years', async () => {

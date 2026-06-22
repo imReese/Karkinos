@@ -68,10 +68,15 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     class FakePro:
         def daily(self, ts_code, start_date, end_date):
             assert ts_code == "603659.SH"
-            assert start_date <= "20260605" <= end_date
+            latest_trade_date = end_date
+            previous_trade_date = (
+                pd.Timestamp(end_date) - pd.Timedelta(days=1)
+            ).strftime("%Y%m%d")
+            assert start_date <= latest_trade_date <= end_date
+            calls["daily_range"] = (start_date, end_date, latest_trade_date)
             return pd.DataFrame(
                 {
-                    "trade_date": ["20260605", "20260604"],
+                    "trade_date": [latest_trade_date, previous_trade_date],
                     "close": [29.98, 29.12],
                     "pre_close": [29.12, 29.55],
                     "change": [0.86, -0.43],
@@ -109,13 +114,18 @@ def test_tushare_fetch_latest_stock_falls_back_to_daily(monkeypatch):
     assert result["previous_close"] == 29.12
     assert result["change"] == 0.86
     assert result["change_percent"] == pytest.approx(0.029533)
-    assert result["timestamp"] == "2026-06-05"
+    assert result["timestamp"] == _trade_date_iso(calls["daily_range"][2])
     assert result["quote_source"] == "tushare_daily"
     assert result["provider_name"] == "tushare"
     assert result["provider_symbol"] == "603659.SH"
     assert result["symbol"] == "603659"
     assert result["asset_class"] == "stock"
     assert calls["pro_api_token"] == "token-1234"
+
+
+def _trade_date_iso(value: object) -> str:
+    timestamp = pd.Timestamp(str(value))
+    return timestamp.date().isoformat()
 
 
 def test_tushare_fetch_latest_stock_times_out_realtime_and_falls_back_to_daily(
