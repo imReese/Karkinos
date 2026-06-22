@@ -303,6 +303,121 @@ test('shows live returns normally and only true missing rows as price gaps', asy
   ).toBeGreaterThan(0);
 });
 
+test('keeps live confirmed and cached valuation states distinct from true price gaps', async () => {
+  renderCalendarWithTimeline([
+    {
+      date: '2026-06-16',
+      equity: 100100,
+      delta: 100,
+      external_flow: 0,
+      market_pnl: 100,
+      valuation_status: 'live',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-17',
+      equity: 100300,
+      delta: 200,
+      external_flow: 0,
+      market_pnl: 200,
+      valuation_status: 'confirmed',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-18',
+      equity: 100600,
+      delta: 300,
+      external_flow: 0,
+      market_pnl: 300,
+      valuation_status: 'complete',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-19',
+      equity: 101000,
+      delta: 400,
+      external_flow: 0,
+      market_pnl: 400,
+      valuation_status: 'cache',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-22',
+      equity: 101500,
+      delta: 500,
+      external_flow: 0,
+      market_pnl: 500,
+      valuation_status: 'stale',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-23',
+      equity: 102100,
+      delta: 600,
+      external_flow: 0,
+      market_pnl: 600,
+      valuation_status: 'estimated',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-24',
+      equity: 102800,
+      delta: 700,
+      external_flow: 0,
+      market_pnl: 700,
+      valuation_status: 'missing',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-25',
+      equity: 103600,
+      delta: 800,
+      external_flow: 0,
+      market_pnl: 800,
+      valuation_status: 'unavailable',
+      missing_price_symbols: [],
+    },
+    {
+      date: '2026-06-26',
+      equity: 104500,
+      delta: 900,
+      external_flow: 0,
+      market_pnl: 900,
+      valuation_status: 'missing_price_symbols',
+      missing_price_symbols: [],
+    },
+  ]);
+
+  expect(
+    await screen.findByRole('button', { name: '2026-06-16 · CN¥100.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-17 · CN¥200.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-18 · CN¥300.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-19 · CN¥400.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-22 · CN¥500.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-23 · CN¥600.00' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-24 · Price gap' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-25 · Price gap' }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: '2026-06-26 · Price gap' }),
+  ).toBeTruthy();
+  expect(screen.getAllByText('Unconfirmed')).toHaveLength(3);
+});
+
 test('switches the return calendar between monthly days, yearly months, and years', async () => {
   renderCalendar();
   const user = userEvent.setup();

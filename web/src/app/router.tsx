@@ -3962,7 +3962,9 @@ function normalizeValuationStatus(status: string | undefined) {
       ?.trim()
       .toLowerCase()
       .replace(/[\s-]+/g, '_') ?? '';
-  if (['missing', 'unavailable'].includes(normalized)) {
+  if (
+    ['missing', 'unavailable', 'missing_price_symbols'].includes(normalized)
+  ) {
     return 'missing';
   }
   if (
