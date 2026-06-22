@@ -25,6 +25,16 @@ from strategy.schema import (
 
 logger = logging.getLogger(__name__)
 
+_STRATEGY_REGISTRY_CONTRACT_VERSION = "karkinos.strategy_registry.v1"
+_STRATEGY_SCHEMA_VERSION = "karkinos.strategy.v1"
+_RESEARCH_ONLY_EXECUTION_BOUNDARY = {
+    "research_only": True,
+    "can_submit_broker_orders": False,
+    "requires_risk_gate": True,
+    "requires_account_truth_gate": True,
+    "requires_paper_shadow_review": True,
+    "requires_manual_confirmation": True,
+}
 _DEFAULT_BENCHMARK_METADATA = {
     "asset_universe": [],
     "supported_frequencies": ["1d"],
@@ -121,6 +131,8 @@ class StrategyRegistry:
             }
             parameter_schema = STRATEGY_PARAMETER_SCHEMAS.get(name, inferred_params)
             cls._strategies[name] = {
+                "registry_contract_version": _STRATEGY_REGISTRY_CONTRACT_VERSION,
+                "schema_version": _STRATEGY_SCHEMA_VERSION,
                 "class": strategy_cls,
                 "display_name": STRATEGY_DISPLAY_NAMES.get(
                     name, name.replace("_", " ").title()
@@ -128,7 +140,9 @@ class StrategyRegistry:
                 "parameter_schema": parameter_schema,
                 "params": [param.to_json_dict() for param in parameter_schema],
                 "description": strategy_cls.__doc__ or "",
+                "source_type": "builtin",
                 "is_extension": False,
+                "execution_boundary": dict(_RESEARCH_ONLY_EXECUTION_BOUNDARY),
                 **benchmark_metadata,
             }
             logger.debug("策略 '%s' 注册成功", name)
@@ -207,10 +221,14 @@ class StrategyRegistry:
                 )
             result.append(
                 {
+                    "registry_contract_version": entry["registry_contract_version"],
+                    "schema_version": entry["schema_version"],
                     "strategy_id": name,
                     "name": name,
                     "display_name": entry["display_name"],
                     "description": entry["description"].strip(),
+                    "source_type": entry["source_type"],
+                    "is_extension": bool(entry["is_extension"]),
                     "params": params,
                     "parameter_schema": params,
                     "asset_universe": list(entry.get("asset_universe", [])),
@@ -224,6 +242,7 @@ class StrategyRegistry:
                     ],
                     "requires_after_cost_report": entry["requires_after_cost_report"],
                     "validation_notes": list(entry["validation_notes"]),
+                    "execution_boundary": dict(entry["execution_boundary"]),
                 }
             )
         return result
@@ -287,11 +306,14 @@ class StrategyRegistry:
             parameter_schema_from_dict(param) for param in raw.get("parameters", [])
         ]
         entry = {
+            "registry_contract_version": _STRATEGY_REGISTRY_CONTRACT_VERSION,
+            "schema_version": _STRATEGY_SCHEMA_VERSION,
             "class": None,
             "class_path": raw["class_path"].strip(),
             "manifest_dir": str(manifest_path.parent),
             "display_name": raw["display_name"].strip(),
             "description": raw.get("description", ""),
+            "source_type": "extension",
             "parameter_schema": parameter_schema,
             "params": [param.to_json_dict() for param in parameter_schema],
             "asset_universe": list(raw.get("asset_universe", [])),
@@ -306,6 +328,7 @@ class StrategyRegistry:
             ),
             "validation_notes": list(raw.get("validation_notes", [])),
             "is_extension": True,
+            "execution_boundary": dict(_RESEARCH_ONLY_EXECUTION_BOUNDARY),
         }
         if (
             strategy_id in cls._strategies

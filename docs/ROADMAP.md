@@ -14,8 +14,8 @@ user manual; current usage guidance belongs in the README files.
 | v0.6 | Completed | Account Truth & Reconciliation Engine |
 | v0.7 | Completed | Account Truth Review Center |
 | v0.8 | Completed | Strategy Assignment & Attribution Engine |
-| v0.9 | Active | Data Plane & Market Reliability |
-| v1.0 | Planned | Strategy Runtime Foundation |
+| v0.9 | Completed | Data Plane & Market Reliability |
+| v1.0 | Active | Strategy Runtime Foundation |
 | v1.1 | Planned | Paper Broker & OMS |
 | v1.2 | Planned | Broker Evidence Connector |
 | v1.3 | Planned | Professional Decision Workflow |
@@ -535,11 +535,11 @@ one-shot backtest functions into a safe lifecycle runtime.
   before-market, bar, tick, after-market, order-update, and fill-update hooks.
 * [x] Strategy context is read-only for broker/account facts and cannot submit
   broker orders.
-* [ ] Strategy outputs normalize into auditable signal and candidate-action
+* [x] Strategy outputs normalize into auditable signal and candidate-action
   records before risk, account-truth, paper/shadow, or manual-review gates.
-* [ ] Built-in and extension strategies share one registry and parameter
+* [x] Built-in and extension strategies share one registry and parameter
   schema contract.
-* [ ] Strategy Runtime and the Web return calendar consume a shared market
+* [x] Strategy Runtime and the Web return calendar consume a shared market
   calendar to explain non-trading days, weekends, and market holidays without
   showing them as missing prices or zero-return trading days.
 * [ ] Strategy docs explain built-in strategies, custom strategy placement,

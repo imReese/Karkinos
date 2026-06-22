@@ -7366,8 +7366,15 @@ def test_backtest_strategies_route_returns_typed_parameter_schema():
     dual_ma = by_name["dual_ma"]
     params = {param["name"]: param for param in dual_ma.parameter_schema}
 
+    assert dual_ma.registry_contract_version == "karkinos.strategy_registry.v1"
+    assert dual_ma.schema_version == "karkinos.strategy.v1"
     assert dual_ma.strategy_id == "dual_ma"
     assert dual_ma.display_name == "Dual Moving Average"
+    assert dual_ma.source_type == "builtin"
+    assert dual_ma.is_extension is False
+    assert dual_ma.execution_boundary["can_submit_broker_orders"] is False
+    assert dual_ma.execution_boundary["requires_manual_confirmation"] is True
+    assert dual_ma.parameter_schema == dual_ma.params
     assert params["short_period"]["type"] == "int"
     assert params["short_period"]["default"] == 5
     assert params["short_period"]["required"] is False
@@ -7424,10 +7431,17 @@ def test_backtest_strategies_route_returns_extension_strategy_metadata(
     by_name = {item.name: item for item in response}
     extension = by_name["local_mean_reversion"]
 
+    assert extension.registry_contract_version == "karkinos.strategy_registry.v1"
+    assert extension.schema_version == "karkinos.strategy.v1"
+    assert extension.source_type == "extension"
+    assert extension.is_extension is True
     assert extension.asset_universe == ["stock", "etf"]
     assert extension.supported_frequencies == ["1d"]
     assert extension.benchmark_role == "local_research_mean_reversion"
     assert extension.requires_after_cost_report is True
+    assert extension.execution_boundary["can_submit_broker_orders"] is False
+    assert extension.execution_boundary["requires_manual_confirmation"] is True
+    assert extension.parameter_schema == extension.params
     assert extension.parameter_schema[0]["name"] == "entry_zscore"
     assert extension.parameter_schema[0]["type"] == "float"
 

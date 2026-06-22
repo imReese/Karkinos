@@ -6,6 +6,35 @@ roadmap promises.
 
 ## v1.0 Progress
 
+* 2026-06-22: Added a shared market-calendar contract for Strategy Runtime and
+  the Web return calendar. `data.market_calendar` and the Web shared
+  `market-calendar` helper expose the same
+  `karkinos.market_calendar.v1` schema semantics for trading days, weekends,
+  configured market holidays, and configured closed days. Strategy Runtime
+  context now carries the calendar as read-only review context, while the Web
+  return calendar explains non-trading blank dates as weekend, holiday, or
+  closed instead of rendering them as missing prices or zero-return trading
+  days. This is calendar explanation evidence only; it does not fetch broker
+  data, submit orders, change risk gates, or change manual-confirmation
+  defaults.
+* 2026-06-22: Tightened the shared Strategy Registry contract for built-in and
+  extension strategies. Registry entries and `/api/backtest/strategies` now
+  expose the same capability-based contract version, strategy schema version,
+  source type, extension flag, parameter schema, validation metadata, and
+  research-only execution boundary for both built-in and local extension
+  strategies. The boundary explicitly keeps broker order submission disabled
+  and requires risk, account-truth, paper/shadow, and manual confirmation gates
+  before any candidate could be reviewed. Existing `params` and
+  `parameter_schema` fields remain aligned for compatibility.
+* 2026-06-22: Added standardized Strategy Runtime output normalization.
+  Lifecycle hooks may now return observation signals, buy candidates, sell
+  candidates, rebalance candidates, risk warnings, or no-action explanations.
+  `StrategyRuntimeRunner` stamps each output with deterministic audit ids,
+  hook/source-event references, strategy/run ids, reason text, evidence, and
+  downstream gate requirements. Candidate actions explicitly require risk,
+  account-truth, paper/shadow, and manual review gates and set
+  `does_not_enable_execution=true`, so this contract does not submit broker
+  orders or change live-like manual-confirmation defaults.
 * 2026-06-22: Hardened the Strategy Runtime context boundary. Runtime context
   now carries account facts, position facts, risk limits, parameters, and
   metadata as recursively frozen read-only mappings, exposes only a false

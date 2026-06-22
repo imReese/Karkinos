@@ -59,10 +59,14 @@ _DEFAULT_BACKTEST_REPORT_DIR = Path("reports/backtest")
 
 
 class StrategyInfoResponse(BaseModel):
+    registry_contract_version: str = "karkinos.strategy_registry.v1"
+    schema_version: str = "karkinos.strategy.v1"
     strategy_id: str
     name: str
     display_name: str
     description: str
+    source_type: str = "builtin"
+    is_extension: bool = False
     params: list[dict[str, Any]]
     parameter_schema: list[dict[str, Any]]
     asset_universe: list[str] = Field(default_factory=list)
@@ -72,6 +76,7 @@ class StrategyInfoResponse(BaseModel):
     requires_out_of_sample_validation: bool = False
     requires_after_cost_report: bool = False
     validation_notes: list[str] = Field(default_factory=list)
+    execution_boundary: dict[str, Any] = Field(default_factory=dict)
 
 
 class StrategyValidationRowResponse(BaseModel):

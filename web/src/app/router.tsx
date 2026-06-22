@@ -50,6 +50,10 @@ import {
   usePendingManualOrdersQuery,
   type ManualOrder,
 } from '../features/trading/api';
+import {
+  explainMarketCalendarDate,
+  type MarketCalendarDay,
+} from '../shared/market-calendar';
 import { useSettingsQuery } from '../features/settings/api';
 import {
   useCreateAdjustmentMutation,
@@ -4327,12 +4331,14 @@ function ReturnMonthGrid({
           }
           const label = `${activeMonth}-${String(day).padStart(2, '0')}`;
           const row = rowsByLabel.get(label);
+          const calendarDay = explainMarketCalendarDate(label);
           return (
             <ReturnCalendarCell
               key={label}
               label={label}
               heading={String(day)}
               row={row}
+              calendarDay={calendarDay}
               metric={metric}
               maxMagnitude={maxMagnitude}
               selected={selectedLabel === label}
@@ -4495,6 +4501,7 @@ function ReturnCalendarCell({
   label,
   heading,
   row,
+  calendarDay,
   metric,
   maxMagnitude,
   selected,
@@ -4505,6 +4512,7 @@ function ReturnCalendarCell({
   label: string;
   heading: string;
   row: ReturnCalendarRow | undefined;
+  calendarDay?: MarketCalendarDay;
   metric: 'amount' | 'percent';
   maxMagnitude: number;
   selected: boolean;
@@ -4529,10 +4537,14 @@ function ReturnCalendarCell({
         ? formatCurrency(row.marketPnl)
         : formatPercent(row.percentChange)
     : '--';
+  const nonTradingLabel =
+    !row && calendarDay && !calendarDay.isTradingDay
+      ? formatMarketCalendarClosedLabel(calendarDay, copy)
+      : null;
   const cellDisplayValue =
     compact && row && !hasMissingValuation && metric === 'amount'
       ? formatCompactReturnCurrency(row.marketPnl)
-      : displayValue;
+      : (nonTradingLabel ?? displayValue);
   const tone = row
     ? hasMissingValuation
       ? 'border-dashed border-[color-mix(in_srgb,var(--app-border)_72%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_64%,transparent)] text-[var(--app-muted)]'
@@ -4709,6 +4721,19 @@ function ReturnCalendarDetail({
       </div>
     </div>
   );
+}
+
+function formatMarketCalendarClosedLabel(
+  day: MarketCalendarDay,
+  copy: AppCopy,
+) {
+  if (day.dayType === 'holiday') {
+    return copy.explainability.marketHolidayShort;
+  }
+  if (day.dayType === 'weekend') {
+    return copy.explainability.marketWeekendShort;
+  }
+  return copy.explainability.marketClosedShort;
 }
 
 function CalendarDetailMetric({
