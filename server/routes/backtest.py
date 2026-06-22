@@ -722,6 +722,7 @@ def create_router() -> APIRouter:
         from analytics.strategy_promotion_readiness import (
             build_strategy_promotion_readiness,
         )
+        from server.account_truth_gate import build_latest_account_truth_score_payload
         from server.app import get_app_state
         from server.routes.account_strategy import (
             _assignment_from_payload,
@@ -759,11 +760,18 @@ def create_router() -> APIRouter:
             account_strategy_attributions.append(
                 {**attribution_payload, **contribution_payload}
             )
+        account_truth_payload = build_latest_account_truth_score_payload(state)
+        account_truth_scores = (
+            [account_truth_payload]
+            if account_truth_payload.get("status") == "available"
+            else None
+        )
         readiness = build_strategy_promotion_readiness(
             StrategyRegistry.get_info(),
             rows,
             risk_decisions,
             order_facts,
+            account_truth_scores=account_truth_scores,
             account_strategy_assignments=account_strategy_assignments,
             account_strategy_attributions=account_strategy_attributions,
         )

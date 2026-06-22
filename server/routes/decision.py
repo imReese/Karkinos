@@ -26,7 +26,7 @@ def create_router() -> APIRouter:
         actions = _read_action_tasks(db)
         journal_by_signal = _journal_by_signal_id(db)
         validation_by_strategy = await _validation_by_strategy_id(db)
-        account_truth = _account_truth_gate_evidence(db)
+        account_truth = _account_truth_gate_evidence(state)
         strategy_attribution = _strategy_attribution_gate_evidence(
             state,
             db,
@@ -81,7 +81,7 @@ def create_router() -> APIRouter:
         ]
         journal_by_signal = _journal_by_signal_id(db)
         validation_by_strategy = await _validation_by_strategy_id(db)
-        account_truth = _account_truth_gate_evidence(db)
+        account_truth = _account_truth_gate_evidence(state)
         strategy_attribution = _strategy_attribution_gate_evidence(
             state,
             db,
@@ -556,8 +556,13 @@ def _overall_decision(candidates: list[dict[str, Any]]) -> str:
     return "review_required"
 
 
-def _account_truth_gate_evidence(db: Any) -> dict[str, Any]:
+def _account_truth_gate_evidence(state: Any) -> dict[str, Any]:
+    db = getattr(state, "db", None)
     score_payload = _latest_account_truth_score(db)
+    if not score_payload:
+        from server.account_truth_gate import build_latest_account_truth_score_payload
+
+        score_payload = _json_object(build_latest_account_truth_score_payload(state))
     if not score_payload:
         return {
             "status": "missing",
@@ -588,6 +593,10 @@ def _account_truth_gate_evidence(db: Any) -> dict[str, Any]:
         "blocking_reasons": list(score_payload.get("blocking_reasons") or []),
         "required_actions": list(score_payload.get("required_actions") or []),
         "limitations": list(score_payload.get("limitations") or []),
+        "import_run_id": score_payload.get("import_run_id"),
+        "source_type": score_payload.get("source_type"),
+        "source_name": score_payload.get("source_name"),
+        "created_at": score_payload.get("created_at"),
     }
 
 
@@ -665,7 +674,9 @@ def _strategy_attribution_gate_evidence(
             contribution.linked_fill_count,
         ]
     )
-    gate_status = "pass" if is_ready else "degraded" if has_linked_evidence else "blocked"
+    gate_status = (
+        "pass" if is_ready else "degraded" if has_linked_evidence else "blocked"
+    )
     return {
         "status": "available",
         "gate_status": gate_status,
@@ -680,13 +691,9 @@ def _strategy_attribution_gate_evidence(
         "linked_fill_count": contribution.linked_fill_count,
         "net_contribution": contribution.net_contribution,
         "required_actions": (
-            []
-            if is_ready
-            else ["link_strategy_signals_orders_fills_and_contribution"]
+            [] if is_ready else ["link_strategy_signals_orders_fills_and_contribution"]
         ),
-        "blocking_reasons": (
-            [] if is_ready else ["strategy_attribution_not_ready"]
-        ),
+        "blocking_reasons": ([] if is_ready else ["strategy_attribution_not_ready"]),
         "limitations": [
             *list(attribution.limitations),
             *list(contribution.limitations),
