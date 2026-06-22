@@ -19,8 +19,10 @@ class KarkinosLedgerFact:
     symbol: str = ""
     quantity: Decimal = Decimal("0")
     price: Decimal = Decimal("0")
+    gross_amount: Decimal = Decimal("0")
     fee: Decimal = Decimal("0")
     tax: Decimal = Decimal("0")
+    transfer_fee: Decimal = Decimal("0")
     net_amount: Decimal = Decimal("0")
 
 
@@ -144,6 +146,7 @@ def build_reconciliation_report(
                 ),
             )
         )
+    items.extend(_trade_component_items(broker_events, ledger_facts))
     items.extend(
         [
             _item(
@@ -210,12 +213,162 @@ def _position_items(
     ]
 
 
+def _trade_component_items(
+    broker_events: list[StoredBrokerEvidenceEvent],
+    ledger_facts: list[KarkinosLedgerFact],
+) -> list[ReconciliationItem]:
+    broker_components = _broker_trade_components_by_symbol(broker_events)
+    ledger_components = _ledger_trade_components_by_symbol(ledger_facts)
+    symbols = sorted(set(broker_components) | set(ledger_components))
+    items: list[ReconciliationItem] = []
+    for symbol in symbols:
+        broker_values = broker_components.get(symbol, _empty_trade_components())
+        ledger_values = ledger_components.get(symbol, _empty_trade_components())
+        items.extend(
+            [
+                _item(
+                    category="trade_gross_amount",
+                    broker_value=broker_values["gross_amount"],
+                    karkinos_value=ledger_values["gross_amount"],
+                    difference=_difference(
+                        broker_values["gross_amount"],
+                        ledger_values["gross_amount"],
+                    ),
+                    suggested_review_action="review_trade_gross_amount_difference",
+                    symbol=symbol,
+                    detail=(
+                        "Broker trade gross amount compared with Karkinos "
+                        "trade gross amount before fees and taxes."
+                    ),
+                ),
+                _item(
+                    category="net_cash_impact",
+                    broker_value=broker_values["net_amount"],
+                    karkinos_value=ledger_values["net_amount"],
+                    difference=_difference(
+                        broker_values["net_amount"],
+                        ledger_values["net_amount"],
+                    ),
+                    suggested_review_action="review_net_cash_impact_difference",
+                    symbol=symbol,
+                    detail=(
+                        "Broker signed net cash impact compared with Karkinos "
+                        "signed ledger cash impact after fees and taxes."
+                    ),
+                ),
+                _item(
+                    category="fee",
+                    broker_value=broker_values["fee"],
+                    karkinos_value=ledger_values["fee"],
+                    difference=_difference(
+                        broker_values["fee"],
+                        ledger_values["fee"],
+                    ),
+                    suggested_review_action="review_fee_difference",
+                    symbol=symbol,
+                    detail=(
+                        "Broker trade commission compared with Karkinos trade "
+                        "commission."
+                    ),
+                ),
+                _item(
+                    category="tax",
+                    broker_value=broker_values["tax"],
+                    karkinos_value=ledger_values["tax"],
+                    difference=_difference(
+                        broker_values["tax"],
+                        ledger_values["tax"],
+                    ),
+                    suggested_review_action="review_tax_difference",
+                    symbol=symbol,
+                    detail="Broker trade tax compared with Karkinos trade tax.",
+                ),
+                _item(
+                    category="transfer_fee",
+                    broker_value=broker_values["transfer_fee"],
+                    karkinos_value=ledger_values["transfer_fee"],
+                    difference=_difference(
+                        broker_values["transfer_fee"],
+                        ledger_values["transfer_fee"],
+                    ),
+                    suggested_review_action="review_transfer_fee_difference",
+                    symbol=symbol,
+                    detail=(
+                        "Broker transfer fee component compared with Karkinos "
+                        "transfer fee component."
+                    ),
+                ),
+            ]
+        )
+    return items
+
+
+def _broker_trade_components_by_symbol(
+    broker_events: list[StoredBrokerEvidenceEvent],
+) -> dict[str, dict[str, Decimal]]:
+    components: dict[str, dict[str, Decimal]] = {}
+    for event in broker_events:
+        if event.event_type not in {"trade_buy", "trade_sell"} or not event.symbol:
+            continue
+        symbol_components = components.setdefault(
+            event.symbol,
+            _empty_trade_components(),
+        )
+        symbol_components["gross_amount"] += _decimal(event.gross_amount)
+        symbol_components["net_amount"] += _decimal(event.net_amount)
+        symbol_components["fee"] += _decimal(event.fee)
+        symbol_components["tax"] += _decimal(event.tax)
+        symbol_components["transfer_fee"] += _decimal(
+            getattr(event, "transfer_fee", "0")
+        )
+    return components
+
+
+def _ledger_trade_components_by_symbol(
+    ledger_facts: list[KarkinosLedgerFact],
+) -> dict[str, dict[str, Decimal]]:
+    components: dict[str, dict[str, Decimal]] = {}
+    for fact in ledger_facts:
+        if fact.event_type not in {"trade_buy", "trade_sell"} or not fact.symbol:
+            continue
+        symbol_components = components.setdefault(
+            fact.symbol,
+            _empty_trade_components(),
+        )
+        gross_amount = (
+            fact.gross_amount
+            if fact.gross_amount != Decimal("0")
+            else fact.quantity * fact.price
+        )
+        symbol_components["gross_amount"] += gross_amount
+        symbol_components["net_amount"] += fact.net_amount
+        symbol_components["fee"] += fact.fee
+        symbol_components["tax"] += fact.tax
+        symbol_components["transfer_fee"] += fact.transfer_fee
+    return components
+
+
+def _empty_trade_components() -> dict[str, Decimal]:
+    return {
+        "gross_amount": Decimal("0"),
+        "net_amount": Decimal("0"),
+        "fee": Decimal("0"),
+        "tax": Decimal("0"),
+        "transfer_fee": Decimal("0"),
+    }
+
+
 def _cost_basis_items(
     broker_events: list[StoredBrokerEvidenceEvent],
     positions: list[KarkinosPositionFact],
 ) -> list[ReconciliationItem]:
     broker_cost_basis = {
         event.symbol: _optional_decimal(event.cost_basis)
+        for event in broker_events
+        if event.event_type == "position_snapshot" and event.symbol
+    }
+    broker_cost_basis_methods = {
+        event.symbol: getattr(event, "cost_basis_method", "")
         for event in broker_events
         if event.event_type == "position_snapshot" and event.symbol
     }
@@ -235,10 +388,17 @@ def _cost_basis_items(
             ),
             suggested_review_action="review_cost_basis_difference",
             symbol=symbol,
-            detail="Broker cost basis compared with Karkinos cost basis.",
+            detail=_cost_basis_detail(broker_cost_basis_methods.get(symbol, "")),
         )
         for symbol in symbols
     ]
+
+
+def _cost_basis_detail(cost_basis_method: str) -> str:
+    detail = "Broker cost basis compared with Karkinos cost basis."
+    if cost_basis_method:
+        detail += f" Broker cost-basis method: {cost_basis_method}."
+    return detail
 
 
 def _item(

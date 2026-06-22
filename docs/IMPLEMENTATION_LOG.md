@@ -610,3 +610,10 @@ roadmap promises.
   connector rows are marked deterministically. This remains read-only broker
   evidence and does not submit broker orders, mutate production ledger entries,
   or change manual-confirmation defaults.
+* 2026-06-22: Completed the v1.2 broker evidence reconciliation detail slice.
+  Canonical broker statement previews and staged evidence now preserve optional
+  transfer-fee and broker cost-basis method fields. Reconciliation reports
+  expose trade gross amount, signed net cash impact, fee, tax, transfer-fee,
+  and cost-basis differences as reviewable items. This is audit evidence only;
+  it does not mutate production ledger entries, submit broker orders, or change
+  manual-confirmation defaults.

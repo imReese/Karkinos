@@ -17,8 +17,8 @@ user manual; current usage guidance belongs in the README files.
 | v0.9 | Completed | Data Plane & Market Reliability |
 | v1.0 | Completed | Strategy Runtime Foundation |
 | v1.1 | Completed | Paper Broker & OMS |
-| v1.2 | Active | Broker Evidence Connector |
-| v1.3 | Planned | Professional Decision Workflow |
+| v1.2 | Completed | Broker Evidence Connector |
+| v1.3 | Active | Professional Decision Workflow |
 | v1.4 | Planned | Strategy Attribution 2.0 |
 | v1.5 | Planned | Risk & Portfolio Construction |
 | v1.6 | Planned | Operations Center |
@@ -609,7 +609,7 @@ import or read without introducing broker order submission.
   inputs without automatically mutating production ledger entries.
 * [x] Decision and Strategy Lab degrade or block when connector evidence shows
   material unresolved account-truth issues.
-* [ ] Reconciliation distinguishes gross trade amount, net cash impact,
+* [x] Reconciliation distinguishes gross trade amount, net cash impact,
   commission, tax, transfer fees, and broker-reported remaining cost basis so
   sell-side cash and cost-basis differences can be reviewed explicitly.
 * [x] Backend deterministic tests use fake connector fixtures for healthy,

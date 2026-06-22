@@ -50,6 +50,10 @@ BROKER_STATEMENT_REQUIRED_COLUMNS = (
     "cost_basis",
     "note",
 )
+BROKER_STATEMENT_OPTIONAL_COLUMNS = (
+    "transfer_fee",
+    "cost_basis_method",
+)
 
 BROKER_STATEMENT_LIMITATIONS = [
     "Import preview is broker evidence only; it does not mutate the production ledger.",
@@ -66,6 +70,7 @@ _DECIMAL_COLUMNS = {
     "cash_balance",
     "position_quantity",
     "cost_basis",
+    "transfer_fee",
 }
 _SYMBOL_REQUIRED_EVENT_TYPES = {
     "trade_buy",
@@ -109,6 +114,8 @@ class BrokerEvidenceEvent:
     note: str
     is_duplicate: bool = False
     duplicate_of_row_number: int | None = None
+    transfer_fee: Decimal = Decimal("0")
+    cost_basis_method: str = ""
 
 
 @dataclass(frozen=True)
@@ -215,6 +222,8 @@ def parse_broker_statement_csv(
                 note=row["note"],
                 is_duplicate=duplicate_of is not None,
                 duplicate_of_row_number=duplicate_of,
+                transfer_fee=_optional_decimal(row["transfer_fee"]) or Decimal("0"),
+                cost_basis_method=row["cost_basis_method"],
             )
         )
 
@@ -239,6 +248,7 @@ def _normalize_raw_row(raw_row: dict[str, str | None]) -> dict[str, str]:
     return {
         column: (raw_row.get(column) or "").strip()
         for column in BROKER_STATEMENT_REQUIRED_COLUMNS
+        + BROKER_STATEMENT_OPTIONAL_COLUMNS
     }
 
 

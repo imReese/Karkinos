@@ -18,6 +18,12 @@ synthetic-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,SY
 synthetic-cash-001,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0.00,0.00,0.00,0.00,8970.00,,,
 """
 
+COMPONENT_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,SYN001,合成样例股票A,stock,CNY,100,12.00,1200.00,1.80,1.20,1196.40,10196.40,0,8.80,synthetic sell row,0.60,broker_remaining_cost
+synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10196.40,0,8.80,synthetic position snapshot,,broker_remaining_cost
+synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,
+"""
+
 
 def test_reconciliation_report_passes_when_account_facts_match(tmp_path) -> None:
     repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
@@ -70,8 +76,11 @@ def test_reconciliation_report_passes_when_account_facts_match(tmp_path) -> None
     assert {item.category for item in report.items} == {
         "cash",
         "position",
+        "trade_gross_amount",
+        "net_cash_impact",
         "fee",
         "tax",
+        "transfer_fee",
         "cost_basis",
     }
 
@@ -111,10 +120,11 @@ def test_reconciliation_report_surfaces_mismatches_with_review_actions(
     assert report.cash_difference == Decimal("-30.00")
     assert report.fee_difference == Decimal("2.25")
     assert report.tax_difference == Decimal("0.75")
-    assert report.unresolved_count == 5
+    assert report.unresolved_count == 7
     assert report.suggested_review_actions == [
         "review_cash_difference",
         "review_position_difference",
+        "review_net_cash_impact_difference",
         "review_fee_difference",
         "review_tax_difference",
         "review_cost_basis_difference",
@@ -127,6 +137,7 @@ def test_reconciliation_report_surfaces_mismatches_with_review_actions(
     assert by_category["cash"].difference == "-30.00"
     assert by_category["position"].symbol == "SYN001"
     assert by_category["position"].difference == "1"
+    assert by_category["net_cash_impact"].difference == "-1.00"
     assert by_category["fee"].difference == "2.25"
     assert by_category["tax"].difference == "0.75"
     assert by_category["cost_basis"].difference == "0.08"
@@ -181,3 +192,66 @@ synthetic-fee-001,fee,2026-01-13T15:30:00+08:00,2026-01-13,,,,CNY,0,0,0.00,1.25,
         ("cash", "warning"),
         ("position", "warning"),
     ]
+
+
+def test_reconciliation_report_distinguishes_trade_cash_fee_tax_transfer_and_cost_basis(
+    tmp_path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(COMPONENT_STATEMENT)
+    import_run = repository.save_preview(preview, source_name="components.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[
+            KarkinosLedgerFact(
+                event_type="trade_sell",
+                symbol="SYN001",
+                quantity=Decimal("100"),
+                price=Decimal("12.00"),
+                gross_amount=Decimal("1200.00"),
+                fee=Decimal("1.50"),
+                tax=Decimal("1.20"),
+                transfer_fee=Decimal("0.60"),
+                net_amount=Decimal("1196.70"),
+            )
+        ],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("0"),
+                cost_basis=Decimal("8.70"),
+            )
+        ],
+    )
+
+    by_key = {(item.category, item.symbol): item for item in report.items}
+
+    assert by_key[("trade_gross_amount", "SYN001")].status == "pass"
+    assert by_key[("trade_gross_amount", "SYN001")].broker_value == "1200.00"
+    assert by_key[("trade_gross_amount", "SYN001")].karkinos_value == "1200.00"
+
+    net_cash_item = by_key[("net_cash_impact", "SYN001")]
+    assert net_cash_item.status == "mismatch"
+    assert net_cash_item.broker_value == "1196.40"
+    assert net_cash_item.karkinos_value == "1196.70"
+    assert net_cash_item.difference == "-0.30"
+    assert net_cash_item.suggested_review_action == (
+        "review_net_cash_impact_difference"
+    )
+
+    fee_item = by_key[("fee", "SYN001")]
+    assert fee_item.status == "mismatch"
+    assert fee_item.broker_value == "1.80"
+    assert fee_item.karkinos_value == "1.50"
+    assert fee_item.difference == "0.30"
+
+    assert by_key[("tax", "SYN001")].status == "pass"
+    assert by_key[("transfer_fee", "SYN001")].status == "pass"
+
+    cost_basis_item = by_key[("cost_basis", "SYN001")]
+    assert cost_basis_item.status == "mismatch"
+    assert cost_basis_item.difference == "0.10"
+    assert "broker_remaining_cost" in cost_basis_item.detail
