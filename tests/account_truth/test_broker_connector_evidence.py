@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from decimal import Decimal
 
+import pytest
+
 from account_truth.broker_connector import (
     BrokerCashFact,
     BrokerConnectorHealth,
@@ -119,7 +121,69 @@ def test_connector_evidence_builder_is_exported_from_account_truth_package():
     assert exported_builder is build_broker_connector_evidence_preview
 
 
+@pytest.mark.parametrize(
+    ("status", "expected_validation_status"),
+    [
+        ("healthy", "pass"),
+        ("stale", "warning"),
+        ("permission_limited", "warning"),
+        ("incomplete", "warning"),
+    ],
+)
+def test_connector_evidence_preview_surfaces_fake_health_states(
+    status,
+    expected_validation_status,
+):
+    snapshot = _snapshot_with_health(status)
+
+    preview = build_broker_connector_evidence_preview(snapshot)
+
+    assert preview.validation_status == expected_validation_status
+    assert preview.row_count == 3
+    assert preview.duplicate_row_count == 0
+    assert f"synthetic {status} state" in preview.limitations
+    if status == "incomplete":
+        assert [error.code for error in preview.errors] == [
+            "connector_incomplete_snapshot"
+        ]
+    else:
+        assert preview.errors == []
+
+
+def test_disconnected_connector_preview_blocks_without_emitting_stale_rows():
+    snapshot = _snapshot_with_health("disconnected")
+
+    preview = build_broker_connector_evidence_preview(snapshot)
+
+    assert preview.validation_status == "blocked"
+    assert preview.row_count == 0
+    assert preview.valid_row_count == 0
+    assert preview.invalid_row_count == 1
+    assert preview.duplicate_row_count == 0
+    assert preview.events == []
+    assert [error.code for error in preview.errors] == ["connector_disconnected"]
+
+
+def test_duplicate_connector_evidence_rows_are_deterministic():
+    snapshot = _snapshot_with_health("healthy")
+    snapshot.positions.append(snapshot.positions[0])
+
+    preview = build_broker_connector_evidence_preview(snapshot)
+
+    assert preview.validation_status == "warning"
+    assert preview.row_count == 4
+    assert preview.duplicate_row_count == 1
+    duplicate_events = [event for event in preview.events if event.is_duplicate]
+    assert len(duplicate_events) == 1
+    assert duplicate_events[0].event_type == "position_snapshot"
+    assert duplicate_events[0].duplicate_of_row_number == 3
+
+
 def _healthy_snapshot() -> BrokerConnectorSnapshot:
+    return _snapshot_with_health("healthy")
+
+
+def _snapshot_with_health(status: str) -> BrokerConnectorSnapshot:
     return BrokerConnectorSnapshot(
         connector_id="fake_qmt_readonly",
         source_name="synthetic qmt readonly fixture",
@@ -127,9 +191,10 @@ def _healthy_snapshot() -> BrokerConnectorSnapshot:
         account_alias="safe-local-alias",
         captured_at="2026-06-22T15:05:00+08:00",
         health=BrokerConnectorHealth(
-            status="healthy",
+            status=status,
             checked_at="2026-06-22T15:05:00+08:00",
-            message="synthetic connector is healthy",
+            message=f"synthetic {status} state",
+            limitations=[f"{status} fixture limitation"],
         ),
         cash=BrokerCashFact(
             currency="CNY",
