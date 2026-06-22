@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from core.types import AssetClass, OrderSide, OrderType, Symbol
+from execution.commission import StockACommission
 from execution.paper_broker import (
     PAPER_BROKER_SCHEMA_VERSION,
     PaperBroker,
@@ -150,6 +151,135 @@ def test_paper_broker_records_partial_fill_as_simulation_evidence(tmp_path) -> N
     ]
     assert order_payload["oms_transitions"][-1]["to_status"] == "partially_filled"
     assert order_payload["oms_transitions"][-1]["filled_quantity"] == "100"
+
+
+def test_paper_broker_records_cancelled_and_rejected_orders_without_fills(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash",
+        timestamp="2026-06-22T09:00:00",
+        amount=10000.0,
+        note="opening fixture cash",
+        source="fixture",
+        source_ref="opening-cash",
+    )
+    ledger_count_before = _ledger_entry_count(db._path)
+    broker = PaperBroker(db=db)
+
+    cancelled = broker.cancel_order(
+        PaperOrderRequest(
+            timestamp=datetime(2026, 6, 22, 10, 5, 5),
+            order_id="PAPER-ORD-CANCEL",
+            symbol=Symbol("TEST-STOCK"),
+            side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("200"),
+            price=Decimal("10.00"),
+        ),
+        reason="user_cancelled_paper_review",
+    )
+    rejected = broker.reject_order(
+        PaperOrderRequest(
+            timestamp=datetime(2026, 6, 22, 10, 6, 5),
+            order_id="PAPER-ORD-REJECT",
+            symbol=Symbol("TEST-STOCK"),
+            side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("200"),
+            price=Decimal("10.00"),
+            context=PaperOrderContext(risk_decision_id="risk-blocked-fixture"),
+        ),
+        reason="risk_gate_blocked_paper_order",
+    )
+
+    cancelled_order = db.get_order_sync("PAPER-ORD-CANCEL")
+    rejected_order = db.get_order_sync("PAPER-ORD-REJECT")
+    cancelled_payload = json.loads(cancelled_order["payload_json"])
+    rejected_payload = json.loads(rejected_order["payload_json"])
+
+    assert cancelled.order.status is PaperOrderStatus.CANCELLED
+    assert rejected.order.status is PaperOrderStatus.REJECTED
+    assert cancelled.fill is None
+    assert rejected.fill is None
+    assert db.list_fills_sync(order_id="PAPER-ORD-CANCEL") == []
+    assert db.list_fills_sync(order_id="PAPER-ORD-REJECT") == []
+
+    assert cancelled_order["status"] == "cancelled"
+    assert rejected_order["status"] == "rejected"
+    assert cancelled_order["execution_mode"] == "paper"
+    assert rejected_order["execution_mode"] == "paper"
+    assert cancelled_order["source"] == "paper_broker"
+    assert rejected_order["source"] == "paper_broker"
+    assert cancelled_payload["status_history"] == [
+        "staged",
+        "submitted",
+        "cancelled",
+    ]
+    assert cancelled_payload["oms_transitions"][-1]["reason"] == (
+        "user_cancelled_paper_review"
+    )
+    assert rejected_payload["status_history"] == [
+        "staged",
+        "submitted",
+        "accepted",
+        "rejected",
+    ]
+    assert rejected_payload["oms_transitions"][-1]["reason"] == (
+        "risk_gate_blocked_paper_order"
+    )
+    assert cancelled_payload["does_not_mutate_production_ledger"] is True
+    assert rejected_payload["does_not_mutate_production_ledger"] is True
+    assert _ledger_entry_count(db._path) == ledger_count_before
+
+
+def test_paper_broker_records_fee_tax_modeling_and_slippage_evidence(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    broker = PaperBroker(db=db)
+
+    result = broker.submit_order(
+        PaperOrderRequest(
+            timestamp=datetime(2026, 6, 22, 10, 7, 5),
+            order_id="PAPER-ORD-COST",
+            symbol=Symbol("TEST-STOCK"),
+            side=OrderSide.SELL,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("200"),
+            price=Decimal("10.00"),
+            context=PaperOrderContext(cost_model_id="stock_a_commission_v1"),
+        ),
+        fill_id="PAPER-FILL-COST",
+        fill_quantity=Decimal("200"),
+        fill_price=Decimal("9.95"),
+    )
+
+    saved_fill = db.get_fill_sync("PAPER-FILL-COST")
+    fill_metadata = json.loads(saved_fill["metadata_json"])
+    expected_commission = StockACommission().calculate(
+        OrderSide.SELL,
+        Decimal("9.95"),
+        Decimal("200"),
+    )
+
+    assert result.fill is not None
+    assert result.fill.commission == expected_commission
+    assert result.fill.slippage == Decimal("10.00")
+    assert saved_fill["commission"] == pytest.approx(float(expected_commission))
+    assert saved_fill["slippage"] == pytest.approx(10.0)
+    assert fill_metadata["commission"] == str(expected_commission)
+    assert fill_metadata["slippage"] == "10.00"
+    assert fill_metadata["cost_modeling"] == {
+        "model_id": "stock_a_commission_v1",
+        "total_fee_tax_cost": str(expected_commission),
+        "slippage_cost": "10.00",
+        "commission_field_includes_fees_and_taxes": True,
+        "reference_price": "10.00",
+    }
 
 
 def test_paper_oms_state_machine_covers_all_review_states() -> None:

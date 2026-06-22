@@ -57,18 +57,17 @@ The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
 Current active milestone:
 
-* **v1.1 — Paper Broker & OMS**
+* **v1.2 — Broker Evidence Connector**
 * Status: active roadmap milestone.
-* Purpose: provide professional order lifecycle evidence for simulation and
-  review without mutating the production ledger or submitting broker orders.
+* Purpose: make broker facts easier to import or read without introducing
+  broker order submission.
 
 Latest completed milestone:
 
-* **v1.0 — Strategy Runtime Foundation**
+* **v1.1 — Paper Broker & OMS**
 * Status: completed roadmap milestone.
-* Purpose: upgrade strategies from one-shot backtest functions into a safe
-  lifecycle runtime with read-only context, standardized outputs, shared
-  registry contracts, and no direct broker order submission.
+* Purpose: provide professional order lifecycle evidence for simulation and
+  review without mutating the production ledger or submitting broker orders.
 
 ## Documentation Map
 
