@@ -28,6 +28,192 @@ class PaperOrderStatus(Enum):
     RECONCILED = "reconciled"
 
 
+class PaperOmsInvalidTransitionError(ValueError):
+    """Raised when a paper order attempts an invalid OMS transition."""
+
+    def __init__(
+        self,
+        *,
+        order_id: str,
+        from_status: PaperOrderStatus,
+        to_status: PaperOrderStatus,
+    ) -> None:
+        super().__init__(
+            "Invalid paper OMS transition for "
+            f"{order_id}: {from_status.value} -> {to_status.value}"
+        )
+        self.order_id = order_id
+        self.from_status = from_status
+        self.to_status = to_status
+
+
+@dataclass(frozen=True)
+class PaperOmsTransition:
+    """One deterministic state transition in a paper OMS history."""
+
+    order_id: str
+    sequence: int
+    from_status: PaperOrderStatus | None
+    to_status: PaperOrderStatus
+    filled_quantity: Decimal = Decimal("0")
+    reason: str = ""
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "order_id": self.order_id,
+            "sequence": self.sequence,
+            "from_status": (
+                self.from_status.value if self.from_status is not None else None
+            ),
+            "to_status": self.to_status.value,
+            "filled_quantity": str(self.filled_quantity),
+            "reason": self.reason,
+        }
+
+
+class PaperOmsStateMachine:
+    """Deterministic OMS state machine for paper-only order evidence."""
+
+    _ALLOWED_TRANSITIONS: dict[PaperOrderStatus, frozenset[PaperOrderStatus]] = {
+        PaperOrderStatus.STAGED: frozenset(
+            {
+                PaperOrderStatus.SUBMITTED,
+                PaperOrderStatus.CANCELLED,
+                PaperOrderStatus.EXPIRED,
+            }
+        ),
+        PaperOrderStatus.SUBMITTED: frozenset(
+            {
+                PaperOrderStatus.ACCEPTED,
+                PaperOrderStatus.REJECTED,
+                PaperOrderStatus.CANCELLED,
+                PaperOrderStatus.EXPIRED,
+            }
+        ),
+        PaperOrderStatus.ACCEPTED: frozenset(
+            {
+                PaperOrderStatus.PARTIALLY_FILLED,
+                PaperOrderStatus.FILLED,
+                PaperOrderStatus.REJECTED,
+                PaperOrderStatus.CANCELLED,
+                PaperOrderStatus.EXPIRED,
+            }
+        ),
+        PaperOrderStatus.PARTIALLY_FILLED: frozenset(
+            {
+                PaperOrderStatus.PARTIALLY_FILLED,
+                PaperOrderStatus.FILLED,
+                PaperOrderStatus.CANCELLED,
+                PaperOrderStatus.EXPIRED,
+            }
+        ),
+        PaperOrderStatus.FILLED: frozenset({PaperOrderStatus.RECONCILED}),
+        PaperOrderStatus.REJECTED: frozenset({PaperOrderStatus.RECONCILED}),
+        PaperOrderStatus.CANCELLED: frozenset({PaperOrderStatus.RECONCILED}),
+        PaperOrderStatus.EXPIRED: frozenset({PaperOrderStatus.RECONCILED}),
+        PaperOrderStatus.RECONCILED: frozenset(),
+    }
+
+    def __init__(self, *, order_id: str) -> None:
+        self.order_id = order_id
+        self.filled_quantity = Decimal("0")
+        self._transitions: list[PaperOmsTransition] = [
+            PaperOmsTransition(
+                order_id=order_id,
+                sequence=1,
+                from_status=None,
+                to_status=PaperOrderStatus.STAGED,
+            )
+        ]
+
+    @property
+    def current_status(self) -> PaperOrderStatus:
+        return self._transitions[-1].to_status
+
+    @property
+    def transitions(self) -> tuple[PaperOmsTransition, ...]:
+        return tuple(self._transitions)
+
+    @property
+    def status_history(self) -> tuple[PaperOrderStatus, ...]:
+        return tuple(transition.to_status for transition in self._transitions)
+
+    def mark_submitted(self, reason: str = "") -> PaperOmsTransition:
+        return self._transition(PaperOrderStatus.SUBMITTED, reason=reason)
+
+    def mark_accepted(self, reason: str = "") -> PaperOmsTransition:
+        return self._transition(PaperOrderStatus.ACCEPTED, reason=reason)
+
+    def mark_partially_filled(
+        self,
+        *,
+        filled_quantity: Decimal,
+        reason: str = "",
+    ) -> PaperOmsTransition:
+        return self._transition(
+            PaperOrderStatus.PARTIALLY_FILLED,
+            filled_quantity=filled_quantity,
+            reason=reason,
+        )
+
+    def mark_filled(
+        self,
+        *,
+        filled_quantity: Decimal,
+        reason: str = "",
+    ) -> PaperOmsTransition:
+        return self._transition(
+            PaperOrderStatus.FILLED,
+            filled_quantity=filled_quantity,
+            reason=reason,
+        )
+
+    def mark_rejected(self, reason: str = "") -> PaperOmsTransition:
+        return self._transition(PaperOrderStatus.REJECTED, reason=reason)
+
+    def mark_cancelled(self, reason: str = "") -> PaperOmsTransition:
+        return self._transition(PaperOrderStatus.CANCELLED, reason=reason)
+
+    def mark_expired(self, reason: str = "") -> PaperOmsTransition:
+        return self._transition(PaperOrderStatus.EXPIRED, reason=reason)
+
+    def mark_reconciled(self, reason: str = "") -> PaperOmsTransition:
+        return self._transition(PaperOrderStatus.RECONCILED, reason=reason)
+
+    def _transition(
+        self,
+        to_status: PaperOrderStatus,
+        *,
+        filled_quantity: Decimal | None = None,
+        reason: str = "",
+    ) -> PaperOmsTransition:
+        if self.current_status is to_status:
+            return self._transitions[-1]
+
+        if to_status not in self._ALLOWED_TRANSITIONS[self.current_status]:
+            raise PaperOmsInvalidTransitionError(
+                order_id=self.order_id,
+                from_status=self.current_status,
+                to_status=to_status,
+            )
+
+        if filled_quantity is not None:
+            if filled_quantity < self.filled_quantity:
+                raise ValueError("Paper filled quantity cannot decrease.")
+            self.filled_quantity = filled_quantity
+
+        transition = PaperOmsTransition(
+            order_id=self.order_id,
+            sequence=len(self._transitions) + 1,
+            from_status=self.current_status,
+            to_status=to_status,
+            filled_quantity=self.filled_quantity,
+            reason=reason,
+        )
+        self._transitions.append(transition)
+        return transition
+
+
 @dataclass(frozen=True)
 class PaperOrderContext:
     """Optional evidence references attached to a paper order."""
@@ -85,6 +271,7 @@ class PaperOrderEvidence:
     filled_quantity: Decimal
     remaining_quantity: Decimal
     status_history: tuple[PaperOrderStatus, ...]
+    oms_transitions: tuple[PaperOmsTransition, ...]
     context: PaperOrderContext
     schema_version: str = PAPER_BROKER_SCHEMA_VERSION
     execution_mode: str = "paper"
@@ -105,6 +292,9 @@ class PaperOrderEvidence:
             "filled_quantity": str(self.filled_quantity),
             "remaining_quantity": str(self.remaining_quantity),
             "status_history": [status.value for status in self.status_history],
+            "oms_transitions": [
+                transition.to_payload() for transition in self.oms_transitions
+            ],
             "context": self.context.to_payload(),
             "execution_mode": self.execution_mode,
             "source": self.source,
@@ -200,17 +390,13 @@ class PaperBroker:
         if effective_price is None:
             raise ValueError("Paper fill price is required when order price is absent.")
 
-        status = (
-            PaperOrderStatus.FILLED
-            if quantity == request.quantity
-            else PaperOrderStatus.PARTIALLY_FILLED
-        )
-        status_history = (
-            PaperOrderStatus.STAGED,
-            PaperOrderStatus.SUBMITTED,
-            PaperOrderStatus.ACCEPTED,
-            status,
-        )
+        oms = PaperOmsStateMachine(order_id=request.order_id)
+        oms.mark_submitted()
+        oms.mark_accepted()
+        if quantity == request.quantity:
+            oms.mark_filled(filled_quantity=quantity)
+        else:
+            oms.mark_partially_filled(filled_quantity=quantity)
         order = PaperOrderEvidence(
             order_id=request.order_id,
             timestamp=request.timestamp,
@@ -220,10 +406,11 @@ class PaperBroker:
             quantity=request.quantity,
             price=request.price,
             asset_class=request.asset_class,
-            status=status,
-            filled_quantity=quantity,
+            status=oms.current_status,
+            filled_quantity=oms.filled_quantity,
             remaining_quantity=request.quantity - quantity,
-            status_history=status_history,
+            status_history=oms.status_history,
+            oms_transitions=oms.transitions,
             context=request.context,
         )
         fill = PaperFillEvidence(
