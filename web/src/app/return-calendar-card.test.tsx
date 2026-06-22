@@ -209,6 +209,26 @@ test('uses Sunday as the first weekday column in the return calendar', async () 
   ]);
 });
 
+test('explains market holidays and weekends without showing missing prices', async () => {
+  renderCalendarWithTimeline([
+    {
+      date: '2026-01-06',
+      equity: 100200,
+      delta: 200,
+      external_flow: 0,
+      market_pnl: 200,
+      valuation_status: 'confirmed',
+      missing_price_symbols: [],
+    },
+  ]);
+
+  expect(await screen.findByText('Holiday')).toBeTruthy();
+  expect(screen.getAllByText('Weekend').length).toBeGreaterThan(0);
+  expect(screen.queryByRole('button', { name: /2026-01-01/ })).not.toBeTruthy();
+  expect(screen.queryByRole('button', { name: /2026-01-04/ })).not.toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Price gap/ })).toBeNull();
+});
+
 test('shows live returns normally and only true missing rows as price gaps', async () => {
   renderCalendarWithTimeline([
     {

@@ -57,19 +57,19 @@ The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
 Current active milestone:
 
-* **v0.9 — Data Plane & Market Reliability**
+* **v1.0 — Strategy Runtime Foundation**
 * Status: active roadmap milestone.
-* Purpose: make market data, fund NAVs, historical bars, intraday snapshots,
-  and replay datasets auditable before valuation, return calendars, backtests,
-  strategy runtime, paper/shadow review, or decision workflows rely on them.
+* Purpose: upgrade strategies from one-shot backtest functions into a safe
+  lifecycle runtime with read-only context, standardized outputs, shared
+  registry contracts, and no direct broker order submission.
 
 Latest completed milestone:
 
-* **v0.8 — Strategy Assignment & Attribution Engine**
+* **v0.9 — Data Plane & Market Reliability**
 * Status: completed roadmap milestone.
-* Purpose: make account strategy assignment explicit, then connect strategy
-  signals, manual review, orders, fills, fees, and position changes into an
-  auditable contribution view before claiming strategy-level account returns.
+* Purpose: make market data, fund NAVs, historical bars, intraday snapshots,
+  and replay datasets auditable before valuation, return calendars, backtests,
+  strategy runtime, paper/shadow review, or decision workflows rely on them.
 
 ## Documentation Map
 
