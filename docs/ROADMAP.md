@@ -593,6 +593,9 @@ import or read without introducing broker order submission.
   broker password storage.
 * Broker evidence persistence and reconciliation against Karkinos ledger,
   cash, positions, fees, taxes, and cost basis.
+* Broker net-cash impact, fee/tax/transfer-fee components, and broker-reported
+  cost-basis method can be captured as evidence so local accounting differences
+  are explainable instead of hidden behind one generic commission field.
 * User-readable diagnostics for disconnected clients, missing permissions,
   stale snapshots, incomplete fields, and connector limitations.
 
@@ -606,7 +609,10 @@ import or read without introducing broker order submission.
   inputs without automatically mutating production ledger entries.
 * [x] Decision and Strategy Lab degrade or block when connector evidence shows
   material unresolved account-truth issues.
-* [ ] Backend deterministic tests use fake connector fixtures for healthy,
+* [ ] Reconciliation distinguishes gross trade amount, net cash impact,
+  commission, tax, transfer fees, and broker-reported remaining cost basis so
+  sell-side cash and cost-basis differences can be reviewed explicitly.
+* [x] Backend deterministic tests use fake connector fixtures for healthy,
   disconnected, stale, permission-limited, duplicate, and incomplete broker
   evidence states.
 
@@ -735,6 +741,10 @@ manual review are mature.
 * Full audit trail from signal to evidence bundle, risk decision,
   account-truth state, manual confirmation, order preview, and broker or
   manual execution record.
+* Manual trade entry surfaces use explicit labels and calculated previews for
+  trade time, instrument, side, quantity, fill price, gross amount, fee/tax
+  breakdown, net cash impact, remaining position, and broker-cost-basis impact;
+  users should not need to infer what an unlabeled number means.
 
 ### Acceptance Criteria for v1.7
 
@@ -744,6 +754,9 @@ manual review are mature.
   risk, paper/shadow, and manual-confirmation evidence.
 * [ ] Kill switch, connector capability checks, and per-order confirmation are
   enforced before any live-like bridge action.
+* [ ] Manual execution forms show user-readable field labels, fee/tax
+  components, net cash impact, and remaining-position/cost-basis preview before
+  saving a manual execution record.
 * [ ] No broker password storage, default real-money automation,
   guaranteed-profit language, or strategy-direct broker submission is
   introduced.

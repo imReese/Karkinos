@@ -603,3 +603,10 @@ roadmap promises.
   construction. Decision summaries and Strategy Lab promotion readiness now
   block when latest read-only broker evidence reconciles to unresolved material
   differences, while preserving manual-confirm-only live-like behavior.
+* 2026-06-22: Added deterministic fake connector evidence-state coverage for
+  healthy, disconnected, stale, permission-limited, duplicate, and incomplete
+  snapshots. Disconnected snapshots now block without emitting stale evidence
+  rows, incomplete snapshots surface explicit diagnostics, and duplicate
+  connector rows are marked deterministically. This remains read-only broker
+  evidence and does not submit broker orders, mutate production ledger entries,
+  or change manual-confirmation defaults.

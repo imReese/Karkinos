@@ -18,6 +18,7 @@ from account_truth.broker_statement import (
     BROKER_STATEMENT_SCHEMA_VERSION,
     BrokerEvidenceEvent,
     BrokerStatementPreview,
+    BrokerStatementValidationError,
     ValidationStatus,
 )
 
@@ -33,8 +34,11 @@ def build_broker_connector_evidence_preview(
 ) -> BrokerStatementPreview:
     """Build a broker-evidence preview from one read-only connector snapshot."""
 
-    event_payloads = _event_payloads(snapshot)
+    event_payloads = (
+        [] if snapshot.health.status == "disconnected" else _event_payloads(snapshot)
+    )
     events = _events_from_payloads(event_payloads)
+    errors = _validation_errors(snapshot)
     return BrokerStatementPreview(
         schema_version=BROKER_STATEMENT_SCHEMA_VERSION,
         source_type=BROKER_CONNECTOR_SOURCE_TYPE,
@@ -43,12 +47,12 @@ def build_broker_connector_evidence_preview(
         normalized_columns=(),
         row_count=len(events),
         valid_row_count=len(events),
-        invalid_row_count=0,
+        invalid_row_count=len(errors),
         duplicate_row_count=sum(1 for event in events if event.is_duplicate),
         validation_status=_validation_status(snapshot, events),
         limitations=_limitations(snapshot),
         events=events,
-        errors=[],
+        errors=errors,
     )
 
 
@@ -194,6 +198,34 @@ def _validation_status(
     if any(event.is_duplicate for event in events):
         return "warning"
     return "pass"
+
+
+def _validation_errors(
+    snapshot: BrokerConnectorSnapshot,
+) -> list[BrokerStatementValidationError]:
+    if snapshot.health.status == "disconnected":
+        return [
+            BrokerStatementValidationError(
+                row_number=None,
+                code="connector_disconnected",
+                message=(
+                    "Read-only broker connector is disconnected; cached facts are "
+                    "not emitted as broker evidence."
+                ),
+            )
+        ]
+    if snapshot.health.status == "incomplete":
+        return [
+            BrokerStatementValidationError(
+                row_number=None,
+                code="connector_incomplete_snapshot",
+                message=(
+                    "Read-only broker connector snapshot is incomplete; available "
+                    "facts are warning-level evidence only."
+                ),
+            )
+        ]
+    return []
 
 
 def _limitations(snapshot: BrokerConnectorSnapshot) -> list[str]:
