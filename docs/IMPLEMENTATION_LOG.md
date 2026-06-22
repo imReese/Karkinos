@@ -6,6 +6,13 @@ roadmap promises.
 
 ## v1.1 Progress
 
+* 2026-06-22: Added shadow review comparison evidence for strategy candidates,
+  paper outcomes, and real account movement. The new
+  `analytics.shadow_review` report only attributes a real account movement to a
+  strategy when candidate id, paper order id, and strategy id references align;
+  unsupported movement remains explicitly unattributed with a review action.
+  The report is audit evidence only and does not mutate account facts, ledger
+  entries, broker orders, or manual-confirmation defaults.
 * 2026-06-22: Added an explicit paper OMS state machine with deterministic
   transitions for staged, submitted, accepted, partially filled, filled,
   rejected, cancelled, expired, and reconciled states. Paper order payloads now
