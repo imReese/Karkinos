@@ -573,7 +573,7 @@ ledger or submitting broker orders.
   filled, filled, rejected, cancelled, expired, and reconciled states.
 * [x] Paper order evidence references signal, strategy, risk decision,
   dataset, cost model, and account-truth context when available.
-* [ ] Shadow review can compare strategy candidates, paper outcomes, and real
+* [x] Shadow review can compare strategy candidates, paper outcomes, and real
   account movement without attributing unsupported differences to a strategy.
 * [ ] Backend deterministic tests cover paper fills, partial fills,
   cancellations, rejections, slippage, fee/tax modeling, and OMS idempotency.
