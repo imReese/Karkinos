@@ -15,8 +15,8 @@ user manual; current usage guidance belongs in the README files.
 | v0.7 | Completed | Account Truth Review Center |
 | v0.8 | Completed | Strategy Assignment & Attribution Engine |
 | v0.9 | Completed | Data Plane & Market Reliability |
-| v1.0 | Active | Strategy Runtime Foundation |
-| v1.1 | Planned | Paper Broker & OMS |
+| v1.0 | Completed | Strategy Runtime Foundation |
+| v1.1 | Active | Paper Broker & OMS |
 | v1.2 | Planned | Broker Evidence Connector |
 | v1.3 | Planned | Professional Decision Workflow |
 | v1.4 | Planned | Strategy Attribution 2.0 |
@@ -542,9 +542,9 @@ one-shot backtest functions into a safe lifecycle runtime.
 * [x] Strategy Runtime and the Web return calendar consume a shared market
   calendar to explain non-trading days, weekends, and market holidays without
   showing them as missing prices or zero-return trading days.
-* [ ] Strategy docs explain built-in strategies, custom strategy placement,
+* [x] Strategy docs explain built-in strategies, custom strategy placement,
   parameter meanings, risk assumptions, and non-investment-advice boundaries.
-* [ ] Backend deterministic tests cover lifecycle ordering, read-only context,
+* [x] Backend deterministic tests cover lifecycle ordering, read-only context,
   output normalization, extension discovery, and blocked unsafe strategy
   behavior.
 

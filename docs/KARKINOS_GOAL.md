@@ -57,19 +57,18 @@ The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
 Current active milestone:
 
-* **v1.0 — Strategy Runtime Foundation**
+* **v1.1 — Paper Broker & OMS**
 * Status: active roadmap milestone.
-* Purpose: upgrade strategies from one-shot backtest functions into a safe
-  lifecycle runtime with read-only context, standardized outputs, shared
-  registry contracts, and no direct broker order submission.
+* Purpose: provide professional order lifecycle evidence for simulation and
+  review without mutating the production ledger or submitting broker orders.
 
 Latest completed milestone:
 
-* **v0.9 — Data Plane & Market Reliability**
+* **v1.0 — Strategy Runtime Foundation**
 * Status: completed roadmap milestone.
-* Purpose: make market data, fund NAVs, historical bars, intraday snapshots,
-  and replay datasets auditable before valuation, return calendars, backtests,
-  strategy runtime, paper/shadow review, or decision workflows rely on them.
+* Purpose: upgrade strategies from one-shot backtest functions into a safe
+  lifecycle runtime with read-only context, standardized outputs, shared
+  registry contracts, and no direct broker order submission.
 
 ## Documentation Map
 

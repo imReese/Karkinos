@@ -22,6 +22,33 @@ wants exposure to the instrument, while `0.0` means it wants no exposure. Share
 count conversion, fees, slippage, T+1 constraints, risk gates, and manual
 confirmation are handled downstream.
 
+## Where Custom Strategies Belong
+
+Private research strategies belong under `strategy/extensions/`, or in the
+local directory pointed to by `KARKINOS_STRATEGY_EXTENSION_DIR`. The repository
+should only commit sanitized templates. Do not commit real account facts, broker
+exports, logs, screenshots, private strategy parameters, or credentials.
+
+A discoverable custom strategy usually has two files:
+
+- A Python strategy script, for example a local `my_strategy.py` copied from
+  `strategy/extensions/template.py.example`.
+- A strategy manifest, for example `my_strategy.strategy.json` copied from
+  `strategy/extensions/template.strategy.json.example`, declaring
+  `strategy_id`, `display_name`, `class_path`, typed parameter schema, asset
+  universe, frequency support, and validation requirements.
+
+The manifest uses the `karkinos.strategy.v1` schema. `class_path` can point to a
+local class such as `my_strategy:MyStrategy`; Karkinos validates metadata during
+discovery and loads the class lazily only when a research backtest instantiates
+that registered strategy.
+
+Custom and built-in strategies share the same registry and parameter schema
+contract. Extensions cannot declare live trading, broker submission,
+auto-trading, or real-money execution capabilities. Strategy outputs remain
+research evidence and must still pass after-cost, OOS, data-quality, risk,
+account-truth, paper/shadow, and manual-confirmation paths.
+
 ## Dual Moving Average
 
 Internal ID: `dual_ma`

@@ -6,6 +6,15 @@ roadmap promises.
 
 ## v1.0 Progress
 
+* 2026-06-22: Completed the v1.0 documentation and backend coverage acceptance
+  evidence. The bilingual strategy primer now explains built-in strategy ids,
+  parameter meanings, risk assumptions, custom strategy placement under
+  `strategy/extensions/` or `KARKINOS_STRATEGY_EXTENSION_DIR`, sanitized
+  extension templates, and the non-investment-advice/manual-confirmation
+  boundary. Added deterministic documentation coverage tests, and confirmed
+  existing backend tests cover lifecycle ordering, read-only runtime context,
+  output normalization, extension discovery, and blocked unsafe extension
+  manifests.
 * 2026-06-22: Added a shared market-calendar contract for Strategy Runtime and
   the Web return calendar. `data.market_calendar` and the Web shared
   `market-calendar` helper expose the same

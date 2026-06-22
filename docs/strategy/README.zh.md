@@ -16,6 +16,30 @@
 
 Karkinos 策略输出的是目标权重，例如 `1.0` 表示目标持有该标的，`0.0` 表示目标清空该标的。实际股数、费用、滑点、T+1、风控和人工确认由后续链路处理。
 
+## 自定义策略放在哪里
+
+私有研究策略放在 `strategy/extensions/`，或放在
+`KARKINOS_STRATEGY_EXTENSION_DIR` 指向的本地目录。仓库只提交经过脱敏的模板；
+真实账户信息、券商导出、日志、截图、策略私有参数和凭证不要提交到 git。
+
+一个可发现的自定义策略通常包含两类文件：
+
+- Python 策略脚本，例如从 `strategy/extensions/template.py.example` 复制出的
+  本地 `my_strategy.py`。
+- 策略 manifest，例如从
+  `strategy/extensions/template.strategy.json.example` 复制出的
+  `my_strategy.strategy.json`，其中声明 `strategy_id`、`display_name`、
+  `class_path`、typed 参数 schema、资产范围、频率和验证要求。
+
+manifest 使用 `karkinos.strategy.v1` schema。`class_path` 可以指向
+`my_strategy:MyStrategy` 这样的本地类；系统在发现阶段校验 metadata，在研究回测
+真正实例化策略时才加载类。
+
+自定义策略和内置策略共享同一个 registry 与参数 schema contract。它们不能声明
+live trading、broker submission、自动交易或真钱执行能力。策略输出仍是研究证据，
+必须继续经过 after-cost、OOS、数据质量、风控、账户事实、paper/shadow 和人工确认
+链路。
+
 ## 双均线策略
 
 内部 ID：`dual_ma`
