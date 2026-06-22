@@ -600,7 +600,7 @@ import or read without introducing broker order submission.
 
 * [x] A capability-based broker connector interface can read account, cash,
   position, order, fill, and health facts without order submission.
-* [ ] Connector configuration stays in ignored local config and never stores
+* [x] Connector configuration stays in ignored local config and never stores
   broker passwords or secrets in source control.
 * [ ] Read-only broker facts normalize into broker evidence and reconciliation
   inputs without automatically mutating production ledger entries.

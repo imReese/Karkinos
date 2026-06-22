@@ -86,8 +86,9 @@ Estimated, cached, stale, missing, or confirmed-NAV-missing data is data-quality
 evidence. It must not be displayed as confirmed returns and is not investment
 advice, a profitability claim, or execution approval. Quotes, bars, and market
 cache belong in local SQLite / data-cache storage; `config.json` stores only
-local runtime preferences and provider settings, not brokerage passwords,
-private statement exports, or public demo holdings.
+local runtime preferences, provider settings, and read-only broker connector
+client paths/account aliases. Broker passwords, tokens, secrets, credentials,
+private statement exports, and public demo holdings do not belong there.
 
 ## Project Structure
 
@@ -304,6 +305,7 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 | `tushare_token` | string | `""` | Local TuShare token written by the onboarding script; `TUSHARE_TOKEN` can also be used |
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
+| `broker_connectors` | array | `[]` | Local read-only broker connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 
 Capital, holdings, watchlists, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, user-tracked assets come from `watchlist_assets`, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.

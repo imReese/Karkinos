@@ -6,6 +6,15 @@
     "tushare_token": "",
     "account_commission_rate": 0.0001,
     "account_min_commission": 5.0,
+    "broker_connectors": [
+        {
+            "connector_id": "local-qmt-readonly",
+            "connector_type": "qmt_readonly",
+            "enabled": false,
+            "client_path": "",
+            "account_alias": ""
+        }
+    ],
     "notification": {
         "type": "console"
     },

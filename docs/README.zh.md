@@ -373,13 +373,14 @@ uv run python scripts/configure_data_source.py
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
 | `account_commission_rate` | number | `0.0001` | 当前账户股票 / ETF 佣金率规则，例如万1.5写作 `0.00015` |
 | `account_min_commission` | number | `5.0` | 当前账户单笔最低佣金规则 |
+| `broker_connectors` | array | `[]` | 只读券商事实 connector 的本地配置，只允许 `connector_id`、`connector_type`、`enabled`、`client_path`、`account_alias`；不得保存券商密码、token、secret 或 credential |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
 
 资金、持仓、关注列表、资产名称、历史行情和当前行情不属于运行配置：资金和交易来自账本，用户关注资产来自 `watchlist_assets`，资产身份来自 `instrument_metadata`，当前行情来自 `latest_quotes`，历史行情来自 `market_bars` / 数据缓存。
 
 #### 本地存储边界
 
-- `config.json`：本机运行偏好和环境相关开关，包括数据源、TuShare token、轮询间隔、通知、CORS origin、当前账户佣金率与最低佣金规则。
+- `config.json`：本机运行偏好和环境相关开关，包括数据源、TuShare token、轮询间隔、通知、CORS origin、当前账户佣金率与最低佣金规则，以及只读券商 connector 的客户端路径和账户别名；券商密码、token、secret 或 credential 不得写入 connector 配置。
 - SQLite（`data/store/`）：会变化的金融事实和缓存，包括关注列表、资产元数据、交易流水、行情快照、历史 K 线、组合快照、交易控制状态和已保存回测索引。
 - `reports/`：一次研究或校验运行生成的人类可读证据，例如回测 JSON 报告、行情对账报告。报告属于运行时产物，不应提交到仓库。
 
