@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.1 Progress
 
+* 2026-06-22: Added an explicit paper OMS state machine with deterministic
+  transitions for staged, submitted, accepted, partially filled, filled,
+  rejected, cancelled, expired, and reconciled states. Paper order payloads now
+  retain full OMS transition evidence in addition to the compact status
+  history, and tests cover idempotent repeated transitions plus invalid path
+  rejection. The state machine is paper-only review evidence and does not
+  submit broker orders, mutate production ledger entries, or change manual
+  confirmation defaults.
 * 2026-06-22: Added the first Paper Broker & OMS evidence slice. The new
   `execution.paper_broker` module records paper-only order and fill evidence
   into the existing order/fill fact tables with

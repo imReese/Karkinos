@@ -569,7 +569,7 @@ ledger or submitting broker orders.
 
 * [x] Paper broker orders and fills are stored as simulation evidence and do
   not mutate production ledger entries.
-* [ ] OMS state transitions cover staged, submitted, accepted, partially
+* [x] OMS state transitions cover staged, submitted, accepted, partially
   filled, filled, rejected, cancelled, expired, and reconciled states.
 * [x] Paper order evidence references signal, strategy, risk decision,
   dataset, cost model, and account-truth context when available.
