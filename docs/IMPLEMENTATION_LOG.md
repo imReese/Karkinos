@@ -583,3 +583,7 @@ roadmap promises.
   quote-dependent observations without fabricating values. This is audit
   wiring only; it does not change broker submission, trading behavior, risk
   gates, or manual-confirmation defaults.
+* 2026-06-22: Completed the v1.1 paper broker and OMS backend coverage slice.
+  Paper broker tests now cover paper-only fills, partial fills, cancellations,
+  rejections, slippage, fee/tax cost modeling, and OMS idempotency without
+  mutating the production ledger or introducing broker order submission.

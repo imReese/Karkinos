@@ -319,6 +319,7 @@ class PaperFillEvidence:
     slippage: Decimal
     asset_class: AssetClass
     context: PaperOrderContext
+    reference_price: Decimal | None = None
     schema_version: str = PAPER_BROKER_SCHEMA_VERSION
     execution_mode: str = "paper"
     provider_name: str = "simulated"
@@ -337,6 +338,17 @@ class PaperFillEvidence:
             "commission": str(self.commission),
             "slippage": str(self.slippage),
             "asset_class": self.asset_class.value,
+            "cost_modeling": {
+                "model_id": self.context.cost_model_id or "default_commission_model",
+                "total_fee_tax_cost": str(self.commission),
+                "slippage_cost": str(self.slippage),
+                "commission_field_includes_fees_and_taxes": True,
+                "reference_price": (
+                    str(self.reference_price)
+                    if self.reference_price is not None
+                    else None
+                ),
+            },
             "context": self.context.to_payload(),
             "execution_mode": self.execution_mode,
             "provider_name": self.provider_name,
@@ -433,12 +445,64 @@ class PaperBroker:
             ),
             asset_class=request.asset_class,
             context=request.context,
+            reference_price=request.price,
             provider_name=self.provider_name,
         )
 
         self._record_order(order)
         self._record_fill(fill)
         return PaperBrokerResult(order=order, fill=fill)
+
+    def cancel_order(
+        self,
+        request: PaperOrderRequest,
+        *,
+        reason: str = "",
+    ) -> PaperBrokerResult:
+        """Persist paper-only cancellation evidence without creating fills."""
+        oms = PaperOmsStateMachine(order_id=request.order_id)
+        oms.mark_submitted()
+        oms.mark_cancelled(reason=reason)
+        order = self._build_terminal_order(request, oms)
+        self._record_order(order)
+        return PaperBrokerResult(order=order, fill=None)
+
+    def reject_order(
+        self,
+        request: PaperOrderRequest,
+        *,
+        reason: str = "",
+    ) -> PaperBrokerResult:
+        """Persist paper-only rejection evidence without creating fills."""
+        oms = PaperOmsStateMachine(order_id=request.order_id)
+        oms.mark_submitted()
+        oms.mark_accepted()
+        oms.mark_rejected(reason=reason)
+        order = self._build_terminal_order(request, oms)
+        self._record_order(order)
+        return PaperBrokerResult(order=order, fill=None)
+
+    def _build_terminal_order(
+        self,
+        request: PaperOrderRequest,
+        oms: PaperOmsStateMachine,
+    ) -> PaperOrderEvidence:
+        return PaperOrderEvidence(
+            order_id=request.order_id,
+            timestamp=request.timestamp,
+            symbol=request.symbol,
+            side=request.side,
+            order_type=request.order_type,
+            quantity=request.quantity,
+            price=request.price,
+            asset_class=request.asset_class,
+            status=oms.current_status,
+            filled_quantity=oms.filled_quantity,
+            remaining_quantity=request.quantity - oms.filled_quantity,
+            status_history=oms.status_history,
+            oms_transitions=oms.transitions,
+            context=request.context,
+        )
 
     def _record_order(self, order: PaperOrderEvidence) -> None:
         if self.db is None or not hasattr(self.db, "record_order_sync"):

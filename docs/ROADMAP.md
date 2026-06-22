@@ -16,8 +16,8 @@ user manual; current usage guidance belongs in the README files.
 | v0.8 | Completed | Strategy Assignment & Attribution Engine |
 | v0.9 | Completed | Data Plane & Market Reliability |
 | v1.0 | Completed | Strategy Runtime Foundation |
-| v1.1 | Active | Paper Broker & OMS |
-| v1.2 | Planned | Broker Evidence Connector |
+| v1.1 | Completed | Paper Broker & OMS |
+| v1.2 | Active | Broker Evidence Connector |
 | v1.3 | Planned | Professional Decision Workflow |
 | v1.4 | Planned | Strategy Attribution 2.0 |
 | v1.5 | Planned | Risk & Portfolio Construction |
@@ -575,7 +575,7 @@ ledger or submitting broker orders.
   dataset, cost model, and account-truth context when available.
 * [x] Shadow review can compare strategy candidates, paper outcomes, and real
   account movement without attributing unsupported differences to a strategy.
-* [ ] Backend deterministic tests cover paper fills, partial fills,
+* [x] Backend deterministic tests cover paper fills, partial fills,
   cancellations, rejections, slippage, fee/tax modeling, and OMS idempotency.
 
 ## Target for v1.2
