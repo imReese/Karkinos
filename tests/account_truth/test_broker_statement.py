@@ -18,6 +18,12 @@ synthetic-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,SY
 synthetic-cash-001,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0.00,0.00,0.00,0.00,9482.50,,,
 """
 
+OPTIONAL_COMPONENT_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,SYN001,合成样例股票A,stock,CNY,100,12.00,1200.00,1.80,1.20,1196.40,10196.40,0,8.80,synthetic sell row,0.60,broker_remaining_cost
+synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10196.40,0,8.80,synthetic position snapshot,,broker_remaining_cost
+synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,
+"""
+
 
 def test_canonical_broker_statement_preview_normalizes_synthetic_rows() -> None:
     preview = parse_broker_statement_csv(SYNTHETIC_STATEMENT)
@@ -111,3 +117,21 @@ def test_broker_statement_preview_requires_symbol_for_trade_events() -> None:
     assert preview.invalid_row_count == 1
     assert preview.errors[0].row_number == 2
     assert "symbol is required" in preview.errors[0].message
+
+
+def test_broker_statement_preview_preserves_optional_reconciliation_components() -> (
+    None
+):
+    preview = parse_broker_statement_csv(OPTIONAL_COMPONENT_STATEMENT)
+
+    assert preview.validation_status == "pass"
+    assert "transfer_fee" in preview.normalized_columns
+    assert "cost_basis_method" in preview.normalized_columns
+
+    trade_event = preview.events[0]
+    assert trade_event.transfer_fee == Decimal("0.60")
+    assert trade_event.cost_basis_method == "broker_remaining_cost"
+
+    position_event = preview.events[1]
+    assert position_event.transfer_fee == Decimal("0")
+    assert position_event.cost_basis_method == "broker_remaining_cost"

@@ -84,6 +84,8 @@ def _event_payloads(snapshot: BrokerConnectorSnapshot) -> list[dict[str, Any]]:
                 "position_quantity": None,
                 "cost_basis": None,
                 "note": _cash_note(snapshot),
+                "transfer_fee": Decimal("0"),
+                "cost_basis_method": "",
             }
         )
     for position in snapshot.positions:
@@ -118,6 +120,8 @@ def _fill_payload(
             f"Read-only connector fill evidence from {snapshot.connector_id}; "
             f"order_id={fill.order_id}"
         ),
+        "transfer_fee": Decimal("0"),
+        "cost_basis_method": "",
     }
 
 
@@ -147,6 +151,8 @@ def _position_payload(
         "position_quantity": position.quantity,
         "cost_basis": position.cost_basis,
         "note": _position_note(snapshot, position),
+        "transfer_fee": Decimal("0"),
+        "cost_basis_method": "",
     }
 
 
@@ -182,6 +188,8 @@ def _events_from_payloads(payloads: list[dict[str, Any]]) -> list[BrokerEvidence
                 note=str(payload["note"]),
                 is_duplicate=duplicate_of is not None,
                 duplicate_of_row_number=duplicate_of,
+                transfer_fee=_decimal(payload["transfer_fee"]),
+                cost_basis_method=str(payload["cost_basis_method"]),
             )
         )
     return events

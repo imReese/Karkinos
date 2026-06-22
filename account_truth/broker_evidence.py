@@ -62,6 +62,8 @@ class StoredBrokerEvidenceEvent:
     note: str
     is_row_duplicate: bool
     duplicate_of_row_number: int | None
+    transfer_fee: str
+    cost_basis_method: str
 
 
 class BrokerEvidenceRepository:
@@ -140,8 +142,9 @@ class BrokerEvidenceRepository:
                         instrument_name, asset_class, currency, quantity,
                         price, gross_amount, fee, tax, net_amount,
                         cash_balance, position_quantity, cost_basis, note,
-                        is_row_duplicate, duplicate_of_row_number, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        is_row_duplicate, duplicate_of_row_number, transfer_fee,
+                        cost_basis_method, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         self._event_insert_values(
@@ -246,6 +249,8 @@ class BrokerEvidenceRepository:
                     note TEXT NOT NULL,
                     is_row_duplicate INTEGER NOT NULL,
                     duplicate_of_row_number INTEGER,
+                    transfer_fee TEXT NOT NULL DEFAULT '0',
+                    cost_basis_method TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(import_run_id)
                         REFERENCES broker_import_runs(import_run_id)
@@ -257,7 +262,23 @@ class BrokerEvidenceRepository:
                 CREATE INDEX IF NOT EXISTS idx_broker_evidence_events_row_fingerprint
                     ON broker_evidence_events(row_fingerprint);
                 """)
+            self._ensure_event_component_columns(conn)
             conn.commit()
+
+    @staticmethod
+    def _ensure_event_component_columns(conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(broker_evidence_events)").fetchall()
+        columns = {str(row[1]) for row in rows}
+        if "transfer_fee" not in columns:
+            conn.execute(
+                "ALTER TABLE broker_evidence_events "
+                "ADD COLUMN transfer_fee TEXT NOT NULL DEFAULT '0'"
+            )
+        if "cost_basis_method" not in columns:
+            conn.execute(
+                "ALTER TABLE broker_evidence_events "
+                "ADD COLUMN cost_basis_method TEXT NOT NULL DEFAULT ''"
+            )
 
     def _find_existing_import_run(self, file_fingerprint: str) -> str | None:
         with sqlite3.connect(self._path) as conn:
@@ -305,6 +326,8 @@ class BrokerEvidenceRepository:
             event.note,
             1 if event.is_duplicate else 0,
             event.duplicate_of_row_number,
+            _decimal_to_text(event.transfer_fee),
+            event.cost_basis_method,
             created_at,
         )
 
@@ -334,6 +357,8 @@ class BrokerEvidenceRepository:
             note=str(row["note"]),
             is_row_duplicate=bool(row["is_row_duplicate"]),
             duplicate_of_row_number=row["duplicate_of_row_number"],
+            transfer_fee=str(row["transfer_fee"]),
+            cost_basis_method=str(row["cost_basis_method"] or ""),
         )
 
     @staticmethod

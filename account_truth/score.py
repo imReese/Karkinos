@@ -19,6 +19,7 @@ _CATEGORY_STATUS_FIELDS = {
     "position": "position_status",
     "fee": "fee_status",
     "tax": "fee_status",
+    "transfer_fee": "fee_status",
     "cost_basis": "cost_basis_status",
 }
 
@@ -93,7 +94,7 @@ def build_account_truth_score(
         gate_status=_gate_status(score=score, blocking_reasons=blocking_reasons),
         cash_status=_category_status(report.items, "cash"),
         position_status=_category_status(report.items, "position"),
-        fee_status=_combined_status(report.items, ["fee", "tax"]),
+        fee_status=_combined_status(report.items, ["fee", "tax", "transfer_fee"]),
         cost_basis_status=_category_status(report.items, "cost_basis"),
         data_freshness_status=freshness,
         unresolved_mismatch_count=len(unresolved_items),

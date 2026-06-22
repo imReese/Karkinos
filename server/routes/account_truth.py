@@ -244,11 +244,25 @@ def _evidence_references(
             for event in events
             if event.event_type == "cash_snapshot"
         ]
-    if item.category in {"fee", "tax", "cost_basis"}:
+    if item.category in {
+        "trade_gross_amount",
+        "net_cash_impact",
+        "fee",
+        "tax",
+        "transfer_fee",
+        "cost_basis",
+    }:
+        event_types = (
+            {"trade_buy", "trade_sell"}
+            if item.category
+            in {"trade_gross_amount", "net_cash_impact", "transfer_fee"}
+            else {item.category, "position_snapshot", "trade_buy", "trade_sell"}
+        )
         return [
             f"broker_event:{event.import_run_id}:{event.symbol or item.category}:{event.event_type}"
             for event in events
-            if event.event_type in {item.category, "position_snapshot"}
+            if event.event_type in event_types
+            and (not item.symbol or event.symbol == item.symbol)
         ]
     return []
 

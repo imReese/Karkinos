@@ -146,13 +146,17 @@ def _latest_quotes_by_symbol(db: Any) -> dict[str, dict[str, object]]:
 
 
 def _ledger_fact_from_entry(entry: LedgerEntry) -> KarkinosLedgerFact:
+    quantity = _decimal_or_zero(entry.quantity)
+    price = _decimal_or_zero(entry.price)
     return KarkinosLedgerFact(
         event_type=entry.entry_type,
         symbol=str(entry.symbol or ""),
-        quantity=_decimal_or_zero(entry.quantity),
-        price=_decimal_or_zero(entry.price),
+        quantity=quantity,
+        price=price,
+        gross_amount=quantity * price,
         fee=_decimal_or_zero(entry.commission),
         tax=Decimal("0"),
+        transfer_fee=Decimal("0"),
         net_amount=_decimal_or_zero(entry.amount),
     )
 

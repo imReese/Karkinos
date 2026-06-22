@@ -18,6 +18,12 @@ synthetic-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,SY
 synthetic-cash-001,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0.00,0.00,0.00,0.00,9387.29,,,
 """
 
+OPTIONAL_COMPONENT_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,SYN001,合成样例股票A,stock,CNY,100,12.00,1200.00,1.80,1.20,1196.40,10196.40,0,8.80,synthetic sell row,0.60,broker_remaining_cost
+synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10196.40,0,8.80,synthetic position snapshot,,broker_remaining_cost
+synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,
+"""
+
 
 def test_broker_evidence_repository_stages_import_run_and_events(
     tmp_path: Path,
@@ -61,6 +67,24 @@ def test_broker_evidence_repository_stages_import_run_and_events(
     assert saved_events[0].quantity == "100"
     assert saved_events[0].fee == "5.00"
     assert saved_events[0].net_amount == "-1028.00"
+
+
+def test_broker_evidence_repository_persists_optional_reconciliation_components(
+    tmp_path: Path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(OPTIONAL_COMPONENT_STATEMENT)
+    import_run = repository.save_preview(
+        preview,
+        source_name="synthetic-components.csv",
+    )
+
+    saved_events = repository.list_events(import_run.import_run_id)
+
+    assert saved_events[0].transfer_fee == "0.60"
+    assert saved_events[0].cost_basis_method == "broker_remaining_cost"
+    assert saved_events[1].transfer_fee == "0"
+    assert saved_events[1].cost_basis_method == "broker_remaining_cost"
 
 
 def test_broker_evidence_repository_detects_duplicate_files(tmp_path: Path) -> None:
