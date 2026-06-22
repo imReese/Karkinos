@@ -50,6 +50,18 @@ flows, order-submission defaults, or profitability claims.
   history, auditability, and reconciliation-style accounting discipline.
 * Portfolio Performance: learn local portfolio accounting UX, statement import,
   transaction taxonomy, performance attribution, and explainable holdings views.
+* QMT / miniQMT / xtquant public adapters: learn local broker-client
+  integration boundaries, read-only account snapshots, position/order/fill
+  state, callback-style order events, connector health, and gateway-style
+  adapter separation. Karkinos' near-term use is broker evidence and account
+  reconciliation. Broker submission remains out of scope until a future
+  controlled bridge is explicitly designed, configured, manually confirmed,
+  and protected by risk gates.
+* PTrade-style strategy platforms: learn strategy lifecycle ergonomics,
+  strategy context APIs, data helpers, scheduled or bar/tick callbacks, and
+  backtest/simulation/live-like consistency. Karkinos should translate this
+  into a safe Strategy Runtime where strategy scripts produce auditable signals
+  and candidate actions, not direct broker orders.
 
 ## Borrowed Design Themes
 
@@ -63,3 +75,34 @@ flows, order-submission defaults, or profitability claims.
   in the UI and API.
 * Diagnostics should prefer deterministic local tests and synthetic examples
   over live-provider-dependent checks.
+
+## QMT and PTrade-Inspired Roadmap Lessons
+
+Karkinos should use QMT as a reference for broker facts and stateful execution
+plumbing, not as permission to automate trading by default. Useful ideas are:
+
+* explicit connector capabilities and health;
+* read-only asset, cash, position, order, and fill snapshots;
+* deterministic mapping from broker callbacks into local evidence events;
+* idempotent order/fill correlation ids for future paper or controlled
+  execution bridges;
+* clear separation between connector configuration, broker evidence, ledger
+  mutation, and user review.
+
+Karkinos should use PTrade as a reference for strategy runtime ergonomics, not
+as a reason to let strategy code bypass gates. Useful ideas are:
+
+* lifecycle hooks such as initialization, pre-market, bar/tick handling, and
+  after-market review;
+* a strategy context that provides data, portfolio facts, parameters, and
+  run metadata;
+* one strategy API that can run under backtest, replay, paper, and shadow
+  modes;
+* explicit parameter schemas and strategy documentation;
+* standardized strategy outputs that enter evidence, risk, account-truth,
+  paper/shadow, and manual-confirmation workflows.
+
+The resulting Professional Quant Platform track is maintained in
+[ROADMAP.md](ROADMAP.md). It should preserve Karkinos' local-first privacy,
+auditability, non-investment-advice, no-default-automation, and manual-review
+boundaries.

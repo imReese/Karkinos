@@ -581,6 +581,121 @@ test('shows intraday category change against the session baseline', async () => 
   });
 });
 
+test('marks 1d category changes as unconfirmed when valuation status is estimated', async () => {
+  const { container } = renderCard({
+    cardPoints: [
+      {
+        timestamp: '2026-06-18T09:30:00+08:00',
+        total: 15400,
+        stocks: 6800,
+        funds: 2800,
+        others: 0,
+        cash: 5800,
+        unrealized_pnl: 100,
+        stocks_daily_change: 0,
+        funds_daily_change: 0,
+        total_daily_change: 0,
+        quote_status: 'live',
+      },
+      {
+        timestamp: '2026-06-18T14:30:00+08:00',
+        total: 15530,
+        stocks: 6920,
+        funds: 2810,
+        others: 0,
+        cash: 5800,
+        unrealized_pnl: 230,
+        stocks_daily_change: 98,
+        funds_daily_change: 10,
+        total_daily_change: 108,
+        quote_status: 'estimated',
+      },
+    ],
+  });
+  const user = userEvent.setup();
+
+  expect(await screen.findByText('Valuation status: Estimated')).toBeTruthy();
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
+  await user.click(await screen.findByRole('button', { name: 'Total' }));
+  await user.click(await screen.findByRole('button', { name: 'Cash' }));
+  await user.click(await screen.findByRole('button', { name: 'Funds' }));
+
+  const chartSurface = container.querySelector('.recharts-surface');
+  expect(chartSurface).not.toBeNull();
+  fireEvent.mouseMove(chartSurface as Element, {
+    clientX: 700,
+    clientY: 160,
+  });
+
+  await waitFor(() => {
+    const tooltip = container.querySelector('.recharts-tooltip-wrapper');
+    expect(tooltip?.textContent).toContain('Stocks change needs confirmation');
+    expect(tooltip?.textContent).toContain('CN¥98');
+    expect(tooltip?.textContent).toContain('Quote status');
+    expect(tooltip?.textContent).toContain('Estimated');
+  });
+});
+
+test('does not fabricate quote-dependent values for missing 1d observations', async () => {
+  const { container } = renderCard({
+    cardPoints: [
+      {
+        timestamp: '2026-06-18T09:30:00+08:00',
+        total: 15400,
+        stocks: 6800,
+        funds: 2800,
+        others: 0,
+        cash: 5800,
+        quote_status: 'live',
+      },
+      {
+        timestamp: '2026-06-18T11:30:00+08:00',
+        total: 15580,
+        stocks: 6980,
+        funds: 2800,
+        others: 0,
+        cash: 5800,
+        stocks_daily_change: 180,
+        total_daily_change: 180,
+        quote_status: 'missing',
+      },
+      {
+        timestamp: '2026-06-18T14:30:00+08:00',
+        total: 15620,
+        stocks: 7020,
+        funds: 2800,
+        others: 0,
+        cash: 5800,
+        quote_status: 'live',
+      },
+    ],
+  });
+  const user = userEvent.setup();
+
+  await user.click(await screen.findByRole('button', { name: 'Range: 1D' }));
+
+  const chartSurface = container.querySelector('.recharts-surface');
+  expect(chartSurface).not.toBeNull();
+  fireEvent.mouseMove(chartSurface as Element, {
+    clientX: 420,
+    clientY: 170,
+  });
+
+  await waitFor(() => {
+    const tooltip = container.querySelector('.recharts-tooltip-wrapper');
+    expect(tooltip?.textContent).toContain('Quote status');
+    expect(tooltip?.textContent).toContain('Missing');
+    expect(tooltip?.textContent).toContain('Cash');
+    expect(tooltip?.textContent).toContain('CN¥5,800');
+    expect(tooltip?.textContent).not.toContain('CN¥15,580');
+    expect(tooltip?.textContent).not.toContain('CN¥6,980');
+    expect(tooltip?.textContent).not.toContain(
+      'Stocks change needs confirmation',
+    );
+  });
+});
+
 test('shows the highest visible value for every selected equity series in the active range', async () => {
   renderCard({ cardPoints: updatedPoints });
   const user = userEvent.setup();

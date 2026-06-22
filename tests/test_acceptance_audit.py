@@ -6,6 +6,7 @@ from analytics.acceptance_audit import (
     build_acceptance_audit,
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
+    build_market_data_reliability_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
@@ -199,7 +200,7 @@ def test_strategy_assignment_goal_completed_checkboxes_match_audit() -> None:
     roadmap_text = Path("docs/ROADMAP.md").read_text()
     strategy_assignment_acceptance = roadmap_text.split(
         "### Acceptance Criteria for v0.8", 1
-    )[1]
+    )[1].split("## Professional Quant Platform Track", 1)[0]
 
     assert audit.is_complete is True
     for criterion in audit.criteria:
@@ -209,5 +210,48 @@ def test_strategy_assignment_goal_completed_checkboxes_match_audit() -> None:
         line
         for line in strategy_assignment_acceptance.splitlines()
         if line.startswith("* [x]")
+    ]
+    assert audit.required_count == len(completed_checkboxes)
+
+
+def test_market_data_reliability_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
+    None
+):
+    audit = build_market_data_reliability_acceptance_audit()
+
+    assert audit.required_count == 13
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert "not investment advice" in audit.limitations[0]
+    assert {criterion.key for criterion in audit.criteria} >= {
+        "backend_market_data_deterministic_tests",
+        "frontend_market_data_status_tests",
+        "one_day_net_value_chart_contract",
+        "market_data_status_consumer_contract",
+        "web_data_status_surface_copy",
+        "market_data_reliability_docs",
+    }
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_market_data_reliability_goal_completed_checkboxes_match_audit() -> None:
+    audit = build_market_data_reliability_acceptance_audit()
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    market_data_acceptance = roadmap_text.split("### Acceptance Criteria for v0.9", 1)[
+        1
+    ].split("## Target for v1.0", 1)[0]
+
+    assert audit.is_complete is True
+    for criterion in audit.criteria:
+        assert criterion.checkbox_text in market_data_acceptance
+
+    completed_checkboxes = [
+        line for line in market_data_acceptance.splitlines() if line.startswith("* [x]")
     ]
     assert audit.required_count == len(completed_checkboxes)

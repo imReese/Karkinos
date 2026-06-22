@@ -5,6 +5,10 @@ import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
+import {
+  formatMarketDataStatusNextAction,
+  isUnconfirmedMarketDataStatus,
+} from '../../../shared/market-data-status';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import type { AccountOverview } from '../api';
 import {
@@ -50,8 +54,7 @@ function isActionableQuoteDiagnostic(item: QuoteDiagnosticItem) {
   const quoteSource = item.quote_source?.toLowerCase();
   return (
     Boolean(item.stale_reason) ||
-    quoteStatus === 'stale' ||
-    quoteStatus === 'missing' ||
+    isUnconfirmedMarketDataStatus(quoteStatus) ||
     quoteStatus === 'error' ||
     quoteSource === 'eastmoney_fund_estimate'
   );
@@ -81,16 +84,17 @@ function assetClassLabel(
 
 function diagnosticActionLabel(
   item: QuoteDiagnosticItem,
-  labels: ReturnType<typeof useCopy>['overview']['dashboard'],
+  locale: 'en' | 'zh',
   staleReasons: ReturnType<typeof useCopy>['common']['staleReasons'],
 ) {
-  if (
-    item.stale_reason === 'confirmed_fund_nav_missing_estimate_only' ||
-    item.quote_source === 'eastmoney_fund_estimate'
-  ) {
-    return labels.waitingConfirmedNav;
-  }
-  return formatStaleReason(item.stale_reason, staleReasons);
+  return (
+    formatMarketDataStatusNextAction(item.stale_reason, locale) ??
+    formatMarketDataStatusNextAction(item.quote_status, locale) ??
+    (item.quote_source === 'eastmoney_fund_estimate'
+      ? formatMarketDataStatusNextAction('confirmed_nav_missing', locale)
+      : null) ??
+    formatStaleReason(item.stale_reason, staleReasons)
+  );
 }
 
 export function DashboardQuickActions({
@@ -110,10 +114,8 @@ export function DashboardQuickActions({
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const quoteStatus = overview.quote_status ?? 'unknown';
   const isStale =
-    quoteStatus === 'stale' ||
-    quoteStatus === 'missing' ||
-    marketHealth?.source_health === 'stale' ||
-    marketHealth?.source_health === 'degraded' ||
+    isUnconfirmedMarketDataStatus(quoteStatus) ||
+    isUnconfirmedMarketDataStatus(marketHealth?.source_health) ||
     marketHealth?.persistent_cache_status === 'missing';
   const refreshMessage = refreshQuotes.isPending
     ? labels.refreshingQuotes
@@ -122,6 +124,32 @@ export function DashboardQuickActions({
       : refreshQuotes.isSuccess
         ? labels.refreshDone
         : '';
+  const marketDataNextAction =
+    formatMarketDataStatusNextAction(overview.stale_reason, locale) ??
+    formatMarketDataStatusNextAction(quoteStatus, locale) ??
+    formatMarketDataStatusNextAction(marketHealth?.source_health, locale) ??
+    formatMarketDataStatusNextAction(
+      marketHealth?.persistent_cache_status,
+      locale,
+    ) ??
+    formatMarketDataStatusNextAction(
+      overview.refresh_policy ?? marketHealth?.refresh_policy,
+      locale,
+    );
+  const providerNextAction =
+    marketHealth?.next_action &&
+    marketHealth.next_action in copy.market.providerActions
+      ? copy.market.providerActions[
+          marketHealth.next_action as keyof typeof copy.market.providerActions
+        ]
+      : marketHealth?.next_action
+        ? formatPublicCode(marketHealth.next_action, locale)
+        : null;
+  const specificProviderNextAction =
+    marketHealth?.next_action &&
+    marketHealth.next_action !== 'refresh_quotes_or_check_source'
+      ? providerNextAction
+      : null;
 
   const statusRows = [
     {
@@ -148,14 +176,9 @@ export function DashboardQuickActions({
     {
       label: copy.market.providerNextAction,
       value: normalizeStatus(
-        marketHealth?.next_action &&
-          marketHealth.next_action in copy.market.providerActions
-          ? copy.market.providerActions[
-              marketHealth.next_action as keyof typeof copy.market.providerActions
-            ]
-          : marketHealth?.next_action
-            ? formatPublicCode(marketHealth.next_action, locale)
-            : null,
+        specificProviderNextAction ??
+          marketDataNextAction ??
+          providerNextAction,
       ),
     },
   ];
@@ -252,7 +275,7 @@ export function DashboardQuickActions({
                       <span>
                         {diagnosticActionLabel(
                           item,
-                          labels,
+                          locale,
                           copy.common.staleReasons,
                         )}
                       </span>

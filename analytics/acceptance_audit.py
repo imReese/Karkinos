@@ -1433,3 +1433,234 @@ def build_strategy_assignment_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_market_data_reliability_acceptance_audit() -> AcceptanceAudit:
+    """Return completed Market Data Reliability criteria evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="capability_market_data_adapter",
+                checkbox_text=(
+                    "* [x] A capability-based market data adapter interface exists "
+                    "for daily bars,"
+                ),
+                evidence_paths=(
+                    "data/market_data.py",
+                    "tests/data/test_market_data_contract.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_contract.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="shared_data_status_vocabulary",
+                checkbox_text=(
+                    "* [x] Daily bars, intraday bars, snapshots, and replay events "
+                    "normalize into a"
+                ),
+                evidence_paths=(
+                    "data/market_data.py",
+                    "web/src/shared/market-data-status.ts",
+                    "tests/data/test_market_data_contract.py",
+                    "web/src/shared/market-data-status.test.ts",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_contract.py",
+                    "npm --prefix web test -- market-data-status",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="market_records_preserve_metadata",
+                checkbox_text=(
+                    "* [x] Market data records keep source, timestamp, trading "
+                    "session, adjustment"
+                ),
+                evidence_paths=(
+                    "data/market_data.py",
+                    "tests/data/test_market_data_contract.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_contract.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="market_data_quality_diagnostics",
+                checkbox_text=(
+                    "* [x] Data-quality diagnostics detect missing trading dates, "
+                    "non-trading days,"
+                ),
+                evidence_paths=(
+                    "data/market_data.py",
+                    "tests/data/test_market_data_quality.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_quality.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_and_scheduled_refresh_boundaries",
+                checkbox_text=(
+                    "* [x] Manual refresh and scheduled refresh flows can update "
+                    "intraday quotes,"
+                ),
+                evidence_paths=(
+                    "data/market_data_refresh.py",
+                    "tests/data/test_market_data_refresh.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_refresh.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frozen_dataset_replay",
+                checkbox_text=(
+                    "* [x] Dataset snapshots can be frozen and replayed "
+                    "deterministically for"
+                ),
+                evidence_paths=(
+                    "data/market_data_replay.py",
+                    "tests/data/test_market_data_replay.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_replay.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="market_data_status_consumer_contract",
+                checkbox_text=(
+                    "* [x] Overview valuation, return calendar, Backtest, "
+                    "and Strategy Runtime use"
+                ),
+                evidence_paths=(
+                    "web/src/shared/market-data-status.ts",
+                    "web/src/shared/market-data-status.test.ts",
+                    "web/src/features/account/components/overview-cards.tsx",
+                    "web/src/features/account/components/equity-curve-card.tsx",
+                    "web/src/features/account/components/equity-curve-card.test.tsx",
+                    "web/src/app/return-calendar-card.test.tsx",
+                    "web/src/features/backtest/components/dataset-snapshot-panel.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "data/market_data_replay.py",
+                    "tests/data/test_market_data_replay.py",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- market-data-status.test.ts equity-curve-card.test.tsx return-calendar-card.test.tsx backtest-page.test.tsx",
+                    "uv run python -m pytest tests/data/test_market_data_replay.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="one_day_net_value_chart_contract",
+                checkbox_text=(
+                    "* [x] The 1D net-value chart can represent intraday "
+                    "market movement, cash-flow"
+                ),
+                evidence_paths=(
+                    "web/src/features/account/components/equity-curve-card.tsx",
+                    "web/src/features/account/components/equity-curve-card.test.tsx",
+                    "server/routes/portfolio.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- equity-curve-card.test.tsx",
+                    'uv run python -m pytest tests/test_server_routes.py -k "portfolio_equity_curve_series_1d or current_equity_series_point_marks_confirmed_nav_missing_fund_estimate"',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="web_data_status_surface_copy",
+                checkbox_text=(
+                    "* [x] Web data-status surfaces expose localized, "
+                    "user-readable status and next"
+                ),
+                evidence_paths=(
+                    "web/src/shared/market-data-status.ts",
+                    "web/src/shared/market-data-status.test.ts",
+                    "web/src/features/account/components/dashboard-quick-actions.tsx",
+                    "web/src/features/account/components/dashboard-quick-actions.test.tsx",
+                    "web/src/app/router.tsx",
+                    "web/src/app/market-page.test.tsx",
+                    "web/src/features/settings/components/settings-page.tsx",
+                    "web/src/features/settings/components/settings-page.test.tsx",
+                    "web/src/features/backtest/components/dataset-snapshot-panel.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/app/layout/app-shell.tsx",
+                    "web/src/app/layout/app-shell.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- market-data-status.test.ts dashboard-quick-actions.test.tsx market-page.test.tsx settings-page.test.tsx backtest-page.test.tsx app-shell.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="backend_market_data_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover adapter "
+                    "normalization, freshness"
+                ),
+                evidence_paths=(
+                    "data/market_data.py",
+                    "data/market_data_refresh.py",
+                    "data/market_data_replay.py",
+                    "tests/data/test_market_data_contract.py",
+                    "tests/data/test_market_data_quality.py",
+                    "tests/data/test_market_data_refresh.py",
+                    "tests/data/test_market_data_replay.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/data/test_market_data_contract.py tests/data/test_market_data_quality.py tests/data/test_market_data_refresh.py tests/data/test_market_data_replay.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frontend_market_data_status_tests",
+                checkbox_text=(
+                    "* [x] Frontend tests cover data-status rendering, "
+                    "estimated-versus-confirmed"
+                ),
+                evidence_paths=(
+                    "web/src/shared/market-data-status.test.ts",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/app/return-calendar-card.test.tsx",
+                    "web/src/features/account/components/equity-curve-card.test.tsx",
+                    "web/src/features/account/components/dashboard-quick-actions.test.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- market-data-status.test.ts overview-page.test.tsx return-calendar-card.test.tsx equity-curve-card.test.tsx dashboard-quick-actions.test.tsx backtest-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="market_data_reliability_docs",
+                checkbox_text=(
+                    "* [x] README/docs explain the market-data reliability "
+                    "workflow and privacy"
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    'rg -n "Market Data Reliability Workflow|市场数据可靠性工作流|not investment advice|不构成投资建议|privacy|隐私" README.md docs/README.zh.md docs/README.en.md docs/ROADMAP.md',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="acceptance_audit_cli_capability",
+                checkbox_text=(
+                    "* [x] Acceptance audit manifest and CLI include the "
+                    "market-data reliability"
+                ),
+                evidence_paths=(
+                    "analytics/acceptance_audit.py",
+                    "scripts/export_acceptance_audit.py",
+                    "tests/test_acceptance_audit.py",
+                    "tests/test_acceptance_audit_cli.py",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_acceptance_audit.py",
+                    "uv run python -m pytest tests/test_acceptance_audit_cli.py",
+                    "uv run python scripts/export_acceptance_audit.py --audit market_data_reliability",
+                ),
+            ),
+        )
+    )

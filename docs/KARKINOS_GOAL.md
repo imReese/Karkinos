@@ -57,19 +57,19 @@ The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
 Current active milestone:
 
-* **v0.8 — Strategy Assignment & Attribution Engine**
+* **v0.9 — Data Plane & Market Reliability**
 * Status: active roadmap milestone.
-* Purpose: make account strategy assignment explicit, then connect strategy
-  signals, manual review, orders, fills, fees, and position changes into an
-  auditable contribution view before claiming strategy-level account returns.
+* Purpose: make market data, fund NAVs, historical bars, intraday snapshots,
+  and replay datasets auditable before valuation, return calendars, backtests,
+  strategy runtime, paper/shadow review, or decision workflows rely on them.
 
 Latest completed milestone:
 
-* **v0.7 — Account Truth Review Center**
+* **v0.8 — Strategy Assignment & Attribution Engine**
 * Status: completed roadmap milestone.
-* Purpose: turn account-truth and reconciliation evidence into a usable review
-  workflow before decision summaries, promotion readiness, paper/shadow review,
-  or manual-confirm workflows rely on unresolved account differences.
+* Purpose: make account strategy assignment explicit, then connect strategy
+  signals, manual review, orders, fills, fees, and position changes into an
+  auditable contribution view before claiming strategy-level account returns.
 
 ## Documentation Map
 

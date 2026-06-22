@@ -685,6 +685,7 @@ function installBacktestFetchMock({
       'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
     ],
   },
+  savedBacktestReport = savedReport,
 }: {
   runFails?: boolean;
   sweepFails?: boolean;
@@ -694,6 +695,7 @@ function installBacktestFetchMock({
   accountStrategy?: unknown;
   accountStrategyAttribution?: unknown;
   accountStrategyContribution?: unknown;
+  savedBacktestReport?: unknown;
 } = {}) {
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -760,7 +762,7 @@ function installBacktestFetchMock({
           : jsonResponse(compareResponse);
       }
       if (url.includes('/api/backtest/results/1')) {
-        return jsonResponse(savedReport);
+        return jsonResponse(savedBacktestReport);
       }
       if (url.includes('/api/backtest/results')) {
         return jsonResponse(results);
@@ -1286,6 +1288,45 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('600519')).toBeTruthy();
   expect(await screen.findByText('260 rows')).toBeTruthy();
   expect(await screen.findByText('qfq')).toBeTruthy();
+});
+
+test('marks unconfirmed dataset rows in saved backtest reports', async () => {
+  renderBacktestPage({
+    savedBacktestReport: {
+      ...savedReport,
+      metrics_json: {
+        ...savedReport.metrics_json,
+        dataset_snapshot: {
+          ...savedReport.metrics_json.dataset_snapshot,
+          symbol_universe:
+            savedReport.metrics_json.dataset_snapshot.symbol_universe.map(
+              (row) => ({
+                ...row,
+                data_quality: {
+                  status: 'estimated',
+                  issues: [
+                    {
+                      code: 'estimated_quote',
+                      message:
+                        'Latest local quote is an estimate and needs confirmation.',
+                      symbol: row.symbol,
+                    },
+                  ],
+                },
+              }),
+            ),
+        },
+      },
+    },
+  });
+
+  expect(await screen.findByText('Data status')).toBeTruthy();
+  expect((await screen.findAllByText('Estimated')).length).toBeGreaterThan(0);
+  expect(
+    await screen.findByText(
+      'Dataset contains unconfirmed market data. Treat after-cost metrics as research evidence until data is refreshed or replayed from confirmed bars.',
+    ),
+  ).toBeTruthy();
 });
 
 test('renders persisted strategy metadata for saved reports', async () => {

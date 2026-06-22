@@ -18,6 +18,7 @@ import {
   type Locale,
   type ThemePreference,
 } from '../preferences';
+import { isUnconfirmedMarketDataStatus } from '../../shared/market-data-status';
 import { formatPublicStatus } from '../../shared/public-labels';
 
 const navItems = [
@@ -131,6 +132,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const marketQuotesHealthy =
     marketHealth.data?.source_health === 'live' ||
     marketHealth.data?.source_health === 'healthy';
+  const marketQuotesUnconfirmed = isUnconfirmedMarketDataStatus(
+    marketHealth.data?.source_health,
+  );
 
   const ledgerStatus = accountOverview.isLoading
     ? {
@@ -222,7 +226,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           tone: 'error' as ToolbarStatusTone,
           indicator: 'dot' as ToolbarStatusIndicator,
         }
-      : isQuoteStale
+      : isQuoteStale || marketQuotesUnconfirmed
         ? {
             value: copy.shell.cachedQuotes,
             tone: 'warning' as ToolbarStatusTone,

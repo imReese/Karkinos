@@ -23,7 +23,7 @@ Key Features:
 - **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts personal finance app
 - **Holdings and market detail** — the Portfolio quote board summarizes asset classes, while instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page
 - **Responsive Platform Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
-- **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data
+- **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data; estimated, cached, stale, or confirmed-NAV-missing periods still show their return value but are marked unconfirmed, while only missing or unavailable prices are shown as valuation gaps
 - **Account Truth review API** — Read-only endpoints list staged import runs
   and computed reconciliation reports with row counts, validation status,
   duplicate counts, source metadata, report status, unresolved differences,
@@ -65,6 +65,29 @@ Monthly Rebalance, Bollinger Mean Reversion, and RSI reversal semantics,
 including current signal rules, parameters, failure modes, and evidence
 boundaries. It is research documentation, not investment advice or a return
 claim.
+
+## Market Data Reliability Workflow
+
+Karkinos labels market data with one shared vocabulary across quotes, fund NAVs,
+historical bars, intraday snapshots, and replay datasets: `confirmed`, `live`,
+`cache`, `estimated`, `missing`, `stale`, and `confirmed_nav_missing`.
+Overview, the return calendar, Backtest data-audit panels, and strategy replay
+evidence use those statuses to separate confirmed values from local cache,
+estimate-only values, missing quotes, stale quotes, and delayed fund NAVs.
+
+Manual refresh and scheduled refresh flows can update intraday quotes, closing
+bars, and fund NAV confirmation. They update local market-data evidence only:
+they do not submit broker orders, change trading behavior, or bypass manual
+confirmation. Frozen market-data datasets can be replayed for backtests,
+strategy runtime dry-runs, paper/shadow review, and audit replay so the same
+inputs can be checked deterministically.
+
+Estimated, cached, stale, missing, or confirmed-NAV-missing data is data-quality
+evidence. It must not be displayed as confirmed returns and is not investment
+advice, a profitability claim, or execution approval. Quotes, bars, and market
+cache belong in local SQLite / data-cache storage; `config.json` stores only
+local runtime preferences and provider settings, not brokerage passwords,
+private statement exports, or public demo holdings.
 
 ## Project Structure
 
@@ -203,7 +226,7 @@ Win Rate:                 8.40%
 Duration (days):           168
 --------------------------------------------------
 Positions:
-  600519: qty=500, avg_cost=1749.04, pnl=-15430.31
+  SYNTH001: qty=500, avg_cost=17.4904, pnl=-1543.03
 ==================================================
 ```
 
@@ -695,8 +718,8 @@ Three notification channels:
 {
     "notification": {
         "type": "telegram",
-        "telegram_bot_token": "123456:ABC-DEF",
-        "telegram_chat_id": "987654321"
+        "telegram_bot_token": "<telegram-bot-token>",
+        "telegram_chat_id": "<telegram-chat-id>"
     }
 }
 ```
@@ -705,7 +728,7 @@ Three notification channels:
 {
     "notification": {
         "type": "wechat",
-        "wechat_sendkey": "SCTxxxxx"
+        "wechat_sendkey": "<serverchan-sendkey>"
     }
 }
 ```
@@ -714,10 +737,10 @@ Signal push message format:
 
 ```
 📈 Trading Signal
-Symbol: 600519
+Symbol: SYNTH001
 Direction: LONG
 Target Weight: 100.0%
-Price: 1850.50
+Price: 18.5050
 Strategy: dual_ma
 Time: 2025-06-15 14:30:00
 ```

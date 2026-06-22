@@ -566,10 +566,10 @@ class EquityPoint(BaseModel):
 
 class EquitySeriesPoint(BaseModel):
     timestamp: str
-    total: float
-    stocks: float
-    funds: float
-    others: float
+    total: float | None
+    stocks: float | None
+    funds: float | None
+    others: float | None
     cash: float
     unrealized_pnl: float | None = None
     total_daily_change: float | None = None

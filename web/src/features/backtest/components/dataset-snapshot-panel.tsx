@@ -2,6 +2,10 @@ import { Database, ShieldCheck } from 'lucide-react';
 
 import { useCopy } from '../../../app/copy';
 import { formatTimestamp } from '../../../shared/format';
+import {
+  isUnconfirmedMarketDataStatus,
+  normalizeMarketDataStatus,
+} from '../../../shared/market-data-status';
 import type { BacktestReport, DatasetSnapshot } from '../api';
 
 function boolLabel(
@@ -21,6 +25,15 @@ function qualityTone(status: string) {
     : 'text-[color-mix(in_srgb,#f9e2af_90%,white)]';
 }
 
+function datasetStatusNeedsReview(status?: string | null) {
+  const normalized = normalizeMarketDataStatus(status);
+  return (
+    Boolean(normalized) &&
+    normalized !== 'ok' &&
+    isUnconfirmedMarketDataStatus(normalized)
+  );
+}
+
 export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   const copy = useCopy();
   const labels = copy.backtest.datasetSnapshot;
@@ -31,6 +44,9 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   }
 
   const firstIssue = snapshot.data_quality.issues[0];
+  const hasUnconfirmedData = snapshot.symbol_universe.some((row) =>
+    datasetStatusNeedsReview(row.data_quality?.status),
+  );
 
   return (
     <section className="app-panel rounded-2xl p-4 sm:p-5">
@@ -96,42 +112,60 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         </div>
       ) : null}
 
+      {hasUnconfirmedData ? (
+        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,#f9e2af_35%,var(--app-border))] bg-[color-mix(in_srgb,#f9e2af_8%,transparent)] px-4 py-3 text-sm text-[color-mix(in_srgb,#f9e2af_88%,white)]">
+          {labels.unconfirmedDataNotice}
+        </div>
+      ) : null}
+
       <div className="mt-4 overflow-x-auto rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)]">
-        <table className="min-w-[760px] w-full text-left text-sm">
+        <table className="min-w-[860px] w-full text-left text-sm">
           <thead className="bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] text-xs uppercase tracking-[0.12em] text-[var(--app-muted)]">
             <tr>
               <th className="px-4 py-3 font-semibold">{labels.symbol}</th>
               <th className="px-4 py-3 font-semibold">{labels.assetClass}</th>
               <th className="px-4 py-3 font-semibold">{labels.frequency}</th>
               <th className="px-4 py-3 font-semibold">{labels.rows}</th>
+              <th className="px-4 py-3 font-semibold">{labels.dataStatus}</th>
               <th className="px-4 py-3 font-semibold">{labels.providerName}</th>
               <th className="px-4 py-3 font-semibold">{labels.coverage}</th>
             </tr>
           </thead>
           <tbody>
-            {snapshot.symbol_universe.map((row) => (
-              <tr
-                key={`${row.symbol}-${row.frequency ?? ''}`}
-                className="border-t border-[color-mix(in_srgb,var(--app-border)_18%,transparent)]"
-              >
-                <td className="px-4 py-3 font-semibold">{row.symbol}</td>
-                <td className="px-4 py-3">
-                  {row.asset_class ?? labels.unknown}
-                </td>
-                <td className="px-4 py-3 tabular-nums">
-                  {row.frequency ?? labels.unknown}
-                </td>
-                <td className="px-4 py-3 tabular-nums">{row.row_count}</td>
-                <td className="px-4 py-3">
-                  {row.provider_name ?? row.data_source ?? labels.unknown}
-                </td>
-                <td className="px-4 py-3 tabular-nums">
-                  {formatTimestamp(row.first_timestamp) ?? labels.unknown}
-                  {' -> '}
-                  {formatTimestamp(row.last_timestamp) ?? labels.unknown}
-                </td>
-              </tr>
-            ))}
+            {snapshot.symbol_universe.map((row) => {
+              const rowStatus =
+                row.data_quality?.status ?? snapshot.data_quality.status;
+              return (
+                <tr
+                  key={`${row.symbol}-${row.frequency ?? ''}`}
+                  className="border-t border-[color-mix(in_srgb,var(--app-border)_18%,transparent)]"
+                >
+                  <td className="px-4 py-3 font-semibold">{row.symbol}</td>
+                  <td className="px-4 py-3">
+                    {row.asset_class ?? labels.unknown}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {row.frequency ?? labels.unknown}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{row.row_count}</td>
+                  <td
+                    className={`px-4 py-3 font-semibold ${qualityTone(
+                      normalizeMarketDataStatus(rowStatus),
+                    )}`}
+                  >
+                    {labels.qualityValue(normalizeMarketDataStatus(rowStatus))}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.provider_name ?? row.data_source ?? labels.unknown}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {formatTimestamp(row.first_timestamp) ?? labels.unknown}
+                    {' -> '}
+                    {formatTimestamp(row.last_timestamp) ?? labels.unknown}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

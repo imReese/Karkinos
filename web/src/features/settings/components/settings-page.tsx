@@ -22,6 +22,13 @@ import {
 } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import {
+  formatMarketDataStatusNextAction,
+  isCacheLikeMarketDataStatus,
+  isConfirmedMarketDataStatus,
+  isUnconfirmedMarketDataStatus,
+  normalizeMarketDataStatus,
+} from '../../../shared/market-data-status';
+import {
   useDataSourceStatusQuery,
   useAssetMetadataStatusQuery,
   useLiveStatusQuery,
@@ -114,17 +121,44 @@ export function SettingsPage() {
   }, [manualTasksDone, taskStorageKey]);
 
   const quoteStatus = overview.data?.quote_status ?? null;
-  const quoteStatusLabel = quoteStatus
-    ? formatPublicStatus(quoteStatus, locale)
+  const normalizedQuoteStatus = normalizeMarketDataStatus(quoteStatus);
+  const quoteStatusLabel = normalizedQuoteStatus
+    ? formatPublicStatus(normalizedQuoteStatus, locale)
     : copy.shell.statusUnknown;
+  const normalizedRefreshPolicy = normalizeMarketDataStatus(
+    marketHealth.data?.refresh_policy,
+  );
   const refreshPolicyLabel = marketHealth.data?.refresh_policy
-    ? formatPublicStatus(marketHealth.data.refresh_policy, locale)
+    ? formatPublicStatus(normalizedRefreshPolicy, locale)
     : copy.shell.statusUnknown;
   const valuationTime = overview.data?.valuation_timestamp
     ? formatTimestamp(overview.data.valuation_timestamp)
     : copy.settings.noValuationTime;
-  const isCacheOnly = marketHealth.data?.refresh_policy === 'cache_only';
-  const isStaleQuote = overview.data?.quote_status === 'stale';
+  const refreshPolicyNeedsReview = isUnconfirmedMarketDataStatus(
+    normalizedRefreshPolicy,
+  );
+  const isCacheOnly = isCacheLikeMarketDataStatus(normalizedRefreshPolicy);
+  const quoteNeedsReview =
+    Boolean(normalizedQuoteStatus) &&
+    !isConfirmedMarketDataStatus(normalizedQuoteStatus);
+  const isStaleQuote = isCacheLikeMarketDataStatus(normalizedQuoteStatus);
+  const quoteNextActionLabel = formatMarketDataStatusNextAction(
+    normalizedQuoteStatus,
+    locale,
+  );
+  const refreshPolicyNextActionLabel = formatMarketDataStatusNextAction(
+    normalizedRefreshPolicy,
+    locale,
+  );
+  const marketDataNoticeNextAction = isStaleQuote
+    ? quoteNextActionLabel
+    : isCacheOnly
+      ? refreshPolicyNextActionLabel
+      : (quoteNextActionLabel ?? refreshPolicyNextActionLabel);
+  const marketDataNoticeDetail = (detail: string) =>
+    marketDataNoticeNextAction
+      ? `${detail} ${copy.settings.providerNextAction}: ${marketDataNoticeNextAction}`
+      : detail;
   const notificationType = String(
     settings.data?.notification?.type ?? copy.settings.notificationUnavailable,
   );
@@ -374,7 +408,8 @@ export function SettingsPage() {
       label: copy.settings.marketDataBoundary,
       value: copy.settings.timestampRequired,
       detail: copy.settings.safetyCachedQuotes,
-      tone: isCacheOnly || isStaleQuote ? 'warning' : 'success',
+      tone:
+        refreshPolicyNeedsReview || quoteNeedsReview ? 'warning' : 'success',
     },
     {
       label: copy.settings.adviceBoundary,
@@ -524,7 +559,7 @@ export function SettingsPage() {
                     ? copy.shell.checking
                     : refreshPolicyLabel
                 }
-                tone={isCacheOnly ? 'warning' : 'success'}
+                tone={refreshPolicyNeedsReview ? 'warning' : 'success'}
               />
               <StatusMetric
                 label={copy.settings.quoteState}
@@ -535,27 +570,35 @@ export function SettingsPage() {
                       ? copy.settings.cachedQuotes
                       : quoteStatusLabel
                 }
-                tone={isStaleQuote ? 'warning' : 'success'}
+                tone={quoteNeedsReview ? 'warning' : 'success'}
               />
               <StatusMetric
                 label={copy.settings.valuationTime}
                 value={overview.isLoading ? copy.shell.checking : valuationTime}
-                tone={isStaleQuote ? 'warning' : 'neutral'}
+                tone={quoteNeedsReview ? 'warning' : 'neutral'}
               />
             </div>
 
-            {isCacheOnly || isStaleQuote ? (
+            {refreshPolicyNeedsReview || quoteNeedsReview ? (
               <InlineNotice
                 tone="warning"
                 title={
                   isStaleQuote
                     ? copy.settings.cachedQuotes
-                    : copy.settings.cacheOnly
+                    : isCacheOnly
+                      ? copy.settings.cacheOnly
+                      : copy.settings.valuationRequiresReview
                 }
                 detail={
                   isStaleQuote
-                    ? copy.settings.cachedQuotesDetail
-                    : copy.settings.cacheOnlyDetail
+                    ? marketDataNoticeDetail(copy.settings.cachedQuotesDetail)
+                    : isCacheOnly
+                      ? marketDataNoticeDetail(copy.settings.cacheOnlyDetail)
+                      : marketDataNoticeDetail(
+                          copy.settings.valuationRequiresReviewDetail(
+                            quoteStatusLabel,
+                          ),
+                        )
                 }
               />
             ) : null}

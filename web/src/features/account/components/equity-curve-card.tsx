@@ -22,6 +22,12 @@ import {
   formatCurrency,
   formatDateTime,
 } from '../../../shared/format';
+import {
+  isCacheLikeMarketDataStatus,
+  isConfirmedMarketDataStatus,
+  isUnconfirmedMarketDataStatus,
+  normalizeMarketDataStatus,
+} from '../../../shared/market-data-status';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import type { EquityCurveRange, EquitySeriesPoint } from '../api';
 
@@ -36,7 +42,7 @@ type TooltipPayload = {
   dataKey?: string | number;
   name?: string | number;
   payload?: ChartPoint;
-  value?: number | string;
+  value?: number | string | null;
 };
 
 type CustomTooltipProps = {
@@ -46,6 +52,7 @@ type CustomTooltipProps = {
   portfolioTotalLabel: string;
   quoteStatusLabel: string;
   realtimeUnrealizedPnlLabel: string;
+  unconfirmedCategoryDailyChangeLabel: (label: string) => string;
   payload?: TooltipPayload[];
 };
 
@@ -91,6 +98,36 @@ const RANGE_DAYS: Record<EquityCurveRange, number> = {
   '1y': 366,
   all: Number.POSITIVE_INFINITY,
 };
+
+function isUnconfirmedQuoteStatus(status?: string | null) {
+  return isUnconfirmedMarketDataStatus(status);
+}
+
+function isMissingQuoteObservation(status?: string | null) {
+  const normalized = normalizeMarketDataStatus(status);
+  return normalized === 'missing' || normalized === 'error';
+}
+
+function resolveValuationStatusText({
+  cachedValuationLabel,
+  locale,
+  quoteStatus,
+  valuationStatusLabel,
+}: {
+  cachedValuationLabel: string;
+  locale: Locale;
+  quoteStatus?: string | null;
+  valuationStatusLabel: (status: string) => string;
+}) {
+  const normalized = normalizeMarketDataStatus(quoteStatus);
+  if (!normalized || isConfirmedMarketDataStatus(normalized)) {
+    return null;
+  }
+  if (isCacheLikeMarketDataStatus(normalized)) {
+    return cachedValuationLabel;
+  }
+  return valuationStatusLabel(formatPublicStatus(normalized, locale));
+}
 
 function formatAxisValue(value: number) {
   return formatCompactNumber(value);
@@ -241,10 +278,28 @@ function TimeAxisTick({
 
 function toChartPoints(points: EquitySeriesPoint[]): ChartPoint[] {
   return points
-    .map((point) => ({
-      ...point,
-      timestampMs: new Date(point.timestamp).getTime(),
-    }))
+    .map((point) => {
+      const timestampMs = new Date(point.timestamp).getTime();
+      if (isMissingQuoteObservation(point.quote_status)) {
+        return {
+          ...point,
+          total: null,
+          stocks: null,
+          funds: null,
+          others: null,
+          unrealized_pnl: null,
+          total_daily_change: null,
+          stocks_daily_change: null,
+          funds_daily_change: null,
+          others_daily_change: null,
+          timestampMs,
+        };
+      }
+      return {
+        ...point,
+        timestampMs,
+      };
+    })
     .filter((point) => Number.isFinite(point.timestampMs))
     .sort((a, b) => a.timestampMs - b.timestampMs);
 }
@@ -426,7 +481,7 @@ function resolveSeriesHighs(
       value: number;
     } | null>((currentHigh, point, pointIndex) => {
       const value = point[series.key];
-      if (!Number.isFinite(value)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
         return currentHigh;
       }
       if (!currentHigh || value > currentHigh.value) {
@@ -570,6 +625,7 @@ function CustomTooltip({
   portfolioTotalLabel,
   quoteStatusLabel,
   realtimeUnrealizedPnlLabel,
+  unconfirmedCategoryDailyChangeLabel,
 }: CustomTooltipProps) {
   if (!active || !payload?.length) {
     return null;
@@ -590,6 +646,9 @@ function CustomTooltip({
   const includesTotalSeries = validPayload.some(
     (item) => item.dataKey === 'total',
   );
+  const hasUnconfirmedQuoteStatus = isUnconfirmedQuoteStatus(
+    point.quote_status,
+  );
   const categoryChangeRows = validPayload.flatMap((item) => {
     const seriesKey = resolveTooltipSeriesKey(item.dataKey);
     if (seriesKey !== 'stocks' && seriesKey !== 'funds') {
@@ -602,7 +661,9 @@ function CustomTooltip({
     return [
       {
         key: seriesKey,
-        label: categoryDailyChangeLabel(String(item.name)),
+        label: hasUnconfirmedQuoteStatus
+          ? unconfirmedCategoryDailyChangeLabel(String(item.name))
+          : categoryDailyChangeLabel(String(item.name)),
         value: change,
       },
     ];
@@ -655,7 +716,9 @@ function CustomTooltip({
             </span>
           </div>
         ))}
-        {!includesTotalSeries && categoryChangeRows.length > 0 ? (
+        {!includesTotalSeries &&
+        categoryChangeRows.length > 0 &&
+        typeof point.total === 'number' ? (
           <div className="flex min-w-40 items-center justify-between gap-5">
             <span className="text-[var(--app-muted)]">
               {portfolioTotalLabel}
@@ -762,7 +825,12 @@ export function EquityCurveCard({
   const xAxisDomain = resolveXAxisDomain(chartPoints, range);
   const yAxisDomain = resolveYAxisDomain(chartPoints, visibleSeries);
   const latestPoint = chartPoints[chartPoints.length - 1];
-  const isStale = latestPoint?.quote_status === 'stale';
+  const valuationStatusText = resolveValuationStatusText({
+    cachedValuationLabel: labels.cachedValuation,
+    locale,
+    quoteStatus: latestPoint?.quote_status,
+    valuationStatusLabel: labels.valuationStatus,
+  });
   const [chartContainerRef, chartSize] =
     useChartContainerSize<HTMLDivElement>();
 
@@ -800,10 +868,10 @@ export function EquityCurveCard({
           <div className="app-card-title mt-1.5 text-xl text-[var(--app-text)]">
             {labels.title}
           </div>
-          {isStale ? (
+          {valuationStatusText ? (
             <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-warning)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
-              <span className="truncate">{labels.cachedValuation}</span>
+              <span className="truncate">{valuationStatusText}</span>
             </div>
           ) : null}
           <div
@@ -965,6 +1033,9 @@ export function EquityCurveCard({
                     portfolioTotalLabel={labels.portfolioTotal}
                     quoteStatusLabel={labels.quoteStatus}
                     realtimeUnrealizedPnlLabel={labels.realtimeUnrealizedPnl}
+                    unconfirmedCategoryDailyChangeLabel={
+                      labels.unconfirmedCategoryDailyChange
+                    }
                   />
                 }
                 cursor={{

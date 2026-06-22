@@ -82,13 +82,66 @@ test('surfaces cached quote status and homepage action paths', () => {
   expect(
     screen.getByText(/Quote older than expected trading session/),
   ).toBeTruthy();
-  expect(screen.getByText('Refresh quotes or check source')).toBeTruthy();
+  expect(
+    screen.getByText('Refresh quotes or check the data source'),
+  ).toBeTruthy();
+  expect(screen.queryByText('quote_older_than_expected_session')).toBeNull();
   expect(
     screen.getByRole('link', { name: 'Add ledger entry' }).getAttribute('href'),
   ).toBe('/activity');
   expect(
     screen.getByRole('link', { name: 'Trading desk' }).getAttribute('href'),
   ).toBe('/trading');
+});
+
+test('treats cache source health as cached quotes on the homepage', () => {
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 3,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        valuation_timestamp: '2026-05-18T10:18:00+08:00',
+        quote_status: 'live',
+        quote_age_seconds: 120,
+        refresh_policy: 'live',
+      }}
+      marketHealth={{
+        quotes: [],
+        market_open: true,
+        refresh_policy: 'live',
+        provider_status: 'cache',
+        provider_name: 'akshare',
+        provider_configured: true,
+        provider_requires_token: false,
+        provider_supports_funds: true,
+        provider_last_error: null,
+        provider_timeout_seconds: 8,
+        next_action: 'refresh_quotes_or_check_source',
+        metadata_configured_count: 1,
+        source_health: 'cache',
+        cache_age_seconds: 120,
+        latest_quote_timestamp: '2026-05-18T10:18:00+08:00',
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        stale_symbols_count: 1,
+        stale_symbols_sample: ['600519'],
+        has_persistent_cache: true,
+        persistent_cache_status: 'available',
+      }}
+      symbols={['600519']}
+    />,
+  );
+
+  expect(screen.getByText('Cached quotes')).toBeTruthy();
+  expect(screen.queryByText('Valuation available')).toBeNull();
+  expect(
+    screen.getByText('Refresh quotes or check the data source'),
+  ).toBeTruthy();
 });
 
 test('lists concrete holdings when fund NAV is still estimate-only', () => {
@@ -128,7 +181,9 @@ test('lists concrete holdings when fund NAV is still estimate-only', () => {
   ).toBeTruthy();
   expect(screen.getByText('018125 · Fund')).toBeTruthy();
   expect(screen.getByText('Using estimate')).toBeTruthy();
-  expect(screen.getByText('Waiting for confirmed NAV')).toBeTruthy();
+  expect(
+    screen.getAllByText('Wait for confirmed fund NAV or sync NAV data').length,
+  ).toBeGreaterThan(0);
 });
 
 test('refresh action calls the market refresh endpoint with dashboard symbols', async () => {
