@@ -598,7 +598,7 @@ import or read without introducing broker order submission.
 
 ### Acceptance Criteria for v1.2
 
-* [ ] A capability-based broker connector interface can read account, cash,
+* [x] A capability-based broker connector interface can read account, cash,
   position, order, fill, and health facts without order submission.
 * [ ] Connector configuration stays in ignored local config and never stores
   broker passwords or secrets in source control.

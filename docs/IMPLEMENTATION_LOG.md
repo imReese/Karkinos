@@ -587,3 +587,7 @@ roadmap promises.
   Paper broker tests now cover paper-only fills, partial fills, cancellations,
   rejections, slippage, fee/tax cost modeling, and OMS idempotency without
   mutating the production ledger or introducing broker order submission.
+* 2026-06-22: Started v1.2 Broker Evidence Connector with a capability-based
+  read-only connector contract and deterministic fake connector fixtures for
+  account, cash, position, order, fill, and health facts. The connector surface
+  does not expose broker order submission.
