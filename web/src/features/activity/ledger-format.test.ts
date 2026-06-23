@@ -69,6 +69,12 @@ describe('ledger formatter', () => {
         note: '用户记录：华夏核心成长混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
       }),
     ).toBeNull();
+    expect(
+      formatLedgerPublicNote({
+        ...yutongBuy,
+        note: '买入 200 股，价格 26.35，手续费 5.00',
+      }),
+    ).toBeNull();
   });
 
   test('suppresses legacy internal cash-deposit notes', () => {
@@ -257,6 +263,19 @@ describe('ledger formatter', () => {
         {
           kind: 'trade_buy',
           title: 'Bought 600066',
+          detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
+          symbol: '600066',
+          amount: -5275,
+        },
+        'zh',
+        instrumentNames,
+      ),
+    ).toBe('买入 宇通客车 600066');
+    expect(
+      formatLedgerExplainabilityTitle(
+        {
+          kind: 'trade_buy',
+          title: '买入 600066',
           detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
           symbol: '600066',
           amount: -5275,

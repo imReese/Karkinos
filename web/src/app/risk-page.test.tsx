@@ -104,7 +104,7 @@ const explainability = {
   recent_drivers: [
     {
       kind: 'trade_buy',
-      title: 'Bought 600066',
+      title: '买入 600066',
       detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
       timestamp: '2026-06-16T03:04:56+00:00',
       symbol: '600066',
@@ -381,7 +381,7 @@ test('uses account instrument names for risk explainability events that only car
       '成交金额 ¥5,270.00 · 现金影响 -¥5,275.00 · 数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
     ),
   ).toBeTruthy();
-  expect(recentList.textContent).not.toContain('Bought 600066');
+  expect(recentList.textContent).not.toContain('买入 600066');
 });
 
 test('keeps explainability columns compact with local event scrolling', async () => {

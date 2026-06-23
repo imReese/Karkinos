@@ -658,7 +658,8 @@ function isGeneratedExplainabilityTitle(item: LedgerExplainabilityItem) {
   return (
     title === item.kind ||
     title.includes('_') ||
-    /^(bought|sold)\s+\S+/i.test(title)
+    /^(bought|sold)\s+\S+/i.test(title) ||
+    /^(买入|卖出|申购|赎回)\s*\S+/u.test(title)
   );
 }
 
@@ -785,7 +786,13 @@ function isGeneratedStructuredTradeNote(
     /^(?:数量|价格|手续费|佣金|份额|金额|成交|quantity\b|price\b|fee\b|commission\b|amount\b)/i.test(
       normalized,
     );
-  if (!startsWithInstrument && !startsWithStructuredFact) {
+  const startsWithActionFact =
+    /^(?:买入|卖出|申购|赎回|buy\b|bought\b|sell\b|sold\b)/i.test(normalized);
+  if (
+    !startsWithInstrument &&
+    !startsWithStructuredFact &&
+    !startsWithActionFact
+  ) {
     return false;
   }
 
@@ -794,7 +801,7 @@ function isGeneratedStructuredTradeNote(
   const structuredFactPattern =
     /(佣金|手续费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|元|gross|amount|quantity|price|fee|commission|subscription|redemption)/i;
 
-  if (startsWithStructuredFact) {
+  if (startsWithStructuredFact || startsWithActionFact) {
     return structuredFactPattern.test(normalized);
   }
   return (
