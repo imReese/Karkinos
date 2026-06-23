@@ -696,6 +696,7 @@ export const copy = {
           rsi: 'RSI momentum/reversion baseline.',
         },
         benchmarkRoleNames: {
+          trend_following: 'Trend-following benchmark',
           etf_rotation_trend_following: 'ETF trend-following benchmark',
           allocation_rebalance: 'Allocation rebalance benchmark',
           a_share_or_etf_mean_reversion:
@@ -2346,6 +2347,7 @@ export const copy = {
           rsi: '基于 RSI 强弱变化观察动量或反转机会的基准策略。',
         },
         benchmarkRoleNames: {
+          trend_following: '趋势跟踪基准',
           etf_rotation_trend_following: 'ETF 趋势跟踪基准',
           allocation_rebalance: '配置再平衡基准',
           a_share_or_etf_mean_reversion: 'A 股 / ETF 均值回归基准',

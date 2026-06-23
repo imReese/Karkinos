@@ -2,7 +2,10 @@ import { BadgeCheck, FlaskConical } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences, type Locale } from '../../../app/preferences';
 import { formatCurrency, formatPercent } from '../../../shared/format';
+import { formatPublicNote } from '../../../shared/public-labels';
+import { formatStrategyAuditLabel } from '../../../shared/strategy-display';
 import type {
   AfterCostEvidence,
   BacktestReport,
@@ -53,6 +56,7 @@ export function ValidationEvidencePanel({
   report: BacktestReport;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.backtest.validationEvidence;
   const pageLabels = copy.backtest.page;
   const afterCost = afterCostFromReport(report);
@@ -125,7 +129,14 @@ export function ValidationEvidencePanel({
             <div className="grid gap-3 sm:grid-cols-2">
               <EvidenceStat
                 label={labels.strategy}
-                value={oos.strategy_id ?? labels.unknown}
+                value={
+                  oos.strategy_id
+                    ? formatStrategyAuditLabel(
+                        oos.strategy_id,
+                        pageLabels.strategyNames,
+                      )
+                    : labels.unknown
+                }
               />
               <EvidenceStat
                 label={labels.benchmarkRole}
@@ -169,22 +180,32 @@ export function ValidationEvidencePanel({
       </div>
 
       {assumptions.length ? (
-        <EvidenceList title={labels.assumptions} items={assumptions} />
+        <EvidenceList
+          title={labels.assumptions}
+          items={assumptions}
+          locale={locale}
+        />
       ) : null}
       {afterCost?.cost_assumptions?.length ? (
         <EvidenceList
           title={labels.costAssumptions}
           items={afterCost.cost_assumptions}
+          locale={locale}
         />
       ) : null}
       {afterCost?.slippage_assumptions?.length ? (
         <EvidenceList
           title={labels.slippageAssumptions}
           items={afterCost.slippage_assumptions}
+          locale={locale}
         />
       ) : null}
       {limitations.length ? (
-        <EvidenceList title={labels.limitations} items={limitations} />
+        <EvidenceList
+          title={labels.limitations}
+          items={limitations}
+          locale={locale}
+        />
       ) : null}
     </section>
   );
@@ -232,7 +253,15 @@ function EvidenceStat({
   );
 }
 
-function EvidenceList({ title, items }: { title: string; items: string[] }) {
+function EvidenceList({
+  title,
+  items,
+  locale,
+}: {
+  title: string;
+  items: string[];
+  locale: Locale;
+}) {
   return (
     <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-3">
       <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
@@ -240,7 +269,7 @@ function EvidenceList({ title, items }: { title: string; items: string[] }) {
       </div>
       <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[var(--app-muted)]">
         {items.map((item) => (
-          <li key={item}>{item}</li>
+          <li key={item}>{formatPublicNote(item, locale)}</li>
         ))}
       </ul>
     </div>
