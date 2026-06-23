@@ -415,6 +415,7 @@ export function formatLedgerPublicNote(entry: PublicLedgerEntry) {
     .map((segment) => stripLedgerNotePrefix(segment).trim())
     .filter((segment) => !isInstrumentIdentitySegment(segment, entry))
     .map((segment) => removeDuplicateSymbolFromSegment(segment, entry))
+    .filter((segment) => !isGeneratedStructuredTradeNote(segment, entry))
     .filter(Boolean);
   return segments.length > 0 ? segments.slice(0, 2).join(' · ') : null;
 }
@@ -652,6 +653,57 @@ function isTechnicalNoteSegment(segment: string) {
     /confirmed_(trade_date|nav|quantity)/i.test(segment) ||
     /gross_amount/i.test(segment) ||
     /^RMB cash (deposit|withdrawal) recorded from user request$/i.test(segment)
+  );
+}
+
+function isGeneratedStructuredTradeNote(
+  segment: string,
+  entry: PublicLedgerEntry,
+) {
+  const kind = normalizeLedgerKind(entry.entry_type);
+  if (kind !== 'trade_buy' && kind !== 'trade_sell') {
+    return false;
+  }
+  const hasStructuredTradeFields =
+    finiteNumber(entry.quantity) !== null ||
+    finiteNumber(entry.price) !== null ||
+    finiteNumber(entry.gross_amount ?? entry.amount) !== null ||
+    finiteNumber(entry.commission) !== null ||
+    Boolean(entry.fee_breakdown);
+  if (!hasStructuredTradeFields) {
+    return false;
+  }
+
+  const normalized = segment.trim();
+  const symbol = entry.symbol?.trim();
+  const name = resolveLedgerInstrumentName(entry).trim();
+  const instrumentPrefixes = [
+    name,
+    symbol,
+    name && symbol && `${name} ${symbol}`,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.trim());
+  const startsWithInstrument = instrumentPrefixes.some(
+    (prefix) =>
+      normalized === prefix ||
+      normalized.startsWith(`${prefix} `) ||
+      normalized.startsWith(`${prefix}买入`) ||
+      normalized.startsWith(`${prefix}卖出`) ||
+      normalized.startsWith(`${prefix}申购`) ||
+      normalized.startsWith(`${prefix}赎回`),
+  );
+  if (!startsWithInstrument) {
+    return false;
+  }
+
+  const directionPattern =
+    kind === 'trade_buy' ? /(买入|申购|buy|bought)/i : /(卖出|赎回|sell|sold)/i;
+  const structuredFactPattern =
+    /(佣金|手续费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|元|gross|amount|quantity|price|fee|commission|subscription|redemption)/i;
+
+  return (
+    directionPattern.test(normalized) && structuredFactPattern.test(normalized)
   );
 }
 

@@ -194,9 +194,11 @@ const intradayDecision: DecisionResponse = {
 function installDecisionFetchMock({
   todayResponse = dailyDecision,
   intradayResponse = intradayDecision,
+  signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
 }: {
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
+  signalActionDetail?: string;
 } = {}) {
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, _init?: RequestInit) => {
@@ -221,8 +223,7 @@ function installDecisionFetchMock({
             symbol: '600519',
             display_name: '贵州茅台',
             title: 'Increase 600519',
-            detail:
-              'Risk gate passed; prepare a manual order only if approved.',
+            detail: signalActionDetail,
             direction: 'buy',
             urgency: 'high',
             target_weight: 0.2,
@@ -604,6 +605,23 @@ test('renders localized candidate evidence chain for decision review', async () 
   expect(card.textContent).toContain('人工确认');
   expect(card.textContent).not.toContain('review_paper_shadow_evidence');
   expect(card.textContent).not.toContain('estimated_from_research_costs');
+});
+
+test('localizes decision action details before rendering the signal queue', async () => {
+  renderDecisionCockpit({
+    signalActionDetail:
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    locale: 'zh',
+  });
+
+  expect(
+    await screen.findByText(
+      '当前策略只作为研究上下文；需要先完成信号、复核与成交归因后，才展示策略贡献。',
+    ),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain(
+    'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+  );
 });
 
 test('marks stale data candidates as review-only instead of certain actions', async () => {
