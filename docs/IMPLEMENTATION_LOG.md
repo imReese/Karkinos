@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Moved Risk/Overview explainability event title and detail
+  formatting into the shared public ledger formatter. Generated event titles
+  such as buy/sell/cash movement now use the same localized ledger labels,
+  instrument-name resolution, and legacy-note suppression as Activity,
+  Portfolio, and Account Truth review surfaces. This is display formatting
+  only; it does not mutate ledger entries, broker evidence, trading behavior,
+  risk gates, or manual-confirmation defaults.
+* 2026-06-23: Moved broker trade evidence-reference formatting into the shared
+  public ledger formatter and routed the Account Truth review surface through
+  it. Broker trade evidence now uses the same localized buy/sell labels as
+  ledger activity, while non-trade broker evidence still uses the public
+  evidence formatter. This is display formatting only; it does not mutate
+  broker evidence, production ledger entries, trading behavior, risk gates, or
+  manual-confirmation defaults.
 * 2026-06-23: Extended the Account Truth review surface to format broker
   trade evidence references with the shared public ledger trade labels instead
   of page-local broker event labels. Review evidence now renders buy/sell

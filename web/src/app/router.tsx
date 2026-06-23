@@ -66,6 +66,8 @@ import {
 } from '../features/activity/api';
 import {
   calculateLedgerEntryAmount,
+  formatLedgerExplainabilityDetail,
+  formatLedgerExplainabilityTitle,
   formatLedgerExecutionDetailLines,
   formatLedgerEntryTypeLabel,
   formatLedgerInstrumentLabel,
@@ -2811,7 +2813,7 @@ function ExplainabilityWorkspace({
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0 text-sm font-semibold leading-6">
-                      {formatExplainabilityPublicTitle(
+                      {formatLedgerExplainabilityTitle(
                         item,
                         locale,
                         instrumentNames,
@@ -2831,13 +2833,13 @@ function ExplainabilityWorkspace({
                       </div>
                     ) : null}
                   </div>
-                  {formatExplainabilityPublicDetail(
+                  {formatLedgerExplainabilityDetail(
                     item,
                     locale,
                     instrumentNames,
                   ) ? (
                     <div className="app-muted mt-2 break-words text-sm leading-6">
-                      {formatExplainabilityPublicDetail(
+                      {formatLedgerExplainabilityDetail(
                         item,
                         locale,
                         instrumentNames,
@@ -2945,7 +2947,7 @@ function ExplainabilityWorkspace({
                           className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2"
                         >
                           <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                            {formatExplainabilityPublicTitle(
+                            {formatLedgerExplainabilityTitle(
                               event,
                               locale,
                               instrumentNames,
@@ -2954,13 +2956,13 @@ function ExplainabilityWorkspace({
                             {getEventCategoryLabel(copy, event.category)} ·{' '}
                             {getImpactSourceLabel(copy, event.impact_source)}
                           </div>
-                          {formatExplainabilityPublicDetail(
+                          {formatLedgerExplainabilityDetail(
                             event,
                             locale,
                             instrumentNames,
                           ) ? (
                             <div className="app-muted mt-1 text-xs leading-5">
-                              {formatExplainabilityPublicDetail(
+                              {formatLedgerExplainabilityDetail(
                                 event,
                                 locale,
                                 instrumentNames,
@@ -4169,102 +4171,6 @@ function formatAuditTimestamp(timestamp: string) {
     minute: '2-digit',
     hour12: false,
   }).format(parsed);
-}
-
-type ExplainabilityPublicDetailInput = {
-  kind?: string;
-  title?: string;
-  detail?: string;
-  timestamp?: string;
-  symbol?: string | null;
-  amount?: number | null;
-};
-
-function toExplainabilityLedgerEntry(
-  item: ExplainabilityPublicDetailInput,
-  instrumentNames?: Map<string, string>,
-) {
-  const symbol = item.symbol?.trim() ?? null;
-  return {
-    id: 0,
-    entry_type: item.kind ?? 'other',
-    timestamp: item.timestamp ?? '',
-    amount: item.amount ?? null,
-    symbol,
-    display_name: resolveInstrumentName(symbol, instrumentNames),
-    direction:
-      item.kind === 'trade_buy'
-        ? 'buy'
-        : item.kind === 'trade_sell'
-          ? 'sell'
-          : null,
-    quantity: null,
-    price: null,
-    commission: 0,
-    asset_class: 'other',
-    note: [item.title, item.detail].filter(Boolean).join(' | '),
-    source: 'explainability',
-    source_ref: null,
-    created_at: null,
-  } satisfies LedgerEntry;
-}
-
-function isGeneratedExplainabilityTitle(item: ExplainabilityPublicDetailInput) {
-  const title = item.title?.trim();
-  if (!title) {
-    return true;
-  }
-  return (
-    title === item.kind ||
-    title.includes('_') ||
-    /^(bought|sold)\s+\S+/i.test(title)
-  );
-}
-
-function formatExplainabilityPublicTitle(
-  item: ExplainabilityPublicDetailInput,
-  locale: Locale,
-  instrumentNames?: Map<string, string>,
-) {
-  if (!isGeneratedExplainabilityTitle(item) && item.title) {
-    return item.title;
-  }
-  const entry = toExplainabilityLedgerEntry(item, instrumentNames);
-  const entryType = formatLedgerEntryTypeLabel(entry, locale);
-  const instrument = formatLedgerInstrumentLabel(entry);
-  return instrument ? `${entryType} ${instrument}` : entryType;
-}
-
-function formatExplainabilityPublicDetail(
-  item: ExplainabilityPublicDetailInput,
-  locale: Locale,
-  instrumentNames?: Map<string, string>,
-) {
-  const entry = toExplainabilityLedgerEntry(
-    { ...item, title: undefined },
-    instrumentNames,
-  );
-  const publicNote = formatLedgerPublicNote(entry);
-  if (publicNote) {
-    return publicNote;
-  }
-
-  switch (item.kind) {
-    case 'cash_deposit':
-      return locale === 'zh'
-        ? '现金流入组合。'
-        : 'Cash inflow into the portfolio.';
-    case 'cash_withdrawal':
-      return locale === 'zh'
-        ? '现金流出组合。'
-        : 'Cash outflow from the portfolio.';
-    case 'dividend':
-      return locale === 'zh' ? '持仓现金收入。' : 'Cash income from a holding.';
-    case 'manual_adjustment':
-      return locale === 'zh' ? '手工账本调整。' : 'Manual ledger adjustment.';
-    default:
-      return item.detail || null;
-  }
 }
 
 function resolveInstrumentName(

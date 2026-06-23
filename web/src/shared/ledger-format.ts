@@ -1,5 +1,6 @@
 import type { Locale } from '../app/preferences';
 import { formatCurrency, formatQuantity } from './format';
+import { formatPublicEvidenceReference } from './public-labels';
 
 export type PublicLedgerEntry = {
   id?: number;
@@ -72,6 +73,15 @@ export type LedgerExecutionDetailLabels = {
 export type LedgerExecutionDetailLine = {
   label: string;
   value: string;
+};
+
+export type LedgerExplainabilityItem = {
+  kind?: string;
+  title?: string;
+  detail?: string;
+  timestamp?: string;
+  symbol?: string | null;
+  amount?: number | null;
 };
 
 const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
@@ -314,6 +324,69 @@ export function formatLedgerSourceLabel(
   );
 }
 
+export function formatLedgerEvidenceReference(
+  reference: string,
+  locale: Locale,
+) {
+  const brokerTradeReference = parseBrokerTradeEvidenceReference(reference);
+  if (brokerTradeReference) {
+    return [
+      locale === 'zh' ? '券商证据' : 'Broker evidence',
+      brokerTradeReference.subject,
+      formatLedgerEntryTypeLabel(brokerTradeReference.eventType, locale),
+      brokerTradeReference.importRunId,
+    ].join(' · ');
+  }
+
+  return formatPublicEvidenceReference(reference, locale);
+}
+
+export function formatLedgerExplainabilityTitle(
+  item: LedgerExplainabilityItem,
+  locale: Locale,
+  instrumentNames?: Map<string, string>,
+) {
+  if (!isGeneratedExplainabilityTitle(item) && item.title) {
+    return item.title;
+  }
+  const entry = toExplainabilityLedgerEntry(item, instrumentNames);
+  const entryType = formatLedgerEntryTypeLabel(entry, locale);
+  const instrument = formatLedgerInstrumentLabel(entry);
+  return instrument ? `${entryType} ${instrument}` : entryType;
+}
+
+export function formatLedgerExplainabilityDetail(
+  item: LedgerExplainabilityItem,
+  locale: Locale,
+  instrumentNames?: Map<string, string>,
+) {
+  const entry = toExplainabilityLedgerEntry(
+    { ...item, title: undefined },
+    instrumentNames,
+  );
+  const publicNote = formatLedgerPublicNote(entry);
+  if (publicNote) {
+    return publicNote;
+  }
+
+  switch (item.kind) {
+    case 'cash_deposit':
+      return locale === 'zh'
+        ? '现金流入组合。'
+        : 'Cash inflow into the portfolio.';
+    case 'cash_withdrawal':
+      return locale === 'zh'
+        ? '现金流出组合。'
+        : 'Cash outflow from the portfolio.';
+    case 'dividend':
+      return locale === 'zh' ? '持仓现金收入。' : 'Cash income from a holding.';
+    case 'manual_adjustment':
+      return locale === 'zh' ? '手工账本调整。' : 'Manual ledger adjustment.';
+    default:
+      return item.detail || null;
+  }
+}
+
 export function formatLedgerInstrumentLabel(entry: PublicLedgerEntry) {
   const name = resolveLedgerInstrumentName(entry);
   const symbol = entry.symbol?.trim();
@@ -437,6 +510,78 @@ function normalizeLedgerKind(entryType: string): LedgerSummaryKind {
     return normalized === 'interest_income' ? 'cash_interest' : normalized;
   }
   return 'other';
+}
+
+function parseBrokerTradeEvidenceReference(reference: string) {
+  const [sourceType, importRunId, subject, ...eventTypeParts] =
+    reference.split(':');
+  const eventType = eventTypeParts.join(':');
+  if (
+    sourceType !== 'broker_event' ||
+    !importRunId ||
+    !subject ||
+    (eventType !== 'trade_buy' && eventType !== 'trade_sell')
+  ) {
+    return null;
+  }
+
+  return {
+    importRunId,
+    subject,
+    eventType,
+  };
+}
+
+function toExplainabilityLedgerEntry(
+  item: LedgerExplainabilityItem,
+  instrumentNames?: Map<string, string>,
+) {
+  const symbol = item.symbol?.trim() ?? null;
+  return {
+    id: 0,
+    entry_type: item.kind ?? 'other',
+    timestamp: item.timestamp ?? '',
+    amount: item.amount ?? null,
+    symbol,
+    display_name: resolveMappedInstrumentName(symbol, instrumentNames),
+    direction:
+      item.kind === 'trade_buy'
+        ? 'buy'
+        : item.kind === 'trade_sell'
+          ? 'sell'
+          : null,
+    quantity: null,
+    price: null,
+    commission: 0,
+    asset_class: 'other',
+    note: [item.title, item.detail].filter(Boolean).join(' | '),
+    source: 'explainability',
+    source_ref: null,
+    created_at: null,
+  } satisfies PublicLedgerEntry;
+}
+
+function isGeneratedExplainabilityTitle(item: LedgerExplainabilityItem) {
+  const title = item.title?.trim();
+  if (!title) {
+    return true;
+  }
+  return (
+    title === item.kind ||
+    title.includes('_') ||
+    /^(bought|sold)\s+\S+/i.test(title)
+  );
+}
+
+function resolveMappedInstrumentName(
+  symbol: string | null | undefined,
+  instrumentNames?: Map<string, string>,
+) {
+  const normalizedSymbol = symbol?.trim();
+  if (!normalizedSymbol) {
+    return null;
+  }
+  return instrumentNames?.get(normalizedSymbol.toLowerCase()) ?? null;
 }
 
 function addLine(
