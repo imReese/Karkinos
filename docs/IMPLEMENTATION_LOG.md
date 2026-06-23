@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Added shared localized fallbacks for unknown public status,
+  action, and note codes so future backend snake-case values render as generic
+  review labels instead of leaking internal names, title-cased raw codes, or
+  "unmapped" placeholders into Decision workflow cards and other public
+  surfaces. Tests cover the shared formatter and the Decision workflow path in
+  Chinese and English. This is display formatting only; it does not mutate
+  ledger entries, broker evidence, trading behavior, risk gates, or
+  manual-confirmation defaults.
 * 2026-06-23: Moved Risk/Overview explainability event title and detail
   formatting into the shared public ledger formatter. Generated event titles
   such as buy/sell/cash movement now use the same localized ledger labels,

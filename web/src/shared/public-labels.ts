@@ -452,8 +452,23 @@ function fallbackLabel(value: string, locale: Locale, kind: string) {
   if (value === '--') {
     return value;
   }
-  if (locale === 'zh' && value.includes('_')) {
-    return kind === 'status' ? '未映射状态' : '未映射原因';
+  if (value.includes('_')) {
+    if (locale === 'zh') {
+      if (kind === 'status') {
+        return '待确认状态';
+      }
+      if (kind === 'note') {
+        return '待人工复核说明';
+      }
+      return '待人工复核项';
+    }
+    if (kind === 'status') {
+      return 'Status needs review';
+    }
+    if (kind === 'note') {
+      return 'Review note';
+    }
+    return 'Review item';
   }
   return value
     .split('_')

@@ -45,6 +45,26 @@ test('formats account-truth reconciliation categories without raw field labels',
   expect(formatPublicCode('cost_basis', 'en')).toBe('Cost basis');
 });
 
+test('formats unknown Chinese snake-case values as generic review labels', () => {
+  expect(formatPublicStatus('new_backend_gate_state', 'zh')).toBe('待确认状态');
+  expect(formatPublicCode('new_backend_required_action', 'zh')).toBe(
+    '待人工复核项',
+  );
+  expect(formatPublicNote('new_backend_reason_code', 'zh')).toBe(
+    '待人工复核说明',
+  );
+});
+
+test('formats unknown English snake-case values as generic review labels', () => {
+  expect(formatPublicStatus('new_backend_gate_state', 'en')).toBe(
+    'Status needs review',
+  );
+  expect(formatPublicCode('new_backend_required_action', 'en')).toBe(
+    'Review item',
+  );
+  expect(formatPublicNote('new_backend_reason_code', 'en')).toBe('Review note');
+});
+
 test('formats research limitation notes for Chinese user-facing surfaces', () => {
   expect(
     formatPublicNote(
