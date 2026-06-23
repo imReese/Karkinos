@@ -1,0 +1,142 @@
+"""Shared manual trade fee contract for ledger-producing routes."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+
+from core.types import OrderSide
+from execution.commission import ETFCommission, FeeBreakdown, StockACommission
+
+MANUAL_CONFIGURED_FEE_RULE_ID = "manual_configured_commission"
+MANUAL_CONFIGURED_FEE_RULE_VERSION = "account_commission_rate"
+MANUAL_FEE_INPUT_RULE_ID = "manual_fee_input"
+MANUAL_FEE_INPUT_RULE_VERSION = "manual_fee_input"
+
+
+@dataclass(frozen=True)
+class ManualTradeFeeResult:
+    """Structured fee result ready for ledger storage."""
+
+    commission: float
+    total_fee: float
+    fee_breakdown_json: dict[str, str]
+    fee_rule_id: str
+    fee_rule_version: str
+    note: str
+
+
+def resolve_manual_trade_fee_breakdown(
+    config,
+    *,
+    asset_class: str,
+    direction: str,
+    quantity: float | None,
+    price: float | None,
+) -> ManualTradeFeeResult | None:
+    """Resolve configured stock/ETF manual-trade fee assumptions."""
+    if config is None or quantity is None or price is None:
+        return None
+
+    normalized_asset_class = asset_class.strip().lower()
+    normalized_direction = direction.strip().lower()
+    if normalized_asset_class not in {"stock", "etf"}:
+        return None
+    if normalized_direction not in {"buy", "sell"}:
+        return None
+
+    rate = _decimal_config_value(config, "account_commission_rate", "0.0001")
+    min_commission = _decimal_config_value(config, "account_min_commission", "5")
+    schedule = getattr(config, "broker_fee_schedule", None)
+    transfer_fee_rate = Decimal(str(getattr(schedule, "transfer_fee_rate", "0.00001")))
+    other_fee_rate = Decimal(str(getattr(schedule, "other_fee_rate", "0")))
+    limitations = tuple(
+        getattr(
+            schedule,
+            "limitations",
+            (
+                "transfer_fee_exchange_not_split",
+                "broker_regulatory_fees_assumed_absorbed",
+            ),
+        )
+    )
+
+    side = OrderSide.BUY if normalized_direction == "buy" else OrderSide.SELL
+    calculator = (
+        ETFCommission(
+            commission_rate=rate,
+            min_commission=min_commission,
+            transfer_fee_rate=transfer_fee_rate,
+            other_fee_rate=other_fee_rate,
+            fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
+            limitations=limitations,
+        )
+        if normalized_asset_class == "etf"
+        else StockACommission(
+            commission_rate=rate,
+            min_commission=min_commission,
+            stamp_tax_rate=Decimal(str(getattr(schedule, "stamp_tax_rate", "0.0005"))),
+            transfer_fee_rate=transfer_fee_rate,
+            other_fee_rate=other_fee_rate,
+            fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
+            limitations=limitations,
+        )
+    )
+    breakdown = calculator.breakdown(
+        side,
+        Decimal(str(price)),
+        Decimal(str(quantity)),
+    )
+    return ManualTradeFeeResult(
+        commission=float(breakdown.commission),
+        total_fee=float(breakdown.total_fee),
+        fee_breakdown_json=fee_breakdown_payload(breakdown),
+        fee_rule_id=breakdown.fee_rule_id,
+        fee_rule_version=MANUAL_CONFIGURED_FEE_RULE_VERSION,
+        note=_account_commission_note(rate, min_commission),
+    )
+
+
+def manual_fee_input_payload(fee: float) -> dict[str, str]:
+    """Return the structured payload for an explicit user-supplied fee."""
+    return {
+        "commission": str(fee),
+        "stamp_tax": "0",
+        "transfer_fee": "0",
+        "other_fees": "0",
+        "total_fee": str(fee),
+    }
+
+
+def fee_breakdown_payload(breakdown: FeeBreakdown) -> dict[str, str]:
+    """Return the canonical JSON payload for a configured fee breakdown."""
+    return {
+        "commission": _fee_component_text(breakdown.commission, "0.01"),
+        "stamp_tax": _fee_component_text(breakdown.stamp_tax),
+        "transfer_fee": _fee_component_text(breakdown.transfer_fee),
+        "other_fees": _fee_component_text(breakdown.other_fees),
+        "total_fee": _fee_component_text(breakdown.total_fee),
+    }
+
+
+def _decimal_config_value(config, name: str, fallback: str) -> Decimal:
+    value = getattr(config, name, fallback)
+    return Decimal(str(value))
+
+
+def _format_decimal_short(value: Decimal) -> str:
+    normalized = value.normalize()
+    return format(normalized, "f")
+
+
+def _account_commission_note(rate: Decimal, min_commission: Decimal) -> str:
+    rate_per_ten_thousand = rate * Decimal("10000")
+    return (
+        "账户佣金配置：佣金率万"
+        f"{_format_decimal_short(rate_per_ten_thousand)}，"
+        f"最低{_format_decimal_short(min_commission)}元"
+    )
+
+
+def _fee_component_text(value: Decimal, quantization: str = "0.000001") -> str:
+    return format(value.quantize(Decimal(quantization)), "f")

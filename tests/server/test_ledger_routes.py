@@ -158,3 +158,73 @@ def test_ledger_trade_route_preserves_structured_sell_cost_fields(
     assert saved.fee_rule_id == "manual_fee_input"
     assert saved.fee_rule_version == "manual_fee_input"
     assert saved.cost_basis_method == "moving_average_buy_cost"
+
+
+def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
+    tmp_path, monkeypatch
+):
+    from server.routes import ledger as ledger_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    fake_state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(
+            account_commission_rate=0.00015,
+            account_min_commission=5,
+            broker_fee_schedule=SimpleNamespace(
+                stamp_tax_rate=0.0005,
+                transfer_fee_rate=0.00001,
+                other_fee_rate=0,
+                limitations=(
+                    "transfer_fee_exchange_not_split",
+                    "broker_regulatory_fees_assumed_absorbed",
+                ),
+            ),
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = ledger_routes.create_router()
+    create_trade = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/ledger/trades"
+    ).endpoint
+    list_entries = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/ledger/entries"
+    ).endpoint
+
+    asyncio.run(
+        create_trade(
+            ledger_routes.LedgerTradeCreate(
+                symbol="SYN001",
+                asset_class="stock",
+                direction="sell",
+                quantity=200,
+                unit_price=26.35,
+                occurred_at="2026-06-17T10:00:00",
+                source_ref="trade-sell-configured-fee",
+            )
+        )
+    )
+
+    saved = asyncio.run(list_entries())[0]
+
+    assert saved.entry_type == "trade_sell"
+    assert saved.gross_amount == pytest.approx(5270.0)
+    assert saved.commission == pytest.approx(5.0)
+    assert saved.net_cash_impact == pytest.approx(5262.3123)
+    assert saved.fee_breakdown == {
+        "commission": "5.00",
+        "stamp_tax": "2.635000",
+        "transfer_fee": "0.052700",
+        "other_fees": "0.000000",
+        "total_fee": "7.687700",
+    }
+    assert saved.fee_rule_id == "manual_configured_commission"
+    assert saved.fee_rule_version == "account_commission_rate"
+    assert saved.cost_basis_method == "moving_average_buy_cost"

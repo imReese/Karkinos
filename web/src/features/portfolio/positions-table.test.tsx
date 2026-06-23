@@ -131,6 +131,56 @@ test('renders cost and quote prices with four decimal places', () => {
   expect(screen.queryByText('CN¥26.3608')).toBeNull();
 });
 
+test('shows broker displayed cost basis beside local moving average cost when evidence exists', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          symbol: '600066',
+          display_name: '宇通客车',
+          asset_class: 'stock',
+          quantity: 200,
+          available_qty: 200,
+          frozen_qty: 0,
+          avg_cost: 26.3758,
+          latest_price: 26.41,
+          market_value: 5282,
+          today_change: -3,
+          today_change_pct: -0.00057,
+          unrealized_pnl: 6.84,
+          realized_pnl: 0,
+          commission_paid: 5,
+          broker_displayed_cost_basis: 5275.16,
+          broker_cost_basis_difference: -0.0,
+          broker_cost_basis_method: 'broker_remaining_cost',
+          broker_cost_basis_status: 'available',
+        },
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getAllByText('Local moving average cost').length,
+  ).toBeGreaterThan(0);
+  expect(screen.getAllByText('Broker displayed cost').length).toBeGreaterThan(
+    0,
+  );
+  expect(screen.getAllByText('26.3758').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('26.3758').length).toBeGreaterThan(1);
+  expect(
+    screen.getAllByText(/Broker remaining-position cost/).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.getAllByText(/Broker-confirmed evidence/).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.getByTestId('position-broker-cost-600066').textContent,
+  ).toContain('26.3758');
+  expect(
+    screen.getByTestId('position-mobile-broker-cost-600066').textContent,
+  ).toBe('26.3758');
+});
+
 test('uses shared numeric cell classes for desktop portfolio columns', () => {
   renderTable(
     <PositionsTable
@@ -160,6 +210,7 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
   for (const testId of [
     'position-quantity-600066',
     'position-avg-cost-600066',
+    'position-broker-cost-600066',
     'position-latest-price-600066',
     'position-market-value-600066',
     'position-today-change-600066',
@@ -313,7 +364,7 @@ test('contains the desktop positions table in a local horizontal scroller', () =
   expect(scrollRegion.className).toContain('overflow-x-scroll');
   expect(scrollRegion.className).toContain('overscroll-x-contain');
   expect(scrollRegion.className).toContain('pb-2');
-  expect(table.className).toContain('w-[1400px]');
+  expect(table.className).toContain('w-[1520px]');
   expect(table.className).toContain('min-w-max');
 });
 
