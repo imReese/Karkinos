@@ -417,6 +417,55 @@ test('formats broker trade evidence references through shared ledger labels', as
   expect(item.textContent).not.toContain('trade_buy');
 });
 
+test('uses specific localized labels for cash-impact reconciliation categories', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+            item_key: 'net_cash_impact:SYN001',
+            category: 'net_cash_impact',
+            broker_value: '-1028.00',
+            karkinos_value: '-1023.00',
+            difference: '-5.00',
+            detail_code: 'account_truth.net_cash_impact_compared',
+            suggested_review_action: 'review_net_cash_impact_difference',
+          },
+          {
+            ...reportDetail.items[0],
+            item_key: 'transfer_fee:SYN001',
+            category: 'transfer_fee',
+            broker_value: '0.60',
+            karkinos_value: '0.00',
+            difference: '0.60',
+            detail_code: 'account_truth.transfer_fee_compared',
+            suggested_review_action: 'review_transfer_fee_difference',
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const netCashItem = await screen.findByTestId(
+    'account-truth-item-net_cash_impact:SYN001',
+  );
+  expect(within(netCashItem).getByText('净现金影响')).toBeTruthy();
+  expect(within(netCashItem).getByText('券商 -¥1,028.00')).toBeTruthy();
+  expect(netCashItem.textContent).not.toContain('net_cash_impact');
+  expect(netCashItem.textContent).not.toContain('待人工复核项');
+
+  const transferFeeItem = await screen.findByTestId(
+    'account-truth-item-transfer_fee:SYN001',
+  );
+  expect(within(transferFeeItem).getByText('过户费')).toBeTruthy();
+  expect(within(transferFeeItem).getByText('差异 ¥0.60')).toBeTruthy();
+  expect(transferFeeItem.textContent).not.toContain('transfer_fee');
+  expect(transferFeeItem.textContent).not.toContain('待人工复核项');
+});
+
 test('explains the blocked empty state without exposing internal action codes', async () => {
   renderAccountTruthReviewPage({
     scoreResponse: {

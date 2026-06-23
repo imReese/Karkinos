@@ -997,3 +997,15 @@ roadmap promises.
   evidence. This is display formatting only; it does not mutate ledger entries,
   change fee calculation, change broker behavior, submit orders, bypass risk
   gates, or alter manual-confirmation defaults.
+* 2026-06-23: Updated the Risk page manual approval table to resolve
+  instrument display names from the same portfolio position evidence used by
+  the Trading page, so pending manual approvals show readable name + symbol
+  labels instead of symbol-only rows. This is presentation-only; it does not
+  change order approval, rejection, broker behavior, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Added explicit public labels for reconciliation fee, tax, gross
+  amount, net cash impact, and transfer-fee categories so Account Truth review
+  cards show specific user-facing difference types instead of generic fallback
+  labels. This is label formatting only; it does not change reconciliation
+  math, review decisions, ledger mutation, broker behavior, risk gates, or
+  manual-confirmation defaults.

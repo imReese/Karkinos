@@ -7,7 +7,9 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import { formatPublicOperationalNote } from '../../../shared/public-labels';
+import { usePositionsQuery } from '../../portfolio/api';
 import {
   useConfirmManualOrderMutation,
   usePendingManualOrdersQuery,
@@ -19,6 +21,7 @@ export function OrderApprovalTable() {
   const copy = useCopy();
   const labels = copy.trading.orders;
   const orders = usePendingManualOrdersQuery();
+  const positions = usePositionsQuery();
   const confirmOrder = useConfirmManualOrderMutation();
   const rejectOrder = useRejectManualOrderMutation();
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>(
@@ -27,6 +30,16 @@ export function OrderApprovalTable() {
   const [rowError, setRowError] = useState<string | null>(null);
 
   const pendingOrders = useMemo(() => orders.data ?? [], [orders.data]);
+  const instrumentNames = useMemo(
+    () =>
+      new Map(
+        (positions.data ?? []).map((position) => [
+          position.symbol,
+          position.display_name ?? position.name ?? position.symbol,
+        ]),
+      ),
+    [positions.data],
+  );
 
   const handleConfirm = async (orderId: string) => {
     setRowError(null);
@@ -76,7 +89,7 @@ export function OrderApprovalTable() {
           <table className="min-w-[920px] table-fixed text-left text-sm">
             <thead>
               <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] text-[11px] uppercase tracking-[0.16em]">
-                <th className="w-[120px] px-3 py-3">{labels.symbol}</th>
+                <th className="w-[180px] px-3 py-3">{labels.symbol}</th>
                 <th className="w-[90px] px-3 py-3">{labels.side}</th>
                 <th className="w-[110px] px-3 py-3">{labels.quantity}</th>
                 <th className="w-[110px] px-3 py-3">{labels.price}</th>
@@ -88,13 +101,23 @@ export function OrderApprovalTable() {
             <tbody>
               {pendingOrders.map((order) => {
                 const busy = confirmOrder.isPending || rejectOrder.isPending;
+                const displayLabel = formatInstrumentDisplayLabel({
+                  symbol: order.symbol,
+                  display_name:
+                    order.display_name ??
+                    order.name ??
+                    instrumentNames.get(order.symbol) ??
+                    null,
+                });
                 return (
                   <tr
                     key={order.order_id}
                     className="border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] align-top"
                   >
                     <td className="px-3 py-4">
-                      <div className="font-semibold">{order.symbol}</div>
+                      <div className="break-words font-semibold">
+                        {displayLabel}
+                      </div>
                       <div className="app-muted mt-1 text-xs">
                         {formatTimestamp(order.timestamp)}
                       </div>
@@ -122,7 +145,7 @@ export function OrderApprovalTable() {
                         }
                         placeholder={labels.rejectReasonPlaceholder}
                         className="app-field w-full rounded-2xl px-4 py-2.5 text-sm"
-                        aria-label={`${labels.rejectReason}: ${order.symbol}`}
+                        aria-label={`${labels.rejectReason}: ${displayLabel}`}
                       />
                     </td>
                     <td className="px-3 py-4">

@@ -156,7 +156,30 @@ const explainability = {
   ],
 };
 
-function installRiskFetchMock() {
+const pendingManualOrder = {
+  id: 1,
+  order_id: 'ORD-RISK-1',
+  timestamp: '2026-06-16T11:04:56+08:00',
+  symbol: '600066',
+  side: 'buy',
+  order_type: 'limit',
+  quantity: 200,
+  price: 26.35,
+  intent_id: 'INT-RISK-1',
+  risk_decision_id: 'RISK-1',
+  execution_mode: 'manual',
+  status: 'pending_confirm',
+  payload_json: '{"intent_id":"INT-RISK-1","risk_decision_id":"RISK-1"}',
+  note: null,
+  created_at: '2026-06-16T11:04:56+08:00',
+  updated_at: '2026-06-16T11:04:56+08:00',
+};
+
+function installRiskFetchMock({
+  manualOrders = [],
+}: {
+  manualOrders?: unknown[];
+} = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
       typeof input === 'string'
@@ -167,6 +190,9 @@ function installRiskFetchMock() {
 
     if (url.includes('/api/portfolio/state')) {
       return jsonResponse(accountState);
+    }
+    if (url.includes('/api/portfolio/positions')) {
+      return jsonResponse(accountState.snapshot.positions);
     }
     if (url.includes('/api/portfolio/risk-summary')) {
       return jsonResponse(riskAlerts);
@@ -185,7 +211,7 @@ function installRiskFetchMock() {
       });
     }
     if (url.includes('/api/trading/orders')) {
-      return jsonResponse([]);
+      return jsonResponse(manualOrders);
     }
     return new Response('Not found', { status: 404 });
   });
@@ -193,12 +219,15 @@ function installRiskFetchMock() {
   return fetchMock;
 }
 
-function renderRiskPage(options?: { locale?: 'en' | 'zh' }) {
+function renderRiskPage(options?: {
+  locale?: 'en' | 'zh';
+  manualOrders?: unknown[];
+}) {
   window.localStorage.clear();
   if (options?.locale) {
     window.localStorage.setItem('karkinos.locale', options.locale);
   }
-  installRiskFetchMock();
+  installRiskFetchMock({ manualOrders: options?.manualOrders });
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -272,6 +301,15 @@ test('renders risk boundaries and blocking register without execution controls',
     within(blockRegister).getByText('Cash buffer is close to the floor'),
   ).toBeTruthy();
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('shows instrument names before symbols in risk manual approval rows', async () => {
+  renderRiskPage({ manualOrders: [pendingManualOrder] });
+
+  expect(await screen.findByText('Pending order approvals')).toBeTruthy();
+  expect(await screen.findByText('宇通客车 600066')).toBeTruthy();
+  expect(screen.queryByText(/^600066$/u)).toBeNull();
+  expect(screen.getByLabelText('Reject reason: 宇通客车 600066')).toBeTruthy();
 });
 
 test('renders recent risk drivers as readable audit events', async () => {
