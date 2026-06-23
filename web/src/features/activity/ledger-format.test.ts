@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  formatLedgerActivitySummary,
+  formatLedgerExecutionDetailLines,
   formatLedgerInstrumentLabel,
   formatLedgerPublicNote,
+  formatLedgerSourceLabel,
   summarizeLedgerEntry,
 } from './ledger-format';
 import type { LedgerEntry } from './api';
@@ -69,5 +72,119 @@ describe('ledger formatter', () => {
       cashImpact: -5270,
       grossAmount: 5270,
     });
+  });
+
+  test('formats activity titles and cash-impact semantics from shared ledger data', () => {
+    expect(formatLedgerActivitySummary(yutongBuy, 'en')).toMatchObject({
+      label: 'Security buy',
+      shortLabel: 'B',
+      cashImpactLabel: 'Consumes cash',
+      amount: '-CN¥5,270.00',
+      tone: 'debit',
+    });
+    expect(
+      formatLedgerActivitySummary(
+        {
+          ...yutongBuy,
+          entry_type: 'cash_deposit',
+          amount: 3000,
+          net_cash_impact: 3000,
+        },
+        'zh',
+      ),
+    ).toMatchObject({
+      label: '现金入金',
+      shortLabel: '入',
+      cashImpactLabel: '增加现金或确认回款',
+      amount: '+CN¥3,000.00',
+      tone: 'credit',
+    });
+  });
+
+  test('formats cash interest as a first-class cash income entry', () => {
+    const cashInterest: LedgerEntry = {
+      id: 17,
+      entry_type: 'cash_interest',
+      timestamp: '2026-06-22T06:24:15+00:00',
+      amount: 0.27,
+      symbol: null,
+      display_name: null,
+      direction: null,
+      quantity: null,
+      price: null,
+      commission: 0,
+      asset_class: 'cash',
+      note: '批量结息归本：现金利息 0.27 元',
+      source: 'broker_statement_manual_correction',
+      source_ref: 'cash-interest-20260622-batch-settlement-0.27',
+      created_at: '2026-06-22T06:24:15+00:00',
+    };
+
+    expect(summarizeLedgerEntry(cashInterest)).toMatchObject({
+      kind: 'cash_interest',
+      cashImpact: 0.27,
+      grossAmount: 0.27,
+    });
+    expect(formatLedgerActivitySummary(cashInterest, 'zh')).toMatchObject({
+      label: '现金利息',
+      shortLabel: '息',
+      cashImpactLabel: '增加现金或确认回款',
+      amount: '+CN¥0.27',
+      tone: 'credit',
+    });
+    expect(formatLedgerActivitySummary(cashInterest, 'en')).toMatchObject({
+      label: 'Cash interest',
+      shortLabel: 'I',
+      cashImpactLabel: 'Adds cash or realized proceeds',
+      amount: '+CN¥0.27',
+      tone: 'credit',
+    });
+    expect(formatLedgerPublicNote(cashInterest)).toBe(
+      '批量结息归本：现金利息 0.27 元',
+    );
+  });
+
+  test('localizes internal ledger source codes for public activity rows', () => {
+    expect(
+      formatLedgerSourceLabel('broker_statement_manual_correction', 'zh'),
+    ).toBe('券商对账修正');
+    expect(formatLedgerSourceLabel('portfolio_trade', 'zh')).toBe('组合交易');
+    expect(
+      formatLedgerSourceLabel('broker_statement_manual_correction', 'en'),
+    ).toBe('Broker statement correction');
+  });
+
+  test('omits cost-basis method from public ledger execution details', () => {
+    const details = formatLedgerExecutionDetailLines(
+      {
+        ...yutongBuy,
+        gross_amount: 5270,
+        net_cash_impact: -5275,
+        fee_breakdown: {
+          commission: 5,
+        },
+        cost_basis_method: 'broker_remaining_cost',
+      },
+      {
+        amount: '金额',
+        grossAmount: '成交总额',
+        netCashImpact: '净现金影响',
+        quantity: '份额/数量',
+        price: '价格',
+        fee: '手续费',
+        commission: '佣金',
+        stampTax: '印花税',
+        transferFee: '过户费',
+        otherFees: '其他费用',
+        costBasis: '成本口径',
+      },
+      'zh',
+    );
+
+    expect(details.some((line) => line.label === '成本口径')).toBe(false);
+    expect(details.some((line) => line.value.includes('broker'))).toBe(false);
+    expect(details.some((line) => line.value.includes('券商展示成本'))).toBe(
+      false,
+    );
   });
 });

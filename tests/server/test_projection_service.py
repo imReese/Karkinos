@@ -77,6 +77,22 @@ def test_build_portfolio_projection_handles_deposit_buy_and_sell():
     assert position.unrealized_pnl == Decimal("5.40")
 
 
+def test_build_portfolio_projection_treats_cash_interest_as_cash_income():
+    projection = build_portfolio_projection(
+        [
+            LedgerEntry(
+                entry_type="cash_interest",
+                timestamp="2026-06-22T06:24:15+00:00",
+                amount=0.27,
+            )
+        ]
+    )
+
+    assert projection.cash == Decimal("0.27")
+    assert projection.total_equity == Decimal("0.27")
+    assert projection.positions == {}
+
+
 def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 

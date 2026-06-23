@@ -5631,6 +5631,37 @@ def test_portfolio_explainability_breaks_daily_change_into_asset_and_flow_bucket
     } == pytest.approx({"dividend": 5.0})
 
 
+def test_portfolio_explainability_classifies_cash_interest_as_income_flow():
+    from server.models import EquityPoint
+    from server.routes.portfolio import _build_timeline
+
+    timeline = _build_timeline(
+        [
+            EquityPoint(timestamp="2026-06-21T15:00:00+08:00", equity=1000.0),
+            EquityPoint(timestamp="2026-06-22T15:00:00+08:00", equity=1000.27),
+        ],
+        [
+            {
+                "entry_type": "cash_interest",
+                "timestamp": "2026-06-22T06:24:15+00:00",
+                "amount": 0.27,
+                "asset_class": "cash",
+                "note": "批量结息归本：现金利息 0.27 元",
+            }
+        ],
+    )
+
+    jun22 = timeline[-1]
+    assert jun22.market_pnl == pytest.approx(0.0)
+    assert jun22.external_flow == pytest.approx(0.27)
+    assert {
+        item.key: item.value for item in jun22.external_flow_breakdown
+    } == pytest.approx({"cash_interest": 0.27})
+    assert jun22.events[0].title == "现金利息"
+    assert jun22.events[0].category == "income"
+    assert jun22.events[0].impact_source == "cash"
+
+
 def test_portfolio_explainability_marks_return_after_missing_valuation_as_gap():
     from server.models import EquityPoint
     from server.routes.portfolio import _build_timeline

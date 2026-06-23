@@ -16,6 +16,7 @@ _CASH_WITHDRAW_TYPES = {"cash_withdraw", "cash_withdrawal", "withdraw"}
 _BUY_TYPES = {"trade_buy", "buy", "trade"}
 _SELL_TYPES = {"trade_sell", "sell"}
 _DIVIDEND_TYPES = {"dividend"}
+_CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
 
@@ -226,7 +227,7 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
         _apply_trade_entry(projection, entry)
         return
 
-    if entry_type in _DIVIDEND_TYPES:
+    if entry_type in _DIVIDEND_TYPES or entry_type in _CASH_INTEREST_TYPES:
         _apply_cash_income(projection, entry)
         return
 

@@ -3,9 +3,8 @@ import { useMemo } from 'react';
 import { useAccountOverviewQuery } from '../../account/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
-  calculateLedgerEntryAmount,
+  formatLedgerActivitySummary,
   formatLedgerExecutionDetailLines,
-  formatLedgerEntryTypeLabel,
   formatLedgerPublicNote,
 } from '../../../shared/ledger-format';
 import {
@@ -697,6 +696,7 @@ function LedgerTrace({
         </thead>
         <tbody>
           {entries.map((entry) => {
+            const activitySummary = formatLedgerActivitySummary(entry, locale);
             const detailLines = formatLedgerExecutionDetailLines(
               entry,
               detailLabels,
@@ -705,11 +705,12 @@ function LedgerTrace({
             return (
               <tr key={entry.id}>
                 <td className="px-4 py-3.5">
-                  <div className="font-semibold">
-                    {formatLedgerEntryTypeLabel(entry, locale)}
-                  </div>
+                  <div className="font-semibold">{activitySummary.label}</div>
                   <div className="app-muted mt-1 text-xs tabular-nums">
                     {formatTimestamp(entry.timestamp)}
+                  </div>
+                  <div className="app-muted mt-1 text-xs">
+                    {activitySummary.cashImpactLabel}
                   </div>
                 </td>
                 <td className="px-4 py-3.5 font-mono tabular-nums">
@@ -719,7 +720,7 @@ function LedgerTrace({
                   {formatPrice(entry.price)}
                 </td>
                 <td className="px-4 py-3.5 text-right font-mono tabular-nums">
-                  <div>{formatCurrency(calculateLedgerEntryAmount(entry))}</div>
+                  <div>{activitySummary.amount}</div>
                   {detailLines.length > 0 ? (
                     <div className="app-muted mt-1 flex flex-col items-end gap-0.5 text-xs">
                       {detailLines.map((detail) => (

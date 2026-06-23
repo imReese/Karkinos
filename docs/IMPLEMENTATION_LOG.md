@@ -833,3 +833,18 @@ roadmap promises.
   codes. This is display formatting only; it does not change risk
   calculations, trading, broker behavior, risk gates, or manual-confirmation
   defaults.
+* 2026-06-23: Promoted cash-interest ledger entries to first-class cash income
+  in portfolio projection, explainability timeline flow breakdown, and the
+  shared public ledger formatter. Activity now reuses shared action titles,
+  short labels, signed amounts, and cash-impact semantics instead of
+  page-local ledger type branches. This changes cash-interest classification
+  from market movement to income flow where evidence exists; it does not change
+  ledger persistence, fee math, broker behavior, trading, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Moved holding-detail ledger traces onto the shared public ledger
+  activity summary for action titles, cash-impact wording, and signed primary
+  amounts while keeping structured gross amount, net cash impact, fee, tax, and
+  transfer-fee lines visible. Cost-basis method is no longer mixed into
+  execution detail lines and should remain in dedicated cost-basis views. This
+  is presentation alignment only; it does not change ledger persistence, fee
+  math, broker behavior, trading, risk gates, or manual-confirmation defaults.

@@ -1,13 +1,15 @@
 import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
-import { formatCurrency, formatTimestamp } from '../../../shared/format';
+import { formatTimestamp } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { LedgerEntry } from '../api';
 import {
+  formatLedgerActivitySummary,
   formatLedgerExecutionDetailLines,
   formatLedgerPublicNote,
+  formatLedgerSourceLabel,
   resolveLedgerInstrumentName,
-  summarizeLedgerEntry,
+  type LedgerActivitySummaryTone,
 } from '../ledger-format';
 
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
@@ -47,7 +49,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           </thead>
           <tbody>
             {entries.map((entry) => {
-              const summary = summarizeEntry(entry, copy);
+              const summary = formatLedgerActivitySummary(entry, locale);
               return (
                 <tr key={entry.id}>
                   <td className="px-5 py-4 align-top">
@@ -55,13 +57,13 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       {formatTimestamp(entry.timestamp)}
                     </div>
                     <div className="app-muted mt-1 text-[11px]">
-                      {formatSource(entry.source, labels)}
+                      {formatLedgerSourceLabel(entry.source, locale)}
                     </div>
                   </td>
                   <td className="px-5 py-4 align-top">
                     <div className="flex items-center gap-3">
                       <span
-                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${summary.badgeClass}`}
+                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${activityBadgeClass(summary.tone)}`}
                       >
                         {summary.shortLabel}
                       </span>
@@ -85,7 +87,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     </div>
                   </td>
                   <td
-                    className={`px-5 py-4 text-right align-top font-mono text-sm font-semibold tabular-nums ${summary.amountClass}`}
+                    className={`px-5 py-4 text-right align-top font-mono text-sm font-semibold tabular-nums ${activityAmountClass(summary.tone)}`}
                   >
                     {summary.amount}
                     <LedgerExecutionDetails
@@ -109,93 +111,24 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   );
 }
 
-function summarizeEntry(entry: LedgerEntry, copy: ReturnType<typeof useCopy>) {
-  const labels = copy.activity.feed;
-  const summary = summarizeLedgerEntry(entry);
-  const grossAmount = summary.grossAmount;
-  if (summary.kind === 'trade_buy') {
-    return {
-      label: labels.entryTypes.tradeBuy,
-      shortLabel: labels.shortTypes.buy,
-      amount: formatSignedCurrency(summary.cashImpact),
-      cashImpactLabel: labels.cashImpact.debit,
-      amountClass: 'text-[var(--app-danger)]',
-      badgeClass:
-        'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]',
-    };
+function activityAmountClass(tone: LedgerActivitySummaryTone) {
+  if (tone === 'credit') {
+    return 'text-[var(--app-success)]';
   }
-  if (summary.kind === 'trade_sell') {
-    return {
-      label: labels.entryTypes.tradeSell,
-      shortLabel: labels.shortTypes.sell,
-      amount: formatSignedCurrency(summary.cashImpact),
-      cashImpactLabel: labels.cashImpact.credit,
-      amountClass: 'text-[var(--app-success)]',
-      badgeClass:
-        'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]',
-    };
+  if (tone === 'debit') {
+    return 'text-[var(--app-danger)]';
   }
-  if (summary.kind === 'cash_deposit') {
-    return {
-      label: labels.entryTypes.cashDeposit,
-      shortLabel: labels.shortTypes.cashIn,
-      amount: formatSignedCurrency(summary.cashImpact),
-      cashImpactLabel: labels.cashImpact.credit,
-      amountClass: 'text-[var(--app-success)]',
-      badgeClass:
-        'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]',
-    };
-  }
-  if (summary.kind === 'cash_withdrawal') {
-    return {
-      label: labels.entryTypes.cashWithdrawal,
-      shortLabel: labels.shortTypes.cashOut,
-      amount: formatSignedCurrency(summary.cashImpact),
-      cashImpactLabel: labels.cashImpact.debit,
-      amountClass: 'text-[var(--app-danger)]',
-      badgeClass:
-        'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]',
-    };
-  }
-  if (summary.kind === 'dividend') {
-    return {
-      label: labels.entryTypes.dividend,
-      shortLabel: labels.shortTypes.dividend,
-      amount: formatSignedCurrency(summary.cashImpact),
-      cashImpactLabel: labels.cashImpact.credit,
-      amountClass: 'text-[var(--app-success)]',
-      badgeClass:
-        'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]',
-    };
-  }
-  if (summary.kind === 'manual_adjustment') {
-    return {
-      label: labels.entryTypes.adjustment,
-      shortLabel: labels.shortTypes.adjustment,
-      amount: formatCurrency(grossAmount),
-      cashImpactLabel: labels.cashImpact.adjustment,
-      amountClass: 'text-[var(--app-soft)]',
-      badgeClass:
-        'bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-soft)] ring-1 ring-[color-mix(in_srgb,var(--app-border)_34%,transparent)]',
-    };
-  }
-  return {
-    label: labels.entryTypes.other,
-    shortLabel: labels.shortTypes.other,
-    amount: formatCurrency(grossAmount),
-    cashImpactLabel: labels.cashImpact.neutral,
-    amountClass: 'text-[var(--app-soft)]',
-    badgeClass:
-      'bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-soft)] ring-1 ring-[color-mix(in_srgb,var(--app-border)_34%,transparent)]',
-  };
+  return 'text-[var(--app-soft)]';
 }
 
-function formatSignedCurrency(value: number | null) {
-  if (value === null || !Number.isFinite(value)) {
-    return '--';
+function activityBadgeClass(tone: LedgerActivitySummaryTone) {
+  if (tone === 'credit') {
+    return 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]';
   }
-  const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
-  return `${prefix}${formatCurrency(Math.abs(value))}`;
+  if (tone === 'debit') {
+    return 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]';
+  }
+  return 'bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-soft)] ring-1 ring-[color-mix(in_srgb,var(--app-border)_34%,transparent)]';
 }
 
 function LedgerExecutionDetails({
@@ -226,20 +159,6 @@ function LedgerExecutionDetails({
       ))}
     </div>
   );
-}
-
-function formatSource(
-  source: string | null | undefined,
-  labels: ReturnType<typeof useCopy>['activity']['feed'],
-) {
-  const normalized = (source ?? '').trim().toLowerCase();
-  if (normalized === 'manual') {
-    return labels.sources.manual;
-  }
-  if (normalized === 'system') {
-    return labels.sources.system;
-  }
-  return source || labels.sources.unknown;
 }
 
 function formatAssetClass(
