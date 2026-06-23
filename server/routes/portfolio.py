@@ -157,9 +157,12 @@ _TIMELINE_MARKET_COMPONENTS = (
 _EXTERNAL_FLOW_LABELS = {
     "cash_deposit": "入金",
     "cash_withdrawal": "出金",
+    "cash_interest": "现金利息",
     "dividend": "分红",
     "manual_adjustment": "手工调整",
 }
+
+_CASH_INCOME_LEDGER_TYPES = {"cash_interest", "dividend"}
 
 _FUND_ESTIMATE_QUOTE_SOURCES = {
     "eastmoney_fund_estimate",
@@ -482,9 +485,13 @@ def _build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDriv
             title = f"卖出 {instrument_label}"
             detail = f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
             amount = _ledger_entry_notional(entry) - commission
-        elif entry_type == "dividend":
-            title = f"分红 {instrument_label}"
-            detail = entry.get("note") or "持仓现金收入。"
+        elif entry_type in _CASH_INCOME_LEDGER_TYPES:
+            if entry_type == "cash_interest":
+                title = "现金利息"
+                detail = entry.get("note") or "现金利息入账。"
+            else:
+                title = f"分红 {instrument_label}"
+                detail = entry.get("note") or "持仓现金收入。"
         elif entry_type == "manual_adjustment":
             title = "手工调整"
             detail = entry.get("note") or "手工估值或持仓调整。"
@@ -610,9 +617,13 @@ def _build_timeline(
             amount = -abs(amount)
             category = "capital"
             impact_source = "external"
-        elif entry_type == "dividend":
-            title = f"分红 {instrument_label}"
-            detail = entry.get("note") or "持仓现金收入。"
+        elif entry_type in _CASH_INCOME_LEDGER_TYPES:
+            if entry_type == "cash_interest":
+                title = "现金利息"
+                detail = entry.get("note") or "现金利息入账。"
+            else:
+                title = f"分红 {instrument_label}"
+                detail = entry.get("note") or "持仓现金收入。"
             external_flow_by_date[event_date] += amount
             external_flow_breakdown_by_date[event_date][entry_type] += amount
             category = "income"

@@ -327,7 +327,8 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Commission CN¥5.00')).toBeTruthy();
   expect(screen.getByText('Stamp tax CN¥0.00')).toBeTruthy();
   expect(screen.getByText('Transfer fee CN¥0.16')).toBeTruthy();
-  expect(screen.getByText('Cost basis Moving average buy cost')).toBeTruthy();
+  expect(screen.queryByText(/Cost basis/)).toBeNull();
+  expect(screen.queryByText(/moving_average_buy_cost/)).toBeNull();
   expect(screen.queryByText('宇通客车 600066')).toBeNull();
   expect(screen.queryByText(/宇通客车 600066/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);

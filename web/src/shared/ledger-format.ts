@@ -24,6 +24,7 @@ export type LedgerSummaryKind =
   | 'trade_sell'
   | 'cash_deposit'
   | 'cash_withdrawal'
+  | 'cash_interest'
   | 'dividend'
   | 'manual_adjustment'
   | 'other';
@@ -32,6 +33,20 @@ export type LedgerEntrySummary = {
   kind: LedgerSummaryKind;
   grossAmount: number | null;
   cashImpact: number | null;
+};
+
+export type LedgerActivitySummaryTone =
+  | 'credit'
+  | 'debit'
+  | 'adjustment'
+  | 'neutral';
+
+export type LedgerActivitySummary = {
+  label: string;
+  shortLabel: string;
+  amount: string;
+  cashImpactLabel: string;
+  tone: LedgerActivitySummaryTone;
 };
 
 export type LedgerExecutionDetailLabels = {
@@ -53,14 +68,20 @@ export type LedgerExecutionDetailLine = {
   value: string;
 };
 
-const COST_BASIS_METHOD_LABELS: Record<Locale, Record<string, string>> = {
+const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
   en: {
-    moving_average_buy_cost: 'Moving average buy cost',
-    broker_remaining_cost: 'Broker displayed cost basis',
+    broker_statement_manual_correction: 'Broker statement correction',
+    manual: 'Manual entry',
+    portfolio_trade: 'Portfolio trade',
+    system: 'System entry',
+    unknown: 'Source unknown',
   },
   zh: {
-    moving_average_buy_cost: '移动平均买入成本',
-    broker_remaining_cost: '券商展示成本',
+    broker_statement_manual_correction: '券商对账修正',
+    manual: '手工录入',
+    portfolio_trade: '组合交易',
+    system: '系统生成',
+    unknown: '来源未知',
   },
 };
 
@@ -70,6 +91,7 @@ const ENTRY_TYPE_LABELS: Record<Locale, Record<LedgerSummaryKind, string>> = {
     trade_sell: 'Sell',
     cash_deposit: 'Cash deposit',
     cash_withdrawal: 'Cash withdrawal',
+    cash_interest: 'Cash interest',
     dividend: 'Dividend',
     manual_adjustment: 'Manual adjustment',
     other: 'Ledger movement',
@@ -79,9 +101,124 @@ const ENTRY_TYPE_LABELS: Record<Locale, Record<LedgerSummaryKind, string>> = {
     trade_sell: '卖出',
     cash_deposit: '资金转入',
     cash_withdrawal: '资金转出',
+    cash_interest: '现金利息',
     dividend: '分红',
     manual_adjustment: '手动调整',
     other: '账本变动',
+  },
+};
+
+const ACTIVITY_LABELS: Record<
+  Locale,
+  Record<
+    LedgerSummaryKind,
+    {
+      label: string;
+      shortLabel: string;
+      cashImpactLabel: string;
+      tone: LedgerActivitySummaryTone;
+    }
+  >
+> = {
+  en: {
+    trade_buy: {
+      label: 'Security buy',
+      shortLabel: 'B',
+      cashImpactLabel: 'Consumes cash',
+      tone: 'debit',
+    },
+    trade_sell: {
+      label: 'Security sell',
+      shortLabel: 'S',
+      cashImpactLabel: 'Adds cash or realized proceeds',
+      tone: 'credit',
+    },
+    cash_deposit: {
+      label: 'Cash deposit',
+      shortLabel: '+',
+      cashImpactLabel: 'Adds cash or realized proceeds',
+      tone: 'credit',
+    },
+    cash_withdrawal: {
+      label: 'Cash withdrawal',
+      shortLabel: '-',
+      cashImpactLabel: 'Consumes cash',
+      tone: 'debit',
+    },
+    cash_interest: {
+      label: 'Cash interest',
+      shortLabel: 'I',
+      cashImpactLabel: 'Adds cash or realized proceeds',
+      tone: 'credit',
+    },
+    dividend: {
+      label: 'Dividend received',
+      shortLabel: 'D',
+      cashImpactLabel: 'Adds cash or realized proceeds',
+      tone: 'credit',
+    },
+    manual_adjustment: {
+      label: 'Manual adjustment',
+      shortLabel: 'A',
+      cashImpactLabel: 'Operator adjustment',
+      tone: 'adjustment',
+    },
+    other: {
+      label: 'Ledger entry',
+      shortLabel: 'L',
+      cashImpactLabel: 'Reference ledger movement',
+      tone: 'neutral',
+    },
+  },
+  zh: {
+    trade_buy: {
+      label: '证券买入',
+      shortLabel: '买',
+      cashImpactLabel: '占用现金',
+      tone: 'debit',
+    },
+    trade_sell: {
+      label: '证券卖出',
+      shortLabel: '卖',
+      cashImpactLabel: '增加现金或确认回款',
+      tone: 'credit',
+    },
+    cash_deposit: {
+      label: '现金入金',
+      shortLabel: '入',
+      cashImpactLabel: '增加现金或确认回款',
+      tone: 'credit',
+    },
+    cash_withdrawal: {
+      label: '现金出金',
+      shortLabel: '出',
+      cashImpactLabel: '占用现金',
+      tone: 'debit',
+    },
+    cash_interest: {
+      label: '现金利息',
+      shortLabel: '息',
+      cashImpactLabel: '增加现金或确认回款',
+      tone: 'credit',
+    },
+    dividend: {
+      label: '分红入账',
+      shortLabel: '息',
+      cashImpactLabel: '增加现金或确认回款',
+      tone: 'credit',
+    },
+    manual_adjustment: {
+      label: '手工调整',
+      shortLabel: '调',
+      cashImpactLabel: '人工校正',
+      tone: 'adjustment',
+    },
+    other: {
+      label: '账本流水',
+      shortLabel: '流',
+      cashImpactLabel: '参考流水',
+      tone: 'neutral',
+    },
   },
 };
 
@@ -99,10 +236,32 @@ export function summarizeLedgerEntry(
       cashImpact: netCashImpact ?? (grossAmount === null ? null : -grossAmount),
     };
   }
-  if (kind === 'trade_sell' || kind === 'cash_deposit' || kind === 'dividend') {
+  if (
+    kind === 'trade_sell' ||
+    kind === 'cash_deposit' ||
+    kind === 'cash_interest' ||
+    kind === 'dividend'
+  ) {
     return { kind, grossAmount, cashImpact: netCashImpact ?? grossAmount };
   }
   return { kind, grossAmount, cashImpact: null };
+}
+
+export function formatLedgerActivitySummary(
+  entry: PublicLedgerEntry,
+  locale: Locale,
+): LedgerActivitySummary {
+  const summary = summarizeLedgerEntry(entry);
+  const labels = ACTIVITY_LABELS[locale][summary.kind];
+  const amount =
+    labels.tone === 'credit' || labels.tone === 'debit'
+      ? (formatSignedCurrency(summary.cashImpact) ?? '--')
+      : formatCurrency(summary.grossAmount);
+
+  return {
+    ...labels,
+    amount,
+  };
 }
 
 export function calculateLedgerEntryAmount(entry: PublicLedgerEntry) {
@@ -134,6 +293,19 @@ export function formatLedgerEntryTypeLabel(
     typeof entryOrType === 'string' ? entryOrType : entryOrType.entry_type;
   const kind = normalizeLedgerKind(entryType);
   return ENTRY_TYPE_LABELS[locale][kind];
+}
+
+export function formatLedgerSourceLabel(
+  source: string | null | undefined,
+  locale: Locale,
+) {
+  const normalized = (source ?? '').trim().toLowerCase();
+  if (!normalized) {
+    return SOURCE_LABELS[locale].unknown;
+  }
+  return (
+    SOURCE_LABELS[locale][normalized] ?? source ?? SOURCE_LABELS[locale].unknown
+  );
 }
 
 export function formatLedgerInstrumentLabel(entry: PublicLedgerEntry) {
@@ -171,7 +343,7 @@ export function formatLedgerPublicNote(entry: PublicLedgerEntry) {
 export function formatLedgerExecutionDetailLines(
   entry: PublicLedgerEntry,
   labels: LedgerExecutionDetailLabels,
-  locale: Locale,
+  _locale: Locale,
 ): LedgerExecutionDetailLine[] {
   const hasStructuredCosts =
     finiteNumber(entry.gross_amount) !== null ||
@@ -219,14 +391,6 @@ export function formatLedgerExecutionDetailLines(
     addLine(lines, labels.fee, formatCurrency(finiteNumber(entry.commission)));
   }
 
-  const costBasisMethod = formatCostBasisMethod(
-    entry.cost_basis_method,
-    locale,
-  );
-  if (costBasisMethod) {
-    addLine(lines, labels.costBasis, costBasisMethod);
-  }
-
   return lines;
 }
 
@@ -247,10 +411,12 @@ function normalizeLedgerKind(entryType: string): LedgerSummaryKind {
     normalized === 'trade_sell' ||
     normalized === 'cash_deposit' ||
     normalized === 'cash_withdrawal' ||
+    normalized === 'cash_interest' ||
+    normalized === 'interest_income' ||
     normalized === 'dividend' ||
     normalized === 'manual_adjustment'
   ) {
-    return normalized;
+    return normalized === 'interest_income' ? 'cash_interest' : normalized;
   }
   return 'other';
 }
@@ -293,17 +459,6 @@ function formatSignedCurrency(value: number | null) {
   }
   const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
   return `${prefix}${formatCurrency(Math.abs(value))}`;
-}
-
-function formatCostBasisMethod(
-  value: string | null | undefined,
-  locale: Locale,
-) {
-  const normalized = value?.trim();
-  if (!normalized) {
-    return null;
-  }
-  return COST_BASIS_METHOD_LABELS[locale][normalized] ?? normalized;
 }
 
 function isTechnicalNoteSegment(segment: string) {
