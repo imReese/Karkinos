@@ -63,6 +63,45 @@ function resolveTone(value: number | null | undefined): NumericCellTone {
   return value > 0 ? 'success' : 'danger';
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function resolveBrokerDisplayedUnitCost(position: Position) {
+  if (
+    !isFiniteNumber(position.broker_displayed_cost_basis) ||
+    position.broker_displayed_cost_basis <= 0 ||
+    position.quantity <= 0
+  ) {
+    return null;
+  }
+  return position.broker_displayed_cost_basis / position.quantity;
+}
+
+function formatCostBasisMethod(
+  labels: ReturnType<typeof useCopy>['portfolio']['detail'],
+  method: string | null | undefined,
+) {
+  const normalized = method ?? 'unavailable';
+  return (
+    labels.costBasisMethods[
+      normalized as keyof typeof labels.costBasisMethods
+    ] ?? normalized
+  );
+}
+
+function formatCostBasisStatus(
+  labels: ReturnType<typeof useCopy>['portfolio']['detail'],
+  status: string | null | undefined,
+) {
+  const normalized = status ?? 'unavailable';
+  return (
+    labels.costBasisStatuses[
+      normalized as keyof typeof labels.costBasisStatuses
+    ] ?? normalized
+  );
+}
+
 function detailAriaLabel(
   labels: ReturnType<typeof useCopy>['portfolio']['table'],
   displayName: string,
@@ -162,6 +201,7 @@ export function PositionsTable({
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.portfolio.table;
+  const detailLabels = copy.portfolio.detail;
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const showFullColumns = variant === 'full';
   const showDashboardColumns = variant === 'dashboard';
@@ -216,10 +256,23 @@ export function PositionsTable({
             position.symbol,
           );
           const latestPrice = resolveLatestPrice(position);
+          const brokerDisplayedUnitCost =
+            resolveBrokerDisplayedUnitCost(position);
+          const brokerCostBasisDetail =
+            brokerDisplayedUnitCost === null
+              ? null
+              : `${formatCostBasisMethod(
+                  detailLabels,
+                  position.broker_cost_basis_method,
+                )} · ${formatCostBasisStatus(
+                  detailLabels,
+                  position.broker_cost_basis_status,
+                )}`;
           const mobileMetrics: Array<{
             key: string;
             label: string;
             value: string;
+            detail?: string;
             kind: NumericCellKind;
             tone?: NumericCellTone;
             emphasis?: boolean;
@@ -233,11 +286,23 @@ export function PositionsTable({
             },
             {
               key: 'avg-cost',
-              label: labels.avgCost,
+              label: detailLabels.avgCost,
               value: formatPrice(position.avg_cost),
               kind: 'price',
               tone: 'muted',
             },
+            ...(brokerDisplayedUnitCost === null
+              ? []
+              : [
+                  {
+                    key: 'broker-cost',
+                    label: detailLabels.brokerDisplayedCost,
+                    value: formatPrice(brokerDisplayedUnitCost),
+                    detail: brokerCostBasisDetail ?? undefined,
+                    kind: 'price' as const,
+                    tone: 'muted' as const,
+                  },
+                ]),
             {
               key: 'latest-price',
               label: labels.latestPrice,
@@ -384,6 +449,11 @@ export function PositionsTable({
                     >
                       {metric.value}
                     </div>
+                    {metric.detail ? (
+                      <div className="app-muted mt-1 truncate text-[10px]">
+                        {metric.detail}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -436,7 +506,7 @@ export function PositionsTable({
       >
         <table
           data-testid="positions-table-desktop"
-          className="app-data-table w-[1400px] min-w-max text-left text-sm"
+          className="app-data-table w-[1520px] min-w-max text-left text-sm"
         >
           <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
             <tr>
@@ -448,7 +518,10 @@ export function PositionsTable({
                 {labels.quantity}
               </th>
               <th className={numericHeaderClassName('price')}>
-                {labels.avgCost}
+                {detailLabels.avgCost}
+              </th>
+              <th className={numericHeaderClassName('price')}>
+                {detailLabels.brokerDisplayedCost}
               </th>
               <th className={numericHeaderClassName('price')}>
                 {labels.latestPrice}
@@ -499,6 +572,18 @@ export function PositionsTable({
               const quoteStatusLabel = position.quote_status
                 ? formatPublicStatus(position.quote_status, locale)
                 : '--';
+              const brokerDisplayedUnitCost =
+                resolveBrokerDisplayedUnitCost(position);
+              const brokerCostBasisDetail =
+                brokerDisplayedUnitCost === null
+                  ? null
+                  : `${formatCostBasisMethod(
+                      detailLabels,
+                      position.broker_cost_basis_method,
+                    )} · ${formatCostBasisStatus(
+                      detailLabels,
+                      position.broker_cost_basis_status,
+                    )}`;
               const detailHref = holdingDetailHref(position.symbol);
               const detailLabel = detailAriaLabel(
                 labels,
@@ -565,6 +650,21 @@ export function PositionsTable({
                     })}
                   >
                     {formatPrice(position.avg_cost)}
+                  </td>
+                  <td
+                    data-testid={`position-broker-cost-${position.symbol}`}
+                    className={numericCellClassName({
+                      kind: 'price',
+                      tone: brokerDisplayedUnitCost === null ? 'muted' : 'text',
+                    })}
+                    title={brokerCostBasisDetail ?? undefined}
+                  >
+                    <span>{formatPrice(brokerDisplayedUnitCost)}</span>
+                    {brokerCostBasisDetail ? (
+                      <span className="app-muted mt-1 block max-w-36 truncate text-[10px] font-sans">
+                        {brokerCostBasisDetail}
+                      </span>
+                    ) : null}
                   </td>
                   <td
                     data-testid={`position-latest-price-${position.symbol}`}

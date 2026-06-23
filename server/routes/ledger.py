@@ -16,16 +16,16 @@ from server.models import (
     LedgerEntryResponse,
     LedgerTradeCreate,
 )
+from server.services.manual_trade_fees import (
+    MANUAL_FEE_INPUT_RULE_ID,
+    MANUAL_FEE_INPUT_RULE_VERSION,
+    manual_fee_input_payload,
+    resolve_manual_trade_fee_breakdown,
+)
 
 
 def _manual_fee_breakdown(fee: float) -> dict[str, str]:
-    return {
-        "commission": str(fee),
-        "stamp_tax": "0",
-        "transfer_fee": "0",
-        "other_fees": "0",
-        "total_fee": str(fee),
-    }
+    return manual_fee_input_payload(fee)
 
 
 def _net_cash_impact(direction: str, gross_amount: float, fee: float) -> float:
@@ -34,12 +34,37 @@ def _net_cash_impact(direction: str, gross_amount: float, fee: float) -> float:
     return gross_amount - fee
 
 
-def _build_trade_entry(body: LedgerTradeCreate) -> LedgerEntry:
+def _build_trade_entry(body: LedgerTradeCreate, *, config=None) -> LedgerEntry:
     direction = body.direction.strip().lower()
     if direction not in {"buy", "sell"}:
         raise HTTPException(status_code=400, detail="direction must be buy or sell")
 
     gross_amount = body.quantity * body.unit_price
+    fee_was_provided = "fee" in getattr(body, "model_fields_set", set())
+    configured_fee = (
+        None
+        if fee_was_provided
+        else resolve_manual_trade_fee_breakdown(
+            config,
+            asset_class=body.asset_class,
+            direction=direction,
+            quantity=body.quantity,
+            price=body.unit_price,
+        )
+    )
+    if configured_fee is None:
+        commission = body.fee
+        total_fee = body.fee
+        fee_breakdown = _manual_fee_breakdown(body.fee)
+        fee_rule_id = MANUAL_FEE_INPUT_RULE_ID
+        fee_rule_version = MANUAL_FEE_INPUT_RULE_VERSION
+    else:
+        commission = float(configured_fee.commission)
+        total_fee = float(configured_fee.total_fee)
+        fee_breakdown = configured_fee.fee_breakdown_json
+        fee_rule_id = configured_fee.fee_rule_id
+        fee_rule_version = configured_fee.fee_rule_version
+
     return LedgerEntry(
         entry_type=f"trade_{direction}",
         timestamp=body.occurred_at,
@@ -48,12 +73,12 @@ def _build_trade_entry(body: LedgerTradeCreate) -> LedgerEntry:
         quantity=body.quantity,
         price=body.unit_price,
         amount=gross_amount,
-        commission=body.fee,
+        commission=commission,
         gross_amount=gross_amount,
-        net_cash_impact=_net_cash_impact(direction, gross_amount, body.fee),
-        fee_breakdown=_manual_fee_breakdown(body.fee),
-        fee_rule_id="manual_fee_input",
-        fee_rule_version="manual_fee_input",
+        net_cash_impact=_net_cash_impact(direction, gross_amount, total_fee),
+        fee_breakdown=fee_breakdown,
+        fee_rule_id=fee_rule_id,
+        fee_rule_version=fee_rule_version,
         cost_basis_method="moving_average_buy_cost",
         asset_class=body.asset_class,
         note=body.note,
@@ -155,7 +180,7 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
-        entry = _build_trade_entry(body)
+        entry = _build_trade_entry(body, config=getattr(state, "config", None))
         entry_id = repo.insert_entry(entry)
         return LedgerEntryCreatedResponse(id=entry_id, entry_type=entry.entry_type)
 

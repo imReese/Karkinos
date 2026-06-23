@@ -6,6 +6,28 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Portfolio position tables now show broker-displayed unit cost
+  beside the local moving-average cost when broker cost-basis evidence exists,
+  with localized method/status context on both desktop rows and mobile
+  metrics. This is a read-only presentation slice; it does not change ledger
+  math, cost-basis computation, broker behavior, risk gates, automatic trading
+  defaults, or manual-confirmation requirements.
+* 2026-06-23: Manual trade fee calculation was extracted into a shared backend
+  fee-contract service used by both Portfolio trade creation and direct Ledger
+  trade creation. Stock/ETF omitted-fee entries now share the same configured
+  commission, stamp-tax, transfer-fee, other-fee, total-fee, fee-rule, and
+  note formatting behavior, while explicit user-entered fees are marked with
+  the `manual_fee_input` audit rule. This keeps manual trade accounting
+  metadata consistent without changing broker behavior, risk gates, automatic
+  trading defaults, or manual-confirmation requirements.
+* 2026-06-23: Manual ledger trade creation now uses the same structured
+  configured fee contract as the Portfolio manual trade path when the caller
+  omits an explicit fee. The route preserves commission, stamp tax, transfer
+  fee, other fees, total fee, fee-rule id, and net cash impact for stock/ETF
+  manual ledger entries, while explicit user-supplied fees continue to use the
+  `manual_fee_input` audit marker. This is accounting metadata only; it does
+  not submit broker orders, change risk gates, enable automatic trading, or
+  bypass manual confirmation.
 * 2026-06-23: Shared public ledger notes now suppress generated trade-note
   segments that start with a buy/sell/subscription/redemption action and only
   repeat structured quantity, price, amount, commission, or fee facts. Activity,

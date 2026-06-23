@@ -310,6 +310,11 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 
 Capital, holdings, watchlists, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, user-tracked assets come from `watchlist_assets`, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.
+Manual trade ledger entries that omit an explicit `fee` use the configured
+`account_commission_rate`, `account_min_commission`, and structured
+`broker_fee_schedule` to record commission, stamp tax, transfer fee, other fees,
+total fee, and net cash impact. Entries with an explicit `fee` keep the
+`manual_fee_input` audit marker.
 
 #### notification Format
 
