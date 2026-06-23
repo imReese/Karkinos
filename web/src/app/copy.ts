@@ -837,8 +837,11 @@ export const copy = {
           valuation_missing: 'Valuation missing',
           estimated_from_linked_fills: 'Estimated from linked fills',
         },
+        accountStrategyGrossRealizedPnl: 'Gross realized P/L',
         accountStrategyGrossUnrealizedPnl: 'Gross unrealized P/L',
         accountStrategyCommissionSlippage: 'Commission / slippage',
+        accountStrategyTax: 'Tax',
+        accountStrategyManualCashFlowMovement: 'Manual / cash-flow movement',
         accountStrategyTaxExcludedMovement: 'Tax / excluded movement',
         accountStrategyNetContribution: 'Net contribution',
         accountStrategyMissingValuation: (symbols: string) =>
@@ -2484,8 +2487,11 @@ export const copy = {
           valuation_missing: '缺少估值',
           estimated_from_linked_fills: '基于已归属成交估算',
         },
+        accountStrategyGrossRealizedPnl: '毛已实现收益',
         accountStrategyGrossUnrealizedPnl: '毛未实现收益',
         accountStrategyCommissionSlippage: '佣金 / 滑点',
+        accountStrategyTax: '税费',
+        accountStrategyManualCashFlowMovement: '手工 / 现金流变动',
         accountStrategyTaxExcludedMovement: '税费 / 排除变动',
         accountStrategyNetContribution: '净贡献',
         accountStrategyMissingValuation: (symbols: string) =>

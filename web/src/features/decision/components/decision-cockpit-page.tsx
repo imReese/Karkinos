@@ -110,6 +110,7 @@ function strategyAttributionTone(
 }
 
 type DecisionCopy = ReturnType<typeof useCopy>['decision'];
+type BacktestPageCopy = ReturnType<typeof useCopy>['backtest']['page'];
 
 type CandidateEvidenceChainItem = {
   label: string;
@@ -119,6 +120,63 @@ type CandidateEvidenceChainItem = {
 
 function numericEvidenceValue(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function nullableCurrency(value: unknown) {
+  return formatCurrency(numericEvidenceValue(value));
+}
+
+function strategyContributionDetailItems(
+  strategyAttribution: StrategyAttributionGateEvidence | null | undefined,
+  labels: BacktestPageCopy,
+) {
+  if (!strategyAttribution) {
+    return [];
+  }
+  const netContribution = numericEvidenceValue(
+    strategyAttribution.net_contribution,
+  );
+  const grossRealizedPnl = numericEvidenceValue(
+    strategyAttribution.gross_realized_pnl,
+  );
+  const grossUnrealizedPnl = numericEvidenceValue(
+    strategyAttribution.gross_unrealized_pnl,
+  );
+  const totalCommission = numericEvidenceValue(
+    strategyAttribution.total_commission,
+  );
+  const totalSlippage = numericEvidenceValue(
+    strategyAttribution.total_slippage,
+  );
+  const totalTax = numericEvidenceValue(strategyAttribution.total_tax);
+  const manualUnattributedPnl = numericEvidenceValue(
+    strategyAttribution.manual_unattributed_pnl,
+  );
+  const cashFlowPnl = numericEvidenceValue(strategyAttribution.cash_flow_pnl);
+  const unattributedAccountPnl = numericEvidenceValue(
+    strategyAttribution.unattributed_account_pnl,
+  );
+
+  return [
+    netContribution === null
+      ? ''
+      : `${labels.accountStrategyNetContribution}: ${formatCurrency(netContribution)}`,
+    grossRealizedPnl === null
+      ? ''
+      : `${labels.accountStrategyGrossRealizedPnl}: ${formatCurrency(grossRealizedPnl)}`,
+    grossUnrealizedPnl === null
+      ? ''
+      : `${labels.accountStrategyGrossUnrealizedPnl}: ${formatCurrency(grossUnrealizedPnl)}`,
+    totalCommission === null && totalSlippage === null
+      ? ''
+      : `${labels.accountStrategyCommissionSlippage}: ${nullableCurrency(totalCommission)} / ${nullableCurrency(totalSlippage)}`,
+    manualUnattributedPnl === null && cashFlowPnl === null
+      ? ''
+      : `${labels.accountStrategyManualCashFlowMovement}: ${nullableCurrency(manualUnattributedPnl)} / ${nullableCurrency(cashFlowPnl)}`,
+    totalTax === null && unattributedAccountPnl === null
+      ? ''
+      : `${labels.accountStrategyTaxExcludedMovement}: ${nullableCurrency(totalTax)} / ${nullableCurrency(unattributedAccountPnl)}`,
+  ].filter(Boolean);
 }
 
 function candidateEvidenceChainItems(
@@ -884,6 +942,7 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
           locale,
         )}`
       : '',
+    ...strategyContributionDetailItems(strategyAttribution, copy.backtest.page),
     requiredActions.length > 0
       ? gateRequirementLabels(requiredActions, labels).join(' · ')
       : gateRequirementLabels(blockingReasons, labels).join(' · '),

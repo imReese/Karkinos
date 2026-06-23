@@ -94,8 +94,32 @@ export function StrategyContributionGateCard({
             ) : null}
           </div>
         ) : isSupported && report ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric label={labels.strategy} value={strategyLabel} />
+            <Metric
+              label={labels.accountStrategyGrossRealizedPnl}
+              value={formatCurrency(report.gross_realized_pnl)}
+            />
+            <Metric
+              label={labels.accountStrategyGrossUnrealizedPnl}
+              value={formatCurrency(report.gross_unrealized_pnl)}
+            />
+            <Metric
+              label={labels.accountStrategyCommissionSlippage}
+              value={`${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`}
+            />
+            <Metric
+              label={labels.accountStrategyTax}
+              value={formatCurrency(report.total_tax)}
+            />
+            <Metric
+              label={labels.accountStrategyManualCashFlowMovement}
+              value={`${formatCurrency(report.manual_unattributed_pnl)} / ${formatCurrency(report.cash_flow_pnl)}`}
+            />
+            <Metric
+              label={labels.accountStrategyTaxExcludedMovement}
+              value={`${formatCurrency(report.total_tax)} / ${formatCurrency(report.unattributed_account_pnl)}`}
+            />
             <Metric
               label={labels.accountStrategyNetContribution}
               value={formatCurrency(report.net_contribution)}
