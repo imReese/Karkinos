@@ -110,10 +110,16 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 function installTradingFetchMock({
   orders = [pendingOrder, confirmedOrder],
+  orderFacts = [orderFact],
+  fillFacts = [fillFact],
+  positions = positionRows,
   rejectFails = false,
   ordersFail = false,
 }: {
   orders?: unknown[];
+  orderFacts?: unknown[];
+  fillFacts?: unknown[];
+  positions?: unknown[];
   rejectFails?: boolean;
   ordersFail?: boolean;
 } = {}) {
@@ -141,13 +147,13 @@ function installTradingFetchMock({
         });
       }
       if (url.includes('/api/portfolio/positions')) {
-        return jsonResponse(positionRows);
+        return jsonResponse(positions);
       }
       if (url.includes('/api/trading/order-facts')) {
-        return jsonResponse([orderFact]);
+        return jsonResponse(orderFacts);
       }
       if (url.includes('/api/trading/fills')) {
-        return jsonResponse([fillFact]);
+        return jsonResponse(fillFacts);
       }
       if (url.includes('/api/trading/shadow-runs/daily')) {
         return jsonResponse({
@@ -197,16 +203,22 @@ function installTradingFetchMock({
 }
 
 function renderTradingPage(
-  options?: Parameters<typeof installTradingFetchMock>[0],
+  options?: Parameters<typeof installTradingFetchMock>[0] & {
+    locale?: 'en' | 'zh';
+  },
 ) {
   window.localStorage.clear();
+  if (options?.locale) {
+    window.localStorage.setItem('karkinos.locale', options.locale);
+  }
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
     media: query,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  const fetchMock = installTradingFetchMock(options);
+  const { locale: _locale, ...fetchOptions } = options ?? {};
+  const fetchMock = installTradingFetchMock(fetchOptions);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -290,6 +302,35 @@ test('runs daily simulation review from the execution audit panel', async () => 
   expect(
     await screen.findByText(/Simulation review prepared 1 orders/),
   ).toBeTruthy();
+});
+
+test('uses execution fact display names when the instrument is not in current holdings', async () => {
+  renderTradingPage({
+    locale: 'zh',
+    positions: [],
+    orderFacts: [
+      {
+        ...orderFact,
+        order_id: 'ORD-FACT-NAME',
+        symbol: '000001',
+        display_name: '平安银行',
+        status: 'confirmed',
+      },
+    ],
+    fillFacts: [
+      {
+        ...fillFact,
+        fill_id: 'FILL-NAME',
+        symbol: '000001',
+        display_name: '平安银行',
+      },
+    ],
+  });
+
+  expect(await screen.findByText('平安银行 000001 · 已确认')).toBeTruthy();
+  expect(await screen.findByText('平安银行 000001 · 买入')).toBeTruthy();
+  expect(screen.queryByText('000001 · confirmed')).toBeNull();
+  expect(screen.queryByText('000001 · buy')).toBeNull();
 });
 
 test('confirms a pending manual order and refreshes the queue', async () => {

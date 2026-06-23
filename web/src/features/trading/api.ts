@@ -61,6 +61,8 @@ export type ManualOrder = {
   order_id: string;
   timestamp: string;
   symbol: string;
+  display_name?: string | null;
+  name?: string | null;
   side: string;
   order_type: string;
   quantity: number;
@@ -87,6 +89,8 @@ export type OrderFact = {
   order_id: string;
   timestamp: string;
   symbol: string;
+  display_name?: string | null;
+  name?: string | null;
   side: string;
   order_type: string;
   quantity: number;
@@ -109,6 +113,8 @@ export type FillFact = {
   order_id: string;
   timestamp: string;
   symbol: string;
+  display_name?: string | null;
+  name?: string | null;
   side: string;
   fill_price: number;
   fill_quantity: number;

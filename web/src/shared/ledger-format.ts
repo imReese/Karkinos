@@ -357,13 +357,6 @@ export function formatLedgerExecutionDetailLines(
     hasStructuredCosts ? labels.grossAmount : labels.amount,
     formatCurrency(finiteNumber(entry.gross_amount ?? entry.amount)),
   );
-  if (hasStructuredCosts) {
-    addLine(
-      lines,
-      labels.netCashImpact,
-      formatSignedCurrency(finiteNumber(entry.net_cash_impact)),
-    );
-  }
   addLine(lines, labels.quantity, formatQuantity(finiteNumber(entry.quantity)));
   addLine(lines, labels.price, formatCurrency(finiteNumber(entry.price)));
 
