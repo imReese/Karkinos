@@ -391,6 +391,32 @@ test('renders structured reconciliation detail context without raw codes', async
   expect(item.textContent).not.toContain('未映射原因');
 });
 
+test('formats broker trade evidence references through shared ledger labels', async () => {
+  renderAccountTruthReviewPage({
+    reportDetailResponse: {
+      ...reportDetail,
+      items: [
+        {
+          ...reportDetail.items[0],
+          item_key: 'trade:SYN001',
+          category: 'trade_gross_amount',
+          detail_code: 'account_truth.trade_gross_amount_compared',
+          evidence_references: ['broker_event:import-run-1:SYN001:trade_buy'],
+          suggested_review_action: 'review_trade_gross_amount_difference',
+        },
+      ],
+    },
+  });
+
+  const item = await screen.findByTestId('account-truth-item-trade:SYN001');
+
+  expect(
+    within(item).getByText('Broker evidence · SYN001 · Buy · import-run-1'),
+  ).toBeTruthy();
+  expect(item.textContent).not.toContain('Buy trade');
+  expect(item.textContent).not.toContain('trade_buy');
+});
+
 test('explains the blocked empty state without exposing internal action codes', async () => {
   renderAccountTruthReviewPage({
     scoreResponse: {

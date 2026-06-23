@@ -318,7 +318,7 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Amount CN¥200.00')).toBeTruthy();
   expect(screen.getByText('Quantity 204.102')).toBeTruthy();
   expect(screen.getByText('Price CN¥0.98')).toBeTruthy();
-  expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
+  expect(screen.queryByText('Fee CN¥0.00')).toBeNull();
   expect(screen.getByText('璞泰来')).toBeTruthy();
   expect(screen.getByText('宇通客车')).toBeTruthy();
   expect(screen.getByText('-CN¥5,275.16')).toBeTruthy();

@@ -2,7 +2,9 @@ import type { Locale } from '../app/preferences';
 import { formatCurrency, formatQuantity } from './format';
 
 export type PublicLedgerEntry = {
+  id?: number;
   entry_type: string;
+  timestamp?: string | null;
   amount?: number | null;
   symbol?: string | null;
   display_name?: string | null;
@@ -16,7 +18,11 @@ export type PublicLedgerEntry = {
   fee_rule_id?: string | null;
   fee_rule_version?: string | null;
   cost_basis_method?: string | null;
+  asset_class?: string | null;
   note?: string | null;
+  source?: string | null;
+  source_ref?: string | null;
+  created_at?: string | null;
 };
 
 export type LedgerSummaryKind =
@@ -361,6 +367,22 @@ export function formatLedgerExecutionDetailLines(
   addLine(lines, labels.price, formatCurrency(finiteNumber(entry.price)));
 
   if (breakdown) {
+    if (isFundLedgerEntry(entry)) {
+      const fundFee = sumBreakdownNumbers(
+        breakdown,
+        'commission',
+        'subscription_fee',
+        'redemption_fee',
+      );
+      if (fundFee !== null && fundFee !== 0) {
+        addLine(lines, labels.fee, formatCurrency(fundFee));
+      }
+      const otherFees = finiteBreakdownNumber(breakdown, 'other_fees');
+      if (otherFees !== null && otherFees !== 0) {
+        addLine(lines, labels.otherFees, formatCurrency(otherFees));
+      }
+      return lines;
+    }
     addLine(
       lines,
       labels.commission,
@@ -381,7 +403,10 @@ export function formatLedgerExecutionDetailLines(
       addLine(lines, labels.otherFees, formatCurrency(otherFees));
     }
   } else {
-    addLine(lines, labels.fee, formatCurrency(finiteNumber(entry.commission)));
+    const fee = finiteNumber(entry.commission);
+    if (!isFundLedgerEntry(entry) || (fee !== null && fee !== 0)) {
+      addLine(lines, labels.fee, formatCurrency(fee));
+    }
   }
 
   return lines;
@@ -446,12 +471,33 @@ function finiteBreakdownNumber(
   return null;
 }
 
+function sumBreakdownNumbers(
+  breakdown: Record<string, number | string | null | undefined>,
+  ...keys: string[]
+) {
+  let total = 0;
+  let hasValue = false;
+  for (const key of keys) {
+    const value = finiteBreakdownNumber(breakdown, key);
+    if (value === null) {
+      continue;
+    }
+    total += value;
+    hasValue = true;
+  }
+  return hasValue ? total : null;
+}
+
 function formatSignedCurrency(value: number | null) {
   if (value === null) {
     return null;
   }
   const prefix = value > 0 ? '+' : value < 0 ? '-' : '';
   return `${prefix}${formatCurrency(Math.abs(value))}`;
+}
+
+function isFundLedgerEntry(entry: PublicLedgerEntry) {
+  return entry.asset_class?.trim().toLowerCase() === 'fund';
 }
 
 function isTechnicalNoteSegment(segment: string) {

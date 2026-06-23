@@ -20,6 +20,8 @@ _CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
 _ADDITIONAL_TRADE_FEE_KEYS = (
+    ("subscription_fee",),
+    ("redemption_fee",),
     ("stamp_tax", "tax"),
     ("transfer_fee",),
     ("other_fees",),

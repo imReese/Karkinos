@@ -12,6 +12,7 @@ import {
   formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
+import { formatLedgerEntryTypeLabel } from '../../../shared/ledger-format';
 import {
   useAccountTruthImportRunsQuery,
   useAccountTruthScoreQuery,
@@ -759,7 +760,7 @@ function ReviewItemCard({
                 key={reference}
                 className="break-words rounded-lg bg-[var(--app-mantle)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]"
               >
-                {formatPublicEvidenceReference(reference, locale)}
+                {formatReviewEvidenceReference(reference, locale)}
               </span>
             ))}
           </div>
@@ -824,4 +825,38 @@ function formatCode(
   return kind === 'status'
     ? formatPublicStatus(value, locale)
     : formatPublicCode(value, locale);
+}
+
+function formatReviewEvidenceReference(reference: string, locale: 'en' | 'zh') {
+  const brokerTradeReference = parseBrokerTradeEvidenceReference(reference);
+  if (brokerTradeReference) {
+    return [
+      locale === 'zh' ? '券商证据' : 'Broker evidence',
+      brokerTradeReference.subject,
+      formatLedgerEntryTypeLabel(brokerTradeReference.eventType, locale),
+      brokerTradeReference.importRunId,
+    ].join(' · ');
+  }
+
+  return formatPublicEvidenceReference(reference, locale);
+}
+
+function parseBrokerTradeEvidenceReference(reference: string) {
+  const [sourceType, importRunId, subject, ...eventTypeParts] =
+    reference.split(':');
+  const eventType = eventTypeParts.join(':');
+  if (
+    sourceType !== 'broker_event' ||
+    !importRunId ||
+    !subject ||
+    (eventType !== 'trade_buy' && eventType !== 'trade_sell')
+  ) {
+    return null;
+  }
+
+  return {
+    importRunId,
+    subject,
+    eventType,
+  };
 }

@@ -127,6 +127,44 @@ def test_build_portfolio_projection_uses_structured_trade_fee_breakdown():
     assert position.commission_paid == Decimal("5.05")
 
 
+def test_build_portfolio_projection_uses_fund_subscription_fee_breakdown():
+    projection = build_portfolio_projection(
+        [
+            LedgerEntry(
+                entry_type="cash_deposit",
+                timestamp="2026-04-13T02:00:00+00:00",
+                amount=2000.0,
+            ),
+            LedgerEntry(
+                entry_type="trade_buy",
+                timestamp="2026-04-13T05:33:50+00:00",
+                symbol="FUND-A",
+                direction="buy",
+                asset_class="fund",
+                quantity=1000.0,
+                price=1.0,
+                commission=0.0,
+                gross_amount=1000.0,
+                net_cash_impact=-1001.5,
+                fee_breakdown={
+                    "subscription_fee": "1.50",
+                    "redemption_fee": "0",
+                    "commission": "0",
+                    "stamp_tax": "0",
+                    "transfer_fee": "0",
+                    "other_fees": "0",
+                },
+            ),
+        ],
+        latest_quotes={"FUND-A": {"price": 1.02}},
+    )
+
+    assert projection.cash == Decimal("998.5")
+    position = projection.positions["FUND-A"]
+    assert position.avg_cost == Decimal("1.0015")
+    assert position.commission_paid == Decimal("1.50")
+
+
 def test_build_portfolio_projection_tracks_sell_side_net_proceeds_for_broker_cost_basis():
     projection = build_portfolio_projection(
         [

@@ -189,4 +189,56 @@ describe('ledger formatter', () => {
       false,
     );
   });
+
+  test('omits zero stock-specific fee rows for open-end fund purchases', () => {
+    const details = formatLedgerExecutionDetailLines(
+      {
+        id: 11,
+        entry_type: 'trade_buy',
+        timestamp: '2026-06-05T05:22:58+00:00',
+        amount: 200,
+        gross_amount: 200,
+        net_cash_impact: -200,
+        symbol: '012710',
+        display_name: '华夏核心成长混合C',
+        direction: 'buy',
+        quantity: 239.808153477218,
+        price: 0.834,
+        commission: 0,
+        fee_breakdown: {
+          commission: 0,
+          subscription_fee: 0,
+          redemption_fee: 0,
+          stamp_tax: 0,
+          transfer_fee: 0,
+          other_fees: 0,
+        },
+        asset_class: 'fund',
+        note: '手工录入基金申购：华夏核心成长混合C，申购金额 200.00',
+        source: 'manual',
+        source_ref: 'manual-fund-012710-20260605',
+        created_at: '2026-06-05T05:22:58+00:00',
+      },
+      {
+        amount: '金额',
+        grossAmount: '成交总额',
+        netCashImpact: '净现金影响',
+        quantity: '份额/数量',
+        price: '价格',
+        fee: '手续费',
+        commission: '佣金',
+        stampTax: '印花税',
+        transferFee: '过户费',
+        otherFees: '其他费用',
+        costBasis: '成本口径',
+      },
+      'zh',
+    );
+
+    expect(details).toEqual([
+      { label: '成交总额', value: 'CN¥200.00' },
+      { label: '份额/数量', value: '239.8082' },
+      { label: '价格', value: 'CN¥0.83' },
+    ]);
+  });
 });

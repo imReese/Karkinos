@@ -6,6 +6,16 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Extended the Account Truth review surface to format broker
+  trade evidence references with the shared public ledger trade labels instead
+  of page-local broker event labels. Review evidence now renders buy/sell
+  trade references as the same localized ledger actions used by Activity,
+  Overview, Portfolio, Risk, and holding detail, while non-trade broker
+  evidence keeps the existing public evidence formatter. The shared ledger
+  execution details also accept the full ledger-row shape and suppress zero
+  stock-specific fee rows for open-end fund purchases. This is display
+  formatting only; it does not mutate broker evidence, production ledger
+  entries, trading behavior, risk gates, or manual-confirmation defaults.
 * 2026-06-23: Routed manual Portfolio trade ledger writes through the
   configured stock/ETF fee model when commission is omitted. Ledger entries now
   store structured commission, stamp tax, transfer fee, other fee, total fee,
