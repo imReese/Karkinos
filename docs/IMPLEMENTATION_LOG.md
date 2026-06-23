@@ -6,6 +6,22 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Shared public ledger notes now suppress generated trade-note
+  segments that start with a buy/sell/subscription/redemption action and only
+  repeat structured quantity, price, amount, commission, or fee facts. Activity,
+  Portfolio holding traces, Overview, and Risk explainability tests cover the
+  formatter path so public notes stay reserved for user-authored context while
+  core accounting facts remain structured fields. This is display formatting
+  only; it does not change ledger storage, accounting math, broker behavior,
+  order submission, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Shared public ledger explainability titles now treat generated
+  Chinese trade titles such as local buy/sell labels followed by a symbol the
+  same way as generated English `Bought/Sold` titles. Risk explainability
+  events rebuild those titles through the shared ledger formatter, so
+  user-facing cards show localized action + instrument name + symbol instead
+  of symbol-only generated titles. This is display formatting only; it does
+  not change ledger storage, accounting math, broker behavior, order
+  submission, risk gates, or manual-confirmation defaults.
 * 2026-06-23: Decision strategy-attribution summary tiles now surface
   component-level strategy contribution evidence when the backend provides it:
   net contribution, realized P/L, unrealized P/L, commission, slippage, tax,
