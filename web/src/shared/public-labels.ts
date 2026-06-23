@@ -351,6 +351,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'Research evidence is not a profitability guarantee.',
     'Backtest evidence is not a profitability claim.':
       'Backtest evidence is not a profitability claim.',
+    'Validation evidence is not investment advice or a profitability guarantee.':
+      'Validation evidence is not investment advice or a profitability guarantee.',
     'Review status is an audit signal only.':
       'Review status is an audit signal only.',
     'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.':
@@ -428,6 +430,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '研究证据不代表收益保证。',
     'Backtest evidence is not a profitability claim.':
       '研究证据不代表收益保证。',
+    'Validation evidence is not investment advice or a profitability guarantee.':
+      '验证证据不构成投资建议，也不保证收益。',
     'Review status is an audit signal only.':
       '复核状态只是审计信号，不会自动上线或下单。',
     'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.':

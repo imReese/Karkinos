@@ -2,6 +2,9 @@ import { describe, expect, test } from 'vitest';
 
 import {
   formatLedgerActivitySummary,
+  formatLedgerEvidenceReference,
+  formatLedgerExplainabilityDetail,
+  formatLedgerExplainabilityTitle,
   formatLedgerExecutionDetailLines,
   formatLedgerInstrumentLabel,
   formatLedgerPublicNote,
@@ -152,6 +155,71 @@ describe('ledger formatter', () => {
     expect(
       formatLedgerSourceLabel('broker_statement_manual_correction', 'en'),
     ).toBe('Broker statement correction');
+  });
+
+  test('formats broker trade evidence references with shared ledger labels', () => {
+    expect(
+      formatLedgerEvidenceReference(
+        'broker_event:import-run-1:SYN001:trade_buy',
+        'en',
+      ),
+    ).toBe('Broker evidence · SYN001 · Buy · import-run-1');
+    expect(
+      formatLedgerEvidenceReference(
+        'broker_event:import-run-1:SYN001:trade_sell',
+        'zh',
+      ),
+    ).toBe('券商证据 · SYN001 · 卖出 · import-run-1');
+    expect(
+      formatLedgerEvidenceReference(
+        'broker_event:import-run-1:SYN001:position_snapshot',
+        'en',
+      ),
+    ).toBe('Broker evidence · SYN001 · Position snapshot · import-run-1');
+  });
+
+  test('formats generated explainability events through shared ledger labels', () => {
+    const instrumentNames = new Map([['600066', '宇通客车']]);
+
+    expect(
+      formatLedgerExplainabilityTitle(
+        {
+          kind: 'trade_buy',
+          title: 'Bought 600066',
+          detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
+          symbol: '600066',
+          amount: -5275,
+        },
+        'zh',
+        instrumentNames,
+      ),
+    ).toBe('买入 宇通客车 600066');
+    expect(
+      formatLedgerExplainabilityTitle(
+        {
+          kind: 'cash_deposit',
+          title: 'cash_deposit',
+          detail: 'RMB cash deposit recorded from user request',
+          symbol: null,
+          amount: 3000,
+        },
+        'en',
+        instrumentNames,
+      ),
+    ).toBe('Cash deposit');
+    expect(
+      formatLedgerExplainabilityDetail(
+        {
+          kind: 'cash_deposit',
+          title: 'cash_deposit',
+          detail: 'RMB cash deposit recorded from user request',
+          symbol: null,
+          amount: 3000,
+        },
+        'zh',
+        instrumentNames,
+      ),
+    ).toBe('现金流入组合。');
   });
 
   test('omits cost-basis method from public ledger execution details', () => {

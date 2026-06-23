@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   formatPublicCode,
+  formatPublicNote,
   formatPublicOperationalNote,
   formatPublicStatus,
 } from './public-labels';
@@ -42,4 +43,13 @@ test('formats account-truth reconciliation categories without raw field labels',
 
   expect(formatPublicCode('position', 'en')).toBe('Position');
   expect(formatPublicCode('cost_basis', 'en')).toBe('Cost basis');
+});
+
+test('formats research limitation notes for Chinese user-facing surfaces', () => {
+  expect(
+    formatPublicNote(
+      'Validation evidence is not investment advice or a profitability guarantee.',
+      'zh',
+    ),
+  ).toBe('验证证据不构成投资建议，也不保证收益。');
 });
