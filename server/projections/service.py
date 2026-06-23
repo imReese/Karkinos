@@ -19,6 +19,13 @@ _DIVIDEND_TYPES = {"dividend"}
 _CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
+_ADDITIONAL_TRADE_FEE_KEYS = (
+    ("stamp_tax", "tax"),
+    ("transfer_fee",),
+    ("other_fees",),
+    ("surcharge_fee",),
+    ("exchange_clearing_fee",),
+)
 
 
 def build_portfolio_projection(
@@ -246,7 +253,7 @@ def _apply_trade_entry(projection: PortfolioProjection, entry: LedgerEntry) -> N
     symbol = _require_text(entry.symbol, "symbol")
     quantity = _require_decimal(entry.quantity, "quantity")
     price = _require_decimal(entry.price, "price")
-    commission = _as_decimal(entry.commission)
+    commission = _trade_total_fee(entry)
     side = _trade_side(entry)
 
     position = projection.positions.get(symbol)
@@ -414,6 +421,35 @@ def _trade_side(entry: LedgerEntry) -> str:
     if entry_type == "sell":
         return "sell"
     return ""
+
+
+def _trade_total_fee(entry: LedgerEntry) -> Decimal:
+    breakdown = entry.fee_breakdown or {}
+    total_fee = _breakdown_decimal(breakdown, "total_fee")
+    if total_fee is not None:
+        return abs(total_fee)
+
+    commission = _breakdown_decimal(breakdown, "commission")
+    total = abs(commission if commission is not None else _as_decimal(entry.commission))
+    if not breakdown:
+        return total
+
+    for aliases in _ADDITIONAL_TRADE_FEE_KEYS:
+        value = _breakdown_decimal(breakdown, *aliases)
+        if value is not None:
+            total += abs(value)
+    return total
+
+
+def _breakdown_decimal(
+    breakdown: Mapping[str, Any], *keys: str
+) -> Decimal | None:
+    for key in keys:
+        raw = breakdown.get(key)
+        if raw in {None, ""}:
+            continue
+        return _as_decimal(raw)
+    return None
 
 
 def _require_decimal(value: float | Decimal | None, field_name: str) -> Decimal:

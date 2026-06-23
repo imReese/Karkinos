@@ -85,6 +85,20 @@ function formatAge(seconds: number | null | undefined) {
   return `${Math.round(hours / 24)}d`;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatCostBasisMethod(
+  method: string | null | undefined,
+  labels: Record<string, string>,
+) {
+  if (!method) {
+    return labels.unavailable;
+  }
+  return labels[method] ?? labels.unavailable;
+}
+
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -222,6 +236,32 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       unavailable: labels.baselineSources.unavailable,
     }[baselineSource] ?? baselineSource;
   const costBasis = position.avg_cost * position.quantity;
+  const brokerDisplayedCostBasis =
+    isFiniteNumber(position.broker_displayed_cost_basis) &&
+    position.broker_displayed_cost_basis > 0
+      ? position.broker_displayed_cost_basis
+      : null;
+  const brokerDisplayedUnitCost =
+    isFiniteNumber(position.broker_displayed_unit_cost) &&
+    position.broker_displayed_unit_cost > 0
+      ? position.broker_displayed_unit_cost
+      : brokerDisplayedCostBasis !== null && position.quantity > 0
+        ? brokerDisplayedCostBasis / position.quantity
+        : null;
+  const brokerCostBasisDifference = isFiniteNumber(
+    position.broker_cost_basis_difference,
+  )
+    ? position.broker_cost_basis_difference
+    : brokerDisplayedCostBasis !== null
+      ? brokerDisplayedCostBasis - costBasis
+      : null;
+  const hasBrokerCostBasisEvidence =
+    position.broker_cost_basis_status === 'available' &&
+    brokerDisplayedUnitCost !== null;
+  const needsCostBasisReview =
+    hasBrokerCostBasisEvidence &&
+    brokerCostBasisDifference !== null &&
+    Math.abs(brokerCostBasisDifference) >= 0.005;
   const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : null;
   const displayName =
     liveItem?.name ??
@@ -283,9 +323,39 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     { label: labels.pnlPct, value: formatReturnPercent(pnlPct) },
   ];
 
+  const brokerCostBasisMetrics: DetailMetric[] = hasBrokerCostBasisEvidence
+    ? [
+        {
+          label: labels.brokerDisplayedCost,
+          value: formatPrice(brokerDisplayedUnitCost),
+        },
+        {
+          label: labels.brokerDisplayedCostBasis,
+          value: formatCurrency(brokerDisplayedCostBasis),
+        },
+        {
+          label: labels.costBasisDifference,
+          value: formatCurrency(brokerCostBasisDifference),
+          tone:
+            brokerCostBasisDifference === null ||
+            Math.abs(brokerCostBasisDifference) < 0.005
+              ? undefined
+              : 'warning',
+        },
+        {
+          label: labels.costBasisMethod,
+          value: formatCostBasisMethod(
+            position.broker_cost_basis_method,
+            labels.costBasisMethods,
+          ),
+        },
+      ]
+    : [];
+
   const valuationMetrics: DetailMetric[] = [
     { label: labels.costBasis, value: formatCurrency(costBasis) },
     { label: labels.avgCost, value: formatPrice(position.avg_cost) },
+    ...brokerCostBasisMetrics,
     { label: labels.quotePrice, value: formatPrice(quotePrice) },
     { label: labels.baselinePrice, value: formatPrice(baselinePrice) },
     { label: labels.baselineSource, value: baselineSourceLabel },
@@ -408,6 +478,16 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           <section className="app-terminal-panel rounded-[28px] p-[1px]">
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <div className="app-product-mark">{labels.valuation}</div>
+              {needsCostBasisReview ? (
+                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-4 py-3">
+                  <div className="text-sm font-semibold text-[var(--app-warning)]">
+                    {labels.costBasisReviewNeeded}
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[var(--app-muted)]">
+                    {labels.costBasisReviewDetail}
+                  </p>
+                </div>
+              ) : null}
               <MetricGrid metrics={valuationMetrics} />
             </div>
           </section>

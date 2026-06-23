@@ -174,6 +174,11 @@ class PositionResponse(BaseModel):
     available_qty: float
     frozen_qty: float
     avg_cost: float
+    broker_displayed_unit_cost: float | None = None
+    broker_displayed_cost_basis: float | None = None
+    broker_cost_basis_difference: float | None = None
+    broker_cost_basis_method: str | None = None
+    broker_cost_basis_status: str | None = None
     latest_price: float | None = None
     market_value: float
     unrealized_pnl: float

@@ -864,3 +864,33 @@ roadmap promises.
   execution detail lines and should remain in dedicated cost-basis views. This
   is presentation alignment only; it does not change ledger persistence, fee
   math, broker behavior, trading, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Updated portfolio projection cost math to consume structured
+  trade fee breakdowns when present, including commission, stamp tax, transfer
+  fee, and other fee components. This keeps local moving-average buy cost and
+  cash projection aligned with the same ledger fee evidence shown in user
+  surfaces. It does not mutate ledger entries, change broker behavior, submit
+  orders, bypass risk gates, or alter manual-confirmation defaults.
+* 2026-06-23: Added Portfolio holding-detail support for broker-facing
+  cost-basis evidence when the position API provides it. The Web detail view
+  now distinguishes local moving average cost, broker displayed unit cost,
+  broker displayed cost basis, localized cost-basis method, and the difference
+  between broker and local cost-basis totals. The positions API can carry these
+  optional evidence fields without mutating ledger entries. This is
+  presentation and payload-surface work only; it does not change projection
+  math, reconciliation decisions, broker behavior, trading, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Hydrated Portfolio position cost-basis fields from staged broker
+  evidence when no explicit broker cost-basis fields are already attached to
+  the projected position. The positions API now reads the latest imported
+  position snapshot cost basis from Account Truth evidence and derives broker
+  displayed unit cost, broker displayed total cost basis, local-vs-broker
+  difference, method, and availability status. This uses already-imported
+  evidence only; it does not read broker credentials, mutate the production
+  ledger, submit orders, bypass risk gates, or change manual-confirmation
+  defaults.
+* 2026-06-23: Added a Portfolio holding-detail cost-basis review prompt when
+  broker displayed cost evidence differs from Karkinos local moving-average cost
+  by a material display threshold. The prompt is localized and points users back
+  to Account Truth evidence before relying on cost-basis P/L. This is
+  presentation-only audit guidance; it does not change ledger math, broker
+  behavior, trading, risk gates, or manual-confirmation defaults.

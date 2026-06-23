@@ -23,6 +23,11 @@ export type Position = {
   available_qty: number;
   frozen_qty: number;
   avg_cost: number;
+  broker_displayed_unit_cost?: number | null;
+  broker_displayed_cost_basis?: number | null;
+  broker_cost_basis_difference?: number | null;
+  broker_cost_basis_method?: string | null;
+  broker_cost_basis_status?: string | null;
   latest_price?: number | null;
   market_value: number;
   unrealized_pnl: number;

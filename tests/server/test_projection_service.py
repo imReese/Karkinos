@@ -93,6 +93,40 @@ def test_build_portfolio_projection_treats_cash_interest_as_cash_income():
     assert projection.positions == {}
 
 
+def test_build_portfolio_projection_uses_structured_trade_fee_breakdown():
+    projection = build_portfolio_projection(
+        [
+            LedgerEntry(
+                entry_type="cash_deposit",
+                timestamp="2026-06-16T02:00:00+00:00",
+                amount=10000.0,
+            ),
+            LedgerEntry(
+                entry_type="trade_buy",
+                timestamp="2026-06-16T03:04:56+00:00",
+                symbol="600066",
+                direction="buy",
+                quantity=200.0,
+                price=26.35,
+                commission=5.0,
+                gross_amount=5270.0,
+                net_cash_impact=-5275.05,
+                fee_breakdown={
+                    "commission": "5.00",
+                    "stamp_tax": "0",
+                    "transfer_fee": "0.05",
+                    "other_fees": "0",
+                },
+            ),
+        ]
+    )
+
+    assert projection.cash == Decimal("4724.95")
+    position = projection.positions["600066"]
+    assert position.avg_cost == Decimal("26.37525")
+    assert position.commission_paid == Decimal("5.05")
+
+
 def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
