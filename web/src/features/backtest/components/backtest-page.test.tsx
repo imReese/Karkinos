@@ -676,15 +676,15 @@ function installBacktestFetchMock({
     strategy_id: 'dual_ma',
     contribution_status: 'estimated_from_linked_fills',
     linked_fill_count: 1,
-    gross_realized_pnl: 0,
+    gross_realized_pnl: 8,
     gross_unrealized_pnl: 23,
     total_commission: 5,
     total_slippage: 1.5,
-    total_tax: 0,
-    net_contribution: 16.5,
-    unattributed_account_pnl: null,
-    manual_unattributed_pnl: null,
-    cash_flow_pnl: null,
+    total_tax: 0.5,
+    net_contribution: 24,
+    unattributed_account_pnl: 4,
+    manual_unattributed_pnl: 12,
+    cash_flow_pnl: 3,
     missing_valuation_symbols: [],
     evidence_refs: ['fill:FILL-ATTR-1'],
     limitations: [
@@ -930,14 +930,22 @@ test('shows account strategy contribution estimates with explicit exclusions', a
   renderBacktestPage({ results: [] });
 
   expect(await screen.findByText('Contribution report')).toBeTruthy();
+  expect(await screen.findByText('Gross realized P/L')).toBeTruthy();
+  expect(await screen.findByText(/8\.00/)).toBeTruthy();
   expect(await screen.findByText('Gross unrealized P/L')).toBeTruthy();
   expect(await screen.findByText(/23\.00/)).toBeTruthy();
   expect(await screen.findByText('Commission / slippage')).toBeTruthy();
   expect(await screen.findByText(/5\.00 \/ .*1\.50/)).toBeTruthy();
+  expect(await screen.findByText('Tax')).toBeTruthy();
+  expect((await screen.findAllByText(/0\.50/)).length).toBeGreaterThanOrEqual(
+    2,
+  );
+  expect(await screen.findByText('Manual / cash-flow movement')).toBeTruthy();
+  expect(await screen.findByText(/12\.00 \/ .*3\.00/)).toBeTruthy();
   expect(await screen.findByText('Tax / excluded movement')).toBeTruthy();
-  expect(await screen.findByText(/0\.00 \/ --/)).toBeTruthy();
+  expect(await screen.findByText(/0\.50 \/ .*4\.00/)).toBeTruthy();
   expect(await screen.findByText('Net contribution')).toBeTruthy();
-  expect(await screen.findByText(/16\.50/)).toBeTruthy();
+  expect(await screen.findByText(/24\.00/)).toBeTruthy();
   expect(
     await screen.findByText(
       'Contribution is estimated from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',

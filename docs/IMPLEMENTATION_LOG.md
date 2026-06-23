@@ -6,6 +6,30 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Decision strategy-attribution summary tiles now surface
+  component-level strategy contribution evidence when the backend provides it:
+  net contribution, realized P/L, unrealized P/L, commission, slippage, tax,
+  manual movement, cash-flow movement, and excluded movement. Frontend
+  coverage pins the user-facing component labels in the decision summary.
+  This is display formatting only; it does not change attribution math,
+  decision generation, broker behavior, order handling, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Aligned the standalone Account Strategy contribution card with
+  the Backtest contribution report by showing realized P/L, unrealized P/L,
+  commission, slippage, tax, manual movement, cash-flow movement,
+  unattributed movement, and net contribution as localized component fields.
+  Frontend coverage verifies the contribution card does not collapse
+  strategy performance into a single net value when linked-fill evidence is
+  available. This is display formatting only; it does not change attribution
+  math, strategy assignment, broker behavior, order handling, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Expanded the Backtest account-strategy contribution report to
+  show component-level realized P/L, unrealized P/L, commission, slippage, tax,
+  manual movement, cash-flow movement, unattributed movement, and net
+  contribution instead of only a compressed net summary. Frontend coverage
+  verifies the user-facing contribution breakdown. This is display formatting
+  only; it does not change attribution math, strategy assignment, broker
+  behavior, order handling, risk gates, or manual-confirmation defaults.
 * 2026-06-23: Updated the Backtest strategy snapshot surface so saved reports
   show the localized strategy name before the internal strategy id, while the
   internal id remains available as a secondary audit identifier. The same

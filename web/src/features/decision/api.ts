@@ -98,6 +98,14 @@ export type StrategyAttributionGateEvidence = {
   fill_count?: number;
   linked_fill_count?: number;
   net_contribution?: number | null;
+  gross_realized_pnl?: number | null;
+  gross_unrealized_pnl?: number | null;
+  total_commission?: number | null;
+  total_slippage?: number | null;
+  total_tax?: number | null;
+  manual_unattributed_pnl?: number | null;
+  cash_flow_pnl?: number | null;
+  unattributed_account_pnl?: number | null;
   required_actions?: string[];
   blocking_reasons?: string[];
   limitations?: string[];

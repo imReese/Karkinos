@@ -587,6 +587,55 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
   expect(await screen.findByText('Strategy attribution: Blocked')).toBeTruthy();
 });
 
+test('surfaces strategy contribution components in decision summaries', async () => {
+  const contributionToday = {
+    ...dailyDecision,
+    summary: {
+      ...dailyDecision.summary,
+      strategy_attribution: {
+        gate_status: 'pass',
+        strategy_id: 'dual_ma',
+        assignment_status: 'active',
+        attribution_status: 'complete',
+        contribution_status: 'estimated_from_linked_fills',
+        has_evidence: true,
+        linked_fill_count: 2,
+        net_contribution: 129.5,
+        gross_realized_pnl: 8,
+        gross_unrealized_pnl: 128.5,
+        total_commission: 5,
+        total_slippage: 1.5,
+        total_tax: 0.5,
+        manual_unattributed_pnl: 12,
+        cash_flow_pnl: 3,
+        unattributed_account_pnl: 4,
+        required_actions: [],
+        blocking_reasons: [],
+        limitations: [],
+      },
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: contributionToday });
+
+  expect(await screen.findByText(/Net contribution: CN¥129.50/)).toBeTruthy();
+  expect(await screen.findByText(/Gross realized P\/L: CN¥8.00/)).toBeTruthy();
+  expect(
+    await screen.findByText(/Gross unrealized P\/L: CN¥128.50/),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(/Commission \/ slippage: CN¥5.00 \/ CN¥1.50/),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      /Manual \/ cash-flow movement: CN¥12.00 \/ CN¥3.00/,
+    ),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(/Tax \/ excluded movement: CN¥0.50 \/ CN¥4.00/),
+  ).toBeTruthy();
+});
+
 test('renders localized candidate evidence chain for decision review', async () => {
   renderDecisionCockpit({ locale: 'zh' });
 

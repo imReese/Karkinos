@@ -1032,7 +1032,7 @@ function AccountStrategyPanel({
             </p>
           ) : contribution ? (
             <>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <StatusTile
                   label={labels.accountStrategyContributionStatus}
                   value={lookupLabel(
@@ -1042,12 +1042,24 @@ function AccountStrategyPanel({
                   )}
                 />
                 <StatusTile
+                  label={labels.accountStrategyGrossRealizedPnl}
+                  value={formatCurrency(contribution.gross_realized_pnl)}
+                />
+                <StatusTile
                   label={labels.accountStrategyGrossUnrealizedPnl}
                   value={formatCurrency(contribution.gross_unrealized_pnl)}
                 />
                 <StatusTile
                   label={labels.accountStrategyCommissionSlippage}
                   value={`${formatCurrency(contribution.total_commission)} / ${formatCurrency(contribution.total_slippage)}`}
+                />
+                <StatusTile
+                  label={labels.accountStrategyTax}
+                  value={formatCurrency(contribution.total_tax)}
+                />
+                <StatusTile
+                  label={labels.accountStrategyManualCashFlowMovement}
+                  value={`${formatCurrency(contribution.manual_unattributed_pnl)} / ${formatCurrency(contribution.cash_flow_pnl)}`}
                 />
                 <StatusTile
                   label={labels.accountStrategyTaxExcludedMovement}
