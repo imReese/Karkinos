@@ -6,6 +6,16 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Updated the Backtest strategy snapshot surface so saved reports
+  show the localized strategy name before the internal strategy id, while the
+  internal id remains available as a secondary audit identifier. The same
+  snapshot now localizes asset-universe and frequency codes such as stock and
+  daily, and validation notes now fall back to the shared public-note formatter.
+  Frontend coverage verifies the Chinese strategy snapshot no longer presents
+  "strategy id" as the primary user-facing field or leaks those raw metadata
+  codes or raw English validation notes. This is display formatting only; it
+  does not mutate persisted reports, strategy metadata, trading behavior, risk
+  gates, broker behavior, or manual-confirmation defaults.
 * 2026-06-23: Routed Backtest validation-evidence OOS strategy labels through
   the shared strategy audit formatter, so research evidence panels show the
   localized strategy name before the internal strategy id, and added localized
