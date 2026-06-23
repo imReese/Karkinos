@@ -1,0 +1,140 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen } from '@testing-library/react';
+import { afterEach, expect, test, vi } from 'vitest';
+
+import { PreferencesProvider } from './preferences';
+import { ActivityPage } from './router';
+
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function installActivityFetchMock() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : input.toString();
+
+    if (url.includes('/api/ledger/entries')) {
+      return jsonResponse([
+        {
+          id: 2,
+          entry_type: 'cash_interest',
+          timestamp: '2026-06-22T06:24:15+00:00',
+          amount: 0.27,
+          symbol: null,
+          display_name: null,
+          direction: null,
+          quantity: null,
+          price: null,
+          commission: 0,
+          asset_class: 'cash',
+          note: '批量结息归本：现金利息 0.27 元',
+          source: 'broker_statement_manual_correction',
+          source_ref: 'synthetic-cash-interest',
+          created_at: '2026-06-22T06:24:15+00:00',
+        },
+        {
+          id: 1,
+          entry_type: 'trade_buy',
+          timestamp: '2026-06-16T03:04:56+00:00',
+          amount: 5270,
+          symbol: 'SYN001',
+          display_name: '合成标的',
+          direction: 'buy',
+          quantity: 200,
+          price: 26.35,
+          commission: 5,
+          gross_amount: 5270,
+          net_cash_impact: -5275.16,
+          fee_breakdown: {
+            commission: '5',
+            stamp_tax: '0',
+            transfer_fee: '0.16',
+            other_fees: '0',
+            total_fee: '5.16',
+          },
+          fee_rule_id: 'synthetic_fee_rule',
+          fee_rule_version: 'fixture',
+          cost_basis_method: 'moving_average_buy_cost',
+          asset_class: 'stock',
+          note: '用户记录：合成标的 买入',
+          source: 'manual',
+          source_ref: 'synthetic-trade-buy',
+          created_at: null,
+        },
+      ]);
+    }
+    if (url.includes('/api/portfolio/pending-fund-orders')) {
+      return jsonResponse([]);
+    }
+    if (url.includes('/api/portfolio/positions')) {
+      return jsonResponse([]);
+    }
+    if (url.includes('/api/settings')) {
+      return jsonResponse({
+        host: '127.0.0.1',
+        port: 8000,
+        live_auto_start: false,
+        initial_cash: 10000,
+        start_date: '2026-01-01',
+        end_date: '2026-06-22',
+        assets: [],
+        strategy: 'dual_ma',
+        short_period: 5,
+        long_period: 20,
+        data_source: 'akshare',
+        tushare_token: '',
+        notification: {},
+        live_poll_interval: 60,
+        account_commission_rate: 0.00015,
+        account_min_commission: 5,
+      });
+    }
+
+    return new Response('Not found', { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+function renderActivityPage() {
+  window.localStorage.clear();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  installActivityFetchMock();
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ActivityPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+test('summarizes activity net cash impact with the shared ledger formatter semantics', async () => {
+  renderActivityPage();
+
+  expect(await screen.findByText('Net cash impact')).toBeTruthy();
+  expect(await screen.findByText('-CN¥5,274.89')).toBeTruthy();
+  expect(screen.queryByText('-CN¥5,270.00')).toBeNull();
+});
