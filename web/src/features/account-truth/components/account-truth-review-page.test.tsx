@@ -299,6 +299,34 @@ test('localizes generated reconciliation detail copy in Chinese locale', async (
   expect(item.textContent).not.toContain('Raw backend detail');
 });
 
+test('localizes reconciliation detail codes that are review actions', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+            item_key: 'fee:SYN001',
+            category: 'fee',
+            detail_code: 'review_fee_difference',
+            detail: 'Raw review action detail should not be visible.',
+            suggested_review_action: 'review_fee_difference',
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const item = await screen.findByTestId('account-truth-item-fee:SYN001');
+
+  expect(within(item).getAllByText('复核费用差异').length).toBeGreaterThan(0);
+  expect(item.textContent).not.toContain('review_fee_difference');
+  expect(item.textContent).not.toContain('Raw review action detail');
+  expect(item.textContent).not.toContain('复核备注');
+});
+
 test('formats reconciliation report summary differences as money in Chinese locale', async () => {
   renderAccountTruthReviewPage(undefined, { locale: 'zh' });
 

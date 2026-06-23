@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -620,6 +626,33 @@ test('localizes decision action details before rendering the signal queue', asyn
     ),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain(
+    'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+  );
+});
+
+test('localizes decision candidate details before rendering action cards', async () => {
+  renderDecisionCockpit({
+    todayResponse: {
+      ...dailyDecision,
+      candidates: [
+        {
+          ...dailyDecision.candidates[0],
+          detail:
+            'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+        },
+      ],
+    },
+    locale: 'zh',
+  });
+
+  const card = await screen.findByTestId('decision-candidate-card-600519');
+
+  expect(
+    within(card).getByText(
+      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+    ),
+  ).toBeTruthy();
+  expect(card.textContent).not.toContain(
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
   );
 });

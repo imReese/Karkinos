@@ -135,7 +135,11 @@ import {
   formatTimestamp,
 } from '../shared/format';
 import { formatAssetClassLabel } from '../shared/asset-class';
-import { formatPublicCode, formatPublicStatus } from '../shared/public-labels';
+import {
+  formatPublicCode,
+  formatPublicNote,
+  formatPublicStatus,
+} from '../shared/public-labels';
 import { formatStaleReason } from '../shared/stale-reason';
 import {
   formatMarketDataStatusNextAction,
@@ -1089,7 +1093,7 @@ export function RiskPage() {
                         </span>
                       </div>
                       <div className="mt-3 break-words text-sm opacity-90">
-                        {item.detail}
+                        {formatPublicNote(item.detail, locale)}
                       </div>
                     </div>
                   ))

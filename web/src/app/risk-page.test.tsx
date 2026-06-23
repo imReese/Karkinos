@@ -177,8 +177,10 @@ const pendingManualOrder = {
 
 function installRiskFetchMock({
   manualOrders = [],
+  riskAlertsResponse = riskAlerts,
 }: {
   manualOrders?: unknown[];
+  riskAlertsResponse?: unknown[];
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -195,7 +197,7 @@ function installRiskFetchMock({
       return jsonResponse(accountState.snapshot.positions);
     }
     if (url.includes('/api/portfolio/risk-summary')) {
-      return jsonResponse(riskAlerts);
+      return jsonResponse(riskAlertsResponse);
     }
     if (url.includes('/api/portfolio/risk-workspace')) {
       return jsonResponse(riskWorkspace);
@@ -222,12 +224,16 @@ function installRiskFetchMock({
 function renderRiskPage(options?: {
   locale?: 'en' | 'zh';
   manualOrders?: unknown[];
+  riskAlertsResponse?: unknown[];
 }) {
   window.localStorage.clear();
   if (options?.locale) {
     window.localStorage.setItem('karkinos.locale', options.locale);
   }
-  installRiskFetchMock({ manualOrders: options?.manualOrders });
+  installRiskFetchMock({
+    manualOrders: options?.manualOrders,
+    riskAlertsResponse: options?.riskAlertsResponse,
+  });
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -301,6 +307,25 @@ test('renders risk boundaries and blocking register without execution controls',
     within(blockRegister).getByText('Cash buffer is close to the floor'),
   ).toBeTruthy();
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('localizes risk blocking detail codes before rendering alerts', async () => {
+  renderRiskPage({
+    riskAlertsResponse: [
+      {
+        ...riskAlerts[0],
+        detail: 'quote_older_than_expected_session',
+      },
+    ],
+    locale: 'zh',
+  });
+
+  const blockRegister = await screen.findByTestId('risk-blocking-register');
+
+  expect(within(blockRegister).getByText('行情早于预期交易时段')).toBeTruthy();
+  expect(blockRegister.textContent).not.toContain(
+    'quote_older_than_expected_session',
+  );
 });
 
 test('shows instrument names before symbols in risk manual approval rows', async () => {
