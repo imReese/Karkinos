@@ -817,3 +817,19 @@ roadmap promises.
   copies. This is display formatting only; it does not change strategy
   execution, attribution math, ledger facts, broker behavior, trading, risk
   gates, or manual-confirmation defaults.
+* 2026-06-23: Risk explainability events now hydrate shared ledger formatting
+  with instrument names from the current account snapshot. Generated broker or
+  ledger event titles that only carry a symbol now render readable name +
+  symbol labels in recent drivers, timeline events, and position drivers. This
+  is display formatting only; it does not change risk math, ledger
+  persistence, broker behavior, trading, risk gates, or manual-confirmation
+  defaults.
+* 2026-06-23: Localized Risk blocking-register alert kinds so user-facing risk
+  cards show readable labels such as cash buffer instead of raw internal codes.
+  This is display formatting only; it does not change risk calculations,
+  trading, broker behavior, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Localized Risk blocking-register severity labels so user-facing
+  alert badges show review labels such as warning instead of raw severity
+  codes. This is display formatting only; it does not change risk
+  calculations, trading, broker behavior, risk gates, or manual-confirmation
+  defaults.
