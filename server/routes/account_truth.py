@@ -220,7 +220,9 @@ def _item_response(
         "karkinos_value": item.karkinos_value,
         "difference": item.difference,
         "suggested_review_action": item.suggested_review_action,
+        "detail_code": item.detail_code,
         "detail": item.detail,
+        "detail_context": dict(item.detail_context),
         "evidence_references": _evidence_references(item, events),
         "latest_review": (
             _decision_response(latest_review) if latest_review is not None else None

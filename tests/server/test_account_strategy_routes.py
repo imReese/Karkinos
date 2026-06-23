@@ -439,5 +439,199 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
     assert response.cash_flow_pnl is None
     assert response.missing_valuation_symbols == []
     assert response.limitations == [
-        "Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded."
+        "Contribution is estimated only from fully linked strategy fills and latest local quotes; manual, cash-flow, and missing-evidence movements are separated and excluded from net contribution."
     ]
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_contribution_separates_tax_manual_cash_and_missing_evidence(
+    monkeypatch, tmp_path
+):
+    from datetime import datetime
+    from decimal import Decimal
+
+    from server.routes import account_strategy as account_strategy_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.set_runtime_control_sync(
+        "account_strategy_assignment",
+        {
+            "strategy_id": "dual_ma",
+            "strategy_name": "dual_ma",
+            "status": "research_only",
+            "scope": "account",
+            "auto_trade_enabled": False,
+            "attribution_status": "assignment_only",
+            "limitations": [
+                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+            ],
+        },
+    )
+    db.save_signal_sync(
+        timestamp="2026-06-18T09:30:00",
+        strategy_id="dual_ma",
+        symbol="510300",
+        direction="buy",
+        target_weight=0.2,
+        price=4.56,
+        asset_class="fund",
+    )
+    intent = OrderIntentEvent(
+        timestamp=datetime(2026, 6, 18, 9, 32),
+        intent_id="INTENT-COMPONENTS-1",
+        strategy_id="dual_ma",
+        symbol=Symbol("510300"),
+        side=OrderSide.BUY,
+        target_weight=Decimal("0.20"),
+        quantity=Decimal("100"),
+        reference_price=Decimal("4.56"),
+        source_signal_id="1",
+        reason="component attribution fixture",
+    )
+    db.save_risk_decision_sync(
+        intent=intent,
+        decision=RiskDecisionEvent(
+            timestamp=datetime(2026, 6, 18, 9, 33),
+            decision_id="RISK-COMPONENTS-1",
+            intent_id=intent.intent_id,
+            passed=True,
+            symbol=intent.symbol,
+            side=intent.side,
+            reasons=[],
+            severity="info",
+        ),
+    )
+    db.record_order_sync(
+        order_id="ORD-COMPONENTS-1",
+        timestamp="2026-06-18T09:34:00",
+        symbol="510300",
+        side="buy",
+        order_type="market",
+        quantity=100,
+        price=4.57,
+        asset_class="fund",
+        intent_id="INTENT-COMPONENTS-1",
+        risk_decision_id="RISK-COMPONENTS-1",
+        execution_mode="paper",
+        status="filled",
+        source="paper_execution",
+        source_ref="ORD-COMPONENTS-1",
+        payload={"strategy_id": "dual_ma", "source_signal_id": 1},
+    )
+    db.record_fill_sync(
+        fill_id="FILL-COMPONENTS-1",
+        order_id="ORD-COMPONENTS-1",
+        timestamp="2026-06-18T09:35:00",
+        symbol="510300",
+        side="buy",
+        fill_price=4.57,
+        fill_quantity=100,
+        commission=5.4,
+        slippage=1.5,
+        asset_class="fund",
+        execution_mode="paper",
+        source="paper_execution",
+        source_ref="FILL-COMPONENTS-1",
+        metadata={
+            "strategy_id": "dual_ma",
+            "source_signal_id": 1,
+            "fee_breakdown": {
+                "commission": "5.0",
+                "transfer_fee": "0.4",
+                "stamp_tax": "2.0",
+            },
+        },
+    )
+    db.record_fill_sync(
+        fill_id="FILL-MISSING-EVIDENCE",
+        order_id="ORD-MISSING-EVIDENCE",
+        timestamp="2026-06-18T10:00:00",
+        symbol="600000",
+        side="buy",
+        fill_price=10,
+        fill_quantity=10,
+        commission=1,
+        slippage=0.5,
+        asset_class="stock",
+        execution_mode="paper",
+        source="paper_execution",
+        source_ref="FILL-MISSING-EVIDENCE",
+        metadata={"strategy_id": "dual_ma"},
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-06-18T10:30:00",
+        amount=60,
+        symbol="600001",
+        direction="buy",
+        quantity=20,
+        price=3,
+        commission=0.2,
+        gross_amount=60,
+        net_cash_impact=-60.2,
+        asset_class="stock",
+        note="manual fixture",
+        source="manual",
+    )
+    await db.add_cash_flow(
+        timestamp="2026-06-18T08:00:00",
+        amount=1000,
+        flow_type="deposit",
+        note="fixture deposit",
+    )
+    await db.add_cash_flow(
+        timestamp="2026-06-18T08:30:00",
+        amount=200,
+        flow_type="withdraw",
+        note="fixture withdraw",
+    )
+    db.upsert_latest_quote_sync(
+        symbol="510300",
+        asset_type="fund",
+        price=4.8,
+        quote_timestamp="2026-06-18T15:00:00+08:00",
+        quote_source="fixture",
+        provider_name="fixture",
+        provider_status="ok",
+        quote_status="confirmed",
+    )
+    db.upsert_latest_quote_sync(
+        symbol="600000",
+        asset_type="stock",
+        price=11,
+        quote_timestamp="2026-06-18T15:00:00+08:00",
+        quote_source="fixture",
+        provider_name="fixture",
+        provider_status="ok",
+        quote_status="confirmed",
+    )
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=4,
+        quote_timestamp="2026-06-18T15:00:00+08:00",
+        quote_source="fixture",
+        provider_name="fixture",
+        provider_status="ok",
+        quote_status="confirmed",
+    )
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    router = account_strategy_routes.create_router()
+    endpoint = _route(router, "/api/account-strategy/contribution", "GET").endpoint
+
+    response = await endpoint()
+
+    assert response.contribution_status == "estimated_from_linked_fills"
+    assert response.linked_fill_count == 1
+    assert response.gross_unrealized_pnl == 23
+    assert response.total_commission == 5.4
+    assert response.total_tax == 2
+    assert response.total_slippage == 1.5
+    assert response.net_contribution == 14.1
+    assert response.unattributed_account_pnl == 8.5
+    assert response.manual_unattributed_pnl == 19.8
+    assert response.cash_flow_pnl == 800
+    assert response.evidence_refs == ["fill:FILL-COMPONENTS-1"]

@@ -12,6 +12,18 @@ from fastapi import APIRouter
 
 _ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
 _STRATEGY_ATTRIBUTION_READY_STATUSES = {"estimated_from_linked_fills"}
+_READY_MANUAL_CONFIRMATION_STATUS = "ready_for_manual_confirmation"
+_TRUSTED_DATA_STATUSES = {"complete", "confirmed", "fresh", "live", "pass"}
+_REVIEW_DATA_STATUSES = {
+    "cache",
+    "cache_only",
+    "confirmed_nav_missing",
+    "estimated",
+    "partial",
+    "stale",
+    "unknown",
+}
+_BLOCKING_DATA_STATUSES = {"blocked", "error", "missing", "unavailable"}
 
 
 def create_router() -> APIRouter:
@@ -49,9 +61,7 @@ def create_router() -> APIRouter:
             "decision_date": date.today().isoformat(),
             "generated_at": datetime.now().isoformat(),
             "decision": _overall_decision(candidates),
-            "requires_manual_confirmation": any(
-                candidate["manual_confirmation_required"] for candidate in candidates
-            ),
+            "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
             "summary": _decision_summary(
                 state,
                 actions=actions,
@@ -107,9 +117,7 @@ def create_router() -> APIRouter:
             "generated_at": datetime.now().isoformat(),
             "cadence": "polling_or_minute_level",
             "decision": _overall_decision(candidates),
-            "requires_manual_confirmation": any(
-                candidate["manual_confirmation_required"] for candidate in candidates
-            ),
+            "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
             "summary": {
                 **_decision_summary(
                     state,
@@ -170,21 +178,33 @@ def _decision_summary(
     risk_blocked_count = sum(
         1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
     )
+    ready_for_manual_confirmation_count = sum(
+        1
+        for candidate in candidates
+        if candidate["manual_confirmation_status"] == "ready_for_manual_confirmation"
+    )
+    market_data = _market_data_summary(state, actions)
+    action_tasks = _action_task_summary(actions)
+    audit = _audit_summary(actions, candidates, journal_by_signal)
     return {
         "candidate_count": len(candidates),
         "risk_blocked_count": risk_blocked_count,
-        "ready_for_manual_confirmation_count": sum(
-            1
-            for candidate in candidates
-            if candidate["manual_confirmation_status"]
-            == "ready_for_manual_confirmation"
-        ),
+        "ready_for_manual_confirmation_count": ready_for_manual_confirmation_count,
         "portfolio": _portfolio_state_summary(state),
-        "market_data": _market_data_summary(state, actions),
+        "market_data": market_data,
         "account_truth": account_truth,
         "strategy_attribution": strategy_attribution,
-        "action_tasks": _action_task_summary(actions),
-        "audit": _audit_summary(actions, candidates, journal_by_signal),
+        "action_tasks": action_tasks,
+        "audit": audit,
+        "workflow_tasks": _workflow_tasks(
+            market_data=market_data,
+            account_truth=account_truth,
+            strategy_attribution=strategy_attribution,
+            action_tasks=action_tasks,
+            audit=audit,
+            candidate_count=len(candidates),
+            ready_for_manual_confirmation_count=ready_for_manual_confirmation_count,
+        ),
     }
 
 
@@ -421,6 +441,258 @@ def _audit_summary(
     }
 
 
+def _workflow_tasks(
+    *,
+    market_data: dict[str, Any],
+    account_truth: dict[str, Any],
+    strategy_attribution: dict[str, Any],
+    action_tasks: dict[str, Any],
+    audit: dict[str, Any],
+    candidate_count: int,
+    ready_for_manual_confirmation_count: int,
+) -> list[dict[str, Any]]:
+    return [
+        _data_refresh_workflow_task(market_data),
+        _account_truth_workflow_task(account_truth),
+        _risk_review_workflow_task(action_tasks, audit),
+        _strategy_evidence_workflow_task(strategy_attribution, candidate_count),
+        _paper_shadow_workflow_task(candidate_count),
+        _manual_confirmation_workflow_task(
+            account_truth=account_truth,
+            strategy_attribution=strategy_attribution,
+            audit=audit,
+            candidate_count=candidate_count,
+            ready_for_manual_confirmation_count=ready_for_manual_confirmation_count,
+        ),
+    ]
+
+
+def _data_refresh_workflow_task(market_data: dict[str, Any]) -> dict[str, Any]:
+    source_health = str(market_data.get("source_health") or "unknown")
+    if source_health == "live":
+        status = "pass"
+        required_actions: list[str] = []
+        blocking_reasons: list[str] = []
+        description = "Market data is live for the decision universe."
+    elif source_health == "missing":
+        status = "blocked"
+        required_actions = ["refresh_market_data"]
+        blocking_reasons = ["market_data_missing"]
+        description = "Decision data is missing for the selected universe."
+    else:
+        status = "degraded"
+        required_actions = ["refresh_or_confirm_market_data"]
+        blocking_reasons = ["market_data_not_fully_live"]
+        description = (
+            "Some decision quotes are stale, cached, or only partially available."
+        )
+    return _workflow_task(
+        task_id="data_refresh",
+        priority=10,
+        status=status,
+        title="Data refresh",
+        description=description,
+        required_actions=required_actions,
+        blocking_reasons=blocking_reasons,
+        evidence={
+            "source_health": source_health,
+            "quote_count": market_data.get("quote_count"),
+            "missing_symbols": list(market_data.get("missing_symbols") or []),
+            "latest_quote_timestamp": market_data.get("latest_quote_timestamp"),
+        },
+    )
+
+
+def _account_truth_workflow_task(account_truth: dict[str, Any]) -> dict[str, Any]:
+    gate_status = str(account_truth.get("gate_status") or "blocked")
+    if gate_status == "pass":
+        status = "pass"
+    elif gate_status == "degraded":
+        status = "degraded"
+    else:
+        status = "blocked"
+    return _workflow_task(
+        task_id="account_truth",
+        priority=20,
+        status=status,
+        title="Account truth",
+        description="Broker evidence and local account facts are checked before action review.",
+        required_actions=list(account_truth.get("required_actions") or []),
+        blocking_reasons=list(account_truth.get("blocking_reasons") or []),
+        evidence={
+            "gate_status": gate_status,
+            "score": account_truth.get("score"),
+            "has_evidence": bool(account_truth.get("has_evidence")),
+            "unresolved_mismatch_count": account_truth.get("unresolved_mismatch_count"),
+        },
+    )
+
+
+def _risk_review_workflow_task(
+    action_tasks: dict[str, Any],
+    audit: dict[str, Any],
+) -> dict[str, Any]:
+    total_count = int(action_tasks.get("total_count") or 0)
+    risk_checked_count = int(audit.get("risk_checked_count") or 0)
+    risk_blocked_count = int(audit.get("risk_blocked_count") or 0)
+    if risk_blocked_count:
+        status = "blocked"
+        required_actions = ["review_risk_blockers"]
+        blocking_reasons = ["risk_gate_blocked"]
+        description = "At least one candidate is blocked by the pre-trade risk gate."
+    elif total_count and risk_checked_count < total_count:
+        status = "review_required"
+        required_actions = ["run_pre_trade_risk_gate"]
+        blocking_reasons = ["risk_gate_not_checked"]
+        description = "Some candidate actions still need risk-gate evidence."
+    else:
+        status = "pass"
+        required_actions = []
+        blocking_reasons = []
+        description = "Risk-gate evidence is present for the current candidates."
+    return _workflow_task(
+        task_id="risk_review",
+        priority=30,
+        status=status,
+        title="Risk review",
+        description=description,
+        required_actions=required_actions,
+        blocking_reasons=blocking_reasons,
+        evidence={
+            "total_action_count": total_count,
+            "risk_checked_count": risk_checked_count,
+            "risk_blocked_count": risk_blocked_count,
+        },
+    )
+
+
+def _strategy_evidence_workflow_task(
+    strategy_attribution: dict[str, Any],
+    candidate_count: int,
+) -> dict[str, Any]:
+    gate_status = str(strategy_attribution.get("gate_status") or "pass")
+    if gate_status == "pass":
+        status = "pass"
+    elif gate_status == "degraded":
+        status = "degraded"
+    else:
+        status = "blocked"
+    return _workflow_task(
+        task_id="strategy_evidence",
+        priority=40,
+        status=status,
+        title="Strategy evidence",
+        description="Strategy candidates are reviewed only after data and account facts.",
+        required_actions=list(strategy_attribution.get("required_actions") or []),
+        blocking_reasons=list(strategy_attribution.get("blocking_reasons") or []),
+        evidence={
+            "candidate_count": candidate_count,
+            "gate_status": gate_status,
+            "strategy_id": strategy_attribution.get("strategy_id"),
+            "has_evidence": bool(strategy_attribution.get("has_evidence")),
+        },
+    )
+
+
+def _paper_shadow_workflow_task(candidate_count: int) -> dict[str, Any]:
+    if candidate_count:
+        status = "review_required"
+        required_actions = ["review_paper_shadow_evidence"]
+        description = (
+            "Candidate actions should be compared against paper/shadow evidence."
+        )
+    else:
+        status = "pass"
+        required_actions = []
+        description = "No candidate actions require paper/shadow review."
+    return _workflow_task(
+        task_id="paper_shadow_review",
+        priority=50,
+        status=status,
+        title="Paper/shadow review",
+        description=description,
+        required_actions=required_actions,
+        blocking_reasons=[],
+        evidence={"candidate_count": candidate_count},
+    )
+
+
+def _manual_confirmation_workflow_task(
+    *,
+    account_truth: dict[str, Any],
+    strategy_attribution: dict[str, Any],
+    audit: dict[str, Any],
+    candidate_count: int,
+    ready_for_manual_confirmation_count: int,
+) -> dict[str, Any]:
+    account_truth_status = str(account_truth.get("gate_status") or "blocked")
+    strategy_status = str(strategy_attribution.get("gate_status") or "pass")
+    risk_blocked_count = int(audit.get("risk_blocked_count") or 0)
+    if not candidate_count:
+        status = "pass"
+        required_actions: list[str] = []
+        blocking_reasons: list[str] = []
+        description = "No candidate actions require manual confirmation."
+    elif (
+        account_truth_status == "pass"
+        and strategy_status == "pass"
+        and risk_blocked_count == 0
+        and ready_for_manual_confirmation_count
+    ):
+        status = "review_required"
+        required_actions = ["manual_confirm_candidate_actions"]
+        blocking_reasons = []
+        description = "Candidate actions are ready for explicit human review."
+    else:
+        status = "blocked"
+        required_actions = ["resolve_upstream_workflow_blockers"]
+        blocking_reasons = ["upstream_workflow_blockers"]
+        description = (
+            "Manual confirmation is blocked until upstream evidence is resolved."
+        )
+    return _workflow_task(
+        task_id="manual_confirmation",
+        priority=60,
+        status=status,
+        title="Manual confirmation",
+        description=description,
+        required_actions=required_actions,
+        blocking_reasons=blocking_reasons,
+        evidence={
+            "candidate_count": candidate_count,
+            "ready_for_manual_confirmation_count": (
+                ready_for_manual_confirmation_count
+            ),
+            "account_truth_gate_status": account_truth_status,
+            "strategy_attribution_gate_status": strategy_status,
+            "risk_blocked_count": risk_blocked_count,
+        },
+    )
+
+
+def _workflow_task(
+    *,
+    task_id: str,
+    priority: int,
+    status: str,
+    title: str,
+    description: str,
+    required_actions: list[str],
+    blocking_reasons: list[str],
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "id": task_id,
+        "priority": priority,
+        "status": status,
+        "title": title,
+        "description": description,
+        "required_actions": required_actions,
+        "blocking_reasons": blocking_reasons,
+        "evidence": evidence,
+    }
+
+
 async def _validation_by_strategy_id(db: Any) -> dict[str, dict[str, Any]]:
     reader = getattr(db, "get_backtest_results", None)
     if not callable(reader):
@@ -448,6 +720,7 @@ def _decision_candidate(
     signal_id = action.get("source_signal_id")
     journal = journal_by_signal.get(int(signal_id)) if signal_id is not None else None
     account_truth_gate_status = str(account_truth.get("gate_status") or "blocked")
+    data_freshness = _data_freshness_evidence(action, db)
     manual_confirmation_status = (
         action.get("manual_confirmation_status", "awaiting_risk_gate")
         if account_truth_gate_status == "pass"
@@ -456,11 +729,28 @@ def _decision_candidate(
     strategy_attribution_gate_status = str(
         strategy_attribution.get("gate_status") or "pass"
     )
+    data_manual_confirmation_status = _data_quality_manual_confirmation_status(
+        data_freshness
+    )
+    if (
+        account_truth_gate_status == "pass"
+        and data_manual_confirmation_status is not None
+        and manual_confirmation_status == _READY_MANUAL_CONFIRMATION_STATUS
+    ):
+        manual_confirmation_status = data_manual_confirmation_status
     if (
         account_truth_gate_status == "pass"
         and strategy_attribution_gate_status != "pass"
+        and manual_confirmation_status == _READY_MANUAL_CONFIRMATION_STATUS
     ):
         manual_confirmation_status = "strategy_attribution_review_required"
+    risk_gate = _risk_gate_evidence(action)
+    validation = _after_cost_oos_validation_evidence(action, validation_by_strategy)
+    manual_confirmation = _manual_confirmation_evidence(
+        action,
+        manual_confirmation_status=manual_confirmation_status,
+    )
+    paper_shadow = _paper_shadow_evidence(action, manual_confirmation_status)
     return {
         "action_id": action.get("id"),
         "action": _normalize_decision_action(action),
@@ -479,17 +769,27 @@ def _decision_candidate(
         "evidence": {
             "strategy": {"strategy_id": action.get("strategy_id")},
             "signal": _signal_evidence(action, journal),
-            "risk_gate": _risk_gate_evidence(action),
-            "after_cost_oos_validation": _after_cost_oos_validation_evidence(
-                action, validation_by_strategy
-            ),
-            "data_freshness": _data_freshness_evidence(action, db),
+            "risk_gate": risk_gate,
+            "after_cost_oos_validation": validation,
+            "data_freshness": data_freshness,
             "account_truth": account_truth,
             "strategy_attribution": strategy_attribution,
-            "manual_confirmation": _manual_confirmation_evidence(
-                action,
-                manual_confirmation_status=manual_confirmation_status,
+            "certainty": _certainty_evidence(
+                data_freshness=data_freshness,
+                account_truth=account_truth,
+                risk_gate=risk_gate,
             ),
+            "paper_shadow": paper_shadow,
+            "cost_impact": _cost_impact_evidence(validation),
+            "uncertainty": _uncertainty_evidence(
+                risk_gate=risk_gate,
+                validation=validation,
+                data_freshness=data_freshness,
+                account_truth=account_truth,
+                strategy_attribution=strategy_attribution,
+                paper_shadow=paper_shadow,
+            ),
+            "manual_confirmation": manual_confirmation,
             "journal": _journal_evidence(journal),
         },
     }
@@ -536,6 +836,11 @@ def _looks_exchange_traded_fund_symbol(symbol: str) -> bool:
 def _overall_decision(candidates: list[dict[str, Any]]) -> str:
     if not candidates:
         return "no_action"
+    if any(
+        candidate["evidence"].get("certainty", {}).get("status") != "pass"
+        for candidate in candidates
+    ):
+        return "review_required"
     if any(candidate["risk_gate_status"] != "passed" for candidate in candidates):
         return "review_required"
     if any(
@@ -554,6 +859,15 @@ def _overall_decision(candidates: list[dict[str, Any]]) -> str:
     if actions <= {"buy", "sell", "rebalance"}:
         return "rebalance"
     return "review_required"
+
+
+def _has_ready_manual_confirmation(candidates: list[dict[str, Any]]) -> bool:
+    return any(
+        candidate.get("manual_confirmation_required")
+        and candidate.get("manual_confirmation_status")
+        == _READY_MANUAL_CONFIRMATION_STATUS
+        for candidate in candidates
+    )
 
 
 def _account_truth_gate_evidence(state: Any) -> dict[str, Any]:
@@ -797,6 +1111,68 @@ def _data_freshness_evidence(action: dict[str, Any], db: Any) -> dict[str, Any]:
     }
 
 
+def _data_quality_manual_confirmation_status(
+    data_freshness: dict[str, Any],
+) -> str | None:
+    status = str(data_freshness.get("status") or "unknown")
+    if status in _TRUSTED_DATA_STATUSES:
+        return None
+    if status in _BLOCKING_DATA_STATUSES:
+        return "blocked_by_data_quality"
+    return "data_review_required"
+
+
+def _certainty_evidence(
+    *,
+    data_freshness: dict[str, Any],
+    account_truth: dict[str, Any],
+    risk_gate: dict[str, Any],
+) -> dict[str, Any]:
+    status = "pass"
+    required_actions: list[str] = []
+    uncertain_reasons: list[str] = []
+
+    risk_status = str(risk_gate.get("status") or "not_checked")
+    if risk_status != "passed":
+        status = "blocked"
+        _append_unique_text(required_actions, "review_risk_blockers")
+        for reason in risk_gate.get("reasons") or []:
+            _append_unique_text(uncertain_reasons, reason)
+
+    account_truth_status = str(account_truth.get("gate_status") or "blocked")
+    if account_truth_status != "pass":
+        status = "blocked" if account_truth_status == "blocked" else "degraded"
+        for action in account_truth.get("required_actions") or []:
+            _append_unique_text(required_actions, action)
+        for reason in account_truth.get("blocking_reasons") or []:
+            _append_unique_text(uncertain_reasons, reason)
+
+    data_status = str(data_freshness.get("status") or "unknown")
+    if data_status in _BLOCKING_DATA_STATUSES:
+        status = "blocked"
+        _append_unique_text(required_actions, "refresh_market_data")
+    elif data_status not in _TRUSTED_DATA_STATUSES:
+        if status != "blocked":
+            status = "degraded"
+        _append_unique_text(required_actions, "refresh_or_confirm_market_data")
+    if data_status not in _TRUSTED_DATA_STATUSES:
+        _append_unique_text(uncertain_reasons, data_freshness.get("reason"))
+        _append_unique_text(uncertain_reasons, data_freshness.get("stale_reason"))
+        _append_unique_text(uncertain_reasons, data_status)
+
+    posture = (
+        "manual_confirmation_allowed"
+        if status == "pass"
+        else "blocked" if status == "blocked" else "review_required"
+    )
+    return {
+        "status": status,
+        "posture": posture,
+        "required_actions": required_actions,
+        "uncertain_reasons": uncertain_reasons,
+    }
+
+
 def _manual_confirmation_evidence(
     action: dict[str, Any],
     *,
@@ -807,6 +1183,94 @@ def _manual_confirmation_evidence(
         "status": manual_confirmation_status,
         "reason": action.get("manual_confirmation_reason"),
     }
+
+
+def _paper_shadow_evidence(
+    action: dict[str, Any],
+    manual_confirmation_status: str,
+) -> dict[str, Any]:
+    status = str(action.get("paper_shadow_status") or "review_required")
+    has_evidence = status in {"attached", "pass", "reviewed", "shadow_recorded"}
+    required_actions = [] if has_evidence else ["review_paper_shadow_evidence"]
+    return {
+        "status": status,
+        "has_evidence": has_evidence,
+        "execution_mode": action.get("execution_mode"),
+        "order_id": action.get("paper_shadow_order_id"),
+        "required_actions": required_actions,
+        "blocking_reasons": (
+            []
+            if has_evidence
+            else ["paper_shadow_evidence_required_before_manual_confirmation"]
+        ),
+        "manual_confirmation_status": manual_confirmation_status,
+    }
+
+
+def _cost_impact_evidence(validation: dict[str, Any]) -> dict[str, Any]:
+    cost_summary = dict(validation.get("cost_summary") or {})
+    total_commission = _float_or_none(
+        cost_summary.get("total_commission", cost_summary.get("commission"))
+    )
+    total_slippage = _float_or_none(
+        cost_summary.get("total_slippage", cost_summary.get("slippage"))
+    )
+    has_costs = (
+        bool(cost_summary) or total_commission is not None or total_slippage is not None
+    )
+    return {
+        "status": "estimated_from_research_costs" if has_costs else "missing",
+        "source": "after_cost_oos_validation",
+        "total_commission": total_commission,
+        "total_slippage": total_slippage,
+        "cost_summary": cost_summary,
+    }
+
+
+def _uncertainty_evidence(
+    *,
+    risk_gate: dict[str, Any],
+    validation: dict[str, Any],
+    data_freshness: dict[str, Any],
+    account_truth: dict[str, Any],
+    strategy_attribution: dict[str, Any],
+    paper_shadow: dict[str, Any],
+) -> dict[str, Any]:
+    factors: list[str] = []
+    for limitation in validation.get("limitations") or []:
+        _append_unique_text(factors, limitation)
+    for missing in validation.get("missing_requirements") or []:
+        _append_unique_text(factors, missing)
+    for reason in risk_gate.get("reasons") or []:
+        _append_unique_text(factors, reason)
+    for key in ("reason", "stale_reason"):
+        _append_unique_text(factors, data_freshness.get(key))
+    for payload in (account_truth, strategy_attribution, paper_shadow):
+        for reason in payload.get("blocking_reasons") or []:
+            _append_unique_text(factors, reason)
+        for action in payload.get("required_actions") or []:
+            _append_unique_text(factors, action)
+    return {
+        "status": "review_required" if factors else "pass",
+        "factors": factors,
+    }
+
+
+def _append_unique_text(values: list[str], value: Any) -> None:
+    if value is None:
+        return
+    text = str(value)
+    if text and text not in values:
+        values.append(text)
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _journal_evidence(journal: dict[str, Any] | None) -> dict[str, Any]:

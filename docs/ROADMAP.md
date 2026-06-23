@@ -18,8 +18,8 @@ user manual; current usage guidance belongs in the README files.
 | v1.0 | Completed | Strategy Runtime Foundation |
 | v1.1 | Completed | Paper Broker & OMS |
 | v1.2 | Completed | Broker Evidence Connector |
-| v1.3 | Active | Professional Decision Workflow |
-| v1.4 | Planned | Strategy Attribution 2.0 |
+| v1.3 | Completed | Professional Decision Workflow |
+| v1.4 | Active | Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity |
 | v1.5 | Planned | Risk & Portfolio Construction |
 | v1.6 | Planned | Operations Center |
 | v1.7 | Planned | Controlled Broker Execution Bridge |
@@ -634,39 +634,95 @@ that a serious investor can follow without reading internal modules.
 
 ### Acceptance Criteria for v1.3
 
-* [ ] Daily decision workflow surfaces prioritize data and account-truth
+* [x] Daily decision workflow surfaces prioritize data and account-truth
   blockers before strategy opportunities.
-* [ ] Each candidate action shows strategy source, market data status, account
+* [x] Each candidate action shows strategy source, market data status, account
   truth status, risk status, research evidence, paper/shadow evidence, cost
   impact, uncertainty, and manual-confirmation state.
-* [ ] Decision views do not present action suggestions as certain when data or
+* [x] Decision views do not present action suggestions as certain when data or
   account facts are stale, estimated, missing, or blocked.
-* [ ] Frontend tests cover localized no-action, degraded, blocked, and
+* [x] Frontend tests cover localized no-action, degraded, blocked, and
   review-required decision states.
 
 ## Target for v1.4
 
-Karkinos v1.4 — Strategy Attribution 2.0 — should answer whether assigned
-strategies are helping the account after separating manual trades, fees, taxes,
-cash flows, unsupported movement, and market changes.
+Karkinos v1.4 — Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity —
+should answer whether assigned strategies are helping the account after
+separating manual trades, broker fees, taxes, cash flows, unsupported movement,
+and market changes. It should also make ledger costs explainable against the
+broker-facing cost basis shown in a user's securities app.
 
 ### v1.4 Scope
 
 * Account, asset-class, and symbol-level strategy assignment health.
+* Local broker fee schedules in ignored runtime config, without storing account
+  numbers, screenshots, broker passwords, or private exports.
+* Fee models for China-market instruments and venues, including A-shares,
+  funds/ETF/LOF, bonds, convertible bonds, BSE, NEEQ, Hong Kong Connect,
+  stamp tax, transfer fees, broker-absorbed regulatory fees, and explicit
+  unknowns.
 * Signal, review, order, fill, fee, tax, ledger, and position references for
   attribution.
 * Strategy-level realized P/L, unrealized P/L, fees, taxes, slippage, manual
   movement, unattributed movement, and cash-flow separation.
+* Ledger entries that distinguish gross trade amount, net cash impact,
+  commission, stamp tax, transfer fee, other fees, fee-rule version, and
+  cost-basis method.
+* Shared user-facing ledger formatting across Overview, Activity, Portfolio,
+  holding detail, Risk, Decision, and review surfaces so internal entry types,
+  reason codes, and legacy note prefixes never leak into the UI.
+* Ledger notes that are normalized into consistent public notes while core
+  accounting fields such as quantity, price, gross amount, net cash impact,
+  commission, tax, transfer fee, and cost basis remain structured fields rather
+  than free-text remarks.
+* Position views that distinguish moving average buy cost from broker displayed
+  cost basis, where broker displayed cost basis means the remaining position
+  cost shown by the broker after realized sell proceeds, sell-side taxes, and
+  transfer fees have been applied to the still-held quantity.
 * Strategy health indicators for stale evidence, drift from historical
   behavior, paused status, and suggested parameter review.
 
 ### Acceptance Criteria for v1.4
 
-* [ ] Strategy performance attribution separates realized, unrealized, fee,
+* [x] Strategy performance attribution separates realized, unrealized, fee,
   tax, slippage, manual, unattributed, and cash-flow components.
+* [x] Local `config.json` supports a structured broker fee schedule without
+  storing account identifiers, screenshots, broker passwords, credentials, or
+  private exports.
+* [x] Fee calculation returns a deterministic breakdown for commission, stamp
+  tax, transfer fee, other fees, total fee, fee-rule id, and known limitations.
+* [x] Buy and sell ledger entries preserve gross trade amount, net cash impact,
+  fee breakdown, cost-basis method, and fee-rule version.
+* [ ] A shared public ledger formatter is used by Overview, Activity,
+  Portfolio, holding detail, Risk, Decision, and review surfaces for action
+  titles, entry types, notes, instrument names, timestamps, quantities, prices,
+  amounts, fees, and cash impact.
+* [ ] User-facing ledger surfaces do not render internal values such as
+  `trade_buy`, `trade_sell`, raw reason codes, legacy note prefixes, duplicate
+  symbol/name fragments, or mixed Chinese/English operational notes.
+* [ ] Public ledger notes follow a consistent localized format and never carry
+  core accounting facts that should be structured columns or detail fields.
+* [ ] Portfolio cost views show both moving average buy cost and broker
+  displayed cost basis when enough evidence exists, with localized
+  explanations of the difference.
+* [ ] Sell-side realized P/L and remaining-position broker cost basis use net
+  proceeds after commission, stamp tax, transfer fees, and configured
+  broker-specific rules.
+* [ ] Account Truth reconciliation compares broker-reported cost basis against
+  Karkinos local cost basis and exposes differences, severity, and suggested
+  review actions.
+* [ ] Backtest, paper broker, manual trade preview, and ledger projections use
+  the same fee model contract without enabling automatic real-money trading.
+* [ ] Backend deterministic tests cover A-share buy/sell, stamp tax,
+  Shanghai/Shenzhen transfer-fee differences, ETF/fund, convertible bond,
+  broker displayed cost basis, realized P/L, and net cash impact.
+* [ ] Frontend tests cover fee-breakdown display, cost-basis-method display,
+  broker/local cost-basis difference warnings, shared ledger formatting, and
+  the absence of internal entry types or raw reason codes in user-visible
+  ledger surfaces.
 * [ ] Strategy health can mark assigned strategies as healthy, degraded,
   stale, paused, or needing review.
-* [ ] Manual trades and missing-evidence movement are never attributed to a
+* [x] Manual trades and missing-evidence movement are never attributed to a
   strategy by default.
 * [ ] Web surfaces explain strategy contribution in localized user-facing
   language and keep internal strategy ids secondary.

@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest';
 
-import { formatPublicStatus } from './public-labels';
+import {
+  formatPublicCode,
+  formatPublicOperationalNote,
+  formatPublicStatus,
+} from './public-labels';
 
 test('formats the shared v0.9 market-data statuses without leaking internal codes', () => {
   expect(formatPublicStatus('confirmed', 'zh')).toBe('已确认');
@@ -16,4 +20,26 @@ test('formats the shared v0.9 market-data statuses without leaking internal code
   expect(formatPublicStatus('confirmed_nav_missing', 'en')).toBe(
     'Confirmed NAV missing',
   );
+});
+
+test('formats generated operational notes without exposing internal ids', () => {
+  expect(
+    formatPublicOperationalNote('Prepared from signal action 42.', 'en'),
+  ).toBe('Prepared from Decision action queue.');
+  expect(
+    formatPublicOperationalNote('Prepared from signal action 42.', 'zh'),
+  ).toBe('已从决策待办生成手工确认订单。');
+  expect(formatPublicOperationalNote('confirmed by operator', 'en')).toBe(
+    'confirmed by operator',
+  );
+});
+
+test('formats account-truth reconciliation categories without raw field labels', () => {
+  expect(formatPublicCode('cash', 'zh')).toBe('现金');
+  expect(formatPublicCode('position', 'zh')).toBe('持仓');
+  expect(formatPublicCode('fee', 'zh')).toBe('费用');
+  expect(formatPublicCode('cost_basis', 'zh')).toBe('成本价');
+
+  expect(formatPublicCode('position', 'en')).toBe('Position');
+  expect(formatPublicCode('cost_basis', 'en')).toBe('Cost basis');
 });

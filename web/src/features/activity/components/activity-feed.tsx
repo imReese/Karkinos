@@ -1,12 +1,10 @@
 import { useCopy } from '../../../app/copy';
-import {
-  formatCurrency,
-  formatQuantity,
-  formatTimestamp,
-} from '../../../shared/format';
+import { usePreferences } from '../../../app/preferences';
+import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { LedgerEntry } from '../api';
 import {
+  formatLedgerExecutionDetailLines,
   formatLedgerPublicNote,
   resolveLedgerInstrumentName,
   summarizeLedgerEntry,
@@ -14,6 +12,7 @@ import {
 
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.activity.feed;
 
   if (entries.length === 0) {
@@ -89,7 +88,11 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     className={`px-5 py-4 text-right align-top font-mono text-sm font-semibold tabular-nums ${summary.amountClass}`}
                   >
                     {summary.amount}
-                    <LedgerExecutionDetails entry={entry} labels={labels} />
+                    <LedgerExecutionDetails
+                      entry={entry}
+                      labels={labels}
+                      locale={locale}
+                    />
                   </td>
                   <td className="max-w-[280px] px-5 py-4 align-top text-[var(--app-muted)]">
                     <span className="line-clamp-2 break-words">
@@ -114,7 +117,7 @@ function summarizeEntry(entry: LedgerEntry, copy: ReturnType<typeof useCopy>) {
     return {
       label: labels.entryTypes.tradeBuy,
       shortLabel: labels.shortTypes.buy,
-      amount: formatSignedCurrency(grossAmount === null ? null : -grossAmount),
+      amount: formatSignedCurrency(summary.cashImpact),
       cashImpactLabel: labels.cashImpact.debit,
       amountClass: 'text-[var(--app-danger)]',
       badgeClass:
@@ -125,7 +128,7 @@ function summarizeEntry(entry: LedgerEntry, copy: ReturnType<typeof useCopy>) {
     return {
       label: labels.entryTypes.tradeSell,
       shortLabel: labels.shortTypes.sell,
-      amount: formatSignedCurrency(grossAmount),
+      amount: formatSignedCurrency(summary.cashImpact),
       cashImpactLabel: labels.cashImpact.credit,
       amountClass: 'text-[var(--app-success)]',
       badgeClass:
@@ -136,7 +139,7 @@ function summarizeEntry(entry: LedgerEntry, copy: ReturnType<typeof useCopy>) {
     return {
       label: labels.entryTypes.cashDeposit,
       shortLabel: labels.shortTypes.cashIn,
-      amount: formatSignedCurrency(grossAmount),
+      amount: formatSignedCurrency(summary.cashImpact),
       cashImpactLabel: labels.cashImpact.credit,
       amountClass: 'text-[var(--app-success)]',
       badgeClass:
@@ -147,7 +150,7 @@ function summarizeEntry(entry: LedgerEntry, copy: ReturnType<typeof useCopy>) {
     return {
       label: labels.entryTypes.cashWithdrawal,
       shortLabel: labels.shortTypes.cashOut,
-      amount: formatSignedCurrency(grossAmount === null ? null : -grossAmount),
+      amount: formatSignedCurrency(summary.cashImpact),
       cashImpactLabel: labels.cashImpact.debit,
       amountClass: 'text-[var(--app-danger)]',
       badgeClass:
@@ -158,7 +161,7 @@ function summarizeEntry(entry: LedgerEntry, copy: ReturnType<typeof useCopy>) {
     return {
       label: labels.entryTypes.dividend,
       shortLabel: labels.shortTypes.dividend,
-      amount: formatSignedCurrency(grossAmount),
+      amount: formatSignedCurrency(summary.cashImpact),
       cashImpactLabel: labels.cashImpact.credit,
       amountClass: 'text-[var(--app-success)]',
       badgeClass:
@@ -198,37 +201,17 @@ function formatSignedCurrency(value: number | null) {
 function LedgerExecutionDetails({
   entry,
   labels,
+  locale,
 }: {
   entry: LedgerEntry;
   labels: ReturnType<typeof useCopy>['activity']['feed'];
+  locale: ReturnType<typeof usePreferences>['locale'];
 }) {
-  const details = [
-    {
-      label: labels.detailFields.amount,
-      value:
-        entry.amount === null || !Number.isFinite(entry.amount)
-          ? null
-          : formatCurrency(entry.amount),
-    },
-    {
-      label: labels.detailFields.quantity,
-      value:
-        entry.quantity === null || !Number.isFinite(entry.quantity)
-          ? null
-          : formatQuantity(entry.quantity),
-    },
-    {
-      label: labels.detailFields.price,
-      value:
-        entry.price === null || !Number.isFinite(entry.price)
-          ? null
-          : formatCurrency(entry.price),
-    },
-    {
-      label: labels.detailFields.fee,
-      value: formatCurrency(entry.commission),
-    },
-  ].filter((item) => item.value !== null);
+  const details = formatLedgerExecutionDetailLines(
+    entry,
+    labels.detailFields,
+    locale,
+  );
 
   if (details.length === 0) {
     return <div className="app-muted mt-1 text-xs">--</div>;

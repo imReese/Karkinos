@@ -17,7 +17,7 @@ import {
 import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import { AppShell } from './layout/app-shell';
-import { usePreferences } from './preferences';
+import { usePreferences, type Locale } from './preferences';
 import {
   useAccountOverviewQuery,
   type EquityCurveRange,
@@ -66,9 +66,11 @@ import {
 } from '../features/activity/api';
 import {
   calculateLedgerEntryAmount,
+  formatLedgerExecutionDetailLines,
+  formatLedgerEntryTypeLabel,
   formatLedgerInstrumentLabel,
   formatLedgerPublicNote,
-} from '../features/activity/ledger-format';
+} from '../shared/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
   CashFlowForm,
@@ -636,6 +638,7 @@ function DashboardLedger({
   isError: boolean;
   copy: AppCopy;
 }) {
+  const { locale } = usePreferences();
   return (
     <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-5">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -656,31 +659,41 @@ function DashboardLedger({
         </div>
       ) : (
         <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
-          {entries.map((entry) => (
-            <div
-              key={entry.id}
-              className="group rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 transition-[background-color,transform,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">
-                    {formatLedgerEntryTitle(entry, copy)}
+          {entries.map((entry) => {
+            const publicNote = formatLedgerPublicNote(entry);
+            return (
+              <div
+                key={entry.id}
+                className="group rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 transition-[background-color,transform,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">
+                      {formatLedgerEntryTitle(entry, locale)}
+                    </div>
+                    <div className="app-muted mt-1 text-xs">
+                      {formatTimestamp(entry.timestamp)}
+                    </div>
+                    <div className="app-muted mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs">
+                      {formatLedgerEntryDetails(entry, copy, locale).map(
+                        (detail) => (
+                          <span key={detail}>{detail}</span>
+                        ),
+                      )}
+                    </div>
+                    {publicNote ? (
+                      <div className="app-muted mt-2 break-words text-xs leading-5">
+                        {publicNote}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="app-muted mt-1 text-xs">
-                    {formatTimestamp(entry.timestamp)}
+                  <div className="text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
+                    {formatLedgerEntryAmount(entry)}
                   </div>
-                  <div className="app-muted mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs">
-                    {formatLedgerEntryDetails(entry, copy).map((detail) => (
-                      <span key={detail}>{detail}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
-                  {formatLedgerEntryAmount(entry)}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -698,42 +711,25 @@ function MetricLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatLedgerEntryTitle(entry: LedgerEntry, copy: AppCopy) {
+function formatLedgerEntryTitle(entry: LedgerEntry, locale: Locale) {
+  const entryType = formatLedgerEntryTypeLabel(entry, locale);
   const instrumentName = formatLedgerInstrumentLabel(entry);
-  if (entry.entry_type === 'trade_buy') {
-    return `${copy.overview.dashboard.tradeBuy} ${instrumentName}`.trim();
-  }
-  if (entry.entry_type === 'trade_sell') {
-    return `${copy.overview.dashboard.tradeSell} ${instrumentName}`.trim();
-  }
-  if (entry.entry_type === 'cash_deposit') {
-    return copy.overview.dashboard.cashDeposit;
-  }
-  if (entry.entry_type === 'cash_withdrawal') {
-    return copy.overview.dashboard.cashWithdrawal;
-  }
-  if (entry.entry_type === 'dividend') {
-    return `${copy.overview.dashboard.dividend} ${instrumentName}`.trim();
-  }
-  if (entry.entry_type === 'manual_adjustment') {
-    return `${copy.overview.dashboard.adjustment} ${instrumentName}`.trim();
-  }
-  return copy.overview.dashboard.unknownActivity;
+  return instrumentName ? `${entryType} ${instrumentName}` : entryType;
 }
 
-function formatLedgerEntryDetails(entry: LedgerEntry, copy: AppCopy) {
+function formatLedgerEntryDetails(
+  entry: LedgerEntry,
+  copy: AppCopy,
+  locale: Locale,
+) {
   const labels = copy.activity.feed.detailFields;
-  const details = [
-    formatAssetClassLabel(entry.asset_class, copy.common),
-    entry.quantity === null || !Number.isFinite(entry.quantity)
-      ? null
-      : `${labels.quantity === 'Quantity' ? 'Qty' : labels.quantity} ${formatQuantity(entry.quantity)}`,
-    entry.price === null || !Number.isFinite(entry.price)
-      ? null
-      : `${labels.price} ${formatCurrencyValue(entry.price)}`,
-    `${labels.fee} ${formatCurrencyValue(entry.commission)}`,
-  ];
-  return details.filter((detail): detail is string => Boolean(detail));
+  const details = formatLedgerExecutionDetailLines(entry, labels, locale).map(
+    (detail) => `${detail.label} ${detail.value}`,
+  );
+  if (details.length > 0) {
+    return [formatAssetClassLabel(entry.asset_class, copy.common), ...details];
+  }
+  return [formatAssetClassLabel(entry.asset_class, copy.common)];
 }
 
 function formatLedgerEntryAmount(entry: LedgerEntry) {
@@ -2726,6 +2722,7 @@ function ExplainabilityWorkspace({
   showReturnCalendar?: boolean;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
 
   if (loading) {
     return (
@@ -2805,7 +2802,7 @@ function ExplainabilityWorkspace({
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0 text-sm font-semibold leading-6">
-                      {item.title}
+                      {formatExplainabilityPublicTitle(item, locale)}
                     </div>
                     {typeof item.amount === 'number' ? (
                       <div
@@ -2821,9 +2818,9 @@ function ExplainabilityWorkspace({
                       </div>
                     ) : null}
                   </div>
-                  {formatExplainabilityPublicDetail(item) ? (
+                  {formatExplainabilityPublicDetail(item, locale) ? (
                     <div className="app-muted mt-2 break-words text-sm leading-6">
-                      {formatExplainabilityPublicDetail(item)}
+                      {formatExplainabilityPublicDetail(item, locale)}
                     </div>
                   ) : null}
                   {item.timestamp ? (
@@ -2922,14 +2919,14 @@ function ExplainabilityWorkspace({
                           className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2"
                         >
                           <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                            {event.title} ·{' '}
+                            {formatExplainabilityPublicTitle(event, locale)} ·{' '}
                             {getEventKindLabel(copy, event.kind)} ·{' '}
                             {getEventCategoryLabel(copy, event.category)} ·{' '}
                             {getImpactSourceLabel(copy, event.impact_source)}
                           </div>
-                          {formatExplainabilityPublicDetail(event) ? (
+                          {formatExplainabilityPublicDetail(event, locale) ? (
                             <div className="app-muted mt-1 text-xs leading-5">
-                              {formatExplainabilityPublicDetail(event)}
+                              {formatExplainabilityPublicDetail(event, locale)}
                             </div>
                           ) : null}
                         </div>
@@ -4138,16 +4135,15 @@ function formatAuditTimestamp(timestamp: string) {
 
 type ExplainabilityPublicDetailInput = {
   kind?: string;
+  title?: string;
   detail?: string;
   timestamp?: string;
   symbol?: string | null;
   amount?: number | null;
 };
 
-function formatExplainabilityPublicDetail(
-  item: ExplainabilityPublicDetailInput,
-) {
-  const entry: LedgerEntry = {
+function toExplainabilityLedgerEntry(item: ExplainabilityPublicDetailInput) {
+  return {
     id: 0,
     entry_type: item.kind ?? 'other',
     timestamp: item.timestamp ?? '',
@@ -4164,11 +4160,43 @@ function formatExplainabilityPublicDetail(
     price: null,
     commission: 0,
     asset_class: 'other',
-    note: item.detail ?? '',
+    note: [item.title, item.detail].filter(Boolean).join(' | '),
     source: 'explainability',
     source_ref: null,
     created_at: null,
-  };
+  } satisfies LedgerEntry;
+}
+
+function isGeneratedExplainabilityTitle(item: ExplainabilityPublicDetailInput) {
+  const title = item.title?.trim();
+  if (!title) {
+    return true;
+  }
+  return (
+    title === item.kind ||
+    title.includes('_') ||
+    /^(bought|sold)\s+\S+/i.test(title)
+  );
+}
+
+function formatExplainabilityPublicTitle(
+  item: ExplainabilityPublicDetailInput,
+  locale: Locale,
+) {
+  if (!isGeneratedExplainabilityTitle(item) && item.title) {
+    return item.title;
+  }
+  const entry = toExplainabilityLedgerEntry(item);
+  const entryType = formatLedgerEntryTypeLabel(entry, locale);
+  const instrument = formatLedgerInstrumentLabel(entry);
+  return instrument ? `${entryType} ${instrument}` : entryType;
+}
+
+function formatExplainabilityPublicDetail(
+  item: ExplainabilityPublicDetailInput,
+  locale: Locale,
+) {
+  const entry = toExplainabilityLedgerEntry({ ...item, title: undefined });
   const publicNote = formatLedgerPublicNote(entry);
   if (publicNote) {
     return publicNote;
@@ -4176,13 +4204,17 @@ function formatExplainabilityPublicDetail(
 
   switch (item.kind) {
     case 'cash_deposit':
-      return '现金流入组合。';
+      return locale === 'zh'
+        ? '现金流入组合。'
+        : 'Cash inflow into the portfolio.';
     case 'cash_withdrawal':
-      return '现金流出组合。';
+      return locale === 'zh'
+        ? '现金流出组合。'
+        : 'Cash outflow from the portfolio.';
     case 'dividend':
-      return '持仓现金收入。';
+      return locale === 'zh' ? '持仓现金收入。' : 'Cash income from a holding.';
     case 'manual_adjustment':
-      return '手工账本调整。';
+      return locale === 'zh' ? '手工账本调整。' : 'Manual ledger adjustment.';
     default:
       return item.detail || null;
   }

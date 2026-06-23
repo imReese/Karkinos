@@ -119,9 +119,18 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     assert position_item["difference"] == "100"
     assert position_item["severity"] == "mismatch"
     assert position_item["suggested_review_action"] == "review_position_difference"
+    assert position_item["detail_code"] == "account_truth.position_quantity_compared"
     assert position_item["evidence_references"] == [
         f"broker_event:{first_run.import_run_id}:SYN001:position_snapshot",
     ]
+
+    cost_basis_item = next(
+        item
+        for item in detail["items"]
+        if item["category"] == "cost_basis" and item["symbol"] == "SYN001"
+    )
+    assert cost_basis_item["detail_code"] == "account_truth.cost_basis_compared"
+    assert cost_basis_item["detail_context"] == {}
 
     assert duplicate_detail["status"] == "blocked"
     assert duplicate_detail["items"][0]["suggested_review_action"] == (

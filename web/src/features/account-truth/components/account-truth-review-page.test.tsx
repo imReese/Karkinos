@@ -6,6 +6,10 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { PreferencesProvider } from '../../../app/preferences';
 import { AccountTruthReviewPage } from './account-truth-review-page';
 
+type RenderOptions = {
+  locale?: 'en' | 'zh';
+};
+
 const score = {
   schema_version: 'karkinos.account_truth.score.v1',
   status: 'available',
@@ -56,7 +60,7 @@ const reportSummaries = [
     unresolved_count: 2,
     cash_difference: '120.00',
     fee_difference: '0.00',
-    tax_difference: '0.00',
+    tax_difference: '2.50',
     suggested_review_actions: ['review_position_difference'],
     limitations: ['safe synthetic fixture'],
   },
@@ -155,8 +159,12 @@ function installFetchMock({
 
 function renderAccountTruthReviewPage(
   fetchOptions?: Parameters<typeof installFetchMock>[0],
+  renderOptions: RenderOptions = {},
 ) {
   window.localStorage.clear();
+  if (renderOptions.locale) {
+    window.localStorage.setItem('karkinos.locale', renderOptions.locale);
+  }
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
     media: query,
@@ -205,6 +213,15 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
       screen.getAllByText('synthetic-safe-example.csv').length,
     ).toBeGreaterThan(0),
   );
+  expect(
+    await screen.findByText(
+      'Cash difference CN¥120.00 · Fee difference CN¥0.00 · Tax difference CN¥2.50',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('Cash difference 120.00')).toBeNull();
+  expect(screen.queryByText('Tax difference 2.50')).toBeNull();
+  expect(screen.queryByText(/cash Δ/)).toBeNull();
+  expect(screen.queryByText(/fee Δ/)).toBeNull();
   expect(await screen.findByText('Rows 3 · duplicates 0')).toBeTruthy();
 
   await userEvent.click(screen.getByRole('button', { name: 'Mismatch' }));
@@ -219,14 +236,19 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
 
   const item = await screen.findByTestId('account-truth-item-position:SYN001');
   expect(within(item).getByText('SYN001')).toBeTruthy();
-  expect(within(item).getByText('Broker 100')).toBeTruthy();
-  expect(within(item).getByText('Karkinos 0')).toBeTruthy();
-  expect(within(item).getByText('Difference 100')).toBeTruthy();
+  expect(within(item).getByText('Position')).toBeTruthy();
+  expect(within(item).queryByText('position')).toBeNull();
+  expect(within(item).getByText('Broker 100 shares')).toBeTruthy();
+  expect(within(item).getByText('Karkinos 0 shares')).toBeTruthy();
+  expect(within(item).getByText('Difference 100 shares')).toBeTruthy();
   expect(
     within(item).getByText(
-      'broker_event:import-run-1:SYN001:position_snapshot',
+      'Broker evidence · SYN001 · Position snapshot · import-run-1',
     ),
   ).toBeTruthy();
+  expect(item.textContent).not.toContain(
+    'broker_event:import-run-1:SYN001:position_snapshot',
+  );
 
   await userEvent.click(
     within(item).getByRole('button', { name: 'Known difference' }),
@@ -250,6 +272,123 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
+});
+
+test('localizes generated reconciliation detail copy in Chinese locale', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+            detail_code: 'account_truth.position_quantity_compared',
+            detail: 'Raw backend detail should not be visible.',
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const item = await screen.findByTestId('account-truth-item-position:SYN001');
+
+  expect(
+    within(item).getByText('券商持仓数量已与 Karkinos 本地持仓数量对比。'),
+  ).toBeTruthy();
+  expect(item.textContent).not.toContain('Raw backend detail');
+});
+
+test('formats reconciliation report summary differences as money in Chinese locale', async () => {
+  renderAccountTruthReviewPage(undefined, { locale: 'zh' });
+
+  expect(
+    await screen.findByText(
+      '现金差异 ¥120.00 · 费用差异 ¥0.00 · 税费差异 ¥2.50',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('现金差异 120.00')).toBeNull();
+  expect(screen.queryByText('税费差异 2.50')).toBeNull();
+  expect(screen.queryByText(/cash Δ/)).toBeNull();
+  expect(screen.queryByText(/fee Δ/)).toBeNull();
+});
+
+test('formats reconciliation values with category-aware units in Chinese locale', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+          },
+          {
+            ...reportDetail.items[0],
+            item_key: 'cost_basis:SYN001',
+            category: 'cost_basis',
+            broker_value: '8.8',
+            karkinos_value: '8.7',
+            difference: '0.1',
+            detail_code: 'account_truth.cost_basis_compared',
+            detail: 'Broker cost basis does not match local ledger.',
+            suggested_review_action: 'review_cost_basis_difference',
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const positionItem = await screen.findByTestId(
+    'account-truth-item-position:SYN001',
+  );
+  expect(within(positionItem).getByText('券商 100 股')).toBeTruthy();
+  expect(within(positionItem).getByText('Karkinos 0 股')).toBeTruthy();
+  expect(within(positionItem).getByText('差异 100 股')).toBeTruthy();
+
+  const costBasisItem = await screen.findByTestId(
+    'account-truth-item-cost_basis:SYN001',
+  );
+  expect(within(costBasisItem).getByText('券商 ¥8.8000')).toBeTruthy();
+  expect(within(costBasisItem).getByText('Karkinos ¥8.7000')).toBeTruthy();
+  expect(within(costBasisItem).getByText('差异 ¥0.1000')).toBeTruthy();
+  expect(within(costBasisItem).queryByText('券商 8.8')).toBeNull();
+  expect(within(costBasisItem).queryByText('差异 0.1')).toBeNull();
+});
+
+test('renders structured reconciliation detail context without raw codes', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+            item_key: 'cost_basis:SYN001',
+            category: 'cost_basis',
+            detail_code: 'account_truth.cost_basis_compared',
+            detail: 'Broker cost-basis method: broker_remaining_cost.',
+            detail_context: {
+              cost_basis_method: 'broker_remaining_cost',
+            },
+            suggested_review_action: 'review_cost_basis_difference',
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const item = await screen.findByTestId(
+    'account-truth-item-cost_basis:SYN001',
+  );
+
+  expect(within(item).getByText('成本口径')).toBeTruthy();
+  expect(within(item).getByText('券商剩余持仓成本')).toBeTruthy();
+  expect(within(item).getByText('复核成本价差异')).toBeTruthy();
+  expect(item.textContent).not.toContain('broker_remaining_cost');
+  expect(item.textContent).not.toContain('Broker cost-basis method');
+  expect(item.textContent).not.toContain('未映射原因');
 });
 
 test('explains the blocked empty state without exposing internal action codes', async () => {

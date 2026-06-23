@@ -53,6 +53,7 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
 
   expect(screen.getByText('Strategy contribution')).toBeTruthy();
   expect(screen.getByText('Evidence-linked')).toBeTruthy();
+  expect(screen.getByText('Dual Moving Average · dual_ma')).toBeTruthy();
   expect(screen.getByText('Net contribution')).toBeTruthy();
   expect(screen.getByText('CN¥122.00')).toBeTruthy();
   expect(screen.getByText('Evidence refs')).toBeTruthy();

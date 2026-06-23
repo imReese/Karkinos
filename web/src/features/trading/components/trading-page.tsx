@@ -8,7 +8,10 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
-import { formatPublicStatus } from '../../../shared/public-labels';
+import {
+  formatPublicOperationalNote,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
 import { KillSwitchPanel } from './kill-switch-panel';
 import {
   useConfirmManualOrderMutation,
@@ -626,12 +629,14 @@ function OrderRow({
   const copy = useCopy();
   const labels = copy.trading.orders;
   const pageLabels = copy.trading.page;
+  const { locale } = usePreferences();
   const isPending = order.status === 'pending_confirm';
   const payload = parsePayload(order.payload_json);
   const decisionId =
     order.risk_decision_id ?? payload?.risk_decision_id ?? null;
   const intentId = order.intent_id ?? payload?.intent_id ?? null;
   const displayLabel = instrumentDisplayLabel(order.symbol, instrumentNames);
+  const publicNote = formatPublicOperationalNote(order.note, locale);
 
   return (
     <tr className="border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] align-top transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]">
@@ -662,8 +667,8 @@ function OrderRow({
           <div className="app-muted break-all text-xs">
             {labels.intentId}: {intentId ?? '--'}
           </div>
-          {order.note ? (
-            <div className="app-muted text-xs">{order.note}</div>
+          {publicNote ? (
+            <div className="app-muted text-xs">{publicNote}</div>
           ) : null}
         </div>
       </td>
@@ -760,14 +765,15 @@ function AuditRow({
   order: ManualOrder;
   instrumentNames: InstrumentNameLookup;
 }) {
+  const { locale } = usePreferences();
   const displayLabel = instrumentDisplayLabel(order.symbol, instrumentNames);
+  const publicNote =
+    formatPublicOperationalNote(order.note, locale) ?? order.order_id;
   return (
     <div className="grid gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm sm:grid-cols-[120px_90px_minmax(0,1fr)_160px] sm:items-center">
       <div className="font-semibold">{displayLabel}</div>
       <SideBadge side={order.side} />
-      <div className="app-muted min-w-0 truncate text-xs">
-        {order.note || order.order_id}
-      </div>
+      <div className="app-muted min-w-0 truncate text-xs">{publicNote}</div>
       <div className="text-right text-xs tabular-nums text-[var(--app-muted)]">
         {formatTimestamp(order.updated_at)}
       </div>

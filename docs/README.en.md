@@ -305,6 +305,7 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 | `tushare_token` | string | `""` | Local TuShare token written by the onboarding script; `TUSHARE_TOKEN` can also be used |
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
+| `broker_fee_schedule` | object | local defaults | Local broker fee rule parameters: stock/ETF commission rates, minimum commission, stamp tax, transfer fee, other fee rate, rule id, and known limitations. Account identifiers, screenshots, statements, broker passwords, tokens, secrets, or credentials are rejected. |
 | `broker_connectors` | array | `[]` | Local read-only broker connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 

@@ -300,7 +300,7 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(screen.queryByText(/宇通客车 600066 600066/)).toBeNull();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);
-  expect(screen.getByText('Qty 100')).toBeTruthy();
+  expect(screen.getByText('Quantity 100')).toBeTruthy();
   expect(screen.getAllByText('Fee CN¥5.00').length).toBeGreaterThanOrEqual(2);
   expect(screen.queryByText('stock')).toBeNull();
   expect(
@@ -324,6 +324,22 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getByText('CN¥98.85')).toBeTruthy();
   expect(within(metricsRail).getByText('-CN¥10.68')).toBeTruthy();
   expect(within(metricsRail).getByText('CN¥88.17')).toBeTruthy();
+});
+
+test('renders overview ledger cards with shared public ledger formatting', async () => {
+  renderOverviewPage();
+
+  const ledgerPanel = await screen.findByText('Latest ledger');
+  const ledgerSection = ledgerPanel.closest('div')?.parentElement;
+  expect(ledgerSection).toBeTruthy();
+
+  expect(await screen.findByText('Buy 宇通客车 600066')).toBeTruthy();
+  expect(
+    await screen.findByText('宇通客车 买入，佣金按万1.5，最低5元计收'),
+  ).toBeTruthy();
+  expect(screen.queryByText('trade_buy')).toBeNull();
+  expect(screen.queryByText(/宇通客车 600066 600066/)).toBeNull();
+  expect(screen.queryByText(/手工录入持仓/)).toBeNull();
 });
 
 test('labels unconfirmed overview valuation status on the total-assets card', async () => {

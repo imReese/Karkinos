@@ -293,7 +293,19 @@ test('renders ledger entries as a user-facing audit table', () => {
           source_ref: 'manual-600066-20260616-110456',
           created_at: null,
           display_name: '宇通客车',
-        },
+          gross_amount: 5270,
+          net_cash_impact: -5275.16,
+          fee_breakdown: {
+            commission: '5',
+            stamp_tax: '0',
+            transfer_fee: '0.16',
+            other_fees: '0',
+            total_fee: '5.16',
+          },
+          fee_rule_id: 'manual_configured_commission',
+          fee_rule_version: 'account_commission_rate',
+          cost_basis_method: 'moving_average_buy_cost',
+        } as unknown as import('./api').LedgerEntry,
       ]}
     />,
   );
@@ -309,6 +321,13 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Fee CN¥0.00')).toBeTruthy();
   expect(screen.getByText('璞泰来')).toBeTruthy();
   expect(screen.getByText('宇通客车')).toBeTruthy();
+  expect(screen.getByText('-CN¥5,275.16')).toBeTruthy();
+  expect(screen.getByText('Gross amount CN¥5,270.00')).toBeTruthy();
+  expect(screen.getByText('Net cash impact -CN¥5,275.16')).toBeTruthy();
+  expect(screen.getByText('Commission CN¥5.00')).toBeTruthy();
+  expect(screen.getByText('Stamp tax CN¥0.00')).toBeTruthy();
+  expect(screen.getByText('Transfer fee CN¥0.16')).toBeTruthy();
+  expect(screen.getByText('Cost basis Moving average buy cost')).toBeTruthy();
   expect(screen.queryByText('宇通客车 600066')).toBeNull();
   expect(screen.queryByText(/宇通客车 600066/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);

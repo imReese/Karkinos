@@ -6192,8 +6192,21 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
 
     assert response.commission == pytest.approx(3.0)
     assert response.note == "账户佣金配置：佣金率万2.5，最低3元"
-    assert fake_state.db.ledger_entries[0]["commission"] == pytest.approx(3.0)
-    assert fake_state.db.ledger_entries[0]["note"] == response.note
+    ledger_entry = fake_state.db.ledger_entries[0]
+    assert ledger_entry["commission"] == pytest.approx(3.0)
+    assert ledger_entry["note"] == response.note
+    assert ledger_entry["gross_amount"] == pytest.approx(5764.0)
+    assert ledger_entry["net_cash_impact"] == pytest.approx(-5767.0)
+    assert json.loads(ledger_entry["fee_breakdown_json"]) == {
+        "commission": "3.0",
+        "stamp_tax": "0",
+        "transfer_fee": "0",
+        "other_fees": "0",
+        "total_fee": "3.0",
+    }
+    assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
+    assert ledger_entry["fee_rule_version"] == "account_commission_rate"
+    assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
 
 
 def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
@@ -6753,6 +6766,20 @@ def test_decision_today_attaches_latest_after_cost_oos_validation(monkeypatch):
     assert validation["after_cost"]["net_return"] == 0.08
     assert validation["oos_validation"]["validation_status"] == "passed"
     assert "not a profitability claim" in validation["limitations"][0]
+    candidate_evidence = response["candidates"][0]["evidence"]
+    assert candidate_evidence["paper_shadow"]["status"] == "review_required"
+    assert candidate_evidence["paper_shadow"]["required_actions"] == [
+        "review_paper_shadow_evidence"
+    ]
+    assert candidate_evidence["cost_impact"]["status"] == (
+        "estimated_from_research_costs"
+    )
+    assert candidate_evidence["cost_impact"]["total_commission"] == 12.3
+    assert candidate_evidence["cost_impact"]["total_slippage"] == 4.5
+    assert candidate_evidence["uncertainty"]["status"] == "review_required"
+    assert "Backtest evidence is not a profitability claim." in (
+        candidate_evidence["uncertainty"]["factors"]
+    )
 
 
 def test_decision_today_blocks_when_account_truth_score_is_missing(monkeypatch):
@@ -6889,6 +6916,80 @@ def test_decision_today_degrades_when_account_truth_score_degrades(monkeypatch):
     assert candidate["evidence"]["account_truth"]["required_actions"] == [
         "refresh_broker_evidence"
     ]
+
+
+def test_decision_today_requires_review_when_candidate_quote_is_stale(monkeypatch):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    class FakeDb:
+        def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
+            return [
+                {
+                    "id": 9,
+                    "source_signal_id": 1,
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "strategy_id": "dual_ma",
+                    "asset_class": "stock",
+                    "risk_gate_status": "passed",
+                    "risk_gate_passed": True,
+                    "manual_confirmation_required": True,
+                    "manual_confirmation_status": "ready_for_manual_confirmation",
+                }
+            ]
+
+        def list_signal_journal_sync(self, limit=50, offset=0):
+            return []
+
+        def get_latest_quote_sync(self, symbol, asset_type=None):
+            return {
+                "symbol": symbol,
+                "price": 123.45,
+                "quote_status": "stale",
+                "quote_timestamp": "2026-04-18T09:34:00+08:00",
+                "quote_source": "fixture",
+                "stale_reason": "quote_older_than_expected_session",
+            }
+
+        async def get_backtest_results(self):
+            return []
+
+        def get_account_truth_score_sync(self):
+            return {
+                "score": 100,
+                "gate_status": "pass",
+                "data_freshness_status": "fresh",
+                "unresolved_mismatch_count": 0,
+            }
+
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=FakeDb()),
+    )
+
+    response = asyncio.run(endpoint())
+
+    candidate = response["candidates"][0]
+    assert response["decision"] == "review_required"
+    assert response["requires_manual_confirmation"] is False
+    assert response["summary"]["ready_for_manual_confirmation_count"] == 0
+    assert candidate["manual_confirmation_status"] == "data_review_required"
+    assert candidate["evidence"]["data_freshness"]["status"] == "stale"
+    assert candidate["evidence"]["certainty"]["status"] == "degraded"
+    assert candidate["evidence"]["certainty"]["required_actions"] == [
+        "refresh_or_confirm_market_data"
+    ]
+    assert "quote_older_than_expected_session" in (
+        candidate["evidence"]["certainty"]["uncertain_reasons"]
+    )
 
 
 def test_decision_today_requires_strategy_attribution_for_assigned_strategy(
@@ -7123,6 +7224,27 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
     assert summary["audit"]["journal_entry_count"] == 2
     assert summary["audit"]["risk_checked_count"] == 2
     assert summary["audit"]["risk_blocked_count"] == 1
+    workflow_tasks = summary["workflow_tasks"]
+    assert [task["id"] for task in workflow_tasks] == [
+        "data_refresh",
+        "account_truth",
+        "risk_review",
+        "strategy_evidence",
+        "paper_shadow_review",
+        "manual_confirmation",
+    ]
+    assert workflow_tasks[0]["status"] == "degraded"
+    assert workflow_tasks[0]["required_actions"] == ["refresh_or_confirm_market_data"]
+    assert workflow_tasks[1]["status"] == "blocked"
+    assert workflow_tasks[1]["required_actions"] == [
+        "preview_import_and_reconcile_broker_evidence"
+    ]
+    assert workflow_tasks[2]["status"] == "blocked"
+    assert workflow_tasks[3]["status"] == "pass"
+    assert workflow_tasks[4]["status"] == "review_required"
+    assert workflow_tasks[5]["status"] == "blocked"
+    assert workflow_tasks[0]["priority"] < workflow_tasks[3]["priority"]
+    assert workflow_tasks[1]["priority"] < workflow_tasks[3]["priority"]
 
 
 def test_decision_today_returns_no_action_reason(monkeypatch):

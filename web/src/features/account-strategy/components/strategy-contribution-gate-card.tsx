@@ -23,6 +23,20 @@ function canShowContribution(
   );
 }
 
+function strategyDisplayName(
+  strategyId: string | null | undefined,
+  localizedNames: Record<string, string>,
+) {
+  const normalized = strategyId?.trim();
+  if (!normalized) {
+    return '--';
+  }
+  const displayName = localizedNames[normalized] ?? normalized;
+  return displayName === normalized
+    ? normalized
+    : `${displayName} · ${normalized}`;
+}
+
 export function StrategyContributionGateCard({
   report,
   isLoading = false,
@@ -38,6 +52,10 @@ export function StrategyContributionGateCard({
   const statusLabel =
     labels.accountStrategyContributionStatusMap[contributionStatus] ??
     formatPublicCode(report?.contribution_status, locale);
+  const strategyLabel = strategyDisplayName(
+    report?.strategy_id,
+    labels.strategyNames,
+  );
 
   return (
     <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
@@ -85,6 +103,7 @@ export function StrategyContributionGateCard({
           </div>
         ) : isSupported && report ? (
           <div className="grid gap-3 sm:grid-cols-2">
+            <Metric label={labels.strategy} value={strategyLabel} />
             <Metric
               label={labels.accountStrategyNetContribution}
               value={formatCurrency(report.net_contribution)}
@@ -109,6 +128,7 @@ export function StrategyContributionGateCard({
               {labels.accountStrategyContributionHiddenUntilEvidence}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
+              <Metric label={labels.strategy} value={strategyLabel} />
               <Metric
                 label={labels.accountStrategyContributionStatus}
                 value={statusLabel}

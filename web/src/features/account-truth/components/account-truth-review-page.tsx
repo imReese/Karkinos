@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { usePreferences } from '../../../app/preferences';
-import { formatDateTime } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatDateTime,
+  formatQuantity,
+} from '../../../shared/format';
 import {
   formatPublicCode,
+  formatPublicEvidenceReference,
+  formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import {
@@ -61,6 +67,9 @@ const labels = {
     detail: 'Report detail',
     rows: 'Rows',
     duplicates: 'duplicates',
+    cashDifference: 'Cash difference',
+    feeDifference: 'Fee difference',
+    taxDifference: 'Tax difference',
     validation: 'Validation',
     source: 'Source',
     created: 'Created',
@@ -114,6 +123,9 @@ const labels = {
     detail: '报告明细',
     rows: '行数',
     duplicates: '重复',
+    cashDifference: '现金差异',
+    feeDifference: '费用差异',
+    taxDifference: '税费差异',
     validation: '校验',
     source: '来源',
     created: '创建时间',
@@ -147,6 +159,52 @@ const labels = {
     },
   },
 } as const;
+
+const currencyReconciliationCategories = new Set([
+  'cash',
+  'fee',
+  'tax',
+  'trade_gross_amount',
+  'net_cash_impact',
+  'transfer_fee',
+]);
+
+function parseReconciliationNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '--') {
+    return null;
+  }
+  const parsed = Number(trimmed.replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatReconciliationValue(
+  category: string,
+  value: string,
+  locale: 'en' | 'zh',
+) {
+  const parsed = parseReconciliationNumber(value);
+  if (parsed === null) {
+    return value || '--';
+  }
+
+  if (category === 'position') {
+    return `${formatQuantity(parsed)} ${locale === 'zh' ? '股' : 'shares'}`;
+  }
+
+  if (category === 'cost_basis') {
+    return formatCurrency(parsed, {
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    });
+  }
+
+  if (currencyReconciliationCategories.has(category)) {
+    return formatCurrency(parsed);
+  }
+
+  return value;
+}
 
 export function AccountTruthReviewPage() {
   const { locale } = usePreferences();
@@ -409,8 +467,24 @@ export function AccountTruthReviewPage() {
                       {report.source_name}
                     </div>
                     <div className="mt-2 text-xs text-[var(--app-muted)]">
-                      cash Δ {report.cash_difference} · fee Δ{' '}
-                      {report.fee_difference}
+                      {text.cashDifference}{' '}
+                      {formatReconciliationValue(
+                        'cash',
+                        report.cash_difference,
+                        locale,
+                      )}{' '}
+                      · {text.feeDifference}{' '}
+                      {formatReconciliationValue(
+                        'fee',
+                        report.fee_difference,
+                        locale,
+                      )}{' '}
+                      · {text.taxDifference}{' '}
+                      {formatReconciliationValue(
+                        'tax',
+                        report.tax_difference,
+                        locale,
+                      )}
                     </div>
                   </button>
                 ))
@@ -594,6 +668,9 @@ function ReviewItemCard({
   onReview: (status: ReviewStatus) => void;
 }) {
   const text = labels[locale];
+  const detailContextEntries = Object.entries(item.detail_context ?? {}).filter(
+    ([, value]) => value.trim().length > 0,
+  );
   return (
     <article
       className="min-w-0 rounded-2xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
@@ -604,13 +681,32 @@ function ReviewItemCard({
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <StatusBadge status={item.status} locale={locale} />
             <span className="text-lg font-black text-[var(--app-text)]">
-              {item.symbol || item.category}
+              {item.symbol || formatCode(item.category, locale, 'code')}
             </span>
             <span className="rounded-full bg-[var(--app-surface-0)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]">
-              {item.category}
+              {formatCode(item.category, locale, 'code')}
             </span>
           </div>
-          <p className="app-muted mt-2 text-sm leading-6">{item.detail}</p>
+          <p className="app-muted mt-2 text-sm leading-6">
+            {formatPublicNote(item.detail_code ?? item.detail, locale)}
+          </p>
+          {detailContextEntries.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {detailContextEntries.map(([key, value]) => (
+                <span
+                  key={key}
+                  className="inline-flex min-w-0 items-center gap-2 rounded-full border border-[var(--app-border)] bg-[var(--app-surface-0)] px-3 py-1 text-xs font-bold text-[var(--app-muted)]"
+                >
+                  <span className="shrink-0">
+                    {formatCode(key, locale, 'code')}
+                  </span>
+                  <span className="min-w-0 truncate text-[var(--app-text)]">
+                    {formatCode(value, locale, 'code')}
+                  </span>
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="text-xs font-semibold text-[var(--app-muted)]">
           {importRunId}
@@ -620,15 +716,27 @@ function ReviewItemCard({
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <Metric
           label={text.broker}
-          value={`${text.broker} ${item.broker_value}`}
+          value={`${text.broker} ${formatReconciliationValue(
+            item.category,
+            item.broker_value,
+            locale,
+          )}`}
         />
         <Metric
           label={text.karkinos}
-          value={`${text.karkinos} ${item.karkinos_value}`}
+          value={`${text.karkinos} ${formatReconciliationValue(
+            item.category,
+            item.karkinos_value,
+            locale,
+          )}`}
         />
         <Metric
           label={text.difference}
-          value={`${text.difference} ${item.difference}`}
+          value={`${text.difference} ${formatReconciliationValue(
+            item.category,
+            item.difference,
+            locale,
+          )}`}
         />
       </div>
 
@@ -647,12 +755,12 @@ function ReviewItemCard({
           </div>
           <div className="mt-2 grid gap-1">
             {item.evidence_references.map((reference) => (
-              <code
+              <span
                 key={reference}
-                className="break-all rounded-lg bg-[var(--app-mantle)] px-2 py-1 text-xs text-[var(--app-muted)]"
+                className="break-words rounded-lg bg-[var(--app-mantle)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]"
               >
-                {reference}
-              </code>
+                {formatPublicEvidenceReference(reference, locale)}
+              </span>
             ))}
           </div>
         </div>

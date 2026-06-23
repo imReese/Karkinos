@@ -671,6 +671,7 @@ export function BacktestPage() {
       </div>
 
       <StrategyEvidenceGatePanel
+        strategyCatalog={strategyCatalog}
         validation={validation.data ?? null}
         readiness={readiness.data ?? null}
         loading={validation.isLoading || readiness.isLoading}
@@ -1121,11 +1122,13 @@ function StatusTile({ label, value }: { label: string; value: string }) {
 }
 
 function StrategyEvidenceGatePanel({
+  strategyCatalog,
   validation,
   readiness,
   loading,
   error,
 }: {
+  strategyCatalog: BacktestStrategyInfo[];
   validation: StrategyValidationMatrix | null;
   readiness: StrategyPromotionReadiness | null;
   loading: boolean;
@@ -1136,6 +1139,16 @@ function StrategyEvidenceGatePanel({
   const rows = validation?.rows ?? [];
   const readinessRows = readiness?.rows ?? [];
   const visibleRows = rows.slice(0, 4);
+  const strategyById = useMemo(
+    () =>
+      new Map(
+        strategyCatalog.flatMap((strategy) => [
+          [strategy.strategy_id, strategy],
+          [strategy.name, strategy],
+        ]),
+      ),
+    [strategyCatalog],
+  );
 
   return (
     <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
@@ -1208,6 +1221,10 @@ function StrategyEvidenceGatePanel({
                   const readinessRow = readinessRows.find(
                     (item) => item.strategy_id === row.strategy_id,
                   );
+                  const strategyInfo = strategyById.get(row.strategy_id);
+                  const displayName = strategyInfo
+                    ? strategyDisplayName(strategyInfo, labels.strategyNames)
+                    : row.strategy_id;
                   const missing = [
                     ...row.missing_requirements,
                     ...(readinessRow?.missing_requirements ?? []),
@@ -1217,8 +1234,13 @@ function StrategyEvidenceGatePanel({
                       key={row.strategy_id}
                       className="border-b border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] align-top"
                     >
-                      <td className="px-3 py-3 font-semibold">
-                        {row.strategy_id}
+                      <td className="px-3 py-3">
+                        <div className="font-semibold text-[var(--app-text)]">
+                          {displayName}
+                        </div>
+                        <div className="app-muted mt-1 break-all font-mono text-xs tabular-nums">
+                          {row.strategy_id}
+                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <EvidenceBadge complete={row.is_ready}>

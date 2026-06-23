@@ -10,6 +10,7 @@ import {
 } from '../../../shared/format';
 import {
   formatPublicCode,
+  formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import {
@@ -22,6 +23,7 @@ import {
   type AccountTruthGateEvidence,
   type DecisionCandidate,
   type DecisionResponse,
+  type DecisionWorkflowTask,
   type SignalJournalEntry,
   type StrategyAttributionGateEvidence,
 } from '../api';
@@ -31,7 +33,12 @@ function normalizeStatus(value: string | null | undefined, locale: Locale) {
 }
 
 function decisionTone(value: string) {
-  if (value === 'passed' || value === 'attached' || value === 'live') {
+  if (
+    value === 'pass' ||
+    value === 'passed' ||
+    value === 'attached' ||
+    value === 'live'
+  ) {
     return 'success';
   }
   if (
@@ -91,6 +98,158 @@ function strategyAttributionTone(
 ) {
   const status = value?.gate_status ?? 'not_configured';
   return status === 'not_configured' ? 'neutral' : decisionTone(status);
+}
+
+type DecisionCopy = ReturnType<typeof useCopy>['decision'];
+type StrategyNameMap = Record<string, string>;
+
+type CandidateEvidenceChainItem = {
+  label: string;
+  value: string;
+  tone?: 'success' | 'warning' | 'danger' | 'neutral';
+};
+
+function strategyDisplayValue(
+  strategyId: string | null | undefined,
+  strategyNames: StrategyNameMap,
+) {
+  const normalized = strategyId?.trim();
+  if (!normalized) {
+    return '--';
+  }
+  const displayName = strategyNames[normalized] ?? normalized;
+  return displayName === normalized
+    ? normalized
+    : `${displayName} · ${normalized}`;
+}
+
+function numericEvidenceValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function candidateEvidenceChainItems(
+  candidate: DecisionCandidate,
+  locale: Locale,
+  labels: DecisionCopy,
+  strategyNames: StrategyNameMap,
+): CandidateEvidenceChainItem[] {
+  const paperShadow = candidate.evidence.paper_shadow;
+  const paperShadowActions = (paperShadow?.required_actions ?? [])
+    .map((action) => formatPublicCode(action, locale))
+    .join('；');
+  const costImpact = candidate.evidence.cost_impact;
+  const commission = numericEvidenceValue(costImpact?.total_commission);
+  const slippage = numericEvidenceValue(costImpact?.total_slippage);
+  const costStatus = formatPublicStatus(
+    costImpact?.status ?? 'missing',
+    locale,
+  );
+  const costDetail =
+    commission === null && slippage === null
+      ? costStatus
+      : `${costStatus} · ${labels.costImpactSummary(
+          formatCurrency(commission),
+          formatCurrency(slippage),
+        )}`;
+  const uncertainty = candidate.evidence.uncertainty;
+  const uncertaintyFactors = (uncertainty?.factors ?? []).map((factor) =>
+    formatPublicNote(factor, locale),
+  );
+  const uncertaintyDetail = [
+    formatPublicStatus(uncertainty?.status ?? 'pass', locale),
+    uncertaintyFactors.length
+      ? uncertaintyFactors.join('；')
+      : labels.noUncertainty,
+  ].join(' · ');
+  const certainty = candidate.evidence.certainty;
+  const certaintyStatus = certainty?.status ?? 'pass';
+  const certaintyHeadline =
+    certaintyStatus === 'blocked'
+      ? labels.certaintyBlocked
+      : certaintyStatus === 'degraded' ||
+          certainty?.posture === 'review_required'
+        ? labels.certaintyReviewRequired
+        : labels.certaintyPass;
+  const certaintyActions = (certainty?.required_actions ?? []).map((action) =>
+    formatPublicCode(action, locale),
+  );
+  const certaintyReasons = (certainty?.uncertain_reasons ?? []).map((reason) =>
+    formatPublicNote(reason, locale),
+  );
+  const certaintyDetail = [
+    certaintyHeadline,
+    ...certaintyActions,
+    ...certaintyReasons,
+  ].join(' · ');
+
+  return [
+    {
+      label: labels.strategySource,
+      value: strategyDisplayValue(
+        candidate.evidence.strategy.strategy_id,
+        strategyNames,
+      ),
+    },
+    {
+      label: labels.marketDataStatus,
+      value: formatPublicStatus(
+        candidate.evidence.data_freshness.status,
+        locale,
+      ),
+      tone: decisionTone(candidate.evidence.data_freshness.status),
+    },
+    {
+      label: labels.accountTruth,
+      value: formatPublicStatus(
+        candidate.evidence.account_truth?.gate_status ?? 'not_evaluated',
+        locale,
+      ),
+      tone: accountTruthTone(candidate.evidence.account_truth),
+    },
+    {
+      label: labels.riskStatus,
+      value: formatPublicStatus(candidate.evidence.risk_gate.status, locale),
+      tone: decisionTone(candidate.evidence.risk_gate.status),
+    },
+    {
+      label: labels.researchEvidence,
+      value: formatPublicStatus(evidenceStatus(candidate), locale),
+      tone: decisionTone(evidenceStatus(candidate)),
+    },
+    {
+      label: labels.paperShadowEvidence,
+      value: paperShadowActions
+        ? `${formatPublicStatus(
+            paperShadow?.status ?? 'not_evaluated',
+            locale,
+          )} · ${paperShadowActions}`
+        : formatPublicStatus(paperShadow?.status ?? 'not_evaluated', locale),
+      tone: decisionTone(paperShadow?.status ?? 'not_evaluated'),
+    },
+    {
+      label: labels.costImpact,
+      value: costDetail,
+      tone: decisionTone(costImpact?.status ?? 'missing'),
+    },
+    {
+      label: labels.certainty,
+      value: certaintyDetail,
+      tone: decisionTone(certaintyStatus),
+    },
+    {
+      label: labels.uncertainty,
+      value: uncertaintyDetail,
+      tone: decisionTone(uncertainty?.status ?? 'pass'),
+    },
+    {
+      label: labels.manual,
+      value: manualStatus(candidate, locale),
+      tone:
+        candidate.manual_confirmation_status === 'ready_for_manual_confirmation'
+          ? 'success'
+          : 'warning',
+    },
+  ];
 }
 
 function gateRequirementLabels(
@@ -250,6 +409,8 @@ export function DecisionCockpitPage() {
         </div>
       </section>
 
+      <DecisionWorkflowPanel lanes={lanes} />
+
       <SignalQueuePanel
         actions={signalActions.data ?? []}
         journal={signalJournal.data ?? []}
@@ -310,6 +471,115 @@ export function DecisionCockpitPage() {
   );
 }
 
+function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
+  const labels = useCopy().decision;
+  const { locale } = usePreferences();
+  const lanesWithTasks = lanes.filter(
+    (lane) => (lane.summary.workflow_tasks ?? []).length > 0,
+  );
+
+  if (lanesWithTasks.length === 0) {
+    return null;
+  }
+
+  return (
+    <section
+      data-testid="decision-workflow-tasks"
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+    >
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.workflowKicker}</div>
+            <h2 className="app-card-title mt-1.5">{labels.workflowTitle}</h2>
+          </div>
+          <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
+            {labels.workflowDetail}
+          </p>
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          {lanesWithTasks.map((lane) => {
+            const laneLabel =
+              lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
+            const tasks = [...(lane.summary.workflow_tasks ?? [])].sort(
+              (left, right) => left.priority - right.priority,
+            );
+            return (
+              <div key={`${lane.lane}-workflow`} className="min-w-0">
+                <div className="app-product-mark mb-2">{laneLabel}</div>
+                <div className="grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {tasks.map((task) => (
+                    <DecisionWorkflowTaskCard
+                      key={`${lane.lane}-${task.id}`}
+                      task={task}
+                      locale={locale}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DecisionWorkflowTaskCard({
+  task,
+  locale,
+}: {
+  task: DecisionWorkflowTask;
+  locale: Locale;
+}) {
+  const labels = useCopy().decision;
+  const actionCodes =
+    task.required_actions.length > 0
+      ? task.required_actions
+      : task.blocking_reasons;
+  const actionLabels = actionCodes.map((code) =>
+    labels.workflowActionLabel(code),
+  );
+
+  return (
+    <article className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3.5">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="break-words text-sm font-semibold text-[var(--app-text)]">
+            {labels.workflowTaskLabel(task.id)}
+          </div>
+          <div className="app-muted mt-1 text-xs">
+            {formatPublicStatus(task.status, locale)}
+          </div>
+        </div>
+        <span
+          className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full border ${
+            decisionTone(task.status) === 'success'
+              ? 'border-[var(--app-success-border)] bg-[var(--app-success)]'
+              : decisionTone(task.status) === 'danger'
+                ? 'border-[var(--app-danger-border)] bg-[var(--app-danger)]'
+                : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[var(--app-warning)]'
+          }`}
+          aria-hidden="true"
+        />
+      </div>
+      <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
+        {(actionLabels.length > 0 ? actionLabels : [labels.none]).map(
+          (label) => (
+            <span
+              key={label}
+              className="min-w-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_28%,transparent)] px-2.5 py-1 text-xs text-[var(--app-soft)]"
+            >
+              {label}
+            </span>
+          ),
+        )}
+      </div>
+    </article>
+  );
+}
+
 function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   const labels = useCopy().decision;
   return (
@@ -367,7 +637,6 @@ function SignalQueuePanel({
       actionId: action.id,
       quantity,
       price: action.price,
-      note: `Prepared from signal action ${action.id}.`,
     });
   };
 
@@ -470,9 +739,13 @@ function SignalQueuePanel({
                         {entry.signal.symbol} · {entry.signal.strategy_id}
                       </div>
                       <div className="app-muted mt-1 break-words">
-                        {entry.latest_event?.event_type ??
-                          entry.review?.outcome ??
-                          normalizeStatus(entry.action_task?.status, locale)}
+                        {formatPublicCode(
+                          entry.latest_event?.event_type ??
+                            entry.review?.outcome ??
+                            entry.action_task?.status ??
+                            '--',
+                          locale,
+                        )}
                       </div>
                       <div className="app-muted mt-1 font-mono tabular-nums">
                         {formatTimestamp(
@@ -553,10 +826,11 @@ function DecisionRegisterRow({
 
 function LaneStatusTile({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
+  const { locale } = usePreferences();
   return (
     <SummaryTile
       label={lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane}
-      value={`${labels.decision}: ${lane.decision}`}
+      value={`${labels.decision}: ${formatPublicStatus(lane.decision, locale)}`}
       detail={labels.candidateCount(lane.summary.candidate_count)}
     />
   );
@@ -624,6 +898,7 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
 
 function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
+  const { locale } = usePreferences();
   const laneLabel =
     lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
   return (
@@ -633,7 +908,7 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
           <div className="min-w-0">
             <div className="app-product-mark">{laneLabel}</div>
             <h2 className="app-card-title mt-1.5">
-              {labels.decision}: {lane.decision}
+              {labels.decision}: {formatPublicStatus(lane.decision, locale)}
             </h2>
             <p className="app-muted mt-2 break-words text-sm">
               {labels.generatedAt}: {formatTimestamp(lane.generated_at)}
@@ -698,7 +973,9 @@ function DecisionCandidateCard({
 }: {
   candidate: DecisionCandidate;
 }) {
-  const labels = useCopy().decision;
+  const copy = useCopy();
+  const labels = copy.decision;
+  const strategyNames = copy.backtest.page.strategyNames;
   const { locale } = usePreferences();
   const readyForManual =
     candidate.manual_confirmation_status === 'ready_for_manual_confirmation';
@@ -779,14 +1056,20 @@ function DecisionCandidateCard({
         />
         <EvidenceLine
           label={labels.journal}
-          value={candidate.evidence.journal.latest_event_type ?? '--'}
+          value={formatPublicCode(
+            candidate.evidence.journal.latest_event_type ?? '--',
+            locale,
+          )}
           tone={
             candidate.evidence.journal.has_journal_entry ? 'success' : 'warning'
           }
         />
         <EvidenceLine
           label={labels.strategy}
-          value={candidate.evidence.strategy.strategy_id ?? '--'}
+          value={strategyDisplayValue(
+            candidate.evidence.strategy.strategy_id,
+            strategyNames,
+          )}
         />
         <EvidenceLine
           label={labels.targetWeight}
@@ -801,7 +1084,57 @@ function DecisionCandidateCard({
           value={String(candidate.evidence.risk_gate.decision_id ?? '--')}
         />
       </div>
+
+      <CandidateEvidenceChain candidate={candidate} />
     </article>
+  );
+}
+
+function CandidateEvidenceChain({
+  candidate,
+}: {
+  candidate: DecisionCandidate;
+}) {
+  const copy = useCopy();
+  const labels = copy.decision;
+  const strategyNames = copy.backtest.page.strategyNames;
+  const { locale } = usePreferences();
+  const items = candidateEvidenceChainItems(
+    candidate,
+    locale,
+    labels,
+    strategyNames,
+  );
+  return (
+    <div className="mt-4 min-w-0 rounded-[18px] border border-[color-mix(in_srgb,var(--app-border)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_32%,transparent)] p-3">
+      <div className="text-xs font-semibold tracking-[0.08em] text-[var(--app-muted)] uppercase">
+        {labels.candidateEvidenceChain}
+      </div>
+      <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-3">
+        {items.map((item) => (
+          <EvidenceChainCell key={item.label} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceChainCell({ item }: { item: CandidateEvidenceChainItem }) {
+  const textColor =
+    item.tone === 'success'
+      ? 'text-[var(--app-success)]'
+      : item.tone === 'danger'
+        ? 'text-[var(--app-danger)]'
+        : item.tone === 'warning'
+          ? 'text-[var(--app-warning)]'
+          : 'text-[var(--app-text)]';
+  return (
+    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_38%,transparent)] px-3 py-2">
+      <div className="app-muted text-[11px]">{item.label}</div>
+      <div className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
+        {item.value}
+      </div>
+    </div>
   );
 }
 

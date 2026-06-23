@@ -252,6 +252,26 @@ test('renders the trading approvals workspace', async () => {
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 
+test('localizes generated manual-order notes without exposing action ids', async () => {
+  renderTradingPage({
+    orders: [
+      {
+        ...pendingOrder,
+        note: 'Prepared from signal action 42.',
+      },
+      {
+        ...confirmedOrder,
+        note: 'Prepared from signal action 42.',
+      },
+    ],
+  });
+
+  expect(
+    await screen.findAllByText('Prepared from Decision action queue.'),
+  ).toHaveLength(2);
+  expect(screen.queryByText('Prepared from signal action 42.')).toBeNull();
+});
+
 test('runs daily simulation review from the execution audit panel', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderTradingPage();
