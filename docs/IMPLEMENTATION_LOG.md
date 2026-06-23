@@ -1038,3 +1038,16 @@ roadmap promises.
   display formatting and regression coverage only; it does not change risk
   calculations, reconciliation math, broker behavior, order submission, or
   manual-confirmation defaults.
+* 2026-06-23: Account strategy contribution reports now expose a derived
+  strategy-health status with `healthy`, `degraded`, `stale`, `paused`, and
+  `needs_review` states, plus machine-readable reasons. The Web strategy
+  contribution card renders the health status with localized labels. This is
+  a read-only evidence and display slice; it does not change strategy
+  assignment, contribution math, risk gates, broker behavior, order
+  submission, or manual-confirmation defaults.
+* 2026-06-23: Overview ledger cards now use a shared ledger dashboard
+  presentation formatter for action titles, structured details, amounts, and
+  public notes instead of local one-off formatting helpers. This continues the
+  v1.4 shared public ledger formatter work without changing ledger storage,
+  accounting math, broker behavior, order submission, or manual-confirmation
+  defaults.

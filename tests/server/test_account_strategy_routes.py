@@ -20,6 +20,106 @@ def _route(router, path: str, method: str = "GET"):
     )
 
 
+class StrategyHealthFakeDb:
+    def __init__(
+        self,
+        *,
+        assignment_status: str = "research_only",
+        linked_fill: bool = False,
+        valuation_available: bool = True,
+        unattributed_fill: bool = False,
+    ) -> None:
+        self.assignment_status = assignment_status
+        self.linked_fill = linked_fill
+        self.valuation_available = valuation_available
+        self.unattributed_fill = unattributed_fill
+
+    def get_runtime_control_sync(self, key):
+        return {
+            "strategy_id": "dual_ma",
+            "strategy_name": "dual_ma",
+            "status": self.assignment_status,
+            "scope": "account",
+            "auto_trade_enabled": False,
+            "attribution_status": "assignment_only",
+            "limitations": [
+                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+            ],
+        }
+
+    def list_signal_journal_sync(self, limit=500, offset=0):
+        return [
+            {
+                "signal": {
+                    "id": 1,
+                    "strategy_id": "dual_ma",
+                    "symbol": "510300",
+                    "asset_class": "fund",
+                }
+            }
+        ]
+
+    def list_orders_sync(self, limit=1000, offset=0):
+        return []
+
+    def list_fills_sync(self, limit=1000, offset=0):
+        fills = []
+        if self.linked_fill:
+            fills.append(
+                {
+                    "fill_id": "FILL-HEALTH-LINKED",
+                    "order_id": "ORD-HEALTH-LINKED",
+                    "timestamp": "2026-06-18T09:35:00",
+                    "symbol": "510300",
+                    "side": "buy",
+                    "fill_price": 4.57,
+                    "fill_quantity": 100,
+                    "commission": 5.0,
+                    "slippage": 0,
+                    "asset_class": "fund",
+                    "metadata_json": '{"strategy_id":"dual_ma","source_signal_id":1}',
+                }
+            )
+        if self.unattributed_fill:
+            fills.append(
+                {
+                    "fill_id": "FILL-HEALTH-UNATTRIBUTED",
+                    "order_id": "ORD-HEALTH-UNATTRIBUTED",
+                    "timestamp": "2026-06-18T09:45:00",
+                    "symbol": "510300",
+                    "side": "buy",
+                    "fill_price": 4.58,
+                    "fill_quantity": 100,
+                    "commission": 5.0,
+                    "slippage": 0,
+                    "asset_class": "fund",
+                    "metadata_json": '{"strategy_id":"dual_ma"}',
+                }
+            )
+        return fills
+
+    def get_latest_quote_sync(self, symbol, asset_type=None):
+        if not self.valuation_available:
+            return None
+        return {"price": 4.8}
+
+    def get_ledger_entries_sync(self, limit=1000, offset=0):
+        return []
+
+    def get_cash_flows_sync(self, limit=1000, offset=0):
+        return []
+
+
+async def _strategy_contribution_response(monkeypatch, db):
+    from server.routes import account_strategy as account_strategy_routes
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    router = account_strategy_routes.create_router()
+    endpoint = _route(router, "/api/account-strategy/contribution", "GET").endpoint
+    return await endpoint()
+
+
 @pytest.mark.asyncio
 async def test_account_strategy_defaults_to_research_only_config_strategy(monkeypatch):
     from server.routes import account_strategy as account_strategy_routes
@@ -43,6 +143,43 @@ async def test_account_strategy_defaults_to_research_only_config_strategy(monkey
     assert response.limitations == [
         "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
     ]
+
+
+@pytest.mark.asyncio
+async def test_account_strategy_contribution_marks_strategy_health_states(monkeypatch):
+    cases = [
+        (
+            StrategyHealthFakeDb(linked_fill=True),
+            "healthy",
+            ["linked_fill_evidence_available"],
+        ),
+        (
+            StrategyHealthFakeDb(linked_fill=True, unattributed_fill=True),
+            "degraded",
+            ["unattributed_strategy_movement"],
+        ),
+        (
+            StrategyHealthFakeDb(linked_fill=True, valuation_available=False),
+            "stale",
+            ["valuation_missing"],
+        ),
+        (
+            StrategyHealthFakeDb(assignment_status="paused", linked_fill=True),
+            "paused",
+            ["assignment_paused"],
+        ),
+        (
+            StrategyHealthFakeDb(linked_fill=False),
+            "needs_review",
+            ["linked_fill_evidence_missing"],
+        ),
+    ]
+
+    for db, expected_status, expected_reasons in cases:
+        response = await _strategy_contribution_response(monkeypatch, db)
+
+        assert response.strategy_health_status == expected_status
+        assert response.strategy_health_reasons == expected_reasons
 
 
 @pytest.mark.asyncio

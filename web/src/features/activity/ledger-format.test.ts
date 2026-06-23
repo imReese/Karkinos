@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   formatLedgerActivitySummary,
+  formatLedgerDashboardPresentation,
   formatLedgerEvidenceReference,
   formatLedgerExplainabilityDetail,
   formatLedgerExplainabilityTitle,
@@ -114,6 +115,52 @@ describe('ledger formatter', () => {
       cashImpactLabel: '增加现金或确认回款',
       amount: '+CN¥3,000.00',
       tone: 'credit',
+    });
+  });
+
+  test('builds overview dashboard ledger presentation from shared formatter', () => {
+    const presentation = formatLedgerDashboardPresentation(
+      {
+        ...yutongBuy,
+        gross_amount: 5270,
+        net_cash_impact: -5275.16,
+        fee_breakdown: {
+          commission: '5',
+          stamp_tax: '0',
+          transfer_fee: '0.16',
+        },
+      },
+      {
+        amount: 'Amount',
+        grossAmount: 'Gross amount',
+        netCashImpact: 'Net cash impact',
+        quantity: 'Quantity',
+        price: 'Price',
+        fee: 'Fee',
+        commission: 'Commission',
+        stampTax: 'Stamp tax',
+        transferFee: 'Transfer fee',
+        otherFees: 'Other fees',
+        costBasis: 'Cost basis',
+      },
+      'en',
+      'Stock',
+    );
+
+    expect(presentation).toEqual({
+      title: 'Buy 宇通客车 600066',
+      details: [
+        'Stock',
+        'Gross amount CN¥5,270.00',
+        'Net cash impact -CN¥5,275.16',
+        'Quantity 200',
+        'Price CN¥26.35',
+        'Commission CN¥5.00',
+        'Stamp tax CN¥0.00',
+        'Transfer fee CN¥0.16',
+      ],
+      amount: 'CN¥5,270.00',
+      publicNote: null,
     });
   });
 

@@ -56,6 +56,13 @@ export type LedgerActivitySummary = {
   tone: LedgerActivitySummaryTone;
 };
 
+export type LedgerDashboardPresentation = {
+  title: string;
+  details: string[];
+  amount: string;
+  publicNote: string | null;
+};
+
 export type LedgerExecutionDetailLabels = {
   amount: string;
   grossAmount: string;
@@ -318,6 +325,28 @@ export function formatLedgerActivitySummary(
   return {
     ...labels,
     amount,
+  };
+}
+
+export function formatLedgerDashboardPresentation(
+  entry: PublicLedgerEntry,
+  labels: LedgerExecutionDetailLabels,
+  locale: Locale,
+  assetClassLabel: string,
+): LedgerDashboardPresentation {
+  const entryType = formatLedgerEntryTypeLabel(entry, locale);
+  const instrumentName = formatLedgerInstrumentLabel(entry);
+  const detailLines = formatLedgerExecutionDetailLines(
+    entry,
+    labels,
+    locale,
+  ).map((detail) => `${detail.label} ${detail.value}`);
+
+  return {
+    title: instrumentName ? `${entryType} ${instrumentName}` : entryType,
+    details: [assetClassLabel, ...detailLines],
+    amount: formatCurrency(calculateLedgerEntryAmount(entry)),
+    publicNote: formatLedgerPublicNote(entry),
   };
 }
 

@@ -5,6 +5,8 @@ import { apiClient } from '../../lib/api/client';
 export type AccountStrategyContributionReport = {
   strategy_id: string;
   contribution_status: string;
+  strategy_health_status: string;
+  strategy_health_reasons: string[];
   linked_fill_count: number;
   gross_realized_pnl: number;
   gross_unrealized_pnl: number;

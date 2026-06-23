@@ -499,6 +499,26 @@ def _cash_flow_component(db: Any) -> float | None:
     return total
 
 
+def _strategy_health_status(
+    assignment: AccountStrategyAssignment,
+    *,
+    contribution_status: str,
+    linked_fill_count: int,
+    unattributed_fill_count: int,
+    missing_valuation_symbols: list[str],
+) -> tuple[str, list[str]]:
+    assignment_status = str(assignment.status or "").lower()
+    if assignment_status in {"paused", "disabled", "inactive"}:
+        return "paused", ["assignment_paused"]
+    if contribution_status == "valuation_missing" or missing_valuation_symbols:
+        return "stale", ["valuation_missing"]
+    if linked_fill_count <= 0:
+        return "needs_review", ["linked_fill_evidence_missing"]
+    if unattributed_fill_count > 0:
+        return "degraded", ["unattributed_strategy_movement"]
+    return "healthy", ["linked_fill_evidence_available"]
+
+
 def _build_contribution_report(
     db: Any,
     assignment: AccountStrategyAssignment,
@@ -519,9 +539,21 @@ def _build_contribution_report(
         status = "valuation_missing"
     else:
         status = "estimated_from_linked_fills"
+    missing_valuation_symbols = sorted(
+        set(linked_components["missing_valuation_symbols"])
+    )
+    strategy_health_status, strategy_health_reasons = _strategy_health_status(
+        assignment,
+        contribution_status=status,
+        linked_fill_count=len(linked_fills),
+        unattributed_fill_count=len(unattributed_fills),
+        missing_valuation_symbols=missing_valuation_symbols,
+    )
     return AccountStrategyContributionReport(
         strategy_id=assignment.strategy_id,
         contribution_status=status,
+        strategy_health_status=strategy_health_status,
+        strategy_health_reasons=strategy_health_reasons,
         linked_fill_count=len(linked_fills),
         gross_realized_pnl=round(linked_components["gross_realized_pnl"], 6),
         gross_unrealized_pnl=round(linked_components["gross_unrealized_pnl"], 6),
@@ -544,9 +576,7 @@ def _build_contribution_report(
             if (cash_flow := _cash_flow_component(db)) is not None
             else None
         ),
-        missing_valuation_symbols=sorted(
-            set(linked_components["missing_valuation_symbols"])
-        ),
+        missing_valuation_symbols=missing_valuation_symbols,
         evidence_refs=[f"fill:{fill['fill_id']}" for fill in linked_fills],
         limitations=[_CONTRIBUTION_LIMITATION],
     )

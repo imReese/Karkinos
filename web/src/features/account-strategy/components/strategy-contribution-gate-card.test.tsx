@@ -34,6 +34,8 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   renderCard({
     strategy_id: 'dual_ma',
     contribution_status: 'estimated_from_linked_fills',
+    strategy_health_status: 'healthy',
+    strategy_health_reasons: ['linked_fill_evidence_available'],
     linked_fill_count: 2,
     gross_realized_pnl: 0,
     gross_unrealized_pnl: 128.5,
@@ -53,6 +55,8 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
 
   expect(screen.getByText('Strategy contribution')).toBeTruthy();
   expect(screen.getByText('Evidence-linked')).toBeTruthy();
+  expect(screen.getByText('Strategy health')).toBeTruthy();
+  expect(screen.getByText('Healthy')).toBeTruthy();
   expect(screen.getByText('Dual Moving Average · dual_ma')).toBeTruthy();
   expect(screen.getByText('Net contribution')).toBeTruthy();
   expect(screen.getByText('CN¥122.00')).toBeTruthy();
@@ -63,6 +67,8 @@ test('does not expose contribution amount when evidence chain is unsupported', (
   renderCard({
     strategy_id: 'dual_ma',
     contribution_status: 'no_linked_fills',
+    strategy_health_status: 'needs_review',
+    strategy_health_reasons: ['linked_fill_evidence_missing'],
     linked_fill_count: 0,
     gross_realized_pnl: 0,
     gross_unrealized_pnl: 0,
@@ -80,6 +86,8 @@ test('does not expose contribution amount when evidence chain is unsupported', (
 
   expect(screen.getByText('Strategy contribution')).toBeTruthy();
   expect(screen.getByText('Evidence required')).toBeTruthy();
+  expect(screen.getByText('Strategy health')).toBeTruthy();
+  expect(screen.getByText('Needs review')).toBeTruthy();
   expect(
     screen.getByText(
       'Contribution is hidden until signals, reviews, orders, and fills are linked.',

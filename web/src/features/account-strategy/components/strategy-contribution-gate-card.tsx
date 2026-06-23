@@ -39,6 +39,11 @@ export function StrategyContributionGateCard({
   const statusLabel =
     labels.accountStrategyContributionStatusMap[contributionStatus] ??
     formatPublicCode(report?.contribution_status, locale);
+  const healthStatus = (report?.strategy_health_status ??
+    'needs_review') as keyof typeof labels.accountStrategyHealthStatusMap;
+  const healthLabel =
+    labels.accountStrategyHealthStatusMap[healthStatus] ??
+    formatPublicCode(report?.strategy_health_status, locale);
   const strategyLabel = formatStrategyAuditLabel(
     report?.strategy_id,
     labels.strategyNames,
@@ -101,6 +106,10 @@ export function StrategyContributionGateCard({
               value={statusLabel}
             />
             <Metric
+              label={labels.accountStrategyHealthStatus}
+              value={healthLabel}
+            />
+            <Metric
               label={labels.accountStrategyOrdersFills}
               value={String(report.linked_fill_count)}
             />
@@ -119,6 +128,10 @@ export function StrategyContributionGateCard({
               <Metric
                 label={labels.accountStrategyContributionStatus}
                 value={statusLabel}
+              />
+              <Metric
+                label={labels.accountStrategyHealthStatus}
+                value={healthLabel}
               />
               <Metric
                 label={labels.accountStrategyOrdersFills}

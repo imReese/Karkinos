@@ -65,13 +65,9 @@ import {
   type LedgerEntry,
 } from '../features/activity/api';
 import {
-  calculateLedgerEntryAmount,
+  formatLedgerDashboardPresentation,
   formatLedgerExplainabilityDetail,
   formatLedgerExplainabilityTitle,
-  formatLedgerExecutionDetailLines,
-  formatLedgerEntryTypeLabel,
-  formatLedgerInstrumentLabel,
-  formatLedgerPublicNote,
   summarizeLedgerEntry,
 } from '../shared/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
@@ -667,7 +663,12 @@ function DashboardLedger({
       ) : (
         <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
           {entries.map((entry) => {
-            const publicNote = formatLedgerPublicNote(entry);
+            const presentation = formatLedgerDashboardPresentation(
+              entry,
+              copy.activity.feed.detailFields,
+              locale,
+              formatAssetClassLabel(entry.asset_class, copy.common),
+            );
             return (
               <div
                 key={entry.id}
@@ -676,26 +677,24 @@ function DashboardLedger({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">
-                      {formatLedgerEntryTitle(entry, locale)}
+                      {presentation.title}
                     </div>
                     <div className="app-muted mt-1 text-xs">
                       {formatTimestamp(entry.timestamp)}
                     </div>
                     <div className="app-muted mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs">
-                      {formatLedgerEntryDetails(entry, copy, locale).map(
-                        (detail) => (
-                          <span key={detail}>{detail}</span>
-                        ),
-                      )}
+                      {presentation.details.map((detail) => (
+                        <span key={detail}>{detail}</span>
+                      ))}
                     </div>
-                    {publicNote ? (
+                    {presentation.publicNote ? (
                       <div className="app-muted mt-2 break-words text-xs leading-5">
-                        {publicNote}
+                        {presentation.publicNote}
                       </div>
                     ) : null}
                   </div>
                   <div className="text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
-                    {formatLedgerEntryAmount(entry)}
+                    {presentation.amount}
                   </div>
                 </div>
               </div>
@@ -716,31 +715,6 @@ function MetricLine({ label, value }: { label: string; value: string }) {
       <div className="mt-1 font-mono font-semibold">{value}</div>
     </div>
   );
-}
-
-function formatLedgerEntryTitle(entry: LedgerEntry, locale: Locale) {
-  const entryType = formatLedgerEntryTypeLabel(entry, locale);
-  const instrumentName = formatLedgerInstrumentLabel(entry);
-  return instrumentName ? `${entryType} ${instrumentName}` : entryType;
-}
-
-function formatLedgerEntryDetails(
-  entry: LedgerEntry,
-  copy: AppCopy,
-  locale: Locale,
-) {
-  const labels = copy.activity.feed.detailFields;
-  const details = formatLedgerExecutionDetailLines(entry, labels, locale).map(
-    (detail) => `${detail.label} ${detail.value}`,
-  );
-  if (details.length > 0) {
-    return [formatAssetClassLabel(entry.asset_class, copy.common), ...details];
-  }
-  return [formatAssetClassLabel(entry.asset_class, copy.common)];
-}
-
-function formatLedgerEntryAmount(entry: LedgerEntry) {
-  return formatCurrencyValue(calculateLedgerEntryAmount(entry));
 }
 
 export function PortfolioPage() {

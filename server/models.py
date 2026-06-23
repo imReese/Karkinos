@@ -893,6 +893,8 @@ class AccountStrategyAttributionSummary(BaseModel):
 class AccountStrategyContributionReport(BaseModel):
     strategy_id: str
     contribution_status: str
+    strategy_health_status: str = "needs_review"
+    strategy_health_reasons: list[str] = Field(default_factory=list)
     linked_fill_count: int = 0
     gross_realized_pnl: float = 0.0
     gross_unrealized_pnl: float = 0.0

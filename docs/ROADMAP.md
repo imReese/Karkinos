@@ -720,7 +720,7 @@ broker-facing cost basis shown in a user's securities app.
   broker/local cost-basis difference warnings, shared ledger formatting, and
   the absence of internal entry types or raw reason codes in user-visible
   ledger surfaces.
-* [ ] Strategy health can mark assigned strategies as healthy, degraded,
+* [x] Strategy health can mark assigned strategies as healthy, degraded,
   stale, paused, or needing review.
 * [x] Manual trades and missing-evidence movement are never attributed to a
   strategy by default.
