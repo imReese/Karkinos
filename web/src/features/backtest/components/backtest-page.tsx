@@ -9,6 +9,7 @@ import {
   formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
+import { formatStrategyDisplayName as strategyDisplayName } from '../../../shared/strategy-display';
 import { BacktestReportView } from './backtest-report-view';
 import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
@@ -120,18 +121,6 @@ function buildParamValues(
 ): Record<string, string> {
   return Object.fromEntries(
     schema.map((param) => [param.name, schemaDefaultValue(param)]),
-  );
-}
-
-function strategyDisplayName(
-  strategy: BacktestStrategyInfo,
-  localizedNames: Record<string, string>,
-) {
-  return (
-    localizedNames[strategy.name] ??
-    localizedNames[strategy.strategy_id] ??
-    strategy.display_name ??
-    strategy.name
   );
 }
 
