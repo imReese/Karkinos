@@ -70,6 +70,7 @@ import {
   formatLedgerEntryTypeLabel,
   formatLedgerInstrumentLabel,
   formatLedgerPublicNote,
+  summarizeLedgerEntry,
 } from '../shared/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
@@ -2246,7 +2247,7 @@ export function MarketPage() {
   );
 }
 
-function ActivityPage() {
+export function ActivityPage() {
   const copy = useCopy();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const entries = useLedgerEntriesQuery();
@@ -2262,7 +2263,7 @@ function ActivityPage() {
   const netCashImpact = useMemo(
     () =>
       ledgerRows.reduce(
-        (total, entry) => total + calculateLedgerCashImpact(entry),
+        (total, entry) => total + (summarizeLedgerEntry(entry).cashImpact ?? 0),
         0,
       ),
     [ledgerRows],
@@ -2554,25 +2555,6 @@ function ActivityMetric({
       <div className="app-muted mt-1 text-xs leading-5">{detail}</div>
     </div>
   );
-}
-
-function calculateLedgerCashImpact(entry: LedgerEntry) {
-  const amount =
-    entry.amount ??
-    (entry.price !== null && entry.quantity !== null
-      ? entry.price * entry.quantity
-      : 0);
-  const type = entry.entry_type.trim().toLowerCase();
-  if (type === 'trade_buy' || type === 'cash_withdrawal') {
-    return -amount;
-  }
-  if (type === 'trade_sell' || type === 'cash_deposit' || type === 'dividend') {
-    return amount;
-  }
-  if (type === 'manual_adjustment') {
-    return amount;
-  }
-  return 0;
 }
 
 function PendingFundOrdersCard({

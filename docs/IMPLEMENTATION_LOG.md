@@ -894,3 +894,9 @@ roadmap promises.
   to Account Truth evidence before relying on cost-basis P/L. This is
   presentation-only audit guidance; it does not change ledger math, broker
   behavior, trading, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Moved the Activity page net-cash-impact summary onto the shared
+  public ledger summary formatter. The page now respects structured
+  `net_cash_impact` evidence and first-class cash-interest entries instead of
+  using a local `entry_type` branch. This is UI summary alignment only; it does
+  not mutate ledger entries, change broker behavior, submit orders, bypass risk
+  gates, or alter manual-confirmation defaults.
