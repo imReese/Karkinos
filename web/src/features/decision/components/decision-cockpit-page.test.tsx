@@ -842,6 +842,70 @@ test('renders localized decision workflow tasks before candidate actions', async
   ).toBeLessThan(workflow.textContent?.indexOf('策略证据') ?? -1);
 });
 
+test('uses generic review labels for unknown decision workflow action codes', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        {
+          id: 'new_backend_workflow_step',
+          priority: 10,
+          status: 'new_backend_gate_state',
+          title: 'New backend workflow step',
+          description: 'A future backend code should not leak into the UI.',
+          required_actions: ['new_backend_required_action'],
+          blocking_reasons: ['new_backend_blocking_reason'],
+          evidence: {},
+        },
+      ],
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
+
+  const workflow = await screen.findByTestId('decision-workflow-tasks');
+  expect(workflow.textContent).toContain('待人工复核项');
+  expect(workflow.textContent).toContain('待确认状态');
+  expect(workflow.textContent).not.toContain('new_backend_required_action');
+  expect(workflow.textContent).not.toContain('new_backend_workflow_step');
+  expect(workflow.textContent).not.toContain('未映射原因');
+  expect(workflow.textContent).not.toContain('未映射状态');
+});
+
+test('uses generic English review labels for unknown decision workflow action codes', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        {
+          id: 'new_backend_workflow_step',
+          priority: 10,
+          status: 'new_backend_gate_state',
+          title: 'New backend workflow step',
+          description: 'A future backend code should not leak into the UI.',
+          required_actions: ['new_backend_required_action'],
+          blocking_reasons: ['new_backend_blocking_reason'],
+          evidence: {},
+        },
+      ],
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'en' });
+
+  const workflow = await screen.findByTestId('decision-workflow-tasks');
+  expect(workflow.textContent).toContain('Review item');
+  expect(workflow.textContent).toContain('Status needs review');
+  expect(workflow.textContent).not.toContain('new_backend_required_action');
+  expect(workflow.textContent).not.toContain('New Backend Required Action');
+  expect(workflow.textContent).not.toContain('new_backend_workflow_step');
+  expect(workflow.textContent).not.toContain('New Backend Workflow Step');
+});
+
 test('shows strategy display names before internal ids in candidate evidence', async () => {
   renderDecisionCockpit();
 
