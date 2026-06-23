@@ -216,6 +216,7 @@ def _item_response(
         "status": item.status,
         "severity": item.status,
         "symbol": item.symbol,
+        "display_name": _display_name_for_item(item, events),
         "broker_value": item.broker_value,
         "karkinos_value": item.karkinos_value,
         "difference": item.difference,
@@ -228,6 +229,18 @@ def _item_response(
             _decision_response(latest_review) if latest_review is not None else None
         ),
     }
+
+
+def _display_name_for_item(
+    item: ReconciliationItem,
+    events: list[StoredBrokerEvidenceEvent],
+) -> str | None:
+    if not item.symbol:
+        return None
+    for event in events:
+        if event.symbol == item.symbol and event.instrument_name.strip():
+            return event.instrument_name
+    return None
 
 
 def _evidence_references(

@@ -114,6 +114,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
         if item["category"] == "position" and item["symbol"] == "SYN001"
     )
     assert position_item["item_key"] == "position:SYN001"
+    assert position_item["display_name"] == "合成样例股票A"
     assert position_item["broker_value"] == "100"
     assert position_item["karkinos_value"] == "0"
     assert position_item["difference"] == "100"
@@ -130,6 +131,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
         if item["category"] == "cost_basis" and item["symbol"] == "SYN001"
     )
     assert cost_basis_item["detail_code"] == "account_truth.cost_basis_compared"
+    assert cost_basis_item["display_name"] == "合成样例股票A"
     assert cost_basis_item["detail_context"] == {}
 
     assert duplicate_detail["status"] == "blocked"
