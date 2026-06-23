@@ -255,10 +255,16 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     : brokerDisplayedCostBasis !== null
       ? brokerDisplayedCostBasis - costBasis
       : null;
+  const costBasisStatus = position.broker_cost_basis_status ?? 'unavailable';
+  const isBrokerConfirmedCostBasis = costBasisStatus === 'available';
+  const isProjectedLedgerCostBasis =
+    costBasisStatus === 'projected_from_ledger';
   const hasBrokerCostBasisEvidence =
-    position.broker_cost_basis_status === 'available' &&
-    brokerDisplayedUnitCost !== null;
+    (isBrokerConfirmedCostBasis || isProjectedLedgerCostBasis) &&
+    brokerDisplayedUnitCost !== null &&
+    brokerDisplayedCostBasis !== null;
   const needsCostBasisReview =
+    isBrokerConfirmedCostBasis &&
     hasBrokerCostBasisEvidence &&
     brokerCostBasisDifference !== null &&
     Math.abs(brokerCostBasisDifference) >= 0.005;
@@ -326,11 +332,15 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const brokerCostBasisMetrics: DetailMetric[] = hasBrokerCostBasisEvidence
     ? [
         {
-          label: labels.brokerDisplayedCost,
+          label: isBrokerConfirmedCostBasis
+            ? labels.brokerDisplayedCost
+            : labels.ledgerProjectedUnitCost,
           value: formatPrice(brokerDisplayedUnitCost),
         },
         {
-          label: labels.brokerDisplayedCostBasis,
+          label: isBrokerConfirmedCostBasis
+            ? labels.brokerDisplayedCostBasis
+            : labels.ledgerProjectedCostBasis,
           value: formatCurrency(brokerDisplayedCostBasis),
         },
         {
@@ -348,6 +358,13 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             position.broker_cost_basis_method,
             labels.costBasisMethods,
           ),
+        },
+        {
+          label: labels.costBasisStatus,
+          value:
+            labels.costBasisStatuses[
+              costBasisStatus as keyof typeof labels.costBasisStatuses
+            ] ?? labels.costBasisStatuses.unavailable,
         },
       ]
     : [];

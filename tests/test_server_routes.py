@@ -6227,17 +6227,89 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     assert ledger_entry["commission"] == pytest.approx(3.0)
     assert ledger_entry["note"] == response.note
     assert ledger_entry["gross_amount"] == pytest.approx(5764.0)
-    assert ledger_entry["net_cash_impact"] == pytest.approx(-5767.0)
+    assert ledger_entry["net_cash_impact"] == pytest.approx(-5767.05764)
     assert json.loads(ledger_entry["fee_breakdown_json"]) == {
-        "commission": "3.0",
-        "stamp_tax": "0",
-        "transfer_fee": "0",
-        "other_fees": "0",
-        "total_fee": "3.0",
+        "commission": "3.00",
+        "stamp_tax": "0.000000",
+        "transfer_fee": "0.057640",
+        "other_fees": "0.000000",
+        "total_fee": "3.057640",
     }
     assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
     assert ledger_entry["fee_rule_version"] == "account_commission_rate"
     assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
+
+
+def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    trade_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
+    )
+
+    class FakeDb:
+        def __init__(self):
+            self.trades: list[dict] = []
+            self.ledger_entries: list[dict] = []
+
+        async def add_trade(self, **payload):
+            trade_id = len(self.trades) + 1
+            self.trades.insert(
+                0,
+                {
+                    "id": trade_id,
+                    **payload,
+                    "created_at": "2026-06-05T14:33:42",
+                },
+            )
+            return trade_id
+
+        def insert_ledger_entry_sync(self, **payload):
+            self.ledger_entries.append(payload)
+
+        async def get_trades(self, limit=50, offset=0):
+            return self.trades[offset : offset + limit]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            account_commission_rate=0.00025,
+            account_min_commission=3.0,
+        ),
+        scheduler=SimpleNamespace(is_running=False),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(
+        trade_route.endpoint(
+            portfolio_routes.TradeCreate(
+                timestamp="2026-06-05T14:33:41",
+                symbol="603659",
+                direction="sell",
+                quantity=200,
+                price=28.82,
+                asset_class="stock",
+            )
+        )
+    )
+
+    assert response.commission == pytest.approx(3.0)
+    ledger_entry = fake_state.db.ledger_entries[0]
+    assert ledger_entry["gross_amount"] == pytest.approx(5764.0)
+    assert ledger_entry["commission"] == pytest.approx(3.0)
+    assert ledger_entry["net_cash_impact"] == pytest.approx(5758.06036)
+    assert json.loads(ledger_entry["fee_breakdown_json"]) == {
+        "commission": "3.00",
+        "stamp_tax": "2.882000",
+        "transfer_fee": "0.057640",
+        "other_fees": "0.000000",
+        "total_fee": "5.939640",
+    }
+    assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
+    assert ledger_entry["fee_rule_version"] == "account_commission_rate"
 
 
 def test_portfolio_trade_returns_pending_when_fund_nav_not_published(

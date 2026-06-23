@@ -358,6 +358,44 @@ test('explains local average cost and broker displayed cost basis when evidence 
   ).toBeTruthy();
 });
 
+test('shows ledger-projected remaining cost without presenting it as broker-confirmed evidence', async () => {
+  renderHoldingDetail({
+    positionOverride: {
+      broker_displayed_unit_cost: 9.0261,
+      broker_displayed_cost_basis: 1805.22,
+      broker_cost_basis_difference: -196.78,
+      broker_cost_basis_method: 'broker_remaining_cost',
+      broker_cost_basis_status: 'projected_from_ledger',
+      quantity: 200,
+      avg_cost: 10.01,
+      market_value: 2500,
+      unrealized_pnl: 498,
+    },
+    liveItemOverride: {
+      quantity: 200,
+      avg_cost: 10.01,
+      market_value: 2500,
+      since_buy_pnl: 498,
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  expect(
+    await screen.findByText('Ledger-projected remaining cost'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Projected from local ledger')).toBeTruthy();
+  expect(await screen.findByText('CN¥1,805.22')).toBeTruthy();
+  expect(await screen.findByText('9.0261')).toBeTruthy();
+  expect(await screen.findByText('-CN¥196.78')).toBeTruthy();
+  expect(screen.queryByText('Broker displayed cost')).toBeNull();
+  expect(screen.queryByText('Cost basis review needed')).toBeNull();
+  expect(
+    screen.queryByText(
+      'Broker displayed cost differs from Karkinos local moving average cost. Review Account Truth evidence before relying on cost-basis P/L.',
+    ),
+  ).toBeNull();
+});
+
 test('keeps holding summary and kline regions responsive on narrow screens', async () => {
   const { container } = renderHoldingDetail();
 

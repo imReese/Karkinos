@@ -127,6 +127,65 @@ def test_build_portfolio_projection_uses_structured_trade_fee_breakdown():
     assert position.commission_paid == Decimal("5.05")
 
 
+def test_build_portfolio_projection_tracks_sell_side_net_proceeds_for_broker_cost_basis():
+    projection = build_portfolio_projection(
+        [
+            LedgerEntry(
+                entry_type="cash_deposit",
+                timestamp="2026-06-16T02:00:00+00:00",
+                amount=10000.0,
+            ),
+            LedgerEntry(
+                entry_type="trade_buy",
+                timestamp="2026-06-16T09:30:00+08:00",
+                symbol="SYN001",
+                direction="buy",
+                quantity=300.0,
+                price=10.0,
+                commission=3.0,
+                gross_amount=3000.0,
+                net_cash_impact=-3003.0,
+                fee_breakdown={
+                    "commission": "3.00",
+                    "stamp_tax": "0",
+                    "transfer_fee": "0",
+                    "total_fee": "3.00",
+                },
+            ),
+            LedgerEntry(
+                entry_type="trade_sell",
+                timestamp="2026-06-17T10:00:00+08:00",
+                symbol="SYN001",
+                direction="sell",
+                quantity=100.0,
+                price=12.0,
+                commission=1.0,
+                gross_amount=1200.0,
+                net_cash_impact=1197.78,
+                fee_breakdown={
+                    "commission": "1.00",
+                    "stamp_tax": "1.20",
+                    "transfer_fee": "0.02",
+                    "total_fee": "2.22",
+                },
+            ),
+        ],
+        latest_quotes={"SYN001": {"price": 12.5}},
+    )
+
+    position = projection.positions["SYN001"]
+    assert projection.cash == Decimal("8194.78")
+    assert position.quantity == Decimal("200.0")
+    assert position.avg_cost == Decimal("10.01")
+    assert position.realized_pnl == Decimal("196.780")
+    assert position.commission_paid == Decimal("5.22")
+    assert position.broker_displayed_cost_basis == Decimal("1805.22")
+    assert position.broker_displayed_unit_cost == Decimal("9.0261")
+    assert position.broker_cost_basis_difference == Decimal("-196.780")
+    assert position.broker_cost_basis_method == "broker_remaining_cost"
+    assert position.broker_cost_basis_status == "projected_from_ledger"
+
+
 def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
@@ -166,7 +225,9 @@ def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
-        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}, watchlist=[], instruments={}),
+        scheduler=SimpleNamespace(
+            portfolio=None, latest_quotes={}, watchlist=[], instruments={}
+        ),
         db=FakeDb(),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
@@ -233,7 +294,9 @@ def test_portfolio_route_prefers_ledger_rows_over_legacy_trade_rows(monkeypatch)
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
-        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}, watchlist=[], instruments={}),
+        scheduler=SimpleNamespace(
+            portfolio=None, latest_quotes={}, watchlist=[], instruments={}
+        ),
         db=FakeDb(),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)

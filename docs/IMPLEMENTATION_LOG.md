@@ -6,6 +6,34 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Routed manual Portfolio trade ledger writes through the
+  configured stock/ETF fee model when commission is omitted. Ledger entries now
+  store structured commission, stamp tax, transfer fee, other fee, total fee,
+  and net cash impact while the API response continues to expose the legacy
+  commission component for compatibility. Tests cover buy-side transfer fees
+  and sell-side tax/fee cash impact. This is ledger evidence alignment only; it
+  does not submit broker orders, bypass risk gates, or alter
+  manual-confirmation defaults.
+* 2026-06-23: Surfaced ledger-projected remaining cost-basis evidence in the
+  Web holding-detail valuation panel with separate labels from broker-confirmed
+  cost evidence. Holding detail now labels projected values as local
+  ledger-derived evidence, keeps broker-confirmed `available` evidence as the
+  only state that can trigger a broker cost-basis review warning, and continues
+  to show moving-average local cost separately. Frontend tests cover the
+  `projected_from_ledger` state and assert it is not rendered as broker
+  displayed cost. This is display evidence only; it does not mutate ledger
+  entries, submit broker orders, change risk gates, or alter
+  manual-confirmation defaults.
+* 2026-06-23: Added broker-style remaining cost-basis evidence to deterministic
+  portfolio ledger projections. Partial sells now reduce projected
+  broker-display-style remaining cost by net proceeds after commission, stamp
+  tax, transfer fees, and other structured trade fees, while realized P/L and
+  cash continue to use the same net cash impact math. The projected
+  cost-basis status is `projected_from_ledger`, not broker-confirmed
+  `available`, so UI surfaces can keep imported broker evidence distinct from
+  local ledger-derived estimates. This is projection evidence only; it does not
+  mutate ledger entries, submit broker orders, change risk gates, or alter
+  manual-confirmation defaults.
 * 2026-06-23: Added a shared Web instrument display helper and applied it to
   the Decision page's candidate cards, signal action queue, and signal journal
   rows. When backend evidence provides a display name, Decision surfaces now
