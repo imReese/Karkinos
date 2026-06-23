@@ -12,7 +12,8 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 
-from core.types import ZERO, AssetClass, BarFrequency, Symbol
+from core.types import ZERO, AssetClass, BarFrequency, OrderSide, Symbol
+from execution.commission import ETFCommission, FeeBreakdown, StockACommission
 from server.ledger.models import LedgerEntry
 from server.models import (
     AccountOverview,
@@ -113,21 +114,67 @@ def _account_commission_note(rate: Decimal, min_commission: Decimal) -> str:
     )
 
 
-def _resolve_account_commission(
+def _resolve_manual_trade_fee_breakdown(
     config,
     *,
     asset_class: str,
+    direction: str,
     quantity: float | None,
     price: float | None,
-) -> tuple[float, str] | None:
-    if asset_class.lower() not in {"stock", "etf"} or quantity is None or price is None:
+) -> tuple[FeeBreakdown, str] | None:
+    if quantity is None or price is None:
         return None
+
+    normalized_asset_class = asset_class.strip().lower()
+    if normalized_asset_class not in {"stock", "etf"}:
+        return None
+
     rate = _decimal_config_value(config, "account_commission_rate", "0.0001")
     min_commission = _decimal_config_value(config, "account_min_commission", "5")
-    notional = Decimal(str(quantity)) * Decimal(str(price))
-    calculated = max(notional * rate, min_commission)
-    commission = calculated.quantize(Decimal("0.01"))
-    return float(commission), _account_commission_note(rate, min_commission)
+    schedule = getattr(config, "broker_fee_schedule", None)
+    stamp_tax_rate = Decimal(str(getattr(schedule, "stamp_tax_rate", "0.0005")))
+    transfer_fee_rate = Decimal(str(getattr(schedule, "transfer_fee_rate", "0.00001")))
+    other_fee_rate = Decimal(str(getattr(schedule, "other_fee_rate", "0")))
+    limitations = tuple(
+        getattr(
+            schedule,
+            "limitations",
+            (
+                "transfer_fee_exchange_not_split",
+                "broker_regulatory_fees_assumed_absorbed",
+            ),
+        )
+    )
+
+    calculator = (
+        ETFCommission(
+            commission_rate=rate,
+            min_commission=min_commission,
+            transfer_fee_rate=transfer_fee_rate,
+            other_fee_rate=other_fee_rate,
+            fee_rule_id="manual_configured_commission",
+            limitations=limitations,
+        )
+        if normalized_asset_class == "etf"
+        else StockACommission(
+            commission_rate=rate,
+            min_commission=min_commission,
+            stamp_tax_rate=stamp_tax_rate,
+            transfer_fee_rate=transfer_fee_rate,
+            other_fee_rate=other_fee_rate,
+            fee_rule_id="manual_configured_commission",
+            limitations=limitations,
+        )
+    )
+    side = OrderSide.BUY if direction == "buy" else OrderSide.SELL
+    return (
+        calculator.breakdown(
+            side,
+            Decimal(str(price)),
+            Decimal(str(quantity)),
+        ),
+        _account_commission_note(rate, min_commission),
+    )
 
 
 def _manual_trade_fee_breakdown(commission: float) -> dict[str, str]:
@@ -140,12 +187,26 @@ def _manual_trade_fee_breakdown(commission: float) -> dict[str, str]:
     }
 
 
+def _manual_trade_fee_breakdown_dict(breakdown: FeeBreakdown) -> dict[str, str]:
+    return {
+        "commission": _fee_component_text(breakdown.commission, "0.01"),
+        "stamp_tax": _fee_component_text(breakdown.stamp_tax),
+        "transfer_fee": _fee_component_text(breakdown.transfer_fee),
+        "other_fees": _fee_component_text(breakdown.other_fees),
+        "total_fee": _fee_component_text(breakdown.total_fee),
+    }
+
+
+def _fee_component_text(value: Decimal, quantization: str = "0.000001") -> str:
+    return format(value.quantize(Decimal(quantization)), "f")
+
+
 def _manual_trade_net_cash_impact(
-    *, direction: str, gross_amount: float, commission: float
+    *, direction: str, gross_amount: float, total_fee: float
 ) -> float:
     if direction == "buy":
-        return -(gross_amount + commission)
-    return gross_amount - commission
+        return -(gross_amount + total_fee)
+    return gross_amount - total_fee
 
 
 _TIMELINE_MARKET_COMPONENTS = (
@@ -3876,6 +3937,7 @@ def create_router() -> APIRouter:
         price = body.price
         note = body.note
         commission = body.commission
+        fee_breakdown: FeeBreakdown | None = None
 
         if (
             body.asset_class == "fund"
@@ -3954,18 +4016,32 @@ def create_router() -> APIRouter:
             )
 
         if commission is None:
-            configured_commission = _resolve_account_commission(
+            configured_fee = _resolve_manual_trade_fee_breakdown(
                 state.config,
                 asset_class=body.asset_class,
+                direction=body.direction,
                 quantity=quantity,
                 price=price,
             )
-            if configured_commission is None:
+            if configured_fee is None:
                 commission = 0.0
             else:
-                commission, commission_note = configured_commission
+                fee_breakdown, commission_note = configured_fee
+                commission = float(fee_breakdown.commission)
                 if not note.strip():
                     note = commission_note
+
+        gross_amount = float(quantity) * float(price)
+        total_fee = (
+            float(fee_breakdown.total_fee)
+            if fee_breakdown is not None
+            else float(commission)
+        )
+        fee_breakdown_json = (
+            _manual_trade_fee_breakdown_dict(fee_breakdown)
+            if fee_breakdown is not None
+            else _manual_trade_fee_breakdown(commission)
+        )
 
         trade_id = await db.add_trade(
             timestamp=body.timestamp,
@@ -3980,20 +4056,20 @@ def create_router() -> APIRouter:
         db.insert_ledger_entry_sync(
             entry_type=f"trade_{body.direction}",
             timestamp=body.timestamp,
-            amount=float(quantity) * float(price),
+            amount=gross_amount,
             symbol=symbol,
             direction=body.direction,
             quantity=float(quantity),
             price=float(price),
             commission=commission,
-            gross_amount=float(quantity) * float(price),
+            gross_amount=gross_amount,
             net_cash_impact=_manual_trade_net_cash_impact(
                 direction=body.direction,
-                gross_amount=float(quantity) * float(price),
-                commission=commission,
+                gross_amount=gross_amount,
+                total_fee=total_fee,
             ),
             fee_breakdown_json=json.dumps(
-                _manual_trade_fee_breakdown(commission),
+                fee_breakdown_json,
                 ensure_ascii=False,
                 sort_keys=True,
             ),

@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from server.ledger.models import LedgerEntry
-from server.projections.models import PortfolioProjection, ProjectedPosition, ZERO
+from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
 from server.valuation.service import value_position
 
 _CASH_DEPOSIT_TYPES = {"cash_deposit", "deposit"}
@@ -279,8 +279,8 @@ def _apply_buy(
     price: Decimal,
     commission: Decimal,
 ) -> None:
-    projection.cash -= quantity * price + commission
     added_cost = quantity * price + commission
+    projection.cash -= added_cost
     if position.quantity == ZERO:
         position.avg_cost = added_cost / quantity
     else:
@@ -288,8 +288,10 @@ def _apply_buy(
         total_quantity = position.quantity + quantity
         position.avg_cost = (previous_cost + added_cost) / total_quantity
 
+    position.broker_displayed_cost_basis += added_cost
     position.quantity += quantity
     position.commission_paid += commission
+    _sync_broker_cost_basis(position)
     position.sync_available_qty()
 
 
@@ -305,18 +307,38 @@ def _apply_sell(
             f"Sell quantity {quantity} exceeds position {position.quantity} for {position.symbol}"
         )
 
-    projection.cash += quantity * price - commission
-    position.realized_pnl += (price - position.avg_cost) * quantity - commission
+    net_proceeds = quantity * price - commission
+    projection.cash += net_proceeds
+    position.realized_pnl += net_proceeds - position.avg_cost * quantity
     position.commission_paid += commission
+    position.broker_displayed_cost_basis -= net_proceeds
     position.quantity -= quantity
     if position.quantity == ZERO:
         position.avg_cost = ZERO
+        position.broker_displayed_cost_basis = ZERO
+    _sync_broker_cost_basis(position)
     position.sync_available_qty()
 
 
-def _apply_cash_income(
-    projection: PortfolioProjection, entry: LedgerEntry
-) -> None:
+def _sync_broker_cost_basis(position: ProjectedPosition) -> None:
+    if position.quantity == ZERO:
+        position.broker_displayed_unit_cost = ZERO
+        position.broker_cost_basis_difference = ZERO
+        position.broker_cost_basis_method = None
+        position.broker_cost_basis_status = None
+        return
+
+    position.broker_displayed_unit_cost = (
+        position.broker_displayed_cost_basis / position.quantity
+    )
+    position.broker_cost_basis_difference = position.broker_displayed_cost_basis - (
+        position.quantity * position.avg_cost
+    )
+    position.broker_cost_basis_method = "broker_remaining_cost"
+    position.broker_cost_basis_status = "projected_from_ledger"
+
+
+def _apply_cash_income(projection: PortfolioProjection, entry: LedgerEntry) -> None:
     amount = _require_decimal(entry.amount, "amount")
     projection.cash += amount
 
@@ -329,9 +351,7 @@ def _apply_cash_income(
         position.realized_pnl += amount
 
 
-def _apply_cash_expense(
-    projection: PortfolioProjection, entry: LedgerEntry
-) -> None:
+def _apply_cash_expense(projection: PortfolioProjection, entry: LedgerEntry) -> None:
     amount = _require_decimal(entry.amount, "amount")
     projection.cash -= amount
 
@@ -373,7 +393,9 @@ def _apply_manual_adjustment(
         if price is not None and previous_quantity > ZERO:
             previous_cost = previous_quantity * position.avg_cost
             added_cost = delta * _as_decimal(price)
-            position.avg_cost = (previous_cost + added_cost) / (previous_quantity + delta)
+            position.avg_cost = (previous_cost + added_cost) / (
+                previous_quantity + delta
+            )
         elif price is not None and previous_quantity == ZERO:
             position.avg_cost = _as_decimal(price)
     position.quantity = previous_quantity + delta
@@ -441,9 +463,7 @@ def _trade_total_fee(entry: LedgerEntry) -> Decimal:
     return total
 
 
-def _breakdown_decimal(
-    breakdown: Mapping[str, Any], *keys: str
-) -> Decimal | None:
+def _breakdown_decimal(breakdown: Mapping[str, Any], *keys: str) -> Decimal | None:
     for key in keys:
         raw = breakdown.get(key)
         if raw in {None, ""}:
