@@ -43,9 +43,7 @@ describe('ledger formatter', () => {
   });
 
   test('formats public notes without technical prefixes or duplicate symbols', () => {
-    expect(formatLedgerPublicNote(yutongBuy)).toBe(
-      '宇通客车 买入，佣金按万1.5，最低5元计收',
-    );
+    expect(formatLedgerPublicNote(yutongBuy)).toBeNull();
   });
 
   test('keeps user-authored English notes in portfolio ledger traces', () => {
@@ -55,6 +53,21 @@ describe('ledger formatter', () => {
         note: 'initial allocation',
       }),
     ).toBe('initial allocation');
+  });
+
+  test('suppresses generated trade notes that repeat structured amount fields', () => {
+    expect(
+      formatLedgerPublicNote({
+        ...yutongBuy,
+        symbol: '012710',
+        display_name: null,
+        quantity: 204.102,
+        price: 0.9799,
+        commission: 0,
+        asset_class: 'fund',
+        note: '用户记录：华夏核心成长混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
+      }),
+    ).toBeNull();
   });
 
   test('suppresses legacy internal cash-deposit notes', () => {

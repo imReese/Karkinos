@@ -335,8 +335,8 @@ test('renders overview ledger cards with shared public ledger formatting', async
 
   expect(await screen.findByText('Buy 宇通客车 600066')).toBeTruthy();
   expect(
-    await screen.findByText('宇通客车 买入，佣金按万1.5，最低5元计收'),
-  ).toBeTruthy();
+    screen.queryByText('宇通客车 买入，佣金按万1.5，最低5元计收'),
+  ).toBeNull();
   expect(screen.queryByText('trade_buy')).toBeNull();
   expect(screen.queryByText(/宇通客车 600066 600066/)).toBeNull();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();

@@ -6,6 +6,27 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Routed Decision signal-queue action details through the shared
+  public note formatter so backend research or review phrases are localized
+  before being shown in the manual-order handoff surface. Frontend coverage
+  verifies the `/api/signals/actions` path in Chinese and keeps the original
+  English evidence phrase out of the public UI. This is display formatting
+  only; it does not mutate candidate actions, manual-order payloads, broker
+  evidence, trading behavior, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Tightened the shared public ledger note formatter so generated
+  trade notes that only repeat structured amount, quantity, price, commission,
+  or fee facts are suppressed from public note fields while user-authored notes
+  remain visible. Overview and Activity tests cover the shared behavior so
+  generated ledger remarks do not duplicate structured columns. This is
+  display formatting only; it does not mutate ledger entries, broker evidence,
+  fee models, trading behavior, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Routed Activity ledger instrument cells through the shared public
+  ledger instrument formatter so the audit table shows one consistent
+  name-plus-symbol label and keeps the asset-class chip separate, instead of
+  rendering a standalone secondary symbol line. Frontend coverage verifies the
+  ActivityFeed path for fund and stock rows. This is display formatting only;
+  it does not mutate ledger entries, broker evidence, fee models, trading
+  behavior, risk gates, or manual-confirmation defaults.
 * 2026-06-23: Added shared localized fallbacks for unknown public status,
   action, and note codes so future backend snake-case values render as generic
   review labels instead of leaking internal names, title-cased raw codes, or

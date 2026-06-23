@@ -676,7 +676,7 @@ function SignalQueuePanel({
                           )}
                         </div>
                         <div className="app-muted mt-2 break-words text-xs leading-5">
-                          {action.detail}
+                          {formatPublicNote(action.detail, locale)}
                         </div>
                       </div>
                       {action.id !== null &&
