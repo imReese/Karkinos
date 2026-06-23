@@ -384,6 +384,41 @@ test('formats reconciliation values with category-aware units in Chinese locale'
   expect(within(costBasisItem).queryByText('差异 0.1')).toBeNull();
 });
 
+test('localizes known reconciliation detail text when detail_code is missing', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+            item_key: 'cost_basis:SYN001',
+            category: 'cost_basis',
+            broker_value: '8.8',
+            karkinos_value: '8.7',
+            difference: '0.1',
+            detail_code: null,
+            detail: 'Broker cost basis does not match local ledger.',
+            suggested_review_action: 'review_cost_basis_difference',
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const item = await screen.findByTestId(
+    'account-truth-item-cost_basis:SYN001',
+  );
+
+  expect(
+    within(item).getByText('券商成本价与 Karkinos 本地账本不一致。'),
+  ).toBeTruthy();
+  expect(item.textContent).not.toContain(
+    'Broker cost basis does not match local ledger.',
+  );
+});
+
 test('renders structured reconciliation detail context without raw codes', async () => {
   renderAccountTruthReviewPage(
     {
