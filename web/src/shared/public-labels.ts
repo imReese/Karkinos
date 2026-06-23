@@ -171,11 +171,11 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     net_cash_impact: 'Net cash impact',
     other_fees: 'Other fees',
     out_of_sample_validation: 'Out-of-sample validation',
-    paper_shadow_divergence_review: 'Paper/simulation divergence review',
-    paper_shadow_evidence: 'Paper/simulation evidence',
-    paper_shadow_review: 'Paper/simulation review',
+    paper_shadow_divergence_review: 'Simulation-review divergence review',
+    paper_shadow_evidence: 'Simulation-review evidence',
+    paper_shadow_review: 'Simulation review',
     paper_shadow_evidence_required_before_manual_confirmation:
-      'Paper/simulation evidence required before manual confirmation',
+      'Simulation-review evidence required before manual confirmation',
     broker_remaining_cost: 'Broker remaining-position cost',
     position: 'Position',
     position_missing: 'Position evidence is missing',
@@ -196,7 +196,7 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     review_trade_gross_amount_difference:
       'Review trade gross amount difference',
     review_transfer_fee_difference: 'Review transfer-fee difference',
-    review_paper_shadow_evidence: 'Review paper/simulation evidence',
+    review_paper_shadow_evidence: 'Review simulation evidence',
     review_risk_blockers: 'Review risk blockers',
     risk_gate_blocked: 'Risk gate is blocking action',
     risk_gate_not_checked: 'Risk gate has not checked every action',
@@ -247,11 +247,11 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     net_cash_impact: '净现金影响',
     other_fees: '其他费用',
     out_of_sample_validation: '样本外验证',
-    paper_shadow_divergence_review: '纸面/模拟差异复核',
-    paper_shadow_evidence: '纸面/模拟证据',
+    paper_shadow_divergence_review: '模拟盘差异复核',
+    paper_shadow_evidence: '模拟盘复核证据',
     paper_shadow_review: '模拟复盘',
     paper_shadow_evidence_required_before_manual_confirmation:
-      '人工确认前需要补齐纸面/模拟证据',
+      '人工确认前需要补齐模拟盘复核证据',
     broker_remaining_cost: '券商剩余持仓成本',
     position: '持仓',
     position_missing: '缺少持仓凭证',
@@ -269,7 +269,7 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     review_tax_difference: '复核税费差异',
     review_trade_gross_amount_difference: '复核成交总额差异',
     review_transfer_fee_difference: '复核过户费差异',
-    review_paper_shadow_evidence: '复核纸面/模拟证据',
+    review_paper_shadow_evidence: '复核模拟盘证据',
     review_risk_blockers: '复核风控阻断',
     risk_gate_blocked: '风控闸门正在阻断动作',
     risk_gate_not_checked: '仍有动作未完成风控检查',
@@ -360,9 +360,9 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
     'Order evidence is present, but fills are blocked.':
       'Order evidence is present, but fills are blocked.',
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.':
-      'The selected strategy is only research context until signals, reviews, and fills are attributed.',
+      'This assignment only sets research context; contribution is shown only after signals, reviews, orders, and fills are linked.',
     'Requires paper/shadow review before promotion.':
-      'Requires paper/simulation review before manual review.',
+      'Requires simulation review before manual review.',
     'Research evidence is not a profitability guarantee.':
       'Research evidence is not a profitability guarantee.',
     'Backtest evidence is not a profitability claim.':
@@ -439,9 +439,9 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
     'Order evidence is present, but fills are blocked.':
       '已有订单证据，但成交证据仍被阻断。',
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.':
-      '当前策略只作为研究上下文；需要先完成信号、复核与成交归因后，才展示策略贡献。',
+      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
     'Requires paper/shadow review before promotion.':
-      '进入人工复核前，需要完成纸面/模拟复盘。',
+      '进入人工复核前，需要完成模拟盘复盘。',
     'Research evidence is not a profitability guarantee.':
       '研究证据不代表收益保证。',
     'Backtest evidence is not a profitability claim.':

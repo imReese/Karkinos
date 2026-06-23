@@ -616,7 +616,7 @@ test('localizes decision action details before rendering the signal queue', asyn
 
   expect(
     await screen.findByText(
-      '当前策略只作为研究上下文；需要先完成信号、复核与成交归因后，才展示策略贡献。',
+      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
     ),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain(

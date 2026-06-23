@@ -750,7 +750,7 @@ export const copy = {
           'Account strategy assignment is unavailable; backtests still run as research evidence.',
         accountStrategyStatus: {
           research_only: 'Research only',
-          paper_review: 'Paper review',
+          paper_review: 'Simulation review',
           shadow_review: 'Simulation review',
           manual_confirm: 'Manual confirmation',
           disabled: 'Disabled',
@@ -857,7 +857,7 @@ export const copy = {
         evidenceGate: 'Research gates',
         evidenceGateTitle: 'Strategy validation and review status',
         evidenceGateDetail:
-          'Review after-cost, out-of-sample, risk, paper/simulation, and account-truth evidence before a strategy can enter manual review or paper/simulation. This does not enable trading.',
+          'Review after-cost, out-of-sample, risk, simulation-review, and account-truth evidence before a strategy can enter manual review or simulation review. This does not enable trading.',
         evidenceGateLoading: 'Loading strategy evidence gates.',
         evidenceGateFailed: 'Strategy evidence gates are unavailable.',
         validationMatrix: 'Validation coverage',
@@ -2391,7 +2391,7 @@ export const copy = {
           '账户策略绑定暂不可用；回测仍可作为研究证据运行。',
         accountStrategyStatus: {
           research_only: '仅研究',
-          paper_review: '纸面复核',
+          paper_review: '模拟盘复核',
           shadow_review: '模拟复盘',
           manual_confirm: '人工确认',
           disabled: '已停用',
@@ -2489,7 +2489,7 @@ export const copy = {
         evidenceGate: '研究门槛',
         evidenceGateTitle: '策略验证与复核状态',
         evidenceGateDetail:
-          '查看扣除成本后、样本外、风控、纸面/模拟与账户事实证据，判断策略是否具备进入人工复核或纸面/模拟流程的条件；不会自动上线或下单。',
+          '查看扣除成本后、样本外、风控、模拟盘复核与账户事实证据，判断策略是否具备进入人工复核或模拟盘复核流程的条件；不会自动上线或下单。',
         evidenceGateLoading: '正在加载策略证据门槛。',
         evidenceGateFailed: '策略证据门槛暂不可用。',
         validationMatrix: '验证覆盖',

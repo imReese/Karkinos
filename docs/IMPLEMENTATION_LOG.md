@@ -6,6 +6,15 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Tightened user-facing strategy assignment and simulation-review
+  labels across shared public notes, Backtest, and Decision surfaces. Raw
+  backend phrases about strategy assignment now render as localized product
+  language that explains when strategy contribution can be calculated, and
+  paper/shadow evidence labels are presented as simulation-review evidence for
+  users. Frontend tests cover the shared formatter plus Backtest and Decision
+  rendering. This is display wording only; it does not mutate strategy
+  assignment, broker behavior, risk gates, order handling, or
+  manual-confirmation defaults.
 * 2026-06-23: Added structured trade fields to portfolio explainability
   drivers and timeline events, including quantity, price, commission, gross
   amount, net cash impact, fee rule metadata, and optional fee breakdown.
@@ -1009,3 +1018,10 @@ roadmap promises.
   labels. This is label formatting only; it does not change reconciliation
   math, review decisions, ledger mutation, broker behavior, risk gates, or
   manual-confirmation defaults.
+* 2026-06-23: Paper broker fill metadata now records the structured fee
+  breakdown produced by the shared commission contract, including commission,
+  stamp tax, transfer fee, other fees, fee rule ID, and known limitations while
+  preserving the legacy total commission field for compatibility. This is
+  paper-only simulation evidence; it does not mutate the production ledger,
+  submit broker orders, bypass risk gates, or alter manual-confirmation
+  defaults.

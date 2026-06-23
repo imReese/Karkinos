@@ -73,3 +73,24 @@ test('formats research limitation notes for Chinese user-facing surfaces', () =>
     ),
   ).toBe('验证证据不构成投资建议，也不保证收益。');
 });
+
+test('formats strategy assignment and simulation notes as user-readable Chinese', () => {
+  expect(
+    formatPublicNote(
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      'zh',
+    ),
+  ).toBe(
+    '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+  );
+
+  expect(
+    formatPublicNote('Requires paper/shadow review before promotion.', 'zh'),
+  ).toBe('进入人工复核前，需要完成模拟盘复盘。');
+  expect(formatPublicCode('paper_shadow_evidence', 'zh')).toBe(
+    '模拟盘复核证据',
+  );
+  expect(formatPublicCode('review_paper_shadow_evidence', 'zh')).toBe(
+    '复核模拟盘证据',
+  );
+});
