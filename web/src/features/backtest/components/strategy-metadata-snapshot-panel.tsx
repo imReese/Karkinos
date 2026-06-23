@@ -1,6 +1,9 @@
 import { BadgeCheck, SlidersHorizontal } from 'lucide-react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences, type Locale } from '../../../app/preferences';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
+import { formatPublicNote } from '../../../shared/public-labels';
 import type {
   BacktestReport,
   StrategyMetadataSnapshot,
@@ -25,8 +28,12 @@ function formatValue(value: ParamValue | Record<string, unknown>) {
   return String(value);
 }
 
-function formatList(values: string[] | undefined, fallback: string) {
-  return values?.length ? values.join(', ') : fallback;
+function formatList(
+  values: string[] | undefined,
+  fallback: string,
+  formatter: (value: string) => string = (value) => value,
+) {
+  return values?.length ? values.map(formatter).join(', ') : fallback;
 }
 
 function translatedStrategyName(
@@ -41,6 +48,16 @@ function translatedStrategyName(
     snapshot.name ??
     snapshot.strategy_id
   );
+}
+
+function translatedStrategyAuditLabel(
+  snapshot: StrategyMetadataSnapshot,
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+) {
+  const displayName = translatedStrategyName(snapshot, labels);
+  return displayName === snapshot.strategy_id
+    ? snapshot.strategy_id
+    : `${displayName} · ${snapshot.strategy_id}`;
 }
 
 function translatedStrategyDescription(
@@ -76,8 +93,12 @@ function translatedParameterDescription(
 function translatedValidationNote(
   note: string,
   labels: ReturnType<typeof useCopy>['backtest']['page'],
+  locale: Locale,
 ) {
-  return (labels.validationNotes as Record<string, string>)[note] ?? note;
+  return (
+    (labels.validationNotes as Record<string, string>)[note] ??
+    formatPublicNote(note, locale)
+  );
 }
 
 function translatedBenchmarkRole(
@@ -89,6 +110,23 @@ function translatedBenchmarkRole(
     return fallback;
   }
   return (labels.benchmarkRoleNames as Record<string, string>)[role] ?? role;
+}
+
+function translatedFrequency(
+  frequency: string,
+  labels: ReturnType<typeof useCopy>['backtest']['strategySnapshot'],
+) {
+  const normalized = frequency.trim().toLowerCase();
+  if (['1d', 'daily', 'day'].includes(normalized)) {
+    return labels.frequencyDaily;
+  }
+  if (['1m', 'minute', 'min'].includes(normalized)) {
+    return labels.frequencyMinute;
+  }
+  if (normalized === 'tick') {
+    return labels.frequencyTick;
+  }
+  return frequency;
 }
 
 function boundsLabel(
@@ -116,8 +154,10 @@ export function StrategyMetadataSnapshotPanel({
   report: BacktestReport;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.backtest.strategySnapshot;
   const pageLabels = copy.backtest.page;
+  const commonLabels = copy.common;
   const snapshot = snapshotFromReport(report);
 
   if (!snapshot) {
@@ -147,11 +187,11 @@ export function StrategyMetadataSnapshotPanel({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SnapshotStat
-          label={labels.displayName}
-          value={translatedStrategyName(snapshot, pageLabels)}
+          label={labels.strategy}
+          value={translatedStrategyAuditLabel(snapshot, pageLabels)}
         />
         <SnapshotStat
-          label={labels.strategyId}
+          label={labels.internalStrategyId}
           value={snapshot.strategy_id}
           mono
         />
@@ -165,11 +205,19 @@ export function StrategyMetadataSnapshotPanel({
         />
         <SnapshotStat
           label={labels.universe}
-          value={formatList(snapshot.asset_universe, labels.notDeclared)}
+          value={formatList(
+            snapshot.asset_universe,
+            labels.notDeclared,
+            (item) => formatAssetClassLabel(item, commonLabels),
+          )}
         />
         <SnapshotStat
           label={labels.frequencies}
-          value={formatList(snapshot.supported_frequencies, labels.notDeclared)}
+          value={formatList(
+            snapshot.supported_frequencies,
+            labels.notDeclared,
+            (item) => translatedFrequency(item, labels),
+          )}
         />
       </div>
 
@@ -280,7 +328,9 @@ export function StrategyMetadataSnapshotPanel({
           </div>
           <ul className="mt-2 space-y-2 text-sm leading-6 text-[var(--app-text)]">
             {snapshot.validation_notes.map((note) => (
-              <li key={note}>{translatedValidationNote(note, pageLabels)}</li>
+              <li key={note}>
+                {translatedValidationNote(note, pageLabels, locale)}
+              </li>
             ))}
           </ul>
         </div>
