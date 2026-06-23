@@ -823,6 +823,14 @@ export const copy = {
           'Contribution is hidden until signals, reviews, orders, and fills are linked.',
         accountStrategyEvidenceRefs: 'Evidence refs',
         accountStrategyContributionStatus: 'Contribution status',
+        accountStrategyHealthStatus: 'Strategy health',
+        accountStrategyHealthStatusMap: {
+          healthy: 'Healthy',
+          degraded: 'Degraded',
+          stale: 'Stale',
+          paused: 'Paused',
+          needs_review: 'Needs review',
+        },
         accountStrategyContributionStatusMap: {
           no_linked_fills: 'No linked fills',
           valuation_missing: 'Valuation missing',
@@ -2456,6 +2464,14 @@ export const copy = {
           '策略贡献会在信号、复核、订单与成交链路连接后展示。',
         accountStrategyEvidenceRefs: '证据引用',
         accountStrategyContributionStatus: '贡献状态',
+        accountStrategyHealthStatus: '策略健康',
+        accountStrategyHealthStatusMap: {
+          healthy: '健康',
+          degraded: '降级',
+          stale: '证据陈旧',
+          paused: '已暂停',
+          needs_review: '需要复核',
+        },
         accountStrategyContributionStatusMap: {
           no_linked_fills: '暂无可归属成交',
           valuation_missing: '缺少估值',
