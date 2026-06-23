@@ -4691,12 +4691,22 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
 
     assert response.equity_bridge[-1].label == "Total Equity"
     assert response.recent_drivers[0].title == "买入 贵州茅台 600519"
-    assert response.recent_drivers[0].detail == "数量 100 · 价格 ¥10.00 · 手续费 ¥3.00"
+    assert response.recent_drivers[0].detail == "first build"
+    assert response.recent_drivers[0].quantity == pytest.approx(100.0)
+    assert response.recent_drivers[0].price == pytest.approx(10.0)
+    assert response.recent_drivers[0].commission == pytest.approx(3.0)
+    assert response.recent_drivers[0].gross_amount == pytest.approx(1000.0)
+    assert response.recent_drivers[0].net_cash_impact == pytest.approx(-1003.0)
     assert response.recent_drivers[0].amount == pytest.approx(-1003.0)
     assert response.positions[0].symbol == "600519"
     assert response.timeline[-1].date == "2026-04-18"
     assert response.timeline[-1].events[0].title == "买入 贵州茅台 600519"
-    assert response.timeline[-1].events[0].detail == "数量 100 · 价格 ¥10.00"
+    assert response.timeline[-1].events[0].detail == "first build"
+    assert response.timeline[-1].events[0].quantity == pytest.approx(100.0)
+    assert response.timeline[-1].events[0].price == pytest.approx(10.0)
+    assert response.timeline[-1].events[0].commission == pytest.approx(3.0)
+    assert response.timeline[-1].events[0].gross_amount == pytest.approx(1000.0)
+    assert response.timeline[-1].events[0].net_cash_impact == pytest.approx(-1003.0)
     assert response.timeline[-1].market_pnl == 600
 
 

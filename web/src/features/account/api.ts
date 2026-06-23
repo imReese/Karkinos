@@ -124,6 +124,15 @@ export type ExplainabilityDriver = {
   timestamp: string;
   symbol: string | null;
   amount: number | null;
+  quantity?: number | null;
+  price?: number | null;
+  commission?: number | null;
+  gross_amount?: number | null;
+  net_cash_impact?: number | null;
+  fee_breakdown?: Record<string, number | string | null | undefined> | null;
+  fee_rule_id?: string | null;
+  fee_rule_version?: string | null;
+  asset_class?: string | null;
 };
 
 export type ExplainabilityPositionDriver = {
@@ -169,6 +178,15 @@ export type ExplainabilityResponse = {
       timestamp: string;
       symbol: string | null;
       amount: number | null;
+      quantity?: number | null;
+      price?: number | null;
+      commission?: number | null;
+      gross_amount?: number | null;
+      net_cash_impact?: number | null;
+      fee_breakdown?: Record<string, number | string | null | undefined> | null;
+      fee_rule_id?: string | null;
+      fee_rule_version?: string | null;
+      asset_class?: string | null;
     }>;
   }>;
 };

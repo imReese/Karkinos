@@ -82,6 +82,15 @@ export type LedgerExplainabilityItem = {
   timestamp?: string;
   symbol?: string | null;
   amount?: number | null;
+  quantity?: number | null;
+  price?: number | null;
+  commission?: number | null;
+  gross_amount?: number | null;
+  net_cash_impact?: number | null;
+  fee_breakdown?: Record<string, number | string | null | undefined> | null;
+  fee_rule_id?: string | null;
+  fee_rule_version?: string | null;
+  asset_class?: string | null;
 };
 
 const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
@@ -121,6 +130,38 @@ const ENTRY_TYPE_LABELS: Record<Locale, Record<LedgerSummaryKind, string>> = {
     dividend: '分红',
     manual_adjustment: '手动调整',
     other: '账本变动',
+  },
+};
+
+const EXPLAINABILITY_DETAIL_LABELS: Record<
+  Locale,
+  LedgerExecutionDetailLabels
+> = {
+  en: {
+    amount: 'Amount',
+    grossAmount: 'Gross amount',
+    netCashImpact: 'Cash impact',
+    quantity: 'Quantity',
+    price: 'Price',
+    fee: 'Fee',
+    commission: 'Commission',
+    stampTax: 'Stamp tax',
+    transferFee: 'Transfer fee',
+    otherFees: 'Other fees',
+    costBasis: 'Cost basis',
+  },
+  zh: {
+    amount: '金额',
+    grossAmount: '成交金额',
+    netCashImpact: '现金影响',
+    quantity: '数量',
+    price: '价格',
+    fee: '手续费',
+    commission: '佣金',
+    stampTax: '印花税',
+    transferFee: '过户费',
+    otherFees: '其他费用',
+    costBasis: '成本价',
   },
 };
 
@@ -364,9 +405,16 @@ export function formatLedgerExplainabilityDetail(
     { ...item, title: undefined },
     instrumentNames,
   );
+  const structuredDetails = isTradeLedgerEntry(entry)
+    ? formatLedgerExecutionDetailLines(
+        entry,
+        EXPLAINABILITY_DETAIL_LABELS[locale],
+        locale,
+      ).map((line) => `${line.label} ${line.value}`)
+    : [];
   const publicNote = formatLedgerPublicNote(entry);
-  if (publicNote) {
-    return publicNote;
+  if (structuredDetails.length > 0 || publicNote) {
+    return [...structuredDetails, publicNote].filter(Boolean).join(' · ');
   }
 
   switch (item.kind) {
@@ -437,6 +485,13 @@ export function formatLedgerExecutionDetailLines(
     hasStructuredCosts ? labels.grossAmount : labels.amount,
     formatCurrency(finiteNumber(entry.gross_amount ?? entry.amount)),
   );
+  if (hasStructuredCosts) {
+    addLine(
+      lines,
+      labels.netCashImpact,
+      formatCurrency(finiteNumber(entry.net_cash_impact)),
+    );
+  }
   addLine(lines, labels.quantity, formatQuantity(finiteNumber(entry.quantity)));
   addLine(lines, labels.price, formatCurrency(finiteNumber(entry.price)));
 
@@ -551,10 +606,15 @@ function toExplainabilityLedgerEntry(
         : item.kind === 'trade_sell'
           ? 'sell'
           : null,
-    quantity: null,
-    price: null,
-    commission: 0,
-    asset_class: 'other',
+    quantity: item.quantity ?? null,
+    price: item.price ?? null,
+    commission: item.commission ?? null,
+    gross_amount: item.gross_amount ?? null,
+    net_cash_impact: item.net_cash_impact ?? null,
+    fee_breakdown: item.fee_breakdown ?? null,
+    fee_rule_id: item.fee_rule_id ?? null,
+    fee_rule_version: item.fee_rule_version ?? null,
+    asset_class: item.asset_class ?? 'other',
     note: [item.title, item.detail].filter(Boolean).join(' | '),
     source: 'explainability',
     source_ref: null,
@@ -646,6 +706,11 @@ function isFundLedgerEntry(entry: PublicLedgerEntry) {
   return entry.asset_class?.trim().toLowerCase() === 'fund';
 }
 
+function isTradeLedgerEntry(entry: PublicLedgerEntry) {
+  const kind = normalizeLedgerKind(entry.entry_type);
+  return kind === 'trade_buy' || kind === 'trade_sell';
+}
+
 function isTechnicalNoteSegment(segment: string) {
   return (
     /(^|\s)[a-z][a-z0-9_]*=/i.test(segment) ||
@@ -693,7 +758,11 @@ function isGeneratedStructuredTradeNote(
       normalized.startsWith(`${prefix}申购`) ||
       normalized.startsWith(`${prefix}赎回`),
   );
-  if (!startsWithInstrument) {
+  const startsWithStructuredFact =
+    /^(?:数量|价格|手续费|佣金|份额|金额|成交|quantity\b|price\b|fee\b|commission\b|amount\b)/i.test(
+      normalized,
+    );
+  if (!startsWithInstrument && !startsWithStructuredFact) {
     return false;
   }
 
@@ -702,6 +771,9 @@ function isGeneratedStructuredTradeNote(
   const structuredFactPattern =
     /(佣金|手续费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|元|gross|amount|quantity|price|fee|commission|subscription|redemption)/i;
 
+  if (startsWithStructuredFact) {
+    return structuredFactPattern.test(normalized);
+  }
   return (
     directionPattern.test(normalized) && structuredFactPattern.test(normalized)
   );
