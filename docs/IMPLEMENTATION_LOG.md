@@ -6,6 +6,16 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Routed Backtest validation-evidence OOS strategy labels through
+  the shared strategy audit formatter, so research evidence panels show the
+  localized strategy name before the internal strategy id, and added localized
+  benchmark-role copy for generic trend-following evidence. The same panel now
+  renders assumption and limitation notes through the shared public-note
+  formatter. Frontend coverage verifies the OOS evidence panel no longer
+  renders a bare strategy id, raw benchmark role, or raw English investment
+  advice limitation as the public evidence value. This is display formatting
+  only; it does not mutate strategy metadata, research evidence, trading
+  behavior, risk gates, broker behavior, or manual-confirmation defaults.
 * 2026-06-23: Routed Decision strategy-attribution gate summaries through the
   shared strategy display-name map, so strategy names appear before internal
   ids in user-facing decision evidence. Frontend coverage verifies the gate
