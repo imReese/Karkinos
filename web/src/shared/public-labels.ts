@@ -379,6 +379,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'Parameter sweep rankings are research evidence, not investment advice.',
     'Strategy comparison results are research evidence, not investment advice.':
       'Strategy comparison results are research evidence, not investment advice.',
+    'Reviewed from Account Truth center.':
+      'Recorded from the Account Truth review center.',
   },
   zh: {
     'account_truth.no_broker_evidence': '尚未导入可用于复核的券商证据。',
@@ -460,6 +462,7 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '参数扫描排名只是研究证据，不构成投资建议。',
     'Strategy comparison results are research evidence, not investment advice.':
       '策略对比结果只是研究证据，不构成投资建议。',
+    'Reviewed from Account Truth center.': '已从账户事实复核中心记录人工处理。',
   },
 };
 

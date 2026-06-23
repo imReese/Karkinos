@@ -75,6 +75,7 @@ const reportDetail = {
       status: 'mismatch',
       severity: 'mismatch',
       symbol: 'SYN001',
+      display_name: '合成样例股票A',
       broker_value: '100',
       karkinos_value: '0',
       difference: '100',
@@ -235,7 +236,7 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   });
 
   const item = await screen.findByTestId('account-truth-item-position:SYN001');
-  expect(within(item).getByText('SYN001')).toBeTruthy();
+  expect(within(item).getByText('合成样例股票A SYN001')).toBeTruthy();
   expect(within(item).getByText('Position')).toBeTruthy();
   expect(within(item).queryByText('position')).toBeNull();
   expect(within(item).getByText('Broker 100 shares')).toBeTruthy();
@@ -417,6 +418,44 @@ test('localizes known reconciliation detail text when detail_code is missing', a
   expect(item.textContent).not.toContain(
     'Broker cost basis does not match local ledger.',
   );
+});
+
+test('localizes latest review notes without showing backend operational text', async () => {
+  renderAccountTruthReviewPage(
+    {
+      reportDetailResponse: {
+        ...reportDetail,
+        items: [
+          {
+            ...reportDetail.items[0],
+            latest_review: {
+              id: 7,
+              import_run_id: 'import-run-1',
+              item_key: 'position:SYN001',
+              category: 'position',
+              symbol: 'SYN001',
+              review_status: 'known_difference',
+              note: 'Reviewed from Account Truth center.',
+              reviewer: 'local',
+              schema_version: 'karkinos.account_truth.manual_review.v1',
+              created_at: '2026-06-18T10:12:00+08:00',
+              updated_at: '2026-06-18T10:12:00+08:00',
+              does_not_mutate_production_ledger: true,
+            },
+          },
+        ],
+      },
+    },
+    { locale: 'zh' },
+  );
+
+  const item = await screen.findByTestId('account-truth-item-position:SYN001');
+
+  expect(within(item).getByText('最近复核: 已知差异')).toBeTruthy();
+  expect(
+    within(item).getByText('已从账户事实复核中心记录人工处理。'),
+  ).toBeTruthy();
+  expect(item.textContent).not.toContain('Reviewed from Account Truth center.');
 });
 
 test('renders structured reconciliation detail context without raw codes', async () => {

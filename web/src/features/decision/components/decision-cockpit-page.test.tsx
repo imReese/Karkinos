@@ -569,8 +569,10 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
     (await screen.findAllByText('Strategy attribution gate')).length,
   ).toBeGreaterThan(0);
   expect(
-    (await screen.findAllByText('Blocked · dual_ma')).length,
+    (await screen.findAllByText('Blocked · Dual Moving Average · dual_ma'))
+      .length,
   ).toBeGreaterThan(0);
+  expect(screen.queryByText('Blocked · dual_ma')).toBeNull();
   expect(
     await screen.findByText(
       /Link strategy signals, reviews, orders, fills, and contribution evidence/,

@@ -6,6 +6,28 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Routed Decision strategy-attribution gate summaries through the
+  shared strategy display-name map, so strategy names appear before internal
+  ids in user-facing decision evidence. Frontend coverage verifies the gate
+  shows the localized strategy label with the internal id secondary. This is
+  display formatting only; it does not mutate strategy assignment, broker
+  behavior, risk gates, order handling, or manual-confirmation defaults.
+* 2026-06-23: Routed Account Truth latest-review notes through the shared
+  public operational-note formatter and displayed the localized note under the
+  latest review status. Historical backend review notes such as Account Truth
+  center audit remarks no longer need to appear as raw English operational
+  text in the Chinese review surface. Frontend coverage verifies the localized
+  note rendering. This is display formatting only; it does not mutate manual
+  review decisions, broker evidence, production ledger entries, trading
+  behavior, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Added broker-evidence instrument names to Account Truth
+  reconciliation detail responses and routed the review item title through the
+  shared instrument display helper, so review cards show the instrument name
+  before the symbol when broker evidence provides it. Backend and frontend
+  tests cover the detail payload and Account Truth review rendering. This is
+  display evidence only; it does not mutate reconciliation math, broker
+  evidence, production ledger entries, trading behavior, risk gates, or
+  manual-confirmation defaults.
 * 2026-06-23: Tightened user-facing strategy assignment and simulation-review
   labels across shared public notes, Backtest, and Decision surfaces. Raw
   backend phrases about strategy assignment now render as localized product

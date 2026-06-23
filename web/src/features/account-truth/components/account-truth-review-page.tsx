@@ -6,9 +6,11 @@ import {
   formatDateTime,
   formatQuantity,
 } from '../../../shared/format';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
   formatPublicCode,
   formatPublicNote,
+  formatPublicOperationalNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import { formatLedgerEvidenceReference } from '../../../shared/ledger-format';
@@ -668,6 +670,16 @@ function ReviewItemCard({
   onReview: (status: ReviewStatus) => void;
 }) {
   const text = labels[locale];
+  const itemTitle = item.symbol
+    ? formatInstrumentDisplayLabel({
+        symbol: item.symbol,
+        display_name: item.display_name ?? null,
+      })
+    : formatCode(item.category, locale, 'code');
+  const latestReviewNote = formatPublicOperationalNote(
+    item.latest_review?.note,
+    locale,
+  );
   const detailContextEntries = Object.entries(item.detail_context ?? {}).filter(
     ([, value]) => value.trim().length > 0,
   );
@@ -681,7 +693,7 @@ function ReviewItemCard({
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <StatusBadge status={item.status} locale={locale} />
             <span className="text-lg font-black text-[var(--app-text)]">
-              {item.symbol || formatCode(item.category, locale, 'code')}
+              {itemTitle}
             </span>
             <span className="rounded-full bg-[var(--app-surface-0)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]">
               {formatCode(item.category, locale, 'code')}
@@ -768,8 +780,15 @@ function ReviewItemCard({
 
       {item.latest_review ? (
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] p-3 text-sm font-bold text-[var(--app-success)]">
-          {text.latestReview}:{' '}
-          {formatPublicStatus(item.latest_review.review_status, locale)}
+          <div>
+            {text.latestReview}:{' '}
+            {formatPublicStatus(item.latest_review.review_status, locale)}
+          </div>
+          {latestReviewNote ? (
+            <div className="mt-1 text-xs font-semibold leading-5 text-[var(--app-soft)]">
+              {latestReviewNote}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

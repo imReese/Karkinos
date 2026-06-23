@@ -87,6 +87,7 @@ export type ReconciliationItem = {
   status: ReconciliationStatus;
   severity: string;
   symbol: string;
+  display_name?: string | null;
   broker_value: string;
   karkinos_value: string;
   difference: string;

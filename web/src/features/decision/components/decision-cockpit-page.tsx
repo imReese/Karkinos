@@ -93,9 +93,13 @@ function accountTruthTone(value: AccountTruthGateEvidence | null | undefined) {
 function strategyAttributionValue(
   value: StrategyAttributionGateEvidence | null | undefined,
   locale: Locale,
+  strategyNames: StrategyNameMap,
 ) {
   const status = value?.gate_status ?? 'not_configured';
-  return `${normalizeStatus(status, locale)} · ${value?.strategy_id ?? '--'}`;
+  const strategyLabel = value?.strategy_id
+    ? formatStrategyAuditLabel(value.strategy_id, strategyNames)
+    : '--';
+  return `${normalizeStatus(status, locale)} · ${strategyLabel}`;
 }
 
 function strategyAttributionTone(
@@ -338,6 +342,7 @@ export function DecisionCockpitPage() {
         value: strategyAttributionValue(
           today.data?.summary.strategy_attribution,
           locale,
+          copy.backtest.page.strategyNames,
         ),
         tone: strategyAttributionTone(today.data?.summary.strategy_attribution),
       },
@@ -860,7 +865,8 @@ function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
 }
 
 function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
-  const labels = useCopy().decision;
+  const copy = useCopy();
+  const labels = copy.decision;
   const { locale } = usePreferences();
   const strategyAttribution = lane.summary.strategy_attribution;
   const requiredActions = strategyAttribution?.required_actions ?? [];
@@ -886,7 +892,11 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
   return (
     <SummaryTile
       label={labels.strategyAttributionGate}
-      value={strategyAttributionValue(strategyAttribution, locale)}
+      value={strategyAttributionValue(
+        strategyAttribution,
+        locale,
+        copy.backtest.page.strategyNames,
+      )}
       detail={detailItems.length > 0 ? detailItems.join(' · ') : labels.none}
     />
   );
