@@ -963,6 +963,7 @@ export function PortfolioPage() {
 
 export function RiskPage() {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const state = useAccountStateQuery();
   const risks = useRiskSummaryQuery();
   const workspace = useRiskWorkspaceQuery();
@@ -974,6 +975,29 @@ export function RiskPage() {
     to_date: timelineToDate || undefined,
     event_kind: timelineEventKind || undefined,
   });
+  const instrumentNames = useMemo(() => {
+    const names = new Map<string, string>();
+    const remember = (
+      symbol: string | null | undefined,
+      displayName: string | null | undefined,
+    ) => {
+      const normalizedSymbol = symbol?.trim();
+      const normalizedName = displayName?.trim();
+      if (!normalizedSymbol || !normalizedName) {
+        return;
+      }
+      names.set(normalizedSymbol.toLowerCase(), normalizedName);
+    };
+    const snapshot = state.data?.snapshot;
+    snapshot?.allocation.forEach((item) => remember(item.symbol, item.name));
+    snapshot?.allocation_grouped.forEach((group) =>
+      group.items.forEach((item) => remember(item.symbol, item.name)),
+    );
+    snapshot?.positions.forEach((position) =>
+      remember(position.symbol, position.display_name ?? position.name),
+    );
+    return names;
+  }, [state.data?.snapshot]);
 
   return (
     <section className="space-y-5 sm:space-y-6">
@@ -1054,11 +1078,11 @@ export function RiskPage() {
                             {item.title}
                           </div>
                           <div className="app-muted mt-1 break-all text-xs">
-                            {item.kind}
+                            {getRiskAlertKindLabel(copy, item.kind)}
                           </div>
                         </div>
                         <span className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em]">
-                          {item.level}
+                          {formatRiskAlertLevel(item.level, locale)}
                         </span>
                       </div>
                       <div className="mt-3 break-words text-sm opacity-90">
@@ -1176,6 +1200,7 @@ export function RiskPage() {
             emptyLabel={copy.riskPage.emptyDrivers}
             explainability={explainability.data}
             loading={explainability.isLoading}
+            instrumentNames={instrumentNames}
             filters={
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="grid gap-2">
@@ -2666,6 +2691,7 @@ function ExplainabilityWorkspace({
   emptyLabel,
   explainability,
   loading,
+  instrumentNames,
   filters,
   showReturnCalendar = false,
 }: {
@@ -2718,6 +2744,7 @@ function ExplainabilityWorkspace({
       }
     | undefined;
   loading: boolean;
+  instrumentNames?: Map<string, string>;
   filters?: ReactNode;
   showReturnCalendar?: boolean;
 }) {
@@ -2802,7 +2829,11 @@ function ExplainabilityWorkspace({
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0 text-sm font-semibold leading-6">
-                      {formatExplainabilityPublicTitle(item, locale)}
+                      {formatExplainabilityPublicTitle(
+                        item,
+                        locale,
+                        instrumentNames,
+                      )}
                     </div>
                     {typeof item.amount === 'number' ? (
                       <div
@@ -2818,9 +2849,17 @@ function ExplainabilityWorkspace({
                       </div>
                     ) : null}
                   </div>
-                  {formatExplainabilityPublicDetail(item, locale) ? (
+                  {formatExplainabilityPublicDetail(
+                    item,
+                    locale,
+                    instrumentNames,
+                  ) ? (
                     <div className="app-muted mt-2 break-words text-sm leading-6">
-                      {formatExplainabilityPublicDetail(item, locale)}
+                      {formatExplainabilityPublicDetail(
+                        item,
+                        locale,
+                        instrumentNames,
+                      )}
                     </div>
                   ) : null}
                   {item.timestamp ? (
@@ -2844,7 +2883,12 @@ function ExplainabilityWorkspace({
                   className="app-panel-strong rounded-2xl px-4 py-4"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">{item.symbol}</div>
+                    <div className="text-sm font-semibold">
+                      {formatInstrumentDisplayLabel(
+                        item.symbol,
+                        instrumentNames,
+                      )}
+                    </div>
                     <div className="text-sm font-medium">
                       {formatCurrency(item.market_value)}
                     </div>
@@ -2919,14 +2963,26 @@ function ExplainabilityWorkspace({
                           className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2"
                         >
                           <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                            {formatExplainabilityPublicTitle(event, locale)} ·{' '}
-                            {getEventKindLabel(copy, event.kind)} ·{' '}
+                            {formatExplainabilityPublicTitle(
+                              event,
+                              locale,
+                              instrumentNames,
+                            )}{' '}
+                            · {getEventKindLabel(copy, event.kind)} ·{' '}
                             {getEventCategoryLabel(copy, event.category)} ·{' '}
                             {getImpactSourceLabel(copy, event.impact_source)}
                           </div>
-                          {formatExplainabilityPublicDetail(event, locale) ? (
+                          {formatExplainabilityPublicDetail(
+                            event,
+                            locale,
+                            instrumentNames,
+                          ) ? (
                             <div className="app-muted mt-1 text-xs leading-5">
-                              {formatExplainabilityPublicDetail(event, locale)}
+                              {formatExplainabilityPublicDetail(
+                                event,
+                                locale,
+                                instrumentNames,
+                              )}
                             </div>
                           ) : null}
                         </div>
@@ -4142,14 +4198,18 @@ type ExplainabilityPublicDetailInput = {
   amount?: number | null;
 };
 
-function toExplainabilityLedgerEntry(item: ExplainabilityPublicDetailInput) {
+function toExplainabilityLedgerEntry(
+  item: ExplainabilityPublicDetailInput,
+  instrumentNames?: Map<string, string>,
+) {
+  const symbol = item.symbol?.trim() ?? null;
   return {
     id: 0,
     entry_type: item.kind ?? 'other',
     timestamp: item.timestamp ?? '',
     amount: item.amount ?? null,
-    symbol: item.symbol ?? null,
-    display_name: null,
+    symbol,
+    display_name: resolveInstrumentName(symbol, instrumentNames),
     direction:
       item.kind === 'trade_buy'
         ? 'buy'
@@ -4182,11 +4242,12 @@ function isGeneratedExplainabilityTitle(item: ExplainabilityPublicDetailInput) {
 function formatExplainabilityPublicTitle(
   item: ExplainabilityPublicDetailInput,
   locale: Locale,
+  instrumentNames?: Map<string, string>,
 ) {
   if (!isGeneratedExplainabilityTitle(item) && item.title) {
     return item.title;
   }
-  const entry = toExplainabilityLedgerEntry(item);
+  const entry = toExplainabilityLedgerEntry(item, instrumentNames);
   const entryType = formatLedgerEntryTypeLabel(entry, locale);
   const instrument = formatLedgerInstrumentLabel(entry);
   return instrument ? `${entryType} ${instrument}` : entryType;
@@ -4195,8 +4256,12 @@ function formatExplainabilityPublicTitle(
 function formatExplainabilityPublicDetail(
   item: ExplainabilityPublicDetailInput,
   locale: Locale,
+  instrumentNames?: Map<string, string>,
 ) {
-  const entry = toExplainabilityLedgerEntry({ ...item, title: undefined });
+  const entry = toExplainabilityLedgerEntry(
+    { ...item, title: undefined },
+    instrumentNames,
+  );
   const publicNote = formatLedgerPublicNote(entry);
   if (publicNote) {
     return publicNote;
@@ -4218,6 +4283,28 @@ function formatExplainabilityPublicDetail(
     default:
       return item.detail || null;
   }
+}
+
+function resolveInstrumentName(
+  symbol: string | null | undefined,
+  instrumentNames?: Map<string, string>,
+) {
+  const normalizedSymbol = symbol?.trim();
+  if (!normalizedSymbol) {
+    return null;
+  }
+  return instrumentNames?.get(normalizedSymbol.toLowerCase()) ?? null;
+}
+
+function formatInstrumentDisplayLabel(
+  symbol: string,
+  instrumentNames?: Map<string, string>,
+) {
+  const name = resolveInstrumentName(symbol, instrumentNames);
+  if (!name || name === symbol) {
+    return symbol;
+  }
+  return `${name} ${symbol}`;
 }
 
 function ReturnCalendarGrid({
@@ -4963,6 +5050,43 @@ function getRiskMetricDetail(copy: AppCopy, value: string) {
     default:
       return value;
   }
+}
+
+function getRiskAlertKindLabel(copy: AppCopy, value: string) {
+  switch (value) {
+    case 'cash_buffer':
+      return copy.overview.risk.cashBuffer;
+    case 'concentration':
+    case 'largest_weight':
+      return copy.overview.risk.concentration;
+    case 'gross_exposure':
+    case 'capital_deployment':
+      return copy.overview.risk.deployment;
+    case 'current_drawdown':
+      return copy.riskPage.currentDrawdown;
+    case 'max_drawdown':
+      return copy.riskPage.maxDrawdown;
+    case 'market_data':
+      return copy.decision.marketData;
+    case 'manual_confirmation':
+      return copy.overview.risk.manualConfirmationRequired;
+    default:
+      return value;
+  }
+}
+
+function formatRiskAlertLevel(level: string, locale: Locale) {
+  const normalized = level.trim().toLowerCase();
+  if (normalized === 'medium') {
+    return formatPublicStatus('warning', locale);
+  }
+  if (normalized === 'high') {
+    return formatPublicStatus('blocked', locale);
+  }
+  if (normalized === 'low') {
+    return formatPublicStatus('review_required', locale);
+  }
+  return formatPublicStatus(level, locale);
 }
 
 function getRiskBucketLabel(copy: AppCopy, value: string) {

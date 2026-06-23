@@ -28,7 +28,22 @@ const accountState = {
     cash: 24000,
     total_equity: 120000,
     total_deposits: 100000,
-    positions: [],
+    positions: [
+      {
+        symbol: '600066',
+        name: '宇通客车',
+        display_name: '宇通客车',
+        asset_class: 'stock',
+        quantity: 200,
+        available_qty: 200,
+        frozen_qty: 0,
+        avg_cost: 26.3758,
+        market_value: 5272,
+        unrealized_pnl: -3.16,
+        realized_pnl: 0,
+        commission_paid: 5.16,
+      },
+    ],
     allocation: [
       {
         symbol: '600519',
@@ -89,7 +104,7 @@ const explainability = {
   recent_drivers: [
     {
       kind: 'trade_buy',
-      title: '买入 宇通客车 600066',
+      title: 'Bought 600066',
       detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
       timestamp: '2026-06-16T03:04:56+00:00',
       symbol: '600066',
@@ -244,7 +259,10 @@ test('renders risk boundaries and blocking register without execution controls',
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   expect(blockRegister.className).toContain('min-w-0');
-  expect(within(blockRegister).getByText('cash_buffer')).toBeTruthy();
+  expect(within(blockRegister).getByText('Cash Buffer')).toBeTruthy();
+  expect(within(blockRegister).queryByText('cash_buffer')).toBeNull();
+  expect(within(blockRegister).getByText('Warning')).toBeTruthy();
+  expect(within(blockRegister).queryByText('medium')).toBeNull();
   expect(
     within(blockRegister).getByText('Cash buffer is close to the floor'),
   ).toBeTruthy();
@@ -256,7 +274,7 @@ test('renders recent risk drivers as readable audit events', async () => {
 
   const recentDrivers = await screen.findByText('Recent impact events');
   expect(recentDrivers).toBeTruthy();
-  expect(await screen.findByText('买入 宇通客车 600066')).toBeTruthy();
+  expect(await screen.findByText('Buy 宇通客车 600066')).toBeTruthy();
   expect(
     await screen.findByText('数量 200 · 价格 ¥26.35 · 手续费 ¥5.00'),
   ).toBeTruthy();
@@ -278,6 +296,14 @@ test('localizes risk explainability ledger titles instead of rendering internal 
   expect(within(recentList).getByText('资金转入')).toBeTruthy();
   expect(await screen.findAllByText('现金流入组合。')).toHaveLength(2);
   expect(document.body.textContent).not.toContain('cash_deposit');
+});
+
+test('uses account instrument names for risk explainability events that only carry symbols', async () => {
+  renderRiskPage({ locale: 'zh' });
+
+  const recentList = await screen.findByTestId('risk-recent-impact-list');
+  expect(within(recentList).getByText('买入 宇通客车 600066')).toBeTruthy();
+  expect(recentList.textContent).not.toContain('Bought 600066');
 });
 
 test('keeps explainability columns compact with local event scrolling', async () => {

@@ -10,7 +10,10 @@ function normalizeModuleId(id: string) {
 function appFeatureChunk(id: string): ChunkName {
   const normalizedId = normalizeModuleId(id);
 
-  if (!normalizedId.includes('/src/features/')) {
+  if (
+    normalizedId.includes('node_modules') ||
+    !normalizedId.includes('/src/features/')
+  ) {
     return undefined;
   }
 
