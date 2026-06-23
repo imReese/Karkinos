@@ -83,7 +83,7 @@ function installHoldingFetchMock({
   includePosition?: boolean;
   includeLedger?: boolean;
   failCore?: boolean;
-  positionOverride?: Partial<typeof position>;
+  positionOverride?: Partial<typeof position> & Record<string, unknown>;
   liveItemOverride?: Record<string, unknown>;
   healthQuoteOverride?: Record<string, unknown>;
   marketHealthOverride?: Record<string, unknown>;
@@ -327,6 +327,35 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(ledgerScroll.className).toContain('pb-2');
   expect(ledgerTable?.className).toContain('w-[880px]');
   expect(ledgerTable?.className).toContain('min-w-max');
+});
+
+test('explains local average cost and broker displayed cost basis when evidence exists', async () => {
+  renderHoldingDetail({
+    positionOverride: {
+      broker_displayed_unit_cost: 1502.3456,
+      broker_displayed_cost_basis: 90140.736,
+      broker_cost_basis_difference: 140.736,
+      broker_cost_basis_method: 'broker_remaining_cost',
+      broker_cost_basis_status: 'available',
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  expect(await screen.findByText('Local moving average cost')).toBeTruthy();
+  expect(await screen.findByText('Broker displayed cost')).toBeTruthy();
+  expect(await screen.findByText('Cost basis difference')).toBeTruthy();
+  expect(
+    await screen.findByText('Broker remaining-position cost'),
+  ).toBeTruthy();
+  expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('1,502.3456')).toBeTruthy();
+  expect(await screen.findByText('CN¥140.74')).toBeTruthy();
+  expect(await screen.findByText('Cost basis review needed')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Broker displayed cost differs from Karkinos local moving average cost. Review Account Truth evidence before relying on cost-basis P/L.',
+    ),
+  ).toBeTruthy();
 });
 
 test('keeps holding summary and kline regions responsive on narrow screens', async () => {

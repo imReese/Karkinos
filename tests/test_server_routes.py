@@ -9802,6 +9802,146 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
     assert response[0].baseline_source == "previous_close"
 
 
+def test_portfolio_positions_exposes_broker_cost_basis_evidence(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    positions_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/positions"
+    )
+
+    fake_position = SimpleNamespace(
+        quantity=60.0,
+        available_qty=60.0,
+        frozen_qty=0.0,
+        avg_cost=1500.0,
+        broker_displayed_unit_cost=1502.3456,
+        broker_displayed_cost_basis=90140.736,
+        broker_cost_basis_difference=140.736,
+        broker_cost_basis_method="broker_remaining_cost",
+        broker_cost_basis_status="available",
+        market_value=96000.0,
+        unrealized_pnl=6000.0,
+        realized_pnl=1200.0,
+        commission_paid=30.0,
+    )
+
+    class FakeDb:
+        async def get_total_deposits(self):
+            return 0.0
+
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=1000.0,
+                positions={"600519": fake_position},
+            ),
+            instruments={
+                Symbol("600519"): SimpleNamespace(
+                    name="贵州茅台",
+                    asset_class=SimpleNamespace(value="stock"),
+                )
+            },
+            latest_quotes={},
+            watchlist=[("600519", SimpleNamespace(value="stock"))],
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(positions_route.endpoint())
+
+    assert response[0].broker_displayed_unit_cost == pytest.approx(1502.3456)
+    assert response[0].broker_displayed_cost_basis == pytest.approx(90140.736)
+    assert response[0].broker_cost_basis_difference == pytest.approx(140.736)
+    assert response[0].broker_cost_basis_method == "broker_remaining_cost"
+    assert response[0].broker_cost_basis_status == "available"
+
+
+def test_portfolio_positions_hydrates_broker_cost_basis_from_evidence(
+    monkeypatch, tmp_path
+):
+    from account_truth.broker_evidence import BrokerEvidenceRepository
+    from account_truth.broker_statement import parse_broker_statement_csv
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    positions_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/positions"
+    )
+
+    db_path = tmp_path / "account-truth.db"
+    repository = BrokerEvidenceRepository(db_path)
+    preview = parse_broker_statement_csv(
+        """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+synthetic-position-001,position_snapshot,2026-06-16T15:10:00+08:00,2026-06-16,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10000.00,60,1502.3456,synthetic position snapshot,0.00,broker_remaining_cost
+"""
+    )
+    repository.save_preview(preview, source_name="synthetic-safe-example.csv")
+
+    fake_position = SimpleNamespace(
+        quantity=60.0,
+        available_qty=60.0,
+        frozen_qty=0.0,
+        avg_cost=1500.0,
+        market_value=96000.0,
+        unrealized_pnl=6000.0,
+        realized_pnl=1200.0,
+        commission_paid=30.0,
+    )
+
+    class FakeDb:
+        _path = db_path
+
+        async def get_total_deposits(self):
+            return 0.0
+
+        def list_latest_quotes_sync(self):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=1000.0,
+                positions={"SYN001": fake_position},
+            ),
+            instruments={
+                Symbol("SYN001"): SimpleNamespace(
+                    name="合成样例股票A",
+                    asset_class=SimpleNamespace(value="stock"),
+                )
+            },
+            latest_quotes={},
+            watchlist=[("SYN001", SimpleNamespace(value="stock"))],
+        ),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(positions_route.endpoint())
+
+    assert response[0].broker_displayed_unit_cost == pytest.approx(1502.3456)
+    assert response[0].broker_displayed_cost_basis == pytest.approx(90140.736)
+    assert response[0].broker_cost_basis_difference == pytest.approx(140.736)
+    assert response[0].broker_cost_basis_method == "broker_remaining_cost"
+    assert response[0].broker_cost_basis_status == "available"
+
+
 def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 

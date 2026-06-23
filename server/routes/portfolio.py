@@ -1265,6 +1265,96 @@ def _position_quote_presentation(
     return quote_status, stale_reason
 
 
+def _optional_float_attr(obj, name: str) -> float | None:
+    return _optional_float_value(getattr(obj, name, None))
+
+
+def _optional_float_value(value) -> float | None:
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _broker_cost_basis_evidence_by_symbol(
+    state,
+    symbols: set[str],
+) -> dict[str, dict[str, object]]:
+    if not symbols:
+        return {}
+    db_path = getattr(getattr(state, "db", None), "_path", None)
+    if db_path is None:
+        return {}
+
+    try:
+        from account_truth.broker_evidence import BrokerEvidenceRepository
+
+        repository = BrokerEvidenceRepository(db_path)
+        evidence_by_symbol: dict[str, dict[str, object]] = {}
+        for import_run in repository.list_import_runs(limit=50):
+            for event in reversed(repository.list_events(import_run.import_run_id)):
+                symbol = str(event.symbol)
+                if (
+                    symbol not in symbols
+                    or symbol in evidence_by_symbol
+                    or event.event_type != "position_snapshot"
+                    or event.is_row_duplicate
+                ):
+                    continue
+                unit_cost = _optional_float_value(event.cost_basis)
+                if unit_cost is None:
+                    continue
+                evidence_by_symbol[symbol] = {
+                    "unit_cost": unit_cost,
+                    "method": event.cost_basis_method or "broker_remaining_cost",
+                    "import_run_id": import_run.import_run_id,
+                }
+            if symbols.issubset(evidence_by_symbol):
+                break
+        return evidence_by_symbol
+    except Exception:
+        logger.debug("Unable to hydrate broker cost-basis evidence", exc_info=True)
+        return {}
+
+
+def _broker_cost_basis_fields(
+    pos,
+    evidence: dict[str, object] | None,
+    *,
+    quantity: float,
+    avg_cost: float,
+) -> dict[str, object]:
+    unit_cost = _optional_float_attr(pos, "broker_displayed_unit_cost")
+    if unit_cost is None and evidence is not None:
+        unit_cost = _optional_float_value(evidence.get("unit_cost"))
+
+    displayed_cost_basis = _optional_float_attr(pos, "broker_displayed_cost_basis")
+    if displayed_cost_basis is None and unit_cost is not None:
+        displayed_cost_basis = unit_cost * quantity
+
+    difference = _optional_float_attr(pos, "broker_cost_basis_difference")
+    if difference is None and displayed_cost_basis is not None:
+        difference = displayed_cost_basis - quantity * avg_cost
+
+    method = getattr(pos, "broker_cost_basis_method", None)
+    if method is None and evidence is not None:
+        method = evidence.get("method")
+
+    status = getattr(pos, "broker_cost_basis_status", None)
+    if status is None and unit_cost is not None:
+        status = "available"
+
+    return {
+        "broker_displayed_unit_cost": unit_cost,
+        "broker_displayed_cost_basis": displayed_cost_basis,
+        "broker_cost_basis_difference": difference,
+        "broker_cost_basis_method": method,
+        "broker_cost_basis_status": status,
+    }
+
+
 def _resolve_live_holding_latest_price(
     state,
     *,
@@ -3225,6 +3315,10 @@ def create_router() -> APIRouter:
             )
 
         latest_quotes = _collect_latest_quotes(state)
+        broker_cost_basis_evidence = _broker_cost_basis_evidence_by_symbol(
+            state,
+            {str(symbol) for symbol in portfolio.positions},
+        )
         positions: list[PositionResponse] = []
         for sym, pos in portfolio.positions.items():
             symbol = str(sym)
@@ -3264,6 +3358,12 @@ def create_router() -> APIRouter:
                 asset_class=metadata.asset_class,
                 quote=quote,
             )
+            broker_cost_basis_fields = _broker_cost_basis_fields(
+                pos,
+                broker_cost_basis_evidence.get(symbol),
+                quantity=quantity,
+                avg_cost=avg_cost,
+            )
             positions.append(
                 PositionResponse(
                     symbol=symbol,
@@ -3274,6 +3374,7 @@ def create_router() -> APIRouter:
                     available_qty=float(pos.available_qty),
                     frozen_qty=float(pos.frozen_qty),
                     avg_cost=avg_cost,
+                    **broker_cost_basis_fields,
                     latest_price=latest_price_value,
                     market_value=float(pos.market_value),
                     unrealized_pnl=float(pos.unrealized_pnl),
