@@ -811,3 +811,9 @@ roadmap promises.
   audit metadata. This makes contribution evidence attributable to a readable
   strategy without changing attribution math, ledger facts, broker behavior,
   trading, risk gates, or manual-confirmation defaults.
+* 2026-06-23: Extracted shared Web strategy display formatting for readable
+  strategy names and secondary audit ids. Backtest, Decision, and Strategy
+  Contribution surfaces now use the same formatter instead of page-local
+  copies. This is display formatting only; it does not change strategy
+  execution, attribution math, ledger facts, broker behavior, trading, risk
+  gates, or manual-confirmation defaults.

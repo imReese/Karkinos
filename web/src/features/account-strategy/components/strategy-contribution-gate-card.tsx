@@ -2,6 +2,7 @@ import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
 import { formatCurrency } from '../../../shared/format';
 import { formatPublicCode } from '../../../shared/public-labels';
+import { formatStrategyAuditLabel } from '../../../shared/strategy-display';
 import type { AccountStrategyContributionReport } from '../api';
 
 type Props = {
@@ -23,20 +24,6 @@ function canShowContribution(
   );
 }
 
-function strategyDisplayName(
-  strategyId: string | null | undefined,
-  localizedNames: Record<string, string>,
-) {
-  const normalized = strategyId?.trim();
-  if (!normalized) {
-    return '--';
-  }
-  const displayName = localizedNames[normalized] ?? normalized;
-  return displayName === normalized
-    ? normalized
-    : `${displayName} · ${normalized}`;
-}
-
 export function StrategyContributionGateCard({
   report,
   isLoading = false,
@@ -52,7 +39,7 @@ export function StrategyContributionGateCard({
   const statusLabel =
     labels.accountStrategyContributionStatusMap[contributionStatus] ??
     formatPublicCode(report?.contribution_status, locale);
-  const strategyLabel = strategyDisplayName(
+  const strategyLabel = formatStrategyAuditLabel(
     report?.strategy_id,
     labels.strategyNames,
   );

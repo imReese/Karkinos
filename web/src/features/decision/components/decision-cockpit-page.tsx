@@ -14,6 +14,10 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import {
+  formatStrategyAuditLabel,
+  type StrategyNameMap,
+} from '../../../shared/strategy-display';
+import {
   useCreateManualOrderFromActionMutation,
   useIntradayDecisionQuery,
   useSignalActionsQuery,
@@ -101,27 +105,12 @@ function strategyAttributionTone(
 }
 
 type DecisionCopy = ReturnType<typeof useCopy>['decision'];
-type StrategyNameMap = Record<string, string>;
 
 type CandidateEvidenceChainItem = {
   label: string;
   value: string;
   tone?: 'success' | 'warning' | 'danger' | 'neutral';
 };
-
-function strategyDisplayValue(
-  strategyId: string | null | undefined,
-  strategyNames: StrategyNameMap,
-) {
-  const normalized = strategyId?.trim();
-  if (!normalized) {
-    return '--';
-  }
-  const displayName = strategyNames[normalized] ?? normalized;
-  return displayName === normalized
-    ? normalized
-    : `${displayName} · ${normalized}`;
-}
 
 function numericEvidenceValue(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -185,7 +174,7 @@ function candidateEvidenceChainItems(
   return [
     {
       label: labels.strategySource,
-      value: strategyDisplayValue(
+      value: formatStrategyAuditLabel(
         candidate.evidence.strategy.strategy_id,
         strategyNames,
       ),
@@ -1066,7 +1055,7 @@ function DecisionCandidateCard({
         />
         <EvidenceLine
           label={labels.strategy}
-          value={strategyDisplayValue(
+          value={formatStrategyAuditLabel(
             candidate.evidence.strategy.strategy_id,
             strategyNames,
           )}
