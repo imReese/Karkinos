@@ -17,7 +17,12 @@ from server.bootstrap import (
     resolve_config_path,
     resolve_data_dir,
 )
-from server.config import BacktestConfig, BrokerConnectorConfig, ServerConfig
+from server.config import (
+    BacktestConfig,
+    BrokerConnectorConfig,
+    BrokerFeeScheduleConfig,
+    ServerConfig,
+)
 
 
 def test_runtime_config_defaults_do_not_seed_real_cash():
@@ -269,6 +274,116 @@ def test_server_config_rejects_non_boolean_broker_connector_enabled(tmp_path):
         ServerConfig.from_json(config_path)
 
 
+def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_fee_schedule": {
+                    "schedule_id": "local-cash-account",
+                    "stock_a_commission_rate": 0.00015,
+                    "stock_a_min_commission": 5,
+                    "fund_etf_commission_rate": 0.00015,
+                    "fund_etf_min_commission": 5,
+                    "stamp_tax_rate": 0.0005,
+                    "transfer_fee_rate": 0.00001,
+                    "other_fee_rate": 0,
+                    "limitations": [
+                        "broker_regulatory_fees_assumed_absorbed",
+                    ],
+                }
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.broker_fee_schedule == BrokerFeeScheduleConfig(
+        schedule_id="local-cash-account",
+        stock_a_commission_rate=Decimal("0.00015"),
+        stock_a_min_commission=Decimal("5"),
+        fund_etf_commission_rate=Decimal("0.00015"),
+        fund_etf_min_commission=Decimal("5"),
+        stamp_tax_rate=Decimal("0.0005"),
+        transfer_fee_rate=Decimal("0.00001"),
+        other_fee_rate=Decimal("0"),
+        limitations=("broker_regulatory_fees_assumed_absorbed",),
+    )
+
+
+def test_server_config_loads_detailed_safe_broker_fee_schedule(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_fee_schedule": {
+                    "source": "public_broker_fee_table",
+                    "currency": "CNY",
+                    "captured_at": "2026-06-22",
+                    "account_identifier_saved": False,
+                    "screenshots_saved": False,
+                    "commission": {
+                        "stock_a": {"sh": 0.00015, "sz": 0.00015},
+                        "fund_etf": {"rate": 0.00012},
+                    },
+                    "taxes_and_fees": {
+                        "stamp_tax": {"sell": 0.0005},
+                        "transfer_fee": {"rate": 0.00001},
+                    },
+                }
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.broker_fee_schedule.schedule_id == "public_broker_fee_table"
+    assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
+    assert config.broker_fee_schedule.fund_etf_commission_rate == Decimal("0.00012")
+    assert config.broker_fee_schedule.stamp_tax_rate == Decimal("0.0005")
+    assert config.broker_fee_schedule.transfer_fee_rate == Decimal("0.00001")
+    assert (
+        "nested_fee_schedule_flattened_for_current_contract"
+        in config.broker_fee_schedule.limitations
+    )
+
+
+def test_server_config_rejects_broker_fee_schedule_with_saved_private_artifacts(
+    tmp_path,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_fee_schedule": {
+                    "source": "public_broker_fee_table",
+                    "account_identifier_saved": True,
+                }
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="broker fee schedule"):
+        ServerConfig.from_json(config_path)
+
+
+def test_server_config_rejects_broker_fee_schedule_secret_fields(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_fee_schedule": {
+                    "schedule_id": "local-cash-account",
+                    "broker_token": "do-not-store",
+                }
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="broker fee schedule"):
+        ServerConfig.from_json(config_path)
+
+
 def test_example_broker_connector_config_contains_no_credentials() -> None:
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
     example = json.loads(Path("config.example.json").read_text(encoding="utf-8"))
@@ -284,6 +399,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         }
     ]
     assert not _contains_sensitive_key(example["broker_connectors"])
+    assert not _contains_sensitive_key(example["broker_fee_schedule"])
 
 
 def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):

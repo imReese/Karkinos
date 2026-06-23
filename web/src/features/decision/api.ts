@@ -24,11 +24,23 @@ export type DecisionAction =
 
 export type DecisionLane = 'daily' | 'intraday';
 
+export type DecisionWorkflowTask = {
+  id: string;
+  priority: number;
+  status: string;
+  title?: string;
+  description?: string;
+  required_actions: string[];
+  blocking_reasons: string[];
+  evidence?: Record<string, unknown>;
+};
+
 export type DecisionSummary = {
   candidate_count: number;
   risk_blocked_count: number;
   ready_for_manual_confirmation_count: number;
   excluded_daily_count?: number;
+  workflow_tasks?: DecisionWorkflowTask[];
   portfolio?: {
     status: string;
     cash: number;
@@ -140,6 +152,32 @@ export type DecisionCandidate = {
       price?: number | null;
       stale_reason?: string | null;
       reason?: string;
+    };
+    paper_shadow?: {
+      status: string;
+      has_evidence?: boolean;
+      execution_mode?: string | null;
+      order_id?: string | number | null;
+      required_actions?: string[];
+      blocking_reasons?: string[];
+      manual_confirmation_status?: string;
+    };
+    cost_impact?: {
+      status: string;
+      source?: string;
+      total_commission?: number | null;
+      total_slippage?: number | null;
+      cost_summary?: Record<string, unknown>;
+    };
+    uncertainty?: {
+      status: string;
+      factors?: string[];
+    };
+    certainty?: {
+      status: string;
+      posture?: string;
+      required_actions?: string[];
+      uncertain_reasons?: string[];
     };
     manual_confirmation: {
       required: boolean;

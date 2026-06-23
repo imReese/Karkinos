@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -822,9 +828,18 @@ test('renders the backtest workspace and saved report history', async () => {
   renderBacktestPage();
 
   expect(await screen.findByText('Strategy replay')).toBeTruthy();
+  const evidenceGateTitle = await screen.findByText(
+    'Strategy validation and review status',
+  );
+  expect(evidenceGateTitle).toBeTruthy();
+  const evidenceGate = evidenceGateTitle.closest('section');
+  expect(evidenceGate).toBeTruthy();
+  expect(within(evidenceGate!).getByText('Dual Moving Average')).toBeTruthy();
+  expect(within(evidenceGate!).getByText('dual_ma')).toBeTruthy();
   expect(
-    await screen.findByText('Strategy validation and review status'),
+    within(evidenceGate!).getByText('Bollinger Mean Reversion'),
   ).toBeTruthy();
+  expect(within(evidenceGate!).getByText('bollinger')).toBeTruthy();
   expect(await screen.findAllByText('1/2')).toHaveLength(2);
   expect(await screen.findByText('Backtest configuration')).toBeTruthy();
   expect(await screen.findByDisplayValue('Dual Moving Average')).toBeTruthy();

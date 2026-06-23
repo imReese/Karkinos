@@ -18,11 +18,28 @@ from server.models import (
 )
 
 
+def _manual_fee_breakdown(fee: float) -> dict[str, str]:
+    return {
+        "commission": str(fee),
+        "stamp_tax": "0",
+        "transfer_fee": "0",
+        "other_fees": "0",
+        "total_fee": str(fee),
+    }
+
+
+def _net_cash_impact(direction: str, gross_amount: float, fee: float) -> float:
+    if direction == "buy":
+        return -(gross_amount + fee)
+    return gross_amount - fee
+
+
 def _build_trade_entry(body: LedgerTradeCreate) -> LedgerEntry:
     direction = body.direction.strip().lower()
     if direction not in {"buy", "sell"}:
         raise HTTPException(status_code=400, detail="direction must be buy or sell")
 
+    gross_amount = body.quantity * body.unit_price
     return LedgerEntry(
         entry_type=f"trade_{direction}",
         timestamp=body.occurred_at,
@@ -30,8 +47,14 @@ def _build_trade_entry(body: LedgerTradeCreate) -> LedgerEntry:
         direction=direction,
         quantity=body.quantity,
         price=body.unit_price,
-        amount=body.quantity * body.unit_price,
+        amount=gross_amount,
         commission=body.fee,
+        gross_amount=gross_amount,
+        net_cash_impact=_net_cash_impact(direction, gross_amount, body.fee),
+        fee_breakdown=_manual_fee_breakdown(body.fee),
+        fee_rule_id="manual_fee_input",
+        fee_rule_version="manual_fee_input",
+        cost_basis_method="moving_average_buy_cost",
         asset_class=body.asset_class,
         note=body.note,
         source=body.source,

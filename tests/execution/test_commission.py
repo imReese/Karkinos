@@ -16,6 +16,46 @@ from execution.commission import (
 
 
 class TestStockACommission:
+    def test_buy_fee_breakdown_includes_rule_id_and_components(self):
+        """买入费用拆分保留佣金、过户费、总费用和规则 id。"""
+        calc = StockACommission(
+            commission_rate=Decimal("0.00015"),
+            min_commission=Decimal("5"),
+            fee_rule_id="cn_stock_a_local_v1",
+        )
+
+        breakdown = calc.breakdown(OrderSide.BUY, Decimal("26.35"), Decimal("200"))
+
+        assert breakdown.gross_amount == Decimal("5270.00")
+        assert breakdown.commission == Decimal("5")
+        assert breakdown.stamp_tax == Decimal("0")
+        assert breakdown.transfer_fee == Decimal("0.052700")
+        assert breakdown.other_fees == Decimal("0")
+        assert breakdown.total_fee == Decimal("5.052700")
+        assert breakdown.fee_rule_id == "cn_stock_a_local_v1"
+        assert breakdown.limitations == (
+            "transfer_fee_exchange_not_split",
+            "broker_regulatory_fees_assumed_absorbed",
+        )
+
+    def test_sell_fee_breakdown_includes_stamp_tax(self):
+        """卖出费用拆分包含印花税。"""
+        calc = StockACommission(
+            commission_rate=Decimal("0.00015"),
+            min_commission=Decimal("5"),
+            fee_rule_id="cn_stock_a_local_v1",
+        )
+
+        breakdown = calc.breakdown(OrderSide.SELL, Decimal("26.35"), Decimal("200"))
+
+        assert breakdown.gross_amount == Decimal("5270.00")
+        assert breakdown.commission == Decimal("5")
+        assert breakdown.stamp_tax == Decimal("2.635000")
+        assert breakdown.transfer_fee == Decimal("0.052700")
+        assert breakdown.other_fees == Decimal("0")
+        assert breakdown.total_fee == Decimal("7.687700")
+        assert breakdown.fee_rule_id == "cn_stock_a_local_v1"
+
     def test_buy_commission(self):
         """买入佣金 = max(金额×佣金率, 5) + 过户费。"""
         calc = StockACommission()

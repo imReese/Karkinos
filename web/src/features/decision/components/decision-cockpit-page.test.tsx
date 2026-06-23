@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -144,6 +144,28 @@ const dailyDecision: DecisionResponse = {
             cost_basis: { status: 'pass' },
           },
         },
+        paper_shadow: {
+          status: 'review_required',
+          has_evidence: false,
+          required_actions: ['review_paper_shadow_evidence'],
+          blocking_reasons: [
+            'paper_shadow_evidence_required_before_manual_confirmation',
+          ],
+        },
+        cost_impact: {
+          status: 'estimated_from_research_costs',
+          source: 'after_cost_oos_validation',
+          total_commission: 12.3,
+          total_slippage: 4.5,
+          cost_summary: { commission: 12.3, slippage: 4.5 },
+        },
+        uncertainty: {
+          status: 'review_required',
+          factors: [
+            'Backtest evidence is not a profitability claim.',
+            'review_paper_shadow_evidence',
+          ],
+        },
       },
     },
   ],
@@ -174,89 +196,104 @@ function installDecisionFetchMock({
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
 } = {}) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url =
-      typeof input === 'string'
-        ? input
-        : input instanceof Request
-          ? input.url
-          : input.toString();
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
 
-    if (url.includes('/api/decision/today')) {
-      return jsonResponse(todayResponse);
-    }
-    if (url.includes('/api/decision/intraday')) {
-      return jsonResponse(intradayResponse);
-    }
-    if (url.includes('/api/signals/actions')) {
-      return jsonResponse([
-        {
-          id: 9,
-          source_signal_id: 1,
-          symbol: '600519',
-          title: 'Increase 600519',
-          detail: 'Risk gate passed; prepare a manual order only if approved.',
-          direction: 'buy',
-          urgency: 'high',
-          target_weight: 0.2,
-          price: 123.45,
-          strategy_id: 'dual_ma',
-          timestamp: '2026-06-12T09:31:00+08:00',
-          asset_class: 'stock',
-          status: 'pending',
-          risk_decision_id: 'RISK-1',
-          risk_gate_passed: true,
-          risk_gate_status: 'passed',
-          risk_gate_severity: 'info',
-          risk_gate_reasons: [],
-          manual_confirmation_required: true,
-          manual_confirmation_status: 'ready_for_manual_confirmation',
-          manual_confirmation_reason: 'Risk gate passed.',
-        },
-      ]);
-    }
-    if (url.includes('/api/signals/journal')) {
-      return jsonResponse([
-        {
-          signal: {
-            id: 1,
-            timestamp: '2026-06-12T09:30:00+08:00',
-            strategy_id: 'dual_ma',
+      if (url.includes('/api/decision/today')) {
+        return jsonResponse(todayResponse);
+      }
+      if (url.includes('/api/decision/intraday')) {
+        return jsonResponse(intradayResponse);
+      }
+      if (url.includes('/api/signals/actions')) {
+        return jsonResponse([
+          {
+            id: 9,
+            source_signal_id: 1,
             symbol: '600519',
+            title: 'Increase 600519',
+            detail:
+              'Risk gate passed; prepare a manual order only if approved.',
             direction: 'buy',
+            urgency: 'high',
             target_weight: 0.2,
             price: 123.45,
-            asset_class: 'stock',
-          },
-          action_task: null,
-          risk_decision: null,
-          review: null,
-          latest_event: {
-            event_type: 'risk.signal.recorded',
+            strategy_id: 'dual_ma',
             timestamp: '2026-06-12T09:31:00+08:00',
-            source: 'risk_decisions',
-            source_ref: 'RISK-1',
+            asset_class: 'stock',
+            status: 'pending',
+            risk_decision_id: 'RISK-1',
+            risk_gate_passed: true,
+            risk_gate_status: 'passed',
+            risk_gate_severity: 'info',
+            risk_gate_reasons: [],
+            manual_confirmation_required: true,
+            manual_confirmation_status: 'ready_for_manual_confirmation',
+            manual_confirmation_reason: 'Risk gate passed.',
           },
-        },
-      ]);
-    }
-    return new Response('Not found', { status: 404 });
-  });
+        ]);
+      }
+      if (url.includes('/api/signals/journal')) {
+        return jsonResponse([
+          {
+            signal: {
+              id: 1,
+              timestamp: '2026-06-12T09:30:00+08:00',
+              strategy_id: 'dual_ma',
+              symbol: '600519',
+              direction: 'buy',
+              target_weight: 0.2,
+              price: 123.45,
+              asset_class: 'stock',
+            },
+            action_task: null,
+            risk_decision: null,
+            review: null,
+            latest_event: {
+              event_type: 'risk.signal.recorded',
+              timestamp: '2026-06-12T09:31:00+08:00',
+              source: 'risk_decisions',
+              source_ref: 'RISK-1',
+            },
+          },
+        ]);
+      }
+      if (url.includes('/api/trading/actions/9/manual-order')) {
+        return jsonResponse({
+          order_id: 'manual-order-9',
+          status: 'pending_confirm',
+        });
+      }
+      return new Response('Not found', { status: 404 });
+    },
+  );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
 
-function renderDecisionCockpit(
-  options?: Parameters<typeof installDecisionFetchMock>[0],
-) {
+type RenderDecisionOptions = Parameters<typeof installDecisionFetchMock>[0] & {
+  locale?: 'en' | 'zh';
+};
+
+function renderDecisionCockpit(options?: RenderDecisionOptions) {
   window.localStorage.clear();
+  if (options?.locale) {
+    window.localStorage.setItem('karkinos.locale', options.locale);
+  }
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
     media: query,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  installDecisionFetchMock(options);
+  const { locale: _locale, ...fetchOptions } = options ?? {};
+  const fetchMock = installDecisionFetchMock(fetchOptions);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -271,6 +308,7 @@ function renderDecisionCockpit(
       </QueryClientProvider>
     </PreferencesProvider>,
   );
+  return { fetchMock };
 }
 
 afterEach(() => {
@@ -305,7 +343,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect((await screen.findAllByText('Intraday lane')).length).toBeGreaterThan(
     0,
   );
-  expect((await screen.findAllByText('Decision: buy')).length).toBeGreaterThan(
+  expect((await screen.findAllByText('Decision: Buy')).length).toBeGreaterThan(
     0,
   );
   expect(await screen.findByText('600519')).toBeTruthy();
@@ -317,7 +355,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect(await screen.findByText('Data freshness: Live')).toBeTruthy();
   expect(await screen.findByText('Account truth: Pass')).toBeTruthy();
   expect(await screen.findByText('Account truth score: 98')).toBeTruthy();
-  expect(await screen.findByText('Journal: risk.signal.recorded')).toBeTruthy();
+  expect(await screen.findByText('Journal: Risk signal recorded')).toBeTruthy();
   expect(await screen.findByText('Signal action queue')).toBeTruthy();
   expect(await screen.findByText('Prepare manual order')).toBeTruthy();
   expect(await screen.findByText('Signal journal')).toBeTruthy();
@@ -337,6 +375,41 @@ test('renders daily and intraday decision cockpit evidence without execution', a
       .getAttribute('href'),
   ).toBe('/trading');
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('localizes signal journal audit events without exposing dotted event keys', async () => {
+  renderDecisionCockpit();
+
+  expect(await screen.findByText('Signal journal')).toBeTruthy();
+  expect(await screen.findByText('Journal: Risk signal recorded')).toBeTruthy();
+  expect(await screen.findByText('Risk signal recorded')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('risk.signal.recorded');
+});
+
+test('prepares manual orders with public notes instead of internal action ids', async () => {
+  const { fetchMock } = renderDecisionCockpit();
+
+  await screen.findByText('Signal action queue');
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare manual order' }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/trading/actions/9/manual-order',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  const manualOrderCall = fetchMock.mock.calls.find(([input]) =>
+    String(input).includes('/api/trading/actions/9/manual-order'),
+  );
+  expect(manualOrderCall).toBeTruthy();
+  const request = manualOrderCall?.[1];
+  const body = JSON.parse(String(request?.body ?? '{}')) as {
+    note?: string;
+  };
+  expect(body.note).toBe('Prepared from Decision action queue.');
+  expect(body.note).not.toContain('signal action');
+  expect(body.note).not.toContain('9');
 });
 
 test('surfaces degraded and blocked account-truth gates in decision summaries', async () => {
@@ -497,6 +570,281 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
     await screen.findByText('Manual: Strategy attribution review required'),
   ).toBeTruthy();
   expect(await screen.findByText('Strategy attribution: Blocked')).toBeTruthy();
+});
+
+test('renders localized candidate evidence chain for decision review', async () => {
+  renderDecisionCockpit({ locale: 'zh' });
+
+  const card = await screen.findByTestId('decision-candidate-card-600519');
+
+  expect(card.textContent).toContain('候选动作证据链');
+  expect(card.textContent).toContain('策略来源');
+  expect(card.textContent).toContain('dual_ma');
+  expect(card.textContent).toContain('行情状态');
+  expect(card.textContent).toContain('实时行情');
+  expect(card.textContent).toContain('账户事实');
+  expect(card.textContent).toContain('通过');
+  expect(card.textContent).toContain('风控状态');
+  expect(card.textContent).toContain('已通过');
+  expect(card.textContent).toContain('研究证据');
+  expect(card.textContent).toContain('已关联');
+  expect(card.textContent).toContain('模拟证据');
+  expect(card.textContent).toContain('需要复核');
+  expect(card.textContent).toContain('成本影响');
+  expect(card.textContent).toContain('¥12.30');
+  expect(card.textContent).toContain('¥4.50');
+  expect(card.textContent).toContain('不确定性');
+  expect(card.textContent).toContain('研究证据不代表收益保证');
+  expect(card.textContent).toContain('人工确认');
+  expect(card.textContent).not.toContain('review_paper_shadow_evidence');
+  expect(card.textContent).not.toContain('estimated_from_research_costs');
+});
+
+test('marks stale data candidates as review-only instead of certain actions', async () => {
+  const staleToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    requires_manual_confirmation: false,
+    summary: {
+      ...dailyDecision.summary,
+      ready_for_manual_confirmation_count: 0,
+      market_data: {
+        ...dailyDecision.summary.market_data,
+        source_health: 'stale',
+        live_quote_count: 0,
+        stale_quote_count: 1,
+      },
+    },
+    candidates: [
+      {
+        ...dailyDecision.candidates[0],
+        manual_confirmation_status: 'data_review_required',
+        evidence: {
+          ...dailyDecision.candidates[0].evidence,
+          data_freshness: {
+            ...dailyDecision.candidates[0].evidence.data_freshness,
+            status: 'stale',
+            stale_reason: 'quote_older_than_expected_session',
+          },
+          certainty: {
+            status: 'degraded',
+            posture: 'review_required',
+            required_actions: ['refresh_or_confirm_market_data'],
+            uncertain_reasons: ['quote_older_than_expected_session'],
+          },
+        },
+      },
+    ],
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: staleToday, locale: 'zh' });
+
+  const card = await screen.findByTestId('decision-candidate-card-600519');
+
+  expect((await screen.findAllByText('决策: 需要复核')).length).toBeGreaterThan(
+    0,
+  );
+  expect(card.textContent).toContain('操作确定性');
+  expect(card.textContent).toContain('需要先复核数据或账户事实');
+  expect(card.textContent).toContain('刷新或确认行情');
+  expect(card.textContent).toContain('行情早于预期交易时段');
+  expect(card.textContent).toContain('人工确认: 需要数据复核');
+  expect(card.textContent).not.toContain('打开交易审批');
+  expect(card.textContent).not.toContain('quote_older_than_expected_session');
+});
+
+test('localizes no-action, degraded, blocked, and review-required decision states', async () => {
+  const localizedToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    requires_manual_confirmation: false,
+    summary: {
+      ...dailyDecision.summary,
+      ready_for_manual_confirmation_count: 0,
+      account_truth: {
+        ...dailyDecision.summary.account_truth,
+        gate_status: 'degraded',
+        score: 72,
+        unresolved_mismatch_count: 1,
+        required_actions: ['review_position_difference'],
+      },
+    },
+    candidates: [
+      {
+        ...dailyDecision.candidates[0],
+        manual_confirmation_status: 'blocked_by_data_quality',
+        evidence: {
+          ...dailyDecision.candidates[0].evidence,
+          data_freshness: {
+            ...dailyDecision.candidates[0].evidence.data_freshness,
+            status: 'missing',
+            reason: 'missing_latest_quote',
+          },
+          account_truth: {
+            ...dailyDecision.candidates[0].evidence.account_truth,
+            gate_status: 'degraded',
+            score: 72,
+            unresolved_mismatch_count: 1,
+            required_actions: ['review_position_difference'],
+          },
+          certainty: {
+            status: 'blocked',
+            posture: 'blocked',
+            required_actions: ['refresh_market_data'],
+            uncertain_reasons: [],
+          },
+        },
+      },
+    ],
+  } as DecisionResponse;
+  const localizedIntraday = {
+    ...intradayDecision,
+    decision: 'no_action',
+    no_action_reasons: ['no_intraday_stock_or_etf_action_tasks'],
+  } as DecisionResponse;
+
+  renderDecisionCockpit({
+    todayResponse: localizedToday,
+    intradayResponse: localizedIntraday,
+    locale: 'zh',
+  });
+
+  const card = await screen.findByTestId('decision-candidate-card-600519');
+
+  expect((await screen.findAllByText('决策: 需要复核')).length).toBeGreaterThan(
+    0,
+  );
+  expect((await screen.findAllByText('决策: 不操作')).length).toBeGreaterThan(
+    0,
+  );
+  expect(card.textContent).toContain('账户事实: 降级');
+  expect(card.textContent).toContain('操作确定性');
+  expect(card.textContent).toContain('证据修复前阻断');
+  expect(card.textContent).toContain('刷新行情');
+  expect(card.textContent).toContain('人工确认: 数据质量阻断');
+  expect(await screen.findByText('暂无盘中股票或 ETF 候选动作')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('未映射状态');
+  expect(document.body.textContent).not.toContain('no_action');
+  expect(document.body.textContent).not.toContain('blocked_by_data_quality');
+  expect(document.body.textContent).not.toContain(
+    'no_intraday_stock_or_etf_action_tasks',
+  );
+});
+
+test('renders localized decision workflow tasks before candidate actions', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        {
+          id: 'data_refresh',
+          priority: 10,
+          status: 'degraded',
+          title: 'Data refresh',
+          description:
+            'Some decision quotes are stale, cached, or only partially available.',
+          required_actions: ['refresh_or_confirm_market_data'],
+          blocking_reasons: ['market_data_not_fully_live'],
+          evidence: { source_health: 'partial' },
+        },
+        {
+          id: 'account_truth',
+          priority: 20,
+          status: 'blocked',
+          title: 'Account truth',
+          description:
+            'Broker evidence and local account facts are checked before action review.',
+          required_actions: ['preview_import_and_reconcile_broker_evidence'],
+          blocking_reasons: ['account_truth_score_unavailable'],
+          evidence: { gate_status: 'blocked', score: null },
+        },
+        {
+          id: 'risk_review',
+          priority: 30,
+          status: 'blocked',
+          title: 'Risk review',
+          description:
+            'At least one candidate is blocked by the pre-trade risk gate.',
+          required_actions: ['review_risk_blockers'],
+          blocking_reasons: ['risk_gate_blocked'],
+          evidence: { risk_blocked_count: 1 },
+        },
+        {
+          id: 'strategy_evidence',
+          priority: 40,
+          status: 'pass',
+          title: 'Strategy evidence',
+          description:
+            'Strategy candidates are reviewed only after data and account facts.',
+          required_actions: [],
+          blocking_reasons: [],
+          evidence: { candidate_count: 1 },
+        },
+        {
+          id: 'paper_shadow_review',
+          priority: 50,
+          status: 'review_required',
+          title: 'Paper/shadow review',
+          description:
+            'Candidate actions should be compared against paper/shadow evidence.',
+          required_actions: ['review_paper_shadow_evidence'],
+          blocking_reasons: [],
+          evidence: { candidate_count: 1 },
+        },
+        {
+          id: 'manual_confirmation',
+          priority: 60,
+          status: 'blocked',
+          title: 'Manual confirmation',
+          description:
+            'Manual confirmation is blocked until upstream evidence is resolved.',
+          required_actions: ['resolve_upstream_workflow_blockers'],
+          blocking_reasons: ['upstream_workflow_blockers'],
+          evidence: { candidate_count: 1 },
+        },
+      ],
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
+
+  const workflow = await screen.findByTestId('decision-workflow-tasks');
+  expect(await screen.findByText('决策工作流')).toBeTruthy();
+  expect(workflow.textContent).toContain(
+    '先检查数据和账户事实，再查看策略机会',
+  );
+  expect(workflow.textContent).toContain('数据刷新');
+  expect(workflow.textContent).toContain('刷新或确认行情');
+  expect(workflow.textContent).toContain('账户事实');
+  expect(workflow.textContent).toContain('预览券商凭证导入并完成对账');
+  expect(workflow.textContent).toContain('风险复核');
+  expect(workflow.textContent).toContain('策略证据');
+  expect(workflow.textContent).toContain('模拟复盘');
+  expect(workflow.textContent).toContain('人工确认');
+  expect(workflow.textContent).not.toContain(
+    'preview_import_and_reconcile_broker_evidence',
+  );
+  expect(workflow.textContent).not.toContain('refresh_or_confirm_market_data');
+  expect(workflow.textContent).not.toContain('paper_shadow_review');
+  expect(
+    workflow.textContent?.indexOf('数据刷新') ?? Number.POSITIVE_INFINITY,
+  ).toBeLessThan(workflow.textContent?.indexOf('策略证据') ?? -1);
+  expect(
+    workflow.textContent?.indexOf('账户事实') ?? Number.POSITIVE_INFINITY,
+  ).toBeLessThan(workflow.textContent?.indexOf('策略证据') ?? -1);
+});
+
+test('shows strategy display names before internal ids in candidate evidence', async () => {
+  renderDecisionCockpit();
+
+  const candidateCard = await screen.findByTestId(
+    'decision-candidate-card-600519',
+  );
+  expect(candidateCard.textContent).toContain('Dual Moving Average');
+  expect(candidateCard.textContent).not.toMatch(/Strategy\s*dual_ma/);
+  expect(candidateCard.textContent).not.toMatch(/Strategy source\s*dual_ma/);
 });
 
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {

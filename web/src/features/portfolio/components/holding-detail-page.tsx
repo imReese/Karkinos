@@ -4,8 +4,10 @@ import { useAccountOverviewQuery } from '../../account/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
   calculateLedgerEntryAmount,
+  formatLedgerExecutionDetailLines,
+  formatLedgerEntryTypeLabel,
   formatLedgerPublicNote,
-} from '../../activity/ledger-format';
+} from '../../../shared/ledger-format';
 import {
   useMarketDataHealthQuery,
   useKlineQuery,
@@ -659,7 +661,10 @@ function LedgerTrace({
   entries: LedgerEntry[];
   loading: boolean;
 }) {
-  const labels = useCopy().portfolio.detail;
+  const copy = useCopy();
+  const labels = copy.portfolio.detail;
+  const detailLabels = copy.activity.feed.detailFields;
+  const { locale } = usePreferences();
 
   if (loading) {
     return <div className="app-muted mt-5 text-sm">{labels.loading}</div>;
@@ -691,30 +696,48 @@ function LedgerTrace({
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.id}>
-              <td className="px-4 py-3.5">
-                <div className="font-semibold">{entry.entry_type}</div>
-                <div className="app-muted mt-1 text-xs tabular-nums">
-                  {formatTimestamp(entry.timestamp)}
-                </div>
-              </td>
-              <td className="px-4 py-3.5 font-mono tabular-nums">
-                {formatQuantity(entry.quantity)}
-              </td>
-              <td className="px-4 py-3.5 text-right font-mono tabular-nums">
-                {formatPrice(entry.price)}
-              </td>
-              <td className="px-4 py-3.5 text-right font-mono tabular-nums">
-                {formatCurrency(calculateLedgerEntryAmount(entry))}
-              </td>
-              <td className="max-w-[280px] px-4 py-3.5 text-[var(--app-muted)]">
-                <span className="line-clamp-2 break-words">
-                  {formatLedgerPublicNote(entry) ?? '--'}
-                </span>
-              </td>
-            </tr>
-          ))}
+          {entries.map((entry) => {
+            const detailLines = formatLedgerExecutionDetailLines(
+              entry,
+              detailLabels,
+              locale,
+            );
+            return (
+              <tr key={entry.id}>
+                <td className="px-4 py-3.5">
+                  <div className="font-semibold">
+                    {formatLedgerEntryTypeLabel(entry, locale)}
+                  </div>
+                  <div className="app-muted mt-1 text-xs tabular-nums">
+                    {formatTimestamp(entry.timestamp)}
+                  </div>
+                </td>
+                <td className="px-4 py-3.5 font-mono tabular-nums">
+                  {formatQuantity(entry.quantity)}
+                </td>
+                <td className="px-4 py-3.5 text-right font-mono tabular-nums">
+                  {formatPrice(entry.price)}
+                </td>
+                <td className="px-4 py-3.5 text-right font-mono tabular-nums">
+                  <div>{formatCurrency(calculateLedgerEntryAmount(entry))}</div>
+                  {detailLines.length > 0 ? (
+                    <div className="app-muted mt-1 flex flex-col items-end gap-0.5 text-xs">
+                      {detailLines.map((detail) => (
+                        <span key={detail.label}>
+                          {detail.label} {detail.value}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </td>
+                <td className="max-w-[280px] px-4 py-3.5 text-[var(--app-muted)]">
+                  <span className="line-clamp-2 break-words">
+                    {formatLedgerPublicNote(entry) ?? '--'}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

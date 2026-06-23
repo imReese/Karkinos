@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal
 
@@ -42,7 +42,9 @@ class ReconciliationItem:
     difference: str
     suggested_review_action: str
     symbol: str = ""
+    detail_code: str = ""
     detail: str = ""
+    detail_context: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ def build_reconciliation_report(
             karkinos_value="0",
             difference="0",
             suggested_review_action="import_broker_evidence",
+            detail_code="account_truth.no_broker_evidence",
             detail="No broker evidence events are available for reconciliation.",
         )
         return ReconciliationReport(
@@ -118,6 +121,7 @@ def build_reconciliation_report(
                 broker_value=None,
                 karkinos_value=cash_balance,
                 suggested_review_action="provide_cash_snapshot",
+                detail_code="account_truth.cash_snapshot_missing",
                 detail="Broker cash snapshot is missing; cash reconciliation is incomplete.",
             )
             if not has_cash_snapshot
@@ -127,6 +131,7 @@ def build_reconciliation_report(
                 karkinos_value=cash_balance,
                 difference=cash_difference,
                 suggested_review_action="review_cash_difference",
+                detail_code="account_truth.cash_compared",
                 detail="Broker cash snapshot compared with Karkinos cash balance.",
             )
         )
@@ -140,6 +145,7 @@ def build_reconciliation_report(
                 broker_value=None,
                 karkinos_value=None,
                 suggested_review_action="provide_position_snapshot",
+                detail_code="account_truth.position_snapshot_missing",
                 detail=(
                     "Broker position snapshot is missing; position reconciliation "
                     "is incomplete."
@@ -155,6 +161,7 @@ def build_reconciliation_report(
                 karkinos_value=ledger_fee,
                 difference=fee_difference,
                 suggested_review_action="review_fee_difference",
+                detail_code="account_truth.fees_compared",
                 detail="Broker fees compared with Karkinos ledger fees.",
             ),
             _item(
@@ -163,6 +170,7 @@ def build_reconciliation_report(
                 karkinos_value=ledger_tax,
                 difference=tax_difference,
                 suggested_review_action="review_tax_difference",
+                detail_code="account_truth.taxes_compared",
                 detail="Broker taxes compared with Karkinos ledger taxes.",
             ),
         ]
@@ -207,6 +215,7 @@ def _position_items(
             ),
             suggested_review_action="review_position_difference",
             symbol=symbol,
+            detail_code="account_truth.position_quantity_compared",
             detail="Broker position quantity compared with Karkinos position quantity.",
         )
         for symbol in symbols
@@ -236,6 +245,7 @@ def _trade_component_items(
                     ),
                     suggested_review_action="review_trade_gross_amount_difference",
                     symbol=symbol,
+                    detail_code="account_truth.trade_gross_amount_compared",
                     detail=(
                         "Broker trade gross amount compared with Karkinos "
                         "trade gross amount before fees and taxes."
@@ -251,6 +261,7 @@ def _trade_component_items(
                     ),
                     suggested_review_action="review_net_cash_impact_difference",
                     symbol=symbol,
+                    detail_code="account_truth.net_cash_impact_compared",
                     detail=(
                         "Broker signed net cash impact compared with Karkinos "
                         "signed ledger cash impact after fees and taxes."
@@ -266,6 +277,7 @@ def _trade_component_items(
                     ),
                     suggested_review_action="review_fee_difference",
                     symbol=symbol,
+                    detail_code="account_truth.trade_commission_compared",
                     detail=(
                         "Broker trade commission compared with Karkinos trade "
                         "commission."
@@ -281,6 +293,7 @@ def _trade_component_items(
                     ),
                     suggested_review_action="review_tax_difference",
                     symbol=symbol,
+                    detail_code="account_truth.trade_tax_compared",
                     detail="Broker trade tax compared with Karkinos trade tax.",
                 ),
                 _item(
@@ -293,6 +306,7 @@ def _trade_component_items(
                     ),
                     suggested_review_action="review_transfer_fee_difference",
                     symbol=symbol,
+                    detail_code="account_truth.transfer_fee_compared",
                     detail=(
                         "Broker transfer fee component compared with Karkinos "
                         "transfer fee component."
@@ -388,7 +402,11 @@ def _cost_basis_items(
             ),
             suggested_review_action="review_cost_basis_difference",
             symbol=symbol,
+            detail_code="account_truth.cost_basis_compared",
             detail=_cost_basis_detail(broker_cost_basis_methods.get(symbol, "")),
+            detail_context=_cost_basis_context(
+                broker_cost_basis_methods.get(symbol, "")
+            ),
         )
         for symbol in symbols
     ]
@@ -401,6 +419,12 @@ def _cost_basis_detail(cost_basis_method: str) -> str:
     return detail
 
 
+def _cost_basis_context(cost_basis_method: str) -> dict[str, str]:
+    if not cost_basis_method:
+        return {}
+    return {"cost_basis_method": cost_basis_method}
+
+
 def _item(
     *,
     category: str,
@@ -409,7 +433,9 @@ def _item(
     difference: Decimal,
     suggested_review_action: str,
     symbol: str = "",
+    detail_code: str = "",
     detail: str = "",
+    detail_context: dict[str, str] | None = None,
 ) -> ReconciliationItem:
     status: ReconciliationStatus = "pass" if difference == Decimal("0") else "mismatch"
     return ReconciliationItem(
@@ -420,7 +446,9 @@ def _item(
         difference=_decimal_to_text(difference),
         suggested_review_action="" if status == "pass" else suggested_review_action,
         symbol=symbol,
+        detail_code=detail_code,
         detail=detail,
+        detail_context=detail_context or {},
     )
 
 
@@ -431,7 +459,9 @@ def _warning_item(
     karkinos_value: Decimal | None,
     suggested_review_action: str,
     symbol: str = "",
+    detail_code: str = "",
     detail: str = "",
+    detail_context: dict[str, str] | None = None,
 ) -> ReconciliationItem:
     return ReconciliationItem(
         category=category,
@@ -441,7 +471,9 @@ def _warning_item(
         difference="0",
         suggested_review_action=suggested_review_action,
         symbol=symbol,
+        detail_code=detail_code,
         detail=detail,
+        detail_context=detail_context or {},
     )
 
 

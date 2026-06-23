@@ -25,6 +25,12 @@ export type LedgerEntry = {
   quantity: number | null;
   price: number | null;
   commission: number;
+  gross_amount?: number | null;
+  net_cash_impact?: number | null;
+  fee_breakdown?: Record<string, number | string | null | undefined> | null;
+  fee_rule_id?: string | null;
+  fee_rule_version?: string | null;
+  cost_basis_method?: string | null;
   asset_class: string;
   note: string;
   source: string;

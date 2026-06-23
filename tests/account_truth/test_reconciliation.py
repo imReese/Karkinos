@@ -137,6 +137,9 @@ def test_reconciliation_report_surfaces_mismatches_with_review_actions(
     assert by_category["cash"].difference == "-30.00"
     assert by_category["position"].symbol == "SYN001"
     assert by_category["position"].difference == "1"
+    assert by_category["position"].detail_code == (
+        "account_truth.position_quantity_compared"
+    )
     assert by_category["net_cash_impact"].difference == "-1.00"
     assert by_category["fee"].difference == "2.25"
     assert by_category["tax"].difference == "0.75"
@@ -254,4 +257,8 @@ def test_reconciliation_report_distinguishes_trade_cash_fee_tax_transfer_and_cos
     cost_basis_item = by_key[("cost_basis", "SYN001")]
     assert cost_basis_item.status == "mismatch"
     assert cost_basis_item.difference == "0.10"
+    assert cost_basis_item.detail_code == "account_truth.cost_basis_compared"
+    assert cost_basis_item.detail_context == {
+        "cost_basis_method": "broker_remaining_cost"
+    }
     assert "broker_remaining_cost" in cost_basis_item.detail

@@ -116,11 +116,11 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 
 `http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/decision`, `/market`, and `/settings` can be refreshed without returning home.
 
-The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file.
+The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file. Advanced local fee assumptions can use `broker_fee_schedule`, which stores fee rule parameters and known limitations only, not account identifiers or broker credentials.
 
 Use this storage boundary:
 
-- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, the current account commission rule, and read-only broker connector client paths/account aliases. Broker passwords, tokens, and secrets do not belong in broker connector config.
+- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, the current account commission rule, structured broker fee schedule, and read-only broker connector client paths/account aliases. Broker passwords, tokens, secrets, account identifiers, screenshots, and private exports do not belong in broker connector or fee-schedule config.
 - SQLite under `data/store/`: mutable financial facts and cache state, including watchlists, instrument metadata, ledger entries, quotes, bars, portfolio snapshots, trading controls, and saved backtest indexes.
 - `reports/`: human-readable generated artifacts such as backtest JSON reports and data reconciliation outputs. Reports are runtime evidence, not source code.
 

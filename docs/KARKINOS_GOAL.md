@@ -57,17 +57,18 @@ The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
 Current active milestone:
 
-* **v1.2 — Broker Evidence Connector**
+* **v1.4 — Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity**
 * Status: active roadmap milestone.
-* Purpose: make broker facts easier to import or read without introducing
-  broker order submission.
+* Purpose: separate strategy contribution, fees, taxes, cash flows, manual
+  movement, and cost-basis evidence so account performance remains auditable.
 
 Latest completed milestone:
 
-* **v1.1 — Paper Broker & OMS**
+* **v1.3 — Professional Decision Workflow**
 * Status: completed roadmap milestone.
-* Purpose: provide professional order lifecycle evidence for simulation and
-  review without mutating the production ledger or submitting broker orders.
+* Purpose: turn data, account, strategy, risk, paper/shadow, and manual-review
+  evidence into a daily workflow that can be followed without reading internal
+  modules.
 
 ## Documentation Map
 

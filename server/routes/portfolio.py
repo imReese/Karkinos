@@ -130,6 +130,24 @@ def _resolve_account_commission(
     return float(commission), _account_commission_note(rate, min_commission)
 
 
+def _manual_trade_fee_breakdown(commission: float) -> dict[str, str]:
+    return {
+        "commission": str(commission),
+        "stamp_tax": "0",
+        "transfer_fee": "0",
+        "other_fees": "0",
+        "total_fee": str(commission),
+    }
+
+
+def _manual_trade_net_cash_impact(
+    *, direction: str, gross_amount: float, commission: float
+) -> float:
+    if direction == "buy":
+        return -(gross_amount + commission)
+    return gross_amount - commission
+
+
 _TIMELINE_MARKET_COMPONENTS = (
     ("stock", "stocks"),
     ("fund", "funds"),
@@ -3856,6 +3874,20 @@ def create_router() -> APIRouter:
             quantity=float(quantity),
             price=float(price),
             commission=commission,
+            gross_amount=float(quantity) * float(price),
+            net_cash_impact=_manual_trade_net_cash_impact(
+                direction=body.direction,
+                gross_amount=float(quantity) * float(price),
+                commission=commission,
+            ),
+            fee_breakdown_json=json.dumps(
+                _manual_trade_fee_breakdown(commission),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            fee_rule_id="manual_configured_commission",
+            fee_rule_version="account_commission_rate",
+            cost_basis_method="moving_average_buy_cost",
             asset_class=body.asset_class,
             note=note,
             source="portfolio_trade",

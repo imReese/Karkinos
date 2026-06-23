@@ -91,7 +91,9 @@ export type ReconciliationItem = {
   karkinos_value: string;
   difference: string;
   suggested_review_action: string;
+  detail_code?: string;
   detail: string;
+  detail_context?: Record<string, string>;
   evidence_references: string[];
   latest_review: ReviewDecision | null;
 };

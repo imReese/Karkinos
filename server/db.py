@@ -81,6 +81,12 @@ class AppDatabase:
             _ensure_column(conn, "quote_snapshots", "provider_status", "TEXT")
             _ensure_column(conn, "quote_snapshots", "captured_reason", "TEXT")
             _ensure_column(conn, "quote_snapshots", "nav_date", "TEXT")
+            _ensure_column(conn, "ledger_entries", "gross_amount", "REAL")
+            _ensure_column(conn, "ledger_entries", "net_cash_impact", "REAL")
+            _ensure_column(conn, "ledger_entries", "fee_breakdown_json", "TEXT")
+            _ensure_column(conn, "ledger_entries", "fee_rule_id", "TEXT")
+            _ensure_column(conn, "ledger_entries", "fee_rule_version", "TEXT")
+            _ensure_column(conn, "ledger_entries", "cost_basis_method", "TEXT")
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
@@ -1439,12 +1445,10 @@ class AppDatabase:
         """获取所有回测结果摘要。"""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """SELECT id, created_at, config_json, initial_cash,
+            rows = conn.execute("""SELECT id, created_at, config_json, initial_cash,
                           final_equity, total_return, sharpe, max_drawdown,
                           equity_curve_json, metrics_json, cost_summary_json
-                   FROM backtest_results ORDER BY id DESC"""
-            ).fetchall()
+                   FROM backtest_results ORDER BY id DESC""").fetchall()
             return [dict(row) for row in rows]
 
     async def get_backtest_result(self, result_id: int) -> dict[str, Any] | None:
@@ -2477,6 +2481,12 @@ class AppDatabase:
         quantity: float | None = None,
         price: float | None = None,
         commission: float = 0.0,
+        gross_amount: float | None = None,
+        net_cash_impact: float | None = None,
+        fee_breakdown_json: str | None = None,
+        fee_rule_id: str | None = None,
+        fee_rule_version: str | None = None,
+        cost_basis_method: str | None = None,
         asset_class: str = "stock",
         note: str = "",
         source: str = "manual",
@@ -2489,8 +2499,11 @@ class AppDatabase:
             cursor = conn.execute(
                 """INSERT INTO ledger_entries
                    (entry_type, timestamp, amount, symbol, direction, quantity,
-                    price, commission, asset_class, note, source, source_ref, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    price, commission, gross_amount, net_cash_impact,
+                    fee_breakdown_json, fee_rule_id, fee_rule_version,
+                    cost_basis_method, asset_class, note, source, source_ref,
+                    created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     entry_type,
                     normalized_timestamp,
@@ -2500,6 +2513,12 @@ class AppDatabase:
                     quantity,
                     price,
                     commission,
+                    gross_amount,
+                    net_cash_impact,
+                    fee_breakdown_json,
+                    fee_rule_id,
+                    fee_rule_version,
+                    cost_basis_method,
                     asset_class,
                     note,
                     source,
@@ -2508,6 +2527,35 @@ class AppDatabase:
                 ),
             )
             row_id = cursor.lastrowid or 0
+            event_payload = {
+                "entry_id": row_id,
+                "entry_type": entry_type,
+                "timestamp": normalized_timestamp,
+                "amount": amount,
+                "symbol": symbol,
+                "direction": direction,
+                "quantity": quantity,
+                "price": price,
+                "commission": commission,
+                "asset_class": asset_class,
+                "note": note,
+                "source": source,
+                "source_ref": source_ref,
+            }
+            event_payload.update(
+                {
+                    key: value
+                    for key, value in {
+                        "gross_amount": gross_amount,
+                        "net_cash_impact": net_cash_impact,
+                        "fee_breakdown_json": fee_breakdown_json,
+                        "fee_rule_id": fee_rule_id,
+                        "fee_rule_version": fee_rule_version,
+                        "cost_basis_method": cost_basis_method,
+                    }.items()
+                    if value is not None
+                }
+            )
             _insert_event_sync(
                 conn,
                 event_type="portfolio.ledger_entry.recorded",
@@ -2516,21 +2564,7 @@ class AppDatabase:
                 entity_id="default",
                 source="ledger_entries",
                 source_ref=str(row_id),
-                payload={
-                    "entry_id": row_id,
-                    "entry_type": entry_type,
-                    "timestamp": normalized_timestamp,
-                    "amount": amount,
-                    "symbol": symbol,
-                    "direction": direction,
-                    "quantity": quantity,
-                    "price": price,
-                    "commission": commission,
-                    "asset_class": asset_class,
-                    "note": note,
-                    "source": source,
-                    "source_ref": source_ref,
-                },
+                payload=event_payload,
             )
             conn.commit()
             return row_id
@@ -3099,6 +3133,12 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     quantity REAL,
     price REAL,
     commission REAL DEFAULT 0,
+    gross_amount REAL,
+    net_cash_impact REAL,
+    fee_breakdown_json TEXT,
+    fee_rule_id TEXT,
+    fee_rule_version TEXT,
+    cost_basis_method TEXT,
     asset_class TEXT DEFAULT 'stock',
     note TEXT DEFAULT '',
     source TEXT NOT NULL DEFAULT 'manual',

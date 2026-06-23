@@ -3,6 +3,7 @@
 from execution.commission import (
     BondExchangeCommission,
     ETFCommission,
+    FeeBreakdown,
     GoldSpotCommission,
     StockACommission,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "PercentSlippage",
     "TickSlippage",
     "VolumeSlippage",
+    "FeeBreakdown",
     "StockACommission",
     "ETFCommission",
     "GoldSpotCommission",

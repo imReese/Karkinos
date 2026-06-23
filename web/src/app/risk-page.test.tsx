@@ -97,7 +97,7 @@ const explainability = {
     },
     {
       kind: 'cash_deposit',
-      title: '资金转入',
+      title: 'cash_deposit',
       detail: 'RMB cash deposit recorded from user request',
       timestamp: '2026-04-01T00:00:00+00:00',
       symbol: null,
@@ -125,7 +125,7 @@ const explainability = {
           category: 'capital',
           impact_source: 'external',
           kind: 'cash_deposit',
-          title: '资金转入',
+          title: 'cash_deposit',
           detail: 'RMB cash deposit recorded from user request',
           timestamp: '2026-04-01T00:00:00+00:00',
           symbol: null,
@@ -173,8 +173,11 @@ function installRiskFetchMock() {
   return fetchMock;
 }
 
-function renderRiskPage() {
+function renderRiskPage(options?: { locale?: 'en' | 'zh' }) {
   window.localStorage.clear();
+  if (options?.locale) {
+    window.localStorage.setItem('karkinos.locale', options.locale);
+  }
   installRiskFetchMock();
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -258,11 +261,23 @@ test('renders recent risk drivers as readable audit events', async () => {
     await screen.findByText('数量 200 · 价格 ¥26.35 · 手续费 ¥5.00'),
   ).toBeTruthy();
   expect(await screen.findByText(/-.*¥5,275\.00/)).toBeTruthy();
-  expect(await screen.findAllByText('现金流入组合。')).toHaveLength(2);
+  expect(
+    await screen.findAllByText('Cash inflow into the portfolio.'),
+  ).toHaveLength(2);
+  expect(screen.queryByText('现金流入组合。')).toBeNull();
   expect(
     screen.queryByText('RMB cash deposit recorded from user request'),
   ).toBeNull();
   expect(screen.queryByText('2026-06-16T03:04:56+00:00')).toBeNull();
+});
+
+test('localizes risk explainability ledger titles instead of rendering internal kinds', async () => {
+  renderRiskPage({ locale: 'zh' });
+
+  const recentList = await screen.findByTestId('risk-recent-impact-list');
+  expect(within(recentList).getByText('资金转入')).toBeTruthy();
+  expect(await screen.findAllByText('现金流入组合。')).toHaveLength(2);
+  expect(document.body.textContent).not.toContain('cash_deposit');
 });
 
 test('keeps explainability columns compact with local event scrolling', async () => {

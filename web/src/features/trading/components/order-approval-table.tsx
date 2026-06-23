@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import {
   formatPrice,
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatPublicOperationalNote } from '../../../shared/public-labels';
 import {
   useConfirmManualOrderMutation,
   usePendingManualOrdersQuery,
@@ -190,10 +192,12 @@ function SideBadge({ side }: { side: string }) {
 function RiskHint({ order }: { order: ManualOrder }) {
   const copy = useCopy();
   const labels = copy.trading.orders;
+  const { locale } = usePreferences();
   const orderPayload = parsePayload(order.payload_json);
   const decisionId =
     order.risk_decision_id ?? orderPayload?.risk_decision_id ?? null;
   const intentId = order.intent_id ?? orderPayload?.intent_id ?? null;
+  const publicNote = formatPublicOperationalNote(order.note, locale);
 
   return (
     <div className="space-y-1">
@@ -204,8 +208,8 @@ function RiskHint({ order }: { order: ManualOrder }) {
       <div className="app-muted break-all text-xs">
         {labels.intentId}: {intentId ?? '--'}
       </div>
-      {order.note ? (
-        <div className="app-muted text-xs">{order.note}</div>
+      {publicNote ? (
+        <div className="app-muted text-xs">{publicNote}</div>
       ) : null}
     </div>
   );

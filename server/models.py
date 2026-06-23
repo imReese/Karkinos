@@ -606,6 +606,12 @@ class LedgerEntryResponse(BaseModel):
     quantity: float | None = None
     price: float | None = None
     commission: float = 0.0
+    gross_amount: float | None = None
+    net_cash_impact: float | None = None
+    fee_breakdown: dict[str, Any] | None = None
+    fee_rule_id: str | None = None
+    fee_rule_version: str | None = None
+    cost_basis_method: str | None = None
     asset_class: str = "stock"
     note: str = ""
     source: str = "manual"

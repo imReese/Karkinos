@@ -4,6 +4,84 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.4 Progress
+
+* 2026-06-22: Started the shared public ledger formatter migration by moving
+  ledger instrument, note, amount, and entry-type formatting into a shared Web
+  module. Overview, Risk explainability conversion, Activity compatibility
+  imports, and holding-detail ledger traces now use the shared formatter path,
+  and holding-detail tests prove raw ledger entry types such as internal trade
+  codes are not rendered in that surface. This is display formatting only; it
+  does not submit broker orders, mutate account facts, or change live-like
+  manual-confirmation defaults.
+* 2026-06-22: Upgraded account strategy contribution attribution so fully
+  linked strategy fills remain the only source of strategy net contribution,
+  while tax, fee, slippage, manual ledger movement, missing-evidence fills, and
+  external cash flow are separated into distinct report fields. Deterministic
+  backend coverage proves that metadata-only strategy fills and manual trades
+  are excluded from net strategy contribution by default. This is attribution
+  evidence only; it does not submit broker orders, mutate broker facts, or
+  change live-like manual-confirmation defaults.
+* 2026-06-22: Added structured trade-cost fields to persisted ledger entries.
+  Buy and sell ledger rows can now preserve gross trade amount, signed net cash
+  impact, JSON fee breakdown, fee-rule id, fee-rule version, and cost-basis
+  method while keeping the legacy `amount` and `commission` fields compatible.
+  Manual Portfolio trades and Ledger trade imports populate these fields for
+  audit and reconciliation. This is accounting evidence only; it does not
+  submit broker orders, mutate broker facts, or change live-like
+  manual-confirmation defaults.
+* 2026-06-22: Started Strategy Attribution 2.0 + Broker Fee & Cost Basis
+  Fidelity with a structured local broker fee schedule and deterministic fee
+  breakdown contract. Ignored `config.json` can now hold safe fee-rule
+  parameters such as commission rates, minimum commissions, stamp tax,
+  transfer fee, other fee rate, rule id, and known limitations while rejecting
+  credential-like fields. `StockACommission` and `ETFCommission` expose
+  component-level fee breakdowns while legacy total-fee `calculate()` calls
+  remain compatible. This is accounting evidence only; it does not submit
+  broker orders, mutate account facts, or change live-like
+  manual-confirmation defaults.
+
+## v1.3 Progress
+
+* 2026-06-22: Completed localized frontend coverage for Decision no-action,
+  degraded, blocked, and review-required states. The Web Decision page now
+  formats lane summary decisions through the shared public-label formatter, so
+  Chinese and English surfaces do not expose raw internal decision codes such
+  as no-action or review-required state ids. Tests assert that localized
+  no-action, degraded account truth, blocked data quality, review-required
+  decision state, and no-action reasons remain user-readable. This is display
+  evidence only; it does not submit broker orders, mutate account facts, or
+  change live-like manual-confirmation defaults.
+* 2026-06-22: Added decision certainty evidence for candidate actions so stale,
+  cached, estimated, unknown, missing, or unavailable market/account evidence
+  cannot appear as a certain actionable suggestion. Decision summaries now
+  degrade stale/estimated data to review-required, block missing/unavailable
+  evidence, hide manual approval entry points until review is complete, and
+  localize certainty reasons and required actions in the Web Decision page.
+  This is review evidence only; it does not submit broker orders, mutate
+  account facts, or change live-like manual-confirmation defaults.
+* 2026-06-22: Added candidate-level evidence-chain fields and Web rendering for
+  strategy source, market data status, account truth, risk status, research
+  evidence, paper/simulation evidence, cost impact, uncertainty, and manual
+  confirmation state. The surface localizes user-facing labels and keeps
+  internal action codes out of the UI. This is review evidence only; it does
+  not submit broker orders, mutate account facts, or change live-like
+  manual-confirmation defaults.
+* 2026-06-22: Connected the decision workflow task surface to the Web Decision
+  page with localized task labels, status labels, and next-action labels.
+  Decision workflow rendering now places data refresh and account truth before
+  strategy evidence, paper/shadow review, and manual confirmation, and tests
+  assert that internal action codes are not shown to users. This is display
+  and review-order evidence only; it does not submit broker orders, mutate
+  account facts, or change live-like manual-confirmation defaults.
+* 2026-06-22: Started Professional Decision Workflow with a stable decision
+  summary workflow task surface. Daily and intraday decision summaries now
+  order data refresh, account truth, risk review, strategy evidence,
+  paper/shadow review, and manual confirmation so data and account-truth
+  blockers are visible before strategy opportunities. This is API review
+  evidence only; it does not submit broker orders, mutate account facts, or
+  change live-like manual-confirmation defaults.
+
 ## v1.1 Progress
 
 * 2026-06-22: Added shadow review comparison evidence for strategy candidates,
@@ -617,3 +695,119 @@ roadmap promises.
   and cost-basis differences as reviewable items. This is audit evidence only;
   it does not mutate production ledger entries, submit broker orders, or change
   manual-confirmation defaults.
+* 2026-06-22: Added shared public formatting for generated Trading manual-order
+  notes. Decision-generated order notes now render as user-readable copy on
+  Trading queue and audit surfaces without exposing internal action ids; order
+  execution behavior and manual-confirmation defaults are unchanged.
+* 2026-06-22: Moved the Overview latest-ledger cards onto the shared public
+  ledger formatter for entry titles, instrument labels, and cleaned public
+  notes. Legacy note prefixes and technical note segments remain hidden from
+  the user-facing ledger cards.
+* 2026-06-22: Stopped Decision manual-order preparation from writing internal
+  signal action ids into order notes. Prepared manual orders now use the
+  shared public queue note from the Trading API hook while preserving manual
+  confirmation and broker-submit defaults.
+* 2026-06-22: Localized Decision signal-journal audit event labels on
+  user-facing candidate and journal surfaces. Dotted internal event keys remain
+  backend audit identifiers, while the Web UI now shows public event copy
+  without changing signal, journal, risk-gate, or manual-confirm behavior.
+* 2026-06-22: Connected Risk explainability recent-driver and timeline titles
+  to the shared public ledger formatter for generated ledger kinds. Internal
+  ledger kind values such as cash-flow entry types now render as localized
+  public titles while existing human-authored titles are preserved. This is UI
+  formatting only; it does not change risk computation, ledger facts, broker
+  behavior, or manual-confirmation defaults.
+* 2026-06-22: Localized Account Truth review evidence references for
+  user-facing reconciliation items. Broker evidence ids now render as readable
+  source, subject, event-type, and import-run labels instead of raw
+  machine-formatted reference strings. This is review-surface formatting only;
+  it does not change import parsing, reconciliation, ledger mutation, broker
+  behavior, or manual-confirmation defaults.
+* 2026-06-22: Localized Account Truth reconciliation item categories on the
+  Web review surface. Difference cards now display public labels such as cash,
+  position, fee, and cost basis through the shared public-label formatter
+  instead of rendering raw backend category fields. This is display formatting
+  only; it does not change reconciliation math, manual review decisions,
+  ledger mutation, broker behavior, or manual-confirmation defaults.
+* 2026-06-22: Replaced Account Truth reconciliation report summary shorthand
+  such as raw cash/fee delta labels with localized public labels for cash
+  difference and fee difference. This is report-summary display formatting
+  only; it does not change reconciliation math, manual review decisions,
+  ledger mutation, broker behavior, or manual-confirmation defaults.
+* 2026-06-22: Localized generated Account Truth reconciliation detail copy on
+  the Web review surface. Known backend-generated reconciliation explanations
+  now pass through the shared public-note formatter in Chinese locale instead
+  of exposing English operational sentences. This is detail-text display
+  formatting only; it does not change reconciliation math, manual review
+  decisions, ledger mutation, broker behavior, or manual-confirmation defaults.
+* 2026-06-22: Added stable Account Truth reconciliation detail codes alongside
+  the legacy detail text. Reconciliation item generation and the Account Truth
+  report API now expose a machine-stable `detail_code`, and the Web review
+  surface prefers that code for localized public-note rendering while keeping
+  old `detail` payloads as fallback. This is an additive review-surface
+  contract change only; it does not change reconciliation math, manual review
+  decisions, ledger mutation, broker behavior, or manual-confirmation defaults.
+* 2026-06-22: Structured dynamic Account Truth reconciliation detail context
+  for broker cost-basis method evidence. Cost-basis reconciliation items now
+  expose `detail_context` for values such as the broker cost-basis method, and
+  the Web review surface renders those context fields as localized labels and
+  values instead of exposing raw method codes in generated detail text. This is
+  an additive review-surface contract change only; it does not change
+  reconciliation math, manual review decisions, ledger mutation, broker
+  behavior, or manual-confirmation defaults.
+* 2026-06-22: Added category-aware numeric formatting to Account Truth
+  reconciliation item values on the Web review surface. Position differences
+  now show share units, cost-basis differences show four-decimal CNY price
+  values, and cash/fee/tax-like differences use CNY amount formatting instead
+  of unqualified raw numbers. This is display formatting only; it does not
+  change reconciliation math, manual review decisions, ledger mutation, broker
+  behavior, or manual-confirmation defaults.
+* 2026-06-22: Extended Account Truth report summaries to use the same
+  category-aware money formatting for cash and fee differences. Report cards
+  now display localized CNY amounts instead of raw decimal strings while the
+  reconciliation report payload remains unchanged. This is display formatting
+  only; it does not change reconciliation math, manual review decisions,
+  ledger mutation, broker behavior, or manual-confirmation defaults.
+* 2026-06-22: Added tax-difference visibility to Account Truth reconciliation
+  report summary cards. Existing `tax_difference` payload values now render as
+  localized CNY amounts alongside cash and fee differences, making fee/tax
+  evidence visible without changing the reconciliation payload or accounting
+  calculations. This is display formatting only; it does not change
+  reconciliation math, manual review decisions, ledger mutation, broker
+  behavior, or manual-confirmation defaults.
+* 2026-06-22: Extended the shared public ledger formatter to render structured
+  trade cost facts on Web ledger surfaces. Activity and Overview ledger rows
+  can now show gross trade amount, signed net cash impact, commission, stamp
+  tax, transfer fee, and localized cost-basis method labels from structured
+  fields instead of hiding those facts in notes. This is display formatting
+  only; it does not change ledger persistence, fee calculation, trading,
+  broker behavior, or manual-confirmation defaults.
+* 2026-06-22: Moved holding-detail ledger traces onto the same structured
+  ledger cost formatter used by Activity and Overview. Holding detail now
+  exposes gross amount, signed net cash impact, commission, stamp tax,
+  transfer fee, and localized cost-basis method labels from structured ledger
+  fields while keeping public notes separate. This is display formatting only;
+  it does not change ledger persistence, fee calculation, trading, broker
+  behavior, or manual-confirmation defaults.
+* 2026-06-22: Localized Risk explainability ledger fallback details for
+  generated cash-flow and ledger adjustment events. Risk review surfaces now
+  use the active Web language for public fallback descriptions after shared
+  ledger-note cleanup removes internal import notes. This is display
+  formatting only; it does not change risk math, ledger persistence, trading,
+  broker behavior, or manual-confirmation defaults.
+* 2026-06-23: Moved Backtest strategy validation rows to use localized
+  strategy display names as the primary label while keeping strategy ids as
+  secondary audit metadata. This makes research-gate status easier to read
+  without changing strategy execution, broker behavior, trading, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Moved Decision candidate strategy evidence to the same
+  user-facing strategy display-name convention. Candidate cards and evidence
+  chains now show localized strategy names first while preserving internal
+  strategy ids as secondary audit metadata. This is display formatting only; it
+  does not change decision generation, broker behavior, trading, risk gates, or
+  manual-confirmation defaults.
+* 2026-06-23: Added strategy identity to the Web strategy contribution report
+  using localized display names first and internal strategy ids as secondary
+  audit metadata. This makes contribution evidence attributable to a readable
+  strategy without changing attribution math, ledger facts, broker behavior,
+  trading, risk gates, or manual-confirmation defaults.

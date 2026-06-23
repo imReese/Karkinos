@@ -44,6 +44,18 @@ const ledgerEntry = {
   quantity: 60,
   price: 1500,
   commission: 30,
+  gross_amount: 90000,
+  net_cash_impact: -90035.1,
+  fee_breakdown: {
+    commission: '30',
+    stamp_tax: '0',
+    transfer_fee: '5.10',
+    other_fees: '0',
+    total_fee: '35.10',
+  },
+  fee_rule_id: 'manual_configured_commission',
+  fee_rule_version: 'account_commission_rate',
+  cost_basis_method: 'moving_average_buy_cost',
   asset_class: 'stock',
   note: 'initial allocation',
   source: 'manual',
@@ -278,8 +290,17 @@ test('renders holding detail with cached quote status and ledger trace', async (
       'Cached quotes · valuation uses cached market data',
     ),
   ).toBeTruthy();
-  expect(await screen.findByText('trade_buy')).toBeTruthy();
+  expect(await screen.findByText('Buy')).toBeTruthy();
+  expect(screen.queryByText('trade_buy')).toBeNull();
   expect(await screen.findByText('initial allocation')).toBeTruthy();
+  expect(await screen.findByText('Gross amount CN¥90,000.00')).toBeTruthy();
+  expect(await screen.findByText('Net cash impact -CN¥90,035.10')).toBeTruthy();
+  expect(await screen.findByText('Commission CN¥30.00')).toBeTruthy();
+  expect(await screen.findByText('Stamp tax CN¥0.00')).toBeTruthy();
+  expect(await screen.findByText('Transfer fee CN¥5.10')).toBeTruthy();
+  expect(
+    await screen.findByText('Cost basis Moving average buy cost'),
+  ).toBeTruthy();
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
   expect(await screen.findByText('6.67%')).toBeTruthy();
