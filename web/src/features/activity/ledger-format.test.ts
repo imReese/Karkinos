@@ -181,6 +181,8 @@ describe('ledger formatter', () => {
       'zh',
     );
 
+    expect(details.some((line) => line.label === '净现金影响')).toBe(false);
+    expect(details.some((line) => line.value === '-CN¥5,275.00')).toBe(false);
     expect(details.some((line) => line.label === '成本口径')).toBe(false);
     expect(details.some((line) => line.value.includes('broker'))).toBe(false);
     expect(details.some((line) => line.value.includes('券商展示成本'))).toBe(

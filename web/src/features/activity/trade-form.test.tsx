@@ -323,7 +323,7 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('宇通客车')).toBeTruthy();
   expect(screen.getByText('-CN¥5,275.16')).toBeTruthy();
   expect(screen.getByText('Gross amount CN¥5,270.00')).toBeTruthy();
-  expect(screen.getByText('Net cash impact -CN¥5,275.16')).toBeTruthy();
+  expect(screen.queryByText('Net cash impact -CN¥5,275.16')).toBeNull();
   expect(screen.getByText('Commission CN¥5.00')).toBeTruthy();
   expect(screen.getByText('Stamp tax CN¥0.00')).toBeTruthy();
   expect(screen.getByText('Transfer fee CN¥0.16')).toBeTruthy();

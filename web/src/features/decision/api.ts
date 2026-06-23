@@ -107,6 +107,8 @@ export type DecisionCandidate = {
   action_id: number | null;
   action: DecisionAction;
   symbol: string;
+  display_name?: string | null;
+  name?: string | null;
   asset_class: string | null;
   title: string | null;
   detail: string | null;
@@ -123,6 +125,8 @@ export type DecisionCandidate = {
       timestamp: string | null;
       strategy_id: string | null;
       symbol: string | null;
+      display_name?: string | null;
+      name?: string | null;
       target_weight: number | null;
     };
     risk_gate: {
@@ -214,6 +218,8 @@ export type SignalResponse = {
   timestamp: string;
   strategy_id: string;
   symbol: string;
+  display_name?: string | null;
+  name?: string | null;
   direction: string;
   target_weight: number;
   price: number | null;
@@ -224,6 +230,8 @@ export type ActionCard = {
   id: number | null;
   source_signal_id: number | null;
   symbol: string;
+  display_name?: string | null;
+  name?: string | null;
   title: string;
   detail: string;
   direction: string;

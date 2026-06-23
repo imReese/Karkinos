@@ -13,6 +13,7 @@ import {
   formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
+import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
   formatStrategyAuditLabel,
   type StrategyNameMap,
@@ -608,7 +609,8 @@ function SignalQueuePanel({
   loading: boolean;
   error: boolean;
 }) {
-  const labels = useCopy().decision;
+  const copy = useCopy();
+  const labels = copy.decision;
   const { locale } = usePreferences();
   const createManualOrder = useCreateManualOrderFromActionMutation();
   const [quantities, setQuantities] = useState<Record<number, string>>({});
@@ -662,10 +664,9 @@ function SignalQueuePanel({
                     <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="font-semibold text-[var(--app-text)]">
-                          {action.title || action.symbol}
+                          {formatInstrumentDisplayLabel(action)}
                         </div>
                         <div className="app-muted mt-1 break-words text-xs">
-                          {action.symbol} ·{' '}
                           {formatPublicStatus(action.direction, locale)} ·{' '}
                           {formatPublicStatus(action.risk_gate_status, locale)}{' '}
                           ·{' '}
@@ -687,7 +688,9 @@ function SignalQueuePanel({
                             type="number"
                             min="1"
                             value={quantities[action.id] ?? '100'}
-                            aria-label={`${labels.orderQuantity}: ${action.symbol}`}
+                            aria-label={`${labels.orderQuantity}: ${formatInstrumentDisplayLabel(
+                              action,
+                            )}`}
                             onChange={(event) =>
                               setQuantities((current) => ({
                                 ...current,
@@ -725,7 +728,11 @@ function SignalQueuePanel({
                       className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
                     >
                       <div className="font-semibold text-[var(--app-soft)]">
-                        {entry.signal.symbol} · {entry.signal.strategy_id}
+                        {formatInstrumentDisplayLabel(entry.signal)} ·{' '}
+                        {formatStrategyAuditLabel(
+                          entry.signal.strategy_id,
+                          copy.backtest.page.strategyNames,
+                        )}
                       </div>
                       <div className="app-muted mt-1 break-words">
                         {formatPublicCode(
@@ -968,6 +975,7 @@ function DecisionCandidateCard({
   const { locale } = usePreferences();
   const readyForManual =
     candidate.manual_confirmation_status === 'ready_for_manual_confirmation';
+  const instrumentLabel = formatInstrumentDisplayLabel(candidate);
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
@@ -977,7 +985,7 @@ function DecisionCandidateCard({
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="break-all font-semibold text-[var(--app-text)]">
-              {candidate.symbol}
+              {instrumentLabel}
             </span>
             <StatusPill value={candidate.action} />
             <StatusPill
@@ -993,7 +1001,7 @@ function DecisionCandidateCard({
           <a
             className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
             href="/trading"
-            aria-label={`${labels.openTradingApprovals}: ${candidate.symbol}`}
+            aria-label={`${labels.openTradingApprovals}: ${instrumentLabel}`}
           >
             {labels.openTradingApprovals}
           </a>

@@ -12,6 +12,10 @@ import {
   formatPublicOperationalNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
+import {
+  formatInstrumentDisplayLabel,
+  type InstrumentDisplayRecord,
+} from '../../../shared/instrument-display';
 import { KillSwitchPanel } from './kill-switch-panel';
 import {
   useConfirmManualOrderMutation,
@@ -85,11 +89,19 @@ function getErrorMessage(error: unknown) {
 }
 
 function instrumentDisplayLabel(
-  symbol: string,
+  instrument: InstrumentDisplayRecord | string,
   instrumentNames: InstrumentNameLookup,
 ) {
-  const name = instrumentNames.get(symbol)?.trim();
-  return name && name !== symbol ? `${name} ${symbol}` : symbol;
+  const record =
+    typeof instrument === 'string' ? { symbol: instrument } : instrument;
+  return formatInstrumentDisplayLabel({
+    ...record,
+    display_name:
+      record.display_name ??
+      record.name ??
+      instrumentNames.get(record.symbol ?? '') ??
+      null,
+  });
 }
 
 function sideLabel(
@@ -445,7 +457,7 @@ function ExecutionAuditPanel({
               rows={latestOrders.map((order) => ({
                 id: order.order_id,
                 title: `${instrumentDisplayLabel(
-                  order.symbol,
+                  order,
                   instrumentNames,
                 )} · ${statusLabel(order.status, labels, locale)}`,
                 detail: `${sideLabel(order.side, labels, locale)} ${formatQuantity(order.quantity)} @ ${
@@ -460,7 +472,7 @@ function ExecutionAuditPanel({
               rows={latestFills.map((fill) => ({
                 id: fill.fill_id ?? fill.order_id,
                 title: `${instrumentDisplayLabel(
-                  fill.symbol,
+                  fill,
                   instrumentNames,
                 )} · ${sideLabel(fill.side, labels, locale)}`,
                 detail: `${formatQuantity(fill.fill_quantity)} @ ${formatPrice(
@@ -635,7 +647,7 @@ function OrderRow({
   const decisionId =
     order.risk_decision_id ?? payload?.risk_decision_id ?? null;
   const intentId = order.intent_id ?? payload?.intent_id ?? null;
-  const displayLabel = instrumentDisplayLabel(order.symbol, instrumentNames);
+  const displayLabel = instrumentDisplayLabel(order, instrumentNames);
   const publicNote = formatPublicOperationalNote(order.note, locale);
 
   return (
@@ -766,7 +778,7 @@ function AuditRow({
   instrumentNames: InstrumentNameLookup;
 }) {
   const { locale } = usePreferences();
-  const displayLabel = instrumentDisplayLabel(order.symbol, instrumentNames);
+  const displayLabel = instrumentDisplayLabel(order, instrumentNames);
   const publicNote =
     formatPublicOperationalNote(order.note, locale) ?? order.order_id;
   return (

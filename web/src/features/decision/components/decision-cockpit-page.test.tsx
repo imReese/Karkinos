@@ -74,6 +74,7 @@ const dailyDecision: DecisionResponse = {
       action_id: 9,
       action: 'buy',
       symbol: '600519',
+      display_name: '贵州茅台',
       asset_class: 'stock',
       title: 'Increase 600519',
       detail:
@@ -91,6 +92,7 @@ const dailyDecision: DecisionResponse = {
           timestamp: '2026-06-12T09:30:00+08:00',
           strategy_id: 'dual_ma',
           symbol: '600519',
+          display_name: '贵州茅台',
           target_weight: 0.2,
         },
         risk_gate: {
@@ -217,6 +219,7 @@ function installDecisionFetchMock({
             id: 9,
             source_signal_id: 1,
             symbol: '600519',
+            display_name: '贵州茅台',
             title: 'Increase 600519',
             detail:
               'Risk gate passed; prepare a manual order only if approved.',
@@ -247,6 +250,7 @@ function installDecisionFetchMock({
               timestamp: '2026-06-12T09:30:00+08:00',
               strategy_id: 'dual_ma',
               symbol: '600519',
+              display_name: '贵州茅台',
               direction: 'buy',
               target_weight: 0.2,
               price: 123.45,
@@ -346,7 +350,9 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect((await screen.findAllByText('Decision: Buy')).length).toBeGreaterThan(
     0,
   );
-  expect(await screen.findByText('600519')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('贵州茅台 600519')).length,
+  ).toBeGreaterThan(0);
   expect(await screen.findByText('Risk gate: Passed')).toBeTruthy();
   expect(
     await screen.findByText('Manual: Ready for manual confirmation'),
@@ -371,7 +377,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   ).toBeNull();
   expect(
     screen
-      .getByRole('link', { name: 'Open Trading approvals: 600519' })
+      .getByRole('link', { name: 'Open Trading approvals: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/trading');
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
@@ -847,6 +853,23 @@ test('shows strategy display names before internal ids in candidate evidence', a
   expect(candidateCard.textContent).not.toMatch(/Strategy source\s*dual_ma/);
 });
 
+test('shows instrument names before symbols across decision candidates and signal audit', async () => {
+  renderDecisionCockpit({ locale: 'zh' });
+
+  const candidateCard = await screen.findByTestId(
+    'decision-candidate-card-600519',
+  );
+
+  expect(candidateCard.textContent).toContain('贵州茅台');
+  expect(candidateCard.textContent).toContain('600519');
+  expect(candidateCard.textContent).toContain('贵州茅台 600519');
+  expect(candidateCard.textContent).not.toMatch(/^600519\s*买入/u);
+  expect(
+    (await screen.findAllByText('贵州茅台 600519')).length,
+  ).toBeGreaterThan(1);
+  expect(document.body.textContent).not.toContain('Increase 600519');
+});
+
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {
   renderDecisionCockpit();
 
@@ -858,7 +881,7 @@ test('keeps decision cockpit candidates accessible on narrow responsive layouts'
   const summaryGrid = screen.getByTestId('decision-summary-grid');
   const laneGrid = screen.getByTestId('decision-lane-grid');
   const tradingLink = screen.getByRole('link', {
-    name: 'Open Trading approvals: 600519',
+    name: 'Open Trading approvals: 贵州茅台 600519',
   });
 
   expect(summaryGrid.className).toContain('min-w-0');

@@ -6,6 +6,22 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Added a shared Web instrument display helper and applied it to
+  the Decision page's candidate cards, signal action queue, and signal journal
+  rows. When backend evidence provides a display name, Decision surfaces now
+  show the instrument name before the symbol instead of relying on raw symbols
+  or legacy candidate titles. Trading execution-audit order and fill facts now
+  reuse the same name-plus-symbol helper and prefer display names carried by
+  the execution facts before falling back to current holdings. Activity and
+  holding-detail execution details also avoid duplicating net cash impact after
+  it has already been shown as the primary signed amount, while keeping gross
+  amount, quantity, price, and fee breakdowns structured. Frontend tests cover
+  that the user-visible Decision surface renders name-plus-symbol labels and
+  does not expose the old internal candidate title as the primary audit label,
+  that Trading audit rows use fact-level instrument names, and that public
+  execution details avoid repeating cash-impact fields. This is display
+  formatting only; it does not submit broker orders, mutate account facts,
+  change API paths, or change live-like manual-confirmation defaults.
 * 2026-06-22: Started the shared public ledger formatter migration by moving
   ledger instrument, note, amount, and entry-type formatting into a shared Web
   module. Overview, Risk explainability conversion, Activity compatibility

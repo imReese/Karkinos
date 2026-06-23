@@ -296,7 +296,7 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('initial allocation')).toBeTruthy();
   expect(await screen.findByText('-CN¥90,035.10')).toBeTruthy();
   expect(await screen.findByText('Gross amount CN¥90,000.00')).toBeTruthy();
-  expect(await screen.findByText('Net cash impact -CN¥90,035.10')).toBeTruthy();
+  expect(screen.queryByText('Net cash impact -CN¥90,035.10')).toBeNull();
   expect(await screen.findByText('Commission CN¥30.00')).toBeTruthy();
   expect(await screen.findByText('Stamp tax CN¥0.00')).toBeTruthy();
   expect(await screen.findByText('Transfer fee CN¥5.10')).toBeTruthy();
