@@ -108,6 +108,11 @@ const explainability = {
       detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
       timestamp: '2026-06-16T03:04:56+00:00',
       symbol: '600066',
+      quantity: 200,
+      price: 26.35,
+      commission: 5,
+      gross_amount: 5270,
+      net_cash_impact: -5275,
       amount: -5275,
     },
     {
@@ -276,9 +281,16 @@ test('renders recent risk drivers as readable audit events', async () => {
   expect(recentDrivers).toBeTruthy();
   expect(await screen.findByText('Buy 宇通客车 600066')).toBeTruthy();
   expect(
-    await screen.findByText('数量 200 · 价格 ¥26.35 · 手续费 ¥5.00'),
+    await screen.findByText(
+      'Gross amount CN¥5,270.00 · Cash impact -CN¥5,275.00 · Quantity 200 · Price CN¥26.35 · Fee CN¥5.00',
+    ),
   ).toBeTruthy();
-  expect(await screen.findByText(/-.*¥5,275\.00/)).toBeTruthy();
+  expect(
+    screen.queryByText('数量 200 · 价格 ¥26.35 · 手续费 ¥5.00'),
+  ).toBeNull();
+  expect(
+    (await screen.findAllByText(/-.*¥5,275\.00/)).length,
+  ).toBeGreaterThanOrEqual(2);
   expect(
     await screen.findAllByText('Cash inflow into the portfolio.'),
   ).toHaveLength(2);
@@ -303,6 +315,11 @@ test('uses account instrument names for risk explainability events that only car
 
   const recentList = await screen.findByTestId('risk-recent-impact-list');
   expect(within(recentList).getByText('买入 宇通客车 600066')).toBeTruthy();
+  expect(
+    within(recentList).getByText(
+      '成交金额 ¥5,270.00 · 现金影响 -¥5,275.00 · 数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
+    ),
+  ).toBeTruthy();
   expect(recentList.textContent).not.toContain('Bought 600066');
 });
 

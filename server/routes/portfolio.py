@@ -525,6 +525,7 @@ def _build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDriv
         amount = entry.get("amount")
         title = entry_type or "ledger"
         detail = entry.get("note") or "账本活动。"
+        structured_fields = _ledger_entry_structured_explainability_fields(entry)
 
         if entry_type == "cash_deposit":
             title = "资金转入"
@@ -537,15 +538,15 @@ def _build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDriv
             price = float(entry.get("price") or 0.0)
             commission = float(entry.get("commission") or 0.0)
             title = f"买入 {instrument_label}"
-            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
             amount = -(_ledger_entry_notional(entry) + commission)
+            detail = entry.get("note") or ""
         elif entry_type == "trade_sell":
             quantity = float(entry.get("quantity") or 0.0)
             price = float(entry.get("price") or 0.0)
             commission = float(entry.get("commission") or 0.0)
             title = f"卖出 {instrument_label}"
-            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f} · 手续费 ¥{commission:.2f}"
             amount = _ledger_entry_notional(entry) - commission
+            detail = entry.get("note") or ""
         elif entry_type in _CASH_INCOME_LEDGER_TYPES:
             if entry_type == "cash_interest":
                 title = "现金利息"
@@ -565,6 +566,7 @@ def _build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDriv
                 timestamp=entry["timestamp"],
                 symbol=symbol,
                 amount=float(amount) if amount is not None else None,
+                **structured_fields,
             )
         )
     return drivers
@@ -586,6 +588,63 @@ def _ledger_entry_notional(entry: dict) -> float:
     if quantity is None or price is None:
         return 0.0
     return abs(float(quantity) * float(price))
+
+
+def _ledger_entry_structured_explainability_fields(entry: dict) -> dict:
+    entry_type = entry.get("entry_type")
+    if entry_type not in {"trade_buy", "trade_sell"}:
+        return {}
+
+    quantity = _optional_float(entry.get("quantity"))
+    price = _optional_float(entry.get("price"))
+    commission = _optional_float(entry.get("commission"))
+    gross_amount = _optional_float(entry.get("gross_amount"))
+    if gross_amount is None:
+        gross_amount = _ledger_entry_notional(entry)
+
+    if entry_type == "trade_buy":
+        net_cash_impact = _optional_float(entry.get("net_cash_impact"))
+        if net_cash_impact is None:
+            net_cash_impact = -(gross_amount + (commission or 0.0))
+    else:
+        net_cash_impact = _optional_float(entry.get("net_cash_impact"))
+        if net_cash_impact is None:
+            net_cash_impact = gross_amount - (commission or 0.0)
+
+    return {
+        "quantity": quantity,
+        "price": price,
+        "commission": commission,
+        "gross_amount": gross_amount,
+        "net_cash_impact": net_cash_impact,
+        "fee_breakdown": _parse_fee_breakdown(entry.get("fee_breakdown_json")),
+        "fee_rule_id": entry.get("fee_rule_id"),
+        "fee_rule_version": entry.get("fee_rule_version"),
+        "asset_class": _normalize_asset_class(entry.get("asset_class")),
+    }
+
+
+def _optional_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_fee_breakdown(value) -> dict | None:
+    if not value:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
 
 
 def _build_timeline_breakdown_items(
@@ -700,7 +759,7 @@ def _build_timeline(
             quantity = float(entry.get("quantity") or 0.0)
             price = float(entry.get("price") or 0.0)
             title = f"买入 {instrument_label}"
-            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f}"
+            detail = entry.get("note") or ""
             amount = None
             category = "trade"
             impact_source = "positioning"
@@ -711,7 +770,7 @@ def _build_timeline(
             quantity = float(entry.get("quantity") or 0.0)
             price = float(entry.get("price") or 0.0)
             title = f"卖出 {instrument_label}"
-            detail = f"数量 {quantity:g} · 价格 ¥{price:.2f}"
+            detail = entry.get("note") or ""
             amount = None
             category = "trade"
             impact_source = "positioning"
@@ -729,6 +788,7 @@ def _build_timeline(
                 timestamp=timestamp,
                 symbol=symbol,
                 amount=amount,
+                **_ledger_entry_structured_explainability_fields(entry),
             )
         )
 

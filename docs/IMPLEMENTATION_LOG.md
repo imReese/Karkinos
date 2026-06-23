@@ -6,6 +6,16 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-23: Added structured trade fields to portfolio explainability
+  drivers and timeline events, including quantity, price, commission, gross
+  amount, net cash impact, fee rule metadata, and optional fee breakdown.
+  Risk explainability now prefers the shared public ledger formatter for these
+  structured fields, so generated quantity/price/fee facts are displayed as
+  localized execution details instead of being carried as free-text notes.
+  Backend and frontend tests cover the API fields and Risk page rendering.
+  This is evidence/display formatting only; it does not mutate ledger entries,
+  broker evidence, fee models, trading behavior, risk gates, or
+  manual-confirmation defaults.
 * 2026-06-23: Routed Decision signal-queue action details through the shared
   public note formatter so backend research or review phrases are localized
   before being shown in the manual-order handoff surface. Frontend coverage
@@ -980,4 +990,10 @@ roadmap promises.
   `net_cash_impact` evidence and first-class cash-interest entries instead of
   using a local `entry_type` branch. This is UI summary alignment only; it does
   not mutate ledger entries, change broker behavior, submit orders, bypass risk
+  gates, or alter manual-confirmation defaults.
+* 2026-06-23: Extended the shared public ledger execution-detail formatter so
+  holding details, Activity audit rows, and Risk explainability cards show
+  structured net cash impact alongside gross amount, quantity, price, and fee
+  evidence. This is display formatting only; it does not mutate ledger entries,
+  change fee calculation, change broker behavior, submit orders, bypass risk
   gates, or alter manual-confirmation defaults.

@@ -310,6 +310,15 @@ class ExplainabilityDriver(BaseModel):
     timestamp: str
     symbol: str | None = None
     amount: float | None = None
+    quantity: float | None = None
+    price: float | None = None
+    commission: float | None = None
+    gross_amount: float | None = None
+    net_cash_impact: float | None = None
+    fee_breakdown: dict[str, Any] | None = None
+    fee_rule_id: str | None = None
+    fee_rule_version: str | None = None
+    asset_class: str | None = None
 
 
 class ExplainabilityPositionDriver(BaseModel):
@@ -333,6 +342,15 @@ class ExplainabilityTimelineEvent(BaseModel):
     timestamp: str
     symbol: str | None = None
     amount: float | None = None
+    quantity: float | None = None
+    price: float | None = None
+    commission: float | None = None
+    gross_amount: float | None = None
+    net_cash_impact: float | None = None
+    fee_breakdown: dict[str, Any] | None = None
+    fee_rule_id: str | None = None
+    fee_rule_version: str | None = None
+    asset_class: str | None = None
 
 
 class ExplainabilityTimelineBreakdownItem(BaseModel):
