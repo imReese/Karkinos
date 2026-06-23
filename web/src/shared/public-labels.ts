@@ -351,6 +351,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'Broker transfer fee was compared with Karkinos transfer fee.',
     'account_truth.cost_basis_compared':
       'Broker cost basis was compared with Karkinos cost basis.',
+    'Broker cost basis does not match local ledger.':
+      'Broker cost basis does not match the Karkinos local ledger.',
     'P/L contribution is not calculated until fills are reconciled with position and valuation history.':
       'P/L contribution is waiting for fills to be reconciled with position and valuation history.',
     'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.':
@@ -412,6 +414,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '缺少券商持仓快照，持仓复核尚不完整。',
     'Broker position does not match local ledger projection.':
       '券商持仓与 Karkinos 本地账本推算不一致。',
+    'Broker cost basis does not match local ledger.':
+      '券商成本价与 Karkinos 本地账本不一致。',
     'Broker position quantity compared with Karkinos position quantity.':
       '券商持仓数量已与 Karkinos 本地持仓数量对比。',
     'Broker fees compared with Karkinos ledger fees.':

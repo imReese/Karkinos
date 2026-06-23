@@ -1051,3 +1051,22 @@ roadmap promises.
   v1.4 shared public ledger formatter work without changing ledger storage,
   accounting math, broker behavior, order submission, or manual-confirmation
   defaults.
+* 2026-06-23: Shared public ledger notes now suppress generated cash and
+  dividend remarks when the same amount and entry type are already available
+  as structured ledger fields. This keeps core accounting facts such as cash
+  interest amounts out of free-text public notes while preserving user-authored
+  notes. This is display formatting only; it does not change ledger storage,
+  accounting math, broker behavior, order submission, or manual-confirmation
+  defaults.
+* 2026-06-23: Risk/explainability ledger details now reuse the shared
+  execution-detail formatter for non-trade cash and dividend events, so
+  generated cash movements expose structured amounts instead of generic
+  fallback text or legacy English operational notes. This is display
+  formatting only; it does not change ledger storage, accounting math, broker
+  behavior, order submission, or manual-confirmation defaults.
+* 2026-06-23: Account Truth review now localizes known broker cost-basis
+  mismatch detail text even when the backend only provides the legacy English
+  detail string and no `detail_code`. This continues the v1.4 review-surface
+  cleanup for public notes and does not change reconciliation math, review
+  decisions, ledger mutation, broker behavior, order submission, or
+  manual-confirmation defaults.

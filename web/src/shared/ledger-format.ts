@@ -434,13 +434,11 @@ export function formatLedgerExplainabilityDetail(
     { ...item, title: undefined },
     instrumentNames,
   );
-  const structuredDetails = isTradeLedgerEntry(entry)
-    ? formatLedgerExecutionDetailLines(
-        entry,
-        EXPLAINABILITY_DETAIL_LABELS[locale],
-        locale,
-      ).map((line) => `${line.label} ${line.value}`)
-    : [];
+  const structuredDetails = formatLedgerExecutionDetailLines(
+    entry,
+    EXPLAINABILITY_DETAIL_LABELS[locale],
+    locale,
+  ).map((line) => `${line.label} ${line.value}`);
   const publicNote = formatLedgerPublicNote(entry);
   if (structuredDetails.length > 0 || publicNote) {
     return [...structuredDetails, publicNote].filter(Boolean).join(' · ');
@@ -493,6 +491,7 @@ export function formatLedgerPublicNote(entry: PublicLedgerEntry) {
     .filter((segment) => !isInstrumentIdentitySegment(segment, entry))
     .map((segment) => removeDuplicateSymbolFromSegment(segment, entry))
     .filter((segment) => !isGeneratedStructuredTradeNote(segment, entry))
+    .filter((segment) => !isGeneratedStructuredCashNote(segment, entry))
     .filter(Boolean);
   return segments.length > 0 ? segments.slice(0, 2).join(' · ') : null;
 }
@@ -735,11 +734,6 @@ function isFundLedgerEntry(entry: PublicLedgerEntry) {
   return entry.asset_class?.trim().toLowerCase() === 'fund';
 }
 
-function isTradeLedgerEntry(entry: PublicLedgerEntry) {
-  const kind = normalizeLedgerKind(entry.entry_type);
-  return kind === 'trade_buy' || kind === 'trade_sell';
-}
-
 function isTechnicalNoteSegment(segment: string) {
   return (
     /(^|\s)[a-z][a-z0-9_]*=/i.test(segment) ||
@@ -805,6 +799,62 @@ function isGeneratedStructuredTradeNote(
   }
   return (
     directionPattern.test(normalized) && structuredFactPattern.test(normalized)
+  );
+}
+
+function isGeneratedStructuredCashNote(
+  segment: string,
+  entry: PublicLedgerEntry,
+) {
+  const kind = normalizeLedgerKind(entry.entry_type);
+  if (
+    kind !== 'cash_deposit' &&
+    kind !== 'cash_withdrawal' &&
+    kind !== 'cash_interest' &&
+    kind !== 'dividend'
+  ) {
+    return false;
+  }
+  const amount = finiteNumber(
+    entry.gross_amount ?? entry.amount ?? entry.net_cash_impact,
+  );
+  if (amount === null || !segmentMentionsAmount(segment, amount)) {
+    return false;
+  }
+
+  const normalized = segment.trim();
+  const keywordPattern =
+    kind === 'cash_interest'
+      ? /(现金利息|结息|interest)/i
+      : kind === 'dividend'
+        ? /(分红|股息|红利|dividend)/i
+        : kind === 'cash_deposit'
+          ? /(现金入金|资金转入|入金|转入|cash deposit|deposit)/i
+          : /(现金出金|资金转出|出金|转出|cash withdrawal|withdrawal|withdraw)/i;
+  return keywordPattern.test(normalized);
+}
+
+function segmentMentionsAmount(segment: string, amount: number) {
+  const normalized = segment.replace(/[,，]/g, '');
+  const absolute = Math.abs(amount);
+  const rawCandidates = [
+    String(absolute),
+    absolute.toFixed(2),
+    absolute.toFixed(4),
+  ];
+  const candidates = new Set(
+    rawCandidates
+      .flatMap((candidate) =>
+        candidate.includes('.')
+          ? [candidate, candidate.replace(/\.?0+$/, '')]
+          : [candidate],
+      )
+      .filter(Boolean),
+  );
+  return [...candidates].some((candidate) =>
+    new RegExp(`(^|[^0-9.])${escapeRegExp(candidate)}([^0-9.]|$)`).test(
+      normalized,
+    ),
   );
 }
 

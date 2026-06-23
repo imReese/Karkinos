@@ -202,9 +202,20 @@ describe('ledger formatter', () => {
       amount: '+CN¥0.27',
       tone: 'credit',
     });
-    expect(formatLedgerPublicNote(cashInterest)).toBe(
-      '批量结息归本：现金利息 0.27 元',
-    );
+    expect(formatLedgerPublicNote(cashInterest)).toBeNull();
+  });
+
+  test('keeps cash notes when the mentioned amount does not match the structured amount', () => {
+    expect(
+      formatLedgerPublicNote({
+        ...yutongBuy,
+        entry_type: 'cash_interest',
+        amount: 0.27,
+        symbol: null,
+        display_name: null,
+        note: '结息差异 10.27 元，等待券商复核',
+      }),
+    ).toBe('结息差异 10.27 元，等待券商复核');
   });
 
   test('localizes internal ledger source codes for public activity rows', () => {
@@ -279,7 +290,7 @@ describe('ledger formatter', () => {
         'zh',
         instrumentNames,
       ),
-    ).toBe('现金流入组合。');
+    ).toBe('金额 CN¥3,000.00');
   });
 
   test('omits cost-basis method from public ledger execution details', () => {

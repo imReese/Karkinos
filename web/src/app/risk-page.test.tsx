@@ -354,9 +354,7 @@ test('renders recent risk drivers as readable audit events', async () => {
   expect(
     (await screen.findAllByText(/-.*¥5,275\.00/)).length,
   ).toBeGreaterThanOrEqual(2);
-  expect(
-    await screen.findAllByText('Cash inflow into the portfolio.'),
-  ).toHaveLength(2);
+  expect(await screen.findAllByText('Amount CN¥3,000.00')).toHaveLength(2);
   expect(screen.queryByText('现金流入组合。')).toBeNull();
   expect(
     screen.queryByText('RMB cash deposit recorded from user request'),
@@ -369,7 +367,7 @@ test('localizes risk explainability ledger titles instead of rendering internal 
 
   const recentList = await screen.findByTestId('risk-recent-impact-list');
   expect(within(recentList).getByText('资金转入')).toBeTruthy();
-  expect(await screen.findAllByText('现金流入组合。')).toHaveLength(2);
+  expect(await screen.findAllByText(/金额\s+¥3,000\.00/u)).toHaveLength(2);
   expect(document.body.textContent).not.toContain('cash_deposit');
 });
 
