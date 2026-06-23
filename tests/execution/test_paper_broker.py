@@ -260,11 +260,12 @@ def test_paper_broker_records_fee_tax_modeling_and_slippage_evidence(
 
     saved_fill = db.get_fill_sync("PAPER-FILL-COST")
     fill_metadata = json.loads(saved_fill["metadata_json"])
-    expected_commission = StockACommission().calculate(
+    expected_breakdown = StockACommission().breakdown(
         OrderSide.SELL,
         Decimal("9.95"),
         Decimal("200"),
     )
+    expected_commission = expected_breakdown.total_fee
 
     assert result.fill is not None
     assert result.fill.commission == expected_commission
@@ -278,7 +279,19 @@ def test_paper_broker_records_fee_tax_modeling_and_slippage_evidence(
         "total_fee_tax_cost": str(expected_commission),
         "slippage_cost": "10.00",
         "commission_field_includes_fees_and_taxes": True,
+        "fee_rule_id": expected_breakdown.fee_rule_id,
+        "limitations": list(expected_breakdown.limitations),
         "reference_price": "10.00",
+    }
+    assert fill_metadata["fee_breakdown"] == {
+        "gross_amount": str(expected_breakdown.gross_amount),
+        "commission": str(expected_breakdown.commission),
+        "stamp_tax": str(expected_breakdown.stamp_tax),
+        "transfer_fee": str(expected_breakdown.transfer_fee),
+        "other_fees": str(expected_breakdown.other_fees),
+        "total_fee": str(expected_breakdown.total_fee),
+        "fee_rule_id": expected_breakdown.fee_rule_id,
+        "limitations": list(expected_breakdown.limitations),
     }
 
 

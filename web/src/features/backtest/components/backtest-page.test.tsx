@@ -882,7 +882,7 @@ test('shows current account strategy without claiming live attribution', async (
   expect(await screen.findByText('Attribution not started')).toBeTruthy();
   expect(
     await screen.findByText(
-      'The selected strategy is only research context until signals, reviews, and fills are attributed.',
+      'This assignment only sets research context; contribution is shown only after signals, reviews, orders, and fills are linked.',
     ),
   ).toBeTruthy();
   expect(
@@ -890,6 +890,21 @@ test('shows current account strategy without claiming live attribution', async (
       'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
     ),
   ).toBeNull();
+});
+
+test('localizes account strategy assignment limitations in Chinese', async () => {
+  renderBacktestPage({ results: [], locale: 'zh' });
+
+  expect(await screen.findByText('当前账户策略')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+    ),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain(
+    'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+  );
+  expect(document.body.textContent).not.toContain('paper/shadow');
 });
 
 test('shows account strategy attribution evidence without claiming pnl', async () => {
@@ -1127,9 +1142,7 @@ test('renders extension strategy metadata and submits its typed params', async (
   ).toBeTruthy();
   expect(screen.queryByText('lookback_window candidates')).toBeNull();
   expect(
-    await screen.findByText(
-      'Requires paper/simulation review before manual review.',
-    ),
+    await screen.findByText('Requires simulation review before manual review.'),
   ).toBeTruthy();
 
   fireEvent.change(await screen.findByLabelText('Symbol'), {

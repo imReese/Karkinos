@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any
 
 from core.types import AssetClass, OrderSide, OrderType, Symbol
-from execution.commission import CommissionCalculator, StockACommission
+from execution.commission import CommissionCalculator, FeeBreakdown, StockACommission
 
 PAPER_BROKER_SCHEMA_VERSION = "karkinos.paper_broker.v1"
 
@@ -320,6 +320,7 @@ class PaperFillEvidence:
     asset_class: AssetClass
     context: PaperOrderContext
     reference_price: Decimal | None = None
+    fee_breakdown: FeeBreakdown | None = None
     schema_version: str = PAPER_BROKER_SCHEMA_VERSION
     execution_mode: str = "paper"
     provider_name: str = "simulated"
@@ -343,12 +344,23 @@ class PaperFillEvidence:
                 "total_fee_tax_cost": str(self.commission),
                 "slippage_cost": str(self.slippage),
                 "commission_field_includes_fees_and_taxes": True,
+                "fee_rule_id": (
+                    self.fee_breakdown.fee_rule_id
+                    if self.fee_breakdown is not None
+                    else None
+                ),
+                "limitations": (
+                    list(self.fee_breakdown.limitations)
+                    if self.fee_breakdown is not None
+                    else []
+                ),
                 "reference_price": (
                     str(self.reference_price)
                     if self.reference_price is not None
                     else None
                 ),
             },
+            "fee_breakdown": _fee_breakdown_payload(self.fee_breakdown),
             "context": self.context.to_payload(),
             "execution_mode": self.execution_mode,
             "provider_name": self.provider_name,
@@ -425,6 +437,11 @@ class PaperBroker:
             oms_transitions=oms.transitions,
             context=request.context,
         )
+        fee_breakdown = self.commission_calc.breakdown(
+            request.side,
+            effective_price,
+            quantity,
+        )
         fill = PaperFillEvidence(
             fill_id=fill_id or f"{request.order_id}-FILL-1",
             order_id=request.order_id,
@@ -433,11 +450,7 @@ class PaperBroker:
             side=request.side,
             fill_price=effective_price,
             fill_quantity=quantity,
-            commission=self.commission_calc.calculate(
-                request.side,
-                effective_price,
-                quantity,
-            ),
+            commission=fee_breakdown.total_fee,
             slippage=_calculate_slippage(
                 reference_price=request.price,
                 fill_price=effective_price,
@@ -446,6 +459,7 @@ class PaperBroker:
             asset_class=request.asset_class,
             context=request.context,
             reference_price=request.price,
+            fee_breakdown=fee_breakdown,
             provider_name=self.provider_name,
         )
 
@@ -557,3 +571,18 @@ def _calculate_slippage(
     if reference_price is None:
         return Decimal("0")
     return abs(fill_price - reference_price) * quantity
+
+
+def _fee_breakdown_payload(breakdown: FeeBreakdown | None) -> dict[str, Any] | None:
+    if breakdown is None:
+        return None
+    return {
+        "gross_amount": str(breakdown.gross_amount),
+        "commission": str(breakdown.commission),
+        "stamp_tax": str(breakdown.stamp_tax),
+        "transfer_fee": str(breakdown.transfer_fee),
+        "other_fees": str(breakdown.other_fees),
+        "total_fee": str(breakdown.total_fee),
+        "fee_rule_id": breakdown.fee_rule_id,
+        "limitations": list(breakdown.limitations),
+    }
