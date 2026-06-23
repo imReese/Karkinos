@@ -1025,3 +1025,16 @@ roadmap promises.
   paper-only simulation evidence; it does not mutate the production ledger,
   submit broker orders, bypass risk gates, or alter manual-confirmation
   defaults.
+* 2026-06-23: Decision candidate cards now pass backend detail notes through
+  the shared public-note formatter before rendering, matching the existing
+  signal action queue behavior. This prevents internal strategy-assignment
+  evidence phrases from leaking into localized user-facing action cards. This
+  is display formatting only; it does not change decision generation, risk
+  gates, broker behavior, order submission, or manual-confirmation defaults.
+* 2026-06-23: Risk blocking-register detail text now uses the shared
+  public-note formatter, and Account Truth review tests pin specific
+  reconciliation action-code localization. This prevents internal market data
+  and review codes from appearing in localized review surfaces. This is
+  display formatting and regression coverage only; it does not change risk
+  calculations, reconciliation math, broker behavior, order submission, or
+  manual-confirmation defaults.

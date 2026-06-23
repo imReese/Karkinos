@@ -976,6 +976,10 @@ function DecisionCandidateCard({
   const readyForManual =
     candidate.manual_confirmation_status === 'ready_for_manual_confirmation';
   const instrumentLabel = formatInstrumentDisplayLabel(candidate);
+  const publicDetail = formatPublicNote(
+    candidate.detail || candidate.title || labels.noDetail,
+    locale,
+  );
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
@@ -993,9 +997,7 @@ function DecisionCandidateCard({
               prefix={labels.riskGate}
             />
           </div>
-          <p className="app-muted mt-2 break-words text-sm">
-            {candidate.detail || candidate.title || labels.noDetail}
-          </p>
+          <p className="app-muted mt-2 break-words text-sm">{publicDetail}</p>
         </div>
         {readyForManual ? (
           <a
