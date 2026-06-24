@@ -1270,3 +1270,13 @@ roadmap promises.
   report display formatting only; it does not change backtest fills, cost
   calculation, broker behavior, order submission, risk gates, or
   manual-confirmation defaults.
+* 2026-06-24: Manual order approval tables now render order directions through
+  shared public labels, including a safe localized fallback for future or
+  unknown backend side codes. This is approval-table presentation only; it does
+  not change order approval, rejection, broker behavior, order submission,
+  risk gates, or manual-confirmation defaults.
+* 2026-06-24: Overview pending-approval cards now show instrument display name
+  plus symbol and render order directions through shared public labels,
+  including a safe fallback for future backend side codes. This is dashboard
+  presentation only; it does not change order approval, rejection, broker
+  behavior, order submission, risk gates, or manual-confirmation defaults.
