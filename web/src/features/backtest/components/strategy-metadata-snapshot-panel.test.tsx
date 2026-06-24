@@ -74,8 +74,10 @@ test('shows localized strategy name before the internal strategy id in strategy 
   );
 
   expect(screen.getByText('策略')).toBeTruthy();
-  expect(screen.getByText('双均线策略 · dual_ma')).toBeTruthy();
+  expect(screen.getByText('双均线策略')).toBeTruthy();
   expect(screen.getByText('策略审计标识')).toBeTruthy();
+  expect(screen.getByText('dual_ma')).toBeTruthy();
+  expect(screen.queryByText('双均线策略 · dual_ma')).toBeNull();
   expect(screen.getByText('股票')).toBeTruthy();
   expect(screen.getByText('日线')).toBeTruthy();
   expect(screen.getByText('进入人工复核前，需要完成模拟盘复盘。')).toBeTruthy();
