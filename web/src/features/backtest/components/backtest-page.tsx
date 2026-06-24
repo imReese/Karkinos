@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
+import { apiClient } from '../../../lib/api/client';
 import { formatCurrency, formatPercent } from '../../../shared/format';
+import {
+  formatInstrumentDisplayLabelsBySymbol,
+  type InstrumentDisplayRecord,
+} from '../../../shared/instrument-display';
 import {
   formatPublicCode,
   formatPublicCodeList,
@@ -74,6 +80,19 @@ const fallbackStrategies: BacktestStrategyInfo[] = [
     ],
   },
 ];
+
+type BacktestPortfolioInstrumentSnapshot = {
+  positions: InstrumentDisplayRecord[];
+};
+
+function useBacktestPortfolioInstrumentsQuery() {
+  return useQuery({
+    queryKey: ['backtest-portfolio-instruments'],
+    queryFn: () =>
+      apiClient<BacktestPortfolioInstrumentSnapshot>('/api/portfolio'),
+    staleTime: 10_000,
+  });
+}
 
 function buildSingleAsset(
   symbol: string,
@@ -287,6 +306,7 @@ export function BacktestPage() {
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
   const accountStrategyContribution = useAccountStrategyContributionQuery();
+  const portfolioInstruments = useBacktestPortfolioInstrumentsQuery();
   const updateAccountStrategy = useUpdateAccountStrategyAssignmentMutation();
   const validation = useStrategyValidationQuery();
   const readiness = useStrategyPromotionReadinessQuery();
@@ -399,6 +419,7 @@ export function BacktestPage() {
         assignment={accountStrategy.data ?? null}
         attribution={accountStrategyAttribution.data ?? null}
         contribution={accountStrategyContribution.data ?? null}
+        instruments={portfolioInstruments.data?.positions ?? []}
         selectedStrategy={selectedStrategy}
         strategyCatalog={strategyCatalog}
         loading={accountStrategy.isLoading}
@@ -775,6 +796,7 @@ function AccountStrategyPanel({
   attributionError,
   contributionLoading,
   contributionError,
+  instruments,
   assigning,
   assignError,
   onAssignSelected,
@@ -790,6 +812,7 @@ function AccountStrategyPanel({
   attributionError: boolean;
   contributionLoading: boolean;
   contributionError: boolean;
+  instruments: InstrumentDisplayRecord[];
   assigning: boolean;
   assignError: boolean;
   onAssignSelected: () => void;
@@ -1074,7 +1097,10 @@ function AccountStrategyPanel({
               {contribution.missing_valuation_symbols.length ? (
                 <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
                   {labels.accountStrategyMissingValuation(
-                    contribution.missing_valuation_symbols.join(', '),
+                    formatInstrumentDisplayLabelsBySymbol(
+                      contribution.missing_valuation_symbols,
+                      instruments,
+                    ),
                   )}
                 </p>
               ) : null}
