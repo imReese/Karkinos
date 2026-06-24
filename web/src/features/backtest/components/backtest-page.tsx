@@ -35,6 +35,7 @@ import {
   type BacktestStrategyInfo,
   type StrategyPromotionReadiness,
   type StrategyParameterSchema,
+  type StrategyValidationRow,
   type StrategyValidationMatrix,
 } from '../api';
 
@@ -1137,9 +1138,33 @@ function StrategyEvidenceGatePanel({
 }) {
   const labels = useCopy().backtest.page;
   const { locale } = usePreferences();
-  const rows = validation?.rows ?? [];
+  const validationRows = validation?.rows ?? [];
   const readinessRows = readiness?.rows ?? [];
-  const visibleRows = rows.slice(0, 4);
+  const visibleRows = useMemo(() => {
+    const rowsByStrategy = new Map<string, StrategyValidationRow>();
+    validationRows.forEach((row) => {
+      rowsByStrategy.set(row.strategy_id, row);
+    });
+    readinessRows.forEach((row) => {
+      if (rowsByStrategy.has(row.strategy_id)) {
+        return;
+      }
+
+      rowsByStrategy.set(row.strategy_id, {
+        strategy_id: row.strategy_id,
+        benchmark_role: row.benchmark_role,
+        requires_out_of_sample_validation: true,
+        requires_after_cost_report: true,
+        has_out_of_sample_validation: row.has_after_cost_and_oos_evidence,
+        has_after_cost_report: row.has_after_cost_and_oos_evidence,
+        validation_status: null,
+        backtest_result_id: row.backtest_result_id,
+        missing_requirements: [],
+        is_ready: row.has_after_cost_and_oos_evidence,
+      });
+    });
+    return Array.from(rowsByStrategy.values());
+  }, [validationRows, readinessRows]);
   const strategyById = useMemo(
     () =>
       new Map(

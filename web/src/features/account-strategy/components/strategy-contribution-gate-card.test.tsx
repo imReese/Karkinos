@@ -49,7 +49,7 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
     missing_valuation_symbols: [],
     evidence_refs: ['fill:FILL-1', 'fill:FILL-2'],
     limitations: [
-      'Contribution is estimated only from linked strategy fills and latest local quotes.',
+      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
     ],
   });
 
@@ -73,6 +73,16 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   expect(screen.getByText('Net contribution')).toBeTruthy();
   expect(screen.getByText('CN¥129.50')).toBeTruthy();
   expect(screen.getByText('Evidence refs')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Contribution is estimated from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(
+      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+    ),
+  ).toBeNull();
 });
 
 test('does not expose contribution amount when evidence chain is unsupported', () => {

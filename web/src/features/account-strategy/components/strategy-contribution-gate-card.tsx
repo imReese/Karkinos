@@ -1,7 +1,10 @@
 import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
 import { formatCurrency } from '../../../shared/format';
-import { formatPublicCode } from '../../../shared/public-labels';
+import {
+  formatPublicCode,
+  formatPublicNote,
+} from '../../../shared/public-labels';
 import { formatStrategyAuditLabel } from '../../../shared/strategy-display';
 import type { AccountStrategyContributionReport } from '../api';
 
@@ -94,52 +97,58 @@ export function StrategyContributionGateCard({
             ) : null}
           </div>
         ) : isSupported && report ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label={labels.strategy} value={strategyLabel} />
-            <Metric
-              label={labels.accountStrategyGrossRealizedPnl}
-              value={formatCurrency(report.gross_realized_pnl)}
-            />
-            <Metric
-              label={labels.accountStrategyGrossUnrealizedPnl}
-              value={formatCurrency(report.gross_unrealized_pnl)}
-            />
-            <Metric
-              label={labels.accountStrategyCommissionSlippage}
-              value={`${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`}
-            />
-            <Metric
-              label={labels.accountStrategyTax}
-              value={formatCurrency(report.total_tax)}
-            />
-            <Metric
-              label={labels.accountStrategyManualCashFlowMovement}
-              value={`${formatCurrency(report.manual_unattributed_pnl)} / ${formatCurrency(report.cash_flow_pnl)}`}
-            />
-            <Metric
-              label={labels.accountStrategyTaxExcludedMovement}
-              value={`${formatCurrency(report.total_tax)} / ${formatCurrency(report.unattributed_account_pnl)}`}
-            />
-            <Metric
-              label={labels.accountStrategyNetContribution}
-              value={formatCurrency(report.net_contribution)}
-              tone={report.net_contribution >= 0 ? 'positive' : 'negative'}
-            />
-            <Metric
-              label={labels.accountStrategyContributionStatus}
-              value={statusLabel}
-            />
-            <Metric
-              label={labels.accountStrategyHealthStatus}
-              value={healthLabel}
-            />
-            <Metric
-              label={labels.accountStrategyOrdersFills}
-              value={String(report.linked_fill_count)}
-            />
-            <Metric
-              label={labels.accountStrategyEvidenceRefs}
-              value={String(report.evidence_refs.length)}
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Metric label={labels.strategy} value={strategyLabel} />
+              <Metric
+                label={labels.accountStrategyGrossRealizedPnl}
+                value={formatCurrency(report.gross_realized_pnl)}
+              />
+              <Metric
+                label={labels.accountStrategyGrossUnrealizedPnl}
+                value={formatCurrency(report.gross_unrealized_pnl)}
+              />
+              <Metric
+                label={labels.accountStrategyCommissionSlippage}
+                value={`${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`}
+              />
+              <Metric
+                label={labels.accountStrategyTax}
+                value={formatCurrency(report.total_tax)}
+              />
+              <Metric
+                label={labels.accountStrategyManualCashFlowMovement}
+                value={`${formatCurrency(report.manual_unattributed_pnl)} / ${formatCurrency(report.cash_flow_pnl)}`}
+              />
+              <Metric
+                label={labels.accountStrategyTaxExcludedMovement}
+                value={`${formatCurrency(report.total_tax)} / ${formatCurrency(report.unattributed_account_pnl)}`}
+              />
+              <Metric
+                label={labels.accountStrategyNetContribution}
+                value={formatCurrency(report.net_contribution)}
+                tone={report.net_contribution >= 0 ? 'positive' : 'negative'}
+              />
+              <Metric
+                label={labels.accountStrategyContributionStatus}
+                value={statusLabel}
+              />
+              <Metric
+                label={labels.accountStrategyHealthStatus}
+                value={healthLabel}
+              />
+              <Metric
+                label={labels.accountStrategyOrdersFills}
+                value={String(report.linked_fill_count)}
+              />
+              <Metric
+                label={labels.accountStrategyEvidenceRefs}
+                value={String(report.evidence_refs.length)}
+              />
+            </div>
+            <ContributionLimitations
+              limitations={report.limitations}
+              locale={locale}
             />
           </div>
         ) : (
@@ -169,6 +178,10 @@ export function StrategyContributionGateCard({
                 )}
               </p>
             ) : null}
+            <ContributionLimitations
+              limitations={report?.limitations ?? []}
+              locale={locale}
+            />
           </div>
         )}
       </div>
@@ -197,6 +210,31 @@ function Metric({
       <div className={`mt-2 text-lg font-bold tabular-nums ${toneClass}`}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function ContributionLimitations({
+  limitations,
+  locale,
+}: {
+  limitations: string[];
+  locale: 'en' | 'zh';
+}) {
+  if (limitations.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {limitations.map((limitation) => (
+        <p
+          className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_22%,transparent)] px-3 py-2 text-sm leading-6 text-[var(--app-soft)]"
+          key={limitation}
+        >
+          {formatPublicNote(limitation, locale)}
+        </p>
+      ))}
     </div>
   );
 }
