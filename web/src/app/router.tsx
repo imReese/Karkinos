@@ -2302,7 +2302,7 @@ export function ActivityPage() {
         quantity: normalizeNumber(values.quantity),
         unit_price: normalizeNumber(values.unit_price),
         amount: normalizeNumber(values.amount),
-        fee: normalizeNumber(values.fee) ?? 0,
+        fee: normalizeNumber(values.fee),
         asset_class: values.asset_class.trim().toLowerCase(),
         symbol: values.symbol.trim(),
       });

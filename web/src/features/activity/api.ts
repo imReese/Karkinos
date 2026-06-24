@@ -65,7 +65,8 @@ export type TradePayload = {
   quantity?: number | null;
   unit_price?: number | null;
   amount?: number | null;
-  fee: number;
+  fee?: number | null;
+  fee_is_manual?: boolean;
   note: string;
 };
 
@@ -166,18 +167,26 @@ export function useCreateTradeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: TradePayload) =>
-      postJson('/api/portfolio/trade', {
+    mutationFn: (payload: TradePayload) => {
+      const requestBody: Record<string, unknown> = {
         timestamp: payload.occurred_at,
         symbol: payload.symbol,
         direction: payload.direction,
         quantity: payload.quantity ?? null,
         price: payload.unit_price ?? null,
         amount: payload.amount ?? null,
-        commission: payload.fee,
         asset_class: payload.asset_class,
         note: payload.note,
-      }),
+      };
+      if (
+        payload.fee_is_manual &&
+        typeof payload.fee === 'number' &&
+        Number.isFinite(payload.fee)
+      ) {
+        requestBody.commission = payload.fee;
+      }
+      return postJson('/api/portfolio/trade', requestBody);
+    },
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
