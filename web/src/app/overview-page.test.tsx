@@ -105,6 +105,11 @@ afterEach(() => {
 
 function installOverviewFetchMock(
   overviewOverrides: Record<string, unknown> = {},
+  {
+    pendingOrders = [],
+  }: {
+    pendingOrders?: unknown[];
+  } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -193,7 +198,7 @@ function installOverviewFetchMock(
       return jsonResponse(ledgerEntries);
     }
     if (url.includes('/api/trading/orders')) {
-      return jsonResponse([]);
+      return jsonResponse(pendingOrders);
     }
     if (url.includes('/api/market/data-health')) {
       return jsonResponse({
@@ -340,6 +345,50 @@ test('renders overview ledger cards with shared public ledger formatting', async
   expect(screen.queryByText('trade_buy')).toBeNull();
   expect(screen.queryByText(/宇通客车 600066 600066/)).toBeNull();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
+});
+
+test('renders pending approvals with instrument names and public side labels', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      pendingOrders: [
+        {
+          id: 1,
+          order_id: 'ORD-OVERVIEW-SIDE',
+          timestamp: '2026-06-18T10:00:00+08:00',
+          symbol: 'SYN001',
+          display_name: '合成样例股票A',
+          side: 'broker_special_side',
+          order_type: 'limit',
+          quantity: 100,
+          price: 8.8,
+          intent_id: 'INT-1',
+          risk_decision_id: 'RISK-1',
+          execution_mode: 'manual',
+          status: 'pending_confirm',
+          payload_json: '{"intent_id":"INT-1","risk_decision_id":"RISK-1"}',
+          note: null,
+          created_at: '2026-06-18T10:00:00+08:00',
+          updated_at: '2026-06-18T10:00:00+08:00',
+        },
+      ],
+    },
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OverviewPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByText('合成样例股票A SYN001')).toBeTruthy();
+  expect(await screen.findByText('Status needs review')).toBeTruthy();
+  expect(screen.queryByText('broker_special_side')).toBeNull();
+  expect(screen.queryByText(/^SYN001$/)).toBeNull();
 });
 
 test('labels unconfirmed overview valuation status on the total-assets card', async () => {

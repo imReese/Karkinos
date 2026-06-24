@@ -66,6 +66,7 @@ import {
 } from '../features/activity/api';
 import {
   formatLedgerDashboardPresentation,
+  formatLedgerEntryTypeLabel,
   formatLedgerExplainabilityDetail,
   formatLedgerExplainabilityTitle,
   summarizeLedgerEntry,
@@ -557,6 +558,7 @@ function DashboardPendingOrders({
   isError: boolean;
   copy: AppCopy;
 }) {
+  const { locale } = usePreferences();
   if (isLoading) {
     return (
       <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-sm">
@@ -589,7 +591,27 @@ function DashboardPendingOrders({
   return (
     <div className="max-h-[270px] space-y-2.5 overflow-y-auto pr-1">
       {orders.map((order) => {
-        const isBuy = order.side.toLowerCase() === 'buy';
+        const normalizedSide = order.side.toLowerCase();
+        const isBuy = normalizedSide === 'buy';
+        const isSell = normalizedSide === 'sell';
+        const sideToneClass = isBuy
+          ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]'
+          : isSell
+            ? 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
+            : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]';
+        const sideLabel = isBuy
+          ? formatLedgerEntryTypeLabel('trade_buy', locale)
+          : isSell
+            ? formatLedgerEntryTypeLabel('trade_sell', locale)
+            : formatPublicStatus(order.side, locale);
+        const displayName = order.display_name ?? order.name ?? null;
+        const instrumentNames = displayName
+          ? new Map([[order.symbol.toLowerCase(), displayName]])
+          : undefined;
+        const instrumentLabel = formatInstrumentDisplayLabel(
+          order.symbol,
+          instrumentNames,
+        );
         return (
           <div
             key={order.order_id}
@@ -598,20 +620,16 @@ function DashboardPendingOrders({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-base font-semibold tracking-[-0.02em]">
-                  {order.symbol}
+                  {instrumentLabel}
                 </div>
                 <div className="app-muted mt-1 text-xs">
                   {formatTimestamp(order.timestamp)}
                 </div>
               </div>
               <div
-                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  isBuy
-                    ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]'
-                    : 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
-                }`}
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${sideToneClass}`}
               >
-                {isBuy ? copy.trading.orders.buy : copy.trading.orders.sell}
+                {sideLabel}
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs tabular-nums">

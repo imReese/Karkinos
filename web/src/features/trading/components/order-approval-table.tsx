@@ -8,7 +8,11 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
-import { formatPublicOperationalNote } from '../../../shared/public-labels';
+import {
+  formatPublicOperationalNote,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
+import { formatLedgerEntryTypeLabel } from '../../../shared/ledger-format';
 import { usePositionsQuery } from '../../portfolio/api';
 import {
   useConfirmManualOrderMutation,
@@ -194,20 +198,26 @@ export function OrderApprovalTable() {
 }
 
 function SideBadge({ side }: { side: string }) {
-  const copy = useCopy();
-  const labels = copy.trading.orders;
+  const { locale } = usePreferences();
   const normalized = side.toLowerCase();
   const isBuy = normalized === 'buy';
+  const isSell = normalized === 'sell';
+  const toneClass = isBuy
+    ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
+    : isSell
+      ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
+      : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]';
+  const label = isBuy
+    ? formatLedgerEntryTypeLabel('trade_buy', locale)
+    : isSell
+      ? formatLedgerEntryTypeLabel('trade_sell', locale)
+      : formatPublicStatus(side, locale);
 
   return (
     <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        isBuy
-          ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
-          : 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
-      }`}
+      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${toneClass}`}
     >
-      {isBuy ? labels.buy : normalized === 'sell' ? labels.sell : side}
+      {label}
     </span>
   );
 }
