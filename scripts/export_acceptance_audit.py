@@ -19,6 +19,7 @@ from analytics.acceptance_audit import (
     build_acceptance_audit,
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
+    build_broker_fee_cost_basis_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
@@ -52,6 +53,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "market_data_reliability": (
         "Market Data Reliability acceptance audit",
         build_market_data_reliability_acceptance_audit,
+    ),
+    "broker_fee_cost_basis": (
+        "Broker Fee & Cost Basis Fidelity acceptance audit",
+        build_broker_fee_cost_basis_acceptance_audit,
     ),
 }
 

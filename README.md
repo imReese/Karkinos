@@ -217,6 +217,7 @@ acceptance audit manifests as JSON:
 uv run python scripts/export_acceptance_audit.py --audit all --pretty
 uv run python scripts/export_acceptance_audit.py --audit research_evidence
 uv run python scripts/export_acceptance_audit.py --audit account_truth
+uv run python scripts/export_acceptance_audit.py --audit broker_fee_cost_basis
 uv run python scripts/export_acceptance_audit.py --audit all --output reports/acceptance-audit.json
 ```
 
