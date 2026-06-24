@@ -941,6 +941,7 @@ test('renders localized decision workflow tasks before candidate actions', async
   );
   expect(workflow.textContent).not.toContain('refresh_or_confirm_market_data');
   expect(workflow.textContent).not.toContain('paper_shadow_review');
+  expect(workflow.textContent).not.toContain('paper/shadow evidence');
   expect(
     workflow.textContent?.indexOf('数据刷新') ?? Number.POSITIVE_INFINITY,
   ).toBeLessThan(workflow.textContent?.indexOf('策略证据') ?? -1);
