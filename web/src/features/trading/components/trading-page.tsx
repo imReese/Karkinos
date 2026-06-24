@@ -17,7 +17,9 @@ import {
   type InstrumentDisplayRecord,
 } from '../../../shared/instrument-display';
 import {
+  formatLedgerEntryTypeLabel,
   formatLedgerExecutionDetailLines,
+  formatLedgerInstrumentLabel,
   type LedgerExecutionDetailLabels,
   type PublicLedgerEntry,
 } from '../../../shared/ledger-format';
@@ -237,6 +239,76 @@ function fillToLedgerEntry(
     source_ref: firstString(fill.source_ref, metadata.source_ref),
     created_at: null,
   };
+}
+
+function orderToLedgerEntry(
+  order: OrderFact,
+  instrumentNames: InstrumentNameLookup,
+): PublicLedgerEntry {
+  const quantity = finiteMetadataNumber(order.quantity);
+  const price = finiteMetadataNumber(order.price);
+  const normalizedSide = order.side.trim().toLowerCase();
+  const entryType = normalizedSide === 'sell' ? 'trade_sell' : 'trade_buy';
+  const grossAmount =
+    quantity !== null && price !== null ? quantity * price : null;
+
+  return {
+    id: order.id,
+    entry_type: entryType,
+    timestamp: order.timestamp,
+    amount: grossAmount,
+    symbol: order.symbol,
+    display_name:
+      order.display_name ??
+      order.name ??
+      instrumentNames.get(order.symbol) ??
+      instrumentNames.get(order.symbol.toLowerCase()) ??
+      null,
+    direction: normalizedSide || null,
+    quantity,
+    price,
+    commission: null,
+    gross_amount: null,
+    net_cash_impact: null,
+    fee_breakdown: null,
+    fee_rule_id: null,
+    fee_rule_version: null,
+    asset_class: order.asset_class ?? 'stock',
+    note: order.note ?? null,
+    source: order.source ?? null,
+    source_ref: order.source_ref ?? null,
+    created_at: order.created_at ?? null,
+  };
+}
+
+function formatOrderFactTitle(
+  order: OrderFact,
+  locale: Locale,
+  instrumentNames: InstrumentNameLookup,
+) {
+  const entry = orderToLedgerEntry(order, instrumentNames);
+  const action = formatLedgerEntryTypeLabel(entry, locale);
+  const instrument = formatLedgerInstrumentLabel(entry);
+  return instrument ? `${action} ${instrument}` : action;
+}
+
+function formatOrderFactDetail(
+  order: OrderFact,
+  labels: ReturnType<typeof useCopy>['trading']['page'],
+  detailLabels: LedgerExecutionDetailLabels,
+  locale: Locale,
+  instrumentNames: InstrumentNameLookup,
+) {
+  const entry = orderToLedgerEntry(order, instrumentNames);
+  const structuredDetails = formatLedgerExecutionDetailLines(
+    entry,
+    detailLabels,
+    locale,
+  ).map((detail) => `${detail.label} ${detail.value}`);
+  structuredDetails.push(
+    `${labels.statusFilter} ${statusLabel(order.status, labels, locale)}`,
+  );
+  return structuredDetails.join(' · ');
 }
 
 function formatFillDetail(
@@ -600,13 +672,14 @@ function ExecutionAuditPanel({
               empty={labels.noOrderFacts}
               rows={latestOrders.map((order) => ({
                 id: order.order_id,
-                title: `${instrumentDisplayLabel(
+                title: formatOrderFactTitle(order, locale, instrumentNames),
+                detail: formatOrderFactDetail(
                   order,
+                  labels,
+                  ledgerDetailLabels,
+                  locale,
                   instrumentNames,
-                )} · ${statusLabel(order.status, labels, locale)}`,
-                detail: `${sideLabel(order.side, labels, locale)} ${formatQuantity(order.quantity)} @ ${
-                  order.price == null ? '--' : formatPrice(order.price)
-                }`,
+                ),
                 timestamp: order.timestamp,
               }))}
             />

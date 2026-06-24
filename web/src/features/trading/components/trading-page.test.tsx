@@ -327,10 +327,35 @@ test('uses execution fact display names when the instrument is not in current ho
     ],
   });
 
-  expect(await screen.findByText('平安银行 000001 · 已确认')).toBeTruthy();
+  expect(await screen.findByText('买入 平安银行 000001')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      /金额\s+(?:CN)?¥172,025\.00 · 份额\/数量 100 · 价格\s+(?:CN)?¥1,720\.25 · 状态 已确认/u,
+    ),
+  ).toBeTruthy();
   expect(await screen.findByText('平安银行 000001 · 买入')).toBeTruthy();
   expect(screen.queryByText('000001 · confirmed')).toBeNull();
   expect(screen.queryByText('000001 · buy')).toBeNull();
+});
+
+test('shows order facts with shared ledger action and detail formatting', async () => {
+  renderTradingPage({
+    orderFacts: [
+      {
+        ...orderFact,
+        status: 'confirmed',
+      },
+    ],
+  });
+
+  expect(await screen.findByText('Buy 贵州茅台 600519')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      /Amount CN¥172,025\.00 · Quantity 100 · Price CN¥1,720\.25 · Status Confirmed/,
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('贵州茅台 600519 · Confirmed')).toBeNull();
+  expect(screen.queryByText('Buy 100 @ CN¥1,720.25')).toBeNull();
 });
 
 test('shows structured fill cash impact and fee breakdown in execution audit', async () => {
