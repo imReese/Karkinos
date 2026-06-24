@@ -287,24 +287,31 @@ describe('ledger formatter', () => {
   });
 
   test('formats broker trade evidence references with shared ledger labels', () => {
+    const instrumentNames = new Map([['syn001', '合成样例股票A']]);
+
     expect(
       formatLedgerEvidenceReference(
         'broker_event:import-run-1:SYN001:trade_buy',
         'en',
+        instrumentNames,
       ),
-    ).toBe('Broker evidence · SYN001 · Buy · import-run-1');
+    ).toBe('Broker evidence · 合成样例股票A SYN001 · Buy · import-run-1');
     expect(
       formatLedgerEvidenceReference(
         'broker_event:import-run-1:SYN001:trade_sell',
         'zh',
+        instrumentNames,
       ),
-    ).toBe('券商证据 · SYN001 · 卖出 · import-run-1');
+    ).toBe('券商证据 · 合成样例股票A SYN001 · 卖出 · import-run-1');
     expect(
       formatLedgerEvidenceReference(
         'broker_event:import-run-1:SYN001:position_snapshot',
         'en',
+        instrumentNames,
       ),
-    ).toBe('Broker evidence · SYN001 · Position snapshot · import-run-1');
+    ).toBe(
+      'Broker evidence · 合成样例股票A SYN001 · Position snapshot · import-run-1',
+    );
   });
 
   test('formats generated explainability events through shared ledger labels', () => {

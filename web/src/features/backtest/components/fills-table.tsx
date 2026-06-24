@@ -7,16 +7,19 @@ import {
 import { useMemo } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCurrency,
   formatPrice,
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
+import { formatLedgerEntryTypeLabel } from '../../../shared/ledger-format';
 import type { BacktestFill } from '../api';
 
 export function FillsTable({ fills }: { fills: BacktestFill[] }) {
   const labels = useCopy().backtest.fills;
+  const { locale } = usePreferences();
   const columns = useMemo<Array<ColumnDef<BacktestFill>>>(
     () => [
       {
@@ -39,7 +42,7 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
                 : 'text-[var(--app-danger)]'
             }
           >
-            {row.original.side.toUpperCase()}
+            {formatFillSide(row.original.side, locale)}
           </span>
         ),
       },
@@ -72,7 +75,7 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
         ),
       },
     ],
-    [labels],
+    [labels, locale],
   );
   const table = useReactTable({
     data: fills,
@@ -138,5 +141,12 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
         </div>
       )}
     </section>
+  );
+}
+
+function formatFillSide(side: string, locale: Locale) {
+  return formatLedgerEntryTypeLabel(
+    side.trim().toLowerCase() === 'sell' ? 'trade_sell' : 'trade_buy',
+    locale,
   );
 }

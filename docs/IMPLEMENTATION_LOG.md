@@ -1258,3 +1258,15 @@ roadmap promises.
   cleanup for public notes and does not change reconciliation math, review
   decisions, ledger mutation, broker behavior, order submission, or
   manual-confirmation defaults.
+* 2026-06-24: Extended the shared ledger evidence-reference formatter so
+  Account Truth review cards can show instrument display name plus symbol for
+  broker evidence references, including trade and position-snapshot evidence.
+  This is user-facing formatting only; it does not change reconciliation math,
+  review decisions, ledger mutation, broker behavior, order submission, or
+  manual-confirmation defaults.
+* 2026-06-24: Backtest fill tables now render buy/sell directions through the
+  shared public ledger action labels, so saved research reports use localized
+  user-facing trade directions instead of raw `BUY` / `SELL` text. This is
+  report display formatting only; it does not change backtest fills, cost
+  calculation, broker behavior, order submission, risk gates, or
+  manual-confirmation defaults.
