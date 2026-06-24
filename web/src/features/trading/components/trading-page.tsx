@@ -17,7 +17,6 @@ import {
   type InstrumentDisplayRecord,
 } from '../../../shared/instrument-display';
 import {
-  formatLedgerEntryTypeLabel,
   formatLedgerExecutionDetailLines,
   formatLedgerInstrumentLabel,
   formatLedgerOrderSideLabel,
@@ -277,7 +276,7 @@ function formatOrderFactTitle(
   instrumentNames: InstrumentNameLookup,
 ) {
   const entry = orderToLedgerEntry(order, instrumentNames);
-  const action = formatLedgerEntryTypeLabel(entry, locale);
+  const action = sideLabel(order.side, locale);
   const instrument = formatLedgerInstrumentLabel(entry);
   return instrument ? `${action} ${instrument}` : action;
 }

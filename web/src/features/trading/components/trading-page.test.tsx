@@ -384,6 +384,33 @@ test('shows order facts with shared ledger action and detail formatting', async 
   expect(screen.queryByText('Buy 100 @ CN¥1,720.25')).toBeNull();
 });
 
+test('does not default unknown execution fact sides to buy', async () => {
+  renderTradingPage({
+    locale: 'zh',
+    orderFacts: [
+      {
+        ...orderFact,
+        order_id: 'ORD-FACT-UNKNOWN-SIDE',
+        side: 'broker_special_side',
+        status: 'confirmed',
+      },
+    ],
+    fillFacts: [
+      {
+        ...fillFact,
+        fill_id: 'FILL-UNKNOWN-SIDE',
+        side: 'broker_special_side',
+      },
+    ],
+  });
+
+  expect(await screen.findByText('待确认状态 贵州茅台 600519')).toBeTruthy();
+  expect(await screen.findByText('贵州茅台 600519 · 待确认状态')).toBeTruthy();
+  expect(screen.queryByText('买入 贵州茅台 600519')).toBeNull();
+  expect(screen.queryByText('贵州茅台 600519 · 买入')).toBeNull();
+  expect(screen.queryByText('broker_special_side')).toBeNull();
+});
+
 test('shows structured fill cash impact and fee breakdown in execution audit', async () => {
   renderTradingPage({
     fillFacts: [

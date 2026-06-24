@@ -385,6 +385,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'This assignment only sets research context; contribution is shown only after signals, reviews, orders, and fills are linked.',
     'Requires paper/shadow review before promotion.':
       'Requires simulation review before manual review.',
+    'Candidate actions should be compared against paper/shadow evidence.':
+      'Candidate actions should be compared with simulation evidence.',
     'Research evidence is not a profitability guarantee.':
       'Research evidence is not a profitability guarantee.',
     'Backtest evidence is not a profitability claim.':
@@ -472,6 +474,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
     'Requires paper/shadow review before promotion.':
       '进入人工复核前，需要完成模拟盘复盘。',
+    'Candidate actions should be compared against paper/shadow evidence.':
+      '候选动作需要先和模拟盘证据对比复核。',
     'Research evidence is not a profitability guarantee.':
       '研究证据不代表收益保证。',
     'Backtest evidence is not a profitability claim.':
@@ -499,9 +503,26 @@ function normalized(value: string | null | undefined) {
   return text && text.length > 0 ? text : '--';
 }
 
+function looksLikeUnmappedEnglishNote(value: string) {
+  return (
+    /[A-Za-z]/.test(value) &&
+    !/[\u4e00-\u9fff]/.test(value) &&
+    /^[A-Za-z0-9\s.,;:'"()!?/@+-]+$/.test(value)
+  );
+}
+
 function fallbackLabel(value: string, locale: Locale, kind: string) {
   if (value === '--') {
     return value;
+  }
+  if (locale === 'zh' && looksLikeUnmappedEnglishNote(value)) {
+    if (kind === 'status') {
+      return '待确认状态';
+    }
+    if (kind === 'note') {
+      return '待人工复核说明';
+    }
+    return '待人工复核项';
   }
   const hasWhitespace = /\s/.test(value);
   const looksLikeSnakeCode = !hasWhitespace && value.includes('_');
@@ -591,11 +612,13 @@ export function formatPublicOperationalNote(
     NOTE_LABELS[locale][text] ??
     CODE_LABELS[locale][text] ??
     STATUS_LABELS[locale][text] ??
-    (looksLikeInternalCode(text)
-      ? locale === 'zh'
-        ? '待人工复核说明'
-        : 'Review note'
-      : text)
+    (locale === 'zh' && looksLikeUnmappedEnglishNote(text)
+      ? '待人工复核说明'
+      : looksLikeInternalCode(text)
+        ? locale === 'zh'
+          ? '待人工复核说明'
+          : 'Review note'
+        : text)
   );
 }
 

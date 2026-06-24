@@ -33,6 +33,9 @@ test('formats generated operational notes without exposing internal ids', () => 
   expect(formatPublicOperationalNote('confirmed by operator', 'en')).toBe(
     'confirmed by operator',
   );
+  expect(formatPublicOperationalNote('confirmed by operator', 'zh')).toBe(
+    '待人工复核说明',
+  );
 });
 
 test('formats dotted operational note codes as generic review notes', () => {
@@ -64,6 +67,15 @@ test('formats unknown Chinese snake-case values as generic review labels', () =>
   );
 });
 
+test('formats unknown English status and action sentences as Chinese review labels', () => {
+  expect(formatPublicStatus('Data source needs operator review.', 'zh')).toBe(
+    '待确认状态',
+  );
+  expect(formatPublicCode('Review broker evidence before action.', 'zh')).toBe(
+    '待人工复核项',
+  );
+});
+
 test('formats unknown English snake-case values as generic review labels', () => {
   expect(formatPublicStatus('new_backend_gate_state', 'en')).toBe(
     'Status needs review',
@@ -82,6 +94,9 @@ test('formats unknown dotted backend codes as generic labels without hiding norm
   expect(formatPublicNote('backend.order.review', 'zh')).toBe('待人工复核说明');
   expect(formatPublicNote('Review this manually.', 'en')).toBe(
     'Review this manually.',
+  );
+  expect(formatPublicNote('Review this manually.', 'zh')).toBe(
+    '待人工复核说明',
   );
 });
 
@@ -121,6 +136,18 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
   expect(
     formatPublicNote('Requires paper/shadow review before promotion.', 'zh'),
   ).toBe('进入人工复核前，需要完成模拟盘复盘。');
+  expect(
+    formatPublicNote(
+      'Candidate actions should be compared against paper/shadow evidence.',
+      'zh',
+    ),
+  ).toBe('候选动作需要先和模拟盘证据对比复核。');
+  expect(
+    formatPublicNote(
+      'Candidate actions should be compared against paper/shadow evidence.',
+      'en',
+    ),
+  ).toBe('Candidate actions should be compared with simulation evidence.');
   expect(formatPublicCode('paper_shadow_evidence', 'zh')).toBe(
     '模拟盘复核证据',
   );
