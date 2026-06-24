@@ -181,6 +181,43 @@ test('shows broker displayed cost basis beside local moving average cost when ev
   ).toBe('26.3758');
 });
 
+test('warns when broker displayed cost basis differs from local cost basis', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          symbol: '600066',
+          display_name: '宇通客车',
+          asset_class: 'stock',
+          quantity: 200,
+          available_qty: 200,
+          frozen_qty: 0,
+          avg_cost: 26.3758,
+          latest_price: 26.41,
+          market_value: 5282,
+          today_change: -3,
+          today_change_pct: -0.00057,
+          unrealized_pnl: 6.84,
+          realized_pnl: 0,
+          commission_paid: 5,
+          broker_displayed_cost_basis: 5285.16,
+          broker_cost_basis_difference: 10,
+          broker_cost_basis_method: 'broker_remaining_cost',
+          broker_cost_basis_status: 'available',
+        },
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getByTestId('position-broker-cost-600066').textContent,
+  ).toContain('Cost basis difference CN¥10.00');
+  expect(
+    screen.getByTestId('position-mobile-broker-cost-600066').parentElement
+      ?.textContent,
+  ).toContain('Cost basis difference CN¥10.00');
+});
+
 test('uses shared numeric cell classes for desktop portfolio columns', () => {
   renderTable(
     <PositionsTable

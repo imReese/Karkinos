@@ -180,9 +180,40 @@ class BondExchangeCommission(CommissionCalculator):
     佣金 = max(金额 × 万0.4, 1元)
     """
 
+    def __init__(
+        self,
+        commission_rate: Decimal = BOND_COMMISSION_RATE,
+        min_commission: Decimal = MIN_BOND_COMMISSION,
+        other_fee_rate: Decimal = ZERO,
+        fee_rule_id: str = "cn_bond_exchange_default_v1",
+        limitations: tuple[str, ...] = ("bond_fee_rules_need_broker_confirmation",),
+    ) -> None:
+        self.commission_rate = commission_rate
+        self.min_commission = min_commission
+        self.other_fee_rate = other_fee_rate
+        self.fee_rule_id = fee_rule_id
+        self.limitations = limitations
+
     def calculate(self, side: OrderSide, price: Decimal, quantity: Decimal) -> Decimal:
+        return self.breakdown(side, price, quantity).total_fee
+
+    def breakdown(
+        self, side: OrderSide, price: Decimal, quantity: Decimal
+    ) -> FeeBreakdown:
         amount = price * quantity
-        return max(amount * BOND_COMMISSION_RATE, MIN_BOND_COMMISSION)
+        commission = max(amount * self.commission_rate, self.min_commission)
+        other_fees = amount * self.other_fee_rate
+        total_fee = commission + other_fees
+        return FeeBreakdown(
+            gross_amount=amount,
+            commission=commission,
+            stamp_tax=ZERO,
+            transfer_fee=ZERO,
+            other_fees=other_fees,
+            total_fee=total_fee,
+            fee_rule_id=self.fee_rule_id,
+            limitations=self.limitations,
+        )
 
 
 class MultiAssetCommission(CommissionCalculator):

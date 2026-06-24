@@ -119,6 +119,25 @@ class TestGoldSpotCommission:
 
 
 class TestBondExchangeCommission:
+    def test_bond_fee_breakdown_uses_structured_components(self):
+        """债券/可转债费用拆分保留佣金和规则 id，不伪造印花税或过户费。"""
+        calc = BondExchangeCommission(
+            commission_rate=Decimal("0.00004"),
+            min_commission=Decimal("1"),
+            fee_rule_id="cn_bond_exchange_local_v1",
+        )
+
+        breakdown = calc.breakdown(OrderSide.SELL, Decimal("100"), Decimal("1000"))
+
+        assert breakdown.gross_amount == Decimal("100000")
+        assert breakdown.commission == Decimal("4.00000")
+        assert breakdown.stamp_tax == Decimal("0")
+        assert breakdown.transfer_fee == Decimal("0")
+        assert breakdown.other_fees == Decimal("0")
+        assert breakdown.total_fee == Decimal("4.00000")
+        assert breakdown.fee_rule_id == "cn_bond_exchange_local_v1"
+        assert breakdown.limitations == ("bond_fee_rules_need_broker_confirmation",)
+
     def test_bond_min_commission(self):
         """债券最低佣金 1 元。"""
         calc = BondExchangeCommission()

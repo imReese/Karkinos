@@ -1280,3 +1280,20 @@ roadmap promises.
   including a safe fallback for future backend side codes. This is dashboard
   presentation only; it does not change order approval, rejection, broker
   behavior, order submission, risk gates, or manual-confirmation defaults.
+* 2026-06-24: Activity ledger source labels now use localized public fallback
+  copy for future or unknown non-empty source codes instead of rendering raw
+  internal source ids. This is ledger presentation only; it does not change
+  ledger storage, accounting calculations, broker behavior, order submission,
+  risk gates, or manual-confirmation defaults.
+* 2026-06-24: Portfolio positions now show broker-versus-local cost-basis
+  differences when broker cost-basis evidence includes a non-zero difference,
+  using localized cost-basis copy in both desktop rows and mobile cards. This
+  is cost-basis presentation only; it does not recalculate position cost,
+  mutate ledger entries, change broker behavior, submit orders, or bypass
+  manual confirmation.
+* 2026-06-24: Exchange bond / convertible-bond fee modeling now returns the
+  same structured fee-breakdown contract as A-share and ETF calculations, and
+  manual trade fee resolution can produce bond fee evidence without stock stamp
+  tax or transfer-fee assumptions. This is deterministic fee-evidence plumbing
+  only; it does not enable broker submission, change default execution, or
+  bypass manual confirmation.
