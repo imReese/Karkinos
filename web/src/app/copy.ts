@@ -512,6 +512,7 @@ export const copy = {
       accountTruthScore: 'Account truth score',
       strategyAttributionGate: 'Strategy attribution gate',
       strategyAttribution: 'Strategy attribution',
+      strategyAuditId: 'Audit id',
       strategyAttributionStatus: 'Attribution status',
       strategyContributionStatus: 'Contribution status',
       accountTruthUnresolved: (count: number) =>
@@ -824,6 +825,7 @@ export const copy = {
         accountStrategyContributionHiddenUntilEvidence:
           'Contribution is hidden until signals, reviews, orders, and fills are linked.',
         accountStrategyEvidenceRefs: 'Evidence refs',
+        accountStrategyAuditId: 'Audit id',
         accountStrategyContributionStatus: 'Contribution status',
         accountStrategyHealthStatus: 'Strategy health',
         accountStrategyHealthStatusMap: {
@@ -2192,6 +2194,7 @@ export const copy = {
       accountTruthScore: '账户事实分',
       strategyAttributionGate: '策略归因闸门',
       strategyAttribution: '策略归因',
+      strategyAuditId: '审计 ID',
       strategyAttributionStatus: '归因状态',
       strategyContributionStatus: '贡献状态',
       accountTruthUnresolved: (count: number) => `${count} 个未解决差异`,
@@ -2490,6 +2493,7 @@ export const copy = {
         accountStrategyContributionHiddenUntilEvidence:
           '策略贡献会在信号、复核、订单与成交链路连接后展示。',
         accountStrategyEvidenceRefs: '证据引用',
+        accountStrategyAuditId: '审计 ID',
         accountStrategyContributionStatus: '贡献状态',
         accountStrategyHealthStatus: '策略健康',
         accountStrategyHealthStatusMap: {

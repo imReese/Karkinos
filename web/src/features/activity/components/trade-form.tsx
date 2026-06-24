@@ -418,11 +418,6 @@ function TradePreviewPanel({
           )}
         />
       </div>
-      {preview.note ? (
-        <div className="app-muted mt-3 break-words text-xs leading-5">
-          {preview.note}
-        </div>
-      ) : null}
     </section>
   );
 }

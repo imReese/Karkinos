@@ -16,6 +16,7 @@ import {
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
   formatStrategyAuditLabel,
+  formatStrategyDisplayName,
   type StrategyNameMap,
 } from '../../../shared/strategy-display';
 import {
@@ -97,9 +98,26 @@ function strategyAttributionValue(
 ) {
   const status = value?.gate_status ?? 'not_configured';
   const strategyLabel = value?.strategy_id
-    ? formatStrategyAuditLabel(value.strategy_id, strategyNames)
+    ? formatStrategyDisplayName(
+        { strategy_id: value.strategy_id },
+        strategyNames,
+      )
     : '--';
   return `${normalizeStatus(status, locale)} · ${strategyLabel}`;
+}
+
+function strategyAttributionAuditId(
+  value: StrategyAttributionGateEvidence | null | undefined,
+  strategyNames: StrategyNameMap,
+) {
+  if (!value?.strategy_id) {
+    return null;
+  }
+  const strategyLabel = formatStrategyDisplayName(
+    { strategy_id: value.strategy_id },
+    strategyNames,
+  );
+  return strategyLabel === value.strategy_id ? null : value.strategy_id;
 }
 
 function strategyAttributionTone(
@@ -929,7 +947,12 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
   const strategyAttribution = lane.summary.strategy_attribution;
   const requiredActions = strategyAttribution?.required_actions ?? [];
   const blockingReasons = strategyAttribution?.blocking_reasons ?? [];
+  const auditId = strategyAttributionAuditId(
+    strategyAttribution,
+    copy.backtest.page.strategyNames,
+  );
   const detailItems = [
+    auditId ? `${labels.strategyAuditId}: ${auditId}` : '',
     strategyAttribution?.attribution_status
       ? `${labels.strategyAttributionStatus}: ${formatPublicCode(
           strategyAttribution.attribution_status,

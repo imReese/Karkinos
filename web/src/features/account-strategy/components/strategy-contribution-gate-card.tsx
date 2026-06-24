@@ -9,7 +9,7 @@ import {
   formatPublicCode,
   formatPublicNote,
 } from '../../../shared/public-labels';
-import { formatStrategyAuditLabel } from '../../../shared/strategy-display';
+import { formatStrategyDisplayName } from '../../../shared/strategy-display';
 import type { AccountStrategyContributionReport } from '../api';
 
 type Props = {
@@ -53,10 +53,14 @@ export function StrategyContributionGateCard({
   const healthLabel =
     labels.accountStrategyHealthStatusMap[healthStatus] ??
     formatPublicCode(report?.strategy_health_status, locale);
-  const strategyLabel = formatStrategyAuditLabel(
-    report?.strategy_id,
+  const strategyLabel = formatStrategyDisplayName(
+    { strategy_id: report?.strategy_id },
     labels.strategyNames,
   );
+  const strategyAuditId =
+    report?.strategy_id && strategyLabel !== report.strategy_id
+      ? report.strategy_id
+      : null;
 
   return (
     <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
@@ -152,6 +156,11 @@ export function StrategyContributionGateCard({
                 value={String(report.evidence_refs.length)}
               />
             </div>
+            {strategyAuditId ? (
+              <div className="app-muted text-xs font-semibold">
+                {labels.accountStrategyAuditId} {strategyAuditId}
+              </div>
+            ) : null}
             <ContributionLimitations
               limitations={report.limitations}
               locale={locale}
@@ -177,6 +186,11 @@ export function StrategyContributionGateCard({
                 value={String(report?.linked_fill_count ?? 0)}
               />
             </div>
+            {strategyAuditId ? (
+              <div className="app-muted text-xs font-semibold">
+                {labels.accountStrategyAuditId} {strategyAuditId}
+              </div>
+            ) : null}
             {report?.missing_valuation_symbols.length ? (
               <p className="text-xs font-semibold text-[var(--app-warning)]">
                 {labels.accountStrategyMissingValuation(

@@ -57,7 +57,9 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   expect(screen.getByText('Evidence-linked')).toBeTruthy();
   expect(screen.getByText('Strategy health')).toBeTruthy();
   expect(screen.getByText('Healthy')).toBeTruthy();
-  expect(screen.getByText('Dual Moving Average · dual_ma')).toBeTruthy();
+  expect(screen.getByText('Dual Moving Average')).toBeTruthy();
+  expect(screen.getByText('Audit id dual_ma')).toBeTruthy();
+  expect(screen.queryByText('Dual Moving Average · dual_ma')).toBeNull();
   expect(screen.getByText('Gross realized P/L')).toBeTruthy();
   expect(screen.getByText('CN¥8.00')).toBeTruthy();
   expect(screen.getByText('Gross unrealized P/L')).toBeTruthy();
