@@ -176,6 +176,7 @@ test('shows structured manual trade preview before saving', () => {
   expect(screen.getByText('-CN¥5,767.06')).toBeTruthy();
   expect(screen.getByText('Configured account fee rule')).toBeTruthy();
   expect(screen.getByText('Moving average buy cost')).toBeTruthy();
+  expect(screen.queryByText('账户佣金配置：佣金率万2.5，最低3元')).toBeNull();
 });
 
 test('submits a fund buy by subscription amount', async () => {

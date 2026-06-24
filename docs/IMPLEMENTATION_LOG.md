@@ -6,6 +6,27 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Decision strategy-attribution gate summaries now show the
+  localized strategy name in the primary status value and move the raw
+  strategy id into the detail line as an audit id. This keeps decision
+  summaries readable while preserving the review key. This is display
+  formatting only; it does not change decision evidence, attribution math,
+  strategy ids, broker behavior, order submission, risk gates, automatic
+  trading defaults, or manual-confirmation requirements.
+* 2026-06-24: Strategy contribution cards now show localized strategy names as
+  the primary label and move the raw strategy id into a smaller audit-id line.
+  This keeps contribution evidence user-readable while preserving the
+  underlying strategy key for review. This is display formatting only; it does
+  not change strategy attribution math, evidence gating, strategy ids, broker
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
+* 2026-06-24: Activity manual-trade preview now keeps generated fee-rule
+  notes out of the visible panel once gross amount, commission, stamp tax,
+  transfer fee, total fee, net cash impact, fee-rule label, and cost-basis
+  method are already shown as structured fields. This is display formatting
+  only; it does not change fee calculation, ledger persistence, broker
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
 * 2026-06-24: Backtest account-strategy and strategy-review tables now use
   localized strategy names as the primary display even when registry metadata
   is incomplete, while strategy ids remain visible only as secondary audit
