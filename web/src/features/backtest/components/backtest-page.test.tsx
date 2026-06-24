@@ -1349,6 +1349,15 @@ test('localizes backtest asset class options without changing payload enum value
   expect(payload.assets).toEqual([{ symbol: '018125', asset_class: 'fund' }]);
 });
 
+test('uses user-readable chinese copy for the backtest configuration contract', async () => {
+  renderBacktestPage({ results: [], locale: 'zh' });
+
+  await screen.findByText('回测配置');
+  const pageText = document.body.textContent ?? '';
+  expect(pageText).toContain('使用后端回测接口约定');
+  expect(pageText).not.toContain('contract');
+});
+
 test('localizes built-in parameter labels and descriptions without changing payload keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 

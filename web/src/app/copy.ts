@@ -78,7 +78,8 @@ export const copy = {
     common: {
       required: 'This field is required.',
       mustBePositive: 'Enter a value greater than zero.',
-      genericSubmitError: 'Request failed. Check your payload and server logs.',
+      genericSubmitError:
+        'Request failed. Check the form values and service status.',
       assetClassStock: 'Stock',
       assetClassEtf: 'ETF',
       assetClassFund: 'Fund',
@@ -1768,7 +1769,7 @@ export const copy = {
     common: {
       required: '该字段不能为空。',
       mustBePositive: '请输入大于零的数值。',
-      genericSubmitError: '请求失败，请检查录入内容或服务日志。',
+      genericSubmitError: '请求失败，请检查录入内容或系统状态。',
       assetClassStock: '股票',
       assetClassEtf: 'ETF',
       assetClassFund: '基金',
@@ -2338,7 +2339,7 @@ export const copy = {
         subtitle: '运行受控历史模拟，并查看风险、成本、净值路径与成交覆盖。',
         formKicker: '运行设置',
         formTitle: '回测配置',
-        formDetail: '使用后端回测 contract。资产留空时使用后端配置资产池。',
+        formDetail: '使用后端回测接口约定。资产留空时使用后端配置资产池。',
         startDate: '开始日期',
         endDate: '结束日期',
         initialCash: '初始现金',
