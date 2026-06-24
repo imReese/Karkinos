@@ -19,3 +19,32 @@ export function formatInstrumentDisplayLabel(
   }
   return `${displayName} ${symbol}`;
 }
+
+export function formatInstrumentDisplayLabelsBySymbol(
+  symbols: string[],
+  instruments: InstrumentDisplayRecord[],
+) {
+  const instrumentBySymbol = new Map(
+    instruments
+      .filter((instrument) => instrument.symbol?.trim())
+      .flatMap((instrument) => {
+        const symbol = instrument.symbol?.trim() ?? '';
+        return [
+          [symbol, instrument],
+          [symbol.toLowerCase(), instrument],
+        ] as const;
+      }),
+  );
+
+  return symbols
+    .map((symbol) => {
+      const normalizedSymbol = symbol.trim();
+      const instrument =
+        instrumentBySymbol.get(normalizedSymbol) ??
+        instrumentBySymbol.get(normalizedSymbol.toLowerCase());
+      return instrument
+        ? formatInstrumentDisplayLabel(instrument)
+        : normalizedSymbol;
+    })
+    .join(', ');
+}

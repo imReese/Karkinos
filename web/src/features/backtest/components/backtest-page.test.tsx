@@ -20,6 +20,15 @@ const savedSummary = {
   max_drawdown: 0.044,
 };
 
+const portfolioSnapshot = {
+  cash: 0,
+  total_equity: 0,
+  total_deposits: 0,
+  positions: [],
+  allocation: [],
+  allocation_grouped: [],
+};
+
 const savedReport = {
   id: 1,
   created_at: '2026-05-15T10:00:00+08:00',
@@ -693,6 +702,7 @@ function installBacktestFetchMock({
   },
   strategyPromotionReadinessResponse = strategyPromotionReadiness,
   savedBacktestReport = savedReport,
+  portfolio = portfolioSnapshot,
 }: {
   runFails?: boolean;
   sweepFails?: boolean;
@@ -704,6 +714,7 @@ function installBacktestFetchMock({
   accountStrategyContribution?: unknown;
   strategyPromotionReadinessResponse?: unknown;
   savedBacktestReport?: unknown;
+  portfolio?: unknown;
 } = {}) {
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -774,6 +785,9 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/backtest/results')) {
         return jsonResponse(results);
+      }
+      if (url.includes('/api/portfolio')) {
+        return jsonResponse(portfolio);
       }
       return new Response('Not found', { status: 404 });
     },
@@ -991,6 +1005,24 @@ test('explains account strategy pnl attribution tier and source statuses', async
       evidence_refs: [],
       limitations: ['Local valuation is missing for linked evidence.'],
     },
+    portfolio: {
+      ...portfolioSnapshot,
+      positions: [
+        {
+          symbol: '600519',
+          display_name: '贵州茅台',
+          asset_class: 'stock',
+          quantity: 100,
+          available_qty: 100,
+          frozen_qty: 0,
+          avg_cost: 1720.25,
+          market_value: 172025,
+          unrealized_pnl: 0,
+          realized_pnl: 0,
+          commission_paid: 0,
+        },
+      ],
+    },
   });
 
   expect(await screen.findByText('P/L attribution status')).toBeTruthy();
@@ -1005,6 +1037,10 @@ test('explains account strategy pnl attribution tier and source statuses', async
   expect(
     await screen.findByText('Contribution status: Valuation missing'),
   ).toBeTruthy();
+  expect(
+    await screen.findByText('Missing local valuation for: 贵州茅台 600519.'),
+  ).toBeTruthy();
+  expect(screen.queryByText('Missing local valuation for: 600519.')).toBeNull();
 });
 
 test('selects a strategy from the visible strategy catalog', async () => {

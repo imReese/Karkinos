@@ -2,6 +2,10 @@ import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
 import { formatCurrency } from '../../../shared/format';
 import {
+  formatInstrumentDisplayLabelsBySymbol,
+  type InstrumentDisplayRecord,
+} from '../../../shared/instrument-display';
+import {
   formatPublicCode,
   formatPublicNote,
 } from '../../../shared/public-labels';
@@ -13,6 +17,7 @@ type Props = {
   isLoading?: boolean;
   isError?: boolean;
   onRetry?: () => void;
+  instruments?: InstrumentDisplayRecord[];
 };
 
 function canShowContribution(
@@ -32,6 +37,7 @@ export function StrategyContributionGateCard({
   isLoading = false,
   isError = false,
   onRetry,
+  instruments = [],
 }: Props) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -174,7 +180,10 @@ export function StrategyContributionGateCard({
             {report?.missing_valuation_symbols.length ? (
               <p className="text-xs font-semibold text-[var(--app-warning)]">
                 {labels.accountStrategyMissingValuation(
-                  report.missing_valuation_symbols.join(', '),
+                  formatInstrumentDisplayLabelsBySymbol(
+                    report.missing_valuation_symbols,
+                    instruments,
+                  ),
                 )}
               </p>
             ) : null}

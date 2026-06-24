@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Account strategy contribution cards and the Backtest account
+  strategy panel now format missing-valuation warnings with readable
+  instrument labels from current holdings when available, keeping the symbol
+  as secondary audit context and falling back to the raw symbol only when no
+  local name is known. This is display-only evidence surfacing; it does not
+  change strategy contribution math, valuation data, broker behavior, order
+  submission, risk gates, automatic trading defaults, or manual-confirmation
+  requirements.
 * 2026-06-24: Backtest strategy evidence gates now merge promotion-review
   rows with validation-matrix rows, so readiness-only strategies remain
   visible with display names first and internal strategy ids as secondary

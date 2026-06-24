@@ -117,3 +117,44 @@ test('does not expose contribution amount when evidence chain is unsupported', (
   ).toBeTruthy();
   expect(screen.queryByText('CN¥999.00')).toBeNull();
 });
+
+test('shows readable instrument labels for missing valuation warnings', () => {
+  render(
+    <PreferencesProvider>
+      <StrategyContributionGateCard
+        report={{
+          strategy_id: 'dual_ma',
+          contribution_status: 'valuation_missing',
+          strategy_health_status: 'stale',
+          strategy_health_reasons: ['local_valuation_missing'],
+          linked_fill_count: 1,
+          gross_realized_pnl: 0,
+          gross_unrealized_pnl: 0,
+          total_commission: 0,
+          total_slippage: 0,
+          total_tax: 0,
+          net_contribution: 0,
+          unattributed_account_pnl: null,
+          manual_unattributed_pnl: null,
+          cash_flow_pnl: null,
+          missing_valuation_symbols: ['600519', '000001'],
+          evidence_refs: ['fill:FILL-1'],
+          limitations: ['Local valuation is missing for linked evidence.'],
+        }}
+        instruments={[
+          {
+            symbol: '600519',
+            display_name: '贵州茅台',
+          },
+        ]}
+      />
+    </PreferencesProvider>,
+  );
+
+  expect(
+    screen.getByText('Missing local valuation for: 贵州茅台 600519, 000001.'),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText('Missing local valuation for: 600519, 000001.'),
+  ).toBeNull();
+});

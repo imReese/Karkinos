@@ -498,6 +498,7 @@ export function OverviewPage() {
                 isLoading={strategyContribution.isLoading}
                 isError={strategyContribution.isError}
                 onRetry={() => void strategyContribution.refetch()}
+                instruments={positions}
               />
             </aside>
           </div>
@@ -922,6 +923,7 @@ export function PortfolioPage() {
                 isLoading={strategyContribution.isLoading}
                 isError={strategyContribution.isError}
                 onRetry={() => void strategyContribution.refetch()}
+                instruments={positions.data ?? snapshot.data.positions}
               />
               <RiskSummaryCard
                 overview={overview.data}
