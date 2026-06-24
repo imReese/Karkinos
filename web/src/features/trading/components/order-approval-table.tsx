@@ -8,11 +8,8 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
-import {
-  formatPublicOperationalNote,
-  formatPublicStatus,
-} from '../../../shared/public-labels';
-import { formatLedgerEntryTypeLabel } from '../../../shared/ledger-format';
+import { formatPublicOperationalNote } from '../../../shared/public-labels';
+import { formatLedgerOrderSideLabel } from '../../../shared/ledger-format';
 import { usePositionsQuery } from '../../portfolio/api';
 import {
   useConfirmManualOrderMutation,
@@ -207,11 +204,7 @@ function SideBadge({ side }: { side: string }) {
     : isSell
       ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
       : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]';
-  const label = isBuy
-    ? formatLedgerEntryTypeLabel('trade_buy', locale)
-    : isSell
-      ? formatLedgerEntryTypeLabel('trade_sell', locale)
-      : formatPublicStatus(side, locale);
+  const label = formatLedgerOrderSideLabel(side, locale);
 
   return (
     <span

@@ -3,6 +3,7 @@ import { formatCurrency, formatQuantity } from './format';
 import {
   formatPublicEvidenceReference,
   formatPublicNote,
+  formatPublicStatus,
 } from './public-labels';
 
 export type PublicLedgerEntry = {
@@ -414,6 +415,17 @@ export function formatLedgerEntryTypeLabel(
     typeof entryOrType === 'string' ? entryOrType : entryOrType.entry_type;
   const kind = normalizeLedgerKind(entryType);
   return ENTRY_TYPE_LABELS[locale][kind];
+}
+
+export function formatLedgerOrderSideLabel(side: string, locale: Locale) {
+  const normalized = side.trim().toLowerCase();
+  if (normalized === 'buy') {
+    return formatLedgerEntryTypeLabel('trade_buy', locale);
+  }
+  if (normalized === 'sell') {
+    return formatLedgerEntryTypeLabel('trade_sell', locale);
+  }
+  return formatPublicStatus(side, locale);
 }
 
 export function formatLedgerSourceLabel(

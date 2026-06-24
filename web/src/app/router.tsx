@@ -67,9 +67,9 @@ import {
 } from '../features/activity/api';
 import {
   formatLedgerDashboardPresentation,
-  formatLedgerEntryTypeLabel,
   formatLedgerExplainabilityDetail,
   formatLedgerExplainabilityTitle,
+  formatLedgerOrderSideLabel,
   summarizeLedgerEntry,
 } from '../shared/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
@@ -600,11 +600,7 @@ function DashboardPendingOrders({
           : isSell
             ? 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
             : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]';
-        const sideLabel = isBuy
-          ? formatLedgerEntryTypeLabel('trade_buy', locale)
-          : isSell
-            ? formatLedgerEntryTypeLabel('trade_sell', locale)
-            : formatPublicStatus(order.side, locale);
+        const sideLabel = formatLedgerOrderSideLabel(order.side, locale);
         const displayName = order.display_name ?? order.name ?? null;
         const instrumentNames = displayName
           ? new Map([[order.symbol.toLowerCase(), displayName]])
