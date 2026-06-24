@@ -345,7 +345,9 @@ export function formatLedgerDashboardPresentation(
   return {
     title: instrumentName ? `${entryType} ${instrumentName}` : entryType,
     details: [assetClassLabel, ...detailLines],
-    amount: formatCurrency(calculateLedgerEntryAmount(entry)),
+    amount:
+      formatSignedCurrency(summarizeLedgerEntry(entry).cashImpact) ??
+      formatCurrency(calculateLedgerEntryAmount(entry)),
     publicNote: formatLedgerPublicNote(entry),
   };
 }
@@ -492,6 +494,7 @@ export function formatLedgerPublicNote(entry: PublicLedgerEntry) {
     .map((segment) => removeDuplicateSymbolFromSegment(segment, entry))
     .filter((segment) => !isGeneratedStructuredTradeNote(segment, entry))
     .filter((segment) => !isGeneratedStructuredCashNote(segment, entry))
+    .filter((segment) => !isGeneratedFeeRuleNote(segment, entry))
     .filter(Boolean);
   return segments.length > 0 ? segments.slice(0, 2).join(' · ') : null;
 }
@@ -839,6 +842,13 @@ function isGeneratedStructuredCashNote(
           ? /(现金入金|资金转入|入金|转入|cash deposit|deposit)/i
           : /(现金出金|资金转出|出金|转出|cash withdrawal|withdrawal|withdraw)/i;
   return keywordPattern.test(normalized);
+}
+
+function isGeneratedFeeRuleNote(segment: string, entry: PublicLedgerEntry) {
+  if (!entry.fee_breakdown && !entry.fee_rule_id && !entry.fee_rule_version) {
+    return false;
+  }
+  return /^账户佣金配置[:：]/u.test(segment.trim());
 }
 
 function segmentMentionsAmount(segment: string, amount: number) {

@@ -56,6 +56,24 @@ describe('ledger formatter', () => {
     ).toBe('initial allocation');
   });
 
+  test('suppresses generated configured-fee notes when fee evidence is structured', () => {
+    expect(
+      formatLedgerPublicNote({
+        ...yutongBuy,
+        fee_breakdown: {
+          commission: '5.00',
+          stamp_tax: '0.000000',
+          transfer_fee: '0.052700',
+          other_fees: '0.000000',
+          total_fee: '5.052700',
+        },
+        fee_rule_id: 'manual_configured_commission',
+        fee_rule_version: 'account_commission_rate',
+        note: '账户佣金配置：佣金率万1.5，最低5元',
+      }),
+    ).toBeNull();
+  });
+
   test('suppresses generated trade notes that repeat structured amount fields', () => {
     expect(
       formatLedgerPublicNote({
@@ -165,9 +183,43 @@ describe('ledger formatter', () => {
         'Stamp tax CN¥0.00',
         'Transfer fee CN¥0.16',
       ],
-      amount: 'CN¥5,270.00',
+      amount: '-CN¥5,275.16',
       publicNote: null,
     });
+  });
+
+  test('uses signed net cash impact as dashboard primary amount when fee evidence exists', () => {
+    const presentation = formatLedgerDashboardPresentation(
+      {
+        ...yutongBuy,
+        gross_amount: 5270,
+        net_cash_impact: -5275.16,
+        fee_breakdown: {
+          commission: '5',
+          stamp_tax: '0',
+          transfer_fee: '0.16',
+        },
+      },
+      {
+        amount: 'Amount',
+        grossAmount: 'Gross amount',
+        netCashImpact: 'Cash impact',
+        quantity: 'Quantity',
+        price: 'Price',
+        fee: 'Fee',
+        commission: 'Commission',
+        stampTax: 'Stamp tax',
+        transferFee: 'Transfer fee',
+        otherFees: 'Other fees',
+        costBasis: 'Cost basis',
+      },
+      'en',
+      'Stock',
+    );
+
+    expect(presentation.amount).toBe('-CN¥5,275.16');
+    expect(presentation.details).toContain('Gross amount CN¥5,270.00');
+    expect(presentation.details).toContain('Cash impact -CN¥5,275.16');
   });
 
   test('formats cash interest as a first-class cash income entry', () => {

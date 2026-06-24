@@ -6,6 +6,22 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Shared dashboard ledger presentation now uses signed structured
+  net cash impact as the primary amount when fee evidence is available, while
+  preserving gross amount, quantity, price, commission, stamp tax, and
+  transfer fee as detail fields. This prevents buy-side ledger cards from
+  presenting pre-fee gross amount as the cash movement. This is display
+  formatting only; it does not change ledger storage, accounting math, broker
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
+* 2026-06-24: Shared public ledger notes now suppress generated account
+  commission configuration remarks when structured fee breakdown or fee-rule
+  evidence is already present. This keeps generated fee assumptions out of
+  free-text user notes while preserving structured commission, stamp tax,
+  transfer fee, other fee, and cash-impact details. This is display
+  formatting only; it does not change ledger storage, accounting math, broker
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
 * 2026-06-24: Portfolio position tables now show broker-displayed unit cost
   beside the local moving-average cost when broker cost-basis evidence exists,
   with localized method/status context on both desktop rows and mobile
