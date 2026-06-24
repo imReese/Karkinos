@@ -16,6 +16,11 @@ import {
   formatInstrumentDisplayLabel,
   type InstrumentDisplayRecord,
 } from '../../../shared/instrument-display';
+import {
+  formatLedgerExecutionDetailLines,
+  type LedgerExecutionDetailLabels,
+  type PublicLedgerEntry,
+} from '../../../shared/ledger-format';
 import { KillSwitchPanel } from './kill-switch-panel';
 import {
   useConfirmManualOrderMutation,
@@ -117,6 +122,143 @@ function sideLabel(
     return labels.sell;
   }
   return locale ? formatPublicStatus(side, locale) : side;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseJsonObject(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseFillMetadata(fill: FillFact) {
+  if (isRecord(fill.metadata)) {
+    return fill.metadata;
+  }
+  if (typeof fill.metadata === 'string') {
+    return parseJsonObject(fill.metadata) ?? {};
+  }
+  return parseJsonObject(fill.metadata_json) ?? {};
+}
+
+function finiteMetadataNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+}
+
+function firstFiniteNumber(...values: unknown[]) {
+  for (const value of values) {
+    const numeric = finiteMetadataNumber(value);
+    if (numeric !== null) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function feeBreakdownFromMetadata(
+  value: unknown,
+): PublicLedgerEntry['fee_breakdown'] {
+  return isRecord(value)
+    ? (value as Record<string, number | string | null | undefined>)
+    : null;
+}
+
+function fillToLedgerEntry(
+  fill: FillFact,
+  instrumentNames: InstrumentNameLookup,
+): PublicLedgerEntry {
+  const metadata = parseFillMetadata(fill);
+  const quantity = firstFiniteNumber(fill.fill_quantity, metadata.quantity);
+  const price = firstFiniteNumber(fill.fill_price, metadata.price);
+  const grossAmount = firstFiniteNumber(
+    fill.gross_amount,
+    metadata.gross_amount,
+    quantity !== null && price !== null ? quantity * price : null,
+  );
+  const normalizedSide = fill.side.trim().toLowerCase();
+  const entryType = normalizedSide === 'sell' ? 'trade_sell' : 'trade_buy';
+
+  return {
+    id: fill.id,
+    entry_type: entryType,
+    timestamp: fill.timestamp,
+    amount: grossAmount,
+    symbol: fill.symbol,
+    display_name:
+      fill.display_name ??
+      fill.name ??
+      instrumentNames.get(fill.symbol) ??
+      instrumentNames.get(fill.symbol.toLowerCase()) ??
+      null,
+    direction: normalizedSide || null,
+    quantity,
+    price,
+    commission: firstFiniteNumber(fill.commission, metadata.commission),
+    gross_amount: grossAmount,
+    net_cash_impact: firstFiniteNumber(
+      fill.net_cash_impact,
+      metadata.net_cash_impact,
+    ),
+    fee_breakdown:
+      fill.fee_breakdown ?? feeBreakdownFromMetadata(metadata.fee_breakdown),
+    fee_rule_id: firstString(fill.fee_rule_id, metadata.fee_rule_id),
+    fee_rule_version: firstString(
+      fill.fee_rule_version,
+      metadata.fee_rule_version,
+    ),
+    asset_class: firstString(fill.asset_class, metadata.asset_class) ?? 'stock',
+    note: firstString(metadata.note),
+    source: firstString(fill.source, metadata.source),
+    source_ref: firstString(fill.source_ref, metadata.source_ref),
+    created_at: null,
+  };
+}
+
+function formatFillDetail(
+  fill: FillFact,
+  labels: ReturnType<typeof useCopy>['trading']['page'],
+  detailLabels: LedgerExecutionDetailLabels,
+  locale: Locale,
+  instrumentNames: InstrumentNameLookup,
+) {
+  const structuredDetails = formatLedgerExecutionDetailLines(
+    fillToLedgerEntry(fill, instrumentNames),
+    detailLabels,
+    locale,
+  ).map((detail) => `${detail.label} ${detail.value}`);
+
+  if (structuredDetails.length > 0) {
+    return structuredDetails.join(' · ');
+  }
+
+  return `${formatQuantity(fill.fill_quantity)} @ ${formatPrice(
+    fill.fill_price,
+  )} · ${labels.commission} ${formatCurrency(fill.commission)}`;
 }
 
 export function TradingPage() {
@@ -404,7 +546,9 @@ function ExecutionAuditPanel({
   shadowRunResult: { processed_count: number; reused_count: number } | null;
   onRunShadowReview: () => void;
 }) {
-  const labels = useCopy().trading.page;
+  const copy = useCopy();
+  const labels = copy.trading.page;
+  const ledgerDetailLabels = copy.activity.feed.detailFields;
   const { locale } = usePreferences();
   const latestOrders = orders.slice(0, 4);
   const latestFills = fills.slice(0, 4);
@@ -475,9 +619,13 @@ function ExecutionAuditPanel({
                   fill,
                   instrumentNames,
                 )} · ${sideLabel(fill.side, labels, locale)}`,
-                detail: `${formatQuantity(fill.fill_quantity)} @ ${formatPrice(
-                  fill.fill_price,
-                )} · ${labels.commission} ${formatCurrency(fill.commission)}`,
+                detail: formatFillDetail(
+                  fill,
+                  labels,
+                  ledgerDetailLabels,
+                  locale,
+                  instrumentNames,
+                ),
                 timestamp: fill.timestamp,
               }))}
             />

@@ -120,6 +120,18 @@ export type FillFact = {
   fill_quantity: number;
   commission: number;
   slippage: number;
+  asset_class?: string | null;
+  execution_mode?: string | null;
+  provider_name?: string | null;
+  source?: string | null;
+  source_ref?: string | null;
+  gross_amount?: number | null;
+  net_cash_impact?: number | null;
+  fee_breakdown?: Record<string, number | string | null | undefined> | null;
+  fee_rule_id?: string | null;
+  fee_rule_version?: string | null;
+  metadata?: Record<string, unknown> | string | null;
+  metadata_json?: string | null;
 };
 
 export type ShadowRunResponse = {

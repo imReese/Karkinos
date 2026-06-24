@@ -333,6 +333,40 @@ test('uses execution fact display names when the instrument is not in current ho
   expect(screen.queryByText('000001 · buy')).toBeNull();
 });
 
+test('shows structured fill cash impact and fee breakdown in execution audit', async () => {
+  renderTradingPage({
+    fillFacts: [
+      {
+        ...fillFact,
+        asset_class: 'stock',
+        metadata_json: JSON.stringify({
+          gross_amount: 172025,
+          net_cash_impact: -172030.2,
+          fee_breakdown: {
+            commission: '5.00',
+            stamp_tax: '0.00',
+            transfer_fee: '0.20',
+            other_fees: '0.00',
+            total_fee: '5.20',
+          },
+          fee_rule_id: 'manual_configured_commission',
+          fee_rule_version: 'account_commission_rate',
+        }),
+      },
+    ],
+  });
+
+  expect(await screen.findByText(/Gross amount CN¥172,025\.00/)).toBeTruthy();
+  expect(
+    await screen.findByText(/Net cash impact -CN¥172,030\.20/),
+  ).toBeTruthy();
+  expect(await screen.findByText(/Commission CN¥5\.00/)).toBeTruthy();
+  expect(await screen.findByText(/Stamp tax CN¥0\.00/)).toBeTruthy();
+  expect(await screen.findByText(/Transfer fee CN¥0\.20/)).toBeTruthy();
+  expect(screen.queryByText(/manual_configured_commission/)).toBeNull();
+  expect(screen.queryByText(/fee_breakdown/)).toBeNull();
+});
+
 test('confirms a pending manual order and refreshes the queue', async () => {
   const { fetchMock } = renderTradingPage();
 

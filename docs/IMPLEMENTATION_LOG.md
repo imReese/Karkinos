@@ -6,6 +6,13 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Trading execution audit fill facts now parse structured
+  fill metadata and reuse the shared public ledger execution-detail formatter
+  for gross amount, net cash impact, quantity, price, commission, stamp tax,
+  transfer fee, and other fee display. Internal fee-rule identifiers remain
+  hidden from user-facing fill cards. This is display formatting only; it does
+  not change fill persistence, order submission, broker behavior, risk gates,
+  automatic trading defaults, or manual-confirmation requirements.
 * 2026-06-24: Shared dashboard ledger presentation now uses signed structured
   net cash impact as the primary amount when fee evidence is available, while
   preserving gross amount, quantity, price, commission, stamp tax, and
