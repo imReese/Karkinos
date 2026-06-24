@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../app/copy';
 import { formatCurrency } from '../../../shared/format';
+import type { TradePreview } from '../api';
 
 export type TradeFormValues = {
   occurred_at: string;
@@ -67,10 +68,18 @@ export function TradeForm({
   onSubmit,
   pending = false,
   commissionSettings,
+  tradePreview = null,
+  previewLoading = false,
+  previewError = false,
+  onPreviewChange,
 }: {
   onSubmit: (values: TradeFormValues) => Promise<void>;
   pending?: boolean;
   commissionSettings?: CommissionSettings;
+  tradePreview?: TradePreview | null;
+  previewLoading?: boolean;
+  previewError?: boolean;
+  onPreviewChange?: (values: TradeFormValues) => void;
 }) {
   const copy = useCopy();
   const common = copy.common;
@@ -105,6 +114,12 @@ export function TradeForm({
   const direction = watch('direction');
   const quantity = watch('quantity');
   const price = watch('unit_price');
+  const occurredAt = watch('occurred_at');
+  const symbol = watch('symbol');
+  const amount = watch('amount');
+  const fee = watch('fee');
+  const feeIsManual = watch('fee_is_manual');
+  const note = watch('note');
   const isFundBuy =
     assetClass.trim().toLowerCase() === 'fund' && direction === 'buy';
   const calculatedCommission = calculateCommission({
@@ -121,6 +136,33 @@ export function TradeForm({
     setValue('fee', calculatedCommission);
     setValue('fee_is_manual', false);
   }, [calculatedCommission, feeWasEdited, setValue]);
+
+  useEffect(() => {
+    onPreviewChange?.({
+      occurred_at: occurredAt,
+      symbol,
+      asset_class: assetClass,
+      direction,
+      quantity,
+      unit_price: price,
+      amount,
+      fee,
+      fee_is_manual: feeIsManual,
+      note,
+    });
+  }, [
+    amount,
+    assetClass,
+    direction,
+    fee,
+    feeIsManual,
+    note,
+    occurredAt,
+    onPreviewChange,
+    price,
+    quantity,
+    symbol,
+  ]);
 
   return (
     <form
@@ -255,6 +297,19 @@ export function TradeForm({
           )}
         </div>
       ) : null}
+      {previewLoading ? (
+        <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-3 text-xs leading-5">
+          {labels.previewLoading}
+        </div>
+      ) : null}
+      {previewError ? (
+        <div className="app-error-text rounded-2xl border border-[var(--app-danger-border)] px-4 py-3 text-xs leading-5">
+          {labels.previewUnavailable}
+        </div>
+      ) : null}
+      {tradePreview ? (
+        <TradePreviewPanel preview={tradePreview} labels={labels} />
+      ) : null}
       {errors.quantity ? (
         <FieldError message={errors.quantity.message} />
       ) : null}
@@ -276,6 +331,118 @@ export function TradeForm({
         {pending ? labels.saving : labels.submit}
       </button>
     </form>
+  );
+}
+
+function readFeeBreakdown(preview: TradePreview, key: string) {
+  const value = preview.fee_breakdown[key];
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function feeRuleLabel(
+  labels: ReturnType<typeof useCopy>['activity']['forms']['trade'],
+  feeRuleId: string,
+) {
+  if (feeRuleId === 'manual_configured_commission') {
+    return labels.previewConfiguredFeeRule;
+  }
+  if (feeRuleId === 'manual_fee_input') {
+    return labels.previewManualFeeRule;
+  }
+  return feeRuleId;
+}
+
+function costBasisMethodLabel(
+  labels: ReturnType<typeof useCopy>['activity']['forms']['trade'],
+  method: string,
+) {
+  if (method === 'moving_average_buy_cost') {
+    return labels.previewMovingAverageCost;
+  }
+  return method;
+}
+
+function TradePreviewPanel({
+  preview,
+  labels,
+}: {
+  preview: TradePreview;
+  labels: ReturnType<typeof useCopy>['activity']['forms']['trade'];
+}) {
+  const stampTax = readFeeBreakdown(preview, 'stamp_tax') ?? 0;
+  const transferFee = readFeeBreakdown(preview, 'transfer_fee') ?? 0;
+  const otherFees = readFeeBreakdown(preview, 'other_fees') ?? 0;
+
+  return (
+    <section className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] p-4">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+          {labels.previewTitle}
+        </div>
+        <div className="app-chip min-w-0 truncate">
+          {feeRuleLabel(labels, preview.fee_rule_id)}
+        </div>
+      </div>
+      <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
+        <PreviewMetric
+          label={labels.previewGrossAmount}
+          value={formatCurrency(preview.gross_amount)}
+        />
+        <PreviewMetric
+          label={labels.previewNetCashImpact}
+          value={formatCurrency(preview.net_cash_impact)}
+        />
+        <PreviewMetric
+          label={labels.previewCommission}
+          value={formatCurrency(preview.commission)}
+        />
+        <PreviewMetric
+          label={labels.previewStampTax}
+          value={formatCurrency(stampTax)}
+        />
+        <PreviewMetric
+          label={labels.previewTransferFee}
+          value={formatCurrency(transferFee)}
+        />
+        {otherFees !== 0 ? (
+          <PreviewMetric
+            label={labels.previewOtherFees}
+            value={formatCurrency(otherFees)}
+          />
+        ) : null}
+        <PreviewMetric
+          label={labels.previewTotalFee}
+          value={formatCurrency(preview.total_fee)}
+        />
+        <PreviewMetric
+          label={labels.previewCostBasisMethod}
+          value={costBasisMethodLabel(labels, preview.cost_basis_method)}
+        />
+      </div>
+      {preview.note ? (
+        <div className="app-muted mt-3 break-words text-xs leading-5">
+          {preview.note}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PreviewMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2">
+      <div className="app-muted text-xs">{label}</div>
+      <div className="mt-1 min-w-0 break-words text-sm font-semibold">
+        {value}
+      </div>
+    </div>
   );
 }
 

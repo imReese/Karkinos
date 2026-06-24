@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   createRoute,
   createRootRoute,
@@ -62,6 +62,7 @@ import {
   useCreateTradeMutation,
   useLedgerEntriesQuery,
   usePendingFundOrdersQuery,
+  useTradePreviewMutation,
   type LedgerEntry,
 } from '../features/activity/api';
 import {
@@ -2255,6 +2256,9 @@ export function ActivityPage() {
   const positions = usePositionsQuery();
   const settings = useSettingsQuery();
   const createTrade = useCreateTradeMutation();
+  const tradePreview = useTradePreviewMutation();
+  const previewTrade = tradePreview.mutate;
+  const resetTradePreview = tradePreview.reset;
   const createCashFlow = useCreateCashFlowMutation();
   const createDividend = useCreateDividendMutation();
   const createAdjustment = useCreateAdjustmentMutation();
@@ -2316,6 +2320,44 @@ export function ActivityPage() {
       throw error;
     }
   };
+
+  const handleTradePreviewChange = useCallback(
+    (values: TradeFormValues) => {
+      const normalizeNumber = (value: number | null | undefined) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : null;
+      const assetClass = values.asset_class.trim().toLowerCase();
+      const symbol = values.symbol.trim();
+      const quantity = normalizeNumber(values.quantity);
+      const unitPrice = normalizeNumber(values.unit_price);
+      const fee = normalizeNumber(values.fee);
+      const occurredAt = new Date(values.occurred_at);
+      const isPriceBasedTrade =
+        symbol &&
+        Number.isFinite(occurredAt.getTime()) &&
+        quantity !== null &&
+        quantity > 0 &&
+        unitPrice !== null &&
+        unitPrice > 0 &&
+        !(assetClass === 'fund' && values.direction === 'buy');
+
+      if (!isPriceBasedTrade) {
+        resetTradePreview();
+        return;
+      }
+
+      previewTrade({
+        ...values,
+        occurred_at: occurredAt.toISOString(),
+        quantity,
+        unit_price: unitPrice,
+        amount: normalizeNumber(values.amount),
+        fee,
+        asset_class: assetClass,
+        symbol,
+      });
+    },
+    [previewTrade, resetTradePreview],
+  );
 
   const handleFundBatchSubmit = async (values: FundBatchFormValues) => {
     try {
@@ -2473,6 +2515,10 @@ export function ActivityPage() {
               <TradeForm
                 onSubmit={handleTradeSubmit}
                 pending={createTrade.isPending}
+                tradePreview={tradePreview.data ?? null}
+                previewLoading={tradePreview.isPending}
+                previewError={tradePreview.isError}
+                onPreviewChange={handleTradePreviewChange}
                 commissionSettings={
                   settings.data
                     ? {

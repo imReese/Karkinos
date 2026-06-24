@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Activity manual-trade entry now previews the same configured
+  fee contract used by ledger persistence before the user saves a trade. The
+  preview shows gross amount, commission, stamp tax, transfer fee, total fee,
+  net cash impact, fee-rule label, and cost-basis method while the backend
+  preview route deliberately avoids writing trades, ledger entries, or broker
+  orders. This is pre-save evidence surfacing only; it does not change ledger
+  persistence, broker behavior, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
 * 2026-06-24: Backtest run-configuration and strategy snapshot copy now
   describes the backend boundary as a user-facing interface boundary and
   labels strategy ids as audit metadata instead of internal implementation
