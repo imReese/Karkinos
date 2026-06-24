@@ -13,6 +13,7 @@ import { useRefreshMarketQuotesMutation } from '../../market/api';
 import type { Position } from '../api';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
+import { formatLedgerCostBasisMethodLabel } from '../../../shared/ledger-format';
 
 function holdingDetailHref(symbol: string) {
   return `/portfolio/${encodeURIComponent(symbol)}`;
@@ -79,15 +80,10 @@ function resolveBrokerDisplayedUnitCost(position: Position) {
 }
 
 function formatCostBasisMethod(
-  labels: ReturnType<typeof useCopy>['portfolio']['detail'],
+  locale: ReturnType<typeof usePreferences>['locale'],
   method: string | null | undefined,
 ) {
-  const normalized = method ?? 'unavailable';
-  return (
-    labels.costBasisMethods[
-      normalized as keyof typeof labels.costBasisMethods
-    ] ?? normalized
-  );
+  return formatLedgerCostBasisMethodLabel(method, locale);
 }
 
 function formatCostBasisStatus(
@@ -104,10 +100,11 @@ function formatCostBasisStatus(
 
 function formatBrokerCostBasisDetail(
   labels: ReturnType<typeof useCopy>['portfolio']['detail'],
+  locale: ReturnType<typeof usePreferences>['locale'],
   position: Position,
 ) {
   const detailParts = [
-    formatCostBasisMethod(labels, position.broker_cost_basis_method),
+    formatCostBasisMethod(locale, position.broker_cost_basis_method),
     formatCostBasisStatus(labels, position.broker_cost_basis_status),
   ];
 
@@ -284,7 +281,7 @@ export function PositionsTable({
           const brokerCostBasisDetail =
             brokerDisplayedUnitCost === null
               ? null
-              : formatBrokerCostBasisDetail(detailLabels, position);
+              : formatBrokerCostBasisDetail(detailLabels, locale, position);
           const mobileMetrics: Array<{
             key: string;
             label: string;
@@ -594,7 +591,7 @@ export function PositionsTable({
               const brokerCostBasisDetail =
                 brokerDisplayedUnitCost === null
                   ? null
-                  : formatBrokerCostBasisDetail(detailLabels, position);
+                  : formatBrokerCostBasisDetail(detailLabels, locale, position);
               const detailHref = holdingDetailHref(position.symbol);
               const detailLabel = detailAriaLabel(
                 labels,

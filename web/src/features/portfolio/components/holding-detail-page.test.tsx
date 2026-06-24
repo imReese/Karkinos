@@ -345,7 +345,7 @@ test('explains local average cost and broker displayed cost basis when evidence 
   expect(await screen.findByText('Broker displayed cost')).toBeTruthy();
   expect(await screen.findByText('Cost basis difference')).toBeTruthy();
   expect(
-    await screen.findByText('Broker remaining-position cost'),
+    await screen.findByText('Broker displayed remaining cost'),
   ).toBeTruthy();
   expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('1,502.3456')).toBeTruthy();
@@ -394,6 +394,24 @@ test('shows ledger-projected remaining cost without presenting it as broker-conf
       'Broker displayed cost differs from Karkinos local moving average cost. Review Account Truth evidence before relying on cost-basis P/L.',
     ),
   ).toBeNull();
+});
+
+test('uses shared public fallback for unknown holding cost-basis methods', async () => {
+  renderHoldingDetail({
+    positionOverride: {
+      broker_displayed_unit_cost: 1502.3456,
+      broker_displayed_cost_basis: 90140.736,
+      broker_cost_basis_difference: 140.736,
+      broker_cost_basis_method: 'future_private_cost_basis_method',
+      broker_cost_basis_status: 'available',
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  expect(
+    await screen.findByText('Cost basis method needs review'),
+  ).toBeTruthy();
+  expect(screen.queryByText(/future_private_cost_basis_method/)).toBeNull();
 });
 
 test('keeps holding summary and kline regions responsive on narrow screens', async () => {

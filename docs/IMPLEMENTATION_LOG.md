@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Portfolio positions and holding-detail cost-basis method labels
+  now use the shared ledger formatter. Unknown future broker cost-basis method
+  ids fall back to localized review copy instead of leaking raw backend codes
+  in portfolio cost views, while existing broker displayed cost, projected
+  ledger cost, local moving-average cost, difference, and status display stay
+  unchanged. This is display formatting only; it does not change cost-basis
+  math, ledger projection, broker evidence, fee calculation, risk gates,
+  automatic trading defaults, or manual-confirmation requirements.
+* 2026-06-24: Shared Web ledger formatting now owns public labels for manual
+  fee-rule ids and cost-basis method ids. The Activity manual-trade preview
+  consumes those shared labels instead of carrying its own local mapping, so
+  configured account fee rules, manual fee overrides, moving-average cost,
+  broker displayed remaining cost, and unknown future ids use the same
+  localized public fallback path as other ledger evidence. This is display
+  formatting only; it does not change fee calculation, cost-basis math,
+  ledger persistence, broker behavior, risk gates, automatic trading defaults,
+  or manual-confirmation requirements.
 * 2026-06-24: Activity manual-trade entry now previews the same configured
   fee contract used by ledger persistence before the user saves a trade. The
   preview shows gross amount, commission, stamp tax, transfer fee, total fee,

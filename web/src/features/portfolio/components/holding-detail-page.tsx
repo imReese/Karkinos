@@ -4,6 +4,7 @@ import { useAccountOverviewQuery } from '../../account/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
   formatLedgerActivitySummary,
+  formatLedgerCostBasisMethodLabel,
   formatLedgerExecutionDetailLines,
   formatLedgerPublicNote,
 } from '../../../shared/ledger-format';
@@ -91,12 +92,9 @@ function isFiniteNumber(value: unknown): value is number {
 
 function formatCostBasisMethod(
   method: string | null | undefined,
-  labels: Record<string, string>,
+  locale: ReturnType<typeof usePreferences>['locale'],
 ) {
-  if (!method) {
-    return labels.unavailable;
-  }
-  return labels[method] ?? labels.unavailable;
+  return formatLedgerCostBasisMethodLabel(method, locale);
 }
 
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
@@ -356,7 +354,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           label: labels.costBasisMethod,
           value: formatCostBasisMethod(
             position.broker_cost_basis_method,
-            labels.costBasisMethods,
+            locale,
           ),
         },
         {

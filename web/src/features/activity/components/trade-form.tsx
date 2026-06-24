@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../app/copy';
+import { usePreferences } from '../../../app/preferences';
 import { formatCurrency } from '../../../shared/format';
+import {
+  formatLedgerCostBasisMethodLabel,
+  formatLedgerFeeRuleLabel,
+} from '../../../shared/ledger-format';
 import type { TradePreview } from '../api';
 
 export type TradeFormValues = {
@@ -82,6 +87,7 @@ export function TradeForm({
   onPreviewChange?: (values: TradeFormValues) => void;
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const common = copy.common;
   const labels = copy.activity.forms.trade;
   const assetOptions = assetClassOptions(copy);
@@ -308,7 +314,11 @@ export function TradeForm({
         </div>
       ) : null}
       {tradePreview ? (
-        <TradePreviewPanel preview={tradePreview} labels={labels} />
+        <TradePreviewPanel
+          preview={tradePreview}
+          labels={labels}
+          locale={locale}
+        />
       ) : null}
       {errors.quantity ? (
         <FieldError message={errors.quantity.message} />
@@ -346,35 +356,14 @@ function readFeeBreakdown(preview: TradePreview, key: string) {
   return null;
 }
 
-function feeRuleLabel(
-  labels: ReturnType<typeof useCopy>['activity']['forms']['trade'],
-  feeRuleId: string,
-) {
-  if (feeRuleId === 'manual_configured_commission') {
-    return labels.previewConfiguredFeeRule;
-  }
-  if (feeRuleId === 'manual_fee_input') {
-    return labels.previewManualFeeRule;
-  }
-  return feeRuleId;
-}
-
-function costBasisMethodLabel(
-  labels: ReturnType<typeof useCopy>['activity']['forms']['trade'],
-  method: string,
-) {
-  if (method === 'moving_average_buy_cost') {
-    return labels.previewMovingAverageCost;
-  }
-  return method;
-}
-
 function TradePreviewPanel({
   preview,
   labels,
+  locale,
 }: {
   preview: TradePreview;
   labels: ReturnType<typeof useCopy>['activity']['forms']['trade'];
+  locale: ReturnType<typeof usePreferences>['locale'];
 }) {
   const stampTax = readFeeBreakdown(preview, 'stamp_tax') ?? 0;
   const transferFee = readFeeBreakdown(preview, 'transfer_fee') ?? 0;
@@ -387,7 +376,7 @@ function TradePreviewPanel({
           {labels.previewTitle}
         </div>
         <div className="app-chip min-w-0 truncate">
-          {feeRuleLabel(labels, preview.fee_rule_id)}
+          {formatLedgerFeeRuleLabel(preview.fee_rule_id, locale)}
         </div>
       </div>
       <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
@@ -423,7 +412,10 @@ function TradePreviewPanel({
         />
         <PreviewMetric
           label={labels.previewCostBasisMethod}
-          value={costBasisMethodLabel(labels, preview.cost_basis_method)}
+          value={formatLedgerCostBasisMethodLabel(
+            preview.cost_basis_method,
+            locale,
+          )}
         />
       </div>
       {preview.note ? (
