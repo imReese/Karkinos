@@ -114,7 +114,8 @@ CSV 格式、安全合成样例和隐私边界见
 
 手工交易流水如果未显式填写 `fee`，会使用本地 `config.json` 中的
 `account_commission_rate`、`account_min_commission` 和结构化
-`broker_fee_schedule` 记录佣金、印花税、过户费、其他费用、总费用与现金影响。
+`broker_fee_schedule` 记录佣金、印花税、按交易所配置的过户费、其他费用、
+总费用与现金影响。
 如果调用方显式填写 `fee`，该条流水会保留 `manual_fee_input` 审计标记，表示费用
 来自用户手工输入。
 
@@ -379,7 +380,7 @@ uv run python scripts/configure_data_source.py
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
 | `account_commission_rate` | number | `0.0001` | 当前账户股票 / ETF 佣金率规则，例如万2写作 `0.0002` |
 | `account_min_commission` | number | `5.0` | 当前账户单笔最低佣金规则 |
-| `broker_fee_schedule` | object | local defaults | 本地券商费用规则参数，包括股票/ETF 佣金率、最低佣金、印花税、过户费、其他费用率、规则 id 和已知限制；不得保存账户号、截图、交割单、券商密码、token、secret 或 credential |
+| `broker_fee_schedule` | object | local defaults | 本地券商费用规则参数，包括股票/ETF 佣金率、最低佣金、印花税、默认过户费、可选沪深过户费率、其他费用率、规则 id 和已知限制；不得保存账户号、截图、交割单、券商密码、token、secret 或 credential |
 | `broker_connectors` | array | `[]` | 只读券商事实 connector 的本地配置，只允许 `connector_id`、`connector_type`、`enabled`、`client_path`、`account_alias`；不得保存券商密码、token、secret 或 credential |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
 

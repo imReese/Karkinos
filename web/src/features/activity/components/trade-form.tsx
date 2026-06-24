@@ -411,6 +411,12 @@ function TradePreviewPanel({
           value={formatCurrency(preview.total_fee)}
         />
         <PreviewMetric
+          label={labels.previewFeeRule}
+          value={`${formatLedgerFeeRuleLabel(preview.fee_rule_id, locale)} · ${
+            preview.fee_rule_version
+          }`}
+        />
+        <PreviewMetric
           label={labels.previewCostBasisMethod}
           value={formatLedgerCostBasisMethodLabel(
             preview.cost_basis_method,

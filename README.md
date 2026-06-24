@@ -116,11 +116,12 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 
 `http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/decision`, `/market`, and `/settings` can be refreshed without returning home.
 
-The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file. Advanced local fee assumptions can use `broker_fee_schedule`, which stores fee rule parameters and known limitations only, not account identifiers or broker credentials.
+The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file. Advanced local fee assumptions can use `broker_fee_schedule`, which stores fee rule parameters, optional Shanghai/Shenzhen transfer-fee rates, and known limitations only, not account identifiers or broker credentials.
 Manual trade ledger entries that omit an explicit fee use the configured account
 fee rule and structured broker fee schedule to record commission, stamp tax,
-transfer fee, other fees, total fee, and net cash impact. Entries with an
-explicit fee keep the `manual_fee_input` audit marker.
+exchange-specific transfer fee when configured, other fees, total fee, and net
+cash impact. Entries with an explicit fee keep the `manual_fee_input` audit
+marker.
 
 Use this storage boundary:
 

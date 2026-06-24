@@ -1287,8 +1287,10 @@ function StrategyEvidenceGatePanel({
                   const strategyInfo = strategyById.get(row.strategy_id);
                   const displayName = strategyInfo
                     ? strategyDisplayName(strategyInfo, labels.strategyNames)
-                    : (labels.strategyNames[row.strategy_id] ??
-                      row.strategy_id);
+                    : strategyDisplayName(
+                        { strategy_id: row.strategy_id, name: row.strategy_id },
+                        labels.strategyNames,
+                      );
                   const missing = [
                     ...row.missing_requirements,
                     ...(readinessRow?.missing_requirements ?? []),

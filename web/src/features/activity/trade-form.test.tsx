@@ -154,7 +154,7 @@ test('shows structured manual trade preview before saving', () => {
           total_fee: '3.057640',
         },
         fee_rule_id: 'manual_configured_commission',
-        fee_rule_version: 'account_commission_rate',
+        fee_rule_version: 'local_broker_fee_schedule_v2',
         cost_basis_method: 'moving_average_buy_cost',
         note: '账户佣金配置：佣金率万2.5，最低3元',
       }}
@@ -174,6 +174,12 @@ test('shows structured manual trade preview before saving', () => {
   expect(screen.getByText('CN¥3.06')).toBeTruthy();
   expect(screen.getByText('Net cash impact')).toBeTruthy();
   expect(screen.getByText('-CN¥5,767.06')).toBeTruthy();
+  expect(screen.getByText('Fee rule')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Configured account fee rule · local_broker_fee_schedule_v2',
+    ),
+  ).toBeTruthy();
   expect(screen.getByText('Configured account fee rule')).toBeTruthy();
   expect(screen.getByText('Moving average buy cost')).toBeTruthy();
   expect(screen.queryByText('账户佣金配置：佣金率万2.5，最低3元')).toBeNull();

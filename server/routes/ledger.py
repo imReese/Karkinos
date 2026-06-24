@@ -50,6 +50,7 @@ def _build_trade_entry(body: LedgerTradeCreate, *, config=None) -> LedgerEntry:
             direction=direction,
             quantity=body.quantity,
             price=body.unit_price,
+            symbol=body.symbol,
         )
     )
     if configured_fee is None:

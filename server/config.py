@@ -51,10 +51,23 @@ _BROKER_FEE_SCHEDULE_ALLOWED_FIELDS = frozenset(
         "fund_etf_min_commission",
         "stamp_tax_rate",
         "transfer_fee_rate",
+        "exchange_transfer_fee_rates",
         "other_fee_rate",
         "limitations",
     }
 )
+_EXCHANGE_ALIASES = {
+    "sh": "shanghai",
+    "sse": "shanghai",
+    "shanghai": "shanghai",
+    "上海": "shanghai",
+    "沪": "shanghai",
+    "sz": "shenzhen",
+    "szse": "shenzhen",
+    "shenzhen": "shenzhen",
+    "深圳": "shenzhen",
+    "深": "shenzhen",
+}
 
 
 @dataclass(frozen=True)
@@ -79,6 +92,7 @@ class BrokerFeeScheduleConfig:
     fund_etf_min_commission: Decimal = Decimal("5")
     stamp_tax_rate: Decimal = Decimal("0.0005")
     transfer_fee_rate: Decimal = Decimal("0.00001")
+    exchange_transfer_fee_rates: dict[str, Decimal] = field(default_factory=dict)
     other_fee_rate: Decimal = Decimal("0")
     limitations: tuple[str, ...] = (
         "transfer_fee_exchange_not_split",
@@ -263,7 +277,14 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
     )
     if not isinstance(limitations, list | tuple):
         raise ValueError("broker fee schedule limitations must be a list")
+    exchange_transfer_fee_rates = _exchange_transfer_fee_rates(value)
     limitation_values = [str(item).strip() for item in limitations if str(item).strip()]
+    if exchange_transfer_fee_rates:
+        limitation_values = [
+            item
+            for item in limitation_values
+            if item != "transfer_fee_exchange_not_split"
+        ]
     if _has_nested_broker_fee_schedule(value):
         limitation_values.append("nested_fee_schedule_flattened_for_current_contract")
 
@@ -316,6 +337,7 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
                 default="0.00001",
             ),
         ),
+        exchange_transfer_fee_rates=exchange_transfer_fee_rates,
         other_fee_rate=_decimal_fee_config(
             value,
             "other_fee_rate",
@@ -368,6 +390,36 @@ def _nested_fee_value(
         if name in section_value:
             return _first_decimal_like(section_value[name], default=default)
     return default
+
+
+def _exchange_transfer_fee_rates(value: dict[str, object]) -> dict[str, Decimal]:
+    direct_value = value.get("exchange_transfer_fee_rates")
+    raw_rates: dict[str, object] = {}
+    if isinstance(direct_value, dict):
+        raw_rates.update(direct_value)
+
+    taxes_and_fees = value.get("taxes_and_fees")
+    if isinstance(taxes_and_fees, dict):
+        transfer_fee = taxes_and_fees.get("transfer_fee")
+        if isinstance(transfer_fee, dict):
+            for raw_key, raw_value in transfer_fee.items():
+                exchange = _normalize_exchange_key(raw_key)
+                if exchange:
+                    raw_rates.setdefault(exchange, raw_value)
+
+    parsed: dict[str, Decimal] = {}
+    for raw_key, raw_value in raw_rates.items():
+        exchange = _normalize_exchange_key(raw_key)
+        if exchange:
+            parsed[exchange] = Decimal(str(raw_value))
+    return parsed
+
+
+def _normalize_exchange_key(value: object) -> str | None:
+    key = str(value).strip().lower()
+    if not key or key in {"rate", "sell", "buy", "value", "default"}:
+        return None
+    return _EXCHANGE_ALIASES.get(key)
 
 
 def _first_decimal_like(value: object, *, default: str) -> object:
