@@ -13,6 +13,7 @@ export type TradeFormValues = {
   unit_price: number | null;
   amount: number | null;
   fee: number;
+  fee_is_manual: boolean;
   note: string;
 };
 
@@ -76,6 +77,7 @@ export function TradeForm({
   const labels = copy.activity.forms.trade;
   const assetOptions = assetClassOptions(copy);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [feeWasEdited, setFeeWasEdited] = useState(false);
   const createDefaultValues = (): TradeFormValues => ({
     occurred_at: new Date().toISOString().slice(0, 16),
     asset_class: 'stock',
@@ -84,6 +86,7 @@ export function TradeForm({
     unit_price: null,
     amount: null,
     fee: 0,
+    fee_is_manual: false,
     note: '',
     symbol: '',
   });
@@ -112,11 +115,12 @@ export function TradeForm({
   });
 
   useEffect(() => {
-    if (calculatedCommission === null) {
+    if (feeWasEdited || calculatedCommission === null) {
       return;
     }
     setValue('fee', calculatedCommission);
-  }, [calculatedCommission, setValue]);
+    setValue('fee_is_manual', false);
+  }, [calculatedCommission, feeWasEdited, setValue]);
 
   return (
     <form
@@ -125,6 +129,7 @@ export function TradeForm({
         try {
           await onSubmit(values);
           reset(createDefaultValues());
+          setFeeWasEdited(false);
         } catch (error) {
           setSubmitError(
             error instanceof Error ? error.message : labels.genericSubmitError,
@@ -232,8 +237,15 @@ export function TradeForm({
           type="number"
           step="any"
           className="app-field rounded-2xl px-4 py-3 text-sm"
-          {...register('fee', { valueAsNumber: true })}
+          {...register('fee', {
+            valueAsNumber: true,
+            onChange: () => {
+              setFeeWasEdited(true);
+              setValue('fee_is_manual', true);
+            },
+          })}
         />
+        <input type="hidden" {...register('fee_is_manual')} />
       </div>
       {commissionSettings ? (
         <div className="app-muted text-xs leading-5">

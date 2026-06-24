@@ -1297,3 +1297,10 @@ roadmap promises.
   tax or transfer-fee assumptions. This is deterministic fee-evidence plumbing
   only; it does not enable broker submission, change default execution, or
   bypass manual confirmation.
+* 2026-06-24: Activity manual-trade fee prefill now stays a UI estimate unless
+  the user edits the fee field; default trade submissions omit explicit
+  commission so the backend configured fee contract can generate structured
+  commission, stamp-tax, transfer-fee, other-fee, total-fee, and fee-rule
+  evidence. Edited fees still submit as manual fee input. This does not change
+  broker behavior, order submission, risk gates, or manual-confirmation
+  defaults.

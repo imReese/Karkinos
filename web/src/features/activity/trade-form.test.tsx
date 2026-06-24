@@ -64,6 +64,73 @@ test('prefills manual trade fee from account commission settings', async () => {
   ).toBeTruthy();
 });
 
+test('does not mark an auto-prefilled trade fee as a manual fee override', async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <TradeForm
+      onSubmit={onSubmit}
+      commissionSettings={{
+        stock_rate: 0.00025,
+        stock_min_commission: 3,
+      }}
+    />,
+  );
+
+  fireEvent.change(screen.getByLabelText('Symbol'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(screen.getByLabelText('Quantity'), {
+    target: { value: '200' },
+  });
+  fireEvent.change(screen.getByLabelText('Unit Price'), {
+    target: { value: '28.82' },
+  });
+  fireEvent.click(screen.getByText('Save Trade'));
+
+  await waitFor(() => {
+    expect(onSubmit).toHaveBeenCalled();
+  });
+
+  expect(onSubmit.mock.calls[0][0].fee).toBe(3);
+  expect(onSubmit.mock.calls[0][0].fee_is_manual).toBe(false);
+});
+
+test('marks an edited trade fee as a manual fee override', async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <TradeForm
+      onSubmit={onSubmit}
+      commissionSettings={{
+        stock_rate: 0.00025,
+        stock_min_commission: 3,
+      }}
+    />,
+  );
+
+  fireEvent.change(screen.getByLabelText('Symbol'), {
+    target: { value: '603659' },
+  });
+  fireEvent.change(screen.getByLabelText('Quantity'), {
+    target: { value: '200' },
+  });
+  fireEvent.change(screen.getByLabelText('Unit Price'), {
+    target: { value: '28.82' },
+  });
+  fireEvent.change(screen.getByLabelText('Fee'), {
+    target: { value: '8.5' },
+  });
+  fireEvent.click(screen.getByText('Save Trade'));
+
+  await waitFor(() => {
+    expect(onSubmit).toHaveBeenCalled();
+  });
+
+  expect(onSubmit.mock.calls[0][0].fee).toBe(8.5);
+  expect(onSubmit.mock.calls[0][0].fee_is_manual).toBe(true);
+});
+
 test('submits a fund buy by subscription amount', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
 
