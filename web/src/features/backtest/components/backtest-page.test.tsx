@@ -1358,6 +1358,15 @@ test('uses user-readable chinese copy for the backtest configuration contract', 
   expect(pageText).not.toContain('contract');
 });
 
+test('uses user-readable english copy for the backtest configuration interface', async () => {
+  renderBacktestPage({ results: [], locale: 'en' });
+
+  await screen.findByText('Backtest configuration');
+  const pageText = document.body.textContent ?? '';
+  expect(pageText).toContain('Uses the backtest interface boundary.');
+  expect(pageText).not.toContain('backend backtest contract');
+});
+
 test('localizes built-in parameter labels and descriptions without changing payload keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
