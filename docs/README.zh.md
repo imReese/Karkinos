@@ -377,7 +377,7 @@ uv run python scripts/configure_data_source.py
 | `tushare_token` | string | `""` | 由配置引导脚本写入的本地 TuShare token；也可使用环境变量 `TUSHARE_TOKEN` |
 | `notification` | object | `{"type":"console"}` | 通知配置 |
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
-| `account_commission_rate` | number | `0.0001` | 当前账户股票 / ETF 佣金率规则，例如万1.5写作 `0.00015` |
+| `account_commission_rate` | number | `0.0001` | 当前账户股票 / ETF 佣金率规则，例如万2写作 `0.0002` |
 | `account_min_commission` | number | `5.0` | 当前账户单笔最低佣金规则 |
 | `broker_fee_schedule` | object | local defaults | 本地券商费用规则参数，包括股票/ETF 佣金率、最低佣金、印花税、过户费、其他费用率、规则 id 和已知限制；不得保存账户号、截图、交割单、券商密码、token、secret 或 credential |
 | `broker_connectors` | array | `[]` | 只读券商事实 connector 的本地配置，只允许 `connector_id`、`connector_type`、`enabled`、`client_path`、`account_alias`；不得保存券商密码、token、secret 或 credential |

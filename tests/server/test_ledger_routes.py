@@ -15,24 +15,24 @@ def test_ledger_entries_include_instrument_display_name(tmp_path, monkeypatch):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     db.upsert_instrument_metadata_sync(
-        symbol="600066",
+        symbol="600003",
         asset_type="stock",
-        display_name="宇通客车",
-        provider_symbol="600066.SH",
+        display_name="示例制造",
+        provider_symbol="600003.SH",
     )
     db.insert_ledger_entry_sync(
         entry_type="trade_buy",
-        timestamp="2026-06-16T11:04:56+08:00",
-        amount=5270.0,
-        symbol="600066",
+        timestamp="2026-01-15T11:04:56+08:00",
+        amount=3250.0,
+        symbol="600003",
         direction="buy",
         quantity=200,
-        price=26.35,
+        price=16.25,
         commission=5,
         asset_class="stock",
-        note="手工录入持仓：宇通客车 600066 买入，佣金按万1.5，最低5元计收",
+        note="合成测试流水：示例制造 600003 买入，按本地费率规则计费",
         source="manual",
-        source_ref="manual-600066-20260616-110456",
+        source_ref="manual-stock-a-20260115-100000",
     )
     fake_state = SimpleNamespace(db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
@@ -46,8 +46,8 @@ def test_ledger_entries_include_instrument_display_name(tmp_path, monkeypatch):
 
     response = asyncio.run(list_route.endpoint())
 
-    assert response[0].symbol == "600066"
-    assert response[0].display_name == "宇通客车"
+    assert response[0].symbol == "600003"
+    assert response[0].display_name == "示例制造"
 
 
 def test_post_trade_and_read_positions_uses_ledger_projection(tmp_path, monkeypatch):
@@ -205,7 +205,7 @@ def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
                 asset_class="stock",
                 direction="sell",
                 quantity=200,
-                unit_price=26.35,
+                unit_price=16.25,
                 occurred_at="2026-06-17T10:00:00",
                 source_ref="trade-sell-configured-fee",
             )
@@ -215,15 +215,15 @@ def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
     saved = asyncio.run(list_entries())[0]
 
     assert saved.entry_type == "trade_sell"
-    assert saved.gross_amount == pytest.approx(5270.0)
+    assert saved.gross_amount == pytest.approx(3250.0)
     assert saved.commission == pytest.approx(5.0)
-    assert saved.net_cash_impact == pytest.approx(5262.3123)
+    assert saved.net_cash_impact == pytest.approx(3243.3425)
     assert saved.fee_breakdown == {
         "commission": "5.00",
-        "stamp_tax": "2.635000",
-        "transfer_fee": "0.052700",
+        "stamp_tax": "1.625000",
+        "transfer_fee": "0.032500",
         "other_fees": "0.000000",
-        "total_fee": "7.687700",
+        "total_fee": "6.657500",
     }
     assert saved.fee_rule_id == "manual_configured_commission"
     assert saved.fee_rule_version == "account_commission_rate"

@@ -71,7 +71,7 @@ def test_frozen_market_data_dataset_payload_is_stable_and_rejects_unallowed_use(
 ):
     frozen_at = datetime(2026, 6, 18, 16, 0, tzinfo=UTC)
     dataset = freeze_market_data_dataset(
-        [_record(kind=MarketDataEventKind.DAILY_BAR, symbol="018125")],
+        [_record(kind=MarketDataEventKind.DAILY_BAR, symbol="019999")],
         frozen_at=frozen_at,
         allowed_uses=(MarketDataReplayUse.AUDIT_REPLAY,),
     )
@@ -102,7 +102,7 @@ def test_strategy_runtime_dry_run_replay_evidence_keeps_estimates_unconfirmed() 
             ),
             _record(
                 kind=MarketDataEventKind.SNAPSHOT,
-                symbol="018125",
+                symbol="019999",
                 status=MarketDataStatus.ESTIMATED,
             ),
         ],

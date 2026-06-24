@@ -850,7 +850,7 @@ export const copy = {
         shortPeriod: 'Short period',
         longPeriod: 'Long period',
         symbol: 'Symbol',
-        symbolPlaceholder: '603659',
+        symbolPlaceholder: '600002',
         assetClass: 'Asset class',
         singleSymbolHint:
           'Leave symbol empty to use the backend configured universe. Single-symbol runs are research evidence only.',
@@ -2516,7 +2516,7 @@ export const copy = {
         shortPeriod: '短周期',
         longPeriod: '长周期',
         symbol: '标的代码',
-        symbolPlaceholder: '603659',
+        symbolPlaceholder: '600002',
         assetClass: '资产类别',
         singleSymbolHint:
           '标的留空时使用后端配置资产池；单标的回测仅作为研究证据。',

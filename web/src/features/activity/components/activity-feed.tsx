@@ -97,7 +97,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   </td>
                   <td className="max-w-[280px] px-5 py-4 align-top text-[var(--app-muted)]">
                     <span className="line-clamp-2 break-words">
-                      {formatLedgerPublicNote(entry) ?? labels.noDetail}
+                      {formatLedgerPublicNote(entry, locale) ?? labels.noDetail}
                     </span>
                   </td>
                 </tr>

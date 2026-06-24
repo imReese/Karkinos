@@ -20,7 +20,7 @@ const defaultSettings = {
   end_date: '2026-05-16',
   assets: [
     { symbol: '600519', asset_class: 'stock' },
-    { symbol: '018125', asset_class: 'fund' },
+    { symbol: '019999', asset_class: 'fund' },
   ],
   strategy: 'dual_ma',
   short_period: 5,
@@ -92,10 +92,10 @@ const defaultAssetMetadataStatus: AssetMetadataStatusResponse = {
       source: 'assets',
     },
     {
-      symbol: '018125',
+      symbol: '019999',
       display_name: '示例基金',
       asset_class: 'fund',
-      provider_symbol: '018125',
+      provider_symbol: '019999',
       aliases: [],
       source: 'assets',
     },
@@ -468,7 +468,7 @@ test('shows tushare capability matrix and manual daily tasks', async () => {
           nav_date: null,
         },
         {
-          symbol: '018125',
+          symbol: '019999',
           asset_class: 'fund',
           timestamp: '2026-06-15 11:20',
           price: 2.3077,
@@ -529,16 +529,16 @@ test('guides users to configure asset metadata when none is available', async ()
     assetMetadataStatus: {
       ...defaultAssetMetadataStatus,
       configured_count: 0,
-      missing_symbols: ['026539', '012710'],
+      missing_symbols: ['029999', '012999'],
       configured_assets: [],
       suggested_config: {
         assets: [
           {
-            symbol: '026539',
+            symbol: '029999',
             asset_class: 'fund',
             display_name: '<填入资产名称>',
-            provider_symbol: '026539',
-            aliases: ['026539'],
+            provider_symbol: '029999',
+            aliases: ['029999'],
           },
         ],
       },
@@ -555,11 +555,11 @@ test('guides users to configure asset metadata when none is available', async ()
     ),
   ).toBeTruthy();
   expect(await screen.findByText('Assets missing metadata')).toBeTruthy();
-  expect(await screen.findByText('026539, 012710')).toBeTruthy();
+  expect(await screen.findByText('029999, 012999')).toBeTruthy();
   const snippet = (await screen.findByLabelText(
     'Suggested config snippet',
   )) as HTMLTextAreaElement;
-  expect(snippet.value).toContain('"symbol": "026539"');
+  expect(snippet.value).toContain('"symbol": "029999"');
 });
 
 test('shows configured asset metadata state when no symbols are missing', async () => {

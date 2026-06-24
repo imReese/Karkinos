@@ -29,8 +29,8 @@ test('omits auto-filled trade fee so backend configured fee contract is used', a
   const { result } = renderHook(() => useCreateTradeMutation(), { wrapper });
 
   result.current.mutate({
-    occurred_at: '2026-06-05T14:33:41+08:00',
-    symbol: '603659',
+    occurred_at: '2026-01-12T14:33:41+08:00',
+    symbol: '600002',
     direction: 'buy',
     quantity: 200,
     unit_price: 28.82,
@@ -49,7 +49,7 @@ test('omits auto-filled trade fee so backend configured fee contract is used', a
   >;
   expect(body).toEqual(
     expect.objectContaining({
-      symbol: '603659',
+      symbol: '600002',
       quantity: 200,
       price: 28.82,
       asset_class: 'stock',
@@ -69,8 +69,8 @@ test('keeps explicitly edited trade fee as manual commission evidence', async ()
   const { result } = renderHook(() => useCreateTradeMutation(), { wrapper });
 
   result.current.mutate({
-    occurred_at: '2026-06-05T14:33:41+08:00',
-    symbol: '603659',
+    occurred_at: '2026-01-12T14:33:41+08:00',
+    symbol: '600002',
     direction: 'buy',
     quantity: 200,
     unit_price: 28.82,
@@ -111,8 +111,8 @@ test('requests manual trade preview with the same commission override contract',
   const { result } = renderHook(() => useTradePreviewMutation(), { wrapper });
 
   result.current.mutate({
-    occurred_at: '2026-06-05T14:33:41+08:00',
-    symbol: '603659',
+    occurred_at: '2026-01-12T14:33:41+08:00',
+    symbol: '600002',
     direction: 'buy',
     quantity: 200,
     unit_price: 28.82,
@@ -133,7 +133,7 @@ test('requests manual trade preview with the same commission override contract',
   expect(url).toBe('/api/portfolio/trade/preview');
   expect(body).toEqual(
     expect.objectContaining({
-      symbol: '603659',
+      symbol: '600002',
       quantity: 200,
       price: 28.82,
       asset_class: 'stock',

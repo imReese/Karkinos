@@ -72,9 +72,9 @@ test('surfaces cached quote status and homepage action paths', () => {
         last_refresh_attempt: null,
         last_refresh_error: null,
         stale_symbols_count: 3,
-        stale_symbols_sample: ['018125'],
+        stale_symbols_sample: ['019999'],
       }}
-      symbols={['018125']}
+      symbols={['019999']}
     />,
   );
 
@@ -162,7 +162,7 @@ test('lists concrete holdings when fund NAV is still estimate-only', () => {
       }}
       quoteDiagnostics={[
         {
-          symbol: '018125',
+          symbol: '019999',
           name: 'Everwin Advanced Manufacturing Fund C',
           asset_class: 'fund',
           quote_status: 'stale',
@@ -171,7 +171,7 @@ test('lists concrete holdings when fund NAV is still estimate-only', () => {
           quote_timestamp: '2026-06-17 15:00',
         },
       ]}
-      symbols={['018125']}
+      symbols={['019999']}
     />,
   );
 
@@ -179,7 +179,7 @@ test('lists concrete holdings when fund NAV is still estimate-only', () => {
   expect(
     screen.getByText('Everwin Advanced Manufacturing Fund C'),
   ).toBeTruthy();
-  expect(screen.getByText('018125 · Fund')).toBeTruthy();
+  expect(screen.getByText('019999 · Fund')).toBeTruthy();
   expect(screen.getByText('Using estimate')).toBeTruthy();
   expect(
     screen.getAllByText('Wait for confirmed fund NAV or sync NAV data').length,
@@ -191,12 +191,12 @@ test('refresh action calls the market refresh endpoint with dashboard symbols', 
   const fetchMock = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({
-      requested_symbols: ['018125'],
+      requested_symbols: ['019999'],
       refreshed: [],
       failed: [],
       skipped: [
         {
-          symbol: '018125',
+          symbol: '019999',
           status: 'stale',
           quote_timestamp: null,
           quote_source: null,
@@ -232,7 +232,7 @@ test('refresh action calls the market refresh endpoint with dashboard symbols', 
         cash_ratio: 0,
         quote_status: 'stale',
       }}
-      symbols={['018125']}
+      symbols={['019999']}
     />,
   );
 
@@ -241,7 +241,7 @@ test('refresh action calls the market refresh endpoint with dashboard symbols', 
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   expect(fetchMock.mock.calls[0][0]).toBe('/api/market/quotes/refresh');
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-    symbols: ['018125'],
+    symbols: ['019999'],
     force: true,
   });
 });
@@ -278,12 +278,12 @@ test('points provider timeouts to data source settings', () => {
         last_refresh_attempt: '2026-05-18T00:18:00+08:00',
         last_refresh_error: 'provider_timeout',
         stale_symbols_count: 1,
-        stale_symbols_sample: ['018125'],
+        stale_symbols_sample: ['019999'],
         has_persistent_cache: true,
         latest_persistent_quote_timestamp: '2026-05-18T00:18:00+08:00',
         persistent_cache_status: 'available',
       }}
-      symbols={['018125']}
+      symbols={['019999']}
     />,
   );
 

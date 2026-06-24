@@ -8,7 +8,7 @@ def test_manual_trade_fee_service_formats_stock_sell_components():
 
     resolved = resolve_manual_trade_fee_breakdown(
         SimpleNamespace(
-            account_commission_rate=0.00015,
+            account_commission_rate=0.0002,
             account_min_commission=5,
             broker_fee_schedule=SimpleNamespace(
                 stamp_tax_rate=0.0005,
@@ -23,22 +23,22 @@ def test_manual_trade_fee_service_formats_stock_sell_components():
         asset_class="stock",
         direction="sell",
         quantity=200,
-        price=26.35,
+        price=16.25,
     )
 
     assert resolved is not None
     assert resolved.fee_breakdown_json == {
         "commission": "5.00",
-        "stamp_tax": "2.635000",
-        "transfer_fee": "0.052700",
+        "stamp_tax": "1.625000",
+        "transfer_fee": "0.032500",
         "other_fees": "0.000000",
-        "total_fee": "7.687700",
+        "total_fee": "6.657500",
     }
     assert resolved.commission == 5.0
-    assert resolved.total_fee == 7.6877
+    assert resolved.total_fee == 6.6575
     assert resolved.fee_rule_id == "manual_configured_commission"
     assert resolved.fee_rule_version == "account_commission_rate"
-    assert "万1.5" in resolved.note
+    assert "万2" in resolved.note
 
 
 def test_manual_trade_fee_service_formats_etf_without_stamp_tax():

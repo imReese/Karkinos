@@ -324,11 +324,11 @@ def test_scheduler_syncs_fund_nav_quotes_before_live_poll(monkeypatch, tmp_path)
             }
         )
         return SimpleNamespace(
-            refreshed=["018125"],
+            refreshed=["019999"],
             skipped=[],
             failed={},
             quotes={
-                "018125": {
+                "019999": {
                     "price": 2.2527,
                     "timestamp": "2026-06-12 15:00",
                     "asset_class": "fund",
@@ -345,7 +345,7 @@ def test_scheduler_syncs_fund_nav_quotes_before_live_poll(monkeypatch, tmp_path)
     db = _run_scheduler_once(
         monkeypatch,
         tmp_path,
-        watchlist=[(Symbol("018125"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
         events=[],
         fund_nav_sync=fake_refresh_fund_nav_quotes,
     )
@@ -353,7 +353,7 @@ def test_scheduler_syncs_fund_nav_quotes_before_live_poll(monkeypatch, tmp_path)
     assert calls == [
         {
             "data_source": "akshare",
-            "watchlist": [(Symbol("018125"), AssetClass.FUND)],
+            "watchlist": [(Symbol("019999"), AssetClass.FUND)],
             "latest_quotes": {},
         }
     ]
@@ -387,7 +387,7 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
 
     config = _scheduler_config(live_poll_interval=120)
     scheduler = TradingScheduler(config, FakeBridge())
-    scheduler._watchlist = [(Symbol("601985"), AssetClass.STOCK)]
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
     calls = []
 
     class FakeManager:
@@ -416,7 +416,7 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
 
     assert len(calls) == 2
     first_args, first_kwargs = calls[0]
-    assert first_args[0] == Symbol("601985")
+    assert first_args[0] == Symbol("600001")
     assert first_kwargs["frequency"] == BarFrequency.DAILY
     assert first_kwargs["asset_class"] == AssetClass.STOCK
     assert first_kwargs["allow_remote_refresh"] is True
@@ -436,8 +436,8 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     db.init_sync()
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
     scheduler._watchlist = [
-        (Symbol("601985"), AssetClass.STOCK),
-        (Symbol("018125"), AssetClass.FUND),
+        (Symbol("600001"), AssetClass.STOCK),
+        (Symbol("019999"), AssetClass.FUND),
     ]
     fund_sync_calls = []
     bar_calls = []
@@ -445,11 +445,11 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     def fake_refresh_fund_nav_quotes(config, db, watchlist, latest_quotes):
         fund_sync_calls.append((list(watchlist), dict(latest_quotes)))
         return SimpleNamespace(
-            refreshed=["018125"],
+            refreshed=["019999"],
             skipped=[],
             failed={},
             quotes={
-                "018125": {
+                "019999": {
                     "price": 2.2527,
                     "timestamp": "2026-06-17 15:30",
                     "asset_class": "fund",
@@ -505,8 +505,8 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     assert len(fund_sync_calls) == 1
     assert len(bar_calls) == 2
     assert {call[0][0] for call in bar_calls} == {
-        Symbol("601985"),
-        Symbol("018125"),
+        Symbol("600001"),
+        Symbol("019999"),
     }
     assert {call[1]["end"].date().isoformat() for call in bar_calls} == {
         "2026-06-17"
@@ -520,7 +520,7 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
     db.init_sync()
     config = _scheduler_config(live_poll_interval=120)
     runtime = _scheduler_runtime(
-        watchlist=[(Symbol("601985"), AssetClass.STOCK)],
+        watchlist=[(Symbol("600001"), AssetClass.STOCK)],
     )
     market_refresh_calls = []
     stop_waits = []
@@ -588,7 +588,7 @@ def test_scheduler_strategy_warmup_does_not_fetch_remote_bars(monkeypatch):
 
     config = _scheduler_config(live_poll_interval=120)
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge())
-    scheduler._watchlist = [(Symbol("018125"), AssetClass.FUND)]
+    scheduler._watchlist = [(Symbol("019999"), AssetClass.FUND)]
     calls = []
 
     class FakeManager:
@@ -607,7 +607,7 @@ def test_scheduler_strategy_warmup_does_not_fetch_remote_bars(monkeypatch):
     scheduler._warmup_strategy(FakeManager(), FakeStrategy())
 
     assert calls
-    assert calls[0][0][0] == Symbol("018125")
+    assert calls[0][0][0] == Symbol("019999")
     assert calls[0][1]["asset_class"] == AssetClass.FUND
 
 
@@ -618,7 +618,7 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
     db.init_sync()
     config = _scheduler_config(live_poll_interval=0.2)
     runtime = _scheduler_runtime(
-        watchlist=[(Symbol("601985"), AssetClass.STOCK)],
+        watchlist=[(Symbol("600001"), AssetClass.STOCK)],
     )
     calls = []
 
@@ -647,7 +647,7 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
     finally:
         scheduler.stop()
 
-    assert calls == [((Symbol("601985"), AssetClass.STOCK),)]
+    assert calls == [((Symbol("600001"), AssetClass.STOCK),)]
 
 
 def test_scheduler_prefers_persistent_watchlist_over_config_assets(
@@ -707,15 +707,15 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
     db.insert_ledger_entry_sync(
         entry_type="trade_buy",
         timestamp="2026-05-29T06:16:00+00:00",
-        amount=2998.0,
-        symbol="603659",
+        amount=1980.0,
+        symbol="600002",
         direction="buy",
         quantity=100.0,
-        price=29.98,
+        price=19.80,
         commission=5.03,
         asset_class="stock",
-        note="璞泰来买入 1 手",
-        source_ref="manual-603659-20260529-1416",
+        note="示例材料买入 1 手",
+        source_ref="manual-stock-b-20260110-141600",
     )
     config = _scheduler_config()
     runtime = _scheduler_runtime(
@@ -729,7 +729,7 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
 
         def poll_all(self, current_watchlist):
             holder["scheduler"]._running.clear()
-            assert current_watchlist == [(Symbol("603659"), AssetClass.STOCK)]
+            assert current_watchlist == [(Symbol("600002"), AssetClass.STOCK)]
             return []
 
     monkeypatch.setattr(scheduler_module, "LiveDataFeed", FakeLiveDataFeed)
@@ -744,4 +744,4 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
     scheduler._running.set()
     scheduler._run_loop()
 
-    assert scheduler.watchlist == [(Symbol("603659"), AssetClass.STOCK)]
+    assert scheduler.watchlist == [(Symbol("600002"), AssetClass.STOCK)]

@@ -564,7 +564,11 @@ export function formatPublicOperationalNote(
     NOTE_LABELS[locale][text] ??
     CODE_LABELS[locale][text] ??
     STATUS_LABELS[locale][text] ??
-    (text.includes('_') ? fallbackLabel(text, locale, 'note') : text)
+    (looksLikeInternalCode(text)
+      ? locale === 'zh'
+        ? '待人工复核说明'
+        : 'Review note'
+      : text)
   );
 }
 
@@ -620,4 +624,8 @@ function parseBrokerEvidenceReference(reference: string) {
     subject,
     eventType,
   };
+}
+
+function looksLikeInternalCode(value: string) {
+  return /^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/i.test(value);
 }

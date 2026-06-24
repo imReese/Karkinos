@@ -19,30 +19,30 @@ import type { LedgerEntry } from './api';
 const yutongBuy: LedgerEntry = {
   id: 15,
   entry_type: 'trade_buy',
-  timestamp: '2026-06-16T03:04:56+00:00',
-  amount: 5270,
-  symbol: '600066',
-  display_name: '宇通客车',
+  timestamp: '2026-01-15T03:04:56+00:00',
+  amount: 3250,
+  symbol: '600003',
+  display_name: '示例制造',
   direction: 'buy',
   quantity: 200,
-  price: 26.35,
+  price: 16.25,
   commission: 5,
   asset_class: 'stock',
-  note: '手工录入持仓：宇通客车 600066 买入，佣金按万1.5，最低5元计收',
+  note: '合成测试流水：示例制造 600003 买入，按本地费率规则计费',
   source: 'manual',
-  source_ref: 'manual-600066-20260616-110456',
-  created_at: '2026-06-16T12:35:51.741832',
+  source_ref: 'manual-stock-a-20260115-100000',
+  created_at: '2026-01-15T12:35:51.741832',
 };
 
 describe('ledger formatter', () => {
   test('uses DB display_name as the instrument source of truth', () => {
-    expect(formatLedgerInstrumentLabel(yutongBuy)).toBe('宇通客车 600066');
+    expect(formatLedgerInstrumentLabel(yutongBuy)).toBe('示例制造 600003');
   });
 
   test('falls back to readable note parsing without duplicating the symbol', () => {
     expect(
       formatLedgerInstrumentLabel({ ...yutongBuy, display_name: null }),
-    ).toBe('宇通客车 600066');
+    ).toBe('示例制造 600003');
   });
 
   test('formats public notes without technical prefixes or duplicate symbols', () => {
@@ -58,6 +58,27 @@ describe('ledger formatter', () => {
     ).toBe('initial allocation');
   });
 
+  test('localizes internal note codes instead of rendering raw backend values', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: 'internal_fee_rule_missing',
+        },
+        'zh',
+      ),
+    ).toBe('待人工复核说明');
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: 'internal_fee_rule_missing',
+        },
+        'en',
+      ),
+    ).toBe('Review note');
+  });
+
   test('suppresses generated configured-fee notes when fee evidence is structured', () => {
     expect(
       formatLedgerPublicNote({
@@ -65,13 +86,13 @@ describe('ledger formatter', () => {
         fee_breakdown: {
           commission: '5.00',
           stamp_tax: '0.000000',
-          transfer_fee: '0.052700',
+          transfer_fee: '0.032500',
           other_fees: '0.000000',
-          total_fee: '5.052700',
+          total_fee: '5.032500',
         },
         fee_rule_id: 'manual_configured_commission',
         fee_rule_version: 'account_commission_rate',
-        note: '账户佣金配置：佣金率万1.5，最低5元',
+        note: '账户佣金配置：佣金率万2，最低5元',
       }),
     ).toBeNull();
   });
@@ -80,19 +101,19 @@ describe('ledger formatter', () => {
     expect(
       formatLedgerPublicNote({
         ...yutongBuy,
-        symbol: '012710',
+        symbol: '012999',
         display_name: null,
         quantity: 204.102,
         price: 0.9799,
         commission: 0,
         asset_class: 'fund',
-        note: '用户记录：华夏核心成长混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
+        note: '用户记录：示例稳健混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
       }),
     ).toBeNull();
     expect(
       formatLedgerPublicNote({
         ...yutongBuy,
-        note: '买入 200 股，价格 26.35，手续费 5.00',
+        note: '买入 200 股，价格 16.25，手续费 5.00',
       }),
     ).toBeNull();
   });
@@ -112,8 +133,8 @@ describe('ledger formatter', () => {
   test('summarizes cash impact consistently for buy trades', () => {
     expect(summarizeLedgerEntry(yutongBuy)).toMatchObject({
       kind: 'trade_buy',
-      cashImpact: -5270,
-      grossAmount: 5270,
+      cashImpact: -3250,
+      grossAmount: 3250,
     });
   });
 
@@ -122,7 +143,7 @@ describe('ledger formatter', () => {
       label: 'Security buy',
       shortLabel: 'B',
       cashImpactLabel: 'Consumes cash',
-      amount: '-CN¥5,270.00',
+      amount: '-CN¥3,250.00',
       tone: 'debit',
     });
     expect(
@@ -148,8 +169,8 @@ describe('ledger formatter', () => {
     const presentation = formatLedgerDashboardPresentation(
       {
         ...yutongBuy,
-        gross_amount: 5270,
-        net_cash_impact: -5275.16,
+        gross_amount: 3250,
+        net_cash_impact: -3255.16,
         fee_breakdown: {
           commission: '5',
           stamp_tax: '0',
@@ -174,18 +195,18 @@ describe('ledger formatter', () => {
     );
 
     expect(presentation).toEqual({
-      title: 'Buy 宇通客车 600066',
+      title: 'Buy 示例制造 600003',
       details: [
         'Stock',
-        'Gross amount CN¥5,270.00',
-        'Net cash impact -CN¥5,275.16',
+        'Gross amount CN¥3,250.00',
+        'Net cash impact -CN¥3,255.16',
         'Quantity 200',
-        'Price CN¥26.35',
+        'Price CN¥16.25',
         'Commission CN¥5.00',
         'Stamp tax CN¥0.00',
         'Transfer fee CN¥0.16',
       ],
-      amount: '-CN¥5,275.16',
+      amount: '-CN¥3,255.16',
       publicNote: null,
     });
   });
@@ -194,8 +215,8 @@ describe('ledger formatter', () => {
     const presentation = formatLedgerDashboardPresentation(
       {
         ...yutongBuy,
-        gross_amount: 5270,
-        net_cash_impact: -5275.16,
+        gross_amount: 3250,
+        net_cash_impact: -3255.16,
         fee_breakdown: {
           commission: '5',
           stamp_tax: '0',
@@ -219,9 +240,9 @@ describe('ledger formatter', () => {
       'Stock',
     );
 
-    expect(presentation.amount).toBe('-CN¥5,275.16');
-    expect(presentation.details).toContain('Gross amount CN¥5,270.00');
-    expect(presentation.details).toContain('Cash impact -CN¥5,275.16');
+    expect(presentation.amount).toBe('-CN¥3,255.16');
+    expect(presentation.details).toContain('Gross amount CN¥3,250.00');
+    expect(presentation.details).toContain('Cash impact -CN¥3,255.16');
   });
 
   test('formats cash interest as a first-class cash income entry', () => {
@@ -347,34 +368,34 @@ describe('ledger formatter', () => {
   });
 
   test('formats generated explainability events through shared ledger labels', () => {
-    const instrumentNames = new Map([['600066', '宇通客车']]);
+    const instrumentNames = new Map([['600003', '示例制造']]);
 
     expect(
       formatLedgerExplainabilityTitle(
         {
           kind: 'trade_buy',
-          title: 'Bought 600066',
-          detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
-          symbol: '600066',
-          amount: -5275,
+          title: 'Bought 600003',
+          detail: '数量 200 · 价格 ¥16.25 · 手续费 ¥5.00',
+          symbol: '600003',
+          amount: -3255,
         },
         'zh',
         instrumentNames,
       ),
-    ).toBe('买入 宇通客车 600066');
+    ).toBe('买入 示例制造 600003');
     expect(
       formatLedgerExplainabilityTitle(
         {
           kind: 'trade_buy',
-          title: '买入 600066',
-          detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
-          symbol: '600066',
-          amount: -5275,
+          title: '买入 600003',
+          detail: '数量 200 · 价格 ¥16.25 · 手续费 ¥5.00',
+          symbol: '600003',
+          amount: -3255,
         },
         'zh',
         instrumentNames,
       ),
-    ).toBe('买入 宇通客车 600066');
+    ).toBe('买入 示例制造 600003');
     expect(
       formatLedgerExplainabilityTitle(
         {
@@ -407,8 +428,8 @@ describe('ledger formatter', () => {
     const details = formatLedgerExecutionDetailLines(
       {
         ...yutongBuy,
-        gross_amount: 5270,
-        net_cash_impact: -5275,
+        gross_amount: 3250,
+        net_cash_impact: -3255,
         fee_breakdown: {
           commission: 5,
         },
@@ -432,7 +453,7 @@ describe('ledger formatter', () => {
 
     expect(details).toContainEqual({
       label: '净现金影响',
-      value: '-CN¥5,275.00',
+      value: '-CN¥3,255.00',
     });
     expect(details.some((line) => line.label === '成本口径')).toBe(false);
     expect(details.some((line) => line.value.includes('broker'))).toBe(false);
@@ -446,12 +467,12 @@ describe('ledger formatter', () => {
       {
         id: 11,
         entry_type: 'trade_buy',
-        timestamp: '2026-06-05T05:22:58+00:00',
+        timestamp: '2026-01-12T05:22:58+00:00',
         amount: 200,
         gross_amount: 200,
         net_cash_impact: -200,
-        symbol: '012710',
-        display_name: '华夏核心成长混合C',
+        symbol: '012999',
+        display_name: '示例稳健混合C',
         direction: 'buy',
         quantity: 239.808153477218,
         price: 0.834,
@@ -465,10 +486,10 @@ describe('ledger formatter', () => {
           other_fees: 0,
         },
         asset_class: 'fund',
-        note: '手工录入基金申购：华夏核心成长混合C，申购金额 200.00',
+        note: '手工录入基金申购：示例稳健混合C，申购金额 200.00',
         source: 'manual',
-        source_ref: 'manual-fund-012710-20260605',
-        created_at: '2026-06-05T05:22:58+00:00',
+        source_ref: 'manual-fund-012999-20260112',
+        created_at: '2026-01-12T05:22:58+00:00',
       },
       {
         amount: '金额',

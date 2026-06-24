@@ -357,7 +357,7 @@ test('defaults to all range and only data-bearing series selected', async () => 
         cash: 5800,
       },
       {
-        timestamp: '2026-06-16T09:30:00+08:00',
+        timestamp: '2026-01-15T09:30:00+08:00',
         total: 15530,
         stocks: 6920,
         funds: 2847,
@@ -471,7 +471,7 @@ test('does not show portfolio unrealized pnl as cash-line pnl', async () => {
         quote_status: 'live',
       },
       {
-        timestamp: '2026-06-16T09:30:00+08:00',
+        timestamp: '2026-01-15T09:30:00+08:00',
         total: 15530,
         stocks: 0,
         funds: 0,
@@ -496,7 +496,7 @@ test('does not show portfolio unrealized pnl as cash-line pnl', async () => {
   await waitFor(() => {
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
     expect(tooltip?.textContent).toContain('Cash');
-    expect(tooltip?.textContent).toContain('CN¥13,000');
+    expect(tooltip?.textContent).toContain('CN¥5,800');
     expect(tooltip?.textContent).not.toContain('Unrealized P/L');
   });
 });
@@ -505,7 +505,7 @@ test('shows category point-in-time change and portfolio context for a single sto
   const { container } = renderCard({
     cardPoints: [
       {
-        timestamp: '2026-06-16T09:30:00+08:00',
+        timestamp: '2026-01-15T09:30:00+08:00',
         total: 15400,
         stocks: 6800,
         funds: 2800,
@@ -518,7 +518,7 @@ test('shows category point-in-time change and portfolio context for a single sto
         quote_status: 'live',
       },
       {
-        timestamp: '2026-06-16T14:30:00+08:00',
+        timestamp: '2026-01-15T14:30:00+08:00',
         total: 15530,
         stocks: 6920,
         funds: 2810,

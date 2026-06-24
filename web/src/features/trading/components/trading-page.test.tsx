@@ -35,7 +35,7 @@ const confirmedOrder = {
   ...pendingOrder,
   id: 2,
   order_id: 'ORD-CONFIRMED',
-  symbol: '018125',
+  symbol: '019999',
   side: 'sell',
   status: 'confirmed',
   note: 'confirmed by operator',
@@ -84,9 +84,9 @@ const positionRows = [
     commission_paid: 5,
   },
   {
-    symbol: '018125',
-    name: '永赢先进制造智选混合发起C',
-    display_name: '永赢先进制造智选混合发起C',
+    symbol: '019999',
+    name: '示例成长混合C',
+    display_name: '示例成长混合C',
     asset_class: 'fund',
     quantity: 100,
     available_qty: 100,
@@ -255,9 +255,7 @@ test('renders the trading approvals workspace', async () => {
   expect(await screen.findByText('Fill facts')).toBeTruthy();
   expect(await screen.findByText('Order queue')).toBeTruthy();
   expect(await screen.findByText('贵州茅台 600519')).toBeTruthy();
-  expect(
-    await screen.findByText('永赢先进制造智选混合发起C 018125'),
-  ).toBeTruthy();
+  expect(await screen.findByText('示例成长混合C 019999')).toBeTruthy();
   expect(
     screen.queryByText('Order facts, fills, and shadow review'),
   ).toBeNull();
@@ -282,6 +280,20 @@ test('localizes generated manual-order notes without exposing action ids', async
     await screen.findAllByText('Prepared from Decision action queue.'),
   ).toHaveLength(2);
   expect(screen.queryByText('Prepared from signal action 42.')).toBeNull();
+});
+
+test('hides dotted backend operational note codes in trading rows', async () => {
+  renderTradingPage({
+    orders: [
+      {
+        ...pendingOrder,
+        note: 'backend.order.review',
+      },
+    ],
+  });
+
+  expect(await screen.findByText('Review note')).toBeTruthy();
+  expect(screen.queryByText('backend.order.review')).toBeNull();
 });
 
 test('runs daily simulation review from the execution audit panel', async () => {

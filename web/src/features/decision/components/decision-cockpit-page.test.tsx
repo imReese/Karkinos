@@ -193,7 +193,7 @@ const intradayDecision: DecisionResponse = {
     excluded_daily_count: 1,
   },
   candidates: [],
-  excluded_daily_symbols: ['018125'],
+  excluded_daily_symbols: ['019999'],
   no_action_reasons: ['no_intraday_stock_or_etf_action_tasks'],
 };
 

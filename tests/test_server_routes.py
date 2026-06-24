@@ -78,35 +78,35 @@ def test_asset_metadata_resolver_accepts_supported_config_shapes():
         config=SimpleNamespace(
             instruments=[
                 {
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "asset_class": "fund",
                     "display_name": "示例基金A",
-                    "provider_symbol": "018125.OF",
-                    "aliases": ["018125"],
+                    "provider_symbol": "019999.OF",
+                    "aliases": ["019999"],
                 }
             ],
             assets={
-                "026539": {
+                "029999": {
                     "asset_class": "fund",
                     "display_name": "示例基金B",
-                    "provider_symbol": "026539",
+                    "provider_symbol": "029999",
                 },
-                "012710": "示例基金C",
+                "012999": "示例基金C",
             },
         ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
-                positions={"018125": object(), "026539": object()}
+                positions={"019999": object(), "029999": object()}
             ),
-            watchlist=[("012710", SimpleNamespace(value="fund"))],
+            watchlist=[("012999", SimpleNamespace(value="fund"))],
             latest_quotes={},
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
 
-    assert resolve_asset_metadata(state, "018125").display_name == "示例基金A"
-    assert resolve_asset_metadata(state, "026539").display_name == "示例基金B"
-    assert resolve_asset_metadata(state, "012710").display_name == "示例基金C"
+    assert resolve_asset_metadata(state, "019999").display_name == "示例基金A"
+    assert resolve_asset_metadata(state, "029999").display_name == "示例基金B"
+    assert resolve_asset_metadata(state, "012999").display_name == "示例基金C"
 
     status = build_asset_metadata_status(state)
     assert status["configured_count"] == 3
@@ -122,12 +122,12 @@ def test_asset_metadata_resolver_prefers_local_db_metadata():
 
     class FakeDb:
         def get_instrument_metadata_sync(self, symbol, asset_type=None):
-            assert symbol == "601985"
+            assert symbol == "600001"
             return {
-                "symbol": "601985",
+                "symbol": "600001",
                 "asset_type": "stock",
-                "display_name": "中国核电",
-                "provider_symbol": "601985",
+                "display_name": "示例能源",
+                "provider_symbol": "600001",
                 "provider_name": "akshare",
                 "source": "quote",
             }
@@ -135,10 +135,10 @@ def test_asset_metadata_resolver_prefers_local_db_metadata():
         def list_instrument_metadata_sync(self):
             return [
                 {
-                    "symbol": "601985",
+                    "symbol": "600001",
                     "asset_type": "stock",
-                    "display_name": "中国核电",
-                    "provider_symbol": "601985",
+                    "display_name": "示例能源",
+                    "provider_symbol": "600001",
                     "provider_name": "akshare",
                     "source": "quote",
                 }
@@ -150,23 +150,23 @@ def test_asset_metadata_resolver_prefers_local_db_metadata():
     state = SimpleNamespace(
         config=SimpleNamespace(
             instruments=[],
-            assets={"601985": {"display_name": "601985 A股", "asset_class": "stock"}},
+            assets={"600001": {"display_name": "600001 A股", "asset_class": "stock"}},
         ),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(positions={"601985": object()}),
+            portfolio=SimpleNamespace(positions={"600001": object()}),
             watchlist=[],
             latest_quotes={},
         ),
         db=FakeDb(),
     )
 
-    metadata = resolve_asset_metadata(state, "601985", asset_class="stock")
+    metadata = resolve_asset_metadata(state, "600001", asset_class="stock")
     status = build_asset_metadata_status(state)
 
-    assert metadata.display_name == "中国核电"
+    assert metadata.display_name == "示例能源"
     assert metadata.source == "db"
     assert status["missing_symbols"] == []
-    assert status["configured_assets"][0]["display_name"] == "中国核电"
+    assert status["configured_assets"][0]["display_name"] == "示例能源"
 
 
 def test_asset_metadata_status_reports_missing_symbols_and_template():
@@ -175,13 +175,13 @@ def test_asset_metadata_status_reports_missing_symbols_and_template():
     state = SimpleNamespace(
         config=SimpleNamespace(
             instruments=[],
-            assets={"018125": {"display_name": "示例基金A", "asset_class": "fund"}},
+            assets={"019999": {"display_name": "示例基金A", "asset_class": "fund"}},
         ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
-                positions={"018125": object(), "026539": object()}
+                positions={"019999": object(), "029999": object()}
             ),
-            watchlist=[("012710", SimpleNamespace(value="fund"))],
+            watchlist=[("012999", SimpleNamespace(value="fund"))],
             latest_quotes={},
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
@@ -190,7 +190,7 @@ def test_asset_metadata_status_reports_missing_symbols_and_template():
     status = build_asset_metadata_status(state)
 
     assert status["configured_count"] == 1
-    assert status["missing_symbols"] == ["012710", "026539"]
+    assert status["missing_symbols"] == ["012999", "029999"]
     assert status["has_missing_metadata"] is True
     assert (
         status["suggested_config"]["watchlist_assets"][0]["display_name"]
@@ -760,7 +760,7 @@ def test_backtest_result_normalizes_legacy_final_equity_from_curve(monkeypatch):
                 "config_json": backtest_routes.BacktestRequest(
                     initial_cash=10000,
                     params={"short_period": 3, "long_period": 9},
-                    assets=[{"symbol": "603659", "asset_class": "stock"}],
+                    assets=[{"symbol": "600002", "asset_class": "stock"}],
                 ).model_dump_json(),
                 "initial_cash": 10000.0,
                 "final_equity": 335.22377,
@@ -926,18 +926,18 @@ def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
         config=SimpleNamespace(
             data_source="tushare",
             tushare_token="token-1234",
-            assets=[{"symbol": "600066", "asset_class": "stock"}],
+            assets=[{"symbol": "600003", "asset_class": "stock"}],
             live_poll_interval=60,
         ),
         scheduler=SimpleNamespace(
             is_running=True,
             latest_quotes={
-                "600066": {
-                    "symbol": "600066",
+                "600003": {
+                    "symbol": "600003",
                     "asset_class": "stock",
                     "price": 26.08,
                     "volume": 451384.0,
-                    "timestamp": "2026-06-16T13:12:13",
+                    "timestamp": "2026-01-15T13:12:13",
                     "quote_source": "tushare_realtime_quote",
                     "provider_name": "tushare",
                 }
@@ -950,11 +950,11 @@ def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
-    response = asyncio.run(endpoint("600066", BackgroundTasks()))
+    response = asyncio.run(endpoint("600003", BackgroundTasks()))
 
-    assert response.symbol == "600066"
+    assert response.symbol == "600003"
     assert response.price == 26.08
-    assert response.timestamp == "2026-06-16T13:12:13"
+    assert response.timestamp == "2026-01-15T13:12:13"
 
 
 def test_market_quote_prefers_persisted_snapshot_without_refresh_when_closed(
@@ -1175,7 +1175,7 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
         def list_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "asset_type": "fund",
                     "price": 2.4062,
                     "quote_timestamp": "2026-06-15 11:07",
@@ -1191,11 +1191,11 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            assets=[{"symbol": "019999", "asset_class": "fund"}],
             data_source="tushare",
             tushare_token="token",
         ),
-        scheduler=SimpleNamespace(watchlist=[("018125", "fund")], latest_quotes={}),
+        scheduler=SimpleNamespace(watchlist=[("019999", "fund")], latest_quotes={}),
         db=FakeDb(),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
@@ -1219,7 +1219,7 @@ def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
 
     fake_state = SimpleNamespace(config=SimpleNamespace(live_poll_interval=60))
     quote = {
-        "symbol": "018125",
+        "symbol": "019999",
         "asset_class": "fund",
         "price": 2.4062,
         "timestamp": "2026-06-15 11:07",
@@ -1234,7 +1234,7 @@ def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
 
     metadata = market_routes._quote_metadata(
         fake_state,
-        "018125",
+        "019999",
         "fund",
         quote,
         market_open=True,
@@ -1277,7 +1277,7 @@ def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch
         SimpleNamespace(
             config=SimpleNamespace(data_source="tushare", tushare_token="token")
         ),
-        "018125",
+        "019999",
         AssetClass.FUND,
     )
 
@@ -1302,7 +1302,7 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
         def list_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "601985",
+                    "symbol": "600001",
                     "asset_type": "stock",
                     "price": 9.25,
                     "quote_timestamp": "2026-06-04",
@@ -1313,7 +1313,7 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
                     "is_demo": 0,
                 },
                 {
-                    "symbol": "603659",
+                    "symbol": "600002",
                     "asset_type": "stock",
                     "price": 28.4,
                     "quote_timestamp": "2026-06-04",
@@ -1336,11 +1336,11 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
                     "id": 1,
                     "entry_type": "trade_buy",
                     "timestamp": "2026-05-29T14:16:00",
-                    "amount": 2998.0,
-                    "symbol": "603659",
+                    "amount": 1980.0,
+                    "symbol": "600002",
                     "direction": "buy",
                     "quantity": 100.0,
-                    "price": 29.98,
+                    "price": 19.80,
                     "commission": 5.03,
                     "asset_class": "stock",
                 }
@@ -1355,7 +1355,7 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
         ),
         scheduler=SimpleNamespace(
             watchlist=[],
-            portfolio=SimpleNamespace(positions={"601985": object()}),
+            portfolio=SimpleNamespace(positions={"600001": object()}),
             instruments={},
             latest_quotes={},
         ),
@@ -1366,8 +1366,8 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
 
     response = asyncio.run(health_route.endpoint())
 
-    assert {quote.symbol for quote in response.quotes} == {"601985", "603659"}
-    ledger_quote = next(quote for quote in response.quotes if quote.symbol == "603659")
+    assert {quote.symbol for quote in response.quotes} == {"600001", "600002"}
+    ledger_quote = next(quote for quote in response.quotes if quote.symbol == "600002")
     assert ledger_quote.price == 28.4
     assert ledger_quote.quote_source == "tushare_daily"
 
@@ -1386,15 +1386,15 @@ def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch)
         def list_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "601985",
+                    "symbol": "600001",
                     "asset_type": "stock",
                     "price": 8.99,
-                    "quote_timestamp": "2026-06-05",
+                    "quote_timestamp": "2026-01-12",
                     "quote_source": "tushare_daily",
                     "provider_name": "tushare",
                     "provider_status": "live",
                     "quote_status": "live",
-                    "captured_at": "2026-06-05T22:23:17+08:00",
+                    "captured_at": "2026-01-12T22:23:17+08:00",
                     "is_demo": 0,
                 }
             ]
@@ -1404,21 +1404,21 @@ def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch)
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             data_source="tushare",
             tushare_token="token-1234",
             live_poll_interval=120,
         ),
         scheduler=SimpleNamespace(
-            watchlist=[("601985", "stock")],
+            watchlist=[("600001", "stock")],
             portfolio=None,
             instruments={},
             latest_quotes={
-                "601985": {
-                    "symbol": "601985",
+                "600001": {
+                    "symbol": "600001",
                     "asset_class": "stock",
                     "price": 9.13,
-                    "timestamp": "2026-06-05T 11:01:13",
+                    "timestamp": "2026-01-12T 11:01:13",
                     "quote_source": "tushare_realtime_quote",
                 }
             },
@@ -1430,9 +1430,9 @@ def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch)
 
     response = asyncio.run(health_route.endpoint())
 
-    assert response.quotes[0].symbol == "601985"
+    assert response.quotes[0].symbol == "600001"
     assert response.quotes[0].price == 8.99
-    assert response.quotes[0].timestamp == "2026-06-05"
+    assert response.quotes[0].timestamp == "2026-01-12"
     assert response.quotes[0].quote_source == "tushare_daily"
 
 
@@ -1984,14 +1984,14 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
     fake_position = SimpleNamespace(quantity=100.0, avg_cost=8.69, market_value=869.0)
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            assets=[{"symbol": "019999", "asset_class": "fund"}],
             data_source="akshare",
             tushare_token="",
         ),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(positions={"601985": fake_position}),
+            portfolio=SimpleNamespace(positions={"600001": fake_position}),
             instruments={
-                Symbol("601985"): SimpleNamespace(
+                Symbol("600001"): SimpleNamespace(
                     asset_class=SimpleNamespace(value="stock")
                 )
             },
@@ -2002,11 +2002,11 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
 
     class FakeAkshare:
         def fetch_latest(self, symbol, asset_class):
-            if str(symbol) == "601985":
-                return {"display_name": "中国核电", "timestamp": "2026-06-01 11:22:00"}
-            if str(symbol) == "018125":
+            if str(symbol) == "600001":
+                return {"display_name": "示例能源", "timestamp": "2026-06-01 11:22:00"}
+            if str(symbol) == "019999":
                 return {
-                    "display_name": "永赢先进制造智选混合C",
+                    "display_name": "示例成长混合C",
                     "timestamp": "2026-06-01",
                 }
             raise AssertionError(f"unexpected symbol {symbol}")
@@ -2023,13 +2023,13 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
 
     assert response.updated_count == 2
     assert response.failed_count == 0
-    assert {item.symbol for item in response.items} == {"018125", "601985"}
-    stock = db.get_instrument_metadata_sync("601985", "stock")
-    fund = db.get_instrument_metadata_sync("018125", "fund")
-    assert stock["display_name"] == "中国核电"
+    assert {item.symbol for item in response.items} == {"019999", "600001"}
+    stock = db.get_instrument_metadata_sync("600001", "stock")
+    fund = db.get_instrument_metadata_sync("019999", "fund")
+    assert stock["display_name"] == "示例能源"
     assert stock["source"] == "backfill"
     assert stock["provider_name"] == "akshare"
-    assert fund["display_name"] == "永赢先进制造智选混合C"
+    assert fund["display_name"] == "示例成长混合C"
 
 
 def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
@@ -2051,7 +2051,7 @@ def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
     db.init_sync()
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             data_source="akshare",
             tushare_token="",
             initial_cash=0,
@@ -2063,15 +2063,15 @@ def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
     class FakeAkshare:
         def fetch_latest(self, symbol, asset_class):
             return {
-                "symbol": "601985",
+                "symbol": "600001",
                 "asset_class": "stock",
                 "provider_name": "akshare",
-                "provider_symbol": "601985.SH",
+                "provider_symbol": "600001.SH",
                 "source": "akshare",
                 "quote_source": "akshare_stock_spot",
                 "price": 8.69,
                 "timestamp": "2026-06-01 11:22:00",
-                "display_name": "中国核电",
+                "display_name": "示例能源",
                 "exchange": "SH",
                 "market": "CN",
             }
@@ -2087,9 +2087,9 @@ def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
     )
 
     assert response.updated_count == 1
-    metadata = db.get_instrument_metadata_sync("601985", "stock")
+    metadata = db.get_instrument_metadata_sync("600001", "stock")
     assert metadata["provider_name"] == "akshare"
-    assert metadata["provider_symbol"] == "601985.SH"
+    assert metadata["provider_symbol"] == "600001.SH"
     assert metadata["exchange"] == "SH"
     assert metadata["market"] == "CN"
     assert json.loads(metadata["metadata_json"])["quote_source"] == "akshare_stock_spot"
@@ -2113,15 +2113,15 @@ def test_market_instrument_metadata_backfill_skips_existing_metadata(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     db.upsert_instrument_metadata_sync(
-        symbol="601985",
+        symbol="600001",
         asset_type="stock",
-        display_name="中国核电",
+        display_name="示例能源",
         provider_name="akshare",
         source="backfill",
     )
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             data_source="akshare",
             tushare_token="",
             initial_cash=0,
@@ -2147,7 +2147,7 @@ def test_market_instrument_metadata_backfill_skips_existing_metadata(
     assert response.updated_count == 0
     assert response.skipped_count == 1
     assert response.items[0].status == "skipped"
-    assert response.items[0].display_name == "中国核电"
+    assert response.items[0].display_name == "示例能源"
 
 
 def test_market_instrument_metadata_backfill_reports_missing_provider_name(
@@ -2169,7 +2169,7 @@ def test_market_instrument_metadata_backfill_reports_missing_provider_name(
     db.init_sync()
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             data_source="akshare",
             tushare_token="",
             initial_cash=0,
@@ -2196,7 +2196,7 @@ def test_market_instrument_metadata_backfill_reports_missing_provider_name(
     assert response.failed_count == 1
     assert response.items[0].status == "failed"
     assert response.items[0].error == "metadata_not_available"
-    assert db.get_instrument_metadata_sync("601985", "stock") is None
+    assert db.get_instrument_metadata_sync("600001", "stock") is None
 
 
 def test_market_data_health_reports_provider_configuration_next_action(monkeypatch):
@@ -2211,12 +2211,12 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            assets=[{"symbol": "019999", "asset_class": "fund"}],
             data_source="tushare",
             tushare_token="",
         ),
         scheduler=SimpleNamespace(
-            watchlist=[("018125", "fund")],
+            watchlist=[("019999", "fund")],
             latest_quotes={},
             portfolio=None,
             instruments={},
@@ -2361,7 +2361,7 @@ def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
         scheduler=SimpleNamespace(
             is_running=True,
             latest_quotes={},
-            portfolio=SimpleNamespace(positions={"018125": SimpleNamespace()}),
+            portfolio=SimpleNamespace(positions={"019999": SimpleNamespace()}),
             instruments={},
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
@@ -2386,7 +2386,7 @@ def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
 
     response = asyncio.run(endpoint(market_routes.QuoteRefreshRequest()))
 
-    assert response.requested_symbols == ["018125"]
+    assert response.requested_symbols == ["019999"]
 
 
 def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
@@ -2890,7 +2890,7 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "永赢先进制造智选混合C",
+                    "symbol": "示例成长混合C",
                     "asset_class": "fund",
                     "price": 1.015,
                     "volume": None,
@@ -2904,7 +2904,7 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
             is_running=False,
             latest_quotes={},
             portfolio=SimpleNamespace(
-                positions={"永赢先进制造智选混合C": fake_position}
+                positions={"示例成长混合C": fake_position}
             ),
             instruments={},
         ),
@@ -2915,7 +2915,7 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert len(response) == 1
-    assert response[0].symbol == "永赢先进制造智选混合C"
+    assert response[0].symbol == "示例成长混合C"
     assert response[0].asset_class == "fund"
     assert response[0].is_holding is True
     assert response[0].quantity == 1000
@@ -3039,7 +3039,7 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
             data_source="akshare",
             tushare_token="",
             start_date="2026-05-01",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
         ),
         scheduler=None,
         db=None,
@@ -3047,7 +3047,7 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
 
     class FakeSource:
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
-            assert str(symbol) == "601985"
+            assert str(symbol) == "600001"
             assert frequency.value == "1d"
             assert asset_class.value == "stock"
             return pd.DataFrame(
@@ -3072,7 +3072,7 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     response = asyncio.run(
         endpoint(
             market_routes.MarketBarsBackfillRequest(
-                symbols=["601985"],
+                symbols=["600001"],
                 start="2026-05-27",
                 end="2026-05-28",
             )
@@ -3082,14 +3082,14 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
     assert response.provider == "akshare"
     assert response.updated_count == 1
     assert response.failed_count == 0
-    assert response.items[0].symbol == "601985"
+    assert response.items[0].symbol == "600001"
     assert response.items[0].row_count == 2
 
-    stored = store.load_bars(Symbol("601985"))
+    stored = store.load_bars(Symbol("600001"))
     assert stored is not None
     assert list(stored["close"]) == [8.74, 8.78]
     assert (
-        store.get_meta(Symbol("601985"), market_routes.BarFrequency.DAILY)["row_count"]
+        store.get_meta(Symbol("600001"), market_routes.BarFrequency.DAILY)["row_count"]
         == 2
     )
 
@@ -3112,7 +3112,7 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
             data_source="akshare",
             tushare_token="",
             start_date="2026-05-01",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
         ),
         scheduler=None,
         db=None,
@@ -3132,7 +3132,7 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
     response = asyncio.run(
         endpoint(
             market_routes.MarketBarsBackfillRequest(
-                symbols=["601985"],
+                symbols=["600001"],
                 start="2026-05-27",
                 end="2026-05-28",
             )
@@ -3143,7 +3143,7 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
     assert response.failed_count == 1
     assert response.items[0].status == "failed"
     assert "provider unavailable" in response.items[0].error
-    assert store.load_bars(Symbol("601985")) is None
+    assert store.load_bars(Symbol("600001")) is None
 
 
 def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch):
@@ -3177,7 +3177,7 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
             latest_quotes={},
             portfolio=SimpleNamespace(
                 positions={
-                    "永赢先进制造智选混合C": SimpleNamespace(
+                    "示例成长混合C": SimpleNamespace(
                         quantity=1000,
                         avg_cost=1.0,
                         market_value=1023.0,
@@ -3197,7 +3197,7 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
-    response = asyncio.run(endpoint("永赢先进制造智选混合C", BackgroundTasks()))
+    response = asyncio.run(endpoint("示例成长混合C", BackgroundTasks()))
 
     assert response.asset_class == "fund"
     assert response.price == 1.023
@@ -3212,7 +3212,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
         config=SimpleNamespace(
             data_source="tushare",
             tushare_token="token-1234",
-            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            assets=[{"symbol": "019999", "asset_class": "fund"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3230,7 +3230,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
                 "price": 1.126,
                 "volume": None,
                 "timestamp": "2026-04-21",
-                "display_name": "永赢先进制造智选混合发起C",
+                "display_name": "示例成长混合C",
                 "previous_close": 1.103,
                 "previous_close_date": "2026-04-18",
             }
@@ -3245,13 +3245,13 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "018125", market_routes.AssetClass.FUND
+        fake_state, "019999", market_routes.AssetClass.FUND
     )
 
     assert response["asset_class"] == "fund"
     assert response["price"] == 1.126
     assert response["timestamp"] == "2026-04-21"
-    assert response["display_name"] == "永赢先进制造智选混合发起C"
+    assert response["display_name"] == "示例成长混合C"
     assert response["previous_close"] == 1.103
     assert response["previous_close_date"] == "2026-04-18"
 
@@ -3267,7 +3267,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
         config=SimpleNamespace(
             data_source="tushare",
             tushare_token="token-1234",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3285,7 +3285,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
                 "price": 8.76,
                 "volume": 123456.0,
                 "timestamp": "10:30:00",
-                "display_name": "中国核电",
+                "display_name": "示例能源",
             }
 
     monkeypatch.setattr(
@@ -3297,14 +3297,14 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "601985", market_routes.AssetClass.STOCK
+        fake_state, "600001", market_routes.AssetClass.STOCK
     )
 
     assert response["asset_class"] == "stock"
     assert response["price"] == 8.76
     assert response["provider_name"] == "akshare"
-    assert response["display_name"] == "中国核电"
-    assert saved_quote["symbol"] == "601985"
+    assert response["display_name"] == "示例能源"
+    assert saved_quote["symbol"] == "600001"
     assert saved_quote["provider_name"] == "akshare"
     assert saved_quote["captured_reason"] == "manual_or_route_refresh"
 
@@ -3320,7 +3320,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
         config=SimpleNamespace(
             data_source="tushare",
             tushare_token="token-1234",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3338,7 +3338,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
                 "price": 8.76,
                 "volume": 123456.0,
                 "timestamp": "10:30:00",
-                "display_name": "中国核电",
+                "display_name": "示例能源",
                 "previous_close": 8.65,
                 "previous_close_date": "2026-06-03",
             }
@@ -3352,15 +3352,15 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "601985", market_routes.AssetClass.STOCK
+        fake_state, "600001", market_routes.AssetClass.STOCK
     )
 
     assert response["asset_class"] == "stock"
     assert response["price"] == 8.76
     assert response["provider_name"] == "akshare"
-    assert response["display_name"] == "中国核电"
+    assert response["display_name"] == "示例能源"
     assert response["previous_close"] == 8.65
-    assert saved_quote["symbol"] == "601985"
+    assert saved_quote["symbol"] == "600001"
     assert saved_quote["provider_name"] == "akshare"
 
 
@@ -3373,7 +3373,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
         config=SimpleNamespace(
             data_source="tushare",
             tushare_token="token-1234",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3387,7 +3387,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
             return {
                 "price": 8.50,
                 "volume": 1.0,
-                "timestamp": "2026-06-05",
+                "timestamp": "2026-01-12",
             }
 
     class AkshareSource:
@@ -3395,8 +3395,8 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
             return {
                 "price": 8.76,
                 "volume": 123456.0,
-                "timestamp": "2026-06-05T10:30:00",
-                "display_name": "中国核电",
+                "timestamp": "2026-01-12T10:30:00",
+                "display_name": "示例能源",
             }
 
     monkeypatch.setattr(market_routes, "_PROVIDER_REFRESH_TIMEOUT_SECONDS", 0.001)
@@ -3409,7 +3409,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "601985", market_routes.AssetClass.STOCK
+        fake_state, "600001", market_routes.AssetClass.STOCK
     )
 
     assert response["price"] == 8.76
@@ -3420,10 +3420,10 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
 def test_parse_quote_timestamp_accepts_legacy_space_after_t():
     from server.routes import portfolio as portfolio_routes
 
-    parsed = portfolio_routes._parse_quote_timestamp("2026-06-05T 11:01:13")
+    parsed = portfolio_routes._parse_quote_timestamp("2026-01-12T 11:01:13")
 
     assert parsed is not None
-    assert parsed.isoformat() == "2026-06-05T11:01:13+08:00"
+    assert parsed.isoformat() == "2026-01-12T11:01:13+08:00"
 
 
 def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
@@ -3435,7 +3435,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
         config=SimpleNamespace(
             data_source="akshare",
             tushare_token="",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3452,7 +3452,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
                 "price": 8.76,
                 "volume": 123456.0,
                 "timestamp": "10:30:00",
-                "display_name": "中国核电",
+                "display_name": "示例能源",
                 "previous_close": 8.65,
                 "previous_close_date": "2026-06-03",
                 "change": 0.11,
@@ -3465,7 +3465,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "601985", market_routes.AssetClass.STOCK
+        fake_state, "600001", market_routes.AssetClass.STOCK
     )
 
     assert response["change"] == 0.11
@@ -3485,7 +3485,7 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
         config=SimpleNamespace(
             data_source="akshare",
             tushare_token="",
-            assets=[{"symbol": "601985", "asset_class": "stock"}],
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3500,16 +3500,16 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
     class AkshareSource:
         def fetch_latest(self, symbol, asset_class):
             return {
-                "symbol": "601985",
+                "symbol": "600001",
                 "asset_class": "stock",
                 "provider_name": "akshare",
-                "provider_symbol": "601985.SH",
+                "provider_symbol": "600001.SH",
                 "source": "akshare",
                 "quote_source": "akshare_stock_spot",
                 "price": 8.76,
                 "volume": 123456.0,
                 "timestamp": "10:30:00",
-                "display_name": "中国核电",
+                "display_name": "示例能源",
                 "exchange": "SH",
                 "market": "CN",
             }
@@ -3520,17 +3520,17 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "601985", market_routes.AssetClass.STOCK
+        fake_state, "600001", market_routes.AssetClass.STOCK
     )
 
     assert response["quote_source"] == "akshare_stock_spot"
     assert response["provider_name"] == "akshare"
-    assert response["provider_symbol"] == "601985.SH"
+    assert response["provider_symbol"] == "600001.SH"
     assert response["exchange"] == "SH"
     assert response["market"] == "CN"
     assert saved_latest["quote_source"] == "akshare_stock_spot"
     assert saved_latest["provider_name"] == "akshare"
-    assert saved_metadata["provider_symbol"] == "601985.SH"
+    assert saved_metadata["provider_symbol"] == "600001.SH"
     assert saved_metadata["exchange"] == "SH"
     assert saved_metadata["market"] == "CN"
     assert saved_metadata["metadata"]["quote_source"] == "akshare_stock_spot"
@@ -3546,7 +3546,7 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
         config=SimpleNamespace(
             data_source="akshare",
             tushare_token="",
-            assets=[{"symbol": "018125", "asset_class": "fund"}],
+            assets=[{"symbol": "019999", "asset_class": "fund"}],
             live_poll_interval=120,
         ),
         db=SimpleNamespace(
@@ -3571,13 +3571,13 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "018125", market_routes.AssetClass.FUND
+        fake_state, "019999", market_routes.AssetClass.FUND
     )
 
     assert response["price"] == 2.2503
     assert saved_quote["timestamp"] == "2026-04-22"
     assert saved_close == {
-        "symbol": "018125",
+        "symbol": "019999",
         "asset_class": "fund",
         "trade_date": "2026-04-21",
         "close_price": 2.2606,
@@ -3610,17 +3610,17 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=4000),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"018125": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"019999": fake_position}),
             instruments={
-                "018125": SimpleNamespace(
-                    name="永赢先进制造智选混合发起C",
+                "019999": SimpleNamespace(
+                    name="示例成长混合C",
                     asset_class=SimpleNamespace(value="fund"),
                 )
             },
-            watchlist=[("018125", SimpleNamespace(value="fund"))],
+            watchlist=[("019999", SimpleNamespace(value="fund"))],
             latest_quotes={
-                "018125": {
-                    "symbol": "018125",
+                "019999": {
+                    "symbol": "019999",
                     "asset_class": "fund",
                     "price": 2.2503,
                     "volume": None,
@@ -3659,9 +3659,9 @@ def test_market_watchlist_prefers_display_name_from_config(monkeypatch):
         config=SimpleNamespace(
             assets=[
                 {
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "asset_class": "fund",
-                    "display_name": "永赢先进制造智选混合发起C",
+                    "display_name": "示例成长混合C",
                 }
             ]
         ),
@@ -3672,8 +3672,8 @@ def test_market_watchlist_prefers_display_name_from_config(monkeypatch):
 
     response = asyncio.run(endpoint())
 
-    assert response[0].symbol == "018125"
-    assert response[0].name == "永赢先进制造智选混合发起C"
+    assert response[0].symbol == "019999"
+    assert response[0].name == "示例成长混合C"
 
 
 def test_market_watchlist_add_and_remove(monkeypatch):
@@ -3796,13 +3796,13 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
         end_date="2026-04-18",
         assets=[
             {
-                "symbol": "永赢先进制造智选混合C",
+                "symbol": "示例成长混合C",
                 "asset_class": "fund",
-                "display_name": "永赢先进制造智选混合C",
-                "provider_symbol": "018125",
-                "aliases": ["018125"],
+                "display_name": "示例成长混合C",
+                "provider_symbol": "019999",
+                "aliases": ["019999"],
             },
-            {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
+            {"symbol": "示例科技混合C", "asset_class": "fund"},
         ],
         strategy="dual_ma",
         short_period=5,
@@ -3839,13 +3839,13 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
     assert response.initial_cash == 4000.0
     assert response.assets == [
         {
-            "symbol": "永赢先进制造智选混合C",
+            "symbol": "示例成长混合C",
             "asset_class": "fund",
-            "display_name": "永赢先进制造智选混合C",
-            "provider_symbol": "018125",
-            "aliases": ["018125"],
+            "display_name": "示例成长混合C",
+            "provider_symbol": "019999",
+            "aliases": ["019999"],
         },
-        {"symbol": "融通科技臻选混合C", "asset_class": "fund"},
+        {"symbol": "示例科技混合C", "asset_class": "fund"},
     ]
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert persisted == {
@@ -3947,14 +3947,14 @@ def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
-            assets={"018125": "示例基金A"},
+            assets={"019999": "示例基金A"},
             instruments=[],
         ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
-                positions={"018125": object(), "026539": object()}
+                positions={"019999": object(), "029999": object()}
             ),
-            watchlist=[("012710", SimpleNamespace(value="fund"))],
+            watchlist=[("012999", SimpleNamespace(value="fund"))],
             latest_quotes={},
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
@@ -3964,10 +3964,10 @@ def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
     response = asyncio.run(status_route.endpoint())
 
     assert response.configured_count == 1
-    assert response.missing_symbols == ["012710", "026539"]
+    assert response.missing_symbols == ["012999", "029999"]
     assert response.has_missing_metadata is True
     assert (
-        response.suggested_config["watchlist_assets"][0]["provider_symbol"] == "012710"
+        response.suggested_config["watchlist_assets"][0]["provider_symbol"] == "012999"
     )
 
 
@@ -4052,21 +4052,21 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
             tushare_token="",
             assets=[
                 {
-                    "symbol": "永赢先进制造智选混合C",
+                    "symbol": "示例成长混合C",
                     "asset_class": "fund",
-                    "display_name": "永赢先进制造智选混合发起C",
-                    "provider_symbol": "018125",
+                    "display_name": "示例成长混合C",
+                    "provider_symbol": "019999",
                 }
             ],
         ),
         db=SimpleNamespace(get_total_deposits=AsyncMock(return_value=0.0)),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=2500.0, positions={"018125": fake_position}),
+            portfolio=SimpleNamespace(cash=2500.0, positions={"019999": fake_position}),
             latest_quotes={},
-            watchlist=[(Symbol("018125"), SimpleNamespace(value="fund"))],
+            watchlist=[(Symbol("019999"), SimpleNamespace(value="fund"))],
             instruments={
-                Symbol("018125"): SimpleNamespace(
-                    asset_class=SimpleNamespace(value="fund"), name="018125"
+                Symbol("019999"): SimpleNamespace(
+                    asset_class=SimpleNamespace(value="fund"), name="019999"
                 )
             },
         ),
@@ -4076,12 +4076,12 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
 
     response = asyncio.run(endpoint())
 
-    assert response.positions[0].symbol == "018125"
-    assert response.positions[0].name == "永赢先进制造智选混合发起C"
-    assert response.positions[0].display_name == "永赢先进制造智选混合发起C"
+    assert response.positions[0].symbol == "019999"
+    assert response.positions[0].name == "示例成长混合C"
+    assert response.positions[0].display_name == "示例成长混合C"
     assert response.positions[0].asset_class == "fund"
-    assert response.allocation[1].symbol == "018125"
-    assert response.allocation[1].name == "永赢先进制造智选混合发起C"
+    assert response.allocation[1].symbol == "019999"
+    assert response.allocation[1].name == "示例成长混合C"
 
 
 def test_empty_portfolio_snapshot_does_not_seed_config_initial_cash(monkeypatch):
@@ -4153,11 +4153,11 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
             data_source="akshare",
             tushare_token="",
             instruments=[],
-            assets={"026539": "示例基金B"},
+            assets={"029999": "示例基金B"},
         ),
         db=SimpleNamespace(get_total_deposits=AsyncMock(return_value=0.0)),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"026539": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"029999": fake_position}),
             latest_quotes={},
             watchlist=[],
             instruments={},
@@ -4169,7 +4169,7 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
 
     assert response.positions[0].display_name == "示例基金B"
     allocation_item = next(
-        item for item in response.allocation if item.symbol == "026539"
+        item for item in response.allocation if item.symbol == "029999"
     )
     assert allocation_item.name == "示例基金B"
 
@@ -4215,33 +4215,33 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
             tushare_token="",
             assets=[
                 {
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "asset_class": "fund",
-                    "display_name": "永赢先进制造智选混合发起C",
+                    "display_name": "示例成长混合C",
                 }
             ],
         ),
         db=FakeDb(),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=2500.0, positions={"018125": fake_position}),
+            portfolio=SimpleNamespace(cash=2500.0, positions={"019999": fake_position}),
             latest_quotes={},
-            watchlist=[(Symbol("018125"), SimpleNamespace(value="fund"))],
+            watchlist=[(Symbol("019999"), SimpleNamespace(value="fund"))],
             instruments={
-                Symbol("018125"): SimpleNamespace(
+                Symbol("019999"): SimpleNamespace(
                     asset_class=SimpleNamespace(value="fund"),
-                    name="018125",
+                    name="019999",
                 )
             },
         ),
     )
 
     def fake_rebuild(config, db, latest_quotes):
-        price = latest_quotes["018125"]["price"]
+        price = latest_quotes["019999"]["price"]
         return SimpleNamespace(
             portfolio=SimpleNamespace(
                 cash=2500.0,
                 positions={
-                    "018125": SimpleNamespace(
+                    "019999": SimpleNamespace(
                         quantity=1000,
                         available_qty=1000,
                         frozen_qty=0,
@@ -4293,7 +4293,7 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "永赢先进制造智选混合C",
+                    "symbol": "示例成长混合C",
                     "asset_class": "fund",
                     "price": 1.023,
                     "volume": None,
@@ -4309,7 +4309,7 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
                 {
                     "id": 1,
                     "timestamp": "2026-04-13T13:33:00",
-                    "symbol": "永赢先进制造智选混合C",
+                    "symbol": "示例成长混合C",
                     "direction": "buy",
                     "quantity": 1000.0,
                     "price": 1.0,
@@ -4321,7 +4321,7 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             initial_cash=4000,
-            assets=[{"symbol": "永赢先进制造智选混合C", "asset_class": "fund"}],
+            assets=[{"symbol": "示例成长混合C", "asset_class": "fund"}],
         ),
         db=FakeDb(),
         scheduler=SimpleNamespace(
@@ -5141,7 +5141,7 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
 
     class FakeDb:
         market_bars = {
-            ("012710", "2026-06-12"): {"close": 0.9194},
+            ("012999", "2026-06-12"): {"close": 0.9194},
         }
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
@@ -5167,13 +5167,13 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
                     "entry_type": "trade_buy",
                     "timestamp": "2026-06-12T06:00:00+00:00",
                     "amount": 100.0,
-                    "symbol": "012710",
+                    "symbol": "012999",
                     "direction": "buy",
                     "quantity": 100.0,
                     "price": 0.9,
                     "commission": 0.0,
                     "asset_class": "fund",
-                    "note": "手工录入基金申购：华夏核心成长混合C，申购金额 100.00",
+                    "note": "手工录入基金申购：示例稳健混合C，申购金额 100.00",
                     "source": "manual",
                     "source_ref": "fund-1",
                     "created_at": "2026-06-12T06:00:01+00:00",
@@ -5183,7 +5183,7 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "012710",
+                    "symbol": "012999",
                     "asset_class": "fund",
                     "price": 0.9202,
                     "volume": 0.0,
@@ -5373,7 +5373,7 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
 
     class FakeDb:
         def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
-            assert symbol == "012710"
+            assert symbol == "012999"
             assert trade_date == "2026-06-16"
             return {
                 "symbol": symbol,
@@ -5393,12 +5393,12 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
 
     quote = _historical_quote_for_equity_day(
         SimpleNamespace(db=FakeDb()),
-        symbol="012710",
+        symbol="012999",
         asset_class="fund",
         trade_date=date(2026, 6, 15),
         latest_quotes={
-            "012710": {
-                "symbol": "012710",
+            "012999": {
+                "symbol": "012999",
                 "asset_class": "fund",
                 "price": 0.9075,
                 "quote_timestamp": "2026-06-15 10:45",
@@ -5516,7 +5516,7 @@ def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "026539",
+                    "symbol": "029999",
                     "asset_class": "fund",
                     "price": 1.9836,
                     "timestamp": "2026-06-17T15:00:00+08:00",
@@ -5526,7 +5526,7 @@ def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
             ]
 
         def get_market_bar_on_date_sync(self, symbol: str, trade_date: str):
-            assert symbol == "026539"
+            assert symbol == "029999"
             assert trade_date == "2026-06-17"
             return None
 
@@ -5538,14 +5538,14 @@ def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
     fake_portfolio = SimpleNamespace(
         cash=0.0,
         positions={
-            "026539": SimpleNamespace(
+            "029999": SimpleNamespace(
                 market_value=877.1646,
                 unrealized_pnl=74.0,
             )
         },
     )
     fake_instruments = {
-        "026539": SimpleNamespace(asset_class=SimpleNamespace(value="fund"))
+        "029999": SimpleNamespace(asset_class=SimpleNamespace(value="fund"))
     }
     monkeypatch.setattr(
         portfolio_routes,
@@ -5599,7 +5599,7 @@ def test_portfolio_explainability_breaks_daily_change_into_asset_and_flow_bucket
 
     timeline = _build_timeline(
         [
-            EquityPoint(timestamp="2026-06-11T15:00:00+08:00", equity=14852.827551),
+            EquityPoint(timestamp="2026-06-11T15:00:00+08:00", equity=14852.818501),
             EquityPoint(timestamp="2026-06-12T15:00:00+08:00", equity=15082.897551),
         ],
         [
@@ -5607,7 +5607,7 @@ def test_portfolio_explainability_breaks_daily_change_into_asset_and_flow_bucket
                 "entry_type": "dividend",
                 "timestamp": "2026-06-12T06:00:00+00:00",
                 "amount": 5.0,
-                "symbol": "601985",
+                "symbol": "600001",
                 "asset_class": "stock",
                 "note": "cash dividend",
             }
@@ -5615,7 +5615,7 @@ def test_portfolio_explainability_breaks_daily_change_into_asset_and_flow_bucket
         component_values_by_date={
             "2026-06-11": {
                 "stocks": 6362.0,
-                "funds": 2727.827551,
+                "funds": 2727.818501,
                 "others": 0.0,
                 "cash": 5763.0,
             },
@@ -5629,11 +5629,11 @@ def test_portfolio_explainability_breaks_daily_change_into_asset_and_flow_bucket
     )
 
     jun12 = timeline[-1]
-    assert jun12.market_pnl == pytest.approx(225.07)
+    assert jun12.market_pnl == pytest.approx(225.07905)
     assert {item.key: item.value for item in jun12.market_breakdown} == pytest.approx(
         {
             "stock": 234.0,
-            "fund": -8.93,
+            "fund": -8.92095,
         }
     )
     assert {
@@ -5687,14 +5687,14 @@ def test_portfolio_explainability_marks_return_after_missing_valuation_as_gap():
             "2026-06-12": "live",
         },
         missing_price_symbols_by_date={
-            "2026-06-11": ["601985", "603659"],
+            "2026-06-11": ["600001", "600002"],
         },
     )
 
     assert timeline[-1].date == "2026-06-12"
     assert timeline[-1].market_pnl == pytest.approx(0.0)
     assert timeline[-1].valuation_status == "missing"
-    assert timeline[-1].missing_price_symbols == ["601985", "603659"]
+    assert timeline[-1].missing_price_symbols == ["600001", "600002"]
 
 
 def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
@@ -5715,14 +5715,14 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
     class FakeDb:
         daily_closes = [
             {
-                "symbol": "601985",
+                "symbol": "600001",
                 "asset_class": "stock",
                 "trade_date": "2026-06-12",
                 "close_price": 9.12,
                 "source": "reported_previous_close",
             },
             {
-                "symbol": "603659",
+                "symbol": "600002",
                 "asset_class": "stock",
                 "trade_date": "2026-06-12",
                 "close_price": 27.23,
@@ -5730,10 +5730,10 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
             },
         ]
         market_bars = {
-            ("601985", "2026-06-11"): {"open": 9.05, "close": 9.12},
-            ("601985", "2026-06-12"): {"open": 9.10, "close": 9.24},
-            ("603659", "2026-06-11"): {"open": 27.48, "close": 27.23},
-            ("603659", "2026-06-12"): {"open": 27.59, "close": 28.34},
+            ("600001", "2026-06-11"): {"open": 9.05, "close": 9.12},
+            ("600001", "2026-06-12"): {"open": 9.10, "close": 9.24},
+            ("600002", "2026-06-11"): {"open": 27.48, "close": 27.23},
+            ("600002", "2026-06-12"): {"open": 27.59, "close": 28.34},
         }
 
         def get_ledger_entries_sync(self, limit=500, offset=0):
@@ -5759,7 +5759,7 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
                     "entry_type": "trade_buy",
                     "timestamp": "2026-06-11T02:00:00+00:00",
                     "amount": 912.0,
-                    "symbol": "601985",
+                    "symbol": "600001",
                     "direction": "buy",
                     "quantity": 100.0,
                     "price": 9.12,
@@ -5775,7 +5775,7 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
                     "entry_type": "trade_buy",
                     "timestamp": "2026-06-11T02:30:00+00:00",
                     "amount": 5446.0,
-                    "symbol": "603659",
+                    "symbol": "600002",
                     "direction": "buy",
                     "quantity": 200.0,
                     "price": 27.23,
@@ -6020,7 +6020,7 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
             {
                 "id": 1,
                 "timestamp": "2026-04-13T13:33:00",
-                "symbol": "永赢先进制造智选混合C",
+                "symbol": "示例成长混合C",
                 "direction": "buy",
                 "quantity": 1000.0,
                 "price": 1.0,
@@ -6032,7 +6032,7 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
             {
                 "id": 2,
                 "timestamp": "2026-04-13T14:27:00",
-                "symbol": "融通科技臻选混合C",
+                "symbol": "示例科技混合C",
                 "direction": "buy",
                 "quantity": 500.0,
                 "price": 1.0,
@@ -6132,10 +6132,10 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
 
     class FakeAkshareSource:
         def _resolve_open_end_fund_name(self, symbol):
-            return "华夏核心成长混合C"
+            return "示例稳健混合C"
 
         def _resolve_open_end_fund_code(self, symbol):
-            return "012710"
+            return "012999"
 
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             import pandas as pd
@@ -6156,7 +6156,7 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
                 timestamp="2026-04-22T14:46:00",
-                symbol="012710",
+                symbol="012999",
                 direction="buy",
                 amount=200.0,
                 asset_class="fund",
@@ -6164,13 +6164,13 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         )
     )
 
-    assert response.symbol == "012710"
+    assert response.symbol == "012999"
     assert response.price == pytest.approx(1.0107)
     assert response.quantity == pytest.approx(200 / 1.0107)
     assert "confirmed_trade_date=2026-04-22" in response.note
     assert fake_state.config.assets == []
-    assert fake_state.db.watchlist_assets[0]["display_name"] == "华夏核心成长混合C"
-    assert fake_state.db.instrument_metadata[0]["display_name"] == "华夏核心成长混合C"
+    assert fake_state.db.watchlist_assets[0]["display_name"] == "示例稳健混合C"
+    assert fake_state.db.instrument_metadata[0]["display_name"] == "示例稳健混合C"
 
 
 def test_portfolio_trade_uses_configured_account_commission_when_missing(
@@ -6197,7 +6197,7 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
                 {
                     "id": trade_id,
                     **payload,
-                    "created_at": "2026-06-05T14:33:42",
+                    "created_at": "2026-01-12T14:33:42",
                 },
             )
             return trade_id
@@ -6221,8 +6221,8 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
-                timestamp="2026-06-05T14:33:41",
-                symbol="603659",
+                timestamp="2026-01-12T14:33:41",
+                symbol="600002",
                 direction="buy",
                 quantity=200,
                 price=28.82,
@@ -6288,8 +6288,8 @@ def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
     response = asyncio.run(
         preview_route.endpoint(
             portfolio_routes.TradeCreate(
-                timestamp="2026-06-05T14:33:41",
-                symbol="603659",
+                timestamp="2026-01-12T14:33:41",
+                symbol="600002",
                 direction="sell",
                 quantity=200,
                 price=28.82,
@@ -6339,7 +6339,7 @@ def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
                 {
                     "id": trade_id,
                     **payload,
-                    "created_at": "2026-06-05T14:33:42",
+                    "created_at": "2026-01-12T14:33:42",
                 },
             )
             return trade_id
@@ -6363,8 +6363,8 @@ def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
-                timestamp="2026-06-05T14:33:41",
-                symbol="603659",
+                timestamp="2026-01-12T14:33:41",
+                symbol="600002",
                 direction="sell",
                 quantity=200,
                 price=28.82,
@@ -6413,7 +6413,7 @@ def test_portfolio_trade_with_explicit_commission_keeps_manual_fee_marker(
                 {
                     "id": trade_id,
                     **payload,
-                    "created_at": "2026-06-05T14:33:42",
+                    "created_at": "2026-01-12T14:33:42",
                 },
             )
             return trade_id
@@ -6437,8 +6437,8 @@ def test_portfolio_trade_with_explicit_commission_keeps_manual_fee_marker(
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
-                timestamp="2026-06-05T14:33:41",
-                symbol="603659",
+                timestamp="2026-01-12T14:33:41",
+                symbol="600002",
                 direction="buy",
                 quantity=200,
                 price=28.82,
@@ -6517,10 +6517,10 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
 
     class FakeAkshareSource:
         def _resolve_open_end_fund_name(self, symbol):
-            return "华夏核心成长混合C"
+            return "示例稳健混合C"
 
         def _resolve_open_end_fund_code(self, symbol):
-            return "012710"
+            return "012999"
 
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             import pandas as pd
@@ -6541,7 +6541,7 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
                 timestamp="2026-04-23T14:46:00",
-                symbol="012710",
+                symbol="012999",
                 direction="buy",
                 amount=200.0,
                 asset_class="fund",
@@ -6555,7 +6555,7 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
     assert payload["target_trade_date"] == "2026-04-23"
     assert "2026-04-23" in payload["detail"]
     assert fake_state.config.assets == []
-    assert fake_state.db.watchlist_assets[0]["symbol"] == "012710"
+    assert fake_state.db.watchlist_assets[0]["symbol"] == "012999"
 
 
 def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
@@ -7369,7 +7369,7 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
                 {
                     "id": 10,
                     "source_signal_id": 2,
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "direction": "hold",
                     "strategy_id": "monthly_rebalance",
                     "asset_class": "fund",
@@ -7419,7 +7419,7 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
                     "quote_source": "fixture",
                 },
                 {
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "asset_type": "fund",
                     "price": 2.34,
                     "quote_status": "stale",
@@ -7435,20 +7435,20 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
         cash=12000.0,
         positions={
             "600519": SimpleNamespace(market_value=20000.0),
-            "018125": SimpleNamespace(market_value=8000.0),
+            "019999": SimpleNamespace(market_value=8000.0),
         },
     )
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             assets=[
                 {"symbol": "600519", "asset_class": "stock"},
-                {"symbol": "018125", "asset_class": "fund"},
+                {"symbol": "019999", "asset_class": "fund"},
             ]
         ),
         scheduler=SimpleNamespace(
             portfolio=fake_portfolio,
             latest_quotes={},
-            watchlist=[("600519", "stock"), ("018125", "fund")],
+            watchlist=[("600519", "stock"), ("019999", "fund")],
         ),
         db=FakeDb(),
     )
@@ -7588,8 +7588,8 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
                 {
                     "id": 11,
                     "source_signal_id": 3,
-                    "symbol": "018125",
-                    "title": "建议申购 018125",
+                    "symbol": "019999",
+                    "title": "建议申购 019999",
                     "detail": "长期配置日级检查",
                     "direction": "buy",
                     "urgency": "low",
@@ -7661,7 +7661,7 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
     ]
     assert response["candidates"][1]["asset_class"] == "fund"
     assert response["candidates"][1]["evidence"]["data_freshness"]["status"] == "live"
-    assert response["excluded_daily_symbols"] == ["018125"]
+    assert response["excluded_daily_symbols"] == ["019999"]
     assert response["no_action_reasons"] == []
 
 
@@ -7684,7 +7684,7 @@ def test_decision_intraday_returns_no_action_reason_when_only_daily_assets(
                 {
                     "id": 11,
                     "source_signal_id": 3,
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "direction": "buy",
                     "asset_class": "fund",
                     "status": "pending",
@@ -7704,7 +7704,7 @@ def test_decision_intraday_returns_no_action_reason_when_only_daily_assets(
     assert response["summary"]["candidate_count"] == 0
     assert response["summary"]["excluded_daily_count"] == 1
     assert response["no_action_reasons"] == ["no_intraday_stock_or_etf_action_tasks"]
-    assert response["excluded_daily_symbols"] == ["018125"]
+    assert response["excluded_daily_symbols"] == ["019999"]
 
 
 def test_backtest_strategies_route_returns_benchmark_metadata():
@@ -8377,7 +8377,7 @@ def test_backtest_compare_runs_parameter_sets_on_one_dataset_snapshot(monkeypatc
                         "end_date": "2026-01-10",
                     },
                     "total_rows": 10,
-                    "symbols": [{"symbol": "603659", "rows": 10}],
+                    "symbols": [{"symbol": "600002", "rows": 10}],
                 }
             },
             "cost_summary_json": {"total_trades": short_period},
@@ -8397,7 +8397,7 @@ def test_backtest_compare_runs_parameter_sets_on_one_dataset_snapshot(monkeypatc
             backtest_routes.CompareRequest(
                 start_date="2026-01-01",
                 end_date="2026-01-10",
-                assets=[{"symbol": "603659", "asset_class": "stock"}],
+                assets=[{"symbol": "600002", "asset_class": "stock"}],
                 runs=[
                     {
                         "strategy": "dual_ma",
@@ -8886,7 +8886,7 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
                     "entry_type": "trade_buy",
                     "timestamp": "2026-04-18T11:00:00+00:00",
                     "amount": 2000.0,
-                    "symbol": "018125",
+                    "symbol": "019999",
                     "direction": "buy",
                     "quantity": 1000.0,
                     "price": 2.0,
@@ -8950,7 +8950,7 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
         def get_latest_quotes_sync(self):
             return [
                 {"symbol": "600519", "price": 1100.0, "asset_class": "stock"},
-                {"symbol": "018125", "price": 2.1, "asset_class": "fund"},
+                {"symbol": "019999", "price": 2.1, "asset_class": "fund"},
                 {"symbol": "510300", "price": 3.2, "asset_class": "etf"},
                 {"symbol": "BOND1", "price": 101.0, "asset_class": "bond"},
                 {"symbol": "GOLD1", "price": 2100.0, "asset_class": "gold"},
@@ -9570,12 +9570,12 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "600066",
+                    "symbol": "600003",
                     "asset_class": "stock",
-                    "price": 26.36,
-                    "timestamp": "2026-06-16T14:56:37+08:00",
-                    "previous_close": 28.26,
-                    "previous_close_date": "2026-06-15",
+                    "price": 16.26,
+                    "timestamp": "2026-01-15T14:56:37+08:00",
+                    "previous_close": 18.26,
+                    "previous_close_date": "2026-01-14",
                 }
             ]
 
@@ -9590,7 +9590,7 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
                 {
                     "id": 14,
                     "entry_type": "cash_deposit",
-                    "timestamp": "2026-06-16T01:30:00+00:00",
+                    "timestamp": "2026-01-15T01:30:00+00:00",
                     "amount": 5763.0,
                     "symbol": None,
                     "direction": None,
@@ -9601,23 +9601,23 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
                     "note": "",
                     "source": "manual",
                     "source_ref": "cash-before-buy",
-                    "created_at": "2026-06-16T09:30:00+08:00",
+                    "created_at": "2026-01-15T09:30:00+08:00",
                 },
                 {
                     "id": 15,
                     "entry_type": "trade_buy",
-                    "timestamp": "2026-06-16T03:04:56+00:00",
-                    "amount": 5270.0,
-                    "symbol": "600066",
+                    "timestamp": "2026-01-15T03:04:56+00:00",
+                    "amount": 3250.0,
+                    "symbol": "600003",
                     "direction": "buy",
                     "quantity": 200.0,
-                    "price": 26.35,
+                    "price": 16.25,
                     "commission": 5.0,
                     "asset_class": "stock",
                     "note": "",
                     "source": "manual",
-                    "source_ref": "manual-600066-20260616-110456",
-                    "created_at": "2026-06-16T12:35:51+08:00",
+                    "source_ref": "manual-stock-a-20260115-100000",
+                    "created_at": "2026-01-15T12:35:51+08:00",
                 },
             ]
 
@@ -9630,11 +9630,11 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
         ),
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
-                cash=488.0,
-                positions={"600066": SimpleNamespace(quantity=200.0, avg_cost=26.375)},
+                cash=2508.0,
+                positions={"600003": SimpleNamespace(quantity=200.0, avg_cost=16.275)},
             ),
             instruments={
-                Symbol("600066"): SimpleNamespace(
+                Symbol("600003"): SimpleNamespace(
                     asset_class=SimpleNamespace(value="stock")
                 )
             },
@@ -9656,7 +9656,7 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
         portfolio_routes,
         "get_shanghai_now",
         lambda now=None: datetime(
-            2026, 6, 16, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+            2026, 1, 15, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
         ),
     )
 
@@ -9670,12 +9670,12 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
     assert series[0].cash == pytest.approx(5763.0)
     assert series[0].stocks == pytest.approx(0.0)
     assert series[0].total == pytest.approx(5763.0)
-    assert series[1].cash == pytest.approx(488.0)
-    assert series[1].stocks == pytest.approx(5275.0)
+    assert series[1].cash == pytest.approx(2508.0)
+    assert series[1].stocks == pytest.approx(3255.0)
     assert series[1].total == pytest.approx(5763.0)
     assert series[1].stocks_daily_change == pytest.approx(0.0)
-    assert series[-1].stocks == pytest.approx(5272.0)
-    assert series[-1].cash == pytest.approx(488.0)
+    assert series[-1].stocks == pytest.approx(3252.0)
+    assert series[-1].cash == pytest.approx(2508.0)
     assert series[-1].total - series[0].total == pytest.approx(-3.0)
     assert series[-1].stocks_daily_change == pytest.approx(-3.0)
     assert series[-1].total_daily_change == pytest.approx(-3.0)
@@ -9867,15 +9867,15 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
         quantity=200.0,
         available_qty=200.0,
         frozen_qty=0.0,
-        avg_cost=26.375,
-        market_value=5272.0,
+        avg_cost=16.275,
+        market_value=3252.0,
         unrealized_pnl=-3.0,
         realized_pnl=0.0,
         commission_paid=5.0,
     )
-    fake_portfolio = SimpleNamespace(cash=488.0, positions={"600066": fake_position})
+    fake_portfolio = SimpleNamespace(cash=2508.0, positions={"600003": fake_position})
     fake_instrument = SimpleNamespace(
-        name="宇通客车",
+        name="示例制造",
         asset_class=SimpleNamespace(value="stock"),
     )
 
@@ -9883,12 +9883,12 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "600066",
+                    "symbol": "600003",
                     "asset_class": "stock",
-                    "price": 26.36,
-                    "timestamp": "2026-06-16T14:56:37+08:00",
-                    "previous_close": 28.26,
-                    "previous_close_date": "2026-06-15",
+                    "price": 16.26,
+                    "timestamp": "2026-01-15T14:56:37+08:00",
+                    "previous_close": 18.26,
+                    "previous_close_date": "2026-01-14",
                 }
             ]
 
@@ -9903,18 +9903,18 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
                 {
                     "id": 15,
                     "entry_type": "trade_buy",
-                    "timestamp": "2026-06-16T03:04:56+00:00",
-                    "amount": 5270.0,
-                    "symbol": "600066",
+                    "timestamp": "2026-01-15T03:04:56+00:00",
+                    "amount": 3250.0,
+                    "symbol": "600003",
                     "direction": "buy",
                     "quantity": 200.0,
-                    "price": 26.35,
+                    "price": 16.25,
                     "commission": 5.0,
                     "asset_class": "stock",
                     "note": "",
                     "source": "manual",
-                    "source_ref": "manual-600066-20260616-110456",
-                    "created_at": "2026-06-16T12:35:51+08:00",
+                    "source_ref": "manual-stock-a-20260115-100000",
+                    "created_at": "2026-01-15T12:35:51+08:00",
                 }
             ]
 
@@ -9925,8 +9925,8 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
         config=SimpleNamespace(initial_cash=0),
         scheduler=SimpleNamespace(
             portfolio=fake_portfolio,
-            instruments={"600066": fake_instrument},
-            watchlist=[("600066", SimpleNamespace(value="stock"))],
+            instruments={"600003": fake_instrument},
+            watchlist=[("600003", SimpleNamespace(value="stock"))],
             latest_quotes={},
         ),
         db=FakeDb(),
@@ -9936,7 +9936,7 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
         portfolio_routes,
         "get_shanghai_now",
         lambda now=None: datetime(
-            2026, 6, 16, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+            2026, 1, 15, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
         ),
     )
 
@@ -9944,9 +9944,9 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
 
     item = response.groups[0].items[0]
     assert item.baseline_source == "intraday_trade_cost"
-    assert item.baseline_price == pytest.approx(26.375)
+    assert item.baseline_price == pytest.approx(16.275)
     assert item.today_change == pytest.approx(-3.0)
-    assert item.today_change_pct == pytest.approx(5272.0 / 5275.0 - 1)
+    assert item.today_change_pct == pytest.approx(3252.0 / 3255.0 - 1)
     assert response.groups[0].total_today_change == pytest.approx(-3.0)
 
 
@@ -9964,8 +9964,8 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         quantity=200.0,
         available_qty=200.0,
         frozen_qty=0.0,
-        avg_cost=26.375,
-        market_value=5272.0,
+        avg_cost=16.275,
+        market_value=3252.0,
         unrealized_pnl=-3.0,
         realized_pnl=0.0,
         commission_paid=5.0,
@@ -9978,15 +9978,15 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         def list_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "600066",
+                    "symbol": "600003",
                     "asset_type": "stock",
                     "price": 26.3608,
                     "previous_close": 26.0,
                     "previous_close_date": "2026-06-15",
-                    "quote_timestamp": "2026-06-16T14:56:37+08:00",
+                    "quote_timestamp": "2026-01-15T14:56:37+08:00",
                     "quote_source": "tushare_realtime_quote",
                     "provider_name": "tushare",
-                    "display_name": "宇通客车",
+                    "display_name": "示例制造",
                 }
             ]
 
@@ -9998,16 +9998,16 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
                 cash=488.0,
-                positions={"600066": fake_position},
+                positions={"600003": fake_position},
             ),
             instruments={
-                Symbol("600066"): SimpleNamespace(
-                    name="宇通客车",
+                Symbol("600003"): SimpleNamespace(
+                    name="示例制造",
                     asset_class=SimpleNamespace(value="stock"),
                 )
             },
             latest_quotes={},
-            watchlist=[("600066", SimpleNamespace(value="stock"))],
+            watchlist=[("600003", SimpleNamespace(value="stock"))],
         ),
         db=FakeDb(),
     )
@@ -10106,7 +10106,7 @@ def test_portfolio_positions_hydrates_broker_cost_basis_from_evidence(
     repository = BrokerEvidenceRepository(db_path)
     preview = parse_broker_statement_csv(
         """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
-synthetic-position-001,position_snapshot,2026-06-16T15:10:00+08:00,2026-06-16,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10000.00,60,1502.3456,synthetic position snapshot,0.00,broker_remaining_cost
+synthetic-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10000.00,60,1502.3456,synthetic position snapshot,0.00,broker_remaining_cost
 """
     )
     repository.save_preview(preview, source_name="synthetic-safe-example.csv")
@@ -10177,7 +10177,7 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
         quantity=100.0,
         available_qty=100.0,
         frozen_qty=0.0,
-        avg_cost=8.7401,
+        avg_cost=8.1234,
         market_value=925.0,
         unrealized_pnl=50.99,
         realized_pnl=0.0,
@@ -10188,7 +10188,7 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
         def list_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "601985",
+                    "symbol": "600001",
                     "asset_type": "stock",
                     "price": 9.25,
                     "quote_timestamp": "2026-06-04",
@@ -10216,17 +10216,17 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"601985": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"600001": fake_position}),
             instruments={
-                "601985": SimpleNamespace(
-                    name="中国核电",
+                "600001": SimpleNamespace(
+                    name="示例能源",
                     asset_class=SimpleNamespace(value="stock"),
                 )
             },
             watchlist=[],
             latest_quotes={
-                "601985": {
-                    "symbol": "601985",
+                "600001": {
+                    "symbol": "600001",
                     "asset_class": "stock",
                     "price": 9.25,
                     "timestamp": "2026-06-04",
@@ -10241,7 +10241,7 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
     response = asyncio.run(live_holdings_route.endpoint())
 
     item = response.groups[0].items[0]
-    assert item.symbol == "601985"
+    assert item.symbol == "600001"
     assert item.baseline_price == 9.26
     assert item.baseline_source == "previous_close"
     assert item.today_change == pytest.approx(-1.0)
@@ -10264,7 +10264,7 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
         quantity=200.0,
         available_qty=200.0,
         frozen_qty=0.0,
-        avg_cost=26.3758,
+        avg_cost=16.2345,
         market_value=5406.0,
         unrealized_pnl=130.84,
         realized_pnl=0.0,
@@ -10283,17 +10283,17 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "600066"
+            assert symbol == "600003"
             assert trade_date == "2026-06-17"
             return {
-                "trade_date": "2026-06-16",
+                "trade_date": "2026-01-15",
                 "close": 26.36,
                 "source": "market_bars",
             }
 
         def get_latest_daily_close_before_sync(self, symbol: str, trade_date: str):
             return {
-                "trade_date": "2026-06-16",
+                "trade_date": "2026-01-15",
                 "close_price": 28.26,
                 "source": "reported_previous_close",
             }
@@ -10307,23 +10307,23 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"600066": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"600003": fake_position}),
             instruments={
-                "600066": SimpleNamespace(
-                    name="宇通客车",
+                "600003": SimpleNamespace(
+                    name="示例制造",
                     asset_class=SimpleNamespace(value="stock"),
                 )
             },
             watchlist=[],
             latest_quotes={
-                "600066": {
-                    "symbol": "600066",
+                "600003": {
+                    "symbol": "600003",
                     "asset_class": "stock",
                     "price": 27.03,
                     "timestamp": "2026-06-17T14:20:25+08:00",
                     "quote_source": "tushare_realtime_quote",
                     "previous_close": 28.26,
-                    "previous_close_date": "2026-06-16",
+                    "previous_close_date": "2026-01-15",
                 }
             },
         ),
@@ -10335,7 +10335,7 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
     item = response.groups[0].items[0]
 
     assert item.baseline_source == "market_bar_close"
-    assert item.baseline_timestamp == "2026-06-16"
+    assert item.baseline_timestamp == "2026-01-15"
     assert item.baseline_price == pytest.approx(26.36)
     assert item.today_change == pytest.approx(134.0)
     assert item.today_change_pct == pytest.approx(27.03 / 26.36 - 1)
@@ -10357,7 +10357,7 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
         quantity=100.0,
         available_qty=100.0,
         frozen_qty=0.0,
-        avg_cost=8.7401,
+        avg_cost=8.1234,
         market_value=931.0,
         unrealized_pnl=56.99,
         realized_pnl=0.0,
@@ -10376,10 +10376,10 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "601985"
+            assert symbol == "600001"
             assert trade_date == "2026-06-17"
             return {
-                "trade_date": "2026-06-16",
+                "trade_date": "2026-01-15",
                 "close": 9.23,
                 "source": "market_bars",
             }
@@ -10389,7 +10389,7 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "601985"
+            assert symbol == "600001"
             assert trade_date == "2026-06-17"
             return {
                 "trade_date": "2026-06-17",
@@ -10409,23 +10409,23 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"601985": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"600001": fake_position}),
             instruments={
-                "601985": SimpleNamespace(
-                    name="中国核电",
+                "600001": SimpleNamespace(
+                    name="示例能源",
                     asset_class=SimpleNamespace(value="stock"),
                 )
             },
             watchlist=[],
             latest_quotes={
-                "601985": {
-                    "symbol": "601985",
+                "600001": {
+                    "symbol": "600001",
                     "asset_class": "stock",
                     "price": 9.31,
                     "timestamp": "2026-06-17T14:59:15+08:00",
                     "quote_source": "tushare_realtime_quote",
                     "previous_close": 9.23,
-                    "previous_close_date": "2026-06-16",
+                    "previous_close_date": "2026-01-15",
                 }
             },
         ),
@@ -10444,7 +10444,7 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
 
     assert item.latest_price == pytest.approx(9.30)
     assert item.baseline_source == "market_bar_close"
-    assert item.baseline_timestamp == "2026-06-16"
+    assert item.baseline_timestamp == "2026-01-15"
     assert item.baseline_price == pytest.approx(9.23)
     assert item.today_change == pytest.approx(7.0)
     assert item.today_change_pct == pytest.approx(9.30 / 9.23 - 1)
@@ -10485,10 +10485,10 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "012710"
+            assert symbol == "012999"
             assert trade_date == "2026-06-17"
             return {
-                "trade_date": "2026-06-16",
+                "trade_date": "2026-01-15",
                 "close": 0.8926,
                 "source": "market_bars",
             }
@@ -10498,7 +10498,7 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "012710"
+            assert symbol == "012999"
             assert trade_date == "2026-06-17"
             return {
                 "trade_date": "2026-06-17",
@@ -10518,17 +10518,17 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"012710": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"012999": fake_position}),
             instruments={
-                "012710": SimpleNamespace(
-                    name="华夏核心成长混合C",
+                "012999": SimpleNamespace(
+                    name="示例稳健混合C",
                     asset_class=SimpleNamespace(value="fund"),
                 )
             },
             watchlist=[],
             latest_quotes={
-                "012710": {
-                    "symbol": "012710",
+                "012999": {
+                    "symbol": "012999",
                     "asset_class": "fund",
                     "price": 0.8827,
                     "timestamp": "2026-06-17 15:00",
@@ -10551,7 +10551,7 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
 
     assert item.latest_price == pytest.approx(0.8847)
     assert item.baseline_price == pytest.approx(0.8926)
-    assert item.baseline_timestamp == "2026-06-16"
+    assert item.baseline_timestamp == "2026-01-15"
     assert item.today_change == pytest.approx(-7.10, abs=0.01)
     assert item.today_change_pct == pytest.approx(0.8847 / 0.8926 - 1)
 
@@ -10591,10 +10591,10 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "026539"
+            assert symbol == "029999"
             assert trade_date == "2026-06-17"
             return {
-                "trade_date": "2026-06-16",
+                "trade_date": "2026-01-15",
                 "close": 1.9651,
                 "source": "market_bars",
             }
@@ -10604,7 +10604,7 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
             symbol: str,
             trade_date: str,
         ):
-            assert symbol == "026539"
+            assert symbol == "029999"
             assert trade_date == "2026-06-17"
             return None
 
@@ -10620,17 +10620,17 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=0, live_poll_interval=120),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"026539": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"029999": fake_position}),
             instruments={
-                "026539": SimpleNamespace(
+                "029999": SimpleNamespace(
                     name="基金C",
                     asset_class=SimpleNamespace(value="fund"),
                 )
             },
             watchlist=[],
             latest_quotes={
-                "026539": {
-                    "symbol": "026539",
+                "029999": {
+                    "symbol": "029999",
                     "asset_class": "fund",
                     "price": 1.9836,
                     "timestamp": "2026-06-17 15:00",
@@ -10673,7 +10673,7 @@ def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
         quantity=100.0,
         available_qty=100.0,
         frozen_qty=0.0,
-        avg_cost=8.7401,
+        avg_cost=8.1234,
         market_value=925.0,
         unrealized_pnl=50.99,
         realized_pnl=0.0,
@@ -10682,17 +10682,17 @@ def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=0, live_poll_interval=1),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"601985": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"600001": fake_position}),
             instruments={
-                "601985": SimpleNamespace(
-                    name="中国核电",
+                "600001": SimpleNamespace(
+                    name="示例能源",
                     asset_class=SimpleNamespace(value="stock"),
                 )
             },
             watchlist=[],
             latest_quotes={
-                "601985": {
-                    "symbol": "601985",
+                "600001": {
+                    "symbol": "600001",
                     "asset_class": "stock",
                     "price": 9.25,
                     "timestamp": "2026-05-01",
@@ -11033,15 +11033,15 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
                     "id": 1,
                     "entry_type": "trade_buy",
                     "timestamp": "2026-05-29T06:16:00+00:00",
-                    "symbol": "603659",
+                    "symbol": "600002",
                     "direction": "buy",
                     "quantity": 100.0,
-                    "price": 29.98,
+                    "price": 19.80,
                     "commission": 5.03,
                     "asset_class": "stock",
                     "note": "manual buy",
                     "source": "manual",
-                    "source_ref": "manual-603659",
+                    "source_ref": "manual-stock-b",
                     "created_at": "2026-05-29T06:16:01+00:00",
                 }
             ]
@@ -11053,11 +11053,11 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
             return []
 
         def get_instrument_metadata_sync(self, symbol, asset_type=None):
-            assert symbol == "603659"
+            assert symbol == "600002"
             return {
-                "symbol": "603659",
+                "symbol": "600002",
                 "asset_type": "stock",
-                "display_name": "璞泰来",
+                "display_name": "示例材料",
             }
 
         def save_quote_snapshot_sync(self, **kwargs):
@@ -11090,7 +11090,7 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
                 "price": 31.0,
                 "volume": 2000.0,
                 "timestamp": "2026-06-04T10:05:00+08:00",
-                "display_name": "璞泰来",
+                "display_name": "示例材料",
                 "previous_close": 30.1,
                 "previous_close_date": "2026-06-03",
             }
@@ -11113,9 +11113,9 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
     response = asyncio.run(snapshot_route.endpoint())
 
     assert fetched == []
-    assert response.positions[0].symbol == "603659"
-    assert response.positions[0].display_name == "璞泰来"
-    assert response.positions[0].market_value == pytest.approx(3003.03)
+    assert response.positions[0].symbol == "600002"
+    assert response.positions[0].display_name == "示例材料"
+    assert response.positions[0].market_value == pytest.approx(1985.03)
     assert response.positions[0].quote_status == "missing"
     assert response.positions[0].quote_timestamp is None
 
@@ -11250,7 +11250,7 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "012710",
+                    "symbol": "012999",
                     "asset_class": "fund",
                     "price": 1.2,
                     "timestamp": "2026-05-22T09:30:00+08:00",
@@ -11270,15 +11270,15 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
             data_source="akshare",
             instruments=[],
             assets={
-                "012710": {
+                "012999": {
                     "display_name": "示例基金C",
                     "asset_class": "fund",
-                    "provider_symbol": "012710",
+                    "provider_symbol": "012999",
                 }
             },
         ),
         scheduler=SimpleNamespace(
-            portfolio=SimpleNamespace(cash=0.0, positions={"012710": fake_position}),
+            portfolio=SimpleNamespace(cash=0.0, positions={"012999": fake_position}),
             instruments={},
             watchlist=[],
             latest_quotes={},
@@ -11307,13 +11307,13 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
         def list_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "012710",
+                    "symbol": "012999",
                     "asset_type": "fund",
                     "price": 0.9477,
                     "quote_timestamp": "2026-05-22",
                     "quote_source": "akshare",
                     "provider_name": "akshare",
-                    "metadata_json": '{"display_name":"华夏核心成长混合C"}',
+                    "metadata_json": '{"display_name":"示例稳健混合C"}',
                 },
                 {
                     "symbol": "600519",
@@ -11329,7 +11329,7 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
         def get_latest_quotes_sync(self):
             return [
                 {
-                    "symbol": "012710",
+                    "symbol": "012999",
                     "asset_class": "stock",
                     "price": 0.90,
                     "timestamp": "2026-05-21T15:00:00+08:00",
@@ -11348,7 +11348,7 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
             portfolio=SimpleNamespace(
                 cash=0.0,
                 positions={
-                    "012710": SimpleNamespace(
+                    "012999": SimpleNamespace(
                         quantity=100.0,
                         avg_cost=1.0,
                         market_value=94.77,
@@ -11375,8 +11375,8 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
 
     assert set(groups) == {"fund", "stock"}
     assert groups["fund"].label == "基金"
-    assert groups["fund"].items[0].name == "华夏核心成长混合C"
-    assert groups["fund"].items[0].display_name == "华夏核心成长混合C"
+    assert groups["fund"].items[0].name == "示例稳健混合C"
+    assert groups["fund"].items[0].display_name == "示例稳健混合C"
     assert groups["fund"].items[0].asset_class == "fund"
     assert groups["fund"].items[0].quote_timestamp == "2026-05-22"
     assert groups["stock"].items[0].name == "贵州茅台"
@@ -11388,27 +11388,27 @@ def test_collect_latest_quotes_prefers_newer_persistent_quote_over_runtime():
     fake_state = SimpleNamespace(
         scheduler=SimpleNamespace(
             latest_quotes={
-                "601985": {
-                    "symbol": "601985",
+                "600001": {
+                    "symbol": "600001",
                     "asset_class": "stock",
                     "price": 9.13,
-                    "timestamp": "2026-06-05T 11:01:13",
+                    "timestamp": "2026-01-12T 11:01:13",
                     "quote_source": "tushare_realtime_quote",
-                    "display_name": "中国核电",
+                    "display_name": "示例能源",
                 }
             }
         ),
         db=SimpleNamespace(
             list_latest_quotes_sync=lambda: [
                 {
-                    "symbol": "601985",
+                    "symbol": "600001",
                     "asset_type": "stock",
                     "price": 8.99,
-                    "quote_timestamp": "2026-06-05",
+                    "quote_timestamp": "2026-01-12",
                     "quote_source": "tushare_daily",
                     "provider_name": "tushare",
-                    "display_name": "中国核电",
-                    "captured_at": "2026-06-05T22:23:17+08:00",
+                    "display_name": "示例能源",
+                    "captured_at": "2026-01-12T22:23:17+08:00",
                 }
             ],
             get_latest_quotes_sync=lambda: [],
@@ -11417,10 +11417,10 @@ def test_collect_latest_quotes_prefers_newer_persistent_quote_over_runtime():
 
     latest = portfolio_routes._collect_latest_quotes(fake_state)
 
-    assert latest["601985"]["price"] == 9.13
-    assert latest["601985"]["timestamp"] == "2026-06-05T 11:01:13"
-    assert latest["601985"]["quote_source"] == "tushare_realtime_quote"
-    assert latest["601985"]["display_name"] == "中国核电"
+    assert latest["600001"]["price"] == 9.13
+    assert latest["600001"]["timestamp"] == "2026-01-12T 11:01:13"
+    assert latest["600001"]["quote_source"] == "tushare_realtime_quote"
+    assert latest["600001"]["display_name"] == "示例能源"
 
 
 def test_collect_latest_quotes_prefers_newer_runtime_quote_over_later_captured_daily():
@@ -11429,28 +11429,28 @@ def test_collect_latest_quotes_prefers_newer_runtime_quote_over_later_captured_d
     fake_state = SimpleNamespace(
         scheduler=SimpleNamespace(
             latest_quotes={
-                "600066": {
-                    "symbol": "600066",
+                "600003": {
+                    "symbol": "600003",
                     "asset_class": "stock",
-                    "price": 26.04,
-                    "timestamp": "2026-06-16T13:11:31",
+                    "price": 16.04,
+                    "timestamp": "2026-01-15T13:11:31",
                     "quote_source": "tushare_realtime_quote",
-                    "display_name": "宇通客车",
-                    "previous_close": 28.26,
+                    "display_name": "示例制造",
+                    "previous_close": 18.26,
                 }
             }
         ),
         db=SimpleNamespace(
             list_latest_quotes_sync=lambda: [
                 {
-                    "symbol": "600066",
+                    "symbol": "600003",
                     "asset_type": "stock",
-                    "price": 28.26,
-                    "quote_timestamp": "2026-06-15",
+                    "price": 18.26,
+                    "quote_timestamp": "2026-01-14",
                     "quote_source": "tushare_daily",
                     "provider_name": "tushare",
-                    "display_name": "宇通客车",
-                    "captured_at": "2026-06-16T13:55:24+08:00",
+                    "display_name": "示例制造",
+                    "captured_at": "2026-01-15T13:55:24+08:00",
                 }
             ],
             get_latest_quotes_sync=lambda: [],
@@ -11459,10 +11459,10 @@ def test_collect_latest_quotes_prefers_newer_runtime_quote_over_later_captured_d
 
     latest = portfolio_routes._collect_latest_quotes(fake_state)
 
-    assert latest["600066"]["price"] == 26.04
-    assert latest["600066"]["timestamp"] == "2026-06-16T13:11:31"
-    assert latest["600066"]["quote_source"] == "tushare_realtime_quote"
-    assert latest["600066"]["display_name"] == "宇通客车"
+    assert latest["600003"]["price"] == 16.04
+    assert latest["600003"]["timestamp"] == "2026-01-15T13:11:31"
+    assert latest["600003"]["quote_source"] == "tushare_realtime_quote"
+    assert latest["600003"]["display_name"] == "示例制造"
 
 
 def test_portfolio_equity_curve_series_appends_current_valuation_point(

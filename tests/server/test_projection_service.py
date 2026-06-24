@@ -98,19 +98,19 @@ def test_build_portfolio_projection_uses_structured_trade_fee_breakdown():
         [
             LedgerEntry(
                 entry_type="cash_deposit",
-                timestamp="2026-06-16T02:00:00+00:00",
+                timestamp="2026-01-15T02:00:00+00:00",
                 amount=10000.0,
             ),
             LedgerEntry(
                 entry_type="trade_buy",
-                timestamp="2026-06-16T03:04:56+00:00",
-                symbol="600066",
+                timestamp="2026-01-15T03:04:56+00:00",
+                symbol="600003",
                 direction="buy",
                 quantity=200.0,
-                price=26.35,
+                price=16.25,
                 commission=5.0,
-                gross_amount=5270.0,
-                net_cash_impact=-5275.05,
+                gross_amount=3250.0,
+                net_cash_impact=-3255.05,
                 fee_breakdown={
                     "commission": "5.00",
                     "stamp_tax": "0",
@@ -121,9 +121,9 @@ def test_build_portfolio_projection_uses_structured_trade_fee_breakdown():
         ]
     )
 
-    assert projection.cash == Decimal("4724.95")
-    position = projection.positions["600066"]
-    assert position.avg_cost == Decimal("26.37525")
+    assert projection.cash == Decimal("6744.95")
+    position = projection.positions["600003"]
+    assert position.avg_cost == Decimal("16.27525")
     assert position.commission_paid == Decimal("5.05")
 
 
@@ -170,12 +170,12 @@ def test_build_portfolio_projection_tracks_sell_side_net_proceeds_for_broker_cos
         [
             LedgerEntry(
                 entry_type="cash_deposit",
-                timestamp="2026-06-16T02:00:00+00:00",
+                timestamp="2026-01-15T02:00:00+00:00",
                 amount=10000.0,
             ),
             LedgerEntry(
                 entry_type="trade_buy",
-                timestamp="2026-06-16T09:30:00+08:00",
+                timestamp="2026-01-15T09:30:00+08:00",
                 symbol="SYN001",
                 direction="buy",
                 quantity=300.0,
@@ -357,10 +357,10 @@ def test_portfolio_route_prefers_db_ledger_over_stale_scheduler_portfolio(monkey
     endpoint = portfolio_route.endpoint
 
     stale_portfolio = PortfolioProjection(cash=Decimal("1000"))
-    stale_portfolio.positions["601985"] = ProjectedPosition(
-        symbol="601985",
+    stale_portfolio.positions["600001"] = ProjectedPosition(
+        symbol="600001",
         quantity=Decimal("100"),
-        avg_cost=Decimal("8.7401"),
+        avg_cost=Decimal("8.1234"),
         market_value=Decimal("874.01"),
         commission_paid=Decimal("5.01"),
     )
@@ -374,15 +374,15 @@ def test_portfolio_route_prefers_db_ledger_over_stale_scheduler_portfolio(monkey
                     "id": 1,
                     "entry_type": "trade_buy",
                     "timestamp": "2026-05-29T06:16:00+00:00",
-                    "symbol": "603659",
+                    "symbol": "600002",
                     "direction": "buy",
                     "quantity": 100.0,
-                    "price": 29.98,
+                    "price": 19.80,
                     "commission": 5.03,
                     "asset_class": "stock",
                     "note": "manual buy",
                     "source": "manual",
-                    "source_ref": "manual-603659",
+                    "source_ref": "manual-stock-b",
                     "created_at": "2026-05-29T06:16:01+00:00",
                 }
             ]
@@ -410,8 +410,8 @@ def test_portfolio_route_prefers_db_ledger_over_stale_scheduler_portfolio(monkey
 
     response = asyncio.run(endpoint())
 
-    assert [position.symbol for position in response.positions] == ["603659"]
-    assert response.positions[0].avg_cost == 30.0303
+    assert [position.symbol for position in response.positions] == ["600002"]
+    assert response.positions[0].avg_cost == 19.8503
 
 
 def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypatch):
@@ -434,15 +434,15 @@ def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypat
                     "id": 1,
                     "entry_type": "trade_buy",
                     "timestamp": "2026-05-29T06:16:00+00:00",
-                    "symbol": "603659",
+                    "symbol": "600002",
                     "direction": "buy",
                     "quantity": 100.0,
-                    "price": 29.98,
+                    "price": 19.80,
                     "commission": 5.03,
                     "asset_class": "stock",
                     "note": "manual buy",
                     "source": "manual",
-                    "source_ref": "manual-603659",
+                    "source_ref": "manual-stock-b",
                     "created_at": "2026-05-29T06:16:01+00:00",
                 }
             ]
@@ -454,11 +454,11 @@ def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypat
             return []
 
         def get_instrument_metadata_sync(self, symbol, asset_type=None):
-            assert symbol == "603659"
+            assert symbol == "600002"
             return {
-                "symbol": "603659",
+                "symbol": "600002",
                 "asset_type": "stock",
-                "display_name": "璞泰来",
+                "display_name": "示例材料",
             }
 
     fake_state = SimpleNamespace(
@@ -478,5 +478,5 @@ def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypat
     assert len(response.groups) == 1
     assert response.groups[0].asset_class == "stock"
     assert response.groups[0].label == "A股"
-    assert response.groups[0].items[0].display_name == "璞泰来"
+    assert response.groups[0].items[0].display_name == "示例材料"
     assert response.groups[0].items[0].asset_class == "stock"

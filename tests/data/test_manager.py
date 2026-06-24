@@ -189,7 +189,7 @@ class TestDataManager:
         )
 
         handler = manager.get_bars(
-            Symbol("601985"),
+            Symbol("600001"),
             start=_TEST_START,
             end=_TEST_END,
             asset_class=AssetClass.STOCK,
@@ -198,7 +198,7 @@ class TestDataManager:
         assert handler.total_bars > 0
         assert primary.fetch_count == 1
         assert fallback.fetch_count == 1
-        loaded = store.load_bars(Symbol("601985"), BarFrequency.DAILY)
+        loaded = store.load_bars(Symbol("600001"), BarFrequency.DAILY)
         assert loaded is not None
         assert len(loaded) > 0
 
@@ -216,13 +216,13 @@ class TestDataManager:
         )
 
         manager.get_bars(
-            Symbol("601985"),
+            Symbol("600001"),
             start=_TEST_START,
             end=_TEST_END,
             asset_class=AssetClass.STOCK,
         )
 
-        meta = store.get_meta(Symbol("601985"), BarFrequency.DAILY)
+        meta = store.get_meta(Symbol("600001"), BarFrequency.DAILY)
         assert meta is not None
         assert meta["provider_name"] == "akshare"
         assert meta["data_source"] == "akshare"
@@ -237,7 +237,7 @@ class TestDataManager:
         )
 
         handler = manager.get_bars(
-            Symbol("018125"),
+            Symbol("019999"),
             start=_TEST_START,
             end=_TEST_END,
             asset_class=AssetClass.FUND,

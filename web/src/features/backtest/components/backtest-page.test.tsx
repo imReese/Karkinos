@@ -1241,7 +1241,7 @@ test('renders extension strategy metadata and submits its typed params', async (
   ).toBeTruthy();
 
   fireEvent.change(await screen.findByLabelText('Symbol'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(await screen.findByLabelText('Lookback Window'), {
     target: { value: '21' },
@@ -1261,7 +1261,7 @@ test('renders extension strategy metadata and submits its typed params', async (
   const payload = JSON.parse(String(runCall?.[1]?.body));
   expect(payload.strategy).toBe('custom_momentum');
   expect(payload.params).toEqual({ lookback_window: 21 });
-  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+  expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
 });
 
 test('accepts ordinary whole-number initial cash values in browser validation', async () => {
@@ -1297,7 +1297,7 @@ test('localizes built-in strategy names without changing strategy ids', async ()
   ).toBeNull();
 
   fireEvent.change(await screen.findByLabelText('标的代码'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   const runButton = screen.getByRole('button', { name: '运行回测' });
   fireEvent.submit(runButton.closest('form') as HTMLFormElement);
@@ -1330,7 +1330,7 @@ test('localizes backtest asset class options without changing payload enum value
   expect(optionLabels).not.toContain('fund');
 
   fireEvent.change(await screen.findByLabelText('标的代码'), {
-    target: { value: '018125' },
+    target: { value: '019999' },
   });
   fireEvent.change(assetClassSelect, { target: { value: 'fund' } });
   const runButton = screen.getByRole('button', { name: '运行回测' });
@@ -1346,7 +1346,7 @@ test('localizes backtest asset class options without changing payload enum value
     String(url).includes('/api/backtest/run'),
   );
   const payload = JSON.parse(String(runCall?.[1]?.body));
-  expect(payload.assets).toEqual([{ symbol: '018125', asset_class: 'fund' }]);
+  expect(payload.assets).toEqual([{ symbol: '019999', asset_class: 'fund' }]);
 });
 
 test('uses user-readable chinese copy for the backtest configuration contract', async () => {
@@ -1408,7 +1408,7 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
 
   await screen.findByText('Strategy replay');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(
     await screen.findByLabelText('Short moving-average window'),
@@ -1434,7 +1434,7 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
   const payload = JSON.parse(String(runCall?.[1]?.body));
   expect(payload.strategy).toBe('dual_ma');
   expect(payload.params).toEqual({ short_period: 3, long_period: 9 });
-  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+  expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
   expect(await screen.findByText('Run output')).toBeTruthy();
   expect(await screen.findByText('Calmar 3.10')).toBeTruthy();
   expect(await screen.findByText('3 fills')).toBeTruthy();
@@ -1640,7 +1640,7 @@ test('runs a parameter sweep and renders ranked research warnings', async () => 
 
   await screen.findByText('Strategy replay');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(
     await screen.findByLabelText('Short moving-average window candidates'),
@@ -1673,7 +1673,7 @@ test('runs a parameter sweep and renders ranked research warnings', async () => 
     short_period: [3, 5],
     long_period: [9],
   });
-  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+  expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
   expect(await screen.findByText('Sweep rankings')).toBeTruthy();
   expect(await screen.findByText('2 tested')).toBeTruthy();
   expect(await screen.findByText('Result #12')).toBeTruthy();
@@ -1696,7 +1696,7 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
 
   await screen.findByText('Strategy replay');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(await screen.findByLabelText('Comparison parameter sets'), {
     target: {
@@ -1718,7 +1718,7 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
     String(url).includes('/api/backtest/compare'),
   );
   const payload = JSON.parse(String(compareCall?.[1]?.body));
-  expect(payload.assets).toEqual([{ symbol: '603659', asset_class: 'stock' }]);
+  expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
   expect(payload.runs).toEqual([
     {
       strategy: 'dual_ma',
@@ -1762,7 +1762,7 @@ test('accepts localized comparison parameter names while submitting API keys', a
   ).toBeTruthy();
 
   fireEvent.change(await screen.findByLabelText('标的代码'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(parameterSets, {
     target: {

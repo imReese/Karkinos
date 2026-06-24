@@ -78,7 +78,7 @@ test('does not mark an auto-prefilled trade fee as a manual fee override', async
   );
 
   fireEvent.change(screen.getByLabelText('Symbol'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(screen.getByLabelText('Quantity'), {
     target: { value: '200' },
@@ -110,7 +110,7 @@ test('marks an edited trade fee as a manual fee override', async () => {
   );
 
   fireEvent.change(screen.getByLabelText('Symbol'), {
-    target: { value: '603659' },
+    target: { value: '600002' },
   });
   fireEvent.change(screen.getByLabelText('Quantity'), {
     target: { value: '200' },
@@ -138,7 +138,7 @@ test('shows structured manual trade preview before saving', () => {
     <TradeForm
       onSubmit={onSubmit}
       tradePreview={{
-        symbol: '603659',
+        symbol: '600002',
         direction: 'buy',
         quantity: 200,
         price: 28.82,
@@ -184,7 +184,7 @@ test('submits a fund buy by subscription amount', async () => {
   render(<TradeForm onSubmit={onSubmit} />);
 
   fireEvent.change(screen.getByLabelText('Symbol'), {
-    target: { value: '012710' },
+    target: { value: '012999' },
   });
   fireEvent.change(screen.getByLabelText('Asset Class'), {
     target: { value: 'fund' },
@@ -200,7 +200,7 @@ test('submits a fund buy by subscription amount', async () => {
 
   expect(onSubmit.mock.calls[0][0]).toEqual(
     expect.objectContaining({
-      symbol: '012710',
+      symbol: '012999',
       asset_class: 'fund',
       amount: 200,
     }),
@@ -212,9 +212,9 @@ test('does not render hard-coded fund candidates in the initial state', () => {
 
   render(<FundBatchForm onSubmit={onSubmit} />);
 
-  expect(screen.queryByText('永赢先进制造智选混合C')).toBeNull();
-  expect(screen.queryByText('融通科技臻选混合C')).toBeNull();
-  expect(screen.queryByText('华夏核心成长混合C')).toBeNull();
+  expect(screen.queryByText('示例成长混合C')).toBeNull();
+  expect(screen.queryByText('示例科技混合C')).toBeNull();
+  expect(screen.queryByText('示例稳健混合C')).toBeNull();
   expect(
     screen.getByText('No held funds available for batch add.'),
   ).toBeTruthy();
@@ -227,16 +227,16 @@ test('submits a batch fund add payload with positive candidate rows only', async
     <FundBatchForm
       onSubmit={onSubmit}
       candidates={[
-        { symbol: '018125', display_name: 'Configured Fund A' },
-        { symbol: '012710', display_name: 'Configured Fund C' },
+        { symbol: '019999', display_name: 'Configured Fund A' },
+        { symbol: '012999', display_name: 'Configured Fund C' },
       ]}
     />,
   );
 
-  fireEvent.change(screen.getByLabelText('018125 Amount'), {
+  fireEvent.change(screen.getByLabelText('019999 Amount'), {
     target: { value: '200' },
   });
-  fireEvent.change(screen.getByLabelText('012710 Amount'), {
+  fireEvent.change(screen.getByLabelText('012999 Amount'), {
     target: { value: '300' },
   });
   fireEvent.click(screen.getByText('Save Batch'));
@@ -246,8 +246,8 @@ test('submits a batch fund add payload with positive candidate rows only', async
   });
 
   expect(onSubmit.mock.calls[0][0].orders).toEqual([
-    expect.objectContaining({ symbol: '018125', amount: 200 }),
-    expect.objectContaining({ symbol: '012710', amount: 300 }),
+    expect.objectContaining({ symbol: '019999', amount: 200 }),
+    expect.objectContaining({ symbol: '012999', amount: 300 }),
   ]);
 });
 
@@ -259,16 +259,15 @@ test('keeps batch fund rows shrinkable for responsive activity layouts', () => {
       onSubmit={onSubmit}
       candidates={[
         {
-          symbol: '018125',
-          display_name:
-            '永赢先进制造智选混合发起C超长中文名称用于响应式布局验证',
+          symbol: '019999',
+          display_name: '示例成长混合C超长中文名称用于响应式布局验证',
         },
       ]}
     />,
   );
 
   const form = container.querySelector('form') as HTMLFormElement | null;
-  const amountInput = screen.getByLabelText('018125 Amount');
+  const amountInput = screen.getByLabelText('019999 Amount');
 
   expect(form?.className).toContain('min-w-0');
   expect(form?.className).toContain('max-w-full');
@@ -362,53 +361,53 @@ test('renders ledger entries as a user-facing audit table', () => {
           entry_type: 'trade_buy',
           timestamp: '2026-04-23T14:46:00+00:00',
           amount: 200,
-          symbol: '012710',
+          symbol: '012999',
           direction: 'buy',
           quantity: 204.102,
           price: 0.9799,
           commission: 0,
           asset_class: 'fund',
-          note: '用户记录：华夏核心成长混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
+          note: '用户记录：示例稳健混合C 买入 200 元 | Auto-confirmed pending fund subscription: gross_amount=200.00 | confirmed_nav=0.979900',
           source: 'manual',
-          source_ref: 'trade_buy-012710',
+          source_ref: 'trade_buy-012999',
           created_at: null,
           display_name: null,
         },
         {
           id: 2,
           entry_type: 'trade_buy',
-          timestamp: '2026-06-05T06:33:41+00:00',
-          amount: 2755,
-          symbol: '603659',
+          timestamp: '2026-01-12T06:33:41+00:00',
+          amount: 1850,
+          symbol: '600002',
           direction: 'buy',
           quantity: 100,
-          price: 27.55,
+          price: 18.5,
           commission: 5,
           asset_class: 'stock',
-          note: '手工录入持仓：璞泰来 买入，佣金按万一最低5元计收',
+          note: '合成测试流水：示例材料 买入，按本地费率规则计费',
           source: 'manual',
-          source_ref: 'manual-603659-20260605-143341',
+          source_ref: 'manual-stock-b-20260112-103000',
           created_at: null,
           display_name: null,
         },
         {
           id: 3,
           entry_type: 'trade_buy',
-          timestamp: '2026-06-16T03:04:56+00:00',
-          amount: 5270,
-          symbol: '600066',
+          timestamp: '2026-01-15T03:04:56+00:00',
+          amount: 3250,
+          symbol: '600003',
           direction: 'buy',
           quantity: 200,
-          price: 26.35,
+          price: 16.25,
           commission: 5,
           asset_class: 'stock',
-          note: '手工录入持仓：宇通客车 600066 买入，佣金按万1.5，最低5元计收',
+          note: '合成测试流水：示例制造 600003 买入，按本地费率规则计费',
           source: 'manual',
-          source_ref: 'manual-600066-20260616-110456',
+          source_ref: 'manual-stock-a-20260115-100000',
           created_at: null,
-          display_name: '宇通客车',
-          gross_amount: 5270,
-          net_cash_impact: -5275.16,
+          display_name: '示例制造',
+          gross_amount: 3250,
+          net_cash_impact: -3255.16,
           fee_breakdown: {
             commission: '5',
             stamp_tax: '0',
@@ -428,24 +427,24 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Fund')).toBeTruthy();
   expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(1);
   expect(screen.getByText('-CN¥200.00')).toBeTruthy();
-  expect(screen.getByText('华夏核心成长混合C 012710')).toBeTruthy();
+  expect(screen.getByText('示例稳健混合C 012999')).toBeTruthy();
   expect(screen.getByText('Amount CN¥200.00')).toBeTruthy();
   expect(screen.getByText('Quantity 204.102')).toBeTruthy();
   expect(screen.getByText('Price CN¥0.98')).toBeTruthy();
   expect(screen.queryByText('Fee CN¥0.00')).toBeNull();
-  expect(screen.getByText('璞泰来 603659')).toBeTruthy();
-  expect(screen.getByText('宇通客车 600066')).toBeTruthy();
-  expect(screen.getByText('-CN¥5,275.16')).toBeTruthy();
-  expect(screen.getByText('Gross amount CN¥5,270.00')).toBeTruthy();
-  expect(screen.getByText('Net cash impact -CN¥5,275.16')).toBeTruthy();
+  expect(screen.getByText('示例材料 600002')).toBeTruthy();
+  expect(screen.getByText('示例制造 600003')).toBeTruthy();
+  expect(screen.getByText('-CN¥3,255.16')).toBeTruthy();
+  expect(screen.getByText('Gross amount CN¥3,250.00')).toBeTruthy();
+  expect(screen.getByText('Net cash impact -CN¥3,255.16')).toBeTruthy();
   expect(screen.getByText('Commission CN¥5.00')).toBeTruthy();
   expect(screen.getByText('Stamp tax CN¥0.00')).toBeTruthy();
   expect(screen.getByText('Transfer fee CN¥0.16')).toBeTruthy();
   expect(screen.queryByText(/Cost basis/)).toBeNull();
   expect(screen.queryByText(/moving_average_buy_cost/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);
-  expect(screen.queryByText('603659')).toBeNull();
-  expect(screen.queryByText('600066')).toBeNull();
+  expect(screen.queryByText('600002')).toBeNull();
+  expect(screen.queryByText('600003')).toBeNull();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.queryByText(/gross_amount/)).toBeNull();
   expect(screen.queryByText(/Auto-confirmed/)).toBeNull();

@@ -278,12 +278,12 @@ class TestAKShareMultiAsset:
 
             observed["HTTP_PROXY"] = os.environ.get("HTTP_PROXY")
             return pd.DataFrame(
-                [{"基金简称": "永赢先进制造智选混合C", "基金代码": "018125"}]
+                [{"基金简称": "示例成长混合C", "基金代码": "019999"}]
             )
 
         monkeypatch.setattr(ak, "fund_name_em", fake_fund_name_em)
 
-        assert source._open_end_fund_name_map() == {"永赢先进制造智选混合C": "018125"}
+        assert source._open_end_fund_name_map() == {"示例成长混合C": "019999"}
         assert observed["HTTP_PROXY"] is None
         source._open_end_fund_name_map.cache_clear()
 
@@ -335,22 +335,22 @@ class TestAKShareFetchLatest:
         self, mock_name_map, mock_daily, source
     ):
         """开放式基金可按基金简称解析净值。"""
-        mock_name_map.return_value = {"永赢先进制造智选混合C": "018124"}
+        mock_name_map.return_value = {"示例成长混合C": "018124"}
         mock_daily.return_value = pd.DataFrame(
             {
                 "基金代码": ["018124"],
-                "基金简称": ["永赢先进制造智选混合C"],
+                "基金简称": ["示例成长混合C"],
                 "2026-04-18-单位净值": [1.023],
                 "2026-04-18-累计净值": [1.023],
             }
         )
 
-        result = source.fetch_latest(Symbol("永赢先进制造智选混合C"), AssetClass.FUND)
+        result = source.fetch_latest(Symbol("示例成长混合C"), AssetClass.FUND)
 
         assert result is not None
         assert result["price"] == 1.023
         assert result["timestamp"] == "2026-04-18"
-        assert result["display_name"] == "永赢先进制造智选混合C"
+        assert result["display_name"] == "示例成长混合C"
 
     @patch("requests.get")
     @patch("akshare.fund_etf_spot_em")
@@ -360,12 +360,12 @@ class TestAKShareFetchLatest:
         self, mock_name_map, mock_daily, mock_etf, mock_get, source
     ):
         """单基金页失败时，开放式基金代码仍可回退到净值表。"""
-        mock_name_map.return_value = {"永赢先进制造智选混合发起C": "018125"}
+        mock_name_map.return_value = {"示例成长混合C": "019999"}
         mock_get.side_effect = TimeoutError("single fund page timeout")
         mock_daily.return_value = pd.DataFrame(
             {
-                "基金代码": ["018125"],
-                "基金简称": ["永赢先进制造智选混合发起C"],
+                "基金代码": ["019999"],
+                "基金简称": ["示例成长混合C"],
                 "2026-04-22-单位净值": [2.2503],
                 "2026-04-22-累计净值": [2.2503],
                 "2026-04-21-单位净值": [2.2606],
@@ -375,12 +375,12 @@ class TestAKShareFetchLatest:
             }
         )
 
-        result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
+        result = source.fetch_latest(Symbol("019999"), AssetClass.FUND)
 
         assert result is not None
         assert result["price"] == 2.2503
         assert result["timestamp"] == "2026-04-22"
-        assert result["display_name"] == "永赢先进制造智选混合发起C"
+        assert result["display_name"] == "示例成长混合C"
         assert result["previous_close"] == 2.2606
         assert result["previous_close_date"] == "2026-04-21"
         assert result["day_change_value"] == pytest.approx(-0.0103)
@@ -399,16 +399,16 @@ class TestAKShareFetchLatest:
         """已知基金代码应走单基金页，不依赖全量名称表或全市场净值表。"""
         mock_name_map.side_effect = AssertionError("fund_name_em should not be called")
         mock_get.return_value = SimpleNamespace(
-            text='jsonpgz({"fundcode":"018125","name":"永赢先进制造智选混合发起C","jzrq":"2026-06-04","dwjz":"2.5000","gsz":"2.5123","gszzl":"0.49","gztime":"2026-06-05 15:00"});',
+            text='jsonpgz({"fundcode":"019999","name":"示例成长混合C","jzrq":"2026-06-04","dwjz":"2.5000","gsz":"2.5123","gszzl":"0.49","gztime":"2026-01-12 15:00"});',
             raise_for_status=lambda: None,
         )
 
-        result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
+        result = source.fetch_latest(Symbol("019999"), AssetClass.FUND)
 
         assert result is not None
         assert result["price"] == 2.5123
-        assert result["timestamp"] == "2026-06-05 15:00"
-        assert result["display_name"] == "永赢先进制造智选混合发起C"
+        assert result["timestamp"] == "2026-01-12 15:00"
+        assert result["display_name"] == "示例成长混合C"
         assert result["previous_close"] == 2.5
         assert result["previous_close_date"] == "2026-06-04"
         assert result["quote_source"] == "eastmoney_fund_estimate"
@@ -430,7 +430,7 @@ class TestAKShareFetchLatest:
             TimeoutError("fund estimate timeout"),
             SimpleNamespace(
                 text=(
-                    'var fS_name = "永赢先进制造智选混合发起C";'
+                    'var fS_name = "示例成长混合C";'
                     "var Data_netWorthTrend = ["
                     '{"x":1780416000000,"y":2.5000,"equityReturn":0.12},'
                     '{"x":1780502400000,"y":2.5123,"equityReturn":0.49}'
@@ -440,12 +440,12 @@ class TestAKShareFetchLatest:
             ),
         ]
 
-        result = source.fetch_latest(Symbol("018125"), AssetClass.FUND)
+        result = source.fetch_latest(Symbol("019999"), AssetClass.FUND)
 
         assert result is not None
         assert result["price"] == 2.5123
         assert result["timestamp"] == "2026-06-04"
-        assert result["display_name"] == "永赢先进制造智选混合发起C"
+        assert result["display_name"] == "示例成长混合C"
         assert result["previous_close"] == 2.5
         assert result["previous_close_date"] == "2026-06-03"
         assert result["day_change_value"] == pytest.approx(0.0123)
@@ -457,16 +457,16 @@ class TestAKShareFetchLatest:
     def test_resolve_open_end_fund_code_accepts_alias_name(self, mock_name_map, source):
         """缺少“发起/发起式”的输入别名也应解析到标准基金代码。"""
         mock_name_map.return_value = {
-            "永赢先进制造智选混合发起C": "018125",
-            "融通科技臻选混合发起式C": "026539",
+            "示例成长混合C": "019999",
+            "示例科技混合C": "029999",
         }
 
         assert (
-            source._resolve_open_end_fund_code(Symbol("永赢先进制造智选混合C"))
-            == "018125"
+            source._resolve_open_end_fund_code(Symbol("示例成长混合C"))
+            == "019999"
         )
         assert (
-            source._resolve_open_end_fund_code(Symbol("融通科技臻选混合C")) == "026539"
+            source._resolve_open_end_fund_code(Symbol("示例科技混合C")) == "029999"
         )
 
     @patch("akshare.stock_zh_a_spot_em")
@@ -476,8 +476,8 @@ class TestAKShareFetchLatest:
         """A股最新行情应包含昨收、涨跌额和涨跌幅。"""
         mock_ak.return_value = pd.DataFrame(
             {
-                "代码": ["601985"],
-                "名称": ["中国核电"],
+                "代码": ["600001"],
+                "名称": ["示例能源"],
                 "最新价": [8.76],
                 "昨收": [8.65],
                 "涨跌额": [0.11],
@@ -488,7 +488,7 @@ class TestAKShareFetchLatest:
             }
         )
 
-        result = source.fetch_latest(Symbol("601985"), AssetClass.STOCK)
+        result = source.fetch_latest(Symbol("600001"), AssetClass.STOCK)
 
         assert result is not None
         assert result["price"] == 8.76
@@ -496,11 +496,11 @@ class TestAKShareFetchLatest:
         assert result["change"] == 0.11
         assert result["change_percent"] == pytest.approx(0.0127)
         assert result["previous_close_date"] is not None
-        assert result["display_name"] == "中国核电"
-        assert result["symbol"] == "601985"
+        assert result["display_name"] == "示例能源"
+        assert result["symbol"] == "600001"
         assert result["asset_class"] == "stock"
         assert result["provider_name"] == "akshare"
-        assert result["provider_symbol"] == "601985"
+        assert result["provider_symbol"] == "600001"
         assert result["source"] == "akshare"
         assert result["quote_source"] == "akshare_stock_spot"
 
