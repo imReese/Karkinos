@@ -296,6 +296,20 @@ test('hides dotted backend operational note codes in trading rows', async () => 
   expect(screen.queryByText('backend.order.review')).toBeNull();
 });
 
+test('uses a public audit-note placeholder instead of raw order ids', async () => {
+  renderTradingPage({
+    orders: [
+      {
+        ...confirmedOrder,
+        note: null,
+      },
+    ],
+  });
+
+  expect(await screen.findByText('No public note recorded.')).toBeTruthy();
+  expect(screen.queryByText('ORD-CONFIRMED')).toBeNull();
+});
+
 test('runs daily simulation review from the execution audit panel', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderTradingPage();

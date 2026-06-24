@@ -603,6 +603,7 @@ export const copy = {
         historyDetail:
           'Confirmed and rejected rows come from the existing manual-order endpoint.',
         noHistory: 'No completed order decisions are available yet.',
+        noPublicAuditNote: 'No public note recorded.',
         statusPendingConfirm: 'Pending approval',
         statusConfirmed: 'Confirmed',
         statusRejected: 'Rejected',
@@ -2284,6 +2285,7 @@ export const copy = {
         historyTitle: '审计记录',
         historyDetail: '已确认与已拒绝记录来自现有人工订单接口。',
         noHistory: '当前还没有已完成的订单决策。',
+        noPublicAuditNote: '暂无公开备注。',
         statusPendingConfirm: '待审批',
         statusConfirmed: '已确认',
         statusRejected: '已拒绝',
