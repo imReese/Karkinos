@@ -6,6 +6,13 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Backtest account-strategy and strategy-review tables now use
+  localized strategy names as the primary display even when registry metadata
+  is incomplete, while strategy ids remain visible only as secondary audit
+  keys where needed. This is display formatting only; it does not change
+  strategy assignment, strategy ids, attribution math, broker behavior, order
+  submission, risk gates, automatic trading defaults, or manual-confirmation
+  requirements.
 * 2026-06-24: Public ledger notes now localize raw internal note-code
   segments through the shared ledger formatter instead of rendering backend
   reason-code text in Activity, Overview dashboard, explainability, and
@@ -1343,3 +1350,10 @@ roadmap promises.
   backend codes. This is display formatting only; it does not change order
   state, review state, broker behavior, risk gates, automatic trading
   defaults, or manual-confirmation requirements.
+* 2026-06-24: Shared public ledger-note formatting now splits semicolon and
+  multiline note segments before suppressing generated structured trade facts,
+  so a user remark can remain visible while repeated quantity, price, amount,
+  and fee text stays in structured fields. This is display formatting only; it
+  does not change ledger storage, accounting math, broker behavior, order
+  submission, risk gates, automatic trading defaults, or manual-confirmation
+  requirements.

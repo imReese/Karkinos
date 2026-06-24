@@ -118,6 +118,54 @@ describe('ledger formatter', () => {
     ).toBeNull();
   });
 
+  test('keeps user remarks while suppressing semicolon-delimited structured facts', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: '复盘观察；买入 200 股，价格 16.25，手续费 5.00',
+        },
+        'zh',
+      ),
+    ).toBe('复盘观察');
+  });
+
+  test('suppresses English generated manual-trade notes that repeat structured fields', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: 'Manual trade: 示例制造 600003 buy, quantity 200, price 16.25, commission 5.00',
+        },
+        'en',
+      ),
+    ).toBeNull();
+  });
+
+  test('keeps English user remarks while suppressing manual-trade fact segments', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: 'watchlist follow-up; Manual trade: 示例制造 600003 buy, quantity 200, price 16.25, commission 5.00',
+        },
+        'en',
+      ),
+    ).toBe('watchlist follow-up');
+  });
+
+  test('keeps multiline user remarks while suppressing generated trade facts', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: '复盘观察\n买入 200 股，价格 16.25，手续费 5.00',
+        },
+        'zh',
+      ),
+    ).toBe('复盘观察');
+  });
+
   test('suppresses legacy internal cash-deposit notes', () => {
     expect(
       formatLedgerPublicNote({
