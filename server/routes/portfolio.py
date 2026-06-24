@@ -134,6 +134,7 @@ def _manual_trade_preview_payload(config, body: TradeCreate) -> dict:
             direction=body.direction,
             quantity=quantity,
             price=price,
+            symbol=body.symbol,
         )
         if configured_fee is None:
             commission = 0.0
@@ -143,14 +144,18 @@ def _manual_trade_preview_payload(config, body: TradeCreate) -> dict:
                 note = configured_fee.note
 
     gross_amount = float(quantity) * float(price)
-    total_fee = configured_fee.total_fee if configured_fee is not None else float(commission)
+    total_fee = (
+        configured_fee.total_fee if configured_fee is not None else float(commission)
+    )
     fee_breakdown_json = (
         configured_fee.fee_breakdown_json
         if configured_fee is not None
         else _manual_trade_fee_breakdown(commission)
     )
     fee_rule_id = (
-        configured_fee.fee_rule_id if configured_fee is not None else MANUAL_FEE_INPUT_RULE_ID
+        configured_fee.fee_rule_id
+        if configured_fee is not None
+        else MANUAL_FEE_INPUT_RULE_ID
     )
     fee_rule_version = (
         configured_fee.fee_rule_version
@@ -3955,9 +3960,7 @@ def create_router() -> APIRouter:
         from server.app import get_app_state
 
         state = get_app_state()
-        return TradePreviewResponse(
-            **_manual_trade_preview_payload(state.config, body)
-        )
+        return TradePreviewResponse(**_manual_trade_preview_payload(state.config, body))
 
     @r.post("/trade", response_model=TradeResponse)
     async def create_trade(body: TradeCreate) -> TradeResponse:
@@ -4062,6 +4065,7 @@ def create_router() -> APIRouter:
                 direction=body.direction,
                 quantity=quantity,
                 price=price,
+                symbol=symbol,
             )
             if configured_fee is None:
                 commission = 0.0

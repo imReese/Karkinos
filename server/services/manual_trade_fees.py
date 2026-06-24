@@ -38,6 +38,7 @@ def resolve_manual_trade_fee_breakdown(
     direction: str,
     quantity: float | None,
     price: float | None,
+    symbol: str | None = None,
 ) -> ManualTradeFeeResult | None:
     """Resolve configured stock/ETF manual-trade fee assumptions."""
     if config is None or quantity is None or price is None:
@@ -54,6 +55,7 @@ def resolve_manual_trade_fee_breakdown(
     min_commission = _decimal_config_value(config, "account_min_commission", "5")
     schedule = getattr(config, "broker_fee_schedule", None)
     transfer_fee_rate = Decimal(str(getattr(schedule, "transfer_fee_rate", "0.00001")))
+    exchange_transfer_fee_rates = _exchange_transfer_fee_rates(schedule)
     other_fee_rate = Decimal(str(getattr(schedule, "other_fee_rate", "0")))
     limitations = tuple(
         getattr(
@@ -85,14 +87,24 @@ def resolve_manual_trade_fee_breakdown(
             limitations=("bond_fee_rules_need_broker_confirmation",),
         )
     else:
+        stock_exchange = _infer_stock_exchange(symbol)
+        stock_limitations = limitations
+        if stock_exchange and exchange_transfer_fee_rates:
+            stock_limitations = tuple(
+                item
+                for item in limitations
+                if item != "transfer_fee_exchange_not_split"
+            )
         calculator = StockACommission(
             commission_rate=rate,
             min_commission=min_commission,
             stamp_tax_rate=Decimal(str(getattr(schedule, "stamp_tax_rate", "0.0005"))),
             transfer_fee_rate=transfer_fee_rate,
+            exchange=stock_exchange,
+            exchange_transfer_fee_rates=exchange_transfer_fee_rates,
             other_fee_rate=other_fee_rate,
             fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
-            limitations=limitations,
+            limitations=stock_limitations,
         )
 
     breakdown = calculator.breakdown(
@@ -105,7 +117,7 @@ def resolve_manual_trade_fee_breakdown(
         total_fee=float(breakdown.total_fee),
         fee_breakdown_json=fee_breakdown_payload(breakdown),
         fee_rule_id=breakdown.fee_rule_id,
-        fee_rule_version=MANUAL_CONFIGURED_FEE_RULE_VERSION,
+        fee_rule_version=_fee_rule_version(schedule),
         note=_account_commission_note(rate, min_commission),
     )
 
@@ -135,6 +147,51 @@ def fee_breakdown_payload(breakdown: FeeBreakdown) -> dict[str, str]:
 def _decimal_config_value(config, name: str, fallback: str) -> Decimal:
     value = getattr(config, name, fallback)
     return Decimal(str(value))
+
+
+def _fee_rule_version(schedule) -> str:
+    schedule_id = str(getattr(schedule, "schedule_id", "") or "").strip()
+    return schedule_id or MANUAL_CONFIGURED_FEE_RULE_VERSION
+
+
+def _exchange_transfer_fee_rates(schedule) -> dict[str, Decimal]:
+    raw_rates = getattr(schedule, "exchange_transfer_fee_rates", None)
+    if not isinstance(raw_rates, dict):
+        return {}
+    parsed: dict[str, Decimal] = {}
+    for raw_exchange, raw_value in raw_rates.items():
+        exchange = _normalize_exchange(raw_exchange)
+        if exchange:
+            parsed[exchange] = Decimal(str(raw_value))
+    return parsed
+
+
+def _infer_stock_exchange(symbol: str | None) -> str | None:
+    if not symbol:
+        return None
+    normalized = symbol.strip().lower()
+    if not normalized:
+        return None
+    if normalized.endswith((".sh", ".sse")) or normalized.startswith(("sh", "sse")):
+        return "shanghai"
+    if normalized.endswith((".sz", ".szse")) or normalized.startswith(("sz", "szse")):
+        return "shenzhen"
+
+    core = normalized.split(".", maxsplit=1)[0]
+    if core.startswith("6"):
+        return "shanghai"
+    if core.startswith(("0", "2", "3")):
+        return "shenzhen"
+    return None
+
+
+def _normalize_exchange(value: object) -> str | None:
+    key = str(value).strip().lower()
+    if key in {"sh", "sse", "shanghai", "上海", "沪"}:
+        return "shanghai"
+    if key in {"sz", "szse", "shenzhen", "深圳", "深"}:
+        return "shenzhen"
+    return None
 
 
 def _format_decimal_short(value: Decimal) -> str:

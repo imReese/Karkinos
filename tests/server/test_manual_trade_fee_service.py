@@ -41,6 +41,78 @@ def test_manual_trade_fee_service_formats_stock_sell_components():
     assert "万2" in resolved.note
 
 
+def test_manual_trade_fee_service_uses_symbol_exchange_transfer_fee_split():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    config = SimpleNamespace(
+        account_commission_rate=0.00015,
+        account_min_commission=5,
+        broker_fee_schedule=SimpleNamespace(
+            stamp_tax_rate=0.0005,
+            transfer_fee_rate=0.00001,
+            exchange_transfer_fee_rates={
+                "shanghai": "0.00001",
+                "shenzhen": "0",
+            },
+            other_fee_rate=0,
+            limitations=(
+                "transfer_fee_exchange_not_split",
+                "broker_regulatory_fees_assumed_absorbed",
+            ),
+        ),
+    )
+
+    shenzhen = resolve_manual_trade_fee_breakdown(
+        config,
+        asset_class="stock",
+        direction="sell",
+        quantity=1000,
+        price=10,
+        symbol="000001",
+    )
+    shanghai = resolve_manual_trade_fee_breakdown(
+        config,
+        asset_class="stock",
+        direction="sell",
+        quantity=1000,
+        price=10,
+        symbol="600000",
+    )
+
+    assert shenzhen is not None
+    assert shanghai is not None
+    assert shenzhen.fee_breakdown_json["transfer_fee"] == "0.000000"
+    assert shenzhen.fee_breakdown_json["total_fee"] == "10.000000"
+    assert shanghai.fee_breakdown_json["transfer_fee"] == "0.100000"
+    assert shanghai.fee_breakdown_json["total_fee"] == "10.100000"
+
+
+def test_manual_trade_fee_service_uses_schedule_id_as_fee_rule_version():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    resolved = resolve_manual_trade_fee_breakdown(
+        SimpleNamespace(
+            account_commission_rate=0.00015,
+            account_min_commission=5,
+            broker_fee_schedule=SimpleNamespace(
+                schedule_id="local_broker_fee_schedule_v2",
+                stamp_tax_rate=0.0005,
+                transfer_fee_rate=0.00001,
+                other_fee_rate=0,
+            ),
+        ),
+        asset_class="stock",
+        direction="buy",
+        quantity=100,
+        price=10,
+        symbol="600000",
+    )
+
+    assert resolved is not None
+    assert resolved.fee_rule_id == "manual_configured_commission"
+    assert resolved.fee_rule_version == "local_broker_fee_schedule_v2"
+
+
 def test_manual_trade_fee_service_formats_etf_without_stamp_tax():
     from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 

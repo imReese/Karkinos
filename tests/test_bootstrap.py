@@ -287,8 +287,13 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
                     "fund_etf_min_commission": 5,
                     "stamp_tax_rate": 0.0005,
                     "transfer_fee_rate": 0.00001,
+                    "exchange_transfer_fee_rates": {
+                        "shanghai": 0.00001,
+                        "shenzhen": 0,
+                    },
                     "other_fee_rate": 0,
                     "limitations": [
+                        "transfer_fee_exchange_not_split",
                         "broker_regulatory_fees_assumed_absorbed",
                     ],
                 }
@@ -306,6 +311,10 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
         fund_etf_min_commission=Decimal("5"),
         stamp_tax_rate=Decimal("0.0005"),
         transfer_fee_rate=Decimal("0.00001"),
+        exchange_transfer_fee_rates={
+            "shanghai": Decimal("0.00001"),
+            "shenzhen": Decimal("0"),
+        },
         other_fee_rate=Decimal("0"),
         limitations=("broker_regulatory_fees_assumed_absorbed",),
     )
@@ -328,7 +337,11 @@ def test_server_config_loads_detailed_safe_broker_fee_schedule(tmp_path):
                     },
                     "taxes_and_fees": {
                         "stamp_tax": {"sell": 0.0005},
-                        "transfer_fee": {"rate": 0.00001},
+                        "transfer_fee": {
+                            "rate": 0.00001,
+                            "sh": 0.00001,
+                            "sz": 0,
+                        },
                     },
                 }
             }
@@ -342,6 +355,10 @@ def test_server_config_loads_detailed_safe_broker_fee_schedule(tmp_path):
     assert config.broker_fee_schedule.fund_etf_commission_rate == Decimal("0.00012")
     assert config.broker_fee_schedule.stamp_tax_rate == Decimal("0.0005")
     assert config.broker_fee_schedule.transfer_fee_rate == Decimal("0.00001")
+    assert config.broker_fee_schedule.exchange_transfer_fee_rates == {
+        "shanghai": Decimal("0.00001"),
+        "shenzhen": Decimal("0"),
+    }
     assert (
         "nested_fee_schedule_flattened_for_current_contract"
         in config.broker_fee_schedule.limitations
