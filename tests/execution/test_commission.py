@@ -88,6 +88,55 @@ class TestStockACommission:
         commission = calc.calculate(OrderSide.SELL, Decimal("1800"), Decimal("1000"))
         assert commission == Decimal("1458")
 
+    def test_exchange_specific_transfer_fee_rates_can_be_configured(self):
+        """A 股费用模型可以显式表达不同交易所过户费口径。"""
+        shanghai = StockACommission(
+            commission_rate=Decimal("0.00015"),
+            min_commission=Decimal("5"),
+            transfer_fee_rate=Decimal("0.00001"),
+            exchange="shanghai",
+            exchange_transfer_fee_rates={
+                "shanghai": Decimal("0.00001"),
+                "shenzhen": Decimal("0"),
+            },
+            fee_rule_id="cn_stock_a_exchange_split_v1",
+        )
+        shenzhen = StockACommission(
+            commission_rate=Decimal("0.00015"),
+            min_commission=Decimal("5"),
+            transfer_fee_rate=Decimal("0.00001"),
+            exchange="shenzhen",
+            exchange_transfer_fee_rates={
+                "shanghai": Decimal("0.00001"),
+                "shenzhen": Decimal("0"),
+            },
+            fee_rule_id="cn_stock_a_exchange_split_v1",
+        )
+
+        shanghai_breakdown = shanghai.breakdown(
+            OrderSide.BUY, Decimal("10"), Decimal("1000")
+        )
+        shenzhen_breakdown = shenzhen.breakdown(
+            OrderSide.BUY, Decimal("10"), Decimal("1000")
+        )
+
+        assert shanghai_breakdown.transfer_fee == Decimal("0.10000")
+        assert shenzhen_breakdown.transfer_fee == Decimal("0")
+        assert shanghai_breakdown.total_fee == Decimal("5.10000")
+        assert shenzhen_breakdown.total_fee == Decimal("5")
+        assert shanghai_breakdown.fee_rule_id == "cn_stock_a_exchange_split_v1"
+        assert shenzhen_breakdown.fee_rule_id == "cn_stock_a_exchange_split_v1"
+
+    def test_default_stock_a_transfer_fee_keeps_legacy_exchange_unsplit_limit(self):
+        """默认 A 股费用数字和未拆交易所限制保持兼容。"""
+        breakdown = StockACommission().breakdown(
+            OrderSide.BUY, Decimal("10"), Decimal("1000")
+        )
+
+        assert breakdown.transfer_fee == Decimal("0.10000")
+        assert breakdown.total_fee == Decimal("5.10000")
+        assert "transfer_fee_exchange_not_split" in breakdown.limitations
+
 
 class TestETFCommission:
     def test_etf_no_stamp_tax(self):
