@@ -373,6 +373,10 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'Validation evidence is not investment advice or a profitability guarantee.',
     'Review status is an audit signal only.':
       'Review status is an audit signal only.',
+    'Account Truth review requires staged broker evidence before trusted use.':
+      'Stage broker evidence and review it before account facts are used in decisions.',
+    'Unresolved reconciliation items require review.':
+      'Unresolved reconciliation differences need manual review.',
     'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.':
       'Multiple tests can overfit historical data; require out-of-sample and after-cost review.',
     'Parameter sweep rankings are research evidence, not investment advice.':
@@ -456,6 +460,10 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '验证证据不构成投资建议，也不保证收益。',
     'Review status is an audit signal only.':
       '复核状态只是审计信号，不会自动上线或下单。',
+    'Account Truth review requires staged broker evidence before trusted use.':
+      '需要先暂存券商证据并完成复核，才能把账户事实用于决策。',
+    'Unresolved reconciliation items require review.':
+      '仍有对账差异需要人工复核。',
     'Multiple testing can overfit historical data; require OOS and after-cost review before promotion.':
       '多次参数测试可能过拟合历史数据，需要样本外与成本后复核。',
     'Parameter sweep rankings are research evidence, not investment advice.':

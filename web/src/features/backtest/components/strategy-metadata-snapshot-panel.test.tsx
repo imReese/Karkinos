@@ -75,14 +75,27 @@ test('shows localized strategy name before the internal strategy id in strategy 
 
   expect(screen.getByText('策略')).toBeTruthy();
   expect(screen.getByText('双均线策略 · dual_ma')).toBeTruthy();
-  expect(screen.getByText('内部策略标识')).toBeTruthy();
+  expect(screen.getByText('策略审计标识')).toBeTruthy();
   expect(screen.getByText('股票')).toBeTruthy();
   expect(screen.getByText('日线')).toBeTruthy();
   expect(screen.getByText('进入人工复核前，需要完成模拟盘复盘。')).toBeTruthy();
   expect(screen.queryByText('策略 ID')).toBeNull();
+  expect(screen.queryByText('内部策略标识')).toBeNull();
   expect(screen.queryByText('stock')).toBeNull();
   expect(screen.queryByText('daily')).toBeNull();
   expect(
     screen.queryByText('Requires paper/shadow review before promotion.'),
   ).toBeNull();
+});
+
+test('labels strategy ids as audit metadata without internal wording', () => {
+  render(
+    <PreferencesProvider>
+      <StrategyMetadataSnapshotPanel report={reportWithStrategySnapshot()} />
+    </PreferencesProvider>,
+  );
+
+  expect(screen.getByText('Strategy audit id')).toBeTruthy();
+  expect(screen.getByText('dual_ma')).toBeTruthy();
+  expect(screen.queryByText('Internal strategy id')).toBeNull();
 });

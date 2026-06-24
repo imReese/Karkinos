@@ -94,3 +94,27 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
     '复核模拟盘证据',
   );
 });
+
+test('formats account-truth evidence limitations without backend wording', () => {
+  expect(
+    formatPublicNote(
+      'Account Truth review requires staged broker evidence before trusted use.',
+      'zh',
+    ),
+  ).toBe('需要先暂存券商证据并完成复核，才能把账户事实用于决策。');
+  expect(
+    formatPublicNote('Unresolved reconciliation items require review.', 'zh'),
+  ).toBe('仍有对账差异需要人工复核。');
+
+  expect(
+    formatPublicNote(
+      'Account Truth review requires staged broker evidence before trusted use.',
+      'en',
+    ),
+  ).toBe(
+    'Stage broker evidence and review it before account facts are used in decisions.',
+  );
+  expect(
+    formatPublicNote('Unresolved reconciliation items require review.', 'en'),
+  ).toBe('Unresolved reconciliation differences need manual review.');
+});

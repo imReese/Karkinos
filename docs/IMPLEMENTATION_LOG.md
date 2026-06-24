@@ -6,6 +6,22 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Backtest run-configuration and strategy snapshot copy now
+  describes the backend boundary as a user-facing interface boundary and
+  labels strategy ids as audit metadata instead of internal implementation
+  identifiers. Chinese strategy metadata uses the same audit-id framing. This
+  is copy-only and does not change backtest payloads, strategy ids, report
+  persistence, strategy math, broker behavior, risk gates, automatic-trading
+  defaults, or manual-confirmation requirements.
+* 2026-06-24: Shared public-note formatting now localizes Account Truth
+  evidence limitation phrases about staged broker evidence and unresolved
+  reconciliation review in both English and Chinese. Decision, Backtest,
+  Risk, and Account Truth surfaces that consume `formatPublicNote` can reuse
+  the same user-readable text instead of leaking backend limitation wording.
+  This is display formatting only; it does not change account-truth scoring,
+  reconciliation math, broker evidence persistence, API paths, trading
+  behavior, risk gates, automatic-trading defaults, or manual-confirmation
+  requirements.
 * 2026-06-24: Backtest asset-class controls now display localized asset labels
   such as Stock/Fund or 股票/基金 while preserving the backend enum payload for
   API compatibility. Adjacent Backtest asset-entry helper copy was also updated
