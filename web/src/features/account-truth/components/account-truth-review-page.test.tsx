@@ -244,7 +244,7 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   expect(within(item).getByText('Difference 100 shares')).toBeTruthy();
   expect(
     within(item).getByText(
-      'Broker evidence · SYN001 · Position snapshot · import-run-1',
+      'Broker evidence · 合成样例股票A SYN001 · Position snapshot · import-run-1',
     ),
   ).toBeTruthy();
   expect(item.textContent).not.toContain(
@@ -513,7 +513,9 @@ test('formats broker trade evidence references through shared ledger labels', as
   const item = await screen.findByTestId('account-truth-item-trade:SYN001');
 
   expect(
-    within(item).getByText('Broker evidence · SYN001 · Buy · import-run-1'),
+    within(item).getByText(
+      'Broker evidence · 合成样例股票A SYN001 · Buy · import-run-1',
+    ),
   ).toBeTruthy();
   expect(item.textContent).not.toContain('Buy trade');
   expect(item.textContent).not.toContain('trade_buy');

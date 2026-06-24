@@ -680,6 +680,10 @@ function ReviewItemCard({
     item.latest_review?.note,
     locale,
   );
+  const evidenceInstrumentNames =
+    item.symbol && item.display_name
+      ? new Map([[item.symbol.toLowerCase(), item.display_name]])
+      : undefined;
   const detailContextEntries = Object.entries(item.detail_context ?? {}).filter(
     ([, value]) => value.trim().length > 0,
   );
@@ -771,7 +775,11 @@ function ReviewItemCard({
                 key={reference}
                 className="break-words rounded-lg bg-[var(--app-mantle)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]"
               >
-                {formatLedgerEvidenceReference(reference, locale)}
+                {formatLedgerEvidenceReference(
+                  reference,
+                  locale,
+                  evidenceInstrumentNames,
+                )}
               </span>
             ))}
           </div>

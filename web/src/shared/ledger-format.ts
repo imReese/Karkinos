@@ -399,14 +399,19 @@ export function formatLedgerSourceLabel(
 export function formatLedgerEvidenceReference(
   reference: string,
   locale: Locale,
+  instrumentNames?: Map<string, string>,
 ) {
-  const brokerTradeReference = parseBrokerTradeEvidenceReference(reference);
-  if (brokerTradeReference) {
+  const brokerReference = parseBrokerEvidenceReference(reference);
+  if (brokerReference) {
+    const subject = formatEvidenceSubject(
+      brokerReference.subject,
+      instrumentNames,
+    );
     return [
       locale === 'zh' ? '券商证据' : 'Broker evidence',
-      brokerTradeReference.subject,
-      formatLedgerEntryTypeLabel(brokerTradeReference.eventType, locale),
-      brokerTradeReference.importRunId,
+      subject,
+      formatBrokerEvidenceTypeLabel(brokerReference.eventType, locale),
+      brokerReference.importRunId,
     ].join(' · ');
   }
 
@@ -599,7 +604,7 @@ function normalizeLedgerKind(entryType: string): LedgerSummaryKind {
   return 'other';
 }
 
-function parseBrokerTradeEvidenceReference(reference: string) {
+function parseBrokerEvidenceReference(reference: string) {
   const [sourceType, importRunId, subject, ...eventTypeParts] =
     reference.split(':');
   const eventType = eventTypeParts.join(':');
@@ -607,7 +612,7 @@ function parseBrokerTradeEvidenceReference(reference: string) {
     sourceType !== 'broker_event' ||
     !importRunId ||
     !subject ||
-    (eventType !== 'trade_buy' && eventType !== 'trade_sell')
+    eventTypeParts.length === 0
   ) {
     return null;
   }
@@ -617,6 +622,28 @@ function parseBrokerTradeEvidenceReference(reference: string) {
     subject,
     eventType,
   };
+}
+
+function formatBrokerEvidenceTypeLabel(eventType: string, locale: Locale) {
+  if (eventType === 'trade_buy' || eventType === 'trade_sell') {
+    return formatLedgerEntryTypeLabel(eventType, locale);
+  }
+  const formatted = formatPublicEvidenceReference(
+    `broker_event:import-run:subject:${eventType}`,
+    locale,
+  );
+  return formatted.split(' · ')[2] ?? formatted;
+}
+
+function formatEvidenceSubject(
+  subject: string,
+  instrumentNames?: Map<string, string>,
+) {
+  const displayName = resolveMappedInstrumentName(subject, instrumentNames);
+  if (!displayName || displayName === subject) {
+    return subject;
+  }
+  return `${displayName} ${subject}`;
 }
 
 function toExplainabilityLedgerEntry(
