@@ -9,6 +9,7 @@ import {
   formatLedgerFeeRuleLabel,
   formatLedgerExecutionDetailLines,
   formatLedgerInstrumentLabel,
+  formatLedgerOrderSideLabel,
   formatLedgerPublicNote,
   formatLedgerSourceLabel,
   formatLedgerCostBasisMethodLabel,
@@ -37,6 +38,14 @@ const yutongBuy: LedgerEntry = {
 describe('ledger formatter', () => {
   test('uses DB display_name as the instrument source of truth', () => {
     expect(formatLedgerInstrumentLabel(yutongBuy)).toBe('示例制造 600003');
+  });
+
+  test('formats order sides through the shared ledger formatter', () => {
+    expect(formatLedgerOrderSideLabel('buy', 'zh')).toBe('买入');
+    expect(formatLedgerOrderSideLabel('sell', 'en')).toBe('Sell');
+    expect(formatLedgerOrderSideLabel('broker_special_side', 'en')).toBe(
+      'Status needs review',
+    );
   });
 
   test('falls back to readable note parsing without duplicating the symbol', () => {
@@ -164,6 +173,24 @@ describe('ledger formatter', () => {
         'zh',
       ),
     ).toBe('复盘观察');
+  });
+
+  test('suppresses legacy manual holding notes that duplicate structured fees', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: '手工录入持仓：示例制造 600003 买入，佣金按万1.5，最低5元计收',
+          fee_breakdown: {
+            commission: '5.00',
+            stamp_tax: '0.00',
+            transfer_fee: '0.03',
+            total_fee: '5.03',
+          },
+        },
+        'zh',
+      ),
+    ).toBeNull();
   });
 
   test('suppresses legacy internal cash-deposit notes', () => {

@@ -26,7 +26,7 @@ const fills: BacktestFill[] = [
   },
 ];
 
-function renderFillsTable(locale: 'en' | 'zh') {
+function renderFillsTable(locale: 'en' | 'zh', rows: BacktestFill[] = fills) {
   window.localStorage.clear();
   window.localStorage.setItem('karkinos.locale', locale);
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -38,7 +38,7 @@ function renderFillsTable(locale: 'en' | 'zh') {
 
   render(
     <PreferencesProvider>
-      <FillsTable fills={fills} />
+      <FillsTable fills={rows} />
     </PreferencesProvider>,
   );
 }
@@ -55,4 +55,17 @@ test('localizes backtest fill directions through the shared ledger labels', () =
   expect(screen.getByText('卖出')).toBeTruthy();
   expect(screen.queryByText('BUY')).toBeNull();
   expect(screen.queryByText('SELL')).toBeNull();
+});
+
+test('uses public review fallback for unknown fill directions', () => {
+  renderFillsTable('en', [
+    {
+      ...fills[0],
+      side: 'broker_special_side',
+    },
+  ]);
+
+  expect(screen.getByText('Status needs review')).toBeTruthy();
+  expect(screen.queryByText('broker_special_side')).toBeNull();
+  expect(screen.queryByText('Buy')).toBeNull();
 });

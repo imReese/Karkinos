@@ -14,7 +14,7 @@ import {
   formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
-import { formatLedgerEntryTypeLabel } from '../../../shared/ledger-format';
+import { formatLedgerOrderSideLabel } from '../../../shared/ledger-format';
 import type { BacktestFill } from '../api';
 
 export function FillsTable({ fills }: { fills: BacktestFill[] }) {
@@ -39,7 +39,9 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
             className={
               row.original.side === 'buy'
                 ? 'text-[#a6e3a1]'
-                : 'text-[var(--app-danger)]'
+                : row.original.side === 'sell'
+                  ? 'text-[var(--app-danger)]'
+                  : 'text-[var(--app-warning)]'
             }
           >
             {formatFillSide(row.original.side, locale)}
@@ -145,8 +147,5 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
 }
 
 function formatFillSide(side: string, locale: Locale) {
-  return formatLedgerEntryTypeLabel(
-    side.trim().toLowerCase() === 'sell' ? 'trade_sell' : 'trade_buy',
-    locale,
-  );
+  return formatLedgerOrderSideLabel(side, locale);
 }

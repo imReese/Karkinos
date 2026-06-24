@@ -20,6 +20,7 @@ import {
   formatLedgerEntryTypeLabel,
   formatLedgerExecutionDetailLines,
   formatLedgerInstrumentLabel,
+  formatLedgerOrderSideLabel,
   type LedgerExecutionDetailLabels,
   type PublicLedgerEntry,
 } from '../../../shared/ledger-format';
@@ -111,19 +112,8 @@ function instrumentDisplayLabel(
   });
 }
 
-function sideLabel(
-  side: string,
-  labels: ReturnType<typeof useCopy>['trading']['page'],
-  locale?: Locale,
-) {
-  const normalized = side.toLowerCase();
-  if (normalized === 'buy') {
-    return labels.buy;
-  }
-  if (normalized === 'sell') {
-    return labels.sell;
-  }
-  return locale ? formatPublicStatus(side, locale) : side;
+function sideLabel(side: string, locale: Locale = 'en') {
+  return formatLedgerOrderSideLabel(side, locale);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -691,7 +681,7 @@ function ExecutionAuditPanel({
                 title: `${instrumentDisplayLabel(
                   fill,
                   instrumentNames,
-                )} · ${sideLabel(fill.side, labels, locale)}`,
+                )} · ${sideLabel(fill.side, locale)}`,
                 detail: formatFillDetail(
                   fill,
                   labels,
