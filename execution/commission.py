@@ -73,6 +73,8 @@ class StockACommission(CommissionCalculator):
         stamp_tax_rate: Decimal = STAMP_TAX_RATE,
         transfer_fee_rate: Decimal = TRANSFER_FEE_RATE,
         other_fee_rate: Decimal = ZERO,
+        exchange: str | None = None,
+        exchange_transfer_fee_rates: dict[str, Decimal] | None = None,
         fee_rule_id: str = "cn_stock_a_default_v1",
         limitations: tuple[str, ...] = (
             "transfer_fee_exchange_not_split",
@@ -84,6 +86,11 @@ class StockACommission(CommissionCalculator):
         self.stamp_tax_rate = stamp_tax_rate
         self.transfer_fee_rate = transfer_fee_rate
         self.other_fee_rate = other_fee_rate
+        self.exchange = exchange.strip().lower() if exchange else None
+        self.exchange_transfer_fee_rates = {
+            key.strip().lower(): Decimal(str(value))
+            for key, value in (exchange_transfer_fee_rates or {}).items()
+        }
         self.fee_rule_id = fee_rule_id
         self.limitations = limitations
 
@@ -100,8 +107,8 @@ class StockACommission(CommissionCalculator):
         stamp_tax = ZERO
         if side == OrderSide.SELL:
             stamp_tax = amount * self.stamp_tax_rate
-        # 过户费
-        transfer_fee = amount * self.transfer_fee_rate
+        # 过户费：默认保持历史全市场口径；显式配置时可按交易所覆盖。
+        transfer_fee = amount * self._transfer_fee_rate()
         other_fees = amount * self.other_fee_rate
         total_fee = commission + stamp_tax + transfer_fee + other_fees
         return FeeBreakdown(
@@ -113,6 +120,14 @@ class StockACommission(CommissionCalculator):
             total_fee=total_fee,
             fee_rule_id=self.fee_rule_id,
             limitations=self.limitations,
+        )
+
+    def _transfer_fee_rate(self) -> Decimal:
+        if not self.exchange:
+            return self.transfer_fee_rate
+        return self.exchange_transfer_fee_rates.get(
+            self.exchange,
+            self.transfer_fee_rate,
         )
 
 
