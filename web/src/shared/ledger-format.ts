@@ -119,6 +119,34 @@ const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
   },
 };
 
+const FEE_RULE_LABELS: Record<Locale, Record<string, string>> = {
+  en: {
+    manual_configured_commission: 'Configured account fee rule',
+    manual_fee_input: 'Manual fee override',
+    review: 'Fee rule needs review',
+  },
+  zh: {
+    manual_configured_commission: '账户配置费用规则',
+    manual_fee_input: '手工费用覆盖',
+    review: '费用规则待确认',
+  },
+};
+
+const COST_BASIS_METHOD_LABELS: Record<Locale, Record<string, string>> = {
+  en: {
+    broker_remaining_cost: 'Broker displayed remaining cost',
+    moving_average_buy_cost: 'Moving average buy cost',
+    projected_from_ledger: 'Projected from local ledger',
+    review: 'Cost basis method needs review',
+  },
+  zh: {
+    broker_remaining_cost: '券商剩余持仓成本',
+    moving_average_buy_cost: '移动平均买入成本',
+    projected_from_ledger: '本地流水推算',
+    review: '成本口径待确认',
+  },
+};
+
 const ENTRY_TYPE_LABELS: Record<Locale, Record<LedgerSummaryKind, string>> = {
   en: {
     trade_buy: 'Buy',
@@ -394,6 +422,31 @@ export function formatLedgerSourceLabel(
     return SOURCE_LABELS[locale].unknown;
   }
   return SOURCE_LABELS[locale][normalized] ?? SOURCE_LABELS[locale].review;
+}
+
+export function formatLedgerFeeRuleLabel(
+  feeRuleId: string | null | undefined,
+  locale: Locale,
+) {
+  const normalized = (feeRuleId ?? '').trim().toLowerCase();
+  if (!normalized) {
+    return FEE_RULE_LABELS[locale].review;
+  }
+  return FEE_RULE_LABELS[locale][normalized] ?? FEE_RULE_LABELS[locale].review;
+}
+
+export function formatLedgerCostBasisMethodLabel(
+  method: string | null | undefined,
+  locale: Locale,
+) {
+  const normalized = (method ?? '').trim().toLowerCase();
+  if (!normalized) {
+    return COST_BASIS_METHOD_LABELS[locale].review;
+  }
+  return (
+    COST_BASIS_METHOD_LABELS[locale][normalized] ??
+    COST_BASIS_METHOD_LABELS[locale].review
+  );
 }
 
 export function formatLedgerEvidenceReference(

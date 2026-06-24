@@ -6,10 +6,12 @@ import {
   formatLedgerEvidenceReference,
   formatLedgerExplainabilityDetail,
   formatLedgerExplainabilityTitle,
+  formatLedgerFeeRuleLabel,
   formatLedgerExecutionDetailLines,
   formatLedgerInstrumentLabel,
   formatLedgerPublicNote,
   formatLedgerSourceLabel,
+  formatLedgerCostBasisMethodLabel,
   summarizeLedgerEntry,
 } from './ledger-format';
 import type { LedgerEntry } from './api';
@@ -293,6 +295,27 @@ describe('ledger formatter', () => {
     expect(
       formatLedgerSourceLabel('broker_statement_manual_adjustment_v2', 'en'),
     ).toBe('Source needs review');
+  });
+
+  test('localizes fee-rule and cost-basis method labels through shared formatter', () => {
+    expect(formatLedgerFeeRuleLabel('manual_configured_commission', 'zh')).toBe(
+      '账户配置费用规则',
+    );
+    expect(formatLedgerFeeRuleLabel('manual_fee_input', 'en')).toBe(
+      'Manual fee override',
+    );
+    expect(formatLedgerFeeRuleLabel('future_fee_rule_v2', 'zh')).toBe(
+      '费用规则待确认',
+    );
+    expect(
+      formatLedgerCostBasisMethodLabel('moving_average_buy_cost', 'zh'),
+    ).toBe('移动平均买入成本');
+    expect(
+      formatLedgerCostBasisMethodLabel('broker_remaining_cost', 'en'),
+    ).toBe('Broker displayed remaining cost');
+    expect(formatLedgerCostBasisMethodLabel('future_cost_basis_v2', 'en')).toBe(
+      'Cost basis method needs review',
+    );
   });
 
   test('formats broker trade evidence references with shared ledger labels', () => {
