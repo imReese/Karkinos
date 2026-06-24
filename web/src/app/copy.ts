@@ -854,8 +854,9 @@ export const copy = {
         singleSymbolHint:
           'Leave symbol empty to use the backend configured universe. Single-symbol runs are research evidence only.',
         assets: 'Assets',
-        assetsPlaceholder: 'SYMBOL stock\nSYMBOL fund',
-        assetsHint: 'One asset per line: symbol asset_class.',
+        assetsPlaceholder: 'SYMBOL Stock\nSYMBOL Fund',
+        assetsHint:
+          'One asset per line: symbol plus asset class such as Stock, ETF, Fund, Gold, or Bond.',
         run: 'Run backtest',
         running: 'Running backtest',
         currentKicker: 'Current run',
@@ -2504,8 +2505,9 @@ export const copy = {
         singleSymbolHint:
           '标的留空时使用后端配置资产池；单标的回测仅作为研究证据。',
         assets: '资产',
-        assetsPlaceholder: '标的代码 stock\n标的代码 fund',
-        assetsHint: '每行一个资产：代码 asset_class。',
+        assetsPlaceholder: '标的代码 股票\n标的代码 基金',
+        assetsHint:
+          '每行一个资产：标的代码 + 资产类别，例如股票、ETF、基金、黄金或债券。',
         run: '运行回测',
         running: '回测运行中',
         currentKicker: '当前运行',

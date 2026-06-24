@@ -321,6 +321,13 @@ export function BacktestPage() {
   const [assetClass, setAssetClass] = useState('stock');
   const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
   const [formError, setFormError] = useState('');
+  const assetClassOptions = [
+    { value: 'stock', label: common.assetClassStock },
+    { value: 'etf', label: common.assetClassEtf },
+    { value: 'fund', label: common.assetClassFund },
+    { value: 'gold', label: common.assetClassGold },
+    { value: 'bond', label: common.assetClassBond },
+  ];
 
   const summary = useMemo(() => resultSummary(latestReport), [latestReport]);
   const strategyCatalog = useMemo(
@@ -583,11 +590,11 @@ export function BacktestPage() {
                     onChange={(event) => setAssetClass(event.target.value)}
                     aria-label={labels.assetClass}
                   >
-                    <option value="stock">stock</option>
-                    <option value="etf">etf</option>
-                    <option value="fund">fund</option>
-                    <option value="gold">gold</option>
-                    <option value="bond">bond</option>
+                    {assetClassOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <span className="app-muted text-xs sm:col-span-2">

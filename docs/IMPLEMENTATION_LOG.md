@@ -6,6 +6,18 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Backtest asset-class controls now display localized asset labels
+  such as Stock/Fund or 股票/基金 while preserving the backend enum payload for
+  API compatibility. Adjacent Backtest asset-entry helper copy was also updated
+  to avoid exposing raw `asset_class` field names in user-facing guidance. This
+  is display/input guidance only; it does not change strategy math, backtest
+  API paths, broker behavior, order submission, risk gates, automatic trading
+  defaults, or manual-confirmation requirements.
+* 2026-06-24: Saved Backtest dataset-snapshot tables now reuse the shared
+  asset-class formatter so report rows display localized labels instead of raw
+  backend enum values. The underlying dataset snapshot schema, API payloads,
+  report persistence, strategy math, broker behavior, risk gates, and
+  manual-confirmation defaults are unchanged.
 * 2026-06-24: Account strategy contribution cards and the Backtest account
   strategy panel now format missing-valuation warnings with readable
   instrument labels from current holdings when available, keeping the symbol
