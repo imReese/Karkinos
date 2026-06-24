@@ -18,6 +18,17 @@ roadmap promises.
   backend enum values. The underlying dataset snapshot schema, API payloads,
   report persistence, strategy math, broker behavior, risk gates, and
   manual-confirmation defaults are unchanged.
+* 2026-06-24: Backtest Chinese run-configuration copy now describes the
+  backend contract as a user-readable interface boundary instead of leaking the
+  English implementation term `contract`. This is copy-only and does not change
+  request payloads, API paths, strategy math, broker behavior, risk gates,
+  automatic-trading defaults, or manual-confirmation requirements.
+* 2026-06-24: Shared Web submit-error copy now avoids developer-facing
+  payload/server-log wording in both English and Chinese. The router fallback
+  uses the same user-readable form/service-status language. This is copy-only
+  and does not change form validation, request payloads, API paths, broker
+  behavior, risk gates, automatic-trading defaults, or manual-confirmation
+  requirements.
 * 2026-06-24: Account strategy contribution cards and the Backtest account
   strategy panel now format missing-valuation warnings with readable
   instrument labels from current holdings when available, keeping the symbol

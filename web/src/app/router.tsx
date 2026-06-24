@@ -5064,5 +5064,5 @@ function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
-  return 'Request failed. Check your payload and server logs.';
+  return 'Request failed. Check the form values and service status.';
 }
