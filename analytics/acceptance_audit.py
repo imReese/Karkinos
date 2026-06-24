@@ -1664,3 +1664,117 @@ def build_market_data_reliability_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
+    """Return completed broker fee and cost-basis fidelity criteria evidence."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="strategy_attribution_component_separation",
+                checkbox_text=(
+                    "* [x] Strategy performance attribution separates realized, "
+                    "unrealized, fee,"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.tsx",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                    "npm --prefix web test -- strategy-contribution-gate-card",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="structured_broker_fee_schedule_config",
+                checkbox_text=(
+                    "* [x] Local `config.json` supports a structured broker fee "
+                    "schedule without"
+                ),
+                evidence_paths=(
+                    "server/config.py",
+                    "config.example.json",
+                    "tests/test_bootstrap.py",
+                    "README.md",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_bootstrap.py",
+                    'rg -n "broker_fee_schedule|券商费用规则|fee schedule" README.md docs config.example.json',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_fee_breakdown",
+                checkbox_text=(
+                    "* [x] Fee calculation returns a deterministic breakdown for "
+                    "commission, stamp"
+                ),
+                evidence_paths=(
+                    "server/services/manual_trade_fees.py",
+                    "execution/commission.py",
+                    "tests/server/test_manual_trade_fee_service.py",
+                    "tests/execution/test_commission.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_manual_trade_fee_service.py tests/execution/test_commission.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="ledger_entries_preserve_fee_cost_fields",
+                checkbox_text=(
+                    "* [x] Buy and sell ledger entries preserve gross trade amount, "
+                    "net cash impact,"
+                ),
+                evidence_paths=(
+                    "server/routes/ledger.py",
+                    "server/routes/portfolio.py",
+                    "server/db.py",
+                    "server/ledger/models.py",
+                    "tests/server/test_ledger_routes.py",
+                    "tests/server/test_ledger_repository.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_ledger_routes.py tests/server/test_ledger_repository.py",
+                    "uv run python -m pytest tests/test_server_routes.py -k 'trade or fee'",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_health_states",
+                checkbox_text=(
+                    "* [x] Strategy health can mark assigned strategies as healthy, "
+                    "degraded,"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_and_missing_evidence_not_strategy_attributed",
+                checkbox_text=(
+                    "* [x] Manual trades and missing-evidence movement are never "
+                    "attributed to a"
+                ),
+                evidence_paths=(
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.tsx",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py",
+                    "npm --prefix web test -- strategy-contribution-gate-card",
+                ),
+            ),
+        )
+    )

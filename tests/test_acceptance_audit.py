@@ -6,6 +6,7 @@ from analytics.acceptance_audit import (
     build_acceptance_audit,
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
+    build_broker_fee_cost_basis_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
@@ -253,5 +254,48 @@ def test_market_data_reliability_goal_completed_checkboxes_match_audit() -> None
 
     completed_checkboxes = [
         line for line in market_data_acceptance.splitlines() if line.startswith("* [x]")
+    ]
+    assert audit.required_count == len(completed_checkboxes)
+
+
+def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
+    None
+):
+    audit = build_broker_fee_cost_basis_acceptance_audit()
+
+    assert audit.required_count == 6
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert "not investment advice" in audit.limitations[0]
+    assert {criterion.key for criterion in audit.criteria} >= {
+        "structured_broker_fee_schedule_config",
+        "deterministic_fee_breakdown",
+        "ledger_entries_preserve_fee_cost_fields",
+        "strategy_health_states",
+    }
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_broker_fee_cost_basis_goal_completed_checkboxes_match_audit() -> None:
+    audit = build_broker_fee_cost_basis_acceptance_audit()
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    broker_fee_cost_basis_acceptance = roadmap_text.split(
+        "### Acceptance Criteria for v1.4", 1
+    )[1].split("## Target for v1.5", 1)[0]
+
+    assert audit.is_complete is True
+    for criterion in audit.criteria:
+        assert criterion.checkbox_text in broker_fee_cost_basis_acceptance
+
+    completed_checkboxes = [
+        line
+        for line in broker_fee_cost_basis_acceptance.splitlines()
+        if line.startswith("* [x]")
     ]
     assert audit.required_count == len(completed_checkboxes)
