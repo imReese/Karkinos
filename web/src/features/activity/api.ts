@@ -70,6 +70,22 @@ export type TradePayload = {
   note: string;
 };
 
+export type TradePreview = {
+  symbol: string;
+  direction: string;
+  quantity: number;
+  price: number;
+  gross_amount: number;
+  commission: number;
+  total_fee: number;
+  net_cash_impact: number;
+  fee_breakdown: Record<string, number | string | null | undefined>;
+  fee_rule_id: string;
+  fee_rule_version: string;
+  cost_basis_method: string;
+  note: string;
+};
+
 export type CashFlowPayload = {
   occurred_at: string;
   amount: number;
@@ -163,30 +179,43 @@ function invalidatePortfolioQueries(
   ]);
 }
 
+function buildTradeRequestBody(payload: TradePayload) {
+  const requestBody: Record<string, unknown> = {
+    timestamp: payload.occurred_at,
+    symbol: payload.symbol,
+    direction: payload.direction,
+    quantity: payload.quantity ?? null,
+    price: payload.unit_price ?? null,
+    amount: payload.amount ?? null,
+    asset_class: payload.asset_class,
+    note: payload.note,
+  };
+  if (
+    payload.fee_is_manual &&
+    typeof payload.fee === 'number' &&
+    Number.isFinite(payload.fee)
+  ) {
+    requestBody.commission = payload.fee;
+  }
+  return requestBody;
+}
+
+export function useTradePreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: TradePayload) =>
+      postJson<TradePreview>(
+        '/api/portfolio/trade/preview',
+        buildTradeRequestBody(payload),
+      ),
+  });
+}
+
 export function useCreateTradeMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: TradePayload) => {
-      const requestBody: Record<string, unknown> = {
-        timestamp: payload.occurred_at,
-        symbol: payload.symbol,
-        direction: payload.direction,
-        quantity: payload.quantity ?? null,
-        price: payload.unit_price ?? null,
-        amount: payload.amount ?? null,
-        asset_class: payload.asset_class,
-        note: payload.note,
-      };
-      if (
-        payload.fee_is_manual &&
-        typeof payload.fee === 'number' &&
-        Number.isFinite(payload.fee)
-      ) {
-        requestBody.commission = payload.fee;
-      }
-      return postJson('/api/portfolio/trade', requestBody);
-    },
+    mutationFn: (payload: TradePayload) =>
+      postJson('/api/portfolio/trade', buildTradeRequestBody(payload)),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },

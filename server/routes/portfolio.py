@@ -48,6 +48,7 @@ from server.models import (
     RiskSummaryItem,
     RiskWorkspaceResponse,
     TradeCreate,
+    TradePreviewResponse,
     TradeResponse,
 )
 from server.projections.service import (
@@ -110,6 +111,72 @@ def _manual_trade_net_cash_impact(
     if direction == "buy":
         return -(gross_amount + total_fee)
     return gross_amount - total_fee
+
+
+def _manual_trade_preview_payload(config, body: TradeCreate) -> dict:
+    quantity = body.quantity
+    price = body.price
+    if quantity is None or price is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail="quantity and price are required for trade preview",
+        )
+
+    commission = body.commission
+    configured_fee = None
+    note = body.note
+    if commission is None:
+        configured_fee = resolve_manual_trade_fee_breakdown(
+            config,
+            asset_class=body.asset_class,
+            direction=body.direction,
+            quantity=quantity,
+            price=price,
+        )
+        if configured_fee is None:
+            commission = 0.0
+        else:
+            commission = configured_fee.commission
+            if not note.strip():
+                note = configured_fee.note
+
+    gross_amount = float(quantity) * float(price)
+    total_fee = configured_fee.total_fee if configured_fee is not None else float(commission)
+    fee_breakdown_json = (
+        configured_fee.fee_breakdown_json
+        if configured_fee is not None
+        else _manual_trade_fee_breakdown(commission)
+    )
+    fee_rule_id = (
+        configured_fee.fee_rule_id if configured_fee is not None else MANUAL_FEE_INPUT_RULE_ID
+    )
+    fee_rule_version = (
+        configured_fee.fee_rule_version
+        if configured_fee is not None
+        else MANUAL_FEE_INPUT_RULE_VERSION
+    )
+
+    return {
+        "symbol": body.symbol.strip(),
+        "direction": body.direction,
+        "quantity": float(quantity),
+        "price": float(price),
+        "gross_amount": gross_amount,
+        "commission": float(commission),
+        "total_fee": total_fee,
+        "net_cash_impact": _manual_trade_net_cash_impact(
+            direction=body.direction,
+            gross_amount=gross_amount,
+            total_fee=total_fee,
+        ),
+        "fee_breakdown": fee_breakdown_json,
+        "fee_rule_id": fee_rule_id,
+        "fee_rule_version": fee_rule_version,
+        "cost_basis_method": "moving_average_buy_cost",
+        "note": note,
+    }
 
 
 _TIMELINE_MARKET_COMPONENTS = (
@@ -3881,6 +3948,16 @@ def create_router() -> APIRouter:
         return {"deleted": deleted}
 
     # ---------- Trades ----------
+
+    @r.post("/trade/preview", response_model=TradePreviewResponse)
+    async def preview_trade(body: TradeCreate) -> TradePreviewResponse:
+        """Preview manual trade fees and cash impact without writing ledger facts."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return TradePreviewResponse(
+            **_manual_trade_preview_payload(state.config, body)
+        )
 
     @r.post("/trade", response_model=TradeResponse)
     async def create_trade(body: TradeCreate) -> TradeResponse:

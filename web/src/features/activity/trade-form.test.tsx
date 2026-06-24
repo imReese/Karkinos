@@ -131,6 +131,53 @@ test('marks an edited trade fee as a manual fee override', async () => {
   expect(onSubmit.mock.calls[0][0].fee_is_manual).toBe(true);
 });
 
+test('shows structured manual trade preview before saving', () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+
+  render(
+    <TradeForm
+      onSubmit={onSubmit}
+      tradePreview={{
+        symbol: '603659',
+        direction: 'buy',
+        quantity: 200,
+        price: 28.82,
+        gross_amount: 5764,
+        commission: 3,
+        total_fee: 3.05764,
+        net_cash_impact: -5767.05764,
+        fee_breakdown: {
+          commission: '3.00',
+          stamp_tax: '0.000000',
+          transfer_fee: '0.057640',
+          other_fees: '0.000000',
+          total_fee: '3.057640',
+        },
+        fee_rule_id: 'manual_configured_commission',
+        fee_rule_version: 'account_commission_rate',
+        cost_basis_method: 'moving_average_buy_cost',
+        note: '账户佣金配置：佣金率万2.5，最低3元',
+      }}
+    />,
+  );
+
+  expect(screen.getByText('Trade preview')).toBeTruthy();
+  expect(screen.getByText('Gross amount')).toBeTruthy();
+  expect(screen.getByText('CN¥5,764.00')).toBeTruthy();
+  expect(screen.getByText('Commission')).toBeTruthy();
+  expect(screen.getByText('CN¥3.00')).toBeTruthy();
+  expect(screen.getByText('Stamp tax')).toBeTruthy();
+  expect(screen.getByText('CN¥0.00')).toBeTruthy();
+  expect(screen.getByText('Transfer fee')).toBeTruthy();
+  expect(screen.getByText('CN¥0.06')).toBeTruthy();
+  expect(screen.getByText('Total fee')).toBeTruthy();
+  expect(screen.getByText('CN¥3.06')).toBeTruthy();
+  expect(screen.getByText('Net cash impact')).toBeTruthy();
+  expect(screen.getByText('-CN¥5,767.06')).toBeTruthy();
+  expect(screen.getByText('Configured account fee rule')).toBeTruthy();
+  expect(screen.getByText('Moving average buy cost')).toBeTruthy();
+});
+
 test('submits a fund buy by subscription amount', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
 

@@ -6250,6 +6250,73 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
 
 
+def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    preview_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/trade/preview"
+    )
+
+    class FakeDb:
+        def __init__(self):
+            self.trades: list[dict] = []
+            self.ledger_entries: list[dict] = []
+
+        async def add_trade(self, **payload):
+            self.trades.append(payload)
+            return len(self.trades)
+
+        def insert_ledger_entry_sync(self, **payload):
+            self.ledger_entries.append(payload)
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            account_commission_rate=0.00025,
+            account_min_commission=3.0,
+        ),
+        scheduler=SimpleNamespace(is_running=False),
+        db=FakeDb(),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(
+        preview_route.endpoint(
+            portfolio_routes.TradeCreate(
+                timestamp="2026-06-05T14:33:41",
+                symbol="603659",
+                direction="sell",
+                quantity=200,
+                price=28.82,
+                asset_class="stock",
+            )
+        )
+    )
+
+    assert response.gross_amount == pytest.approx(5764.0)
+    assert response.commission == pytest.approx(3.0)
+    assert response.total_fee == pytest.approx(5.93964)
+    assert response.net_cash_impact == pytest.approx(5758.06036)
+    assert response.fee_breakdown == {
+        "commission": "3.00",
+        "stamp_tax": "2.882000",
+        "transfer_fee": "0.057640",
+        "other_fees": "0.000000",
+        "total_fee": "5.939640",
+    }
+    assert response.fee_rule_id == "manual_configured_commission"
+    assert response.fee_rule_version == "account_commission_rate"
+    assert response.cost_basis_method == "moving_average_buy_cost"
+    assert response.note == "账户佣金配置：佣金率万2.5，最低3元"
+    assert fake_state.db.trades == []
+    assert fake_state.db.ledger_entries == []
+
+
 def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 

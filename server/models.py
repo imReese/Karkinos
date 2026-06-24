@@ -563,6 +563,22 @@ class TradeResponse(BaseModel):
     created_at: str
 
 
+class TradePreviewResponse(BaseModel):
+    symbol: str
+    direction: str
+    quantity: float
+    price: float
+    gross_amount: float
+    commission: float
+    total_fee: float
+    net_cash_impact: float
+    fee_breakdown: dict[str, Any] = Field(default_factory=dict)
+    fee_rule_id: str
+    fee_rule_version: str
+    cost_basis_method: str
+    note: str
+
+
 class PendingFundOrderResponse(BaseModel):
     id: int
     submitted_at: str
