@@ -16,9 +16,9 @@ class FakeFundSource:
             "source": "eastmoney_fund_estimate",
             "quote_source": "eastmoney_fund_estimate",
             "provider_name": "akshare",
-            "provider_symbol": "018125",
+            "provider_symbol": "019999",
             "nav_date": "2026-06-12",
-            "display_name": "永赢先进制造智选混合C",
+            "display_name": "示例成长混合C",
         }
         self.calls: list[tuple[Symbol, AssetClass]] = []
 
@@ -46,21 +46,21 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
         SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
         db,
         watchlist=[
-            (Symbol("018125"), AssetClass.FUND),
-            (Symbol("603659"), AssetClass.STOCK),
+            (Symbol("019999"), AssetClass.FUND),
+            (Symbol("600002"), AssetClass.STOCK),
         ],
         latest_quotes={},
         now=datetime(2026, 6, 12, 15, 5),
         ttl_seconds=900,
     )
 
-    latest = db.get_latest_quote_sync("018125", asset_type="fund")
-    stock_latest = db.get_latest_quote_sync("603659", asset_type="stock")
+    latest = db.get_latest_quote_sync("019999", asset_type="fund")
+    stock_latest = db.get_latest_quote_sync("600002", asset_type="stock")
 
-    assert result.refreshed == ["018125"]
+    assert result.refreshed == ["019999"]
     assert result.skipped == []
     assert result.failed == {}
-    assert source.calls == [(Symbol("018125"), AssetClass.FUND)]
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
     assert latest is not None
     assert latest["price"] == 2.2527
     assert latest["quote_source"] == "eastmoney_fund_estimate"
@@ -87,9 +87,9 @@ def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
     result = fund_nav_sync.refresh_fund_nav_quotes(
         SimpleNamespace(data_source="akshare", tushare_token=""),
         db,
-        watchlist=[(Symbol("018125"), AssetClass.FUND)],
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
         latest_quotes={
-            "018125": {
+            "019999": {
                 "price": 2.20,
                 "timestamp": "2026-06-12T15:04:00",
                 "asset_class": "fund",
@@ -101,7 +101,7 @@ def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
     )
 
     assert result.refreshed == []
-    assert result.skipped == ["018125"]
+    assert result.skipped == ["019999"]
     assert result.failed == {}
     assert source.calls == []
-    assert db.get_latest_quote_sync("018125", asset_type="fund") is None
+    assert db.get_latest_quote_sync("019999", asset_type="fund") is None

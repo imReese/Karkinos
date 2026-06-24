@@ -30,15 +30,15 @@ const accountState = {
     total_deposits: 100000,
     positions: [
       {
-        symbol: '600066',
-        name: '宇通客车',
-        display_name: '宇通客车',
+        symbol: '600003',
+        name: '示例制造',
+        display_name: '示例制造',
         asset_class: 'stock',
         quantity: 200,
         available_qty: 200,
         frozen_qty: 0,
-        avg_cost: 26.3758,
-        market_value: 5272,
+        avg_cost: 16.2345,
+        market_value: 3252,
         unrealized_pnl: -3.16,
         realized_pnl: 0,
         commission_paid: 5.16,
@@ -104,16 +104,16 @@ const explainability = {
   recent_drivers: [
     {
       kind: 'trade_buy',
-      title: '买入 600066',
-      detail: '数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
-      timestamp: '2026-06-16T03:04:56+00:00',
-      symbol: '600066',
+      title: '买入 600003',
+      detail: '数量 200 · 价格 ¥16.25 · 手续费 ¥5.00',
+      timestamp: '2026-01-15T03:04:56+00:00',
+      symbol: '600003',
       quantity: 200,
-      price: 26.35,
+      price: 16.25,
       commission: 5,
-      gross_amount: 5270,
-      net_cash_impact: -5275,
-      amount: -5275,
+      gross_amount: 3250,
+      net_cash_impact: -3255,
+      amount: -3255,
     },
     {
       kind: 'cash_deposit',
@@ -126,11 +126,11 @@ const explainability = {
   ],
   positions: [
     {
-      symbol: '600066',
+      symbol: '600003',
       quantity: 200,
-      market_value: 5272,
+      market_value: 3252,
       unrealized_pnl: -3.16,
-      last_activity_at: '2026-06-16T03:04:56+00:00',
+      last_activity_at: '2026-01-15T03:04:56+00:00',
     },
   ],
   timeline: [
@@ -159,20 +159,20 @@ const explainability = {
 const pendingManualOrder = {
   id: 1,
   order_id: 'ORD-RISK-1',
-  timestamp: '2026-06-16T11:04:56+08:00',
-  symbol: '600066',
+  timestamp: '2026-01-15T11:04:56+08:00',
+  symbol: '600003',
   side: 'buy',
   order_type: 'limit',
   quantity: 200,
-  price: 26.35,
+  price: 16.25,
   intent_id: 'INT-RISK-1',
   risk_decision_id: 'RISK-1',
   execution_mode: 'manual',
   status: 'pending_confirm',
   payload_json: '{"intent_id":"INT-RISK-1","risk_decision_id":"RISK-1"}',
   note: null,
-  created_at: '2026-06-16T11:04:56+08:00',
-  updated_at: '2026-06-16T11:04:56+08:00',
+  created_at: '2026-01-15T11:04:56+08:00',
+  updated_at: '2026-01-15T11:04:56+08:00',
 };
 
 function installRiskFetchMock({
@@ -332,9 +332,9 @@ test('shows instrument names before symbols in risk manual approval rows', async
   renderRiskPage({ manualOrders: [pendingManualOrder] });
 
   expect(await screen.findByText('Pending order approvals')).toBeTruthy();
-  expect(await screen.findByText('宇通客车 600066')).toBeTruthy();
-  expect(screen.queryByText(/^600066$/u)).toBeNull();
-  expect(screen.getByLabelText('Reject reason: 宇通客车 600066')).toBeTruthy();
+  expect(await screen.findByText('示例制造 600003')).toBeTruthy();
+  expect(screen.queryByText(/^600003$/u)).toBeNull();
+  expect(screen.getByLabelText('Reject reason: 示例制造 600003')).toBeTruthy();
 });
 
 test('renders recent risk drivers as readable audit events', async () => {
@@ -342,24 +342,24 @@ test('renders recent risk drivers as readable audit events', async () => {
 
   const recentDrivers = await screen.findByText('Recent impact events');
   expect(recentDrivers).toBeTruthy();
-  expect(await screen.findByText('Buy 宇通客车 600066')).toBeTruthy();
+  expect(await screen.findByText('Buy 示例制造 600003')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Gross amount CN¥5,270.00 · Cash impact -CN¥5,275.00 · Quantity 200 · Price CN¥26.35 · Fee CN¥5.00',
+      'Gross amount CN¥3,250.00 · Cash impact -CN¥3,255.00 · Quantity 200 · Price CN¥16.25 · Fee CN¥5.00',
     ),
   ).toBeTruthy();
   expect(
-    screen.queryByText('数量 200 · 价格 ¥26.35 · 手续费 ¥5.00'),
+    screen.queryByText('数量 200 · 价格 ¥16.25 · 手续费 ¥5.00'),
   ).toBeNull();
   expect(
-    (await screen.findAllByText(/-.*¥5,275\.00/)).length,
+    (await screen.findAllByText(/-.*¥3,255\.00/)).length,
   ).toBeGreaterThanOrEqual(2);
   expect(await screen.findAllByText('Amount CN¥3,000.00')).toHaveLength(2);
   expect(screen.queryByText('现金流入组合。')).toBeNull();
   expect(
     screen.queryByText('RMB cash deposit recorded from user request'),
   ).toBeNull();
-  expect(screen.queryByText('2026-06-16T03:04:56+00:00')).toBeNull();
+  expect(screen.queryByText('2026-01-15T03:04:56+00:00')).toBeNull();
 });
 
 test('localizes risk explainability ledger titles instead of rendering internal kinds', async () => {
@@ -375,13 +375,13 @@ test('uses account instrument names for risk explainability events that only car
   renderRiskPage({ locale: 'zh' });
 
   const recentList = await screen.findByTestId('risk-recent-impact-list');
-  expect(within(recentList).getByText('买入 宇通客车 600066')).toBeTruthy();
+  expect(within(recentList).getByText('买入 示例制造 600003')).toBeTruthy();
   expect(
     within(recentList).getByText(
-      '成交金额 ¥5,270.00 · 现金影响 -¥5,275.00 · 数量 200 · 价格 ¥26.35 · 手续费 ¥5.00',
+      '成交金额 ¥3,250.00 · 现金影响 -¥3,255.00 · 数量 200 · 价格 ¥16.25 · 手续费 ¥5.00',
     ),
   ).toBeTruthy();
-  expect(recentList.textContent).not.toContain('买入 600066');
+  expect(recentList.textContent).not.toContain('买入 600003');
 });
 
 test('keeps explainability columns compact with local event scrolling', async () => {

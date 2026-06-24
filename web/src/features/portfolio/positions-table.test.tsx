@@ -89,17 +89,17 @@ test('renders cost and quote prices with four decimal places', () => {
     <PositionsTable
       positions={[
         {
-          symbol: '600066',
-          display_name: '宇通客车',
+          symbol: '600003',
+          display_name: '示例制造',
           asset_class: 'stock',
           quantity: 200,
           available_qty: 200,
           frozen_qty: 0,
-          avg_cost: 26.375,
-          latest_price: 26.3608,
-          market_value: 5272,
+          avg_cost: 16.275,
+          latest_price: 16.2608,
+          market_value: 3252,
           today_change: -3,
-          today_change_pct: -0.00057,
+          today_change_pct: -0.00092,
           unrealized_pnl: -3,
           realized_pnl: 0,
           commission_paid: 5,
@@ -108,27 +108,27 @@ test('renders cost and quote prices with four decimal places', () => {
     />,
   );
 
-  expect(screen.getAllByText('26.3750').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('26.3608').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('16.2750').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('16.2608').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Today PnL').length).toBeGreaterThan(0);
   expect(screen.getAllByText('-CN¥3.00').length).toBeGreaterThan(0);
-  expect(screen.getByTestId('position-avg-cost-600066').textContent).toBe(
-    '26.3750',
+  expect(screen.getByTestId('position-avg-cost-600003').textContent).toBe(
+    '16.2750',
   );
-  expect(screen.getByTestId('position-latest-price-600066').textContent).toBe(
-    '26.3608',
+  expect(screen.getByTestId('position-latest-price-600003').textContent).toBe(
+    '16.2608',
   );
-  expect(screen.getByTestId('position-avg-cost-600066').className).toContain(
+  expect(screen.getByTestId('position-avg-cost-600003').className).toContain(
     'min-w-28',
   );
   expect(
-    screen.getByTestId('position-latest-price-600066').className,
+    screen.getByTestId('position-latest-price-600003').className,
   ).toContain('min-w-28');
-  expect(screen.getAllByText('CN¥5,272.00').length).toBeGreaterThan(0);
-  expect(screen.queryByText('26.38')).toBeNull();
-  expect(screen.queryByText('26.36')).toBeNull();
-  expect(screen.queryByText('CN¥26.3750')).toBeNull();
-  expect(screen.queryByText('CN¥26.3608')).toBeNull();
+  expect(screen.getAllByText('CN¥3,252.00').length).toBeGreaterThan(0);
+  expect(screen.queryByText('16.28')).toBeNull();
+  expect(screen.queryByText('16.26')).toBeNull();
+  expect(screen.queryByText('CN¥16.2750')).toBeNull();
+  expect(screen.queryByText('CN¥16.2608')).toBeNull();
 });
 
 test('shows broker displayed cost basis beside local moving average cost when evidence exists', () => {
@@ -136,13 +136,13 @@ test('shows broker displayed cost basis beside local moving average cost when ev
     <PositionsTable
       positions={[
         {
-          symbol: '600066',
-          display_name: '宇通客车',
+          symbol: '600003',
+          display_name: '示例制造',
           asset_class: 'stock',
           quantity: 200,
           available_qty: 200,
           frozen_qty: 0,
-          avg_cost: 26.3758,
+          avg_cost: 16.2345,
           latest_price: 26.41,
           market_value: 5282,
           today_change: -3,
@@ -150,7 +150,7 @@ test('shows broker displayed cost basis beside local moving average cost when ev
           unrealized_pnl: 6.84,
           realized_pnl: 0,
           commission_paid: 5,
-          broker_displayed_cost_basis: 5275.16,
+          broker_displayed_cost_basis: 3255.16,
           broker_cost_basis_difference: -0.0,
           broker_cost_basis_method: 'broker_remaining_cost',
           broker_cost_basis_status: 'available',
@@ -165,8 +165,8 @@ test('shows broker displayed cost basis beside local moving average cost when ev
   expect(screen.getAllByText('Broker displayed cost').length).toBeGreaterThan(
     0,
   );
-  expect(screen.getAllByText('26.3758').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('26.3758').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('16.2345').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('16.2345').length).toBeGreaterThan(1);
   expect(
     screen.getAllByText(/Broker displayed remaining cost/).length,
   ).toBeGreaterThan(0);
@@ -174,11 +174,11 @@ test('shows broker displayed cost basis beside local moving average cost when ev
     screen.getAllByText(/Broker-confirmed evidence/).length,
   ).toBeGreaterThan(0);
   expect(
-    screen.getByTestId('position-broker-cost-600066').textContent,
-  ).toContain('26.3758');
+    screen.getByTestId('position-broker-cost-600003').textContent,
+  ).toContain('16.2758');
   expect(
-    screen.getByTestId('position-mobile-broker-cost-600066').textContent,
-  ).toBe('26.3758');
+    screen.getByTestId('position-mobile-broker-cost-600003').textContent,
+  ).toBe('16.2758');
 });
 
 test('warns when broker displayed cost basis differs from local cost basis', () => {
@@ -186,13 +186,13 @@ test('warns when broker displayed cost basis differs from local cost basis', () 
     <PositionsTable
       positions={[
         {
-          symbol: '600066',
-          display_name: '宇通客车',
+          symbol: '600003',
+          display_name: '示例制造',
           asset_class: 'stock',
           quantity: 200,
           available_qty: 200,
           frozen_qty: 0,
-          avg_cost: 26.3758,
+          avg_cost: 16.2345,
           latest_price: 26.41,
           market_value: 5282,
           today_change: -3,
@@ -210,10 +210,10 @@ test('warns when broker displayed cost basis differs from local cost basis', () 
   );
 
   expect(
-    screen.getByTestId('position-broker-cost-600066').textContent,
+    screen.getByTestId('position-broker-cost-600003').textContent,
   ).toContain('Cost basis difference CN¥10.00');
   expect(
-    screen.getByTestId('position-mobile-broker-cost-600066').parentElement
+    screen.getByTestId('position-mobile-broker-cost-600003').parentElement
       ?.textContent,
   ).toContain('Cost basis difference CN¥10.00');
 });
@@ -223,13 +223,13 @@ test('uses shared public fallback for unknown broker cost-basis methods', () => 
     <PositionsTable
       positions={[
         {
-          symbol: '600066',
-          display_name: '宇通客车',
+          symbol: '600003',
+          display_name: '示例制造',
           asset_class: 'stock',
           quantity: 200,
           available_qty: 200,
           frozen_qty: 0,
-          avg_cost: 26.3758,
+          avg_cost: 16.2345,
           latest_price: 26.41,
           market_value: 5282,
           today_change: -3,
@@ -237,7 +237,7 @@ test('uses shared public fallback for unknown broker cost-basis methods', () => 
           unrealized_pnl: 6.84,
           realized_pnl: 0,
           commission_paid: 5,
-          broker_displayed_cost_basis: 5275.16,
+          broker_displayed_cost_basis: 3255.16,
           broker_cost_basis_difference: 0,
           broker_cost_basis_method: 'future_private_cost_basis_method',
           broker_cost_basis_status: 'available',
@@ -257,17 +257,17 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
     <PositionsTable
       positions={[
         {
-          symbol: '600066',
-          display_name: '宇通客车',
+          symbol: '600003',
+          display_name: '示例制造',
           asset_class: 'stock',
           quantity: 200,
           available_qty: 200,
           frozen_qty: 0,
-          avg_cost: 26.375,
-          latest_price: 26.3608,
-          market_value: 5272,
+          avg_cost: 16.275,
+          latest_price: 16.2608,
+          market_value: 3252,
           today_change: -3,
-          today_change_pct: -0.00057,
+          today_change_pct: -0.00092,
           unrealized_pnl: -3,
           realized_pnl: 0,
           commission_paid: 5,
@@ -279,32 +279,32 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
   expect(screen.getAllByText('Realized PnL').length).toBeGreaterThan(0);
 
   for (const testId of [
-    'position-quantity-600066',
-    'position-avg-cost-600066',
-    'position-broker-cost-600066',
-    'position-latest-price-600066',
-    'position-market-value-600066',
-    'position-today-change-600066',
-    'position-unrealized-600066',
-    'position-return-pct-600066',
-    'position-available-frozen-600066',
-    'position-realized-600066',
+    'position-quantity-600003',
+    'position-avg-cost-600003',
+    'position-broker-cost-600003',
+    'position-latest-price-600003',
+    'position-market-value-600003',
+    'position-today-change-600003',
+    'position-unrealized-600003',
+    'position-return-pct-600003',
+    'position-available-frozen-600003',
+    'position-realized-600003',
   ]) {
     expect(screen.getByTestId(testId).className).toContain(
       'karkinos-numeric-cell',
     );
   }
 
-  expect(screen.getByTestId('position-avg-cost-600066').className).toContain(
+  expect(screen.getByTestId('position-avg-cost-600003').className).toContain(
     'min-w-28',
   );
   expect(
-    screen.getByTestId('position-latest-price-600066').className,
+    screen.getByTestId('position-latest-price-600003').className,
   ).toContain('min-w-28');
   expect(
-    screen.getByTestId('position-market-value-600066').className,
+    screen.getByTestId('position-market-value-600003').className,
   ).toContain('min-w-32');
-  expect(screen.getByTestId('position-return-pct-600066').className).toContain(
+  expect(screen.getByTestId('position-return-pct-600003').className).toContain(
     'min-w-24',
   );
 });
@@ -314,17 +314,17 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
     <PositionsTable
       positions={[
         {
-          symbol: '600066',
-          display_name: '宇通客车',
+          symbol: '600003',
+          display_name: '示例制造',
           asset_class: 'stock',
           quantity: 200,
           available_qty: 200,
           frozen_qty: 0,
-          avg_cost: 26.375,
-          latest_price: 26.3608,
-          market_value: 5272,
+          avg_cost: 16.275,
+          latest_price: 16.2608,
+          market_value: 3252,
           today_change: -3,
-          today_change_pct: -0.00057,
+          today_change_pct: -0.00092,
           unrealized_pnl: -3,
           realized_pnl: 0,
           commission_paid: 5,
@@ -336,15 +336,15 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
   expect(screen.getAllByText('Realized PnL').length).toBeGreaterThan(0);
 
   for (const testId of [
-    'position-mobile-quantity-600066',
-    'position-mobile-avg-cost-600066',
-    'position-mobile-latest-price-600066',
-    'position-mobile-market-value-600066',
-    'position-mobile-today-change-600066',
-    'position-mobile-unrealized-600066',
-    'position-mobile-return-pct-600066',
-    'position-mobile-available-frozen-600066',
-    'position-mobile-realized-600066',
+    'position-mobile-quantity-600003',
+    'position-mobile-avg-cost-600003',
+    'position-mobile-latest-price-600003',
+    'position-mobile-market-value-600003',
+    'position-mobile-today-change-600003',
+    'position-mobile-unrealized-600003',
+    'position-mobile-return-pct-600003',
+    'position-mobile-available-frozen-600003',
+    'position-mobile-realized-600003',
   ]) {
     expect(screen.getByTestId(testId).className).toContain(
       'karkinos-numeric-display',
@@ -352,25 +352,25 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
   }
 
   expect(
-    screen.getByTestId('position-mobile-avg-cost-600066').textContent,
-  ).toBe('26.3750');
+    screen.getByTestId('position-mobile-avg-cost-600003').textContent,
+  ).toBe('16.2750');
   expect(
-    screen.getByTestId('position-mobile-latest-price-600066').textContent,
-  ).toBe('26.3608');
+    screen.getByTestId('position-mobile-latest-price-600003').textContent,
+  ).toBe('16.2608');
   expect(
-    screen.getByTestId('position-mobile-market-value-600066').textContent,
-  ).toBe('CN¥5,272.00');
+    screen.getByTestId('position-mobile-market-value-600003').textContent,
+  ).toBe('CN¥3,252.00');
   expect(
-    screen.getByTestId('position-mobile-today-change-600066').textContent,
+    screen.getByTestId('position-mobile-today-change-600003').textContent,
   ).toBe('-CN¥3.00');
   expect(
-    screen.getByTestId('position-mobile-today-change-600066').className,
+    screen.getByTestId('position-mobile-today-change-600003').className,
   ).toContain('text-[var(--app-danger)]');
   expect(
-    screen.getByTestId('position-mobile-return-pct-600066').className,
+    screen.getByTestId('position-mobile-return-pct-600003').className,
   ).toContain('text-[var(--app-danger)]');
-  expect(screen.queryByText('CN¥26.3750')).toBeNull();
-  expect(screen.queryByText('CN¥26.3608')).toBeNull();
+  expect(screen.queryByText('CN¥16.2750')).toBeNull();
+  expect(screen.queryByText('CN¥16.2608')).toBeNull();
 });
 
 test('shows cached quote copy for stale positions', () => {

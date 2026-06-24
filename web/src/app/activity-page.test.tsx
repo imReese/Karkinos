@@ -43,16 +43,16 @@ function installActivityFetchMock() {
         {
           id: 1,
           entry_type: 'trade_buy',
-          timestamp: '2026-06-16T03:04:56+00:00',
-          amount: 5270,
+          timestamp: '2026-01-15T03:04:56+00:00',
+          amount: 3250,
           symbol: 'SYN001',
           display_name: '合成标的',
           direction: 'buy',
           quantity: 200,
-          price: 26.35,
+          price: 16.25,
           commission: 5,
-          gross_amount: 5270,
-          net_cash_impact: -5275.16,
+          gross_amount: 3250,
+          net_cash_impact: -3255.16,
           fee_breakdown: {
             commission: '5',
             stamp_tax: '0',
@@ -64,7 +64,7 @@ function installActivityFetchMock() {
           fee_rule_version: 'fixture',
           cost_basis_method: 'moving_average_buy_cost',
           asset_class: 'stock',
-          note: '用户记录：合成标的 买入',
+          note: 'internal_fee_rule_missing',
           source: 'manual',
           source_ref: 'synthetic-trade-buy',
           created_at: null,
@@ -104,8 +104,11 @@ function installActivityFetchMock() {
   return fetchMock;
 }
 
-function renderActivityPage() {
+function renderActivityPage(locale?: 'en' | 'zh') {
   window.localStorage.clear();
+  if (locale) {
+    window.localStorage.setItem('karkinos.locale', locale);
+  }
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
     media: query,
@@ -135,6 +138,13 @@ test('summarizes activity net cash impact with the shared ledger formatter seman
   renderActivityPage();
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
-  expect(await screen.findByText('-CN¥5,274.89')).toBeTruthy();
-  expect(screen.queryByText('-CN¥5,270.00')).toBeNull();
+  expect(await screen.findByText('-CN¥3,254.89')).toBeTruthy();
+  expect(screen.queryByText('-CN¥3,250.00')).toBeNull();
+});
+
+test('renders public localized notes instead of raw backend note codes', async () => {
+  renderActivityPage('zh');
+
+  expect(await screen.findByText('待人工复核说明')).toBeTruthy();
+  expect(screen.queryByText('internal_fee_rule_missing')).toBeNull();
 });

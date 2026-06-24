@@ -54,7 +54,7 @@ const timeline = [
 
 const positionSnapshot = [
   {
-    symbol: '026539',
+    symbol: '029999',
     display_name: 'Rongtong Tech Growth Fund C',
     asset_class: 'fund',
     market_value: 775.78,
@@ -62,7 +62,7 @@ const positionSnapshot = [
     realized_pnl: 0,
   },
   {
-    symbol: '603659',
+    symbol: '600002',
     name: 'Putailai',
     asset_class: 'stock',
     market_value: 5668,
@@ -232,7 +232,7 @@ test('explains market holidays and weekends without showing missing prices', asy
 test('shows live returns normally and only true missing rows as price gaps', async () => {
   renderCalendarWithTimeline([
     {
-      date: '2026-06-16',
+      date: '2026-06-15',
       equity: 100300,
       delta: 300,
       external_flow: 0,
@@ -271,7 +271,7 @@ test('shows live returns normally and only true missing rows as price gaps', asy
 
   expect(await screen.findByText('Data status')).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-16 · CN¥300.00' }),
+    screen.getByRole('button', { name: '2026-06-15 · CN¥300.00' }),
   ).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-06-17 · CN¥700.00' }),
@@ -306,7 +306,7 @@ test('shows live returns normally and only true missing rows as price gaps', asy
 test('keeps live confirmed and cached valuation states distinct from true price gaps', async () => {
   renderCalendarWithTimeline([
     {
-      date: '2026-06-16',
+      date: '2026-06-15',
       equity: 100100,
       delta: 100,
       external_flow: 0,
@@ -389,7 +389,7 @@ test('keeps live confirmed and cached valuation states distinct from true price 
   ]);
 
   expect(
-    await screen.findByRole('button', { name: '2026-06-16 · CN¥100.00' }),
+    await screen.findByRole('button', { name: '2026-06-15 · CN¥100.00' }),
   ).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-06-17 · CN¥200.00' }),
@@ -564,9 +564,9 @@ test('shows a current-position fallback when daily attribution is not available'
   expect(screen.getByText('Return calendar is warming up')).toBeTruthy();
   expect(screen.getAllByText('CN¥80.78').length).toBeGreaterThan(0);
   expect(screen.getByText('Rongtong Tech Growth Fund C')).toBeTruthy();
-  expect(screen.getByText('026539')).toBeTruthy();
+  expect(screen.getByText('029999')).toBeTruthy();
   expect(screen.getByText('Putailai')).toBeTruthy();
-  expect(screen.getByText('603659')).toBeTruthy();
+  expect(screen.getByText('600002')).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Add activity' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Check data source' })).toBeTruthy();
 });

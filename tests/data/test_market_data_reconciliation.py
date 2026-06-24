@@ -26,7 +26,7 @@ def test_reconcile_market_bars_reports_matched_provider_rows():
     provider = local.copy()
 
     report = reconcile_market_bars(
-        Symbol("601985"),
+        Symbol("600001"),
         BarFrequency.DAILY,
         local,
         provider,
@@ -34,7 +34,7 @@ def test_reconcile_market_bars_reports_matched_provider_rows():
     )
 
     assert report.status == "matched"
-    assert report.symbol == "601985"
+    assert report.symbol == "600001"
     assert report.frequency == "1d"
     assert report.provider_name == "fixture_provider"
     assert report.checked_rows == 2
@@ -55,7 +55,7 @@ def test_reconcile_market_bars_reports_price_and_missing_row_differences():
     )
     provider = pd.DataFrame(
         {
-            "timestamp": pd.to_datetime(["2026-06-12", "2026-06-16"]),
+            "timestamp": pd.to_datetime(["2026-06-12", "2026-01-15"]),
             "open": [9.0, 9.5],
             "high": [9.3, 9.8],
             "low": [8.9, 9.4],
@@ -65,7 +65,7 @@ def test_reconcile_market_bars_reports_price_and_missing_row_differences():
     )
 
     report = reconcile_market_bars(
-        Symbol("601985"),
+        Symbol("600001"),
         BarFrequency.DAILY,
         local,
         provider,
@@ -86,12 +86,12 @@ def test_reconcile_market_bars_reports_price_and_missing_row_differences():
     assert report.mismatches[0].local_value == 9.13
     assert report.mismatches[0].provider_value == 9.21
     assert report.mismatches[1].timestamp == "2026-06-15"
-    assert report.mismatches[2].timestamp == "2026-06-16"
+    assert report.mismatches[2].timestamp == "2026-01-15"
 
 
 def test_reconcile_store_with_provider_fetches_requested_range(tmp_path):
     store = DataStore(tmp_path / "store")
-    symbol = Symbol("601985")
+    symbol = Symbol("600001")
     local = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(["2026-06-12", "2026-06-15"]),
@@ -117,7 +117,7 @@ def test_reconcile_store_with_provider_fetches_requested_range(tmp_path):
 
     assert report.status == "matched"
     assert report.checked_rows == 2
-    assert provider.calls == [("601985", "2026-06-12", "2026-06-15", "1d", "stock")]
+    assert provider.calls == [("600001", "2026-06-12", "2026-06-15", "1d", "stock")]
 
 
 class _FakeSource:

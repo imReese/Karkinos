@@ -206,7 +206,7 @@ async def test_account_strategy_update_persists_manual_confirm_assignment(monkey
             strategy_id="bollinger",
             status="paper_review",
             scope="symbol",
-            symbol="603659",
+            symbol="600002",
             effective_from="2026-06-18",
             notes="observe before manual confirmation",
         )
@@ -215,7 +215,7 @@ async def test_account_strategy_update_persists_manual_confirm_assignment(monkey
     assert response.strategy_id == "bollinger"
     assert response.status == "paper_review"
     assert response.scope == "symbol"
-    assert response.symbol == "603659"
+    assert response.symbol == "600002"
     assert response.auto_trade_enabled is False
     assert response.attribution_status == "assignment_only"
     assert persisted["account_strategy_assignment"]["strategy_id"] == "bollinger"
@@ -255,7 +255,7 @@ async def test_account_strategy_asset_class_scope_filters_attribution(monkeypatc
                     "signal": {
                         "id": 2,
                         "strategy_id": "dual_ma",
-                        "symbol": "018125",
+                        "symbol": "019999",
                         "asset_class": "fund",
                     }
                 },

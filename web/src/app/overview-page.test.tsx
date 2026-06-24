@@ -41,35 +41,35 @@ const ledgerEntries = [
   {
     id: 2,
     entry_type: 'trade_buy',
-    timestamp: '2026-06-16T03:04:56+00:00',
-    amount: 5270,
-    symbol: '600066',
-    display_name: '宇通客车',
+    timestamp: '2026-01-15T03:04:56+00:00',
+    amount: 3250,
+    symbol: '600003',
+    display_name: '示例制造',
     direction: 'buy',
     quantity: 200,
-    price: 26.35,
+    price: 16.25,
     commission: 5,
     asset_class: 'stock',
-    note: '手工录入持仓：宇通客车 600066 买入，佣金按万1.5，最低5元计收',
+    note: '合成测试流水：示例制造 600003 买入，按本地费率规则计费',
     source: 'manual',
-    source_ref: 'manual-600066-20260616-110456',
+    source_ref: 'manual-stock-a-20260115-100000',
     created_at: null,
   },
   {
     id: 1,
     entry_type: 'trade_buy',
-    timestamp: '2026-06-05T06:33:41+00:00',
-    amount: 2755,
-    symbol: '603659',
-    display_name: '璞泰来',
+    timestamp: '2026-01-12T06:33:41+00:00',
+    amount: 1850,
+    symbol: '600002',
+    display_name: '示例材料',
     direction: 'buy',
     quantity: 100,
-    price: 27.55,
+    price: 18.5,
     commission: 5,
     asset_class: 'stock',
-    note: '手工录入持仓：璞泰来 买入，佣金按万一最低5元计收',
+    note: '合成测试流水：示例材料 买入，按本地费率规则计费',
     source: 'manual',
-    source_ref: 'manual-603659-20260605-143341',
+    source_ref: 'manual-stock-b-20260112-103000',
     created_at: null,
   },
 ];
@@ -300,9 +300,9 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(
     await screen.findByRole('button', { name: '2026-02-10 · CN¥600.00' }),
   ).toBeTruthy();
-  expect(await screen.findByText(/璞泰来 603659/)).toBeTruthy();
-  expect(await screen.findByText(/宇通客车 600066/)).toBeTruthy();
-  expect(screen.queryByText(/宇通客车 600066 600066/)).toBeNull();
+  expect(await screen.findByText(/示例材料 600002/)).toBeTruthy();
+  expect(await screen.findByText(/示例制造 600003/)).toBeTruthy();
+  expect(screen.queryByText(/示例制造 600003 600003/)).toBeNull();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText('Quantity 100')).toBeTruthy();
@@ -338,12 +338,10 @@ test('renders overview ledger cards with shared public ledger formatting', async
   const ledgerSection = ledgerPanel.closest('div')?.parentElement;
   expect(ledgerSection).toBeTruthy();
 
-  expect(await screen.findByText('Buy 宇通客车 600066')).toBeTruthy();
-  expect(
-    screen.queryByText('宇通客车 买入，佣金按万1.5，最低5元计收'),
-  ).toBeNull();
+  expect(await screen.findByText('Buy 示例制造 600003')).toBeTruthy();
+  expect(screen.queryByText('示例制造 买入，按本地费率规则计费')).toBeNull();
   expect(screen.queryByText('trade_buy')).toBeNull();
-  expect(screen.queryByText(/宇通客车 600066 600066/)).toBeNull();
+  expect(screen.queryByText(/示例制造 600003 600003/)).toBeNull();
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
 });
 

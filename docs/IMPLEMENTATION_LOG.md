@@ -6,6 +6,13 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Public ledger notes now localize raw internal note-code
+  segments through the shared ledger formatter instead of rendering backend
+  reason-code text in Activity, Overview dashboard, explainability, and
+  holding ledger traces. User-authored free-text notes remain unchanged. This
+  is display formatting only; it does not change ledger persistence, fee
+  calculation, cost-basis math, broker behavior, risk gates, automatic trading
+  defaults, or manual-confirmation requirements.
 * 2026-06-24: Portfolio positions and holding-detail cost-basis method labels
   now use the shared ledger formatter. Unknown future broker cost-basis method
   ids fall back to localized review copy instead of leaking raw backend codes
@@ -1329,3 +1336,10 @@ roadmap promises.
   evidence. Edited fees still submit as manual fee input. This does not change
   broker behavior, order submission, risk gates, or manual-confirmation
   defaults.
+* 2026-06-24: Public operational-note formatting now treats dotted backend
+  note identifiers the same as snake-case note identifiers, so Trading order
+  rows, Trading audit rows, manual approval risk hints, and Account Truth
+  review cards fall back to localized review copy instead of rendering raw
+  backend codes. This is display formatting only; it does not change order
+  state, review state, broker behavior, risk gates, automatic trading
+  defaults, or manual-confirmation requirements.

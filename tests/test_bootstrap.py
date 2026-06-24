@@ -213,7 +213,7 @@ def test_server_config_loads_local_read_only_broker_connector_config(tmp_path):
                         "connector_type": "qmt_readonly",
                         "enabled": True,
                         "client_path": "/Applications/QMT",
-                        "account_alias": "personal-review",
+                        "account_alias": "local-review",
                     }
                 ]
             }
@@ -228,7 +228,7 @@ def test_server_config_loads_local_read_only_broker_connector_config(tmp_path):
             connector_type="qmt_readonly",
             enabled=True,
             client_path="/Applications/QMT",
-            account_alias="personal-review",
+            account_alias="local-review",
         )
     ]
 
@@ -243,7 +243,7 @@ def test_server_config_rejects_broker_connector_credential_fields(tmp_path):
                         "connector_id": "local-qmt-readonly",
                         "connector_type": "qmt_readonly",
                         "client_path": "/Applications/QMT",
-                        "account_alias": "personal-review",
+                        "account_alias": "local-review",
                         "broker_password": "do-not-store",
                     }
                 ]

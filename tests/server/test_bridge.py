@@ -15,7 +15,7 @@ def test_event_bus_bridge_serializes_market_event_symbol() -> None:
     bridge = EventBusBridge(EventBus(), loop)
     event = MarketEvent(
         timestamp=datetime(2026, 6, 5, 10, 30),
-        symbol=Symbol("601985"),
+        symbol=Symbol("600001"),
         open=Decimal("9.25"),
         high=Decimal("9.25"),
         low=Decimal("9.25"),
@@ -31,7 +31,7 @@ def test_event_bus_bridge_serializes_market_event_symbol() -> None:
         loop.close()
 
     assert payload["event_type"] == "MarketEvent"
-    assert payload["symbol"] == "601985"
+    assert payload["symbol"] == "600001"
     assert payload["close"] == 9.25
     assert payload["frequency"] == "1d"
     assert payload["asset_class"] == "stock"

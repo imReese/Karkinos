@@ -150,7 +150,7 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "601985",
+                "600001",
                 "1d",
                 "2026-06-12T00:00:00",
                 9.1,
@@ -165,7 +165,7 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
         )
         conn.commit()
 
-    bar = db.get_latest_market_bar_before_date_sync("601985", "2026-06-13")
+    bar = db.get_latest_market_bar_before_date_sync("600001", "2026-06-13")
 
     assert bar is not None
     assert bar["trade_date"] == "2026-06-12"
@@ -173,13 +173,13 @@ def test_app_database_reads_market_bar_close_from_meta_store(tmp_path):
     assert bar["close"] == 9.24
     assert bar["price"] == 9.24
 
-    same_day_bar = db.get_market_bar_on_date_sync("601985", "2026-06-12")
+    same_day_bar = db.get_market_bar_on_date_sync("600001", "2026-06-12")
 
     assert same_day_bar is not None
     assert same_day_bar["trade_date"] == "2026-06-12"
     assert same_day_bar["close"] == 9.24
     assert same_day_bar["price"] == 9.24
-    assert db.get_market_bar_on_date_sync("601985", "2026-06-13") is None
+    assert db.get_market_bar_on_date_sync("600001", "2026-06-13") is None
 
 
 def test_app_database_initializes_instrument_metadata_table(tmp_path):
@@ -220,7 +220,7 @@ def test_app_database_persists_watchlist_assets(tmp_path):
         source="manual",
     )
     seeded = db.seed_watchlist_assets_from_config_sync(
-        [{"symbol": "018125", "asset_class": "fund", "display_name": "示例基金"}]
+        [{"symbol": "019999", "asset_class": "fund", "display_name": "示例基金"}]
     )
     rows = db.list_watchlist_assets_sync()
     deleted = db.delete_watchlist_asset_sync("510300")
@@ -230,9 +230,9 @@ def test_app_database_persists_watchlist_assets(tmp_path):
     assert updated["id"] == created["id"]
     assert updated["display_name"] == "沪深300 ETF"
     assert seeded == 1
-    assert [row["symbol"] for row in rows] == ["510300", "018125"]
+    assert [row["symbol"] for row in rows] == ["510300", "019999"]
     assert deleted is True
-    assert [row["symbol"] for row in db.list_watchlist_assets_sync()] == ["018125"]
+    assert [row["symbol"] for row in db.list_watchlist_assets_sync()] == ["019999"]
 
 
 def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
@@ -240,10 +240,10 @@ def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
     db.init_sync()
 
     created = db.upsert_instrument_metadata_sync(
-        symbol="601985",
+        symbol="600001",
         asset_type="stock",
-        display_name="中国核电",
-        provider_symbol="601985",
+        display_name="示例能源",
+        provider_symbol="600001",
         exchange="SH",
         market="cn",
         provider_name="akshare",
@@ -252,10 +252,10 @@ def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
         metadata={"provider_status": "live"},
     )
     updated = db.upsert_instrument_metadata_sync(
-        symbol="601985",
+        symbol="600001",
         asset_type="stock",
-        display_name="中国核电",
-        provider_symbol="601985",
+        display_name="示例能源",
+        provider_symbol="600001",
         exchange="SH",
         market="cn",
         provider_name="akshare",
@@ -263,7 +263,7 @@ def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
         fetched_at="2026-05-29T09:31:00+08:00",
         metadata={"provider_status": "live", "sequence": 2},
     )
-    row = db.get_instrument_metadata_sync("601985", "stock")
+    row = db.get_instrument_metadata_sync("600001", "stock")
     rows = db.list_instrument_metadata_sync()
 
     with sqlite3.connect(tmp_path / "app.db") as conn:
@@ -273,7 +273,7 @@ def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
             FROM instrument_metadata
             WHERE symbol = ? AND asset_type = ?
             """,
-            ("601985", "stock"),
+            ("600001", "stock"),
         ).fetchone()[0]
 
     assert created is not None
@@ -283,9 +283,9 @@ def test_app_database_upserts_and_reads_instrument_metadata(tmp_path):
     assert updated["id"] == created["id"]
     assert updated["created_at"] == created["created_at"]
     assert updated["updated_at"] != created["updated_at"]
-    assert row["display_name"] == "中国核电"
+    assert row["display_name"] == "示例能源"
     assert row["metadata_json"] == '{"provider_status":"live","sequence":2}'
-    assert [item["symbol"] for item in rows] == ["601985"]
+    assert [item["symbol"] for item in rows] == ["600001"]
 
 
 def test_app_database_appends_and_lists_domain_events(tmp_path):

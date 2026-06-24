@@ -45,21 +45,21 @@ def test_ledger_repository_persists_structured_trade_cost_fields(tmp_path):
 
     entry = LedgerEntry(
         entry_type="trade_buy",
-        timestamp="2026-06-16T11:04:56+08:00",
-        symbol="600066",
+        timestamp="2026-01-15T11:04:56+08:00",
+        symbol="600003",
         direction="buy",
         quantity=200.0,
-        price=26.35,
-        amount=5270.0,
+        price=16.25,
+        amount=3250.0,
         commission=5.0527,
-        gross_amount=5270.0,
-        net_cash_impact=-5275.0527,
+        gross_amount=3250.0,
+        net_cash_impact=-3255.0527,
         fee_breakdown={
             "commission": "5",
             "stamp_tax": "0",
-            "transfer_fee": "0.052700",
+            "transfer_fee": "0.032500",
             "other_fees": "0",
-            "total_fee": "5.052700",
+            "total_fee": "5.032500",
         },
         fee_rule_id="cn_stock_a_local_v1",
         fee_rule_version="local_broker_fee_schedule_v1",
@@ -70,14 +70,14 @@ def test_ledger_repository_persists_structured_trade_cost_fields(tmp_path):
     repository.insert_entry(entry)
 
     saved = repository.list_entries()[0]
-    assert saved.gross_amount == 5270.0
-    assert saved.net_cash_impact == -5275.0527
+    assert saved.gross_amount == 3250.0
+    assert saved.net_cash_impact == -3255.0527
     assert saved.fee_breakdown == {
         "commission": "5",
         "stamp_tax": "0",
-        "transfer_fee": "0.052700",
+        "transfer_fee": "0.032500",
         "other_fees": "0",
-        "total_fee": "5.052700",
+        "total_fee": "5.032500",
     }
     assert saved.fee_rule_id == "cn_stock_a_local_v1"
     assert saved.fee_rule_version == "local_broker_fee_schedule_v1"

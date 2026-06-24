@@ -828,7 +828,7 @@ function LedgerTrace({
                 </td>
                 <td className="max-w-[280px] px-4 py-3.5 text-[var(--app-muted)]">
                   <span className="line-clamp-2 break-words">
-                    {formatLedgerPublicNote(entry) ?? '--'}
+                    {formatLedgerPublicNote(entry, locale) ?? '--'}
                   </span>
                 </td>
               </tr>

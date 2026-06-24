@@ -29,7 +29,7 @@ def test_manual_refresh_plan_covers_intraday_close_and_fund_nav_without_trading_
         requested_at=requested_at,
         symbols_by_asset_class={
             AssetClass.STOCK: (Symbol("600519"),),
-            AssetClass.FUND: (Symbol("018125"),),
+            AssetClass.FUND: (Symbol("019999"),),
         },
     )
     result = run_market_data_refresh(_FixtureRefreshAdapter(), tasks)
@@ -60,24 +60,24 @@ def test_scheduled_refresh_dispatches_adapter_methods_for_expected_asset_groups(
         trigger=MarketDataRefreshTrigger.SCHEDULED,
         requested_at=requested_at,
         symbols_by_asset_class={
-            AssetClass.STOCK: (Symbol("600519"), Symbol("601985")),
-            AssetClass.FUND: (Symbol("018125"),),
+            AssetClass.STOCK: (Symbol("600519"), Symbol("600001")),
+            AssetClass.FUND: (Symbol("019999"),),
         },
     )
 
     result = run_market_data_refresh(adapter, tasks)
 
     assert adapter.calls == [
+        ("snapshot", Symbol("600001"), AssetClass.STOCK),
         ("snapshot", Symbol("600519"), AssetClass.STOCK),
-        ("snapshot", Symbol("601985"), AssetClass.STOCK),
+        ("daily", Symbol("600001"), AssetClass.STOCK),
         ("daily", Symbol("600519"), AssetClass.STOCK),
-        ("daily", Symbol("601985"), AssetClass.STOCK),
-        ("snapshot", Symbol("018125"), AssetClass.FUND),
+        ("snapshot", Symbol("019999"), AssetClass.FUND),
     ]
     assert result.trigger == MarketDataRefreshTrigger.SCHEDULED
     assert result.status == "success"
     assert result.failed_symbols == []
-    assert result.refreshed_symbols == ["018125", "600519", "601985"]
+    assert result.refreshed_symbols == ["019999", "600001", "600519"]
 
 
 class _FixtureRefreshAdapter:

@@ -60,7 +60,7 @@ class TestMakeETF:
 
 class TestMakeOpenEndFund:
     def test_open_end_fund_fields(self):
-        inst = make_open_end_fund("000001", "华夏成长")
+        inst = make_open_end_fund("000001", "示例成长")
         assert inst.asset_class == AssetClass.FUND
         assert inst.commission_type == CommissionType.FUND_OPENEND
         assert inst.settlement == Settlement.T_PLUS_0

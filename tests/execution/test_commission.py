@@ -24,14 +24,14 @@ class TestStockACommission:
             fee_rule_id="cn_stock_a_local_v1",
         )
 
-        breakdown = calc.breakdown(OrderSide.BUY, Decimal("26.35"), Decimal("200"))
+        breakdown = calc.breakdown(OrderSide.BUY, Decimal("16.25"), Decimal("200"))
 
-        assert breakdown.gross_amount == Decimal("5270.00")
+        assert breakdown.gross_amount == Decimal("3250.00")
         assert breakdown.commission == Decimal("5")
         assert breakdown.stamp_tax == Decimal("0")
-        assert breakdown.transfer_fee == Decimal("0.052700")
+        assert breakdown.transfer_fee == Decimal("0.032500")
         assert breakdown.other_fees == Decimal("0")
-        assert breakdown.total_fee == Decimal("5.052700")
+        assert breakdown.total_fee == Decimal("5.032500")
         assert breakdown.fee_rule_id == "cn_stock_a_local_v1"
         assert breakdown.limitations == (
             "transfer_fee_exchange_not_split",
@@ -46,14 +46,14 @@ class TestStockACommission:
             fee_rule_id="cn_stock_a_local_v1",
         )
 
-        breakdown = calc.breakdown(OrderSide.SELL, Decimal("26.35"), Decimal("200"))
+        breakdown = calc.breakdown(OrderSide.SELL, Decimal("16.25"), Decimal("200"))
 
-        assert breakdown.gross_amount == Decimal("5270.00")
+        assert breakdown.gross_amount == Decimal("3250.00")
         assert breakdown.commission == Decimal("5")
-        assert breakdown.stamp_tax == Decimal("2.635000")
-        assert breakdown.transfer_fee == Decimal("0.052700")
+        assert breakdown.stamp_tax == Decimal("1.625000")
+        assert breakdown.transfer_fee == Decimal("0.032500")
         assert breakdown.other_fees == Decimal("0")
-        assert breakdown.total_fee == Decimal("7.687700")
+        assert breakdown.total_fee == Decimal("6.657500")
         assert breakdown.fee_rule_id == "cn_stock_a_local_v1"
 
     def test_buy_commission(self):

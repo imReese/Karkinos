@@ -35,6 +35,15 @@ test('formats generated operational notes without exposing internal ids', () => 
   );
 });
 
+test('formats dotted operational note codes as generic review notes', () => {
+  expect(formatPublicOperationalNote('backend.order.review', 'en')).toBe(
+    'Review note',
+  );
+  expect(formatPublicOperationalNote('backend.order.review', 'zh')).toBe(
+    '待人工复核说明',
+  );
+});
+
 test('formats account-truth reconciliation categories without raw field labels', () => {
   expect(formatPublicCode('cash', 'zh')).toBe('现金');
   expect(formatPublicCode('position', 'zh')).toBe('持仓');

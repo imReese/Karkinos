@@ -465,19 +465,19 @@ test('keeps the holding detail header compact and non-duplicative', async () => 
 test('keeps quote status and action panels readable with long runtime values', async () => {
   const { container } = renderHoldingDetail({
     positionOverride: {
-      quote_timestamp: '2026-06-16T11:04:56.000000+08:00',
+      quote_timestamp: '2026-01-15T11:04:56.000000+08:00',
       quote_source: longProviderName,
       stale_reason: longStaleReason,
       refresh_policy: 'cache_only_after_market_data_permission_fallback',
     },
     liveItemOverride: {
-      quote_timestamp: '2026-06-16T11:04:56.000000+08:00',
+      quote_timestamp: '2026-01-15T11:04:56.000000+08:00',
       quote_source: longProviderName,
       stale_reason: longStaleReason,
       refresh_policy: 'cache_only_after_market_data_permission_fallback',
     },
     healthQuoteOverride: {
-      timestamp: '2026-06-16T11:04:56.000000+08:00',
+      timestamp: '2026-01-15T11:04:56.000000+08:00',
       quote_source: longProviderName,
       stale_reason: longStaleReason,
     },

@@ -1,6 +1,9 @@
 import type { Locale } from '../app/preferences';
 import { formatCurrency, formatQuantity } from './format';
-import { formatPublicEvidenceReference } from './public-labels';
+import {
+  formatPublicEvidenceReference,
+  formatPublicNote,
+} from './public-labels';
 
 export type PublicLedgerEntry = {
   id?: number;
@@ -378,7 +381,7 @@ export function formatLedgerDashboardPresentation(
     amount:
       formatSignedCurrency(summarizeLedgerEntry(entry).cashImpact) ??
       formatCurrency(calculateLedgerEntryAmount(entry)),
-    publicNote: formatLedgerPublicNote(entry),
+    publicNote: formatLedgerPublicNote(entry, locale),
   };
 }
 
@@ -499,7 +502,7 @@ export function formatLedgerExplainabilityDetail(
     EXPLAINABILITY_DETAIL_LABELS[locale],
     locale,
   ).map((line) => `${line.label} ${line.value}`);
-  const publicNote = formatLedgerPublicNote(entry);
+  const publicNote = formatLedgerPublicNote(entry, locale);
   if (structuredDetails.length > 0 || publicNote) {
     return [...structuredDetails, publicNote].filter(Boolean).join(' · ');
   }
@@ -545,14 +548,22 @@ export function resolveLedgerInstrumentName(entry: PublicLedgerEntry) {
   return noteName ?? entry.symbol ?? '';
 }
 
-export function formatLedgerPublicNote(entry: PublicLedgerEntry) {
+export function formatLedgerPublicNote(
+  entry: PublicLedgerEntry,
+  locale: Locale = 'en',
+) {
+  const instrumentName = resolveLedgerInstrumentName(entry).trim();
   const segments = readableLedgerNoteSegments(entry.note)
     .map((segment) => stripLedgerNotePrefix(segment).trim())
+    .map((segment) =>
+      stripGeneratedLedgerContextPrefix(segment, entry.symbol, instrumentName),
+    )
     .filter((segment) => !isInstrumentIdentitySegment(segment, entry))
     .map((segment) => removeDuplicateSymbolFromSegment(segment, entry))
     .filter((segment) => !isGeneratedStructuredTradeNote(segment, entry))
     .filter((segment) => !isGeneratedStructuredCashNote(segment, entry))
     .filter((segment) => !isGeneratedFeeRuleNote(segment, entry))
+    .map((segment) => formatLedgerPublicNoteSegment(segment, locale))
     .filter(Boolean);
   return segments.length > 0 ? segments.slice(0, 2).join(' · ') : null;
 }
@@ -828,6 +839,18 @@ function isTechnicalNoteSegment(segment: string) {
   );
 }
 
+function formatLedgerPublicNoteSegment(segment: string, locale: Locale) {
+  const normalized = segment.trim();
+  if (isRawInternalNoteCode(normalized)) {
+    return formatPublicNote(normalized, locale);
+  }
+  return normalized;
+}
+
+function isRawInternalNoteCode(segment: string) {
+  return /^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/i.test(segment);
+}
+
 function isGeneratedStructuredTradeNote(
   segment: string,
   entry: PublicLedgerEntry,
@@ -882,7 +905,7 @@ function isGeneratedStructuredTradeNote(
   const directionPattern =
     kind === 'trade_buy' ? /(买入|申购|buy|bought)/i : /(卖出|赎回|sell|sold)/i;
   const structuredFactPattern =
-    /(佣金|手续费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|元|gross|amount|quantity|price|fee|commission|subscription|redemption)/i;
+    /(佣金|手续费|费率|计费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|元|gross|amount|quantity|price|fee|commission|subscription|redemption)/i;
 
   if (startsWithStructuredFact || startsWithActionFact) {
     return structuredFactPattern.test(normalized);
@@ -981,7 +1004,10 @@ function extractInstrumentNameFromSegment(
   segment: string,
   symbol: string | null | undefined,
 ) {
-  const cleaned = stripLedgerNotePrefix(segment).trim();
+  const cleaned = stripGeneratedLedgerContextPrefix(
+    stripLedgerNotePrefix(segment).trim(),
+    symbol,
+  );
   if (!/[\u4e00-\u9fff]/.test(cleaned)) {
     return null;
   }
@@ -1014,6 +1040,74 @@ function removeDuplicateSymbolFromSegment(
   return segment.replace(
     new RegExp(`^(.+?)\\s+${escapeRegExp(symbol)}\\s+`),
     '$1 ',
+  );
+}
+
+function stripGeneratedLedgerContextPrefix(
+  segment: string,
+  symbol: string | null | undefined,
+  instrumentName?: string | null,
+) {
+  const normalized = segment.trim();
+  const match = normalized.match(/^.+?[:：]\s*(.+)$/u);
+  if (!match) {
+    return normalized;
+  }
+  const remainder = match[1].trim();
+  return looksLikeGeneratedLedgerTradeSegment(remainder, symbol, instrumentName)
+    ? remainder
+    : normalized;
+}
+
+function looksLikeGeneratedLedgerTradeSegment(
+  segment: string,
+  symbol: string | null | undefined,
+  instrumentName?: string | null,
+) {
+  const normalized = segment.trim();
+  const hasTradeAction = /(买入|卖出|申购|赎回|buy|bought|sell|sold)/i.test(
+    normalized,
+  );
+  if (!hasTradeAction) {
+    return false;
+  }
+
+  const normalizedSymbol = symbol?.trim();
+  const normalizedName = instrumentName?.trim();
+  const instrumentPrefixes = [
+    normalizedName,
+    normalizedSymbol,
+    normalizedName && normalizedSymbol
+      ? `${normalizedName} ${normalizedSymbol}`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  if (
+    instrumentPrefixes.some(
+      (prefix) =>
+        normalized === prefix ||
+        normalized.startsWith(`${prefix} `) ||
+        normalized.startsWith(`${prefix}买入`) ||
+        normalized.startsWith(`${prefix}卖出`) ||
+        normalized.startsWith(`${prefix}申购`) ||
+        normalized.startsWith(`${prefix}赎回`),
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /^[\u4e00-\u9fffA-Za-z0-9（）()·\-\s]+?\s+(?:买入|卖出|申购|赎回|buy|bought|sell|sold)/i.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    normalizedSymbol &&
+    new RegExp(`(^|\\s)${escapeRegExp(normalizedSymbol)}(\\s|$)`).test(
+      normalized,
+    ),
   );
 }
 
