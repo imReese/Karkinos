@@ -286,6 +286,15 @@ describe('ledger formatter', () => {
     ).toBe('Broker statement correction');
   });
 
+  test('uses public fallbacks for future ledger source codes', () => {
+    expect(
+      formatLedgerSourceLabel('broker_statement_manual_adjustment_v2', 'zh'),
+    ).toBe('账本来源待确认');
+    expect(
+      formatLedgerSourceLabel('broker_statement_manual_adjustment_v2', 'en'),
+    ).toBe('Source needs review');
+  });
+
   test('formats broker trade evidence references with shared ledger labels', () => {
     const instrumentNames = new Map([['syn001', '合成样例股票A']]);
 

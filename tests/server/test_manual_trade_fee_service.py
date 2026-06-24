@@ -69,6 +69,35 @@ def test_manual_trade_fee_service_formats_etf_without_stamp_tax():
     }
 
 
+def test_manual_trade_fee_service_formats_bond_without_stock_taxes():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    resolved = resolve_manual_trade_fee_breakdown(
+        SimpleNamespace(
+            account_commission_rate=0.00004,
+            account_min_commission=1,
+            broker_fee_schedule=SimpleNamespace(other_fee_rate=0),
+        ),
+        asset_class="bond",
+        direction="sell",
+        quantity=1000,
+        price=100,
+    )
+
+    assert resolved is not None
+    assert resolved.fee_breakdown_json == {
+        "commission": "4.00",
+        "stamp_tax": "0.000000",
+        "transfer_fee": "0.000000",
+        "other_fees": "0.000000",
+        "total_fee": "4.000000",
+    }
+    assert resolved.commission == 4.0
+    assert resolved.total_fee == 4.0
+    assert resolved.fee_rule_id == "manual_configured_commission"
+    assert resolved.fee_rule_version == "account_commission_rate"
+
+
 def test_manual_trade_fee_service_leaves_unsupported_assets_to_explicit_fee():
     from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 

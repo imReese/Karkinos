@@ -105,6 +105,7 @@ const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
     broker_statement_manual_correction: 'Broker statement correction',
     manual: 'Manual entry',
     portfolio_trade: 'Portfolio trade',
+    review: 'Source needs review',
     system: 'System entry',
     unknown: 'Source unknown',
   },
@@ -112,6 +113,7 @@ const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
     broker_statement_manual_correction: '券商对账修正',
     manual: '手工录入',
     portfolio_trade: '组合交易',
+    review: '账本来源待确认',
     system: '系统生成',
     unknown: '来源未知',
   },
@@ -391,9 +393,7 @@ export function formatLedgerSourceLabel(
   if (!normalized) {
     return SOURCE_LABELS[locale].unknown;
   }
-  return (
-    SOURCE_LABELS[locale][normalized] ?? source ?? SOURCE_LABELS[locale].unknown
-  );
+  return SOURCE_LABELS[locale][normalized] ?? SOURCE_LABELS[locale].review;
 }
 
 export function formatLedgerEvidenceReference(

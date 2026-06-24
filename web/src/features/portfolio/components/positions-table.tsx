@@ -102,6 +102,29 @@ function formatCostBasisStatus(
   );
 }
 
+function formatBrokerCostBasisDetail(
+  labels: ReturnType<typeof useCopy>['portfolio']['detail'],
+  position: Position,
+) {
+  const detailParts = [
+    formatCostBasisMethod(labels, position.broker_cost_basis_method),
+    formatCostBasisStatus(labels, position.broker_cost_basis_status),
+  ];
+
+  if (
+    isFiniteNumber(position.broker_cost_basis_difference) &&
+    Math.abs(position.broker_cost_basis_difference) >= 0.005
+  ) {
+    detailParts.push(
+      `${labels.costBasisDifference} ${formatCurrency(
+        position.broker_cost_basis_difference,
+      )}`,
+    );
+  }
+
+  return detailParts.join(' · ');
+}
+
 function detailAriaLabel(
   labels: ReturnType<typeof useCopy>['portfolio']['table'],
   displayName: string,
@@ -261,13 +284,7 @@ export function PositionsTable({
           const brokerCostBasisDetail =
             brokerDisplayedUnitCost === null
               ? null
-              : `${formatCostBasisMethod(
-                  detailLabels,
-                  position.broker_cost_basis_method,
-                )} · ${formatCostBasisStatus(
-                  detailLabels,
-                  position.broker_cost_basis_status,
-                )}`;
+              : formatBrokerCostBasisDetail(detailLabels, position);
           const mobileMetrics: Array<{
             key: string;
             label: string;
@@ -577,13 +594,7 @@ export function PositionsTable({
               const brokerCostBasisDetail =
                 brokerDisplayedUnitCost === null
                   ? null
-                  : `${formatCostBasisMethod(
-                      detailLabels,
-                      position.broker_cost_basis_method,
-                    )} · ${formatCostBasisStatus(
-                      detailLabels,
-                      position.broker_cost_basis_status,
-                    )}`;
+                  : formatBrokerCostBasisDetail(detailLabels, position);
               const detailHref = holdingDetailHref(position.symbol);
               const detailLabel = detailAriaLabel(
                 labels,
@@ -661,7 +672,7 @@ export function PositionsTable({
                   >
                     <span>{formatPrice(brokerDisplayedUnitCost)}</span>
                     {brokerCostBasisDetail ? (
-                      <span className="app-muted mt-1 block max-w-36 truncate text-[10px] font-sans">
+                      <span className="app-muted mt-1 block max-w-44 whitespace-normal text-[10px] font-sans leading-4">
                         {brokerCostBasisDetail}
                       </span>
                     ) : null}

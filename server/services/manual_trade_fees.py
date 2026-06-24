@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from core.types import OrderSide
-from execution.commission import ETFCommission, FeeBreakdown, StockACommission
+from execution.commission import (
+    BondExchangeCommission,
+    ETFCommission,
+    FeeBreakdown,
+    StockACommission,
+)
 
 MANUAL_CONFIGURED_FEE_RULE_ID = "manual_configured_commission"
 MANUAL_CONFIGURED_FEE_RULE_VERSION = "account_commission_rate"
@@ -40,7 +45,7 @@ def resolve_manual_trade_fee_breakdown(
 
     normalized_asset_class = asset_class.strip().lower()
     normalized_direction = direction.strip().lower()
-    if normalized_asset_class not in {"stock", "etf"}:
+    if normalized_asset_class not in {"stock", "etf", "bond"}:
         return None
     if normalized_direction not in {"buy", "sell"}:
         return None
@@ -62,8 +67,8 @@ def resolve_manual_trade_fee_breakdown(
     )
 
     side = OrderSide.BUY if normalized_direction == "buy" else OrderSide.SELL
-    calculator = (
-        ETFCommission(
+    if normalized_asset_class == "etf":
+        calculator = ETFCommission(
             commission_rate=rate,
             min_commission=min_commission,
             transfer_fee_rate=transfer_fee_rate,
@@ -71,8 +76,16 @@ def resolve_manual_trade_fee_breakdown(
             fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
             limitations=limitations,
         )
-        if normalized_asset_class == "etf"
-        else StockACommission(
+    elif normalized_asset_class == "bond":
+        calculator = BondExchangeCommission(
+            commission_rate=rate,
+            min_commission=min_commission,
+            other_fee_rate=other_fee_rate,
+            fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
+            limitations=("bond_fee_rules_need_broker_confirmation",),
+        )
+    else:
+        calculator = StockACommission(
             commission_rate=rate,
             min_commission=min_commission,
             stamp_tax_rate=Decimal(str(getattr(schedule, "stamp_tax_rate", "0.0005"))),
@@ -81,7 +94,7 @@ def resolve_manual_trade_fee_breakdown(
             fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
             limitations=limitations,
         )
-    )
+
     breakdown = calculator.breakdown(
         side,
         Decimal(str(price)),
