@@ -832,11 +832,15 @@ function AccountStrategyPanel({
         item.strategy_id === assignment?.strategy_id ||
         item.name === assignment?.strategy_id,
     ) ?? null;
-  const strategyName = strategyInfo
-    ? strategyDisplayName(strategyInfo, labels.strategyNames)
-    : assignment?.strategy_name ||
-      assignment?.strategy_id ||
-      labels.notDeclared;
+  const strategyName = assignment
+    ? strategyDisplayName(
+        strategyInfo ?? {
+          strategy_id: assignment.strategy_id,
+          name: assignment.strategy_name,
+        },
+        labels.strategyNames,
+      )
+    : labels.notDeclared;
   const status = assignment
     ? lookupLabel(
         labels.accountStrategyStatus,
@@ -1283,7 +1287,8 @@ function StrategyEvidenceGatePanel({
                   const strategyInfo = strategyById.get(row.strategy_id);
                   const displayName = strategyInfo
                     ? strategyDisplayName(strategyInfo, labels.strategyNames)
-                    : row.strategy_id;
+                    : (labels.strategyNames[row.strategy_id] ??
+                      row.strategy_id);
                   const missing = [
                     ...row.missing_requirements,
                     ...(readinessRow?.missing_requirements ?? []),

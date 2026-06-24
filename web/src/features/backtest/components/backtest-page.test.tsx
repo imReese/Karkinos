@@ -969,6 +969,30 @@ test('shows account strategy contribution estimates with explicit exclusions', a
   ).toBeTruthy();
 });
 
+test('keeps known strategy ids secondary when registry metadata is missing', async () => {
+  renderBacktestPage({
+    results: [],
+    strategies: [strategyCatalog[1]],
+  });
+
+  expect(await screen.findByText('Research only')).toBeTruthy();
+  const currentStrategy = (
+    await screen.findByText('Current account strategy')
+  ).closest('section');
+  expect(currentStrategy).toBeTruthy();
+  expect(
+    within(currentStrategy!).getByText('Dual Moving Average'),
+  ).toBeTruthy();
+  expect(within(currentStrategy!).queryByText(/^dual_ma$/u)).toBeNull();
+
+  const evidenceGate = (
+    await screen.findByText('Strategy validation and review status')
+  ).closest('section');
+  expect(evidenceGate).toBeTruthy();
+  expect(within(evidenceGate!).getByText('Dual Moving Average')).toBeTruthy();
+  expect(within(evidenceGate!).getByText('dual_ma')).toBeTruthy();
+});
+
 test('explains account strategy pnl attribution tier and source statuses', async () => {
   renderBacktestPage({
     results: [],

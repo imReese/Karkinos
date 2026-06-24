@@ -646,7 +646,7 @@ export function readableLedgerNoteSegments(note: string | null | undefined) {
     return [];
   }
   return note
-    .split('|')
+    .split(/[|;；\r\n]+/u)
     .map((segment) => segment.trim())
     .filter((segment) => segment && !isTechnicalNoteSegment(segment));
 }
