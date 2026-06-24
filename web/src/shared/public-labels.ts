@@ -201,6 +201,16 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     risk_gate_blocked: 'Risk gate is blocking action',
     risk_gate_not_checked: 'Risk gate has not checked every action',
     risk_review: 'Risk review',
+    'order.fill.recorded': 'Fill recorded',
+    'order.recorded': 'Order recorded',
+    'order.shadow_divergence_reviewed': 'Simulation divergence review recorded',
+    'order.status_changed': 'Order status changed',
+    'order.submitted': 'Order submitted',
+    'signal.review.recorded': 'Signal review recorded',
+    'task.action.created': 'Action task created',
+    'task.action.status_changed': 'Action task status changed',
+    'task_run.completed': 'Task run completed',
+    'task_run.started': 'Task run started',
     'risk.signal.recorded': 'Risk signal recorded',
     run_pre_trade_risk_gate: 'Run pre-trade risk gate',
     run_first_sync: 'Configure a data source or run the first sync',
@@ -274,6 +284,16 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     risk_gate_blocked: '风控闸门正在阻断动作',
     risk_gate_not_checked: '仍有动作未完成风控检查',
     risk_review: '风险复核',
+    'order.fill.recorded': '成交已记录',
+    'order.recorded': '订单已记录',
+    'order.shadow_divergence_reviewed': '模拟盘差异复核已记录',
+    'order.status_changed': '订单状态已更新',
+    'order.submitted': '订单已提交',
+    'signal.review.recorded': '信号复核已记录',
+    'task.action.created': '动作任务已创建',
+    'task.action.status_changed': '动作任务状态已更新',
+    'task_run.completed': '任务运行已完成',
+    'task_run.started': '任务运行已开始',
     'risk.signal.recorded': '风控信号已记录',
     run_pre_trade_risk_gate: '运行下单前风控',
     run_first_sync: '配置数据源或执行首次同步',
@@ -483,7 +503,14 @@ function fallbackLabel(value: string, locale: Locale, kind: string) {
   if (value === '--') {
     return value;
   }
-  if (value.includes('_')) {
+  const hasWhitespace = /\s/.test(value);
+  const looksLikeSnakeCode = !hasWhitespace && value.includes('_');
+  const looksLikeDottedCode =
+    !hasWhitespace &&
+    value.includes('.') &&
+    /[A-Za-z]/.test(value) &&
+    /^[A-Za-z0-9_.:-]+$/.test(value);
+  if (looksLikeSnakeCode || looksLikeDottedCode) {
     if (locale === 'zh') {
       if (kind === 'status') {
         return '待确认状态';

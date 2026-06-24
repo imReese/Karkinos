@@ -999,9 +999,10 @@ function AuditRow({
   instrumentNames: InstrumentNameLookup;
 }) {
   const { locale } = usePreferences();
+  const labels = useCopy().trading.page;
   const displayLabel = instrumentDisplayLabel(order, instrumentNames);
   const publicNote =
-    formatPublicOperationalNote(order.note, locale) ?? order.order_id;
+    formatPublicOperationalNote(order.note, locale) ?? labels.noPublicAuditNote;
   return (
     <div className="grid gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm sm:grid-cols-[120px_90px_minmax(0,1fr)_160px] sm:items-center">
       <div className="font-semibold">{displayLabel}</div>

@@ -74,6 +74,31 @@ test('formats unknown English snake-case values as generic review labels', () =>
   expect(formatPublicNote('new_backend_reason_code', 'en')).toBe('Review note');
 });
 
+test('formats unknown dotted backend codes as generic labels without hiding normal notes', () => {
+  expect(formatPublicStatus('backend.order.review', 'en')).toBe(
+    'Status needs review',
+  );
+  expect(formatPublicCode('backend.order.review', 'zh')).toBe('待人工复核项');
+  expect(formatPublicNote('backend.order.review', 'zh')).toBe('待人工复核说明');
+  expect(formatPublicNote('Review this manually.', 'en')).toBe(
+    'Review this manually.',
+  );
+});
+
+test('formats known audit event codes with specific public labels', () => {
+  expect(formatPublicCode('signal.review.recorded', 'zh')).toBe(
+    '信号复核已记录',
+  );
+  expect(formatPublicCode('task.action.status_changed', 'zh')).toBe(
+    '动作任务状态已更新',
+  );
+  expect(formatPublicCode('order.status_changed', 'zh')).toBe('订单状态已更新');
+  expect(formatPublicCode('order.fill.recorded', 'zh')).toBe('成交已记录');
+  expect(formatPublicCode('order.shadow_divergence_reviewed', 'en')).toBe(
+    'Simulation divergence review recorded',
+  );
+});
+
 test('formats research limitation notes for Chinese user-facing surfaces', () => {
   expect(
     formatPublicNote(
