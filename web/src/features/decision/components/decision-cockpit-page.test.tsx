@@ -571,7 +571,9 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
   expect(
     (await screen.findAllByText('Blocked · Dual Moving Average')).length,
   ).toBeGreaterThan(0);
-  expect(await screen.findByText(/Audit id: dual_ma/)).toBeTruthy();
+  expect(
+    (await screen.findAllByText(/Audit id: dual_ma/)).length,
+  ).toBeGreaterThan(0);
   expect(
     screen.queryByText('Blocked · Dual Moving Average · dual_ma'),
   ).toBeNull();
@@ -1018,6 +1020,11 @@ test('shows strategy display names before internal ids in candidate evidence', a
     'decision-candidate-card-600519',
   );
   expect(candidateCard.textContent).toContain('Dual Moving Average');
+  expect(candidateCard.textContent).toContain('Audit id');
+  expect(candidateCard.textContent).toContain('dual_ma');
+  expect(candidateCard.textContent).not.toContain(
+    'Dual Moving Average · dual_ma',
+  );
   expect(candidateCard.textContent).not.toMatch(/Strategy\s*dual_ma/);
   expect(candidateCard.textContent).not.toMatch(/Strategy source\s*dual_ma/);
 });
@@ -1036,6 +1043,9 @@ test('shows instrument names before symbols across decision candidates and signa
   expect(
     (await screen.findAllByText('贵州茅台 600519')).length,
   ).toBeGreaterThan(1);
+  expect(document.body.textContent).not.toContain(
+    '贵州茅台 600519 · 双均线策略 · dual_ma',
+  );
   expect(document.body.textContent).not.toContain('Increase 600519');
 });
 

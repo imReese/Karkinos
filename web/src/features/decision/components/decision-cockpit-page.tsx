@@ -15,7 +15,6 @@ import {
 } from '../../../shared/public-labels';
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import {
-  formatStrategyAuditLabel,
   formatStrategyDisplayName,
   type StrategyNameMap,
 } from '../../../shared/strategy-display';
@@ -118,6 +117,25 @@ function strategyAttributionAuditId(
     strategyNames,
   );
   return strategyLabel === value.strategy_id ? null : value.strategy_id;
+}
+
+function strategyDisplayNameFromId(
+  strategyId: string | null | undefined,
+  strategyNames: StrategyNameMap,
+) {
+  return formatStrategyDisplayName({ strategy_id: strategyId }, strategyNames);
+}
+
+function strategyAuditIdFromDisplay(
+  strategyId: string | null | undefined,
+  strategyNames: StrategyNameMap,
+) {
+  const normalized = strategyId?.trim();
+  if (!normalized) {
+    return null;
+  }
+  const strategyLabel = strategyDisplayNameFromId(normalized, strategyNames);
+  return strategyLabel === normalized ? null : normalized;
 }
 
 function strategyAttributionTone(
@@ -251,15 +269,23 @@ function candidateEvidenceChainItems(
     ...certaintyActions,
     ...certaintyReasons,
   ].join(' · ');
+  const strategyId = candidate.evidence.strategy.strategy_id;
+  const strategyAuditId = strategyAuditIdFromDisplay(strategyId, strategyNames);
 
   return [
     {
       label: labels.strategySource,
-      value: formatStrategyAuditLabel(
-        candidate.evidence.strategy.strategy_id,
-        strategyNames,
-      ),
+      value: strategyDisplayNameFromId(strategyId, strategyNames),
     },
+    ...(strategyAuditId
+      ? [
+          {
+            label: labels.strategyAuditId,
+            value: strategyAuditId,
+            tone: 'neutral' as const,
+          },
+        ]
+      : []),
     {
       label: labels.marketDataStatus,
       value: formatPublicStatus(
@@ -803,36 +829,49 @@ function SignalQueuePanel({
                     {labels.noSignalJournal}
                   </div>
                 ) : (
-                  latestJournal.map((entry) => (
-                    <div
-                      key={`${entry.signal.id}-${entry.signal.timestamp}`}
-                      className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
-                    >
-                      <div className="font-semibold text-[var(--app-soft)]">
-                        {formatInstrumentDisplayLabel(entry.signal)} ·{' '}
-                        {formatStrategyAuditLabel(
-                          entry.signal.strategy_id,
-                          copy.backtest.page.strategyNames,
-                        )}
+                  latestJournal.map((entry) => {
+                    const strategyNames = copy.backtest.page.strategyNames;
+                    const strategyLabel = strategyDisplayNameFromId(
+                      entry.signal.strategy_id,
+                      strategyNames,
+                    );
+                    const strategyAuditId = strategyAuditIdFromDisplay(
+                      entry.signal.strategy_id,
+                      strategyNames,
+                    );
+                    return (
+                      <div
+                        key={`${entry.signal.id}-${entry.signal.timestamp}`}
+                        className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
+                      >
+                        <div className="font-semibold text-[var(--app-soft)]">
+                          {formatInstrumentDisplayLabel(entry.signal)} ·{' '}
+                          {strategyLabel}
+                        </div>
+                        {strategyAuditId ? (
+                          <div className="app-muted mt-1 break-words">
+                            {labels.strategyAuditId}: {strategyAuditId}
+                          </div>
+                        ) : null}
+                        <div className="app-muted mt-1 break-words">
+                          {formatPublicCode(
+                            entry.latest_event?.event_type ??
+                              entry.review?.outcome ??
+                              entry.action_task?.status ??
+                              '--',
+                            locale,
+                          )}
+                        </div>
+                        <div className="app-muted mt-1 font-mono tabular-nums">
+                          {formatTimestamp(
+                            entry.latest_event?.timestamp ??
+                              entry.review?.reviewed_at ??
+                              entry.signal.timestamp,
+                          )}
+                        </div>
                       </div>
-                      <div className="app-muted mt-1 break-words">
-                        {formatPublicCode(
-                          entry.latest_event?.event_type ??
-                            entry.review?.outcome ??
-                            entry.action_task?.status ??
-                            '--',
-                          locale,
-                        )}
-                      </div>
-                      <div className="app-muted mt-1 font-mono tabular-nums">
-                        {formatTimestamp(
-                          entry.latest_event?.timestamp ??
-                            entry.review?.reviewed_at ??
-                            entry.signal.timestamp,
-                        )}
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -1072,6 +1111,8 @@ function DecisionCandidateCard({
     candidate.detail || candidate.title || labels.noDetail,
     locale,
   );
+  const strategyId = candidate.evidence.strategy.strategy_id;
+  const strategyAuditId = strategyAuditIdFromDisplay(strategyId, strategyNames);
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
@@ -1157,11 +1198,14 @@ function DecisionCandidateCard({
         />
         <EvidenceLine
           label={labels.strategy}
-          value={formatStrategyAuditLabel(
-            candidate.evidence.strategy.strategy_id,
-            strategyNames,
-          )}
+          value={strategyDisplayNameFromId(strategyId, strategyNames)}
         />
+        {strategyAuditId ? (
+          <EvidenceLine
+            label={labels.strategyAuditId}
+            value={strategyAuditId}
+          />
+        ) : null}
         <EvidenceLine
           label={labels.targetWeight}
           value={formatPercent(candidate.target_weight)}

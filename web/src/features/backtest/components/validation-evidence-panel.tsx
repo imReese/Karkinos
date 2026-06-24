@@ -5,7 +5,10 @@ import { useCopy } from '../../../app/copy';
 import { usePreferences, type Locale } from '../../../app/preferences';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import { formatPublicNote } from '../../../shared/public-labels';
-import { formatStrategyAuditLabel } from '../../../shared/strategy-display';
+import {
+  formatStrategyDisplayName,
+  type StrategyNameMap,
+} from '../../../shared/strategy-display';
 import type {
   AfterCostEvidence,
   BacktestReport,
@@ -50,6 +53,33 @@ function translatedBenchmarkRole(
   return (labels.benchmarkRoleNames as Record<string, string>)[role] ?? role;
 }
 
+function strategyDisplayName(
+  strategyId: string | null | undefined,
+  strategyNames: StrategyNameMap,
+  fallback: string,
+) {
+  if (!strategyId) {
+    return fallback;
+  }
+  return formatStrategyDisplayName({ strategy_id: strategyId }, strategyNames);
+}
+
+function strategyAuditId(
+  strategyId: string | null | undefined,
+  strategyNames: StrategyNameMap,
+) {
+  const normalized = strategyId?.trim();
+  if (!normalized) {
+    return null;
+  }
+  const displayName = strategyDisplayName(
+    normalized,
+    strategyNames,
+    normalized,
+  );
+  return displayName === normalized ? null : normalized;
+}
+
 export function ValidationEvidencePanel({
   report,
 }: {
@@ -61,6 +91,10 @@ export function ValidationEvidencePanel({
   const pageLabels = copy.backtest.page;
   const afterCost = afterCostFromReport(report);
   const oos = oosFromReport(report);
+  const oosStrategyAuditId = strategyAuditId(
+    oos?.strategy_id,
+    pageLabels.strategyNames,
+  );
 
   if (!afterCost && !oos) {
     return null;
@@ -129,15 +163,18 @@ export function ValidationEvidencePanel({
             <div className="grid gap-3 sm:grid-cols-2">
               <EvidenceStat
                 label={labels.strategy}
-                value={
-                  oos.strategy_id
-                    ? formatStrategyAuditLabel(
-                        oos.strategy_id,
-                        pageLabels.strategyNames,
-                      )
-                    : labels.unknown
-                }
+                value={strategyDisplayName(
+                  oos.strategy_id,
+                  pageLabels.strategyNames,
+                  labels.unknown,
+                )}
               />
+              {oosStrategyAuditId ? (
+                <EvidenceStat
+                  label={labels.strategyAuditId}
+                  value={oosStrategyAuditId}
+                />
+              ) : null}
               <EvidenceStat
                 label={labels.benchmarkRole}
                 value={translatedBenchmarkRole(

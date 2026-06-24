@@ -50,16 +50,6 @@ function translatedStrategyName(
   );
 }
 
-function translatedStrategyAuditLabel(
-  snapshot: StrategyMetadataSnapshot,
-  labels: ReturnType<typeof useCopy>['backtest']['page'],
-) {
-  const displayName = translatedStrategyName(snapshot, labels);
-  return displayName === snapshot.strategy_id
-    ? snapshot.strategy_id
-    : `${displayName} · ${snapshot.strategy_id}`;
-}
-
 function translatedStrategyDescription(
   snapshot: StrategyMetadataSnapshot,
   labels: ReturnType<typeof useCopy>['backtest']['page'],
@@ -188,7 +178,7 @@ export function StrategyMetadataSnapshotPanel({
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SnapshotStat
           label={labels.strategy}
-          value={translatedStrategyAuditLabel(snapshot, pageLabels)}
+          value={translatedStrategyName(snapshot, pageLabels)}
         />
         <SnapshotStat
           label={labels.internalStrategyId}

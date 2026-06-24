@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Backtest validation evidence now shows localized strategy names
+  as the primary OOS strategy value and keeps raw strategy ids in a separate
+  audit-id field. Backtest strategy snapshot cards follow the same convention:
+  primary strategy text is localized and the raw id remains audit metadata.
+  Web surfaces no longer consume the combined strategy audit-label helper
+  directly, so internal ids stay secondary in Backtest and Decision review
+  text. This is display formatting only; it does not change research evidence,
+  OOS calculations, strategy ids, broker behavior, order submission, risk
+  gates, automatic trading defaults, or manual-confirmation requirements.
+* 2026-06-24: Decision candidate cards, candidate evidence chains, and signal
+  journal rows now keep localized strategy names as the primary user-facing
+  text and show raw strategy ids only as secondary audit ids. This removes
+  combined labels such as "strategy name · strategy id" from the main
+  decision workflow while preserving traceability. This is display formatting
+  only; it does not change decision evidence, signal records, strategy ids,
+  broker behavior, order submission, risk gates, automatic trading defaults,
+  or manual-confirmation requirements.
 * 2026-06-24: Decision strategy-attribution gate summaries now show the
   localized strategy name in the primary status value and move the raw
   strategy id into the detail line as an audit id. This keeps decision
