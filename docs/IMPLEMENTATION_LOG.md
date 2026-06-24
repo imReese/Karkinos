@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-24: Backtest strategy evidence gates now merge promotion-review
+  rows with validation-matrix rows, so readiness-only strategies remain
+  visible with display names first and internal strategy ids as secondary
+  audit labels. This is display-only evidence surfacing; it does not change
+  strategy promotion rules, attribution math, broker behavior, order
+  submission, risk gates, automatic trading defaults, or manual-confirmation
+  requirements.
+* 2026-06-24: Account strategy contribution cards now surface backend
+  limitation notes through the shared public-note formatter, so strategy
+  contribution estimates explain linked-fill, quote, manual-trade, and
+  cash-flow boundaries in user-facing language instead of raw backend
+  wording. This is display formatting only; it does not change attribution
+  math, strategy assignment, broker behavior, order submission, risk gates,
+  automatic trading defaults, or manual-confirmation requirements.
 * 2026-06-24: Trading execution audit fill facts now parse structured
   fill metadata and reuse the shared public ledger execution-detail formatter
   for gross amount, net cash impact, quantity, price, commission, stamp tax,

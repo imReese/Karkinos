@@ -691,6 +691,7 @@ function installBacktestFetchMock({
       'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
     ],
   },
+  strategyPromotionReadinessResponse = strategyPromotionReadiness,
   savedBacktestReport = savedReport,
 }: {
   runFails?: boolean;
@@ -701,6 +702,7 @@ function installBacktestFetchMock({
   accountStrategy?: unknown;
   accountStrategyAttribution?: unknown;
   accountStrategyContribution?: unknown;
+  strategyPromotionReadinessResponse?: unknown;
   savedBacktestReport?: unknown;
 } = {}) {
   const fetchMock = vi.fn(
@@ -719,7 +721,7 @@ function installBacktestFetchMock({
         return jsonResponse(strategyValidation);
       }
       if (url.includes('/api/backtest/strategy-promotion-readiness')) {
-        return jsonResponse(strategyPromotionReadiness);
+        return jsonResponse(strategyPromotionReadinessResponse);
       }
       if (url.includes('/api/account-strategy/attribution')) {
         return jsonResponse(accountStrategyAttribution);
@@ -1084,6 +1086,55 @@ test('shows strategy attribution gate status in strategy review status', async (
   ).toBeGreaterThan(0);
   expect(screen.queryByText('evidence_linked_pnl_pending')).toBeNull();
   expect(await screen.findByText('Attribution pending')).toBeTruthy();
+});
+
+test('keeps readiness-only strategies visible with display names before ids', async () => {
+  renderBacktestPage({
+    results: [],
+    strategies: [...strategyCatalog, extensionStrategy],
+    strategyPromotionReadinessResponse: {
+      ...strategyPromotionReadiness,
+      required_strategy_count: 3,
+      rows: [
+        ...strategyPromotionReadiness.rows,
+        {
+          strategy_id: 'custom_momentum',
+          benchmark_role: 'custom_momentum_research',
+          backtest_result_id: null,
+          has_after_cost_and_oos_evidence: false,
+          has_risk_block_evidence: false,
+          has_paper_shadow_evidence: false,
+          has_paper_shadow_divergence_review: false,
+          has_account_truth_evidence: true,
+          account_truth_gate_status: 'degraded',
+          account_truth_score: 72,
+          has_strategy_attribution_evidence: false,
+          strategy_attribution_status: 'not_started',
+          missing_requirements: [
+            'risk_block_evidence',
+            'paper_shadow_evidence',
+          ],
+          promotion_status: 'review_required',
+          is_promotable: false,
+        },
+      ],
+    },
+  });
+
+  const evidenceGate = (
+    await screen.findByText('Strategy validation and review status')
+  ).closest('section');
+  expect(evidenceGate).toBeTruthy();
+  expect(
+    await within(evidenceGate!).findByText('Custom Momentum Extension'),
+  ).toBeTruthy();
+  expect(within(evidenceGate!).getByText('custom_momentum')).toBeTruthy();
+  expect(within(evidenceGate!).getByText('Review required')).toBeTruthy();
+  expect(within(evidenceGate!).getByText('Degraded · 72')).toBeTruthy();
+  expect(within(evidenceGate!).getByText(/Risk block evidence/)).toBeTruthy();
+  expect(
+    within(evidenceGate!).queryByText(/custom_momentum_research/),
+  ).toBeNull();
 });
 
 test('defaults strategy parameters to chinese for chinese browser locales', async () => {
