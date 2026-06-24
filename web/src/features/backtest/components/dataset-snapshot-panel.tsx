@@ -1,6 +1,7 @@
 import { Database, ShieldCheck } from 'lucide-react';
 
 import { useCopy } from '../../../app/copy';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatTimestamp } from '../../../shared/format';
 import {
   isUnconfirmedMarketDataStatus,
@@ -37,6 +38,7 @@ function datasetStatusNeedsReview(status?: string | null) {
 export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   const copy = useCopy();
   const labels = copy.backtest.datasetSnapshot;
+  const common = copy.common;
   const snapshot = snapshotFromReport(report);
 
   if (!snapshot) {
@@ -142,7 +144,9 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
                 >
                   <td className="px-4 py-3 font-semibold">{row.symbol}</td>
                   <td className="px-4 py-3">
-                    {row.asset_class ?? labels.unknown}
+                    {row.asset_class
+                      ? formatAssetClassLabel(row.asset_class, common)
+                      : labels.unknown}
                   </td>
                   <td className="px-4 py-3 tabular-nums">
                     {row.frequency ?? labels.unknown}

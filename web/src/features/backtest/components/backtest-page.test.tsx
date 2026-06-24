@@ -1315,6 +1315,40 @@ test('localizes built-in strategy names without changing strategy ids', async ()
   expect(payload.strategy).toBe('dual_ma');
 });
 
+test('localizes backtest asset class options without changing payload enum values', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
+
+  const assetClassSelect = (await screen.findByLabelText(
+    '资产类别',
+  )) as HTMLSelectElement;
+  const optionLabels = Array.from(assetClassSelect.options).map(
+    (option) => option.textContent,
+  );
+
+  expect(optionLabels).toEqual(['股票', 'ETF', '基金', '黄金', '债券']);
+  expect(optionLabels).not.toContain('stock');
+  expect(optionLabels).not.toContain('fund');
+
+  fireEvent.change(await screen.findByLabelText('标的代码'), {
+    target: { value: '018125' },
+  });
+  fireEvent.change(assetClassSelect, { target: { value: 'fund' } });
+  const runButton = screen.getByRole('button', { name: '运行回测' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/run',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const runCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/run'),
+  );
+  const payload = JSON.parse(String(runCall?.[1]?.body));
+  expect(payload.assets).toEqual([{ symbol: '018125', asset_class: 'fund' }]);
+});
+
 test('localizes built-in parameter labels and descriptions without changing payload keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
@@ -1411,6 +1445,16 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('600519')).toBeTruthy();
   expect(await screen.findByText('260 rows')).toBeTruthy();
   expect(await screen.findByText('qfq')).toBeTruthy();
+});
+
+test('localizes dataset snapshot asset classes in chinese reports', async () => {
+  renderBacktestPage({ locale: 'zh' });
+
+  const title = await screen.findByText('数据快照');
+  const panel = title.closest('section');
+  expect(panel).toBeTruthy();
+  expect(within(panel!).getByText('股票')).toBeTruthy();
+  expect(within(panel!).queryByText('stock')).toBeNull();
 });
 
 test('marks unconfirmed dataset rows in saved backtest reports', async () => {
