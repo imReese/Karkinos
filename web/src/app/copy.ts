@@ -903,6 +903,18 @@ export const copy = {
         signalPreviewReferencePrice: (price: string) =>
           `Reference price ${price}`,
         signalPreviewDataset: 'Dataset snapshot',
+        signalPreviewReviewGates: 'Review gates',
+        signalPreviewGateLabels: {
+          dataReady: 'Data ready',
+          dataNeedsReview: 'Data needs review',
+          dataBlocked: 'Data blocked',
+          accountTruthRequired: 'Account truth required',
+          riskRequired: 'Risk gate required',
+          paperShadowWaiting: 'Paper/shadow waiting',
+          manualReviewRequired: 'Manual review required',
+          notRequired: 'Not required',
+          unknown: 'Review required',
+        },
         signalPreviewGateRequired:
           'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
         signalPreviewNoGateRequired:
@@ -2613,6 +2625,18 @@ export const copy = {
         signalPreviewReferencePriceLabel: '参考价格',
         signalPreviewReferencePrice: (price: string) => `参考价格 ${price}`,
         signalPreviewDataset: '数据快照',
+        signalPreviewReviewGates: '复核闸门',
+        signalPreviewGateLabels: {
+          dataReady: '数据可用',
+          dataNeedsReview: '数据需复核',
+          dataBlocked: '数据阻断',
+          accountTruthRequired: '账户事实待复核',
+          riskRequired: '风控闸门待执行',
+          paperShadowWaiting: 'paper/shadow 待前置闸门',
+          manualReviewRequired: '人工复核必需',
+          notRequired: '无需执行',
+          unknown: '需要复核',
+        },
         signalPreviewGateRequired:
           '需要先经过风控、账户事实、paper/shadow 和人工复核，才能进入任何类 live 流程。',
         signalPreviewNoGateRequired: '未生成候选动作；不需要进入交易闸门。',

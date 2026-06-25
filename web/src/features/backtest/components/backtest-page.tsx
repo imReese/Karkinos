@@ -1211,6 +1211,7 @@ function StrategySignalPreviewPanel({
   const actionLabel = output
     ? signalPreviewActionLabel(output, locale, labels)
     : labels.notDeclared;
+  const reviewGates = output?.review_gates ?? [];
   const gateRequired = output
     ? output.requires_risk_gate ||
       output.requires_account_truth_gate ||
@@ -1296,6 +1297,28 @@ function StrategySignalPreviewPanel({
               </p>
             </div>
           </div>
+          {reviewGates.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+              <div className="app-muted text-xs font-semibold">
+                {labels.signalPreviewReviewGates}
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                {reviewGates.map((gate) => (
+                  <div
+                    key={`${gate.key}:${gate.status}`}
+                    className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] px-3 py-2"
+                  >
+                    <div className="truncate text-sm font-semibold text-[var(--app-text)]">
+                      {signalPreviewGateLabel(gate, labels)}
+                    </div>
+                    <div className="app-muted mt-1 truncate text-xs">
+                      {formatPublicStatus(gate.status, locale)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold text-[var(--app-warning)]">
             {gateRequired
               ? labels.signalPreviewGateRequired
@@ -1346,6 +1369,37 @@ function signalPreviewReason(
     return labels.signalPreviewReasons.rebalance;
   }
   return labels.signalPreviewReasons.no_action;
+}
+
+function signalPreviewGateLabel(
+  gate: NonNullable<StrategySignalPreviewOutput['review_gates']>[number],
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+) {
+  if (gate.status === 'not_required') {
+    return labels.signalPreviewGateLabels.notRequired;
+  }
+  if (gate.key === 'data') {
+    if (['blocked', 'missing', 'unavailable'].includes(gate.status)) {
+      return labels.signalPreviewGateLabels.dataBlocked;
+    }
+    if (['pass', 'ok', 'complete', 'confirmed', 'live'].includes(gate.status)) {
+      return labels.signalPreviewGateLabels.dataReady;
+    }
+    return labels.signalPreviewGateLabels.dataNeedsReview;
+  }
+  if (gate.key === 'account_truth') {
+    return labels.signalPreviewGateLabels.accountTruthRequired;
+  }
+  if (gate.key === 'risk') {
+    return labels.signalPreviewGateLabels.riskRequired;
+  }
+  if (gate.key === 'paper_shadow') {
+    return labels.signalPreviewGateLabels.paperShadowWaiting;
+  }
+  if (gate.key === 'manual_review') {
+    return labels.signalPreviewGateLabels.manualReviewRequired;
+  }
+  return labels.signalPreviewGateLabels.unknown;
 }
 
 function StrategyEvidenceGatePanel({

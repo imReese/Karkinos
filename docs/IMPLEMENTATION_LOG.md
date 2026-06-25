@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Strategy signal-preview audit records now include a structured
+  review-gate chain for data readiness, account truth, pre-trade risk,
+  paper/shadow preview, and manual review. Web Backtest renders those gates as
+  localized user-facing review states after a single-symbol run, without
+  exposing internal reason codes. This is audit and review guidance only; it
+  does not run a sized pre-trade order intent, create paper or live orders,
+  persist signals, mutate ledger entries, submit broker orders, or change
+  automatic-trading defaults.
 * 2026-06-25: Added a research-only Backtest signal-preview path that runs a
   registered strategy over explicit single-symbol bars or server-side
   single-symbol date ranges, validates the same parameter schema as backtests,

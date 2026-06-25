@@ -68,6 +68,57 @@ def test_strategy_signal_preview_converts_legacy_signal_into_candidate_action() 
     assert record["evidence"]["bar_count"] == 4
     assert record["evidence"]["dataset_snapshot_id"] == "snapshot-signal-preview-001"
     assert record["evidence"]["data_quality_status"] == "pass"
+    assert record["review_gates"] == [
+        {
+            "key": "data",
+            "status": "pass",
+            "severity": "info",
+            "summary": "Dataset snapshot is available for the preview bars.",
+            "required_action": None,
+            "evidence_ref": "snapshot-signal-preview-001",
+        },
+        {
+            "key": "account_truth",
+            "status": "not_evaluated",
+            "severity": "warning",
+            "summary": (
+                "Account-truth evidence must be checked before this candidate "
+                "can enter any live-like workflow."
+            ),
+            "required_action": "review_account_truth_evidence",
+            "evidence_ref": None,
+        },
+        {
+            "key": "risk",
+            "status": "not_evaluated",
+            "severity": "warning",
+            "summary": (
+                "Pre-trade risk requires a sized order intent and current "
+                "account context."
+            ),
+            "required_action": "size_order_and_run_pre_trade_risk_gate",
+            "evidence_ref": None,
+        },
+        {
+            "key": "paper_shadow",
+            "status": "waiting",
+            "severity": "warning",
+            "summary": (
+                "Paper/shadow preview waits for data, account-truth, and risk "
+                "gates."
+            ),
+            "required_action": "run_paper_shadow_preview_after_gates",
+            "evidence_ref": None,
+        },
+        {
+            "key": "manual_review",
+            "status": "required",
+            "severity": "warning",
+            "summary": "Manual review is required before any live-like workflow.",
+            "required_action": "manual_confirm_or_reject_candidate",
+            "evidence_ref": None,
+        },
+    ]
 
 
 def test_strategy_signal_preview_returns_no_action_when_strategy_emits_no_signal() -> (
@@ -100,3 +151,45 @@ def test_strategy_signal_preview_returns_no_action_when_strategy_emits_no_signal
     assert record["requires_paper_shadow_review"] is False
     assert record["requires_manual_review"] is False
     assert record["evidence"]["data_quality_status"] == "degraded"
+    assert record["review_gates"] == [
+        {
+            "key": "data",
+            "status": "degraded",
+            "severity": "warning",
+            "summary": "Dataset snapshot is degraded for the preview bars.",
+            "required_action": "review_dataset_quality",
+            "evidence_ref": "snapshot-signal-preview-002",
+        },
+        {
+            "key": "account_truth",
+            "status": "not_required",
+            "severity": "info",
+            "summary": "No candidate action was emitted, so account-truth gate is not required.",
+            "required_action": None,
+            "evidence_ref": None,
+        },
+        {
+            "key": "risk",
+            "status": "not_required",
+            "severity": "info",
+            "summary": "No candidate action was emitted, so pre-trade risk gate is not required.",
+            "required_action": None,
+            "evidence_ref": None,
+        },
+        {
+            "key": "paper_shadow",
+            "status": "not_required",
+            "severity": "info",
+            "summary": "No candidate action was emitted, so paper/shadow preview is not required.",
+            "required_action": None,
+            "evidence_ref": None,
+        },
+        {
+            "key": "manual_review",
+            "status": "not_required",
+            "severity": "info",
+            "summary": "No candidate action was emitted, so manual review is not required.",
+            "required_action": None,
+            "evidence_ref": None,
+        },
+    ]

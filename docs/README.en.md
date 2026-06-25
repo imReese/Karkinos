@@ -517,9 +517,9 @@ parameter schema to convert explicit single-symbol bars, or backend-loaded
 data for a single symbol and date range, into research-only strategy-runtime
 audit records. The response marks
 `does_not_enable_execution=true`, includes dataset snapshot id and data-quality
-status, and states the downstream risk, account-truth, paper/shadow, and manual
-review gates required for candidate actions. It does not write to `signals`,
-the action queue, order/fill facts, or ledger entries.
+status, and includes a structured review-gate chain for data readiness,
+account truth, pre-trade risk, paper/shadow preview, and manual review. It does
+not write to `signals`, the action queue, order/fill facts, or ledger entries.
 Saved results also persist `metrics_json.strategy_metadata` with the strategy
 identity, display name, description, asset universe, supported frequencies,
 parameter schema, normalized params, benchmark role, and validation
