@@ -727,6 +727,24 @@ broker-facing cost basis shown in a user's securities app.
 * [ ] Web surfaces explain strategy contribution in localized user-facing
   language and keep internal strategy ids secondary.
 
+### Active Goal Audit: Data-Trusted Single-Instrument Strategy Loop
+
+This active-goal audit tracks the current read-only preview chain for one
+instrument. It proves that deterministic evidence exists from dataset and
+strategy selection through signal, risk, paper/shadow, and attribution-preview
+boundaries. It does not claim production strategy P/L attribution, broker order
+submission, or automatic real-money trading.
+
+### Acceptance Criteria for Data-Trusted Single-Instrument Strategy Loop
+
+* [x] Dataset snapshot evidence and strategy registry are both present in the one-symbol flow.
+* [x] A single-symbol after-cost backtest can feed the preview chain without writing production trading facts.
+* [x] Today's signal preview returns standardized candidate actions or no-action reasons as research evidence.
+* [x] The preview path runs a read-only risk gate before paper/shadow simulation.
+* [x] Paper/shadow preview simulates order and fill evidence while remaining isolated from the real ledger.
+* [x] Attribution preview exposes evidence counts and a manual review linkage candidate without claiming strategy P/L.
+* [x] Web Backtest surfaces the loop in localized, user-readable language without exposing internal reason codes.
+
 ## Target for v1.5
 
 Karkinos v1.5 — Risk & Portfolio Construction — should move from single-order

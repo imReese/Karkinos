@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Added a capability-based acceptance audit manifest and CLI
+  registry entry for the data-trusted single-instrument strategy loop. The
+  audit covers dataset snapshot and strategy registry evidence, one-symbol
+  after-cost backtest, signal preview, risk preview, paper/shadow preview,
+  attribution-preview boundary, and localized Web Backtest surfaces. This is
+  deterministic audit coverage for the read-only preview chain; it does not
+  claim production strategy P/L, mutate ledger entries, submit broker orders,
+  or change automatic-trading defaults.
 * 2026-06-25: Backtest now exposes a read-only attribution evidence preview
   after the single-symbol signal, risk, and paper/shadow preview chain. The
   backend reports preview evidence counts, production order/fill fact counts,
