@@ -1743,6 +1743,70 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="shared_public_ledger_formatter_surface_contract",
+                checkbox_text=(
+                    "* [x] A shared public ledger formatter is used by Overview, "
+                    "Activity,"
+                ),
+                evidence_paths=(
+                    "web/src/shared/ledger-format.ts",
+                    "web/src/features/activity/components/activity-feed.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                    "web/src/app/router.tsx",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                    "web/src/features/activity/ledger-format.test.ts",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/app/risk-page.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.test.tsx",
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- ledger-format overview-page risk-page holding-detail-page account-truth-review-page decision-cockpit-page",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="public_ledger_surfaces_hide_internal_values",
+                checkbox_text=(
+                    "* [x] User-facing ledger surfaces do not render internal "
+                    "values such as"
+                ),
+                evidence_paths=(
+                    "web/src/shared/ledger-format.ts",
+                    "web/src/shared/public-labels.ts",
+                    "web/src/features/activity/ledger-format.test.ts",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/app/risk-page.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.test.tsx",
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- ledger-format overview-page risk-page holding-detail-page account-truth-review-page decision-cockpit-page",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="public_ledger_notes_keep_core_facts_structured",
+                checkbox_text=(
+                    "* [x] Public ledger notes follow a consistent localized "
+                    "format and never carry"
+                ),
+                evidence_paths=(
+                    "web/src/shared/ledger-format.ts",
+                    "web/src/features/activity/ledger-format.test.ts",
+                    "web/src/features/activity/components/activity-feed.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                    "web/src/app/router.tsx",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- ledger-format overview-page risk-page holding-detail-page account-truth-review-page decision-cockpit-page",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="shared_fee_model_contract_across_research_and_ledger",
                 checkbox_text=(
                     "* [x] Backtest, paper broker, manual trade preview, and "
