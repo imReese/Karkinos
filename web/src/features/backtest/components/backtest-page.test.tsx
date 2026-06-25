@@ -1903,6 +1903,12 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
   fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
   expect(await screen.findByText('Risk passed')).toBeTruthy();
   expect(await screen.findByText('Approved for manual review')).toBeTruthy();
+  expect(await screen.findByText('Paper/shadow next step')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Risk preview passed. Run paper/shadow simulation before any manual step.',
+    ),
+  ).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: 'Preview paper/shadow' }));
   expect(await screen.findByText('Paper/shadow preview')).toBeTruthy();
@@ -1995,6 +2001,16 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(await screen.findByText('Risk gate passed')).toBeTruthy();
   expect(await screen.findByText('Paper/shadow simulation ready')).toBeTruthy();
   expect(await screen.findByText('Attribution boundary ready')).toBeTruthy();
+  expect(await screen.findByText('Acceptance audit coverage')).toBeTruthy();
+  expect(await screen.findByText('8/8 criteria verified')).toBeTruthy();
+  expect(
+    await screen.findByText('single_instrument_strategy_loop'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Product-readiness proof only; it does not enable broker execution or investment advice.',
+    ),
+  ).toBeTruthy();
   expect(
     (
       await screen.findByRole('link', {
@@ -2045,6 +2061,12 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(
     await screen.findByText(
       'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
+    ),
+  ).toBeTruthy();
+  expect(await screen.findByText('No linked production fills')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Strategy P/L is unavailable until signal, review, order, and fill evidence are linked.',
     ),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain('ready_for_review_linkage');

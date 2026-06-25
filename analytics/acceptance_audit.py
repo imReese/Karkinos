@@ -1942,6 +1942,25 @@ def build_single_instrument_strategy_loop_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="web_paper_shadow_attribution_boundary",
+                checkbox_text=(
+                    "* [x] Web Backtest explicitly explains the post-risk "
+                    "paper/shadow next step and blocks strategy P/L attribution "
+                    "when production fills are not linked."
+                ),
+                evidence_paths=(
+                    "web/src/app/copy.ts",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- backtest-page -t 'previews paper shadow simulation after a passed risk preview|summarizes attribution preview evidence'",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k single_instrument_strategy_loop",
+                    "uv run python scripts/export_acceptance_audit.py --audit single_instrument_strategy_loop",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="web_user_readable_loop_surface",
                 checkbox_text=(
                     "* [x] Web Backtest surfaces the loop in localized, "

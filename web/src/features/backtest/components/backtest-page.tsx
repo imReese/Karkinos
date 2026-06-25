@@ -1068,6 +1068,24 @@ function SingleInstrumentLoopReadinessCard({
           {labels.singleInstrumentLoopEvidenceCta}
         </a>
       </div>
+      <div className="mt-3 grid gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)] px-3 py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="min-w-0">
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {labels.singleInstrumentLoopAuditCoverage}
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+            <span className="font-semibold text-[var(--app-success)]">
+              {labels.singleInstrumentLoopAuditCount}
+            </span>
+            <code className="min-w-0 break-all rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-muted)]">
+              {labels.singleInstrumentLoopAuditKey}
+            </code>
+          </div>
+        </div>
+        <p className="app-muted min-w-0 text-xs leading-5 sm:max-w-sm sm:text-right">
+          {labels.singleInstrumentLoopAuditBoundary}
+        </p>
+      </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {steps.map((step) => (
           <div
@@ -1858,7 +1876,7 @@ function StrategySignalPreviewPanel({
                   <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="min-w-0">
                       <div className="app-muted text-xs font-semibold">
-                        {labels.signalPreviewPaperShadowTitle}
+                        {labels.signalPreviewPaperShadowNextStep}
                       </div>
                       <p className="app-muted mt-1 text-sm leading-6">
                         {paperShadowPreviewable
@@ -2122,6 +2140,16 @@ function AttributionPreviewResult({
           value={labels.signalPreviewAttributionPreviewOnly}
         />
       </div>
+      {!result.can_attribute_pnl && productionFacts === 0 ? (
+        <div className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3">
+          <div className="text-sm font-semibold text-[var(--app-warning)]">
+            {labels.signalPreviewAttributionNoLinkedFillsTitle}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-[var(--app-warning)]">
+            {labels.signalPreviewAttributionNoLinkedFillsDetail}
+          </p>
+        </div>
+      ) : null}
       {result.review_linkage_candidate ? (
         <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-4 py-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
