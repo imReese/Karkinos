@@ -33,7 +33,9 @@ Key Features:
 - **Account Truth Review Center** — Web `/account-truth` shows Account Truth
   Score, import runs, status-filtered reconciliation reports, per-item
   broker/Karkinos differences, evidence references, and manual review actions
-  without mutating the production ledger
+  without mutating the production ledger. Cost-basis differences show broker
+  and local method context, per-share comparison units, and precision
+  limitations.
 - **Account Truth gate linkage** — Decision and Strategy Lab promotion review
   surfaces show Account Truth gate status, score, unresolved-difference
   context, and evidence availability before manual review or research promotion
@@ -526,6 +528,10 @@ Backtest fill records keep the legacy `commission` total while exposing the
 same structured fee-breakdown contract used by paper broker evidence, manual
 trade preview, and ledger projections: commission, stamp tax, transfer fee,
 other fees, total fee, fee-rule id, and known limitations.
+When a backtest report includes fills, the Web equity/drawdown chart overlays
+buy/sell markers and shows a compact marker summary beside the curve. These
+markers come only from the saved backtest fills as research evidence; they do
+not approve execution or attribute live-account returns by themselves.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports
 whether each registered benchmark strategy has after-cost and out-of-sample

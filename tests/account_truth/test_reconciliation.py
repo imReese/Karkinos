@@ -259,6 +259,69 @@ def test_reconciliation_report_distinguishes_trade_cash_fee_tax_transfer_and_cos
     assert cost_basis_item.difference == "0.10"
     assert cost_basis_item.detail_code == "account_truth.cost_basis_compared"
     assert cost_basis_item.detail_context == {
-        "cost_basis_method": "broker_remaining_cost"
+        "broker_cost_basis_method": "broker_remaining_cost",
+        "karkinos_cost_basis_method": "moving_average_buy_cost",
+        "comparison_unit": "per_share_cost_basis",
+        "comparison_precision": "decimal_string_no_rounding",
+        "precision_limitation": (
+            "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
+        ),
     }
     assert "broker_remaining_cost" in cost_basis_item.detail
+
+
+def test_reconciliation_cost_basis_context_explains_methods_and_precision(
+    tmp_path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(COMPONENT_STATEMENT)
+    import_run = repository.save_preview(
+        preview,
+        source_name="cost-basis-context.csv",
+    )
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[
+            KarkinosLedgerFact(
+                event_type="trade_sell",
+                symbol="SYN001",
+                quantity=Decimal("100"),
+                price=Decimal("12.00"),
+                gross_amount=Decimal("1200.00"),
+                fee=Decimal("1.80"),
+                tax=Decimal("1.20"),
+                transfer_fee=Decimal("0.60"),
+                net_amount=Decimal("1196.40"),
+            )
+        ],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("0"),
+                cost_basis=Decimal("8.8000"),
+                cost_basis_method="broker_remaining_cost",
+            )
+        ],
+    )
+
+    cost_basis_item = next(
+        item
+        for item in report.items
+        if item.category == "cost_basis" and item.symbol == "SYN001"
+    )
+
+    assert cost_basis_item.status == "pass"
+    assert cost_basis_item.detail_context == {
+        "broker_cost_basis_method": "broker_remaining_cost",
+        "karkinos_cost_basis_method": "broker_remaining_cost",
+        "comparison_unit": "per_share_cost_basis",
+        "comparison_precision": "decimal_string_no_rounding",
+        "precision_limitation": (
+            "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
+        ),
+    }
+    assert "per-share" in cost_basis_item.detail
+    assert "precision" in cost_basis_item.detail

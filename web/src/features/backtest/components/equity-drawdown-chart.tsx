@@ -4,6 +4,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,13 +16,23 @@ import {
   formatCompactNumber,
   formatCurrency,
   formatPercent,
+  formatPrice,
+  formatQuantity,
   formatTimestamp,
 } from '../../../shared/format';
-import type { BacktestEquityPoint } from '../api';
+import { formatPublicCode } from '../../../shared/public-labels';
+import { usePreferences } from '../../../app/preferences';
+import type { BacktestEquityPoint, BacktestFill } from '../api';
 
 type ChartPoint = BacktestEquityPoint & {
   timestampMs: number;
   drawdown: number;
+};
+
+type FillMarker = BacktestFill & {
+  timestampMs: number;
+  equity: number;
+  sideLabel: string;
 };
 
 function toChartPoints(points: BacktestEquityPoint[]): ChartPoint[] {
@@ -46,6 +57,38 @@ function formatDate(timestampMs: number) {
 
 function formatAxisCurrency(value: number) {
   return formatCompactNumber(value);
+}
+
+function nearestEquity(points: ChartPoint[], timestampMs: number) {
+  if (points.length === 0) {
+    return 0;
+  }
+  return points.reduce((closest, point) =>
+    Math.abs(point.timestampMs - timestampMs) <
+    Math.abs(closest.timestampMs - timestampMs)
+      ? point
+      : closest,
+  ).equity;
+}
+
+function toFillMarkers(
+  fills: BacktestFill[],
+  points: ChartPoint[],
+  locale: 'en' | 'zh',
+): FillMarker[] {
+  return fills
+    .map((fill) => {
+      const timestampMs = fill.timestamp
+        ? new Date(fill.timestamp).getTime()
+        : Number.NaN;
+      return {
+        ...fill,
+        timestampMs,
+        equity: nearestEquity(points, timestampMs),
+        sideLabel: formatPublicCode(fill.side, locale),
+      };
+    })
+    .filter((marker) => Number.isFinite(marker.timestampMs));
 }
 
 function EquityTooltip({
@@ -75,12 +118,16 @@ function EquityTooltip({
 }
 
 export function EquityDrawdownChart({
+  fills = [],
   points,
 }: {
+  fills?: BacktestFill[];
   points: BacktestEquityPoint[];
 }) {
   const labels = useCopy().backtest.chart;
+  const { locale } = usePreferences();
   const data = toChartPoints(points);
+  const fillMarkers = toFillMarkers(fills, data, locale);
 
   if (data.length === 0) {
     return (
@@ -142,6 +189,22 @@ export function EquityDrawdownChart({
                 fontSize={12}
               />
               <Tooltip content={<EquityTooltip />} />
+              {fillMarkers.map((marker, index) => (
+                <ReferenceDot
+                  fill={
+                    marker.side === 'buy'
+                      ? 'var(--app-success)'
+                      : 'var(--app-danger)'
+                  }
+                  ifOverflow="extendDomain"
+                  key={`${marker.fill_id ?? marker.order_id ?? marker.symbol}-${index}`}
+                  r={5}
+                  stroke="var(--app-base)"
+                  strokeWidth={2}
+                  x={marker.timestampMs}
+                  y={marker.equity}
+                />
+              ))}
               <Line
                 type="monotone"
                 dataKey="equity"
@@ -153,6 +216,54 @@ export function EquityDrawdownChart({
             </LineChart>
           </ResponsiveContainer>
         </div>
+
+        {fillMarkers.length > 0 ? (
+          <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                  {labels.markersKicker}
+                </div>
+                <div className="mt-1 text-sm font-black text-[var(--app-text)]">
+                  {labels.markersTitle}
+                </div>
+              </div>
+              <div className="app-muted text-xs tabular-nums">
+                {labels.markersCount(fillMarkers.length)}
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {fillMarkers.slice(0, 6).map((marker, index) => (
+                <div
+                  className="min-w-0 rounded-2xl bg-[color-mix(in_srgb,var(--app-mantle)_34%,transparent)] px-3 py-2 text-xs"
+                  key={`${marker.fill_id ?? marker.order_id ?? marker.symbol}-${index}-summary`}
+                >
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <span
+                      className={`font-black ${
+                        marker.side === 'buy'
+                          ? 'text-[var(--app-success)]'
+                          : 'text-[var(--app-danger)]'
+                      }`}
+                    >
+                      {marker.sideLabel} · {marker.symbol}
+                    </span>
+                    <span className="tabular-nums text-[var(--app-text)]">
+                      {formatPrice(marker.fill_price)}
+                    </span>
+                  </div>
+                  <div className="app-muted mt-1 flex flex-wrap gap-x-3 gap-y-1 tabular-nums">
+                    <span>{formatTimestamp(marker.timestamp ?? '')}</span>
+                    <span>
+                      {labels.markerQuantity}{' '}
+                      {formatQuantity(marker.fill_quantity)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="h-[150px] min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)]">
           <ResponsiveContainer

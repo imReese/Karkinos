@@ -84,7 +84,10 @@ public demos and development.
 - Web Account Truth Review Center at `/account-truth` surfaces the latest
   Account Truth Score, import runs, status-filtered reconciliation reports,
   per-item broker/Karkinos differences, evidence references, and manual review
-  actions without mutating the production ledger.
+  actions without mutating the production ledger. Cost-basis reconciliation
+  items include broker and Karkinos method context, per-share comparison units,
+  and precision limitations so broker display rounding and local projections
+  can be reviewed explicitly.
 - Decision and Strategy Lab promotion review surfaces show Account Truth gate
   status, score, unresolved-difference context, and evidence availability so
   account-truth issues are visible before manual review or research promotion.
@@ -214,6 +217,10 @@ Backtest fill records keep the legacy `commission` total and now expose the
 same structured fee-breakdown contract used by paper broker evidence, manual
 trade preview, and ledger projections: commission, stamp tax, transfer fee,
 other fees, total fee, fee-rule id, and known limitations.
+When a backtest report includes fill records, the Web equity/drawdown chart
+overlays buy/sell markers and a compact marker summary beside the curve. Those
+markers are research evidence from the saved backtest fills only; they do not
+approve execution or attribute live account returns by themselves.
 
 For CI, release review, or manual acceptance checks, export the current
 acceptance audit manifests as JSON:

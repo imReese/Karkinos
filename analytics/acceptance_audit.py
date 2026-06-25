@@ -1768,6 +1768,25 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="account_truth_cost_basis_method_precision_context",
+                checkbox_text=(
+                    "* [x] Account Truth reconciliation compares "
+                    "broker-reported cost basis against"
+                ),
+                evidence_paths=(
+                    "account_truth/reconciliation.py",
+                    "server/account_truth_gate.py",
+                    "tests/account_truth/test_reconciliation.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/shared/public-labels.ts",
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/account_truth/test_reconciliation.py tests/server/test_account_truth_routes.py",
+                    "npm --prefix web test -- account-truth-review-page",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="strategy_health_states",
                 checkbox_text=(
                     "* [x] Strategy health can mark assigned strategies as healthy, "

@@ -6,6 +6,12 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Web Backtest equity/drawdown charts now consume saved fill
+  records, overlay buy/sell markers, and show a compact marker summary with
+  localized side labels, symbol, price, time, and quantity. The markers are
+  report display evidence only and do not change strategy math, fills,
+  attribution, broker behavior, order submission, risk gates, automatic
+  trading defaults, or manual-confirmation requirements.
 * 2026-06-24: Backtest validation evidence now shows localized strategy names
   as the primary OOS strategy value and keeps raw strategy ids in a separate
   audit-id field. Backtest strategy snapshot cards follow the same convention:
@@ -1416,3 +1422,10 @@ roadmap promises.
   evidence. This is research and simulation evidence only; it does not submit
   broker orders, change live-like defaults, bypass risk gates, or bypass
   manual confirmation.
+* 2026-06-25: Account Truth cost-basis reconciliation now compares broker
+  reported per-share cost basis against the Karkinos broker/local cost-basis
+  method context and exposes comparison unit, precision policy, and rounding /
+  fee-allocation limitations to the Web review surface. The v1.4 broker fee /
+  cost-basis acceptance audit records this evidence. This is reconciliation
+  evidence only; it does not mutate ledger entries, submit broker orders,
+  change risk gates, enable automatic trading, or bypass manual confirmation.

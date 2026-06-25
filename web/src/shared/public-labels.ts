@@ -197,7 +197,17 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     paper_shadow_review: 'Simulation review',
     paper_shadow_evidence_required_before_manual_confirmation:
       'Simulation-review evidence required before manual confirmation',
+    broker_cost_basis_method: 'Broker cost-basis method',
+    karkinos_cost_basis_method: 'Karkinos cost-basis method',
     broker_remaining_cost: 'Broker remaining-position cost',
+    moving_average_buy_cost: 'Moving average buy cost',
+    comparison_unit: 'Comparison unit',
+    per_share_cost_basis: 'Per-share cost basis',
+    comparison_precision: 'Comparison precision',
+    decimal_string_no_rounding: 'Original decimal value',
+    precision_limitation: 'Precision limitation',
+    broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding:
+      'Broker display precision, fee allocation, tax timing, and transfer-fee rounding may differ',
     position: 'Position',
     position_missing: 'Position evidence is missing',
     preview_import_and_reconcile_broker_evidence:
@@ -283,7 +293,17 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     paper_shadow_review: '模拟复盘',
     paper_shadow_evidence_required_before_manual_confirmation:
       '人工确认前需要补齐模拟盘复核证据',
+    broker_cost_basis_method: '券商成本口径',
+    karkinos_cost_basis_method: '本地成本口径',
     broker_remaining_cost: '券商剩余持仓成本',
+    moving_average_buy_cost: '移动平均买入成本',
+    comparison_unit: '对比单位',
+    per_share_cost_basis: '单股成本价',
+    comparison_precision: '对比精度',
+    decimal_string_no_rounding: '原始小数值',
+    precision_limitation: '精度限制',
+    broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding:
+      '券商显示精度、费用分摊、税费确认与过户费舍入可能不同',
     position: '持仓',
     position_missing: '缺少持仓凭证',
     preview_import_and_reconcile_broker_evidence: '预览券商凭证导入并完成对账',
