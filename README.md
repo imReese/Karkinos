@@ -225,9 +225,11 @@ approve execution or attribute live account returns by themselves.
 single-symbol bars or a server-side single-symbol date range and return
 research-only strategy-runtime audit records
 (`buy`, `sell`, `rebalance`, or `no_action`) with dataset snapshot and data
-quality context. It validates the same strategy parameter schema as backtests
-and does not persist signals, create action tasks, submit orders, create fills,
-or mutate ledger entries.
+quality context plus a structured review-gate chain for data readiness,
+account truth, pre-trade risk, paper/shadow preview, and manual review. It
+validates the same strategy parameter schema as backtests and does not persist
+signals, create action tasks, submit orders, create fills, or mutate ledger
+entries.
 
 For CI, release review, or manual acceptance checks, export the current
 acceptance audit manifests as JSON:

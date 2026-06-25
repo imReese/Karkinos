@@ -225,6 +225,14 @@ export type StrategySignalPreviewOutput = {
     research_only?: boolean;
     does_not_enable_execution?: boolean;
   };
+  review_gates?: Array<{
+    key: string;
+    status: string;
+    severity?: string | null;
+    summary?: string | null;
+    required_action?: string | null;
+    evidence_ref?: string | null;
+  }>;
   requires_risk_gate: boolean;
   requires_account_truth_gate: boolean;
   requires_paper_shadow_review: boolean;

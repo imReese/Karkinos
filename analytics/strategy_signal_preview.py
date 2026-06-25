@@ -126,6 +126,7 @@ def _signal_to_audit_record(
             signal=signal,
             dataset_snapshot=dataset_snapshot,
         ),
+        "review_gates": _candidate_review_gates(dataset_snapshot),
         "requires_risk_gate": True,
         "requires_account_truth_gate": True,
         "requires_paper_shadow_review": True,
@@ -166,6 +167,7 @@ def _no_action_record(
             signal=None,
             dataset_snapshot=dataset_snapshot,
         ),
+        "review_gates": _no_action_review_gates(dataset_snapshot),
         "requires_risk_gate": False,
         "requires_account_truth_gate": False,
         "requires_paper_shadow_review": False,
@@ -216,6 +218,132 @@ def _record_evidence(
             }
         )
     return evidence
+
+
+def _candidate_review_gates(dataset_snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        _data_review_gate(dataset_snapshot),
+        {
+            "key": "account_truth",
+            "status": "not_evaluated",
+            "severity": "warning",
+            "summary": (
+                "Account-truth evidence must be checked before this candidate "
+                "can enter any live-like workflow."
+            ),
+            "required_action": "review_account_truth_evidence",
+            "evidence_ref": None,
+        },
+        {
+            "key": "risk",
+            "status": "not_evaluated",
+            "severity": "warning",
+            "summary": (
+                "Pre-trade risk requires a sized order intent and current "
+                "account context."
+            ),
+            "required_action": "size_order_and_run_pre_trade_risk_gate",
+            "evidence_ref": None,
+        },
+        {
+            "key": "paper_shadow",
+            "status": "waiting",
+            "severity": "warning",
+            "summary": (
+                "Paper/shadow preview waits for data, account-truth, and risk "
+                "gates."
+            ),
+            "required_action": "run_paper_shadow_preview_after_gates",
+            "evidence_ref": None,
+        },
+        {
+            "key": "manual_review",
+            "status": "required",
+            "severity": "warning",
+            "summary": "Manual review is required before any live-like workflow.",
+            "required_action": "manual_confirm_or_reject_candidate",
+            "evidence_ref": None,
+        },
+    ]
+
+
+def _no_action_review_gates(dataset_snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        _data_review_gate(dataset_snapshot),
+        {
+            "key": "account_truth",
+            "status": "not_required",
+            "severity": "info",
+            "summary": (
+                "No candidate action was emitted, so account-truth gate is not "
+                "required."
+            ),
+            "required_action": None,
+            "evidence_ref": None,
+        },
+        {
+            "key": "risk",
+            "status": "not_required",
+            "severity": "info",
+            "summary": (
+                "No candidate action was emitted, so pre-trade risk gate is not "
+                "required."
+            ),
+            "required_action": None,
+            "evidence_ref": None,
+        },
+        {
+            "key": "paper_shadow",
+            "status": "not_required",
+            "severity": "info",
+            "summary": (
+                "No candidate action was emitted, so paper/shadow preview is not "
+                "required."
+            ),
+            "required_action": None,
+            "evidence_ref": None,
+        },
+        {
+            "key": "manual_review",
+            "status": "not_required",
+            "severity": "info",
+            "summary": "No candidate action was emitted, so manual review is not required.",
+            "required_action": None,
+            "evidence_ref": None,
+        },
+    ]
+
+
+def _data_review_gate(dataset_snapshot: dict[str, Any]) -> dict[str, Any]:
+    status = _data_quality_status(dataset_snapshot)
+    snapshot_id = _dataset_snapshot_id(dataset_snapshot)
+    normalized = status.lower()
+    if normalized in {"pass", "ok", "complete", "confirmed", "live"}:
+        return {
+            "key": "data",
+            "status": status,
+            "severity": "info",
+            "summary": "Dataset snapshot is available for the preview bars.",
+            "required_action": None,
+            "evidence_ref": snapshot_id,
+        }
+    if normalized in {"blocked", "missing", "unavailable"}:
+        return {
+            "key": "data",
+            "status": status,
+            "severity": "critical",
+            "summary": "Dataset snapshot is unavailable for the preview bars.",
+            "required_action": "repair_dataset_snapshot",
+            "evidence_ref": snapshot_id,
+        }
+    return {
+        "key": "data",
+        "status": status,
+        "severity": "warning",
+        "summary": f"Dataset snapshot is {status} for the preview bars.",
+        "required_action": "review_dataset_quality",
+        "evidence_ref": snapshot_id,
+    }
 
 
 def _dataset_snapshot_id(dataset_snapshot: dict[str, Any]) -> str | None:

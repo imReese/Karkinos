@@ -584,8 +584,8 @@ Web 回测实验室会读取 `/api/backtest/strategies` 的策略注册表，把
 `POST /api/backtest/signal-preview` 使用同一策略 registry 和参数 schema，对前端或本地工具
 提供的单标的 K 线，或后端按标的和日期区间加载的数据，生成 research-only runtime audit record。返回值会标记
 `does_not_enable_execution=true`，并携带 dataset snapshot id、数据质量状态以及
-风控、账户事实、paper/shadow 和人工复核 gate 要求；它不会写入 `signals`、action queue、
-order/fill facts 或 ledger entries。
+数据可用性、账户事实、下单前风控、paper/shadow 预览和人工复核的结构化复核链路；
+它不会写入 `signals`、action queue、order/fill facts 或 ledger entries。
 
 已保存回测会写入本地 SQLite 数据库 `data/store/app.db` 的 `backtest_results`
 表，供 Web 历史列表、风险页、决策证据和策略晋级流程查询。为了方便人工查看，每条

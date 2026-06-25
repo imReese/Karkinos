@@ -437,6 +437,51 @@ const signalPreviewResponse = {
         signal_timestamp: '2026-06-18T15:00:00+08:00',
         reference_price: '29.17',
       },
+      review_gates: [
+        {
+          key: 'data',
+          status: 'pass',
+          severity: 'info',
+          summary: 'Dataset snapshot is available for the preview bars.',
+          required_action: null,
+          evidence_ref: 'sha256:preview-dataset',
+        },
+        {
+          key: 'account_truth',
+          status: 'not_evaluated',
+          severity: 'warning',
+          summary:
+            'Account-truth evidence must be checked before this candidate can enter any live-like workflow.',
+          required_action: 'review_account_truth_evidence',
+          evidence_ref: null,
+        },
+        {
+          key: 'risk',
+          status: 'not_evaluated',
+          severity: 'warning',
+          summary:
+            'Pre-trade risk requires a sized order intent and current account context.',
+          required_action: 'size_order_and_run_pre_trade_risk_gate',
+          evidence_ref: null,
+        },
+        {
+          key: 'paper_shadow',
+          status: 'waiting',
+          severity: 'warning',
+          summary:
+            'Paper/shadow preview waits for data, account-truth, and risk gates.',
+          required_action: 'run_paper_shadow_preview_after_gates',
+          evidence_ref: null,
+        },
+        {
+          key: 'manual_review',
+          status: 'required',
+          severity: 'warning',
+          summary: 'Manual review is required before any live-like workflow.',
+          required_action: 'manual_confirm_or_reject_candidate',
+          evidence_ref: null,
+        },
+      ],
       requires_risk_gate: true,
       requires_account_truth_gate: true,
       requires_paper_shadow_review: true,
@@ -1556,6 +1601,10 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect(await screen.findByText('sha256:preview-dataset')).toBeTruthy();
   expect(await screen.findByText('Data quality: OK')).toBeTruthy();
   expect(await screen.findByText('Reference price CN¥29.17')).toBeTruthy();
+  expect(await screen.findByText('Review gates')).toBeTruthy();
+  expect(await screen.findByText('Data ready')).toBeTruthy();
+  expect(await screen.findByText('Risk gate required')).toBeTruthy();
+  expect(await screen.findByText('Paper/shadow waiting')).toBeTruthy();
   expect(
     await screen.findByText(
       'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
@@ -1563,6 +1612,7 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain('buy_candidate');
   expect(document.body.textContent).not.toContain('requires_risk_gate');
+  expect(document.body.textContent).not.toContain('account_truth_gate');
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
