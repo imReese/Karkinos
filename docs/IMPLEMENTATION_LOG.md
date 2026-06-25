@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Added a research-only Backtest signal-preview path that runs a
+  registered strategy over explicit single-symbol bars, validates the same
+  parameter schema as backtests, and returns strategy-runtime audit records
+  with dataset snapshot and data-quality context. Candidate records require
+  downstream risk, account-truth, paper/shadow, and manual-review gates and
+  explicitly do not enable execution. This preview does not persist signals,
+  create action tasks, create paper or live orders, create fills, mutate ledger
+  entries, submit broker orders, or change automatic-trading defaults.
 * 2026-06-25: Web Backtest equity/drawdown charts now consume saved fill
   records, overlay buy/sell markers, and show a compact marker summary with
   localized side labels, symbol, price, time, and quantity. The markers are
