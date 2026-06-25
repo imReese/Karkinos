@@ -387,6 +387,16 @@ test('renders daily and intraday decision cockpit evidence without execution', a
       .getByRole('link', { name: 'Open Trading approvals: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/trading');
+  expect(
+    screen
+      .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })
+      .getAttribute('href'),
+  ).toBe('/backtest');
+  expect(
+    screen
+      .getByRole('link', { name: 'Open holding detail: 贵州茅台 600519' })
+      .getAttribute('href'),
+  ).toBe('/portfolio/600519');
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
 });
 
@@ -936,6 +946,31 @@ test('renders localized decision workflow tasks before candidate actions', async
   expect(workflow.textContent).toContain('策略证据');
   expect(workflow.textContent).toContain('模拟复盘');
   expect(workflow.textContent).toContain('人工确认');
+  expect(
+    screen
+      .getByRole('link', { name: '打开行情中心：数据刷新' })
+      .getAttribute('href'),
+  ).toBe('/market');
+  expect(
+    screen
+      .getByRole('link', { name: '打开风控中心：风险复核' })
+      .getAttribute('href'),
+  ).toBe('/risk');
+  expect(
+    screen
+      .getByRole('link', { name: '打开回测实验室：策略证据' })
+      .getAttribute('href'),
+  ).toBe('/backtest');
+  expect(
+    screen
+      .getByRole('link', { name: '打开回测实验室：模拟复盘' })
+      .getAttribute('href'),
+  ).toBe('/backtest');
+  expect(
+    screen
+      .getByRole('link', { name: '打开交易审批：人工确认' })
+      .getAttribute('href'),
+  ).toBe('/trading');
   expect(workflow.textContent).not.toContain(
     'preview_import_and_reconcile_broker_evidence',
   );
