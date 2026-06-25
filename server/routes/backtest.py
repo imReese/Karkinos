@@ -16,7 +16,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from core.types import Symbol
+from core.events import MarketEvent
+from core.types import AssetClass, BarFrequency, Symbol
 from server.bootstrap import build_strategy, build_watchlist
 from server.config import BacktestConfig
 from server.models import (
@@ -124,6 +125,39 @@ class StrategyPromotionReadinessResponse(BaseModel):
     is_complete: bool
     rows: list[StrategyPromotionReadinessRowResponse]
     limitations: list[str] = Field(default_factory=list)
+
+
+class StrategySignalPreviewBar(BaseModel):
+    timestamp: datetime
+    close: Decimal
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    volume: Decimal = Decimal("0")
+    frequency: str = BarFrequency.DAILY.value
+    data_status: str = "confirmed"
+
+
+class StrategySignalPreviewRequest(BaseModel):
+    strategy: str = "dual_ma"
+    symbol: str
+    asset_class: str | None = None
+    params: dict[str, Any] | None = None
+    bars: list[StrategySignalPreviewBar] = Field(min_length=1)
+    dataset_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategySignalPreviewResponse(BaseModel):
+    schema_version: str
+    strategy_id: str
+    symbol: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    run_id: str
+    dataset_snapshot_id: str | None = None
+    record_count: int
+    outputs: list[dict[str, Any]] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    does_not_enable_execution: bool = True
 
 
 def _json_object(raw: Any) -> dict[str, Any]:
@@ -236,6 +270,88 @@ def _validate_backtest_strategy_params(request: BacktestRequest) -> BacktestRequ
         if legacy_name in validated:
             updates[legacy_name] = validated[legacy_name]
     return request.model_copy(update=updates)
+
+
+def _validate_signal_preview_strategy_params(
+    request: StrategySignalPreviewRequest,
+) -> StrategySignalPreviewRequest:
+    """Return a signal-preview request copy with validated strategy params."""
+    import strategy.builtins  # noqa: F401
+    from strategy.registry import StrategyRegistry
+    from strategy.schema import StrategyParameterValidationError
+
+    strategy_info = StrategyRegistry.get(request.strategy)
+    if strategy_info is None:
+        available = StrategyRegistry.list_strategies()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "strategy": request.strategy,
+                "errors": [
+                    {
+                        "field": "strategy",
+                        "code": "unknown_strategy",
+                        "message": (
+                            f"Unknown strategy '{request.strategy}'. "
+                            f"Available strategies: {available}."
+                        ),
+                    }
+                ],
+            },
+        )
+
+    try:
+        validated = StrategyRegistry.validate_params(request.strategy, request.params)
+    except StrategyParameterValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"strategy": request.strategy, "errors": exc.errors},
+        ) from exc
+    return request.model_copy(update={"params": validated})
+
+
+def _preview_bar_to_market_event(
+    bar: StrategySignalPreviewBar,
+    *,
+    symbol: str,
+    asset_class: str | None,
+) -> MarketEvent:
+    close = bar.close
+    parsed_asset_class = AssetClass(asset_class) if asset_class else None
+    return MarketEvent(
+        timestamp=bar.timestamp,
+        symbol=Symbol(symbol),
+        open=bar.open if bar.open is not None else close,
+        high=bar.high if bar.high is not None else close,
+        low=bar.low if bar.low is not None else close,
+        close=close,
+        volume=bar.volume,
+        frequency=BarFrequency(bar.frequency),
+        asset_class=parsed_asset_class,
+    )
+
+
+def _run_strategy_signal_preview(
+    request: StrategySignalPreviewRequest,
+) -> dict[str, Any]:
+    """Run a research-only strategy signal preview from explicit bars."""
+    from analytics.strategy_signal_preview import build_strategy_signal_preview
+
+    bars = tuple(
+        _preview_bar_to_market_event(
+            bar,
+            symbol=request.symbol,
+            asset_class=request.asset_class,
+        )
+        for bar in request.bars
+    )
+    return build_strategy_signal_preview(
+        strategy_id=request.strategy,
+        symbol=request.symbol,
+        params=request.params,
+        bars=bars,
+        dataset_snapshot=request.dataset_snapshot,
+    )
 
 
 def _build_parameter_grid(
@@ -779,6 +895,15 @@ def create_router() -> APIRouter:
             account_strategy_attributions=account_strategy_attributions,
         )
         return StrategyPromotionReadinessResponse(**readiness.to_json_dict())
+
+    @r.post("/signal-preview", response_model=StrategySignalPreviewResponse)
+    async def preview_strategy_signal(
+        request: StrategySignalPreviewRequest,
+    ) -> StrategySignalPreviewResponse:
+        """Preview strategy outputs as research evidence without persistence."""
+        request = _validate_signal_preview_strategy_params(request)
+        preview = await asyncio.to_thread(_run_strategy_signal_preview, request)
+        return StrategySignalPreviewResponse(**preview)
 
     @r.post("/run", response_model=BacktestResponse)
     async def run_backtest(request: BacktestRequest) -> BacktestResponse:
