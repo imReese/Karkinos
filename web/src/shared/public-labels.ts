@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     ignored: 'Ignored',
     incomplete: 'Incomplete',
     known_difference: 'Known difference',
-    ledger_candidate: 'Ledger candidate',
+    ledger_candidate: 'Ledger correction candidate',
     live: 'Live',
     manual: 'Manual',
     manual_confirm: 'Manual confirmation',
@@ -45,7 +45,8 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     no_action: 'No action',
     not_attached: 'Not attached',
     not_configured: 'Not configured',
-    not_evaluated: 'Not evaluated',
+    not_evaluated: 'Review not evaluated yet',
+    not_promotable: 'Not ready for review',
     not_started: 'Not started',
     ok: 'OK',
     partial: 'Partial',
@@ -55,6 +56,7 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     pending_confirm: 'Pending approval',
     ready: 'Ready for review',
     ready_for_manual_confirmation: 'Ready for manual confirmation',
+    promotable_for_paper_review: 'Ready for simulation review',
     rejected: 'Rejected',
     research_only: 'Research only',
     refreshed: 'Refreshed',
@@ -102,7 +104,7 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     ignored: '已忽略',
     incomplete: '未完成',
     known_difference: '已知差异',
-    ledger_candidate: '账本候选',
+    ledger_candidate: '账本修正候选',
     live: '实时行情',
     manual: '手动',
     manual_confirm: '人工确认',
@@ -112,7 +114,8 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     no_action: '不操作',
     not_attached: '未关联',
     not_configured: '未配置',
-    not_evaluated: '未评估',
+    not_evaluated: '尚未完成复核评估',
+    not_promotable: '暂不满足复核条件',
     not_started: '尚未开始',
     ok: '正常',
     partial: '部分可用',
@@ -122,6 +125,7 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     pending_confirm: '待审批',
     ready: '可进入复核',
     ready_for_manual_confirmation: '可人工确认',
+    promotable_for_paper_review: '可进入模拟盘复核',
     rejected: '已拒绝',
     research_only: '仅研究',
     refreshed: '已刷新',
@@ -135,6 +139,23 @@ const STATUS_LABELS: Record<Locale, LabelMap> = {
     warning: '警告',
     account_truth_review_required: '需要账户事实复核',
     strategy_attribution_review_required: '需要策略归因复核',
+  },
+};
+
+const REVIEW_ACTION_LABELS: Record<Locale, LabelMap> = {
+  en: {
+    accepted: 'Mark accepted',
+    ignored: 'Ignore difference',
+    known_difference: 'Mark known difference',
+    ledger_candidate: 'Create ledger candidate',
+    needs_investigation: 'Mark needs investigation',
+  },
+  zh: {
+    accepted: '标记为已接受',
+    ignored: '忽略该差异',
+    known_difference: '标记为已知差异',
+    ledger_candidate: '列为账本修正候选',
+    needs_investigation: '标记为需要调查',
   },
 };
 
@@ -619,6 +640,18 @@ export function formatPublicOperationalNote(
           ? '待人工复核说明'
           : 'Review note'
         : text)
+  );
+}
+
+export function formatPublicReviewActionLabel(
+  value: string | null | undefined,
+  locale: Locale,
+) {
+  const key = normalized(value);
+  return (
+    REVIEW_ACTION_LABELS[locale][key] ??
+    STATUS_LABELS[locale][key] ??
+    fallbackLabel(key, locale, 'code')
   );
 }
 

@@ -1395,3 +1395,17 @@ roadmap promises.
   does not change ledger storage, accounting math, broker behavior, order
   submission, risk gates, automatic trading defaults, or manual-confirmation
   requirements.
+* 2026-06-25: Shared public review labels now cover strategy review promotion
+  states and Account Truth manual-review action buttons, so review surfaces
+  show localized user actions such as simulation-review readiness and
+  ledger-correction candidates instead of backend status nouns or generic
+  fallback labels. This is display formatting only; it does not change
+  reconciliation math, review persistence semantics, ledger mutation, broker
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
+* 2026-06-25: Portfolio compact holding cards now label locally projected
+  cost-basis evidence as ledger-projected unit cost instead of broker-displayed
+  cost when no broker cost-basis evidence has been imported. This is display
+  formatting only; it does not change cost-basis math, ledger mutation, broker
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.

@@ -4,6 +4,7 @@ import {
   formatPublicCode,
   formatPublicNote,
   formatPublicOperationalNote,
+  formatPublicReviewActionLabel,
   formatPublicStatus,
 } from './public-labels';
 
@@ -154,6 +155,37 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
   expect(formatPublicCode('review_paper_shadow_evidence', 'zh')).toBe(
     '复核模拟盘证据',
   );
+});
+
+test('formats strategy review statuses without exposing backend promotion codes', () => {
+  expect(formatPublicStatus('promotable_for_paper_review', 'en')).toBe(
+    'Ready for simulation review',
+  );
+  expect(formatPublicStatus('promotable_for_paper_review', 'zh')).toBe(
+    '可进入模拟盘复核',
+  );
+  expect(formatPublicStatus('not_promotable', 'en')).toBe(
+    'Not ready for review',
+  );
+  expect(formatPublicStatus('not_promotable', 'zh')).toBe('暂不满足复核条件');
+  expect(formatPublicStatus('not_evaluated', 'zh')).toBe('尚未完成复核评估');
+});
+
+test('formats manual review actions as user actions instead of status nouns', () => {
+  expect(formatPublicReviewActionLabel('accepted', 'en')).toBe('Mark accepted');
+  expect(formatPublicReviewActionLabel('known_difference', 'en')).toBe(
+    'Mark known difference',
+  );
+  expect(formatPublicReviewActionLabel('ledger_candidate', 'en')).toBe(
+    'Create ledger candidate',
+  );
+  expect(formatPublicReviewActionLabel('known_difference', 'zh')).toBe(
+    '标记为已知差异',
+  );
+  expect(formatPublicReviewActionLabel('ledger_candidate', 'zh')).toBe(
+    '列为账本修正候选',
+  );
+  expect(formatPublicStatus('ledger_candidate', 'zh')).toBe('账本修正候选');
 });
 
 test('formats account-truth evidence limitations without backend wording', () => {

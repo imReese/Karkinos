@@ -250,9 +250,15 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   expect(item.textContent).not.toContain(
     'broker_event:import-run-1:SYN001:position_snapshot',
   );
+  expect(
+    within(item).getByRole('button', { name: 'Create ledger candidate' }),
+  ).toBeTruthy();
+  expect(
+    within(item).queryByRole('button', { name: 'Ledger candidate' }),
+  ).toBeNull();
 
   await userEvent.click(
-    within(item).getByRole('button', { name: 'Known difference' }),
+    within(item).getByRole('button', { name: 'Mark known difference' }),
   );
 
   await waitFor(() => {
@@ -273,6 +279,20 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
+});
+
+test('localizes manual review action buttons as user actions in Chinese', async () => {
+  renderAccountTruthReviewPage({}, { locale: 'zh' });
+
+  const item = await screen.findByTestId('account-truth-item-position:SYN001');
+
+  expect(
+    within(item).getByRole('button', { name: '列为账本修正候选' }),
+  ).toBeTruthy();
+  expect(within(item).queryByRole('button', { name: '账本候选' })).toBeNull();
+  expect(
+    within(item).getByRole('button', { name: '标记为已知差异' }),
+  ).toBeTruthy();
 });
 
 test('localizes generated reconciliation detail copy in Chinese locale', async () => {

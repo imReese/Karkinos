@@ -98,13 +98,31 @@ function formatCostBasisStatus(
   );
 }
 
+function isProjectedLedgerCostBasis(status: string | null | undefined) {
+  return status === 'projected_from_ledger';
+}
+
+function brokerUnitCostLabel(
+  labels: ReturnType<typeof useCopy>['portfolio']['detail'],
+  status: string | null | undefined,
+) {
+  return isProjectedLedgerCostBasis(status)
+    ? labels.ledgerProjectedUnitCost
+    : labels.brokerDisplayedCost;
+}
+
 function formatBrokerCostBasisDetail(
   labels: ReturnType<typeof useCopy>['portfolio']['detail'],
   locale: ReturnType<typeof usePreferences>['locale'],
   position: Position,
 ) {
+  const projectedFromLedger = isProjectedLedgerCostBasis(
+    position.broker_cost_basis_status,
+  );
   const detailParts = [
-    formatCostBasisMethod(locale, position.broker_cost_basis_method),
+    projectedFromLedger
+      ? labels.ledgerProjectedCostBasis
+      : formatCostBasisMethod(locale, position.broker_cost_basis_method),
     formatCostBasisStatus(labels, position.broker_cost_basis_status),
   ];
 
@@ -310,7 +328,10 @@ export function PositionsTable({
               : [
                   {
                     key: 'broker-cost',
-                    label: detailLabels.brokerDisplayedCost,
+                    label: brokerUnitCostLabel(
+                      detailLabels,
+                      position.broker_cost_basis_status,
+                    ),
                     value: formatPrice(brokerDisplayedUnitCost),
                     detail: brokerCostBasisDetail ?? undefined,
                     kind: 'price' as const,
