@@ -319,6 +319,61 @@ export type BacktestPaperShadowPreviewResponse = {
   limitations: string[];
 };
 
+export type BacktestAttributionPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class: string;
+  signal_id?: string | null;
+  dataset_snapshot_id?: string | null;
+  risk_preview_passed: boolean;
+  risk_reasons: string[];
+  paper_shadow_status?: string | null;
+  paper_shadow_order?: Record<string, unknown> | null;
+  paper_shadow_fill?: Record<string, unknown> | null;
+};
+
+export type BacktestAttributionPreviewResponse = {
+  schema_version: string;
+  status: string;
+  strategy_id: string;
+  symbol: string;
+  asset_class: string;
+  attribution_status: string;
+  can_attribute_pnl: boolean;
+  does_not_create_order: boolean;
+  does_not_create_fill: boolean;
+  does_not_mutate_ledger: boolean;
+  risk_reasons: string[];
+  evidence_counts: {
+    signal_preview: number;
+    risk_preview: number;
+    paper_shadow_order: number;
+    paper_shadow_fill: number;
+    production_order: number;
+    production_fill: number;
+  };
+  evidence_refs: string[];
+  required_next_actions: string[];
+  review_linkage_candidate?: {
+    candidate_id: string;
+    strategy_id: string;
+    symbol: string;
+    asset_class: string;
+    signal_ref: string | null;
+    dataset_snapshot_ref: string | null;
+    risk_preview_ref: string | null;
+    paper_shadow_order_ref: string | null;
+    paper_shadow_fill_ref: string | null;
+    recommended_review_action: string;
+    manual_confirmation_required: boolean;
+    does_not_create_order: boolean;
+    does_not_create_fill: boolean;
+    does_not_mutate_ledger: boolean;
+    can_link_to_strategy_pnl: boolean;
+  } | null;
+  limitations: string[];
+};
+
 export type BacktestSweepRequest = {
   start_date: string;
   end_date: string;
@@ -660,6 +715,16 @@ export function useBacktestPaperShadowPreviewMutation() {
     mutationFn: (payload: BacktestPaperShadowPreviewRequest) =>
       postJson<BacktestPaperShadowPreviewResponse>(
         '/api/backtest/paper-shadow-preview',
+        payload,
+      ),
+  });
+}
+
+export function useBacktestAttributionPreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: BacktestAttributionPreviewRequest) =>
+      postJson<BacktestAttributionPreviewResponse>(
+        '/api/backtest/attribution-preview',
         payload,
       ),
   });

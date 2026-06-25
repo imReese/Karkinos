@@ -498,6 +498,7 @@ fill.
 | POST | `/api/backtest/signal-preview` | Preview strategy outputs from explicit single-symbol bars or a server-side single-symbol date range as research-only audit records without writing signals, orders, fills, or ledger entries |
 | POST | `/api/backtest/risk-preview` | Run a read-only pre-trade risk preview for a sized single-symbol research candidate; returns pass/blocked reasons without creating orders, risk decisions, fills, or ledger entries |
 | POST | `/api/backtest/paper-shadow-preview` | Run a read-only paper/shadow simulation for a risk-passed single-symbol candidate; returns paper order/fill evidence, fee breakdown, and shadow-review summary without writing order/fill facts or ledger entries |
+| POST | `/api/backtest/attribution-preview` | Summarize the same single-symbol preview chain into an attribution evidence boundary; shows preview evidence versus production order/fill facts without attributing strategy P/L |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
 | POST | `/api/backtest/sweep` | Run bounded parameter grids, persist each tested configuration, and return deterministic rankings with multiple-testing warnings |
 | POST | `/api/backtest/compare` | Compare multiple strategies or explicit strategy parameter sets on one frozen dataset snapshot |
@@ -531,6 +532,12 @@ after a passed risk preview. It returns paper order/fill evidence,
 after-cost fee breakdown, and a shadow-review summary while remaining read-only:
 it does not write order/fill facts, mutate the production ledger, or submit
 broker orders.
+`POST /api/backtest/attribution-preview` summarizes the same single-symbol
+preview chain into an attribution evidence boundary: how much preview evidence
+exists, whether production order/fill facts are still zero, and whether manual
+review linkage is the next step. When ready, it returns a read-only manual
+review linkage candidate; it does not write ledger entries or attribute strategy
+P/L before real signal, review, order, and fill facts are linked.
 Saved results also persist `metrics_json.strategy_metadata` with the strategy
 identity, display name, description, asset universe, supported frequencies,
 parameter schema, normalized params, benchmark role, and validation

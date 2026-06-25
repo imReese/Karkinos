@@ -307,3 +307,109 @@ def test_backtest_paper_shadow_preview_route_simulates_without_order_or_fill_wri
     assert response["shadow_review"]["candidate_count"] == 1
     assert response["shadow_review"]["supported_match_count"] == 0
     assert forbidden_calls == []
+
+
+def test_backtest_attribution_preview_summarizes_preview_evidence_without_writes(
+    monkeypatch,
+) -> None:
+    from server.routes import backtest as backtest_routes
+
+    forbidden_calls: list[str] = []
+
+    def forbid(name: str):
+        def _inner(*args, **kwargs):
+            forbidden_calls.append(name)
+            raise AssertionError(f"{name} should not be called by attribution preview")
+
+        return _inner
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            record_order_sync=forbid("record_order_sync"),
+            record_fill_sync=forbid("record_fill_sync"),
+            insert_ledger_entry_sync=forbid("insert_ledger_entry_sync"),
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = backtest_routes.create_router()
+    endpoint = _route(router, "/api/backtest/attribution-preview", "POST").endpoint
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.BacktestAttributionPreviewRequest(
+                strategy="dual_ma",
+                symbol="600000",
+                asset_class="stock",
+                signal_id="preview-run-001:0001:buy_candidate",
+                dataset_snapshot_id="sha256:preview-dataset",
+                risk_preview_passed=True,
+                risk_reasons=["approved"],
+                paper_shadow_status="simulated",
+                paper_shadow_order={
+                    "order_id": "paper-shadow-preview:dual_ma:600000:buy:100:10",
+                    "execution_mode": "paper_shadow_preview",
+                },
+                paper_shadow_fill={
+                    "fill_id": "paper-shadow-preview:dual_ma:600000:buy:100:10:fill:1",
+                    "execution_mode": "paper_shadow_preview",
+                    "fee_breakdown": {"total_fee": "5.010"},
+                },
+            )
+        )
+    )
+
+    assert response["schema_version"] == "karkinos.strategy_attribution_preview.v1"
+    assert response["status"] == "ready_for_review_linkage"
+    assert response["strategy_id"] == "dual_ma"
+    assert response["symbol"] == "600000"
+    assert response["attribution_status"] == "preview_only_pnl_not_attributed"
+    assert response["can_attribute_pnl"] is False
+    assert response["does_not_create_order"] is True
+    assert response["does_not_create_fill"] is True
+    assert response["does_not_mutate_ledger"] is True
+    assert response["evidence_counts"] == {
+        "signal_preview": 1,
+        "risk_preview": 1,
+        "paper_shadow_order": 1,
+        "paper_shadow_fill": 1,
+        "production_order": 0,
+        "production_fill": 0,
+    }
+    assert response["evidence_refs"] == [
+        "signal_preview:preview-run-001:0001:buy_candidate",
+        "dataset_snapshot:sha256:preview-dataset",
+        "paper_shadow_order:paper-shadow-preview:dual_ma:600000:buy:100:10",
+        "paper_shadow_fill:paper-shadow-preview:dual_ma:600000:buy:100:10:fill:1",
+    ]
+    assert response["required_next_actions"] == [
+        "link_signal_review_order_and_fill_before_strategy_pnl_attribution"
+    ]
+    assert response["review_linkage_candidate"] == {
+        "candidate_id": (
+            "review-linkage:" "dual_ma:600000:preview-run-001:0001:buy_candidate"
+        ),
+        "strategy_id": "dual_ma",
+        "symbol": "600000",
+        "asset_class": "stock",
+        "signal_ref": "signal_preview:preview-run-001:0001:buy_candidate",
+        "dataset_snapshot_ref": "dataset_snapshot:sha256:preview-dataset",
+        "risk_preview_ref": "risk_preview:approved",
+        "paper_shadow_order_ref": (
+            "paper_shadow_order:paper-shadow-preview:dual_ma:600000:buy:100:10"
+        ),
+        "paper_shadow_fill_ref": (
+            "paper_shadow_fill:" "paper-shadow-preview:dual_ma:600000:buy:100:10:fill:1"
+        ),
+        "recommended_review_action": "review_and_link_evidence_manually",
+        "manual_confirmation_required": True,
+        "does_not_create_order": True,
+        "does_not_create_fill": True,
+        "does_not_mutate_ledger": True,
+        "can_link_to_strategy_pnl": False,
+    }
+    assert response["limitations"] == [
+        "Preview evidence is not production attribution evidence.",
+        "Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.",
+    ]
+    assert forbidden_calls == []

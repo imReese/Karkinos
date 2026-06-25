@@ -596,6 +596,60 @@ const paperShadowPreviewResponse = {
   ],
 };
 
+const attributionPreviewResponse = {
+  schema_version: 'karkinos.strategy_attribution_preview.v1',
+  status: 'ready_for_review_linkage',
+  strategy_id: 'dual_ma',
+  symbol: '600002',
+  asset_class: 'stock',
+  attribution_status: 'preview_only_pnl_not_attributed',
+  can_attribute_pnl: false,
+  does_not_create_order: true,
+  does_not_create_fill: true,
+  does_not_mutate_ledger: true,
+  evidence_counts: {
+    signal_preview: 1,
+    risk_preview: 1,
+    paper_shadow_order: 1,
+    paper_shadow_fill: 1,
+    production_order: 0,
+    production_fill: 0,
+  },
+  evidence_refs: [
+    'signal_preview:preview-run-001:0001:buy_candidate',
+    'dataset_snapshot:sha256:preview-dataset',
+    'paper_shadow_order:paper-shadow-preview:dual_ma:600002:buy:100:29.17',
+    'paper_shadow_fill:paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1',
+  ],
+  required_next_actions: [
+    'link_signal_review_order_and_fill_before_strategy_pnl_attribution',
+  ],
+  review_linkage_candidate: {
+    candidate_id:
+      'review-linkage:dual_ma:600002:preview-run-001:0001:buy_candidate',
+    strategy_id: 'dual_ma',
+    symbol: '600002',
+    asset_class: 'stock',
+    signal_ref: 'signal_preview:preview-run-001:0001:buy_candidate',
+    dataset_snapshot_ref: 'dataset_snapshot:sha256:preview-dataset',
+    risk_preview_ref: 'risk_preview:approved',
+    paper_shadow_order_ref:
+      'paper_shadow_order:paper-shadow-preview:dual_ma:600002:buy:100:29.17',
+    paper_shadow_fill_ref:
+      'paper_shadow_fill:paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1',
+    recommended_review_action: 'review_and_link_evidence_manually',
+    manual_confirmation_required: true,
+    does_not_create_order: true,
+    does_not_create_fill: true,
+    does_not_mutate_ledger: true,
+    can_link_to_strategy_pnl: false,
+  },
+  limitations: [
+    'Preview evidence is not production attribution evidence.',
+    'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.',
+  ],
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -902,6 +956,7 @@ function installBacktestFetchMock({
   signalPreview = signalPreviewResponse,
   riskPreview = riskPreviewResponse,
   paperShadowPreview = paperShadowPreviewResponse,
+  attributionPreview = attributionPreviewResponse,
   savedBacktestReport = savedReport,
   portfolio = portfolioSnapshot,
 }: {
@@ -917,6 +972,7 @@ function installBacktestFetchMock({
   signalPreview?: unknown;
   riskPreview?: unknown;
   paperShadowPreview?: unknown;
+  attributionPreview?: unknown;
   savedBacktestReport?: unknown;
   portfolio?: unknown;
 } = {}) {
@@ -982,6 +1038,9 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/backtest/paper-shadow-preview')) {
         return jsonResponse(paperShadowPreview);
+      }
+      if (url.includes('/api/backtest/attribution-preview')) {
+        return jsonResponse(attributionPreview);
       }
       if (url.includes('/api/backtest/sweep')) {
         return sweepFails
@@ -1845,6 +1904,87 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
   });
   expect(paperShadowPayload.execution_mode).toBeUndefined();
   expect(paperShadowPayload.order_type).toBeUndefined();
+});
+
+test('summarizes attribution preview evidence without claiming strategy pnl', async () => {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    riskPreview: passedRiskPreviewResponse,
+  });
+
+  await screen.findByText('Strategy replay');
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '600002' },
+  });
+  fireEvent.change(
+    await screen.findByLabelText('Short moving-average window'),
+    {
+      target: { value: '3' },
+    },
+  );
+  fireEvent.change(await screen.findByLabelText('Long moving-average window'), {
+    target: { value: '9' },
+  });
+  fireEvent.submit(
+    screen
+      .getByRole('button', { name: 'Run backtest' })
+      .closest('form') as HTMLFormElement,
+  );
+
+  fireEvent.change(await screen.findByLabelText('Risk quantity'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
+  expect(await screen.findByText('Risk passed')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Preview paper/shadow' }));
+  expect(await screen.findByText('Simulated fill')).toBeTruthy();
+  expect(await screen.findByText('Attribution evidence preview')).toBeTruthy();
+  expect(await screen.findByText('Ready for review linkage')).toBeTruthy();
+  expect(
+    await screen.findByText('Preview only, P/L not attributed'),
+  ).toBeTruthy();
+  expect(
+    await screen.findByText('Preview evidence 4 / Production facts 0'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Review linkage candidate')).toBeTruthy();
+  expect(await screen.findAllByText('Manual review required')).not.toHaveLength(
+    0,
+  );
+  expect(await screen.findByText('No order or ledger write')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
+    ),
+  ).toBeTruthy();
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/attribution-preview',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const attributionCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/attribution-preview'),
+  );
+  const attributionPayload = JSON.parse(String(attributionCall?.[1]?.body));
+  expect(attributionPayload).toMatchObject({
+    strategy: 'dual_ma',
+    symbol: '600002',
+    asset_class: 'stock',
+    signal_id: 'preview-run-001:0001:buy_candidate',
+    dataset_snapshot_id: 'sha256:preview-dataset',
+    risk_preview_passed: true,
+    risk_reasons: ['approved'],
+    paper_shadow_status: 'simulated',
+  });
+  expect(attributionPayload.paper_shadow_order.order_id).toBe(
+    'paper-shadow-preview:dual_ma:600002:buy:100:29.17',
+  );
+  expect(attributionPayload.paper_shadow_fill.fill_id).toBe(
+    'paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1',
+  );
+  expect(attributionPayload.execution_mode).toBeUndefined();
 });
 
 test('renders dataset snapshot metadata for saved reports', async () => {

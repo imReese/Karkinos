@@ -149,6 +149,18 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
       'en',
     ),
   ).toBe('Candidate actions should be compared with simulation evidence.');
+  expect(
+    formatPublicNote(
+      'Preview evidence is not production attribution evidence.',
+      'zh',
+    ),
+  ).toBe('当前只是预览证据，还不是可用于正式归因的生产证据。');
+  expect(
+    formatPublicNote(
+      'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.',
+      'zh',
+    ),
+  ).toBe('只有信号、复核、订单和成交事实全部关联后，才允许计算策略收益。');
   expect(formatPublicCode('paper_shadow_evidence', 'zh')).toBe(
     '模拟盘复核证据',
   );

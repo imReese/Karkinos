@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Backtest now exposes a read-only attribution evidence preview
+  after the single-symbol signal, risk, and paper/shadow preview chain. The
+  backend reports preview evidence counts, production order/fill fact counts,
+  evidence refs, next review action, and keeps `can_attribute_pnl=false` until
+  real signal, review, order, and fill facts are linked. Web Backtest renders
+  the preview boundary after paper/shadow simulation with localized copy. This
+  does not write order facts, fill facts, ledger entries, broker submissions,
+  or claim strategy P/L.
 * 2026-06-25: Backtest now exposes a read-only paper/shadow preview after a
   passed single-symbol risk preview. The backend route builds paper order/fill
   simulation evidence with structured fee breakdown and a shadow-review
