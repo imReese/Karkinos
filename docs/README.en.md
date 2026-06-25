@@ -497,6 +497,7 @@ fill.
 | GET | `/api/backtest/strategy-promotion-readiness` | Get promotion-readiness gates for benchmark strategies |
 | POST | `/api/backtest/signal-preview` | Preview strategy outputs from explicit single-symbol bars or a server-side single-symbol date range as research-only audit records without writing signals, orders, fills, or ledger entries |
 | POST | `/api/backtest/risk-preview` | Run a read-only pre-trade risk preview for a sized single-symbol research candidate; returns pass/blocked reasons without creating orders, risk decisions, fills, or ledger entries |
+| POST | `/api/backtest/paper-shadow-preview` | Run a read-only paper/shadow simulation for a risk-passed single-symbol candidate; returns paper order/fill evidence, fee breakdown, and shadow-review summary without writing order/fill facts or ledger entries |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
 | POST | `/api/backtest/sweep` | Run bounded parameter grids, persist each tested configuration, and return deterministic rankings with multiple-testing warnings |
 | POST | `/api/backtest/compare` | Compare multiple strategies or explicit strategy parameter sets on one frozen dataset snapshot |
@@ -525,6 +526,11 @@ not write to `signals`, the action queue, order/fill facts, or ledger entries.
 reuse the pre-trade risk rules against current account context. It returns
 pass/blocked reasons, keeps manual confirmation required, and does not create
 orders, persist risk decisions, mutate ledger entries, or submit broker orders.
+`POST /api/backtest/paper-shadow-preview` can then simulate that same candidate
+after a passed risk preview. It returns paper order/fill evidence,
+after-cost fee breakdown, and a shadow-review summary while remaining read-only:
+it does not write order/fill facts, mutate the production ledger, or submit
+broker orders.
 Saved results also persist `metrics_json.strategy_metadata` with the strategy
 identity, display name, description, asset universe, supported frequencies,
 parameter schema, normalized params, benchmark role, and validation

@@ -30,6 +30,7 @@ import {
   useAccountStrategyContributionQuery,
   useUpdateAccountStrategyAssignmentMutation,
   useRunBacktestMutation,
+  useBacktestPaperShadowPreviewMutation,
   useBacktestRiskPreviewMutation,
   useBacktestStrategiesQuery,
   useStrategySignalPreviewMutation,
@@ -39,6 +40,8 @@ import {
   type AccountStrategyAttributionSummary,
   type AccountStrategyContributionReport,
   type BacktestReport,
+  type BacktestPaperShadowPreviewRequest,
+  type BacktestPaperShadowPreviewResponse,
   type BacktestRiskPreviewRequest,
   type BacktestRiskPreviewResponse,
   type BacktestRunRequest,
@@ -310,6 +313,7 @@ export function BacktestPage() {
   const runBacktest = useRunBacktestMutation();
   const signalPreview = useStrategySignalPreviewMutation();
   const riskPreview = useBacktestRiskPreviewMutation();
+  const paperShadowPreview = useBacktestPaperShadowPreviewMutation();
   const strategies = useBacktestStrategiesQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
@@ -393,6 +397,7 @@ export function BacktestPage() {
       setLatestReport(report);
       signalPreview.reset();
       riskPreview.reset();
+      paperShadowPreview.reset();
       const previewAsset = payload.assets?.[0];
       if (previewAsset) {
         signalPreview.mutate({
@@ -699,7 +704,16 @@ export function BacktestPage() {
                 <StrategySignalPreviewPanel
                   error={signalPreview.isError}
                   loading={signalPreview.isPending}
-                  onRiskPreview={(payload) => riskPreview.mutate(payload)}
+                  onPaperShadowPreview={(payload) =>
+                    paperShadowPreview.mutate(payload)
+                  }
+                  onRiskPreview={(payload) => {
+                    paperShadowPreview.reset();
+                    riskPreview.mutate(payload);
+                  }}
+                  paperShadowPreviewError={paperShadowPreview.isError}
+                  paperShadowPreviewLoading={paperShadowPreview.isPending}
+                  paperShadowPreviewResult={paperShadowPreview.data ?? null}
                   preview={signalPreview.data ?? null}
                   riskPreviewError={riskPreview.isError}
                   riskPreviewLoading={riskPreview.isPending}
@@ -1199,18 +1213,26 @@ function StrategySignalPreviewPanel({
   error,
   singleAsset,
   onRiskPreview,
+  onPaperShadowPreview,
   riskPreviewResult,
   riskPreviewLoading,
   riskPreviewError,
+  paperShadowPreviewResult,
+  paperShadowPreviewLoading,
+  paperShadowPreviewError,
 }: {
   preview: StrategySignalPreviewResponse | null;
   loading: boolean;
   error: boolean;
   singleAsset: { symbol: string; asset_class: string } | null;
   onRiskPreview: (payload: BacktestRiskPreviewRequest) => void;
+  onPaperShadowPreview: (payload: BacktestPaperShadowPreviewRequest) => void;
   riskPreviewResult: BacktestRiskPreviewResponse | null;
   riskPreviewLoading: boolean;
   riskPreviewError: boolean;
+  paperShadowPreviewResult: BacktestPaperShadowPreviewResponse | null;
+  paperShadowPreviewLoading: boolean;
+  paperShadowPreviewError: boolean;
 }) {
   const labels = useCopy().backtest.page;
   const { locale } = usePreferences();
@@ -1242,6 +1264,8 @@ function StrategySignalPreviewPanel({
     parsedReferencePrice !== null &&
     Number.isFinite(parsedReferencePrice) &&
     parsedReferencePrice > 0;
+  const paperShadowPreviewable =
+    riskPreviewable && Boolean(riskPreviewResult?.passed);
 
   useEffect(() => {
     setRiskQuantity('');
@@ -1268,6 +1292,35 @@ function StrategySignalPreviewPanel({
       reference_price: parsedReferencePrice,
       target_weight: output.target_weight ?? null,
       data_quality_status: dataQuality,
+    });
+  };
+  const submitPaperShadowPreview = () => {
+    if (
+      !preview ||
+      !output ||
+      !singleAsset ||
+      !paperShadowPreviewable ||
+      parsedReferencePrice === null
+    ) {
+      return;
+    }
+    const quantity = Number(riskQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return;
+    }
+    onPaperShadowPreview({
+      strategy: preview.strategy_id,
+      symbol: output.symbol,
+      asset_class: singleAsset.asset_class,
+      action: output.action,
+      quantity,
+      reference_price: parsedReferencePrice,
+      target_weight: output.target_weight ?? null,
+      signal_id: output.output_id,
+      dataset_snapshot_id:
+        preview.dataset_snapshot_id ?? output.evidence.dataset_snapshot_id,
+      risk_preview_passed: riskPreviewResult?.passed ?? false,
+      risk_reasons: riskPreviewResult?.reasons ?? [],
     });
   };
 
@@ -1447,6 +1500,43 @@ function StrategySignalPreviewPanel({
                   {labels.signalPreviewRiskPending}
                 </p>
               )}
+              {riskPreviewResult ? (
+                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
+                  <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="app-muted text-xs font-semibold">
+                        {labels.signalPreviewPaperShadowTitle}
+                      </div>
+                      <p className="app-muted mt-1 text-sm leading-6">
+                        {paperShadowPreviewable
+                          ? labels.signalPreviewPaperShadowReady
+                          : labels.signalPreviewPaperShadowBlocked}
+                      </p>
+                    </div>
+                    <button
+                      className="app-button-secondary rounded-2xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={
+                        paperShadowPreviewLoading || !paperShadowPreviewable
+                      }
+                      onClick={submitPaperShadowPreview}
+                      type="button"
+                    >
+                      {paperShadowPreviewLoading
+                        ? labels.signalPreviewPaperShadowLoading
+                        : labels.signalPreviewPaperShadowButton}
+                    </button>
+                  </div>
+                  {paperShadowPreviewError ? (
+                    <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+                      {labels.signalPreviewPaperShadowUnavailable}
+                    </p>
+                  ) : paperShadowPreviewResult ? (
+                    <PaperShadowPreviewResult
+                      result={paperShadowPreviewResult}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
           <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold text-[var(--app-warning)]">
@@ -1557,6 +1647,64 @@ function signalPreviewRiskReasonLabel(
     return labels.signalPreviewRiskReasonLabels.positionWeight;
   }
   return formatPublicStatus(reason, locale);
+}
+
+function PaperShadowPreviewResult({
+  result,
+}: {
+  result: BacktestPaperShadowPreviewResponse;
+}) {
+  const labels = useCopy().backtest.page;
+  const fill = result.fill;
+  const fillPrice = Number(fill?.fill_price ?? 0);
+  const fillQuantity = fill?.fill_quantity ?? '--';
+  const totalFee = Number(
+    fill?.fee_breakdown?.total_fee ?? fill?.commission ?? 0,
+  );
+  const hasFill = result.status === 'simulated' && fill !== null;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="app-muted text-xs font-semibold">
+            {labels.signalPreviewPaperShadowResultTitle}
+          </div>
+          <div className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {hasFill
+              ? labels.signalPreviewPaperShadowSimulatedFill
+              : labels.signalPreviewPaperShadowBlockedResult}
+          </div>
+        </div>
+        {result.does_not_mutate_ledger ? (
+          <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
+            {labels.signalPreviewPaperShadowNoLedgerMutation}
+          </span>
+        ) : null}
+      </div>
+      {hasFill ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <MetadataItem
+            label={labels.signalPreviewPaperShadowFill}
+            value={labels.signalPreviewPaperShadowFillSummary(
+              String(fillQuantity),
+              formatCurrency(fillPrice),
+            )}
+          />
+          <MetadataItem
+            label={labels.signalPreviewPaperShadowFee}
+            value={labels.signalPreviewPaperShadowEstimatedFee(
+              formatCurrency(totalFee),
+            )}
+          />
+        </div>
+      ) : (
+        <p className="app-muted mt-3 text-sm leading-6">
+          {labels.signalPreviewPaperShadowBlocked}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function StrategyEvidenceGatePanel({

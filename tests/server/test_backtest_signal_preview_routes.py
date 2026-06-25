@@ -236,3 +236,74 @@ def test_backtest_risk_preview_route_evaluates_without_order_or_audit_writes(
     assert response["metadata"]["target_weight"] == "1.0"
     assert response["metadata"]["order_value"] == "1000"
     assert forbidden_calls == []
+
+
+def test_backtest_paper_shadow_preview_route_simulates_without_order_or_fill_writes(
+    monkeypatch,
+) -> None:
+    from server.routes import backtest as backtest_routes
+
+    forbidden_calls: list[str] = []
+
+    def forbid(name: str):
+        def _inner(*args, **kwargs):
+            forbidden_calls.append(name)
+            raise AssertionError(f"{name} should not be called by paper/shadow preview")
+
+        return _inner
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            record_order_sync=forbid("record_order_sync"),
+            record_fill_sync=forbid("record_fill_sync"),
+            record_shadow_divergence_review_sync=forbid(
+                "record_shadow_divergence_review_sync"
+            ),
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = backtest_routes.create_router()
+    endpoint = _route(router, "/api/backtest/paper-shadow-preview", "POST").endpoint
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.BacktestPaperShadowPreviewRequest(
+                strategy="dual_ma",
+                symbol="600000",
+                asset_class="stock",
+                action="buy",
+                quantity=100,
+                reference_price=10,
+                target_weight="1.0",
+                signal_id="preview-run-001:0001:buy_candidate",
+                dataset_snapshot_id="sha256:preview-dataset",
+                risk_preview_passed=True,
+                risk_reasons=["approved"],
+            )
+        )
+    )
+
+    assert response["schema_version"] == "karkinos.paper_shadow_preview.v1"
+    assert response["status"] == "simulated"
+    assert response["execution_mode"] == "paper_shadow_preview"
+    assert response["manual_confirmation_required"] is True
+    assert response["does_not_create_order"] is True
+    assert response["does_not_create_fill"] is True
+    assert response["does_not_mutate_ledger"] is True
+    assert response["order"]["execution_mode"] == "paper_shadow_preview"
+    assert response["order"]["status"] == "filled"
+    assert response["order"]["symbol"] == "600000"
+    assert response["order"]["context"]["strategy_id"] == "dual_ma"
+    assert response["order"]["context"]["signal_id"] == (
+        "preview-run-001:0001:buy_candidate"
+    )
+    assert response["order"]["context"]["dataset_id"] == "sha256:preview-dataset"
+    assert response["fill"]["execution_mode"] == "paper_shadow_preview"
+    assert response["fill"]["fill_price"] == "10"
+    assert response["fill"]["fill_quantity"] == "100"
+    assert response["fill"]["fee_breakdown"]["gross_amount"] == "1000"
+    assert Decimal(response["fill"]["fee_breakdown"]["total_fee"]) == Decimal("5.010")
+    assert response["shadow_review"]["candidate_count"] == 1
+    assert response["shadow_review"]["supported_match_count"] == 0
+    assert forbidden_calls == []

@@ -520,6 +520,82 @@ const riskPreviewResponse = {
   },
 };
 
+const passedRiskPreviewResponse = {
+  ...riskPreviewResponse,
+  passed: true,
+  status: 'passed',
+  severity: 'info',
+  reasons: ['approved'],
+};
+
+const paperShadowPreviewResponse = {
+  schema_version: 'karkinos.paper_shadow_preview.v1',
+  status: 'simulated',
+  execution_mode: 'paper_shadow_preview',
+  manual_confirmation_required: true,
+  does_not_create_order: true,
+  does_not_create_fill: true,
+  does_not_mutate_ledger: true,
+  risk_reasons: ['approved'],
+  order: {
+    order_id: 'paper-shadow-preview:dual_ma:600002:buy:100:29.17',
+    symbol: '600002',
+    side: 'buy',
+    order_type: 'market',
+    quantity: '100',
+    price: '29.17',
+    asset_class: 'stock',
+    status: 'filled',
+    filled_quantity: '100',
+    remaining_quantity: '0',
+    context: {
+      strategy_id: 'dual_ma',
+      signal_id: 'preview-run-001:0001:buy_candidate',
+      dataset_id: 'sha256:preview-dataset',
+    },
+    execution_mode: 'paper_shadow_preview',
+    source: 'backtest_paper_shadow_preview',
+    does_not_mutate_production_ledger: true,
+  },
+  fill: {
+    fill_id: 'paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1',
+    order_id: 'paper-shadow-preview:dual_ma:600002:buy:100:29.17',
+    symbol: '600002',
+    side: 'buy',
+    fill_price: '29.17',
+    fill_quantity: '100',
+    commission: '5.0291700',
+    slippage: '0',
+    asset_class: 'stock',
+    execution_mode: 'paper_shadow_preview',
+    source: 'backtest_paper_shadow_preview',
+    does_not_mutate_production_ledger: true,
+    fee_breakdown: {
+      gross_amount: '2917.00',
+      commission: '5',
+      stamp_tax: '0',
+      transfer_fee: '0.0291700',
+      other_fees: '0.00',
+      total_fee: '5.0291700',
+      fee_rule_id: 'cn_stock_a_default_v1',
+      limitations: ['transfer_fee_exchange_not_split'],
+    },
+  },
+  shadow_review: {
+    schema_version: 'karkinos.shadow_review.v1',
+    does_not_mutate_account_facts: true,
+    candidate_count: 1,
+    supported_match_count: 0,
+    unsupported_real_movement_count: 0,
+    items: [],
+    limitations: ['This report does not mutate account facts.'],
+  },
+  limitations: [
+    'Paper/shadow preview is simulation evidence, not investment advice.',
+    'This preview does not mutate ledger entries or submit broker orders.',
+  ],
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -825,6 +901,7 @@ function installBacktestFetchMock({
   strategyPromotionReadinessResponse = strategyPromotionReadiness,
   signalPreview = signalPreviewResponse,
   riskPreview = riskPreviewResponse,
+  paperShadowPreview = paperShadowPreviewResponse,
   savedBacktestReport = savedReport,
   portfolio = portfolioSnapshot,
 }: {
@@ -839,6 +916,7 @@ function installBacktestFetchMock({
   strategyPromotionReadinessResponse?: unknown;
   signalPreview?: unknown;
   riskPreview?: unknown;
+  paperShadowPreview?: unknown;
   savedBacktestReport?: unknown;
   portfolio?: unknown;
 } = {}) {
@@ -901,6 +979,9 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/backtest/risk-preview')) {
         return jsonResponse(riskPreview);
+      }
+      if (url.includes('/api/backtest/paper-shadow-preview')) {
+        return jsonResponse(paperShadowPreview);
       }
       if (url.includes('/api/backtest/sweep')) {
         return sweepFails
@@ -1698,6 +1779,72 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   });
   expect(riskPayload.order_type).toBeUndefined();
   expect(riskPayload.execution_mode).toBeUndefined();
+});
+
+test('previews paper shadow simulation after a passed risk preview', async () => {
+  const { fetchMock } = renderBacktestPage({
+    results: [],
+    riskPreview: passedRiskPreviewResponse,
+  });
+
+  await screen.findByText('Strategy replay');
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '600002' },
+  });
+  fireEvent.change(
+    await screen.findByLabelText('Short moving-average window'),
+    {
+      target: { value: '3' },
+    },
+  );
+  fireEvent.change(await screen.findByLabelText('Long moving-average window'), {
+    target: { value: '9' },
+  });
+  fireEvent.submit(
+    screen
+      .getByRole('button', { name: 'Run backtest' })
+      .closest('form') as HTMLFormElement,
+  );
+
+  fireEvent.change(await screen.findByLabelText('Risk quantity'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
+  expect(await screen.findByText('Risk passed')).toBeTruthy();
+  expect(await screen.findByText('Approved for manual review')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Preview paper/shadow' }));
+  expect(await screen.findByText('Paper/shadow preview')).toBeTruthy();
+  expect(await screen.findByText('Simulated fill')).toBeTruthy();
+  expect(await screen.findByText('Filled 100 @ CN¥29.17')).toBeTruthy();
+  expect(await screen.findByText('Estimated fee CN¥5.03')).toBeTruthy();
+  expect(await screen.findByText('No ledger mutation')).toBeTruthy();
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/paper-shadow-preview',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const paperShadowCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/paper-shadow-preview'),
+  );
+  const paperShadowPayload = JSON.parse(String(paperShadowCall?.[1]?.body));
+  expect(paperShadowPayload).toMatchObject({
+    strategy: 'dual_ma',
+    symbol: '600002',
+    asset_class: 'stock',
+    action: 'buy',
+    quantity: 100,
+    reference_price: 29.17,
+    target_weight: '1.0',
+    signal_id: 'preview-run-001:0001:buy_candidate',
+    dataset_snapshot_id: 'sha256:preview-dataset',
+    risk_preview_passed: true,
+    risk_reasons: ['approved'],
+  });
+  expect(paperShadowPayload.execution_mode).toBeUndefined();
+  expect(paperShadowPayload.order_type).toBeUndefined();
 });
 
 test('renders dataset snapshot metadata for saved reports', async () => {

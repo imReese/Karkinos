@@ -235,6 +235,10 @@ run the same pre-trade risk rules against current account context as a
 read-only preview. The response reports pass/blocked reasons, requires manual
 confirmation, and explicitly does not create orders, persist risk decisions, or
 mutate ledger entries.
+`POST /api/backtest/paper-shadow-preview` can then simulate a passed, sized
+candidate as paper/shadow evidence. It returns paper order/fill evidence,
+after-cost fee breakdown, and a shadow-review summary without writing order
+facts, fills, ledger entries, or broker submissions.
 
 For CI, release review, or manual acceptance checks, export the current
 acceptance audit manifests as JSON:
