@@ -576,13 +576,4 @@ def _calculate_slippage(
 def _fee_breakdown_payload(breakdown: FeeBreakdown | None) -> dict[str, Any] | None:
     if breakdown is None:
         return None
-    return {
-        "gross_amount": str(breakdown.gross_amount),
-        "commission": str(breakdown.commission),
-        "stamp_tax": str(breakdown.stamp_tax),
-        "transfer_fee": str(breakdown.transfer_fee),
-        "other_fees": str(breakdown.other_fees),
-        "total_fee": str(breakdown.total_fee),
-        "fee_rule_id": breakdown.fee_rule_id,
-        "limitations": list(breakdown.limitations),
-    }
+    return breakdown.to_json_dict()

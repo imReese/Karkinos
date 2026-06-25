@@ -222,7 +222,7 @@ class BacktestEngine:
                 fill = self.execution.execute(event)
                 if fill is not None:
                     # 覆盖佣金为按资产类型和最终成交价计算的值。
-                    commission = self._multi_commission.calculate_for(
+                    fee_breakdown = self._multi_commission.breakdown_for(
                         inst.commission_type,
                         event.side,
                         fill.fill_price,
@@ -236,8 +236,11 @@ class BacktestEngine:
                         side=fill.side,
                         fill_price=fill.fill_price,
                         fill_quantity=fill.fill_quantity,
-                        commission=commission,
+                        commission=fee_breakdown.total_fee,
                         slippage=fill.slippage,
+                        fee_breakdown=fee_breakdown.to_json_dict(),
+                        fee_rule_id=fee_breakdown.fee_rule_id,
+                        fee_rule_version="backtest_commission_model",
                     )
                     self._record_fill_event(fill, event)
                     return

@@ -1409,3 +1409,10 @@ roadmap promises.
   formatting only; it does not change cost-basis math, ledger mutation, broker
   behavior, order submission, risk gates, automatic trading defaults, or
   manual-confirmation requirements.
+* 2026-06-25: Backtest fills now carry the same structured fee-breakdown
+  payload used by paper broker evidence, manual trade previews, and ledger
+  projections while preserving the legacy total `commission` field. The v1.4
+  broker fee / cost-basis acceptance audit now records this shared fee-contract
+  evidence. This is research and simulation evidence only; it does not submit
+  broker orders, change live-like defaults, bypass risk gates, or bypass
+  manual confirmation.

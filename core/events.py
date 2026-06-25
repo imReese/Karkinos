@@ -108,6 +108,9 @@ class FillEvent(Event):
     fill_quantity: Decimal
     commission: Decimal
     slippage: Decimal
+    fee_breakdown: dict[str, Any] | None = None
+    fee_rule_id: str | None = None
+    fee_rule_version: str | None = None
 
 
 @dataclass(frozen=True)

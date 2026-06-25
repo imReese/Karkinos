@@ -768,6 +768,9 @@ class BacktestFill(BaseModel):
     fill_quantity: float
     commission: float
     slippage: float
+    fee_breakdown: dict[str, Any] | None = None
+    fee_rule_id: str | None = None
+    fee_rule_version: str | None = None
 
 
 class BacktestResponse(BaseModel):

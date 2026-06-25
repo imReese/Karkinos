@@ -1743,6 +1743,31 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="shared_fee_model_contract_across_research_and_ledger",
+                checkbox_text=(
+                    "* [x] Backtest, paper broker, manual trade preview, and "
+                    "ledger projections use"
+                ),
+                evidence_paths=(
+                    "execution/commission.py",
+                    "execution/simulator.py",
+                    "execution/paper_broker.py",
+                    "backtest/engine.py",
+                    "server/services/manual_trade_fees.py",
+                    "server/projections/service.py",
+                    "server/routes/backtest.py",
+                    "tests/execution/test_simulator.py",
+                    "tests/execution/test_paper_broker.py",
+                    "tests/server/test_manual_trade_fee_service.py",
+                    "tests/server/test_projection_service.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/execution/test_simulator.py tests/execution/test_paper_broker.py tests/server/test_manual_trade_fee_service.py tests/server/test_projection_service.py",
+                    "uv run python -m pytest tests/test_server_routes.py::test_backtest_fill_response_preserves_structured_fee_breakdown",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="strategy_health_states",
                 checkbox_text=(
                     "* [x] Strategy health can mark assigned strategies as healthy, "

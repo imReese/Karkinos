@@ -81,6 +81,35 @@ class TestSimulatedExecution:
         # ETF 佣金 = max(400 * 0.0003, 5) + 过户费 = 5 + 0.004 ≈ 5.004
         assert fill.commission > Decimal("0")
 
+    def test_fill_carries_structured_fee_breakdown(self):
+        """Backtest fills preserve the same structured fee contract as preview paths."""
+        exec_engine = SimulatedExecution(commission_calc=ETFCommission())
+        order = OrderEvent(
+            timestamp=datetime(2024, 1, 1),
+            order_id="ORD001",
+            symbol=Symbol("510300"),
+            side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("100"),
+            price=Decimal("4.0"),
+        )
+
+        fill = exec_engine.execute(order)
+
+        assert fill is not None
+        assert fill.commission == Decimal("5.00400")
+        assert fill.fee_rule_id == "cn_fund_etf_default_v1"
+        assert fill.fee_breakdown == {
+            "gross_amount": "400.0",
+            "commission": "5",
+            "stamp_tax": "0",
+            "transfer_fee": "0.004000",
+            "other_fees": "0.0",
+            "total_fee": "5.004000",
+            "fee_rule_id": "cn_fund_etf_default_v1",
+            "limitations": ["broker_regulatory_fees_assumed_absorbed"],
+        }
+
     def test_tick_slippage_adds_for_buy_and_subtracts_for_sell(self):
         slippage = TickSlippage(ticks=2, tick_size=Decimal("0.01"))
 
