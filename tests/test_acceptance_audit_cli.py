@@ -117,6 +117,24 @@ def test_acceptance_audit_cli_broker_fee_cost_basis_filter_outputs_one_audit() -
     assert audit["criteria"]
 
 
+def test_acceptance_audit_cli_single_instrument_strategy_loop_filter_outputs_one_audit() -> (
+    None
+):
+    result = _run_cli("--audit", "single_instrument_strategy_loop")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "single_instrument_strategy_loop"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "single_instrument_strategy_loop"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
+    assert audit["completed_count"] == audit["required_count"]
+    assert audit["criteria"]
+
+
 def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     result = _run_cli("--audit", "all")
 
@@ -132,6 +150,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "strategy_assignment",
         "market_data_reliability",
         "broker_fee_cost_basis",
+        "single_instrument_strategy_loop",
     ]
     assert all(audit["is_complete"] for audit in payload["audits"])
 

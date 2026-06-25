@@ -1822,3 +1822,144 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_single_instrument_strategy_loop_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the read-only single-instrument strategy loop."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="dataset_snapshot_and_strategy_registry",
+                checkbox_text=(
+                    "* [x] Dataset snapshot evidence and strategy registry are "
+                    "both present in the one-symbol flow."
+                ),
+                evidence_paths=(
+                    "strategy/registry.py",
+                    "backtest/engine.py",
+                    "server/routes/backtest.py",
+                    "tests/server/test_backtest_signal_preview_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_backtest_signal_preview_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="single_symbol_after_cost_backtest",
+                checkbox_text=(
+                    "* [x] A single-symbol after-cost backtest can feed the "
+                    "preview chain without writing production trading facts."
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "backtest/engine.py",
+                    "execution/commission.py",
+                    "tests/server/test_backtest_signal_preview_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_backtest_signal_preview_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="today_signal_preview",
+                checkbox_text=(
+                    "* [x] Today's signal preview returns standardized candidate "
+                    "actions or no-action reasons as research evidence."
+                ),
+                evidence_paths=(
+                    "analytics/strategy_signal_preview.py",
+                    "server/routes/backtest.py",
+                    "tests/strategy/test_signal_preview.py",
+                    "tests/server/test_backtest_signal_preview_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/strategy/test_signal_preview.py tests/server/test_backtest_signal_preview_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="risk_gate_preview",
+                checkbox_text=(
+                    "* [x] The preview path runs a read-only risk gate before "
+                    "paper/shadow simulation."
+                ),
+                evidence_paths=(
+                    "risk/pre_trade.py",
+                    "server/routes/backtest.py",
+                    "tests/risk/test_pre_trade.py",
+                    "tests/server/test_backtest_signal_preview_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/risk/test_pre_trade.py tests/server/test_backtest_signal_preview_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_preview",
+                checkbox_text=(
+                    "* [x] Paper/shadow preview simulates order and fill evidence "
+                    "while remaining isolated from the real ledger."
+                ),
+                evidence_paths=(
+                    "execution/paper_broker.py",
+                    "server/routes/backtest.py",
+                    "analytics/shadow_review.py",
+                    "tests/execution/test_paper_broker.py",
+                    "tests/analytics/test_shadow_review.py",
+                    "tests/server/test_backtest_signal_preview_routes.py",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/execution/test_paper_broker.py tests/analytics/test_shadow_review.py tests/server/test_backtest_signal_preview_routes.py",
+                    "npm --prefix web test -- backtest-page",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="attribution_preview_boundary",
+                checkbox_text=(
+                    "* [x] Attribution preview exposes evidence counts and a "
+                    "manual review linkage candidate without claiming strategy P/L."
+                ),
+                evidence_paths=(
+                    "server/routes/backtest.py",
+                    "tests/server/test_backtest_signal_preview_routes.py",
+                    "web/src/features/backtest/api.ts",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "README.md",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_backtest_signal_preview_routes.py -k attribution_preview",
+                    "npm --prefix web test -- backtest-page -t 'summarizes attribution preview'",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="web_user_readable_loop_surface",
+                checkbox_text=(
+                    "* [x] Web Backtest surfaces the loop in localized, "
+                    "user-readable language without exposing internal reason codes."
+                ),
+                evidence_paths=(
+                    "web/src/app/copy.ts",
+                    "web/src/shared/public-labels.ts",
+                    "web/src/shared/public-labels.test.ts",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- backtest-page public-labels",
+                    "npm --prefix web run format:check",
+                ),
+            ),
+        )
+    )
