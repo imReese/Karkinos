@@ -1600,3 +1600,22 @@ roadmap promises.
   it does not change cost calculation, ledger storage, broker connector
   behavior, order submission, risk gates, automatic trading defaults, or
   manual-confirmation requirements.
+* 2026-06-25: Manual trade fee resolution now treats `convertible_bond` as an
+  exchange-bond fee class for configured ledger and preview fee evidence,
+  preserving commission, other-fee, total-fee, fee-rule, and net-cash-impact
+  fields without adding stock stamp tax or transfer fees. Deterministic backend
+  tests now cover the v1.4 fee/cost-basis contract across A-share fees,
+  Shanghai/Shenzhen transfer-fee differences, ETF/fund-style fees,
+  convertible-bond fees, broker displayed cost basis, realized P/L, and net
+  cash impact. This is fee evidence and ledger projection handling only; it
+  does not introduce broker order submission, automatic real-money trading,
+  broker password storage, or changes to manual-confirmation requirements.
+* 2026-06-25: The v1.4 acceptance audit now records frontend coverage for
+  user-facing fee and cost-basis surfaces: Activity, Trading, Portfolio
+  positions, holding detail, manual trade preview, and shared ledger formatting
+  tests cover fee-breakdown display, cost-basis-method labels, broker/local
+  cost-basis difference warnings, and suppression of raw entry types, fee-rule
+  ids, backend note codes, and internal reason codes. This is test/audit
+  coverage only; it does not change UI behavior, ledger storage, broker
+  behavior, order submission, automatic trading defaults, or manual-confirmation
+  requirements.

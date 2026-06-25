@@ -346,3 +346,68 @@ def test_ledger_trade_route_preserves_broker_fee_schedule_version(
 
     assert saved.fee_rule_id == "manual_configured_commission"
     assert saved.fee_rule_version == "local_broker_fee_schedule_v2"
+
+
+def test_ledger_trade_route_uses_configured_convertible_bond_fee_contract(
+    tmp_path, monkeypatch
+):
+    from server.routes import ledger as ledger_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    fake_state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(
+            account_commission_rate=0.00004,
+            account_min_commission=1,
+            broker_fee_schedule=SimpleNamespace(
+                other_fee_rate=0.000001,
+                schedule_id="local_bond_fee_schedule_v1",
+            ),
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = ledger_routes.create_router()
+    create_trade = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/ledger/trades"
+    ).endpoint
+    list_entries = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/ledger/entries"
+    ).endpoint
+
+    asyncio.run(
+        create_trade(
+            ledger_routes.LedgerTradeCreate(
+                symbol="113001",
+                asset_class="convertible_bond",
+                direction="sell",
+                quantity=100,
+                unit_price=115,
+                occurred_at="2026-06-17T10:00:00",
+                source_ref="trade-sell-convertible-bond-configured-fee",
+            )
+        )
+    )
+
+    saved = asyncio.run(list_entries())[0]
+
+    assert saved.entry_type == "trade_sell"
+    assert saved.gross_amount == pytest.approx(11500.0)
+    assert saved.commission == pytest.approx(1.0)
+    assert saved.net_cash_impact == pytest.approx(11498.9885)
+    assert saved.fee_breakdown == {
+        "commission": "1.00",
+        "stamp_tax": "0.000000",
+        "transfer_fee": "0.000000",
+        "other_fees": "0.011500",
+        "total_fee": "1.011500",
+    }
+    assert saved.fee_rule_id == "manual_configured_commission"
+    assert saved.fee_rule_version == "local_bond_fee_schedule_v1"
+    assert saved.cost_basis_method == "moving_average_buy_cost"

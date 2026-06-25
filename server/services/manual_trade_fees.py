@@ -44,9 +44,9 @@ def resolve_manual_trade_fee_breakdown(
     if config is None or quantity is None or price is None:
         return None
 
-    normalized_asset_class = asset_class.strip().lower()
+    normalized_asset_class = asset_class.strip().lower().replace("-", "_")
     normalized_direction = direction.strip().lower()
-    if normalized_asset_class not in {"stock", "etf", "bond"}:
+    if normalized_asset_class not in {"stock", "etf", "bond", "convertible_bond"}:
         return None
     if normalized_direction not in {"buy", "sell"}:
         return None
@@ -78,7 +78,7 @@ def resolve_manual_trade_fee_breakdown(
             fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
             limitations=limitations,
         )
-    elif normalized_asset_class == "bond":
+    elif normalized_asset_class in {"bond", "convertible_bond"}:
         calculator = BondExchangeCommission(
             commission_rate=rate,
             min_commission=min_commission,
