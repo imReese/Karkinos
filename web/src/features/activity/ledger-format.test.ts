@@ -193,6 +193,38 @@ describe('ledger formatter', () => {
     ).toBeNull();
   });
 
+  test('suppresses legacy manual trade prefixes that duplicate structured facts', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          note: '手工录入交易-示例制造 600003 买入，数量 200，价格 16.25，手续费 5.00',
+        },
+        'zh',
+      ),
+    ).toBeNull();
+  });
+
+  test('keeps user remarks while suppressing core accounting fact note segments', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          gross_amount: 3250,
+          net_cash_impact: -3255.16,
+          fee_breakdown: {
+            commission: '5.00',
+            stamp_tax: '0.00',
+            transfer_fee: '0.16',
+            total_fee: '5.16',
+          },
+          note: '复盘观察；成本价 16.25；净现金影响 -3255.16；手续费 5.16',
+        },
+        'zh',
+      ),
+    ).toBe('复盘观察');
+  });
+
   test('suppresses legacy internal cash-deposit notes', () => {
     expect(
       formatLedgerPublicNote({

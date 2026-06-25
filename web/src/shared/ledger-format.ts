@@ -901,7 +901,7 @@ function isGeneratedStructuredTradeNote(
       normalized.startsWith(`${prefix}赎回`),
   );
   const startsWithStructuredFact =
-    /^(?:数量|价格|手续费|佣金|份额|金额|成交|quantity\b|price\b|fee\b|commission\b|amount\b)/i.test(
+    /^(?:数量|价格|手续费|佣金|份额|金额|成交|成本|成本价|净现金影响|现金影响|净额|净金额|quantity\b|price\b|fee\b|commission\b|amount\b|cost\b|cost basis\b|net cash\b|cash impact\b)/i.test(
       normalized,
     );
   const startsWithActionFact =
@@ -917,7 +917,7 @@ function isGeneratedStructuredTradeNote(
   const directionPattern =
     kind === 'trade_buy' ? /(买入|申购|buy|bought)/i : /(卖出|赎回|sell|sold)/i;
   const structuredFactPattern =
-    /(佣金|手续费|费率|计费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|元|gross|amount|quantity|price|fee|commission|subscription|redemption)/i;
+    /(佣金|手续费|费率|计费|申购金额|赎回金额|买入金额|卖出金额|成交|份额|数量|价格|成本|净现金影响|现金影响|净额|净金额|元|gross|net cash|cash impact|amount|quantity|price|fee|commission|cost|basis|subscription|redemption)/i;
 
   if (startsWithStructuredFact || startsWithActionFact) {
     return structuredFactPattern.test(normalized);
@@ -993,7 +993,10 @@ function segmentMentionsAmount(segment: string, amount: number) {
 function stripLedgerNotePrefix(segment: string) {
   return segment
     .replace(/^用户记录[:：]\s*/, '')
-    .replace(/^手工录入(?:持仓|基金申购|现金入金|现金出金)[:：]\s*/, '');
+    .replace(
+      /^手工录入(?:持仓|基金申购|现金入金|现金出金|(?:股票|证券)?交易)[:：\-－—]\s*/,
+      '',
+    );
 }
 
 function looksLikeInstrumentNameOnly(segment: string) {

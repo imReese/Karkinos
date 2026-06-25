@@ -693,14 +693,14 @@ broker-facing cost basis shown in a user's securities app.
   tax, transfer fee, other fees, total fee, fee-rule id, and known limitations.
 * [x] Buy and sell ledger entries preserve gross trade amount, net cash impact,
   fee breakdown, cost-basis method, and fee-rule version.
-* [ ] A shared public ledger formatter is used by Overview, Activity,
+* [x] A shared public ledger formatter is used by Overview, Activity,
   Portfolio, holding detail, Risk, Decision, and review surfaces for action
   titles, entry types, notes, instrument names, timestamps, quantities, prices,
   amounts, fees, and cash impact.
-* [ ] User-facing ledger surfaces do not render internal values such as
+* [x] User-facing ledger surfaces do not render internal values such as
   `trade_buy`, `trade_sell`, raw reason codes, legacy note prefixes, duplicate
   symbol/name fragments, or mixed Chinese/English operational notes.
-* [ ] Public ledger notes follow a consistent localized format and never carry
+* [x] Public ledger notes follow a consistent localized format and never carry
   core accounting facts that should be structured columns or detail fields.
 * [ ] Portfolio cost views show both moving average buy cost and broker
   displayed cost basis when enough evidence exists, with localized

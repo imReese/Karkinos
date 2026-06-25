@@ -1554,3 +1554,31 @@ roadmap promises.
   cost-basis acceptance audit records this evidence. This is reconciliation
   evidence only; it does not mutate ledger entries, submit broker orders,
   change risk gates, enable automatic trading, or bypass manual confirmation.
+* 2026-06-25: The v1.4 broker fee / cost-basis acceptance audit now records
+  the shared public ledger formatter contract used across Overview, Activity,
+  Portfolio holding detail, Risk explainability, Decision, and Account Truth
+  review surfaces. Existing Web tests cover localized action titles, entry
+  types, instrument names, timestamps, quantities, prices, amounts, fees, cash
+  impact, evidence references, and suppression of internal ledger/action codes.
+  This is presentation/audit-manifest evidence only; it does not change ledger
+  storage, accounting math, broker behavior, order submission, risk gates,
+  automatic trading defaults, or manual-confirmation requirements.
+* 2026-06-25: Shared public ledger-note formatting now suppresses dash-prefixed
+  legacy manual-trade notes such as generated "manual trade - instrument buy"
+  facts when the same quantity, price, amount, fee, and cash-impact values are
+  already available as structured fields. The v1.4 acceptance audit now records
+  the broader user-facing contract that raw entry types, reason codes, legacy
+  prefixes, duplicate symbol/name fragments, and mixed operational notes should
+  not leak into public ledger surfaces. This is display cleanup only; it does
+  not change ledger storage, accounting math, broker behavior, order
+  submission, risk gates, automatic trading defaults, or manual-confirmation
+  requirements.
+* 2026-06-25: Shared public ledger-note formatting now keeps genuine user
+  remarks while suppressing generated accounting-fact note segments such as
+  cost-basis, net-cash-impact, amount, quantity, price, and fee fragments when
+  those facts already have structured fields. The v1.4 acceptance audit records
+  the localized public-note contract so future ledger surfaces do not smuggle
+  core accounting facts into free-form notes. This is display/audit evidence
+  only; it does not change ledger storage, accounting math, broker behavior,
+  order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.
