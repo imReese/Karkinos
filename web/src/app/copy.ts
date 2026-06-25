@@ -835,6 +835,8 @@ export const copy = {
         accountStrategyContributionLoading: 'Loading contribution report.',
         accountStrategyContributionUnavailable:
           'Contribution report is unavailable.',
+        accountStrategyContributionExplanation:
+          'Only linked signal, review, order, and fill evidence is counted here; manual trades and cash flows stay separate.',
         accountStrategyEvidenceLinked: 'Evidence-linked',
         accountStrategyEvidenceRequired: 'Evidence required',
         accountStrategyContributionHiddenUntilEvidence:
@@ -1024,8 +1026,10 @@ export const copy = {
         singleInstrumentLoopNextComplete:
           'All research evidence is ready for manual review; no broker order is created here.',
         singleInstrumentLoopAuditCoverage: 'Acceptance audit coverage',
-        singleInstrumentLoopAuditCount: '8/8 criteria verified',
-        singleInstrumentLoopAuditKey: 'single_instrument_strategy_loop',
+        singleInstrumentLoopAuditVerified: 'criteria verified',
+        singleInstrumentLoopAuditLoading: 'Loading audit coverage',
+        singleInstrumentLoopAuditUnavailable: 'Audit coverage unavailable',
+        singleInstrumentLoopAuditFallbackKey: 'acceptance audit',
         singleInstrumentLoopAuditBoundary:
           'Product-readiness proof only; it does not enable broker execution or investment advice.',
         singleInstrumentLoopEvidenceCta: 'Review evidence',
@@ -2697,6 +2701,8 @@ export const copy = {
         accountStrategyContributionPublicTitle: '策略贡献',
         accountStrategyContributionLoading: '正在加载策略贡献报告。',
         accountStrategyContributionUnavailable: '策略贡献报告暂不可用。',
+        accountStrategyContributionExplanation:
+          '这里只统计已连接的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
         accountStrategyEvidenceLinked: '证据链已连接',
         accountStrategyEvidenceRequired: '需要补齐证据',
         accountStrategyContributionHiddenUntilEvidence:
@@ -2874,8 +2880,10 @@ export const copy = {
         singleInstrumentLoopNextComplete:
           '研究证据已就绪，可进入人工复核；这里不会创建券商订单。',
         singleInstrumentLoopAuditCoverage: '验收审计覆盖',
-        singleInstrumentLoopAuditCount: '8/8 项已验证',
-        singleInstrumentLoopAuditKey: 'single_instrument_strategy_loop',
+        singleInstrumentLoopAuditVerified: '项已验证',
+        singleInstrumentLoopAuditLoading: '正在读取验收审计覆盖',
+        singleInstrumentLoopAuditUnavailable: '验收审计覆盖暂不可用',
+        singleInstrumentLoopAuditFallbackKey: '验收审计',
         singleInstrumentLoopAuditBoundary:
           '仅代表产品就绪证据；不会启用券商执行，也不构成投资建议。',
         singleInstrumentLoopEvidenceCta: '查看证据',

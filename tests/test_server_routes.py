@@ -68,6 +68,43 @@ def _backtest_route(router, path: str, method: str = "GET"):
     )
 
 
+def test_acceptance_audit_route_returns_single_instrument_loop_manifest():
+    from server.routes import acceptance_audit as acceptance_audit_routes
+
+    router = acceptance_audit_routes.create_router()
+    endpoint = _backtest_route(
+        router,
+        "/api/acceptance-audits/{audit_key}",
+        "GET",
+    ).endpoint
+
+    response = asyncio.run(endpoint("single_instrument_strategy_loop"))
+    audit = response["audits"][0]
+
+    assert response["selected_audit"] == "single_instrument_strategy_loop"
+    assert response["overall_is_complete"] is True
+    assert audit["key"] == "single_instrument_strategy_loop"
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "dataset_snapshot_and_strategy_registry",
+        "web_paper_shadow_attribution_boundary",
+    }
+
+
+def test_app_registers_acceptance_audit_route():
+    from server.app import create_app
+
+    app = create_app({"live_auto_start": False})
+
+    assert any(
+        isinstance(route, APIRoute)
+        and route.path == "/api/acceptance-audits/{audit_key}"
+        and "GET" in route.methods
+        for route in app.routes
+    )
+
+
 def test_asset_metadata_resolver_accepts_supported_config_shapes():
     from server.services.asset_metadata import (
         build_asset_metadata_status,

@@ -22,7 +22,12 @@ beforeEach(() => {
 
 function renderCard(
   report: Parameters<typeof StrategyContributionGateCard>[0]['report'],
+  locale?: 'en' | 'zh',
 ) {
+  window.localStorage.clear();
+  if (locale) {
+    window.localStorage.setItem('karkinos.locale', locale);
+  }
   return render(
     <PreferencesProvider>
       <StrategyContributionGateCard report={report} />
@@ -54,6 +59,11 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   });
 
   expect(screen.getByText('Strategy contribution')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Only linked signal, review, order, and fill evidence is counted here; manual trades and cash flows stay separate.',
+    ),
+  ).toBeTruthy();
   expect(screen.getByText('Evidence-linked')).toBeTruthy();
   expect(screen.getByText('Strategy health')).toBeTruthy();
   expect(screen.getByText('Healthy')).toBeTruthy();
@@ -85,6 +95,40 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
       'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
     ),
   ).toBeNull();
+});
+
+test('localizes the contribution explanation before showing estimates', () => {
+  renderCard(
+    {
+      strategy_id: 'dual_ma',
+      contribution_status: 'estimated_from_linked_fills',
+      strategy_health_status: 'healthy',
+      strategy_health_reasons: ['linked_fill_evidence_available'],
+      linked_fill_count: 1,
+      gross_realized_pnl: 0,
+      gross_unrealized_pnl: 16,
+      total_commission: 5,
+      total_slippage: 0,
+      total_tax: 0,
+      net_contribution: 11,
+      unattributed_account_pnl: 0,
+      manual_unattributed_pnl: 0,
+      cash_flow_pnl: 0,
+      missing_valuation_symbols: [],
+      evidence_refs: ['fill:FILL-1'],
+      limitations: [],
+    },
+    'zh',
+  );
+
+  expect(screen.getByText('策略贡献')).toBeTruthy();
+  expect(
+    screen.getByText(
+      '这里只统计已连接的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText('证据链已连接')).toBeTruthy();
+  expect(screen.queryByText(/linked signal/)).toBeNull();
 });
 
 test('does not expose contribution amount when evidence chain is unsupported', () => {

@@ -298,6 +298,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     )
 
     # 注册路由
+    from server.routes.acceptance_audit import create_router as acceptance_audit_router
     from server.routes.backtest import create_router as backtest_router
     from server.routes.account_strategy import create_router as account_strategy_router
     from server.routes.account_truth import create_router as account_truth_router
@@ -311,6 +312,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.ws.handlers import router as ws_router
 
     app.include_router(market_router())
+    app.include_router(acceptance_audit_router())
     app.include_router(account_strategy_router())
     app.include_router(account_truth_router())
     app.include_router(ledger_router())

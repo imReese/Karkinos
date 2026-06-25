@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Web strategy-contribution surfaces now include a stable
+  localized explanation that only linked signal, review, order, and fill
+  evidence is counted while manual trades and cash flows remain separate.
+  Decision summaries also keep contribution status user-readable in English
+  and Chinese. Internal strategy identifiers remain secondary audit labels.
+  This is display-only and does not change contribution math, attribution
+  gates, ledger records, broker submission, or automatic trading behavior.
+* 2026-06-25: Added a read-only acceptance audit API surface for
+  `single_instrument_strategy_loop` and moved the audit registry / JSON export
+  builder into shared analytics code. The Backtest readiness card now fetches
+  live audit manifest metadata instead of hardcoding the 8/8 coverage count.
+  The API is review-only: it writes no report artifact, does not mutate the
+  ledger, does not submit broker orders, and does not enable automatic
+  real-money trading.
 * 2026-06-25: Web Backtest now surfaces the
   `single_instrument_strategy_loop` acceptance audit coverage directly inside
   the single-instrument readiness card. Users can see the 8/8 verified

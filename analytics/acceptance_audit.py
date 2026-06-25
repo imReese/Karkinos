@@ -1820,6 +1820,24 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
                     "npm --prefix web test -- strategy-contribution-gate-card",
                 ),
             ),
+            AcceptanceCriterion(
+                key="web_strategy_contribution_user_readable_surface",
+                checkbox_text=(
+                    "* [x] Web surfaces explain strategy contribution in "
+                    "localized user-facing"
+                ),
+                evidence_paths=(
+                    "web/src/app/copy.ts",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.tsx",
+                    "web/src/features/account-strategy/components/strategy-contribution-gate-card.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- strategy-contribution-gate-card decision-cockpit-page",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
         )
     )
 
