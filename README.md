@@ -127,8 +127,9 @@ The data-source setup command writes ignored local `config.json` for you. It hid
 Manual trade ledger entries that omit an explicit fee use the configured account
 fee rule and structured broker fee schedule to record commission, stamp tax,
 exchange-specific transfer fee when configured, other fees, total fee, and net
-cash impact. Entries with an explicit fee keep the `manual_fee_input` audit
-marker.
+cash impact. Bond and convertible-bond manual trades use the exchange-bond fee
+model without stock stamp tax or transfer fees. Entries with an explicit fee
+keep the `manual_fee_input` audit marker.
 
 Use this storage boundary:
 

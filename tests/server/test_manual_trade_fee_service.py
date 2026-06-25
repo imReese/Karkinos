@@ -170,6 +170,36 @@ def test_manual_trade_fee_service_formats_bond_without_stock_taxes():
     assert resolved.fee_rule_version == "account_commission_rate"
 
 
+def test_manual_trade_fee_service_treats_convertible_bond_as_exchange_bond_fee():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    resolved = resolve_manual_trade_fee_breakdown(
+        SimpleNamespace(
+            account_commission_rate=0.00004,
+            account_min_commission=1,
+            broker_fee_schedule=SimpleNamespace(other_fee_rate=0.000001),
+        ),
+        asset_class="convertible_bond",
+        direction="sell",
+        quantity=100,
+        price=115,
+        symbol="113001",
+    )
+
+    assert resolved is not None
+    assert resolved.fee_breakdown_json == {
+        "commission": "1.00",
+        "stamp_tax": "0.000000",
+        "transfer_fee": "0.000000",
+        "other_fees": "0.011500",
+        "total_fee": "1.011500",
+    }
+    assert resolved.commission == 1.0
+    assert resolved.total_fee == 1.0115
+    assert resolved.fee_rule_id == "manual_configured_commission"
+    assert resolved.fee_rule_version == "account_commission_rate"
+
+
 def test_manual_trade_fee_service_leaves_unsupported_assets_to_explicit_fee():
     from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 

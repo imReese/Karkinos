@@ -264,7 +264,7 @@ def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_check
 ):
     audit = build_broker_fee_cost_basis_acceptance_audit()
 
-    assert audit.required_count == 14
+    assert audit.required_count == 16
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -281,6 +281,8 @@ def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_check
         "public_ledger_notes_keep_core_facts_structured",
         "portfolio_cost_views_distinguish_local_and_broker_cost_basis",
         "sell_side_net_proceeds_broker_cost_basis",
+        "backend_fee_cost_basis_deterministic_tests",
+        "frontend_fee_cost_basis_display_tests",
     }
 
     for criterion in audit.criteria:

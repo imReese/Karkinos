@@ -713,10 +713,10 @@ broker-facing cost basis shown in a user's securities app.
   context, precision limitations, and suggested review actions.
 * [x] Backtest, paper broker, manual trade preview, and ledger projections use
   the same fee model contract without enabling automatic real-money trading.
-* [ ] Backend deterministic tests cover A-share buy/sell, stamp tax,
+* [x] Backend deterministic tests cover A-share buy/sell, stamp tax,
   Shanghai/Shenzhen transfer-fee differences, ETF/fund, convertible bond,
   broker displayed cost basis, realized P/L, and net cash impact.
-* [ ] Frontend tests cover fee-breakdown display, cost-basis-method display,
+* [x] Frontend tests cover fee-breakdown display, cost-basis-method display,
   broker/local cost-basis difference warnings, shared ledger formatting, and
   the absence of internal entry types or raw reason codes in user-visible
   ledger surfaces.

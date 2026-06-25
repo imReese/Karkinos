@@ -139,7 +139,13 @@ test('summarizes activity net cash impact with the shared ledger formatter seman
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
   expect(await screen.findByText('-CN¥3,254.89')).toBeTruthy();
+  expect(await screen.findByText('Commission CN¥5.00')).toBeTruthy();
+  expect(await screen.findByText('Stamp tax CN¥0.00')).toBeTruthy();
+  expect(await screen.findByText('Transfer fee CN¥0.16')).toBeTruthy();
   expect(screen.queryByText('-CN¥3,250.00')).toBeNull();
+  expect(screen.queryByText('synthetic_fee_rule')).toBeNull();
+  expect(screen.queryByText('moving_average_buy_cost')).toBeNull();
+  expect(screen.queryByText('fee_breakdown')).toBeNull();
 });
 
 test('renders public localized notes instead of raw backend note codes', async () => {

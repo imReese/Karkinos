@@ -312,7 +312,7 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 | `tushare_token` | string | `""` | Local TuShare token written by the onboarding script; `TUSHARE_TOKEN` can also be used |
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
-| `broker_fee_schedule` | object | local defaults | Local broker fee rule parameters: stock/ETF commission rates, minimum commission, stamp tax, default transfer fee, optional Shanghai/Shenzhen transfer-fee rates, other fee rate, rule id, and known limitations. Account identifiers, screenshots, statements, broker passwords, tokens, secrets, or credentials are rejected. |
+| `broker_fee_schedule` | object | local defaults | Local broker fee rule parameters: stock/ETF commission rates, minimum commission, stamp tax, default transfer fee, optional Shanghai/Shenzhen transfer-fee rates, bond/convertible-bond exchange fees, other fee rate, rule id, and known limitations. Account identifiers, screenshots, statements, broker passwords, tokens, secrets, or credentials are rejected. |
 | `broker_connectors` | array | `[]` | Local read-only broker connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 
@@ -321,6 +321,8 @@ Manual trade ledger entries that omit an explicit `fee` use the configured
 `account_commission_rate`, `account_min_commission`, and structured
 `broker_fee_schedule` to record commission, stamp tax, exchange-specific
 transfer fee when configured, other fees, total fee, and net cash impact.
+Bond and convertible-bond manual trades use the exchange-bond fee model without
+stock stamp tax or transfer fees.
 Entries with an explicit `fee` keep the `manual_fee_input` audit marker.
 
 #### notification Format

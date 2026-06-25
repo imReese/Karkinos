@@ -1875,6 +1875,51 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="backend_fee_cost_basis_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Backend deterministic tests cover A-share buy/sell, "
+                    "stamp tax,"
+                ),
+                evidence_paths=(
+                    "execution/commission.py",
+                    "server/services/manual_trade_fees.py",
+                    "server/routes/ledger.py",
+                    "server/projections/service.py",
+                    "tests/execution/test_commission.py",
+                    "tests/server/test_manual_trade_fee_service.py",
+                    "tests/server/test_ledger_routes.py",
+                    "tests/server/test_projection_service.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/execution/test_commission.py tests/server/test_manual_trade_fee_service.py tests/server/test_ledger_routes.py tests/server/test_projection_service.py",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frontend_fee_cost_basis_display_tests",
+                checkbox_text=(
+                    "* [x] Frontend tests cover fee-breakdown display, "
+                    "cost-basis-method display,"
+                ),
+                evidence_paths=(
+                    "web/src/app/activity-page.test.tsx",
+                    "web/src/features/activity/ledger-format.test.ts",
+                    "web/src/features/activity/trade-form.test.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                    "web/src/features/portfolio/positions-table.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.test.tsx",
+                    "web/src/shared/ledger-format.ts",
+                    "web/src/features/activity/components/activity-feed.tsx",
+                    "web/src/features/activity/components/trade-form.tsx",
+                    "web/src/features/portfolio/components/positions-table.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- activity-page ledger-format trade-form trading-page positions-table holding-detail-page",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="account_truth_cost_basis_method_precision_context",
                 checkbox_text=(
                     "* [x] Account Truth reconciliation compares "
