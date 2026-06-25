@@ -11,6 +11,7 @@ import {
   formatPublicCode,
   formatPublicNote,
   formatPublicOperationalNote,
+  formatPublicReviewActionLabel,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import { formatLedgerEvidenceReference } from '../../../shared/ledger-format';
@@ -35,16 +36,12 @@ const filters: Array<{ value: ReportFilter; en: string; zh: string }> = [
   { value: 'blocked', en: 'Blocked', zh: '阻断' },
 ];
 
-const reviewActions: Array<{
-  value: ReviewStatus;
-  en: string;
-  zh: string;
-}> = [
-  { value: 'accepted', en: 'Accept', zh: '接受' },
-  { value: 'ignored', en: 'Ignore', zh: '忽略' },
-  { value: 'known_difference', en: 'Known difference', zh: '已知差异' },
-  { value: 'ledger_candidate', en: 'Ledger candidate', zh: '账本候选' },
-  { value: 'needs_investigation', en: 'Needs investigation', zh: '继续调查' },
+const reviewActions: ReviewStatus[] = [
+  'accepted',
+  'ignored',
+  'known_difference',
+  'ledger_candidate',
+  'needs_investigation',
 ];
 
 const labels = {
@@ -803,12 +800,12 @@ function ReviewItemCard({
       <div className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-1">
         {reviewActions.map((action) => (
           <button
-            key={action.value}
+            key={action}
             type="button"
             className="shrink-0 rounded-full border border-[var(--app-border)] px-3 py-2 text-xs font-black text-[var(--app-muted)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-text)]"
-            onClick={() => onReview(action.value)}
+            onClick={() => onReview(action)}
           >
-            {action[locale]}
+            {formatPublicReviewActionLabel(action, locale)}
           </button>
         ))}
       </div>
