@@ -491,6 +491,35 @@ const signalPreviewResponse = {
   ],
 };
 
+const riskPreviewResponse = {
+  schema_version: 'karkinos.pre_trade_risk_preview.v1',
+  passed: false,
+  status: 'blocked',
+  severity: 'warning',
+  reasons: ['kill switch is enabled: buy orders are blocked'],
+  manual_confirmation_required: true,
+  does_not_create_order: true,
+  does_not_persist_decision: true,
+  metadata: {
+    quantity: '100',
+    reference_price: '29.17',
+    target_weight: '1.0',
+    cash: '100000',
+    total_equity: '100000',
+    order_value: '2917.00',
+    projected_cash: '97083.00',
+    current_position_value: '0',
+    projected_position_value: '2917.00',
+    projected_position_weight: '0.02917',
+    policy: {
+      execution_mode: 'manual',
+      max_order_notional: null,
+      min_cash_reserve: '0',
+      max_position_weight: null,
+    },
+  },
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -795,6 +824,7 @@ function installBacktestFetchMock({
   },
   strategyPromotionReadinessResponse = strategyPromotionReadiness,
   signalPreview = signalPreviewResponse,
+  riskPreview = riskPreviewResponse,
   savedBacktestReport = savedReport,
   portfolio = portfolioSnapshot,
 }: {
@@ -808,6 +838,7 @@ function installBacktestFetchMock({
   accountStrategyContribution?: unknown;
   strategyPromotionReadinessResponse?: unknown;
   signalPreview?: unknown;
+  riskPreview?: unknown;
   savedBacktestReport?: unknown;
   portfolio?: unknown;
 } = {}) {
@@ -867,6 +898,9 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/backtest/signal-preview')) {
         return jsonResponse(signalPreview);
+      }
+      if (url.includes('/api/backtest/risk-preview')) {
+        return jsonResponse(riskPreview);
       }
       if (url.includes('/api/backtest/sweep')) {
         return sweepFails
@@ -1605,6 +1639,14 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect(await screen.findByText('Data ready')).toBeTruthy();
   expect(await screen.findByText('Risk gate required')).toBeTruthy();
   expect(await screen.findByText('Paper/shadow waiting')).toBeTruthy();
+  fireEvent.change(await screen.findByLabelText('Risk quantity'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
+  expect(await screen.findByText('Risk preview')).toBeTruthy();
+  expect(await screen.findByText('Blocked by risk')).toBeTruthy();
+  expect(await screen.findByText('Kill switch enabled')).toBeTruthy();
+  expect(await screen.findByText('No order created')).toBeTruthy();
   expect(
     await screen.findByText(
       'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
@@ -1634,6 +1676,28 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   });
   expect(payload.bars).toBeUndefined();
   expect(payload.dataset_snapshot).toBeUndefined();
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/risk-preview',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const riskCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/risk-preview'),
+  );
+  const riskPayload = JSON.parse(String(riskCall?.[1]?.body));
+  expect(riskPayload).toMatchObject({
+    strategy: 'dual_ma',
+    symbol: '600002',
+    asset_class: 'stock',
+    action: 'buy',
+    quantity: 100,
+    reference_price: 29.17,
+    target_weight: '1.0',
+    data_quality_status: 'ok',
+  });
+  expect(riskPayload.order_type).toBeUndefined();
+  expect(riskPayload.execution_mode).toBeUndefined();
 });
 
 test('renders dataset snapshot metadata for saved reports', async () => {

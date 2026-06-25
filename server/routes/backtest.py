@@ -16,8 +16,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from core.events import MarketEvent
-from core.types import AssetClass, BarFrequency, Symbol
+from core.events import MarketEvent, OrderIntentEvent
+from core.types import AssetClass, BarFrequency, OrderSide, Symbol
 from server.bootstrap import build_strategy, build_watchlist
 from server.config import BacktestConfig
 from server.models import (
@@ -160,6 +160,17 @@ class StrategySignalPreviewResponse(BaseModel):
     outputs: list[dict[str, Any]] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     does_not_enable_execution: bool = True
+
+
+class BacktestRiskPreviewRequest(BaseModel):
+    strategy: str
+    symbol: str
+    asset_class: str = AssetClass.STOCK.value
+    action: str
+    quantity: Decimal = Field(gt=Decimal("0"))
+    reference_price: Decimal = Field(gt=Decimal("0"))
+    target_weight: Decimal = Decimal("0")
+    data_quality_status: str = "pass"
 
 
 def _json_object(raw: Any) -> dict[str, Any]:
@@ -441,6 +452,82 @@ def _run_strategy_signal_preview(
         bars=bars,
         dataset_snapshot=dataset_snapshot,
     )
+
+
+def _run_backtest_risk_preview(
+    request: BacktestRiskPreviewRequest,
+    state: Any,
+) -> dict[str, Any]:
+    """Evaluate a signal candidate through pre-trade risk without side effects."""
+    from risk.pre_trade import PreTradePolicy, preview_pre_trade_risk
+    from server.services.live_context import LiveContextProvider
+    from server.services.trading_controls import TradingControlState
+
+    side = _risk_preview_order_side(request.action)
+    if side is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "action": request.action,
+                "errors": [
+                    {
+                        "field": "action",
+                        "code": "unsupported_risk_preview_action",
+                        "message": "Risk preview currently supports buy or sell actions.",
+                    }
+                ],
+            },
+        )
+
+    scheduler = getattr(state, "scheduler", None)
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler is not None else None
+    controls = getattr(state, "trading_controls", None) or TradingControlState()
+    context = LiveContextProvider(
+        portfolio_getter=lambda: portfolio,
+        controls=controls,
+    ).snapshot()
+    _, asset_class = _signal_preview_symbol_asset_class(
+        request.symbol,
+        request.asset_class,
+    )
+    intent = OrderIntentEvent(
+        timestamp=datetime.now(timezone.utc),
+        intent_id="BACKTEST-RISK-PREVIEW",
+        strategy_id=request.strategy,
+        symbol=Symbol(request.symbol),
+        side=side,
+        target_weight=request.target_weight,
+        quantity=request.quantity,
+        reference_price=request.reference_price,
+        asset_class=asset_class,
+        reason="backtest_signal_preview_risk_check",
+        metadata={
+            "source": "backtest_signal_preview",
+            "data_quality_issues": _risk_preview_data_quality_issues(
+                request.data_quality_status
+            ),
+        },
+    )
+    return preview_pre_trade_risk(
+        intent=intent,
+        context=context,
+        policy=PreTradePolicy(execution_mode="manual"),
+    )
+
+
+def _risk_preview_order_side(action: str) -> OrderSide | None:
+    if action == "buy":
+        return OrderSide.BUY
+    if action == "sell":
+        return OrderSide.SELL
+    return None
+
+
+def _risk_preview_data_quality_issues(status: str) -> list[str]:
+    normalized = status.lower()
+    if normalized in {"pass", "ok", "complete", "confirmed", "live"}:
+        return []
+    return [f"preview data quality: {status}"]
 
 
 def _build_parameter_grid(
@@ -997,6 +1084,14 @@ def create_router() -> APIRouter:
         request = _validate_signal_preview_strategy_params(request)
         preview = await asyncio.to_thread(_run_strategy_signal_preview, request, config)
         return StrategySignalPreviewResponse(**preview)
+
+    @r.post("/risk-preview")
+    async def preview_backtest_risk(request: BacktestRiskPreviewRequest) -> dict:
+        """Preview pre-trade risk without persisting decisions or orders."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return _run_backtest_risk_preview(request, state)
 
     @r.post("/run", response_model=BacktestResponse)
     async def run_backtest(request: BacktestRequest) -> BacktestResponse:

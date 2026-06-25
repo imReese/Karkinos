@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Backtest now exposes a read-only pre-trade risk preview for
+  sized single-symbol strategy candidates. The backend route reuses
+  `PreTradeRiskManager` rule inputs through a pure preview function and the
+  Web Backtest page lets users enter a quantity, run the preview, and see
+  localized pass/blocked reasons such as kill-switch status. The response
+  explicitly requires manual confirmation and does not create orders, persist
+  risk decisions, create fills, mutate ledger entries, submit broker orders,
+  or change automatic-trading defaults.
 * 2026-06-25: Strategy signal-preview audit records now include a structured
   review-gate chain for data readiness, account truth, pre-trade risk,
   paper/shadow preview, and manual review. Web Backtest renders those gates as

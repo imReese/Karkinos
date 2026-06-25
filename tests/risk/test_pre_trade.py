@@ -238,3 +238,61 @@ def test_pre_trade_risk_blocks_data_quality_issues(tmp_path) -> None:
     assert orders == []
     decisions = db.get_risk_decisions_sync()
     assert "data quality issue: duplicate timestamps" in decisions[0]["reasons_json"]
+
+
+def test_pre_trade_risk_preview_reuses_rules_without_publishing_or_auditing(
+    tmp_path,
+) -> None:
+    from risk.pre_trade import preview_pre_trade_risk
+
+    bus = EventBus()
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    controls = TradingControlState()
+    orders: list[OrderEvent] = []
+    bus.subscribe(OrderEvent, orders.append)
+
+    context = StaticContextProvider(
+        controls,
+        cash=Decimal("12000"),
+        total_equity=Decimal("12000"),
+    ).snapshot()
+    preview = preview_pre_trade_risk(
+        intent=_buy_intent(quantity=Decimal("100")),
+        context=context,
+        policy=PreTradePolicy(
+            execution_mode="manual",
+            min_cash_reserve=Decimal("3000"),
+        ),
+    )
+
+    assert preview == {
+        "schema_version": "karkinos.pre_trade_risk_preview.v1",
+        "passed": False,
+        "status": "blocked",
+        "severity": "warning",
+        "reasons": ["cash reserve would fall below min_cash_reserve"],
+        "manual_confirmation_required": True,
+        "does_not_create_order": True,
+        "does_not_persist_decision": True,
+        "metadata": {
+            "quantity": "100",
+            "reference_price": "100",
+            "target_weight": "0.10",
+            "cash": "12000",
+            "total_equity": "12000",
+            "order_value": "10000",
+            "projected_cash": "2000",
+            "current_position_value": "0",
+            "projected_position_value": "10000",
+            "projected_position_weight": "0.8333333333333333333333333333",
+            "policy": {
+                "execution_mode": "manual",
+                "max_order_notional": None,
+                "min_cash_reserve": "3000",
+                "max_position_weight": None,
+            },
+        },
+    }
+    assert orders == []
+    assert db.get_risk_decisions_sync() == []

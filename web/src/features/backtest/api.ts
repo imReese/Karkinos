@@ -253,6 +253,29 @@ export type StrategySignalPreviewResponse = {
   does_not_enable_execution: boolean;
 };
 
+export type BacktestRiskPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class: string;
+  action: string;
+  quantity: number;
+  reference_price: number;
+  target_weight?: string | number | null;
+  data_quality_status?: string | null;
+};
+
+export type BacktestRiskPreviewResponse = {
+  schema_version: string;
+  passed: boolean;
+  status: string;
+  severity: string;
+  reasons: string[];
+  manual_confirmation_required: boolean;
+  does_not_create_order: boolean;
+  does_not_persist_decision: boolean;
+  metadata?: Record<string, unknown>;
+};
+
 export type BacktestSweepRequest = {
   start_date: string;
   end_date: string;
@@ -574,6 +597,16 @@ export function useStrategySignalPreviewMutation() {
     mutationFn: (payload: StrategySignalPreviewRequest) =>
       postJson<StrategySignalPreviewResponse>(
         '/api/backtest/signal-preview',
+        payload,
+      ),
+  });
+}
+
+export function useBacktestRiskPreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: BacktestRiskPreviewRequest) =>
+      postJson<BacktestRiskPreviewResponse>(
+        '/api/backtest/risk-preview',
         payload,
       ),
   });
