@@ -73,6 +73,9 @@ export function StrategyContributionGateCard({
             <h2 className="app-card-title mt-1.5 text-xl">
               {labels.accountStrategyContributionPublicTitle}
             </h2>
+            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+              {labels.accountStrategyContributionExplanation}
+            </p>
           </div>
           <span
             className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${

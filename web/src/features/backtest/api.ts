@@ -573,6 +573,31 @@ export type AccountStrategyAssignmentUpdate = {
   notes?: string;
 };
 
+export type AcceptanceAuditCriterion = {
+  key: string;
+  checkbox_text: string;
+  evidence_paths: string[];
+  validation_commands: string[];
+  is_complete: boolean;
+};
+
+export type AcceptanceAuditSummary = {
+  key: string;
+  name: string;
+  required_count: number;
+  completed_count: number;
+  is_complete: boolean;
+  criteria: AcceptanceAuditCriterion[];
+  limitations: string[];
+};
+
+export type AcceptanceAuditExport = {
+  generated_at: string;
+  selected_audit: string;
+  audits: AcceptanceAuditSummary[];
+  overall_is_complete: boolean;
+};
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -654,6 +679,17 @@ export function useAccountStrategyContributionQuery() {
         '/api/account-strategy/contribution',
       ),
     staleTime: 10_000,
+  });
+}
+
+export function useSingleInstrumentStrategyLoopAcceptanceAuditQuery() {
+  return useQuery({
+    queryKey: ['acceptance-audit', 'single_instrument_strategy_loop'],
+    queryFn: () =>
+      apiClient<AcceptanceAuditExport>(
+        '/api/acceptance-audits/single_instrument_strategy_loop',
+      ),
+    staleTime: 60_000,
   });
 }
 

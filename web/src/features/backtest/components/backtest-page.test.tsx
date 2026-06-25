@@ -650,6 +650,45 @@ const attributionPreviewResponse = {
   ],
 };
 
+const singleInstrumentAcceptanceAudit = {
+  generated_at: '2026-06-25T12:00:00Z',
+  selected_audit: 'single_instrument_strategy_loop',
+  overall_is_complete: true,
+  audits: [
+    {
+      key: 'single_instrument_strategy_loop',
+      name: 'Single-Instrument Strategy Loop acceptance audit',
+      required_count: 8,
+      completed_count: 8,
+      is_complete: true,
+      criteria: [
+        {
+          key: 'dataset_snapshot_and_strategy_registry',
+          checkbox_text: '* [x] Dataset snapshot is available.',
+          evidence_paths: ['analytics/dataset_snapshot.py'],
+          validation_commands: [
+            'uv run python -m pytest tests/test_acceptance_audit.py',
+          ],
+          is_complete: true,
+        },
+        {
+          key: 'web_paper_shadow_attribution_boundary',
+          checkbox_text:
+            '* [x] Web Backtest explains paper/shadow and attribution boundaries.',
+          evidence_paths: [
+            'web/src/features/backtest/components/backtest-page.tsx',
+          ],
+          validation_commands: ['npm --prefix web test -- backtest-page'],
+          is_complete: true,
+        },
+      ],
+      limitations: [
+        'Acceptance audit is product-readiness evidence, not investment advice.',
+      ],
+    },
+  ],
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -957,6 +996,7 @@ function installBacktestFetchMock({
   riskPreview = riskPreviewResponse,
   paperShadowPreview = paperShadowPreviewResponse,
   attributionPreview = attributionPreviewResponse,
+  acceptanceAudit = singleInstrumentAcceptanceAudit,
   savedBacktestReport = savedReport,
   portfolio = portfolioSnapshot,
 }: {
@@ -973,6 +1013,7 @@ function installBacktestFetchMock({
   riskPreview?: unknown;
   paperShadowPreview?: unknown;
   attributionPreview?: unknown;
+  acceptanceAudit?: unknown;
   savedBacktestReport?: unknown;
   portfolio?: unknown;
 } = {}) {
@@ -993,6 +1034,11 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/backtest/strategy-promotion-readiness')) {
         return jsonResponse(strategyPromotionReadinessResponse);
+      }
+      if (
+        url.includes('/api/acceptance-audits/single_instrument_strategy_loop')
+      ) {
+        return jsonResponse(acceptanceAudit);
       }
       if (url.includes('/api/account-strategy/attribution')) {
         return jsonResponse(accountStrategyAttribution);
@@ -2006,6 +2052,14 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(
     await screen.findByText('single_instrument_strategy_loop'),
   ).toBeTruthy();
+  await waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/api/acceptance-audits/single_instrument_strategy_loop',
+      ),
+      expect.any(Object),
+    ),
+  );
   expect(
     await screen.findByText(
       'Product-readiness proof only; it does not enable broker execution or investment advice.',

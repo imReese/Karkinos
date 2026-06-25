@@ -264,7 +264,7 @@ def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_check
 ):
     audit = build_broker_fee_cost_basis_acceptance_audit()
 
-    assert audit.required_count == 8
+    assert audit.required_count == 9
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -275,6 +275,7 @@ def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_check
         "shared_fee_model_contract_across_research_and_ledger",
         "account_truth_cost_basis_method_precision_context",
         "strategy_health_states",
+        "web_strategy_contribution_user_readable_surface",
     }
 
     for criterion in audit.criteria:

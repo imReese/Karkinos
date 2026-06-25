@@ -112,9 +112,12 @@ def test_acceptance_audit_cli_broker_fee_cost_basis_filter_outputs_one_audit() -
     assert payload["selected_audit"] == "broker_fee_cost_basis"
     assert [audit["key"] for audit in payload["audits"]] == ["broker_fee_cost_basis"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 8
+    assert audit["required_count"] == 9
     assert audit["completed_count"] == audit["required_count"]
     assert audit["criteria"]
+    assert {
+        criterion["key"] for criterion in audit["criteria"]
+    } >= {"web_strategy_contribution_user_readable_surface"}
 
 
 def test_acceptance_audit_cli_single_instrument_strategy_loop_filter_outputs_one_audit() -> (

@@ -724,7 +724,7 @@ broker-facing cost basis shown in a user's securities app.
   stale, paused, or needing review.
 * [x] Manual trades and missing-evidence movement are never attributed to a
   strategy by default.
-* [ ] Web surfaces explain strategy contribution in localized user-facing
+* [x] Web surfaces explain strategy contribution in localized user-facing
   language and keep internal strategy ids secondary.
 
 ### Active Goal Audit: Data-Trusted Single-Instrument Strategy Loop

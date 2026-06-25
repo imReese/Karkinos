@@ -327,6 +327,36 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function contributionDecision(): DecisionResponse {
+  return {
+    ...dailyDecision,
+    summary: {
+      ...dailyDecision.summary,
+      strategy_attribution: {
+        gate_status: 'pass',
+        strategy_id: 'dual_ma',
+        assignment_status: 'active',
+        attribution_status: 'complete',
+        contribution_status: 'estimated_from_linked_fills',
+        has_evidence: true,
+        linked_fill_count: 2,
+        net_contribution: 129.5,
+        gross_realized_pnl: 8,
+        gross_unrealized_pnl: 128.5,
+        total_commission: 5,
+        total_slippage: 1.5,
+        total_tax: 0.5,
+        manual_unattributed_pnl: 12,
+        cash_flow_pnl: 3,
+        unattributed_account_pnl: 4,
+        required_actions: [],
+        blocking_reasons: [],
+        limitations: [],
+      },
+    },
+  } as DecisionResponse;
+}
+
 test('renders daily and intraday decision cockpit evidence without execution', async () => {
   renderDecisionCockpit();
 
@@ -609,36 +639,17 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
 });
 
 test('surfaces strategy contribution components in decision summaries', async () => {
-  const contributionToday = {
-    ...dailyDecision,
-    summary: {
-      ...dailyDecision.summary,
-      strategy_attribution: {
-        gate_status: 'pass',
-        strategy_id: 'dual_ma',
-        assignment_status: 'active',
-        attribution_status: 'complete',
-        contribution_status: 'estimated_from_linked_fills',
-        has_evidence: true,
-        linked_fill_count: 2,
-        net_contribution: 129.5,
-        gross_realized_pnl: 8,
-        gross_unrealized_pnl: 128.5,
-        total_commission: 5,
-        total_slippage: 1.5,
-        total_tax: 0.5,
-        manual_unattributed_pnl: 12,
-        cash_flow_pnl: 3,
-        unattributed_account_pnl: 4,
-        required_actions: [],
-        blocking_reasons: [],
-        limitations: [],
-      },
-    },
-  } as DecisionResponse;
+  renderDecisionCockpit({ todayResponse: contributionDecision() });
 
-  renderDecisionCockpit({ todayResponse: contributionToday });
-
+  expect(
+    await screen.findByText(/Contribution status: Estimated from linked fills/),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain(
+    'Contribution status: Estimated From Linked Fills',
+  );
+  expect(document.body.textContent).not.toContain(
+    'estimated_from_linked_fills',
+  );
   expect(await screen.findByText(/Net contribution: CN¥129.50/)).toBeTruthy();
   expect(await screen.findByText(/Gross realized P\/L: CN¥8.00/)).toBeTruthy();
   expect(
@@ -655,6 +666,21 @@ test('surfaces strategy contribution components in decision summaries', async ()
   expect(
     await screen.findByText(/Tax \/ excluded movement: CN¥0.50 \/ CN¥4.00/),
   ).toBeTruthy();
+});
+
+test('localizes strategy contribution status in decision summaries', async () => {
+  renderDecisionCockpit({
+    todayResponse: contributionDecision(),
+    locale: 'zh',
+  });
+
+  expect(await screen.findByText(/贡献状态: 基于已归属成交估算/)).toBeTruthy();
+  expect(document.body.textContent).not.toContain(
+    'estimated_from_linked_fills',
+  );
+  expect(document.body.textContent).not.toContain(
+    'Estimated From Linked Fills',
+  );
 });
 
 test('renders localized candidate evidence chain for decision review', async () => {
