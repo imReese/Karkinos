@@ -1108,6 +1108,7 @@ function renderBacktestPage(
 }
 
 afterEach(() => {
+  window.history.pushState({}, '', '/');
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -1136,6 +1137,31 @@ test('renders the backtest workspace and saved report history', async () => {
   ).toBeTruthy();
   expect(await screen.findByText('Report selection')).toBeTruthy();
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
+});
+
+test('prefills single-instrument research context from decision handoff query', async () => {
+  window.history.pushState(
+    {},
+    '',
+    '/backtest?symbol=600519&assetClass=stock&strategy=dual_ma',
+  );
+
+  renderBacktestPage({ results: [] });
+
+  expect(
+    ((await screen.findByLabelText('Symbol')) as HTMLInputElement).value,
+  ).toBe('600519');
+  expect(
+    (screen.getByLabelText('Asset class') as HTMLSelectElement).value,
+  ).toBe('stock');
+  expect((screen.getByLabelText('Strategy') as HTMLSelectElement).value).toBe(
+    'dual_ma',
+  );
+  const handoff = await screen.findByTestId('backtest-decision-handoff');
+  expect(handoff.textContent).toContain('Decision handoff context');
+  expect(handoff.textContent).toContain('600519');
+  expect(handoff.textContent).toContain('Dual Moving Average');
+  expect(handoff.textContent).toContain('Research only');
 });
 
 test('shows current account strategy without claiming live attribution', async () => {
@@ -1779,6 +1805,12 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect(await screen.findByText('Data ready')).toBeTruthy();
   expect(await screen.findByText('Risk gate required')).toBeTruthy();
   expect(await screen.findByText('Paper/shadow waiting')).toBeTruthy();
+  expect(await screen.findByText('Next review step')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Run the risk preview before paper/shadow simulation.',
+    ),
+  ).toBeTruthy();
   fireEvent.change(await screen.findByLabelText('Risk quantity'), {
     target: { value: '100' },
   });

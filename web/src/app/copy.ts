@@ -690,6 +690,12 @@ export const copy = {
         formTitle: 'Backtest configuration',
         formDetail:
           'Uses the backtest interface boundary. Leave assets empty to use configured coverage.',
+        decisionHandoffKicker: 'Decision handoff',
+        decisionHandoffTitle: 'Decision handoff context',
+        decisionHandoffDetail:
+          'This form was prefilled from a candidate action. Run the backtest, then inspect dataset, after-cost result, signal preview, risk preview, and simulation evidence before any manual step.',
+        decisionHandoffResearchOnly:
+          'Research only; no broker order is created.',
         startDate: 'Start date',
         endDate: 'End date',
         initialCash: 'Initial cash',
@@ -997,6 +1003,21 @@ export const copy = {
         singleInstrumentLoopReady: 'Ready for manual review',
         singleInstrumentLoopWaiting: 'Waiting for evidence',
         singleInstrumentLoopBlocked: 'Blocked by review gates',
+        singleInstrumentLoopNextStep: 'Next review step',
+        singleInstrumentLoopNextBacktest:
+          'Review the after-cost backtest evidence before generating signals.',
+        singleInstrumentLoopNextSignal:
+          'Wait for the strategy signal preview for this single-instrument run.',
+        singleInstrumentLoopNextRisk:
+          'Run the risk preview before paper/shadow simulation.',
+        singleInstrumentLoopNextBlocked:
+          'Risk preview is blocked; review the risk reasons before simulation.',
+        singleInstrumentLoopNextPaper:
+          'Run paper/shadow simulation after the risk preview passes.',
+        singleInstrumentLoopNextAttribution:
+          'Review the attribution boundary; strategy P/L stays unavailable until signal, review, order, and fill evidence is linked.',
+        singleInstrumentLoopNextComplete:
+          'All research evidence is ready for manual review; no broker order is created here.',
         singleInstrumentLoopEvidenceCta: 'Review evidence',
         singleInstrumentLoopDatasetEvidence: 'Review dataset snapshot evidence',
         singleInstrumentLoopStrategyEvidence:
@@ -2531,6 +2552,11 @@ export const copy = {
         formKicker: '运行设置',
         formTitle: '回测配置',
         formDetail: '使用后端回测接口约定。资产留空时使用后端配置资产池。',
+        decisionHandoffKicker: '决策交接',
+        decisionHandoffTitle: '来自决策候选动作',
+        decisionHandoffDetail:
+          '此表单已从候选动作带入标的、资产类别和策略。运行回测后，再查看数据快照、扣费后结果、信号预览、风控预览和模拟证据，之后才进入人工步骤。',
+        decisionHandoffResearchOnly: '仅研究；不会创建券商订单',
         startDate: '开始日期',
         endDate: '结束日期',
         initialCash: '初始现金',
@@ -2819,6 +2845,20 @@ export const copy = {
         singleInstrumentLoopReady: '可进入人工复核',
         singleInstrumentLoopWaiting: '等待证据',
         singleInstrumentLoopBlocked: '被复核闸门阻断',
+        singleInstrumentLoopNextStep: '下一步复核',
+        singleInstrumentLoopNextBacktest:
+          '先查看扣费后回测证据，再生成今日信号。',
+        singleInstrumentLoopNextSignal: '等待这个单标的回测生成策略信号预览。',
+        singleInstrumentLoopNextRisk:
+          '先运行风控预览，再进入 paper/shadow 模拟。',
+        singleInstrumentLoopNextBlocked:
+          '风控预览已阻断；先复核阻断原因再模拟。',
+        singleInstrumentLoopNextPaper:
+          '风控预览通过后，运行 paper/shadow 模拟。',
+        singleInstrumentLoopNextAttribution:
+          '复核归因边界；只有信号、复核、订单与成交证据串起后，才展示策略收益。',
+        singleInstrumentLoopNextComplete:
+          '研究证据已就绪，可进入人工复核；这里不会创建券商订单。',
         singleInstrumentLoopEvidenceCta: '查看证据',
         singleInstrumentLoopDatasetEvidence: '查看数据快照证据',
         singleInstrumentLoopStrategyEvidence: '查看策略注册证据',

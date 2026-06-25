@@ -387,11 +387,17 @@ test('renders daily and intraday decision cockpit evidence without execution', a
       .getByRole('link', { name: 'Open Trading approvals: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/trading');
-  expect(
-    screen
-      .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })
-      .getAttribute('href'),
-  ).toBe('/backtest');
+  const backtestEvidenceHref = screen
+    .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })
+    .getAttribute('href');
+  const backtestEvidenceUrl = new URL(
+    String(backtestEvidenceHref),
+    'http://localhost',
+  );
+  expect(backtestEvidenceUrl.pathname).toBe('/backtest');
+  expect(backtestEvidenceUrl.searchParams.get('symbol')).toBe('600519');
+  expect(backtestEvidenceUrl.searchParams.get('assetClass')).toBe('stock');
+  expect(backtestEvidenceUrl.searchParams.get('strategy')).toBe('dual_ma');
   expect(
     screen
       .getByRole('link', { name: 'Open holding detail: 贵州茅台 600519' })

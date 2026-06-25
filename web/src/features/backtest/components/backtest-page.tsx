@@ -116,6 +116,45 @@ function buildSingleAsset(
   return [{ symbol: normalized, asset_class: assetClass }];
 }
 
+const allowedBacktestAssetClasses = new Set([
+  'stock',
+  'etf',
+  'fund',
+  'gold',
+  'bond',
+]);
+
+function readBacktestSearchDefaults(search: string) {
+  const params = new URLSearchParams(search);
+  const symbol = params.get('symbol')?.trim() ?? '';
+  const hasAssetClassParam =
+    params.has('assetClass') || params.has('asset_class');
+  const rawAssetClass =
+    params.get('assetClass')?.trim() ?? params.get('asset_class')?.trim() ?? '';
+  const strategy = params.get('strategy')?.trim() ?? '';
+  return {
+    symbol,
+    assetClass: allowedBacktestAssetClasses.has(rawAssetClass)
+      ? rawAssetClass
+      : 'stock',
+    strategy: strategy || 'dual_ma',
+    hasHandoffContext:
+      Boolean(symbol) || hasAssetClassParam || Boolean(strategy),
+  };
+}
+
+function currentBacktestSearchDefaults() {
+  if (typeof window === 'undefined') {
+    return {
+      symbol: '',
+      assetClass: 'stock',
+      strategy: 'dual_ma',
+      hasHandoffContext: false,
+    };
+  }
+  return readBacktestSearchDefaults(window.location.search);
+}
+
 function isPositiveNumber(value: string) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0;
@@ -347,15 +386,16 @@ export function BacktestPage() {
   const updateAccountStrategy = useUpdateAccountStrategyAssignmentMutation();
   const validation = useStrategyValidationQuery();
   const readiness = useStrategyPromotionReadinessQuery();
+  const searchDefaults = useMemo(() => currentBacktestSearchDefaults(), []);
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());
   const [initialCash, setInitialCash] = useState('100000');
-  const [strategy, setStrategy] = useState('dual_ma');
+  const [strategy, setStrategy] = useState(searchDefaults.strategy);
   const [parameterValues, setParameterValues] = useState<
     Record<string, string>
   >(() => buildParamValues(fallbackStrategies[0].parameter_schema));
-  const [symbol, setSymbol] = useState('');
-  const [assetClass, setAssetClass] = useState('stock');
+  const [symbol, setSymbol] = useState(searchDefaults.symbol);
+  const [assetClass, setAssetClass] = useState(searchDefaults.assetClass);
   const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
   const [formError, setFormError] = useState('');
   const assetClassOptions = [
@@ -384,6 +424,9 @@ export function BacktestPage() {
     () => selectedStrategy.parameter_schema ?? [],
     [selectedStrategy],
   );
+  const selectedAssetClassLabel =
+    assetClassOptions.find((option) => option.value === assetClass)?.label ??
+    assetClass;
 
   useEffect(() => {
     setParameterValues(buildParamValues(parameterSchema));
@@ -503,6 +546,52 @@ export function BacktestPage() {
             <p className="app-muted mt-2 text-sm leading-6">
               {labels.formDetail}
             </p>
+            {searchDefaults.hasHandoffContext ? (
+              <section
+                className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_34%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] p-3.5"
+                data-testid="backtest-decision-handoff"
+              >
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                      {labels.decisionHandoffKicker}
+                    </div>
+                    <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+                      {labels.decisionHandoffTitle}
+                    </h3>
+                    <p className="app-muted mt-1.5 text-xs leading-5">
+                      {labels.decisionHandoffDetail}
+                    </p>
+                  </div>
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                    {labels.decisionHandoffResearchOnly}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                  <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
+                    <div className="app-muted">{labels.symbol}</div>
+                    <div className="mt-1 truncate font-semibold text-[var(--app-text)] tabular-nums">
+                      {symbol || labels.notDeclared}
+                    </div>
+                  </div>
+                  <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
+                    <div className="app-muted">{labels.assetClass}</div>
+                    <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
+                      {selectedAssetClassLabel}
+                    </div>
+                  </div>
+                  <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
+                    <div className="app-muted">{labels.strategy}</div>
+                    <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
+                      {strategyDisplayName(
+                        selectedStrategy,
+                        labels.strategyNames,
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             <form className="mt-5 grid gap-4" onSubmit={submitRun}>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -918,6 +1007,19 @@ function SingleInstrumentLoopReadinessCard({
     : allReady
       ? labels.singleInstrumentLoopReady
       : labels.singleInstrumentLoopWaiting;
+  const nextReviewStep = !hasAfterCostEvidence(report)
+    ? labels.singleInstrumentLoopNextBacktest
+    : !preview?.outputs.length
+      ? labels.singleInstrumentLoopNextSignal
+      : !riskPreviewResult
+        ? labels.singleInstrumentLoopNextRisk
+        : !riskPreviewResult.passed
+          ? labels.singleInstrumentLoopNextBlocked
+          : paperShadowPreviewResult?.status !== 'simulated'
+            ? labels.singleInstrumentLoopNextPaper
+            : attributionPreviewResult?.status !== 'ready_for_review_linkage'
+              ? labels.singleInstrumentLoopNextAttribution
+              : labels.singleInstrumentLoopNextComplete;
 
   return (
     <section className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
@@ -949,6 +1051,22 @@ function SingleInstrumentLoopReadinessCard({
             {readyCount}/{steps.length}
           </span>
         </div>
+      </div>
+      <div className="mt-4 flex min-w-0 flex-col gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_30%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_9%,transparent)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {labels.singleInstrumentLoopNextStep}
+          </div>
+          <p className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+            {nextReviewStep}
+          </p>
+        </div>
+        <a
+          className="inline-flex shrink-0 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+          href="#backtest-signal-review-evidence"
+        >
+          {labels.singleInstrumentLoopEvidenceCta}
+        </a>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {steps.map((step) => (
