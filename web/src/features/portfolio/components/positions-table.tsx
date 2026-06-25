@@ -70,6 +70,12 @@ function isFiniteNumber(value: unknown): value is number {
 
 function resolveBrokerDisplayedUnitCost(position: Position) {
   if (
+    isFiniteNumber(position.broker_displayed_unit_cost) &&
+    position.broker_displayed_unit_cost > 0
+  ) {
+    return position.broker_displayed_unit_cost;
+  }
+  if (
     !isFiniteNumber(position.broker_displayed_cost_basis) ||
     position.broker_displayed_cost_basis <= 0 ||
     position.quantity <= 0

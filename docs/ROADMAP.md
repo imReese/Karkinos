@@ -702,10 +702,10 @@ broker-facing cost basis shown in a user's securities app.
   symbol/name fragments, or mixed Chinese/English operational notes.
 * [x] Public ledger notes follow a consistent localized format and never carry
   core accounting facts that should be structured columns or detail fields.
-* [ ] Portfolio cost views show both moving average buy cost and broker
+* [x] Portfolio cost views show both moving average buy cost and broker
   displayed cost basis when enough evidence exists, with localized
   explanations of the difference.
-* [ ] Sell-side realized P/L and remaining-position broker cost basis use net
+* [x] Sell-side realized P/L and remaining-position broker cost basis use net
   proceeds after commission, stamp tax, transfer fees, and configured
   broker-specific rules.
 * [x] Account Truth reconciliation compares broker-reported cost basis against

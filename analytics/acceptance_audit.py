@@ -1807,6 +1807,49 @@ def build_broker_fee_cost_basis_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="portfolio_cost_views_distinguish_local_and_broker_cost_basis",
+                checkbox_text=(
+                    "* [x] Portfolio cost views show both moving average buy "
+                    "cost and broker"
+                ),
+                evidence_paths=(
+                    "web/src/features/portfolio/components/positions-table.tsx",
+                    "web/src/features/portfolio/positions-table.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.test.tsx",
+                    "web/src/app/copy.ts",
+                    "server/models.py",
+                    "server/routes/portfolio.py",
+                    "tests/test_server_routes.py",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- positions-table holding-detail-page",
+                    "uv run python -m pytest tests/test_server_routes.py -k broker_cost_basis",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="sell_side_net_proceeds_broker_cost_basis",
+                checkbox_text=(
+                    "* [x] Sell-side realized P/L and remaining-position "
+                    "broker cost basis use net"
+                ),
+                evidence_paths=(
+                    "server/projections/service.py",
+                    "tests/server/test_projection_service.py",
+                    "server/services/manual_trade_fees.py",
+                    "tests/server/test_manual_trade_fee_service.py",
+                    "server/routes/ledger.py",
+                    "tests/server/test_ledger_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_projection_service.py -k sell_side_net_proceeds",
+                    "uv run python -m pytest tests/server/test_manual_trade_fee_service.py tests/server/test_ledger_routes.py -k sell",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k broker_fee_cost_basis",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="shared_fee_model_contract_across_research_and_ledger",
                 checkbox_text=(
                     "* [x] Backtest, paper broker, manual trade preview, and "

@@ -112,7 +112,7 @@ def test_acceptance_audit_cli_broker_fee_cost_basis_filter_outputs_one_audit() -
     assert payload["selected_audit"] == "broker_fee_cost_basis"
     assert [audit["key"] for audit in payload["audits"]] == ["broker_fee_cost_basis"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 12
+    assert audit["required_count"] == 14
     assert audit["completed_count"] == audit["required_count"]
     assert audit["criteria"]
     assert {
@@ -122,6 +122,8 @@ def test_acceptance_audit_cli_broker_fee_cost_basis_filter_outputs_one_audit() -
         "shared_public_ledger_formatter_surface_contract",
         "public_ledger_surfaces_hide_internal_values",
         "public_ledger_notes_keep_core_facts_structured",
+        "portfolio_cost_views_distinguish_local_and_broker_cost_basis",
+        "sell_side_net_proceeds_broker_cost_basis",
     }
 
 
