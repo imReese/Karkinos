@@ -276,6 +276,49 @@ export type BacktestRiskPreviewResponse = {
   metadata?: Record<string, unknown>;
 };
 
+export type BacktestPaperShadowPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class: string;
+  action: string;
+  quantity: number;
+  reference_price: number;
+  target_weight?: string | number | null;
+  signal_id?: string | null;
+  dataset_snapshot_id?: string | null;
+  risk_preview_passed: boolean;
+  risk_reasons: string[];
+};
+
+export type BacktestPaperShadowPreviewResponse = {
+  schema_version: string;
+  status: string;
+  execution_mode: string;
+  manual_confirmation_required: boolean;
+  does_not_create_order: boolean;
+  does_not_create_fill: boolean;
+  does_not_mutate_ledger: boolean;
+  risk_reasons: string[];
+  order: Record<string, unknown> | null;
+  fill: {
+    fill_price?: string | null;
+    fill_quantity?: string | null;
+    commission?: string | null;
+    fee_breakdown?: {
+      gross_amount?: string | null;
+      total_fee?: string | null;
+      fee_rule_id?: string | null;
+      limitations?: string[];
+    } | null;
+  } | null;
+  shadow_review?: {
+    candidate_count?: number;
+    supported_match_count?: number;
+    unsupported_real_movement_count?: number;
+  } | null;
+  limitations: string[];
+};
+
 export type BacktestSweepRequest = {
   start_date: string;
   end_date: string;
@@ -607,6 +650,16 @@ export function useBacktestRiskPreviewMutation() {
     mutationFn: (payload: BacktestRiskPreviewRequest) =>
       postJson<BacktestRiskPreviewResponse>(
         '/api/backtest/risk-preview',
+        payload,
+      ),
+  });
+}
+
+export function useBacktestPaperShadowPreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: BacktestPaperShadowPreviewRequest) =>
+      postJson<BacktestPaperShadowPreviewResponse>(
+        '/api/backtest/paper-shadow-preview',
         payload,
       ),
   });

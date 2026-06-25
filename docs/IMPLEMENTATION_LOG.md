@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Backtest now exposes a read-only paper/shadow preview after a
+  passed single-symbol risk preview. The backend route builds paper order/fill
+  simulation evidence with structured fee breakdown and a shadow-review
+  summary without passing a database handle to the paper broker. Web Backtest
+  renders the simulated fill, estimated fee, and no-ledger-mutation boundary
+  after the user sizes a candidate and runs risk preview. This does not write
+  order facts, fill facts, ledger entries, broker submissions, or change
+  automatic-trading defaults.
 * 2026-06-25: Backtest now exposes a read-only pre-trade risk preview for
   sized single-symbol strategy candidates. The backend route reuses
   `PreTradeRiskManager` rule inputs through a pure preview function and the

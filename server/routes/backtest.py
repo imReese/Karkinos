@@ -173,6 +173,20 @@ class BacktestRiskPreviewRequest(BaseModel):
     data_quality_status: str = "pass"
 
 
+class BacktestPaperShadowPreviewRequest(BaseModel):
+    strategy: str
+    symbol: str
+    asset_class: str = AssetClass.STOCK.value
+    action: str
+    quantity: Decimal = Field(gt=Decimal("0"))
+    reference_price: Decimal = Field(gt=Decimal("0"))
+    target_weight: Decimal = Decimal("0")
+    signal_id: str | None = None
+    dataset_snapshot_id: str | None = None
+    risk_preview_passed: bool = False
+    risk_reasons: list[str] = Field(default_factory=list)
+
+
 def _json_object(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
@@ -528,6 +542,175 @@ def _risk_preview_data_quality_issues(status: str) -> list[str]:
     if normalized in {"pass", "ok", "complete", "confirmed", "live"}:
         return []
     return [f"preview data quality: {status}"]
+
+
+def _run_backtest_paper_shadow_preview(
+    request: BacktestPaperShadowPreviewRequest,
+    state: Any,
+) -> dict[str, Any]:
+    """Simulate a paper/shadow outcome without storing orders or fills."""
+    from analytics.shadow_review import (
+        PaperOutcomeEvidence,
+        StrategyCandidateEvidence,
+        build_shadow_review_report,
+    )
+    from core.types import OrderType
+    from execution.paper_broker import (
+        PaperBroker,
+        PaperOrderContext,
+        PaperOrderRequest,
+    )
+
+    side = _risk_preview_order_side(request.action)
+    if side is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "action": request.action,
+                "errors": [
+                    {
+                        "field": "action",
+                        "code": "unsupported_paper_shadow_preview_action",
+                        "message": "Paper/shadow preview currently supports buy or sell actions.",
+                    }
+                ],
+            },
+        )
+
+    if not request.risk_preview_passed:
+        return {
+            "schema_version": "karkinos.paper_shadow_preview.v1",
+            "status": "blocked_by_risk",
+            "execution_mode": "paper_shadow_preview",
+            "manual_confirmation_required": True,
+            "does_not_create_order": True,
+            "does_not_create_fill": True,
+            "does_not_mutate_ledger": True,
+            "risk_reasons": request.risk_reasons,
+            "order": None,
+            "fill": None,
+            "shadow_review": None,
+            "limitations": [
+                "Paper/shadow preview waits for a passing read-only risk preview.",
+                "This preview does not mutate ledger entries or submit broker orders.",
+            ],
+        }
+
+    _, asset_class = _signal_preview_symbol_asset_class(
+        request.symbol,
+        request.asset_class,
+    )
+    order_id = (
+        "paper-shadow-preview:"
+        f"{request.strategy}:{request.symbol}:{request.action}:"
+        f"{request.quantity}:{request.reference_price}"
+    )
+    context = PaperOrderContext(
+        strategy_id=request.strategy,
+        signal_id=request.signal_id,
+        dataset_id=request.dataset_snapshot_id,
+        cost_model_id="paper_shadow_preview_after_cost",
+    )
+    broker = PaperBroker(
+        db=None,
+        provider_name="paper-shadow-preview",
+        commission_calc=_paper_shadow_commission_calculator(asset_class),
+    )
+    result = broker.submit_order(
+        PaperOrderRequest(
+            timestamp=datetime.now(timezone.utc),
+            order_id=order_id,
+            symbol=Symbol(request.symbol),
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=request.quantity,
+            price=request.reference_price,
+            asset_class=asset_class,
+            context=context,
+        ),
+        fill_id=f"{order_id}:fill:1",
+        fill_quantity=request.quantity,
+        fill_price=request.reference_price,
+    )
+    order_payload = _paper_shadow_payload(result.order.to_payload())
+    fill_payload = (
+        _paper_shadow_payload(result.fill.to_payload())
+        if result.fill is not None
+        else None
+    )
+    paper_outcome = PaperOutcomeEvidence(
+        candidate_id=request.signal_id or order_id,
+        order_id=order_id,
+        strategy_id=request.strategy,
+        symbol=request.symbol,
+        side=side.value,
+        status=order_payload["status"],
+        filled_quantity=request.quantity,
+        average_fill_price=request.reference_price,
+        commission=(
+            result.fill.commission if result.fill is not None else Decimal("0")
+        ),
+        slippage=result.fill.slippage if result.fill is not None else Decimal("0"),
+        fill_id=result.fill.fill_id if result.fill is not None else None,
+    )
+    shadow_review = build_shadow_review_report(
+        candidates=[
+            StrategyCandidateEvidence(
+                candidate_id=request.signal_id or order_id,
+                strategy_id=request.strategy,
+                symbol=request.symbol,
+                action=request.action,
+                quantity=request.quantity,
+                reference_price=request.reference_price,
+                signal_id=request.signal_id,
+            )
+        ],
+        paper_outcomes=[paper_outcome],
+        real_movements=[],
+    )
+    return {
+        "schema_version": "karkinos.paper_shadow_preview.v1",
+        "status": "simulated",
+        "execution_mode": "paper_shadow_preview",
+        "manual_confirmation_required": True,
+        "does_not_create_order": True,
+        "does_not_create_fill": True,
+        "does_not_mutate_ledger": True,
+        "risk_reasons": request.risk_reasons,
+        "order": order_payload,
+        "fill": fill_payload,
+        "shadow_review": shadow_review.to_json_dict(),
+        "limitations": [
+            "Paper/shadow preview is simulation evidence, not investment advice.",
+            "This preview does not mutate ledger entries or submit broker orders.",
+        ],
+    }
+
+
+def _paper_shadow_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **payload,
+        "execution_mode": "paper_shadow_preview",
+        "source": "backtest_paper_shadow_preview",
+        "does_not_mutate_production_ledger": True,
+    }
+
+
+def _paper_shadow_commission_calculator(asset_class: AssetClass):
+    from execution.commission import (
+        BondExchangeCommission,
+        ETFCommission,
+        GoldSpotCommission,
+        StockACommission,
+    )
+
+    if asset_class == AssetClass.FUND:
+        return ETFCommission()
+    if asset_class == AssetClass.GOLD:
+        return GoldSpotCommission()
+    if asset_class == AssetClass.BOND:
+        return BondExchangeCommission()
+    return StockACommission()
 
 
 def _build_parameter_grid(
@@ -1092,6 +1275,16 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         return _run_backtest_risk_preview(request, state)
+
+    @r.post("/paper-shadow-preview")
+    async def preview_backtest_paper_shadow(
+        request: BacktestPaperShadowPreviewRequest,
+    ) -> dict:
+        """Preview paper/shadow simulation without persisting orders or fills."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return _run_backtest_paper_shadow_preview(request, state)
 
     @r.post("/run", response_model=BacktestResponse)
     async def run_backtest(request: BacktestRequest) -> BacktestResponse:

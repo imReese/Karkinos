@@ -923,6 +923,27 @@ export const copy = {
           orderNotional: 'Order amount exceeds policy',
           positionWeight: 'Position concentration exceeds policy',
         },
+        signalPreviewPaperShadowTitle: 'Paper/shadow preview',
+        signalPreviewPaperShadowReady:
+          'Risk preview passed. You can simulate the candidate without touching the real ledger.',
+        signalPreviewPaperShadowBlocked:
+          'Paper/shadow preview waits for a passed risk preview.',
+        signalPreviewPaperShadowButton: 'Preview paper/shadow',
+        signalPreviewPaperShadowLoading: 'Simulating paper/shadow',
+        signalPreviewPaperShadowUnavailable:
+          'Paper/shadow preview is unavailable; no ledger entry was created.',
+        signalPreviewPaperShadowResultTitle: 'Paper/shadow preview',
+        signalPreviewPaperShadowSimulatedFill: 'Simulated fill',
+        signalPreviewPaperShadowBlockedResult: 'Waiting for risk pass',
+        signalPreviewPaperShadowNoLedgerMutation: 'No ledger mutation',
+        signalPreviewPaperShadowFill: 'Simulated execution',
+        signalPreviewPaperShadowFillSummary: (
+          quantity: string,
+          price: string,
+        ) => `Filled ${quantity} @ ${price}`,
+        signalPreviewPaperShadowFee: 'Estimated cost',
+        signalPreviewPaperShadowEstimatedFee: (fee: string) =>
+          `Estimated fee ${fee}`,
         signalPreviewGateLabels: {
           dataReady: 'Data ready',
           dataNeedsReview: 'Data needs review',
@@ -2662,6 +2683,27 @@ export const copy = {
           orderNotional: '订单金额超过策略限制',
           positionWeight: '持仓集中度超过策略限制',
         },
+        signalPreviewPaperShadowTitle: 'paper/shadow 预览',
+        signalPreviewPaperShadowReady:
+          '风控预检已通过，可以在不触碰真实账本的前提下模拟候选动作。',
+        signalPreviewPaperShadowBlocked:
+          'paper/shadow 预览需要等待风控预检通过。',
+        signalPreviewPaperShadowButton: '预览 paper/shadow',
+        signalPreviewPaperShadowLoading: '正在模拟 paper/shadow',
+        signalPreviewPaperShadowUnavailable:
+          'paper/shadow 预览暂不可用；未创建账本记录。',
+        signalPreviewPaperShadowResultTitle: 'paper/shadow 预览',
+        signalPreviewPaperShadowSimulatedFill: '模拟成交',
+        signalPreviewPaperShadowBlockedResult: '等待风控通过',
+        signalPreviewPaperShadowNoLedgerMutation: '不改真实账本',
+        signalPreviewPaperShadowFill: '模拟执行',
+        signalPreviewPaperShadowFillSummary: (
+          quantity: string,
+          price: string,
+        ) => `成交 ${quantity} @ ${price}`,
+        signalPreviewPaperShadowFee: '预估成本',
+        signalPreviewPaperShadowEstimatedFee: (fee: string) =>
+          `预估费用 ${fee}`,
         signalPreviewGateLabels: {
           dataReady: '数据可用',
           dataNeedsReview: '数据需复核',
