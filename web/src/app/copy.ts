@@ -1081,6 +1081,10 @@ export const copy = {
         empty: 'No equity curve is available for this backtest result.',
         points: (count: number) => `${count} points`,
         drawdown: 'Drawdown',
+        markersKicker: 'Trade markers',
+        markersTitle: 'Buy / sell points',
+        markersCount: (count: number) => `${count} markers`,
+        markerQuantity: 'Qty',
       },
       fills: {
         kicker: 'Execution ledger',
@@ -2749,6 +2753,10 @@ export const copy = {
         empty: '当前回测结果没有可用的净值曲线。',
         points: (count: number) => `${count} 个点`,
         drawdown: '回撤',
+        markersKicker: '交易点位',
+        markersTitle: '买卖点',
+        markersCount: (count: number) => `${count} 个点位`,
+        markerQuantity: '数量',
       },
       fills: {
         kicker: '执行流水',

@@ -708,9 +708,9 @@ broker-facing cost basis shown in a user's securities app.
 * [ ] Sell-side realized P/L and remaining-position broker cost basis use net
   proceeds after commission, stamp tax, transfer fees, and configured
   broker-specific rules.
-* [ ] Account Truth reconciliation compares broker-reported cost basis against
-  Karkinos local cost basis and exposes differences, severity, and suggested
-  review actions.
+* [x] Account Truth reconciliation compares broker-reported cost basis against
+  Karkinos broker/local cost basis and exposes differences, severity, method
+  context, precision limitations, and suggested review actions.
 * [x] Backtest, paper broker, manual trade preview, and ledger projections use
   the same fee model contract without enabling automatic real-money trading.
 * [ ] Backend deterministic tests cover A-share buy/sell, stamp tax,

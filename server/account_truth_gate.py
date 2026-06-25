@@ -123,7 +123,14 @@ def _karkinos_account_facts(state: Any) -> dict[str, object]:
         KarkinosPositionFact(
             symbol=position.symbol,
             quantity=position.quantity,
-            cost_basis=position.avg_cost,
+            cost_basis=(
+                position.broker_displayed_unit_cost
+                if position.broker_displayed_unit_cost != Decimal("0")
+                else position.avg_cost
+            ),
+            cost_basis_method=(
+                position.broker_cost_basis_method or "moving_average_buy_cost"
+            ),
         )
         for position in projection.positions.values()
         if position.quantity != Decimal("0")

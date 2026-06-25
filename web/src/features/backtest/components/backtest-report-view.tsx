@@ -150,7 +150,10 @@ export function BacktestReportView() {
           <ValidationEvidencePanel report={report.data} />
           <StrategyMetadataSnapshotPanel report={report.data} />
           <DatasetSnapshotPanel report={report.data} />
-          <EquityDrawdownChart points={report.data.equity_curve} />
+          <EquityDrawdownChart
+            fills={report.data.fills ?? []}
+            points={report.data.equity_curve}
+          />
           <FillsTable fills={report.data.fills ?? []} />
         </>
       ) : null}

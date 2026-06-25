@@ -31,6 +31,7 @@ class KarkinosPositionFact:
     symbol: str
     quantity: Decimal
     cost_basis: Decimal | None = None
+    cost_basis_method: str = "moving_average_buy_cost"
 
 
 @dataclass(frozen=True)
@@ -391,6 +392,11 @@ def _cost_basis_items(
         for position in positions
         if position.cost_basis is not None
     }
+    karkinos_cost_basis_methods = {
+        position.symbol: position.cost_basis_method
+        for position in positions
+        if position.cost_basis is not None
+    }
     symbols = sorted(set(broker_cost_basis) | set(karkinos_cost_basis))
     return [
         _item(
@@ -403,26 +409,50 @@ def _cost_basis_items(
             suggested_review_action="review_cost_basis_difference",
             symbol=symbol,
             detail_code="account_truth.cost_basis_compared",
-            detail=_cost_basis_detail(broker_cost_basis_methods.get(symbol, "")),
+            detail=_cost_basis_detail(
+                broker_cost_basis_methods.get(symbol, ""),
+                karkinos_cost_basis_methods.get(symbol, ""),
+            ),
             detail_context=_cost_basis_context(
-                broker_cost_basis_methods.get(symbol, "")
+                broker_cost_basis_methods.get(symbol, ""),
+                karkinos_cost_basis_methods.get(symbol, ""),
             ),
         )
         for symbol in symbols
     ]
 
 
-def _cost_basis_detail(cost_basis_method: str) -> str:
-    detail = "Broker cost basis compared with Karkinos cost basis."
-    if cost_basis_method:
-        detail += f" Broker cost-basis method: {cost_basis_method}."
+def _cost_basis_detail(
+    broker_cost_basis_method: str,
+    karkinos_cost_basis_method: str,
+) -> str:
+    detail = (
+        "Broker per-share cost basis compared with Karkinos per-share cost "
+        "basis. precision may differ because brokers can allocate fees, taxes, "
+        "and transfer fees differently from local projections."
+    )
+    if broker_cost_basis_method:
+        detail += f" Broker cost-basis method: {broker_cost_basis_method}."
+    if karkinos_cost_basis_method:
+        detail += f" Karkinos cost-basis method: {karkinos_cost_basis_method}."
     return detail
 
 
-def _cost_basis_context(cost_basis_method: str) -> dict[str, str]:
-    if not cost_basis_method:
-        return {}
-    return {"cost_basis_method": cost_basis_method}
+def _cost_basis_context(
+    broker_cost_basis_method: str,
+    karkinos_cost_basis_method: str,
+) -> dict[str, str]:
+    return {
+        "broker_cost_basis_method": broker_cost_basis_method or "unspecified",
+        "karkinos_cost_basis_method": (
+            karkinos_cost_basis_method or "moving_average_buy_cost"
+        ),
+        "comparison_unit": "per_share_cost_basis",
+        "comparison_precision": "decimal_string_no_rounding",
+        "precision_limitation": (
+            "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
+        ),
+    }
 
 
 def _item(

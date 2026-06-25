@@ -676,7 +676,10 @@ export function BacktestPage() {
                 <MetricsGrid report={latestReport} />
                 <ValidationEvidencePanel report={latestReport} />
                 <DatasetSnapshotPanel report={latestReport} />
-                <EquityDrawdownChart points={latestReport.equity_curve} />
+                <EquityDrawdownChart
+                  fills={latestReport.fills ?? []}
+                  points={latestReport.equity_curve}
+                />
                 <FillsTable fills={latestReport.fills ?? []} />
               </div>
             ) : (

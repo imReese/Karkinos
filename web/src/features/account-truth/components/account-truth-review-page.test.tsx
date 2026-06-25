@@ -489,9 +489,15 @@ test('renders structured reconciliation detail context without raw codes', async
             item_key: 'cost_basis:SYN001',
             category: 'cost_basis',
             detail_code: 'account_truth.cost_basis_compared',
-            detail: 'Broker cost-basis method: broker_remaining_cost.',
+            detail:
+              'Broker per-share cost basis compared with Karkinos per-share cost basis. precision may differ because brokers can allocate fees, taxes, and transfer fees differently from local projections.',
             detail_context: {
-              cost_basis_method: 'broker_remaining_cost',
+              broker_cost_basis_method: 'broker_remaining_cost',
+              karkinos_cost_basis_method: 'moving_average_buy_cost',
+              comparison_unit: 'per_share_cost_basis',
+              comparison_precision: 'decimal_string_no_rounding',
+              precision_limitation:
+                'broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding',
             },
             suggested_review_action: 'review_cost_basis_difference',
           },
@@ -505,11 +511,26 @@ test('renders structured reconciliation detail context without raw codes', async
     'account-truth-item-cost_basis:SYN001',
   );
 
-  expect(within(item).getByText('成本口径')).toBeTruthy();
+  expect(within(item).getByText('券商成本口径')).toBeTruthy();
   expect(within(item).getByText('券商剩余持仓成本')).toBeTruthy();
+  expect(within(item).getByText('本地成本口径')).toBeTruthy();
+  expect(within(item).getByText('移动平均买入成本')).toBeTruthy();
+  expect(within(item).getByText('对比单位')).toBeTruthy();
+  expect(within(item).getByText('单股成本价')).toBeTruthy();
+  expect(within(item).getByText('对比精度')).toBeTruthy();
+  expect(within(item).getByText('原始小数值')).toBeTruthy();
+  expect(within(item).getByText('精度限制')).toBeTruthy();
+  expect(
+    within(item).getByText(
+      '券商显示精度、费用分摊、税费确认与过户费舍入可能不同',
+    ),
+  ).toBeTruthy();
   expect(within(item).getByText('复核成本价差异')).toBeTruthy();
   expect(item.textContent).not.toContain('broker_remaining_cost');
-  expect(item.textContent).not.toContain('Broker cost-basis method');
+  expect(item.textContent).not.toContain('moving_average_buy_cost');
+  expect(item.textContent).not.toContain('per_share_cost_basis');
+  expect(item.textContent).not.toContain('decimal_string_no_rounding');
+  expect(item.textContent).not.toContain('Broker per-share cost basis');
   expect(item.textContent).not.toContain('未映射原因');
 });
 

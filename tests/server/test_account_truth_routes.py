@@ -132,7 +132,15 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     )
     assert cost_basis_item["detail_code"] == "account_truth.cost_basis_compared"
     assert cost_basis_item["display_name"] == "合成样例股票A"
-    assert cost_basis_item["detail_context"] == {}
+    assert cost_basis_item["detail_context"] == {
+        "broker_cost_basis_method": "unspecified",
+        "karkinos_cost_basis_method": "moving_average_buy_cost",
+        "comparison_unit": "per_share_cost_basis",
+        "comparison_precision": "decimal_string_no_rounding",
+        "precision_limitation": (
+            "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
+        ),
+    }
 
     assert duplicate_detail["status"] == "blocked"
     assert duplicate_detail["items"][0]["suggested_review_action"] == (
