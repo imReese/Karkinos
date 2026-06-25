@@ -255,6 +255,28 @@ function resultSummary(report: BacktestReport | null) {
   };
 }
 
+type LoopStepState = 'ready' | 'waiting' | 'blocked';
+
+type LoopStep = {
+  key: string;
+  label: string;
+  state: LoopStepState;
+  evidenceHref: string;
+  evidenceLabel: string;
+};
+
+function hasDatasetSnapshotEvidence(report: BacktestReport) {
+  return Boolean(report.metrics_json?.dataset_snapshot?.snapshot_id);
+}
+
+function hasAfterCostEvidence(report: BacktestReport) {
+  return Boolean(
+    report.evidence_json ||
+    report.metrics_json?.evidence_bundle ||
+    report.cost_summary_json,
+  );
+}
+
 function formatGateScore(score: number | null) {
   return score === null ? '--' : String(score);
 }
@@ -445,11 +467,13 @@ export function BacktestPage() {
         </div>
       </header>
 
-      <StrategyCatalogPanel
-        strategyCatalog={strategyCatalog}
-        selectedStrategyName={strategy}
-        onSelect={setStrategy}
-      />
+      <div className="scroll-mt-24" id="backtest-strategy-catalog">
+        <StrategyCatalogPanel
+          strategyCatalog={strategyCatalog}
+          selectedStrategyName={strategy}
+          onSelect={setStrategy}
+        />
+      </div>
 
       <AccountStrategyPanel
         assignment={accountStrategy.data ?? null}
@@ -702,52 +726,71 @@ export function BacktestPage() {
 
             {latestReport ? (
               <div className="mt-5 space-y-5">
-                <MetricsGrid report={latestReport} />
-                <ValidationEvidencePanel report={latestReport} />
-                <DatasetSnapshotPanel report={latestReport} />
-                <StrategySignalPreviewPanel
-                  error={signalPreview.isError}
-                  loading={signalPreview.isPending}
-                  onPaperShadowPreview={(payload) => {
-                    attributionPreview.reset();
-                    paperShadowPreview.mutate(payload, {
-                      onSuccess: (result) => {
-                        attributionPreview.mutate({
-                          strategy: payload.strategy,
-                          symbol: payload.symbol,
-                          asset_class: payload.asset_class,
-                          signal_id: payload.signal_id ?? null,
-                          dataset_snapshot_id:
-                            payload.dataset_snapshot_id ?? null,
-                          risk_preview_passed: payload.risk_preview_passed,
-                          risk_reasons: payload.risk_reasons,
-                          paper_shadow_status: result.status,
-                          paper_shadow_order: result.order,
-                          paper_shadow_fill: result.fill as Record<
-                            string,
-                            unknown
-                          > | null,
-                        });
-                      },
-                    });
-                  }}
-                  onRiskPreview={(payload) => {
-                    paperShadowPreview.reset();
-                    attributionPreview.reset();
-                    riskPreview.mutate(payload);
-                  }}
-                  attributionPreviewError={attributionPreview.isError}
-                  attributionPreviewLoading={attributionPreview.isPending}
+                <SingleInstrumentLoopReadinessCard
                   attributionPreviewResult={attributionPreview.data ?? null}
-                  paperShadowPreviewError={paperShadowPreview.isError}
-                  paperShadowPreviewLoading={paperShadowPreview.isPending}
                   paperShadowPreviewResult={paperShadowPreview.data ?? null}
                   preview={signalPreview.data ?? null}
-                  riskPreviewError={riskPreview.isError}
-                  riskPreviewLoading={riskPreview.isPending}
+                  report={latestReport}
                   riskPreviewResult={riskPreview.data ?? null}
-                  singleAsset={latestReport.config.assets?.[0] ?? null}
                 />
+                <div
+                  className="scroll-mt-24 space-y-5"
+                  id="backtest-after-cost-evidence"
+                >
+                  <MetricsGrid report={latestReport} />
+                  <ValidationEvidencePanel report={latestReport} />
+                </div>
+                <div className="scroll-mt-24" id="backtest-dataset-evidence">
+                  <DatasetSnapshotPanel report={latestReport} />
+                </div>
+                <div
+                  className="scroll-mt-24"
+                  id="backtest-signal-review-evidence"
+                >
+                  <StrategySignalPreviewPanel
+                    error={signalPreview.isError}
+                    loading={signalPreview.isPending}
+                    onPaperShadowPreview={(payload) => {
+                      attributionPreview.reset();
+                      paperShadowPreview.mutate(payload, {
+                        onSuccess: (result) => {
+                          attributionPreview.mutate({
+                            strategy: payload.strategy,
+                            symbol: payload.symbol,
+                            asset_class: payload.asset_class,
+                            signal_id: payload.signal_id ?? null,
+                            dataset_snapshot_id:
+                              payload.dataset_snapshot_id ?? null,
+                            risk_preview_passed: payload.risk_preview_passed,
+                            risk_reasons: payload.risk_reasons,
+                            paper_shadow_status: result.status,
+                            paper_shadow_order: result.order,
+                            paper_shadow_fill: result.fill as Record<
+                              string,
+                              unknown
+                            > | null,
+                          });
+                        },
+                      });
+                    }}
+                    onRiskPreview={(payload) => {
+                      paperShadowPreview.reset();
+                      attributionPreview.reset();
+                      riskPreview.mutate(payload);
+                    }}
+                    attributionPreviewError={attributionPreview.isError}
+                    attributionPreviewLoading={attributionPreview.isPending}
+                    attributionPreviewResult={attributionPreview.data ?? null}
+                    paperShadowPreviewError={paperShadowPreview.isError}
+                    paperShadowPreviewLoading={paperShadowPreview.isPending}
+                    paperShadowPreviewResult={paperShadowPreview.data ?? null}
+                    preview={signalPreview.data ?? null}
+                    riskPreviewError={riskPreview.isError}
+                    riskPreviewLoading={riskPreview.isPending}
+                    riskPreviewResult={riskPreview.data ?? null}
+                    singleAsset={latestReport.config.assets?.[0] ?? null}
+                  />
+                </div>
                 <EquityDrawdownChart
                   fills={latestReport.fills ?? []}
                   points={latestReport.equity_curve}
@@ -772,6 +815,164 @@ export function BacktestPage() {
       />
 
       <BacktestReportView />
+    </section>
+  );
+}
+
+function SingleInstrumentLoopReadinessCard({
+  report,
+  preview,
+  riskPreviewResult,
+  paperShadowPreviewResult,
+  attributionPreviewResult,
+}: {
+  report: BacktestReport;
+  preview: StrategySignalPreviewResponse | null;
+  riskPreviewResult: BacktestRiskPreviewResponse | null;
+  paperShadowPreviewResult: BacktestPaperShadowPreviewResponse | null;
+  attributionPreviewResult: BacktestAttributionPreviewResponse | null;
+}) {
+  const labels = useCopy().backtest.page;
+  const steps: LoopStep[] = [
+    {
+      key: 'dataset',
+      label: hasDatasetSnapshotEvidence(report)
+        ? labels.singleInstrumentLoopDatasetReady
+        : labels.singleInstrumentLoopDatasetWaiting,
+      state: hasDatasetSnapshotEvidence(report) ? 'ready' : 'waiting',
+      evidenceHref: '#backtest-dataset-evidence',
+      evidenceLabel: labels.singleInstrumentLoopDatasetEvidence,
+    },
+    {
+      key: 'strategy',
+      label: report.config.strategy
+        ? labels.singleInstrumentLoopStrategyReady
+        : labels.singleInstrumentLoopStrategyWaiting,
+      state: report.config.strategy ? 'ready' : 'waiting',
+      evidenceHref: '#backtest-strategy-catalog',
+      evidenceLabel: labels.singleInstrumentLoopStrategyEvidence,
+    },
+    {
+      key: 'backtest',
+      label: hasAfterCostEvidence(report)
+        ? labels.singleInstrumentLoopBacktestReady
+        : labels.singleInstrumentLoopBacktestWaiting,
+      state: hasAfterCostEvidence(report) ? 'ready' : 'waiting',
+      evidenceHref: '#backtest-after-cost-evidence',
+      evidenceLabel: labels.singleInstrumentLoopBacktestEvidence,
+    },
+    {
+      key: 'signal',
+      label: preview?.outputs.length
+        ? labels.singleInstrumentLoopSignalReady
+        : labels.singleInstrumentLoopSignalWaiting,
+      state: preview?.outputs.length ? 'ready' : 'waiting',
+      evidenceHref: '#backtest-signal-review-evidence',
+      evidenceLabel: labels.singleInstrumentLoopSignalEvidence,
+    },
+    {
+      key: 'risk',
+      label: riskPreviewResult
+        ? riskPreviewResult.passed
+          ? labels.singleInstrumentLoopRiskPassed
+          : labels.singleInstrumentLoopRiskBlocked
+        : labels.singleInstrumentLoopRiskWaiting,
+      state: riskPreviewResult
+        ? riskPreviewResult.passed
+          ? 'ready'
+          : 'blocked'
+        : 'waiting',
+      evidenceHref: '#backtest-signal-review-evidence',
+      evidenceLabel: labels.singleInstrumentLoopRiskEvidence,
+    },
+    {
+      key: 'paper',
+      label:
+        paperShadowPreviewResult?.status === 'simulated'
+          ? labels.singleInstrumentLoopPaperReady
+          : labels.singleInstrumentLoopPaperWaiting,
+      state:
+        paperShadowPreviewResult?.status === 'simulated' ? 'ready' : 'waiting',
+      evidenceHref: '#backtest-signal-review-evidence',
+      evidenceLabel: labels.singleInstrumentLoopPaperEvidence,
+    },
+    {
+      key: 'attribution',
+      label:
+        attributionPreviewResult?.status === 'ready_for_review_linkage'
+          ? labels.singleInstrumentLoopAttributionReady
+          : labels.singleInstrumentLoopAttributionWaiting,
+      state:
+        attributionPreviewResult?.status === 'ready_for_review_linkage'
+          ? 'ready'
+          : 'waiting',
+      evidenceHref: '#backtest-signal-review-evidence',
+      evidenceLabel: labels.singleInstrumentLoopAttributionEvidence,
+    },
+  ];
+  const readyCount = steps.filter((step) => step.state === 'ready').length;
+  const blocked = steps.some((step) => step.state === 'blocked');
+  const allReady = readyCount === steps.length;
+  const statusLabel = blocked
+    ? labels.singleInstrumentLoopBlocked
+    : allReady
+      ? labels.singleInstrumentLoopReady
+      : labels.singleInstrumentLoopWaiting;
+
+  return (
+    <section className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {labels.singleInstrumentLoopKicker}
+          </div>
+          <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+            {labels.singleInstrumentLoopTitle}
+          </h3>
+          <p className="app-muted mt-2 text-sm leading-6">
+            {labels.singleInstrumentLoopDetail}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              blocked
+                ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]'
+                : allReady
+                  ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
+                  : 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning)]'
+            }`}
+          >
+            {statusLabel}
+          </span>
+          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] tabular-nums">
+            {readyCount}/{steps.length}
+          </span>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {steps.map((step) => (
+          <div
+            className={`min-w-0 rounded-2xl border px-3 py-2 text-sm font-semibold ${
+              step.state === 'ready'
+                ? 'border-[color-mix(in_srgb,var(--app-success)_40%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] text-[var(--app-success)]'
+                : step.state === 'blocked'
+                  ? 'border-[color-mix(in_srgb,var(--app-danger)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] text-[var(--app-danger)]'
+                  : 'border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_14%,transparent)] text-[var(--app-muted)]'
+            }`}
+            key={step.key}
+          >
+            <div className="min-w-0">{step.label}</div>
+            <a
+              aria-label={step.evidenceLabel}
+              className="mt-2 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,currentColor_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-inherit opacity-85 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              href={step.evidenceHref}
+            >
+              {labels.singleInstrumentLoopEvidenceCta}
+            </a>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
