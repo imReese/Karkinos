@@ -1582,3 +1582,21 @@ roadmap promises.
   only; it does not change ledger storage, accounting math, broker behavior,
   order submission, risk gates, automatic trading defaults, or
   manual-confirmation requirements.
+* 2026-06-25: Portfolio cost views now consistently distinguish local moving
+  average buy cost from broker displayed cost-basis evidence across the
+  positions table and holding detail page. The positions table now prefers the
+  explicit broker-displayed unit cost from the API when present instead of
+  deriving a unit value from total remaining cost, matching the holding detail
+  page and reducing confusion when broker precision or remaining-cost methods
+  differ. The v1.4 acceptance audit records the localized Portfolio cost-view
+  evidence. This is display/evidence handling only; it does not change cost
+  calculation, ledger storage, broker connector behavior, order submission,
+  risk gates, automatic trading defaults, or manual-confirmation requirements.
+* 2026-06-25: The v1.4 acceptance audit now records the existing sell-side net
+  proceeds projection evidence: partial sells reduce broker-display-style
+  remaining cost by proceeds after commission, stamp tax, transfer fees, and
+  other configured fee components, while realized P/L uses the same net cash
+  math. This records existing deterministic projection and ledger-fee evidence;
+  it does not change cost calculation, ledger storage, broker connector
+  behavior, order submission, risk gates, automatic trading defaults, or
+  manual-confirmation requirements.

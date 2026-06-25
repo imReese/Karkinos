@@ -181,6 +181,44 @@ test('shows broker displayed cost basis beside local moving average cost when ev
   ).toBe('16.2758');
 });
 
+test('prefers broker displayed unit cost over deriving from total basis', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          symbol: '600003',
+          display_name: '示例制造',
+          asset_class: 'stock',
+          quantity: 200,
+          available_qty: 200,
+          frozen_qty: 0,
+          avg_cost: 16.2345,
+          latest_price: 26.41,
+          market_value: 5282,
+          today_change: -3,
+          today_change_pct: -0.00057,
+          unrealized_pnl: 6.84,
+          realized_pnl: 0,
+          commission_paid: 5,
+          broker_displayed_unit_cost: 16.2379,
+          broker_displayed_cost_basis: 99999,
+          broker_cost_basis_difference: 10,
+          broker_cost_basis_method: 'broker_remaining_cost',
+          broker_cost_basis_status: 'available',
+        },
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getByTestId('position-broker-cost-600003').textContent,
+  ).toContain('16.2379');
+  expect(
+    screen.getByTestId('position-mobile-broker-cost-600003').textContent,
+  ).toBe('16.2379');
+  expect(screen.queryByText('499.9950')).toBeNull();
+});
+
 test('labels ledger-projected position costs without presenting them as broker displayed cost', () => {
   renderTable(
     <PositionsTable
