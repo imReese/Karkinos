@@ -230,6 +230,11 @@ account truth, pre-trade risk, paper/shadow preview, and manual review. It
 validates the same strategy parameter schema as backtests and does not persist
 signals, create action tasks, submit orders, create fills, or mutate ledger
 entries.
+`POST /api/backtest/risk-preview` can size one of those research candidates and
+run the same pre-trade risk rules against current account context as a
+read-only preview. The response reports pass/blocked reasons, requires manual
+confirmation, and explicitly does not create orders, persist risk decisions, or
+mutate ledger entries.
 
 For CI, release review, or manual acceptance checks, export the current
 acceptance audit manifests as JSON:

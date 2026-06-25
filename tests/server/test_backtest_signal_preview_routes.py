@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi.routing import APIRoute
@@ -172,3 +174,65 @@ def test_backtest_signal_preview_route_rejects_unknown_params_before_running(
             }
         ],
     }
+
+
+def test_backtest_risk_preview_route_evaluates_without_order_or_audit_writes(
+    monkeypatch,
+) -> None:
+    from core.event_bus import EventBus
+    from domain.portfolio import Portfolio
+    from server.routes import backtest as backtest_routes
+    from server.services.trading_controls import TradingControlState
+
+    controls = TradingControlState()
+    controls.set_kill_switch(True, "operator stop")
+    portfolio = Portfolio(EventBus(), initial_cash=Decimal("100000"))
+    forbidden_calls: list[str] = []
+
+    def forbid(name: str):
+        def _inner(*args, **kwargs):
+            forbidden_calls.append(name)
+            raise AssertionError(f"{name} should not be called by risk preview")
+
+        return _inner
+
+    fake_state = SimpleNamespace(
+        scheduler=SimpleNamespace(portfolio=portfolio),
+        trading_controls=controls,
+        db=SimpleNamespace(
+            save_risk_decision_sync=forbid("save_risk_decision_sync"),
+            record_order_sync=forbid("record_order_sync"),
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = backtest_routes.create_router()
+    endpoint = _route(router, "/api/backtest/risk-preview", "POST").endpoint
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.BacktestRiskPreviewRequest(
+                strategy="dual_ma",
+                symbol="600000",
+                asset_class="stock",
+                action="buy",
+                quantity=100,
+                reference_price=10,
+                target_weight="1.0",
+                data_quality_status="pass",
+            )
+        )
+    )
+
+    assert response["schema_version"] == "karkinos.pre_trade_risk_preview.v1"
+    assert response["passed"] is False
+    assert response["status"] == "blocked"
+    assert response["reasons"] == ["kill switch is enabled: buy orders are blocked"]
+    assert response["manual_confirmation_required"] is True
+    assert response["does_not_create_order"] is True
+    assert response["does_not_persist_decision"] is True
+    assert response["metadata"]["quantity"] == "100"
+    assert response["metadata"]["reference_price"] == "10"
+    assert response["metadata"]["target_weight"] == "1.0"
+    assert response["metadata"]["order_value"] == "1000"
+    assert forbidden_calls == []

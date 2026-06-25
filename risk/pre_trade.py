@@ -127,79 +127,120 @@ class PreTradeRiskManager:
         ctx: PreTradeContext,
         risk_inputs: dict,
     ) -> list[str]:
-        reasons: list[str] = []
-        order_value = Decimal(risk_inputs["order_value"])
-
-        if intent.quantity <= ZERO:
-            reasons.append("order quantity must be positive")
-        if intent.reference_price <= ZERO:
-            reasons.append("reference price must be positive")
-        if order_value <= ZERO:
-            reasons.append("order value must be positive")
-
-        symbol = str(intent.symbol)
-        if symbol in ctx.blacklist:
-            reasons.append(f"{symbol} is blacklisted")
-        if symbol in ctx.st_symbols:
-            reasons.append(f"{symbol} is marked as ST")
-
-        if ctx.kill_switch_enabled and intent.side == OrderSide.BUY:
-            reasons.append("kill switch is enabled: buy orders are blocked")
-
-        if (
-            self.policy.max_order_notional is not None
-            and order_value > self.policy.max_order_notional
-        ):
-            reasons.append("order notional exceeds max_order_notional")
-
-        if (
-            intent.side == OrderSide.BUY
-            and Decimal(risk_inputs["projected_cash"]) < self.policy.min_cash_reserve
-        ):
-            reasons.append("cash reserve would fall below min_cash_reserve")
-
-        if (
-            self.policy.max_position_weight is not None
-            and Decimal(risk_inputs["projected_position_weight"])
-            > self.policy.max_position_weight
-        ):
-            reasons.append("projected position weight exceeds max_position_weight")
-
-        for issue in ctx.data_quality_issues.get(intent.symbol, []):
-            reasons.append(f"data quality issue: {issue}")
-
-        for issue in intent.metadata.get("data_quality_issues", []):
-            reasons.append(f"data quality issue: {issue}")
-
-        return reasons
+        return _pre_trade_reasons(intent, ctx, risk_inputs, self.policy)
 
     def _risk_inputs(self, intent: OrderIntentEvent, ctx: PreTradeContext) -> dict:
-        order_value = intent.quantity * intent.reference_price
-        current_position_value = _position_market_value(
-            ctx.positions.get(intent.symbol)
-        )
-        if intent.side == OrderSide.BUY:
-            projected_cash = ctx.cash - order_value
-            projected_position_value = current_position_value + order_value
-        else:
-            projected_cash = ctx.cash
-            projected_position_value = max(ZERO, current_position_value - order_value)
+        return _pre_trade_risk_inputs(intent, ctx, self.policy)
 
-        if ctx.total_equity > ZERO:
-            projected_position_weight = projected_position_value / ctx.total_equity
-        else:
-            projected_position_weight = ZERO
 
-        return {
-            "cash": str(ctx.cash),
-            "total_equity": str(ctx.total_equity),
-            "order_value": str(order_value),
-            "projected_cash": str(projected_cash),
-            "current_position_value": str(current_position_value),
-            "projected_position_value": str(projected_position_value),
-            "projected_position_weight": str(projected_position_weight),
-            "policy": _policy_metadata(self.policy),
-        }
+def preview_pre_trade_risk(
+    *,
+    intent: OrderIntentEvent,
+    context: PreTradeContext,
+    policy: PreTradePolicy | None = None,
+) -> dict[str, object]:
+    """Evaluate pre-trade risk without publishing events or persisting audit rows."""
+    resolved_policy = policy or PreTradePolicy()
+    risk_inputs = _pre_trade_risk_inputs(intent, context, resolved_policy)
+    reasons = _pre_trade_reasons(intent, context, risk_inputs, resolved_policy)
+    passed = not reasons
+    return {
+        "schema_version": "karkinos.pre_trade_risk_preview.v1",
+        "passed": passed,
+        "status": "passed" if passed else "blocked",
+        "severity": "info" if passed else "warning",
+        "reasons": reasons or ["approved"],
+        "manual_confirmation_required": True,
+        "does_not_create_order": True,
+        "does_not_persist_decision": True,
+        "metadata": {
+            "quantity": str(intent.quantity),
+            "reference_price": str(intent.reference_price),
+            "target_weight": str(intent.target_weight),
+            **risk_inputs,
+        },
+    }
+
+
+def _pre_trade_risk_inputs(
+    intent: OrderIntentEvent,
+    ctx: PreTradeContext,
+    policy: PreTradePolicy,
+) -> dict:
+    order_value = intent.quantity * intent.reference_price
+    current_position_value = _position_market_value(ctx.positions.get(intent.symbol))
+    if intent.side == OrderSide.BUY:
+        projected_cash = ctx.cash - order_value
+        projected_position_value = current_position_value + order_value
+    else:
+        projected_cash = ctx.cash
+        projected_position_value = max(ZERO, current_position_value - order_value)
+
+    if ctx.total_equity > ZERO:
+        projected_position_weight = projected_position_value / ctx.total_equity
+    else:
+        projected_position_weight = ZERO
+
+    return {
+        "cash": str(ctx.cash),
+        "total_equity": str(ctx.total_equity),
+        "order_value": str(order_value),
+        "projected_cash": str(projected_cash),
+        "current_position_value": str(current_position_value),
+        "projected_position_value": str(projected_position_value),
+        "projected_position_weight": str(projected_position_weight),
+        "policy": _policy_metadata(policy),
+    }
+
+
+def _pre_trade_reasons(
+    intent: OrderIntentEvent,
+    ctx: PreTradeContext,
+    risk_inputs: dict,
+    policy: PreTradePolicy,
+) -> list[str]:
+    reasons: list[str] = []
+    order_value = Decimal(risk_inputs["order_value"])
+
+    if intent.quantity <= ZERO:
+        reasons.append("order quantity must be positive")
+    if intent.reference_price <= ZERO:
+        reasons.append("reference price must be positive")
+    if order_value <= ZERO:
+        reasons.append("order value must be positive")
+
+    symbol = str(intent.symbol)
+    if symbol in ctx.blacklist:
+        reasons.append(f"{symbol} is blacklisted")
+    if symbol in ctx.st_symbols:
+        reasons.append(f"{symbol} is marked as ST")
+
+    if ctx.kill_switch_enabled and intent.side == OrderSide.BUY:
+        reasons.append("kill switch is enabled: buy orders are blocked")
+
+    if policy.max_order_notional is not None and order_value > policy.max_order_notional:
+        reasons.append("order notional exceeds max_order_notional")
+
+    if (
+        intent.side == OrderSide.BUY
+        and Decimal(risk_inputs["projected_cash"]) < policy.min_cash_reserve
+    ):
+        reasons.append("cash reserve would fall below min_cash_reserve")
+
+    if (
+        policy.max_position_weight is not None
+        and Decimal(risk_inputs["projected_position_weight"])
+        > policy.max_position_weight
+    ):
+        reasons.append("projected position weight exceeds max_position_weight")
+
+    for issue in ctx.data_quality_issues.get(intent.symbol, []):
+        reasons.append(f"data quality issue: {issue}")
+
+    for issue in intent.metadata.get("data_quality_issues", []):
+        reasons.append(f"data quality issue: {issue}")
+
+    return reasons
 
 
 def _position_market_value(position: Position | None) -> Decimal:
