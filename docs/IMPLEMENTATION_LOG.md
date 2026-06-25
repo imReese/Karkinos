@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Decision candidate cards now provide localized handoff links
+  from each candidate to Backtest evidence, the single-instrument holding
+  detail page, and Trading approvals when manual confirmation is ready. This
+  makes the single-instrument strategy loop easier to follow from a daily
+  candidate back to research evidence and position context. It is navigation
+  only; it does not create signals, orders, fills, ledger entries, broker
+  submissions, or change automatic-trading defaults.
+* 2026-06-25: Decision workflow task cards now include localized handoff
+  links to existing review surfaces for market data, risk review, Strategy
+  Lab/backtest evidence, paper/shadow review, and trading approvals. This
+  helps the single-instrument strategy loop move from daily decision review
+  back to the relevant evidence surface without exposing internal workflow
+  codes. It is navigation only; it does not create signals, orders, fills,
+  ledger entries, broker submissions, or change automatic-trading defaults.
 * 2026-06-25: Web Backtest now renders a localized single-instrument loop
   readiness card for the current result. The card summarizes dataset snapshot,
   strategy registry, after-cost backtest, signal preview, risk gate,

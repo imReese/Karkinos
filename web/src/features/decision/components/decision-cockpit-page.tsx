@@ -355,6 +355,25 @@ function gateRequirementLabels(
   return values.map((value) => labels.gateRequirementLabel(value));
 }
 
+function decisionWorkflowTarget(
+  taskId: string,
+  labels: ReturnType<typeof useCopy>['decision'],
+) {
+  switch (taskId) {
+    case 'data_refresh':
+      return { href: '/market', label: labels.workflowOpenMarket };
+    case 'risk_review':
+      return { href: '/risk', label: labels.workflowOpenRisk };
+    case 'strategy_evidence':
+    case 'paper_shadow_review':
+      return { href: '/backtest', label: labels.workflowOpenBacktest };
+    case 'manual_confirmation':
+      return { href: '/trading', label: labels.workflowOpenTrading };
+    default:
+      return null;
+  }
+}
+
 export function DecisionCockpitPage() {
   const copy = useCopy();
   const labels = copy.decision;
@@ -638,13 +657,15 @@ function DecisionWorkflowTaskCard({
   const actionLabels = actionCodes.map((code) =>
     labels.workflowActionLabel(code),
   );
+  const taskLabel = labels.workflowTaskLabel(task.id);
+  const target = decisionWorkflowTarget(task.id, labels);
 
   return (
     <article className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3.5">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-sm font-semibold text-[var(--app-text)]">
-            {labels.workflowTaskLabel(task.id)}
+            {taskLabel}
           </div>
           <div className="app-muted mt-1 text-xs">
             {formatPublicStatus(task.status, locale)}
@@ -673,6 +694,15 @@ function DecisionWorkflowTaskCard({
           ),
         )}
       </div>
+      {target ? (
+        <a
+          aria-label={labels.workflowOpenSurfaceLabel(target.label, taskLabel)}
+          className="mt-3 inline-flex min-h-8 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+          href={target.href}
+        >
+          {target.label}
+        </a>
+      ) : null}
     </article>
   );
 }
@@ -1113,6 +1143,7 @@ function DecisionCandidateCard({
   );
   const strategyId = candidate.evidence.strategy.strategy_id;
   const strategyAuditId = strategyAuditIdFromDisplay(strategyId, strategyNames);
+  const holdingDetailHref = `/portfolio/${encodeURIComponent(candidate.symbol)}`;
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
@@ -1132,15 +1163,31 @@ function DecisionCandidateCard({
           </div>
           <p className="app-muted mt-2 break-words text-sm">{publicDetail}</p>
         </div>
-        {readyForManual ? (
+        <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
           <a
             className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
-            href="/trading"
-            aria-label={`${labels.openTradingApprovals}: ${instrumentLabel}`}
+            href="/backtest"
+            aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
           >
-            {labels.openTradingApprovals}
+            {labels.openBacktestEvidence}
           </a>
-        ) : null}
+          <a
+            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+            href={holdingDetailHref}
+            aria-label={`${labels.openHoldingDetail}: ${instrumentLabel}`}
+          >
+            {labels.openHoldingDetail}
+          </a>
+          {readyForManual ? (
+            <a
+              className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+              href="/trading"
+              aria-label={`${labels.openTradingApprovals}: ${instrumentLabel}`}
+            >
+              {labels.openTradingApprovals}
+            </a>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-4 grid min-w-0 gap-2 text-sm sm:grid-cols-2">

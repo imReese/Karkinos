@@ -520,6 +520,12 @@ export const copy = {
       gateRequirementLabel: (code: string) => formatPublicCode(code, 'en'),
       workflowTaskLabel: (code: string) => formatPublicCode(code, 'en'),
       workflowActionLabel: (code: string) => formatPublicCode(code, 'en'),
+      workflowOpenMarket: 'Open Market data',
+      workflowOpenBacktest: 'Open Strategy Lab',
+      workflowOpenRisk: 'Open Risk center',
+      workflowOpenTrading: 'Open Trading approvals',
+      workflowOpenSurfaceLabel: (surface: string, task: string) =>
+        `${surface}: ${task}`,
       readyCount: (count: number) => `${count} ready`,
       blockedCount: (count: number) => `${count} blocked`,
       dailyLane: 'Daily lane',
@@ -565,6 +571,8 @@ export const copy = {
       riskDecision: 'Risk decision',
       none: 'None',
       openTradingApprovals: 'Open Trading approvals',
+      openBacktestEvidence: 'Open Backtest evidence',
+      openHoldingDetail: 'Open holding detail',
       signalQueue: 'Signal action queue',
       signalQueueTitle: 'Signals, action tasks, and manual-order handoff',
       signalQueueDetail:
@@ -2357,6 +2365,12 @@ export const copy = {
       gateRequirementLabel: (code: string) => formatPublicCode(code, 'zh'),
       workflowTaskLabel: (code: string) => formatPublicCode(code, 'zh'),
       workflowActionLabel: (code: string) => formatPublicCode(code, 'zh'),
+      workflowOpenMarket: '打开行情中心',
+      workflowOpenBacktest: '打开回测实验室',
+      workflowOpenRisk: '打开风控中心',
+      workflowOpenTrading: '打开交易审批',
+      workflowOpenSurfaceLabel: (surface: string, task: string) =>
+        `${surface}：${task}`,
       readyCount: (count: number) => `${count} 个就绪`,
       blockedCount: (count: number) => `${count} 个阻断`,
       dailyLane: '日级通道',
@@ -2402,6 +2416,8 @@ export const copy = {
       riskDecision: '风控决策',
       none: '无',
       openTradingApprovals: '打开交易审批',
+      openBacktestEvidence: '打开回测证据',
+      openHoldingDetail: '打开持仓明细',
       signalQueue: '信号动作队列',
       signalQueueTitle: '信号、动作任务与人工订单交接',
       signalQueueDetail:
