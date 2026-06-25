@@ -35,6 +35,18 @@ class FeeBreakdown:
     fee_rule_id: str
     limitations: tuple[str, ...] = ()
 
+    def to_json_dict(self) -> dict[str, object]:
+        return {
+            "gross_amount": str(self.gross_amount),
+            "commission": str(self.commission),
+            "stamp_tax": str(self.stamp_tax),
+            "transfer_fee": str(self.transfer_fee),
+            "other_fees": str(self.other_fees),
+            "total_fee": str(self.total_fee),
+            "fee_rule_id": self.fee_rule_id,
+            "limitations": list(self.limitations),
+        }
+
 
 class CommissionCalculator(ABC):
     """佣金计算抽象基类。"""

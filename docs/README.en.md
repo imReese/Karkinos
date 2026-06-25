@@ -522,6 +522,10 @@ out-of-sample validation payload: net versus gross return, cost drag,
 turnover, benchmark role/status, split point, structured cost assumptions,
 slippage assumptions, general assumptions, and limitations.
 These panels are research evidence only and do not approve execution.
+Backtest fill records keep the legacy `commission` total while exposing the
+same structured fee-breakdown contract used by paper broker evidence, manual
+trade preview, and ledger projections: commission, stamp tax, transfer fee,
+other fees, total fee, fee-rule id, and known limitations.
 
 `GET /api/backtest/strategy-validation` reads saved backtest results and reports
 whether each registered benchmark strategy has after-cost and out-of-sample

@@ -815,6 +815,52 @@ def test_backtest_result_normalizes_legacy_final_equity_from_curve(monkeypatch):
     assert response.evidence_json["gross_pnl_before_costs"] == pytest.approx(8149.0)
 
 
+def test_backtest_fill_response_preserves_structured_fee_breakdown():
+    from core.events import FillEvent
+    from core.types import OrderSide, Symbol
+    from server.routes import backtest as backtest_routes
+
+    fill = FillEvent(
+        timestamp=datetime(2026, 1, 2, 15, 0),
+        fill_id="FILL-FEE-1",
+        order_id="ORD-FEE-1",
+        symbol=Symbol("510300"),
+        side=OrderSide.SELL,
+        fill_price=Decimal("4.0"),
+        fill_quantity=Decimal("100"),
+        commission=Decimal("5.00400"),
+        slippage=Decimal("0"),
+        fee_breakdown={
+            "gross_amount": "400.0",
+            "commission": "5",
+            "stamp_tax": "0",
+            "transfer_fee": "0.0040",
+            "other_fees": "0.0",
+            "total_fee": "5.00400",
+            "fee_rule_id": "cn_fund_etf_default_v1",
+            "limitations": ["broker_regulatory_fees_assumed_absorbed"],
+        },
+        fee_rule_id="cn_fund_etf_default_v1",
+        fee_rule_version="backtest_commission_model",
+    )
+
+    payload = backtest_routes._fill_to_response(fill)
+
+    assert payload["commission"] == pytest.approx(5.004)
+    assert payload["fee_rule_id"] == "cn_fund_etf_default_v1"
+    assert payload["fee_rule_version"] == "backtest_commission_model"
+    assert payload["fee_breakdown"] == {
+        "gross_amount": "400.0",
+        "commission": "5",
+        "stamp_tax": "0",
+        "transfer_fee": "0.0040",
+        "other_fees": "0.0",
+        "total_fee": "5.00400",
+        "fee_rule_id": "cn_fund_etf_default_v1",
+        "limitations": ["broker_regulatory_fees_assumed_absorbed"],
+    }
+
+
 def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch):
     from server.routes import market as market_routes
 

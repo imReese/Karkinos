@@ -33,9 +33,10 @@ class SimulatedExecution(ExecutionEngine):
         """
         fill_price = self._apply_slippage(order)
         fill_quantity = order.quantity
-        commission = self.commission_calc.calculate(
+        fee_breakdown = self.commission_calc.breakdown(
             order.side, fill_price, fill_quantity
         )
+        commission = fee_breakdown.total_fee
         slippage = abs(fill_price - (order.price or fill_price)) * fill_quantity
 
         return FillEvent(
@@ -48,6 +49,9 @@ class SimulatedExecution(ExecutionEngine):
             fill_quantity=fill_quantity,
             commission=commission,
             slippage=slippage,
+            fee_breakdown=fee_breakdown.to_json_dict(),
+            fee_rule_id=fee_breakdown.fee_rule_id,
+            fee_rule_version="backtest_commission_model",
         )
 
     def _apply_slippage(self, order: OrderEvent) -> Decimal:

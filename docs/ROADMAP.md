@@ -711,7 +711,7 @@ broker-facing cost basis shown in a user's securities app.
 * [ ] Account Truth reconciliation compares broker-reported cost basis against
   Karkinos local cost basis and exposes differences, severity, and suggested
   review actions.
-* [ ] Backtest, paper broker, manual trade preview, and ledger projections use
+* [x] Backtest, paper broker, manual trade preview, and ledger projections use
   the same fee model contract without enabling automatic real-money trading.
 * [ ] Backend deterministic tests cover A-share buy/sell, stamp tax,
   Shanghai/Shenzhen transfer-fee differences, ETF/fund, convertible bond,

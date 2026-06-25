@@ -210,6 +210,11 @@ limitations, and `promotion_gate.does_not_enable_execution=true`. It is
 evidence for review, not investment advice, not a profitability claim, and not
 authorization to submit broker orders.
 
+Backtest fill records keep the legacy `commission` total and now expose the
+same structured fee-breakdown contract used by paper broker evidence, manual
+trade preview, and ledger projections: commission, stamp tax, transfer fee,
+other fees, total fee, fee-rule id, and known limitations.
+
 For CI, release review, or manual acceptance checks, export the current
 acceptance audit manifests as JSON:
 

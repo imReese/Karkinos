@@ -153,6 +153,9 @@ def _fill_to_response(fill: Any) -> dict[str, Any]:
         "fill_quantity": float(getattr(fill, "fill_quantity", 0)),
         "commission": float(getattr(fill, "commission", 0)),
         "slippage": float(getattr(fill, "slippage", 0)),
+        "fee_breakdown": getattr(fill, "fee_breakdown", None),
+        "fee_rule_id": getattr(fill, "fee_rule_id", None),
+        "fee_rule_version": getattr(fill, "fee_rule_version", None),
     }
 
 
