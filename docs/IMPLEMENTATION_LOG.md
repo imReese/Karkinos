@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Web Backtest now surfaces the
+  `single_instrument_strategy_loop` acceptance audit coverage directly inside
+  the single-instrument readiness card. Users can see the 8/8 verified
+  product-readiness criteria without reading CLI JSON, with explicit wording
+  that the audit does not enable broker execution and is not investment advice.
+* 2026-06-25: The Data-Trusted Single-Instrument Strategy Loop acceptance
+  audit now includes an explicit Web boundary criterion for the post-risk
+  paper/shadow next step and the rule that strategy P/L attribution stays
+  blocked when production fills are not linked. The capability-based
+  `single_instrument_strategy_loop` CLI export covers this evidence without
+  introducing broker submission, ledger mutation, or automatic real-money
+  trading.
+* 2026-06-25: Web Backtest now makes the post-risk paper/shadow step and
+  attribution boundary more explicit in the single-instrument research loop.
+  Once a risk preview passes, the UI tells users to run paper/shadow simulation
+  before any manual step, and attribution preview highlights that strategy P/L
+  stays unavailable when no production fill facts are linked. This is
+  explanatory UI only; it does not create broker orders, mutate the production
+  ledger, or enable automatic real-money trading.
 * 2026-06-25: Web Backtest single-instrument loop readiness now includes a
   localized next-review-step guide. After a run produces signal evidence, the
   card tells the user whether to inspect after-cost evidence, wait for signal

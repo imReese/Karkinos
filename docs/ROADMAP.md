@@ -743,6 +743,7 @@ submission, or automatic real-money trading.
 * [x] The preview path runs a read-only risk gate before paper/shadow simulation.
 * [x] Paper/shadow preview simulates order and fill evidence while remaining isolated from the real ledger.
 * [x] Attribution preview exposes evidence counts and a manual review linkage candidate without claiming strategy P/L.
+* [x] Web Backtest explicitly explains the post-risk paper/shadow next step and blocks strategy P/L attribution when production fills are not linked.
 * [x] Web Backtest surfaces the loop in localized, user-readable language without exposing internal reason codes.
 
 ## Target for v1.5

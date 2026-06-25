@@ -938,8 +938,9 @@ export const copy = {
           positionWeight: 'Position concentration exceeds policy',
         },
         signalPreviewPaperShadowTitle: 'Paper/shadow preview',
+        signalPreviewPaperShadowNextStep: 'Paper/shadow next step',
         signalPreviewPaperShadowReady:
-          'Risk preview passed. You can simulate the candidate without touching the real ledger.',
+          'Risk preview passed. Run paper/shadow simulation before any manual step.',
         signalPreviewPaperShadowBlocked:
           'Paper/shadow preview waits for a passed risk preview.',
         signalPreviewPaperShadowButton: 'Preview paper/shadow',
@@ -974,6 +975,10 @@ export const copy = {
         signalPreviewAttributionBoundary: 'Attribution boundary',
         signalPreviewAttributionPreviewOnly:
           'Signal, review, order, and fill facts must be linked before strategy P/L attribution.',
+        signalPreviewAttributionNoLinkedFillsTitle:
+          'No linked production fills',
+        signalPreviewAttributionNoLinkedFillsDetail:
+          'Strategy P/L is unavailable until signal, review, order, and fill evidence are linked.',
         signalPreviewReviewLinkageTitle: 'Review linkage candidate',
         signalPreviewReviewLinkageManual: 'Manual review required',
         signalPreviewReviewLinkageNoWrite: 'No order or ledger write',
@@ -1018,6 +1023,11 @@ export const copy = {
           'Review the attribution boundary; strategy P/L stays unavailable until signal, review, order, and fill evidence is linked.',
         singleInstrumentLoopNextComplete:
           'All research evidence is ready for manual review; no broker order is created here.',
+        singleInstrumentLoopAuditCoverage: 'Acceptance audit coverage',
+        singleInstrumentLoopAuditCount: '8/8 criteria verified',
+        singleInstrumentLoopAuditKey: 'single_instrument_strategy_loop',
+        singleInstrumentLoopAuditBoundary:
+          'Product-readiness proof only; it does not enable broker execution or investment advice.',
         singleInstrumentLoopEvidenceCta: 'Review evidence',
         singleInstrumentLoopDatasetEvidence: 'Review dataset snapshot evidence',
         singleInstrumentLoopStrategyEvidence:
@@ -2782,8 +2792,9 @@ export const copy = {
           positionWeight: '持仓集中度超过策略限制',
         },
         signalPreviewPaperShadowTitle: 'paper/shadow 预览',
+        signalPreviewPaperShadowNextStep: 'paper/shadow 下一步',
         signalPreviewPaperShadowReady:
-          '风控预检已通过，可以在不触碰真实账本的前提下模拟候选动作。',
+          '风控预检已通过。先运行 paper/shadow 模拟，再进入任何人工步骤。',
         signalPreviewPaperShadowBlocked:
           'paper/shadow 预览需要等待风控预检通过。',
         signalPreviewPaperShadowButton: '预览 paper/shadow',
@@ -2817,6 +2828,9 @@ export const copy = {
         signalPreviewAttributionBoundary: '归因边界',
         signalPreviewAttributionPreviewOnly:
           '只有信号、复核、订单和成交事实全部关联后，才允许归因策略收益。',
+        signalPreviewAttributionNoLinkedFillsTitle: '没有关联真实成交',
+        signalPreviewAttributionNoLinkedFillsDetail:
+          '只有信号、复核、订单与成交证据全部串起后，才展示策略收益归因。',
         signalPreviewReviewLinkageTitle: '复核关联候选',
         signalPreviewReviewLinkageManual: '需要人工复核',
         signalPreviewReviewLinkageNoWrite: '不写订单或账本',
@@ -2859,6 +2873,11 @@ export const copy = {
           '复核归因边界；只有信号、复核、订单与成交证据串起后，才展示策略收益。',
         singleInstrumentLoopNextComplete:
           '研究证据已就绪，可进入人工复核；这里不会创建券商订单。',
+        singleInstrumentLoopAuditCoverage: '验收审计覆盖',
+        singleInstrumentLoopAuditCount: '8/8 项已验证',
+        singleInstrumentLoopAuditKey: 'single_instrument_strategy_loop',
+        singleInstrumentLoopAuditBoundary:
+          '仅代表产品就绪证据；不会启用券商执行，也不构成投资建议。',
         singleInstrumentLoopEvidenceCta: '查看证据',
         singleInstrumentLoopDatasetEvidence: '查看数据快照证据',
         singleInstrumentLoopStrategyEvidence: '查看策略注册证据',
