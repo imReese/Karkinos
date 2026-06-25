@@ -31,6 +31,7 @@ import {
   useUpdateAccountStrategyAssignmentMutation,
   useRunBacktestMutation,
   useBacktestStrategiesQuery,
+  useStrategySignalPreviewMutation,
   useStrategyPromotionReadinessQuery,
   useStrategyValidationQuery,
   type AccountStrategyAssignment,
@@ -39,6 +40,8 @@ import {
   type BacktestReport,
   type BacktestRunRequest,
   type BacktestStrategyInfo,
+  type StrategySignalPreviewOutput,
+  type StrategySignalPreviewResponse,
   type StrategyPromotionReadiness,
   type StrategyParameterSchema,
   type StrategyValidationRow,
@@ -302,6 +305,7 @@ export function BacktestPage() {
   const labels = copy.backtest.page;
   const common = copy.common;
   const runBacktest = useRunBacktestMutation();
+  const signalPreview = useStrategySignalPreviewMutation();
   const strategies = useBacktestStrategiesQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
@@ -371,19 +375,30 @@ export function BacktestPage() {
     }
     setFormError('');
     try {
-      const report = await runBacktest.mutateAsync(
-        buildRunPayload({
-          startDate,
-          endDate,
-          initialCash,
-          strategy,
-          parameterSchema,
-          parameterValues,
-          symbol,
-          assetClass,
-        }),
-      );
+      const payload = buildRunPayload({
+        startDate,
+        endDate,
+        initialCash,
+        strategy,
+        parameterSchema,
+        parameterValues,
+        symbol,
+        assetClass,
+      });
+      const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
+      signalPreview.reset();
+      const previewAsset = payload.assets?.[0];
+      if (previewAsset) {
+        signalPreview.mutate({
+          strategy: payload.strategy,
+          symbol: previewAsset.symbol,
+          asset_class: previewAsset.asset_class,
+          start_date: payload.start_date,
+          end_date: payload.end_date,
+          params: payload.params,
+        });
+      }
     } catch (error) {
       setFormError(
         error instanceof Error && error.message
@@ -676,6 +691,12 @@ export function BacktestPage() {
                 <MetricsGrid report={latestReport} />
                 <ValidationEvidencePanel report={latestReport} />
                 <DatasetSnapshotPanel report={latestReport} />
+                <StrategySignalPreviewPanel
+                  error={signalPreview.isError}
+                  loading={signalPreview.isPending}
+                  preview={signalPreview.data ?? null}
+                  singleAsset={latestReport.config.assets?.[0] ?? null}
+                />
                 <EquityDrawdownChart
                   fills={latestReport.fills ?? []}
                   points={latestReport.equity_curve}
@@ -1161,6 +1182,170 @@ function StatusTile({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
+}
+
+function StrategySignalPreviewPanel({
+  preview,
+  loading,
+  error,
+  singleAsset,
+}: {
+  preview: StrategySignalPreviewResponse | null;
+  loading: boolean;
+  error: boolean;
+  singleAsset: { symbol: string; asset_class: string } | null;
+}) {
+  const labels = useCopy().backtest.page;
+  const { locale } = usePreferences();
+  const output = preview?.outputs[0] ?? null;
+  const dataQuality = output?.evidence.data_quality_status ?? 'unknown';
+  const referencePrice = output?.price ?? output?.evidence.reference_price;
+  const parsedReferencePrice =
+    referencePrice === null || referencePrice === undefined
+      ? null
+      : Number(referencePrice);
+  const referencePriceText =
+    parsedReferencePrice !== null && Number.isFinite(parsedReferencePrice)
+      ? formatCurrency(parsedReferencePrice)
+      : labels.notDeclared;
+  const actionLabel = output
+    ? signalPreviewActionLabel(output, locale, labels)
+    : labels.notDeclared;
+  const gateRequired = output
+    ? output.requires_risk_gate ||
+      output.requires_account_truth_gate ||
+      output.requires_paper_shadow_review ||
+      output.requires_manual_review
+    : false;
+
+  return (
+    <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {labels.signalPreviewKicker}
+          </div>
+          <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+            {labels.signalPreviewTitle}
+          </h3>
+          <p className="app-muted mt-2 text-sm leading-6">
+            {labels.signalPreviewDetail}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
+          {labels.signalPreviewResearchOnly}
+        </span>
+      </div>
+
+      {!singleAsset ? (
+        <p className="app-muted mt-4 text-sm">{labels.signalPreviewSkipped}</p>
+      ) : loading ? (
+        <p className="app-muted mt-4 text-sm">{labels.signalPreviewLoading}</p>
+      ) : error ? (
+        <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+          {labels.signalPreviewUnavailable}
+        </p>
+      ) : output ? (
+        <>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetadataItem
+              label={labels.signalPreviewAction}
+              value={actionLabel}
+            />
+            <MetadataItem
+              label={labels.signalPreviewDataQualityLabel}
+              value={formatPublicStatus(dataQuality, locale)}
+            />
+            <MetadataItem
+              label={labels.signalPreviewBars}
+              value={labels.signalPreviewBarCount(
+                output.evidence.bar_count ?? 0,
+              )}
+            />
+            <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
+              <div className="app-muted text-[11px]">
+                {labels.signalPreviewReferencePriceLabel}
+              </div>
+              <div className="mt-1 truncate text-sm font-semibold tabular-nums">
+                {labels.signalPreviewReferencePrice(referencePriceText)}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+              <div className="app-muted text-xs font-semibold">
+                {labels.signalPreviewReason}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-[var(--app-text)]">
+                {signalPreviewReason(output, labels)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
+              <div className="app-muted text-xs font-semibold">
+                {labels.signalPreviewDataset}
+              </div>
+              <p className="mt-2 break-words text-sm font-semibold text-[var(--app-text)]">
+                {preview?.dataset_snapshot_id ??
+                  output.evidence.dataset_snapshot_id ??
+                  labels.notDeclared}
+              </p>
+              <p className="app-muted mt-2 text-sm leading-6">
+                {labels.signalPreviewDataQuality(
+                  formatPublicStatus(dataQuality, locale),
+                )}
+              </p>
+            </div>
+          </div>
+          <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold text-[var(--app-warning)]">
+            {gateRequired
+              ? labels.signalPreviewGateRequired
+              : labels.signalPreviewNoGateRequired}
+          </p>
+          <p className="app-muted mt-3 text-xs leading-5">
+            {labels.signalPreviewExecutionBoundary}
+          </p>
+        </>
+      ) : (
+        <p className="app-muted mt-4 text-sm">{labels.signalPreviewPending}</p>
+      )}
+    </div>
+  );
+}
+
+function signalPreviewActionLabel(
+  output: StrategySignalPreviewOutput,
+  locale: 'en' | 'zh',
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+) {
+  if (output.action === 'buy') {
+    return labels.signalPreviewActions.buy;
+  }
+  if (output.action === 'sell') {
+    return labels.signalPreviewActions.sell;
+  }
+  if (output.action === 'rebalance') {
+    return labels.signalPreviewActions.rebalance;
+  }
+  if (output.action === 'no_action') {
+    return labels.signalPreviewActions.no_action;
+  }
+  return formatPublicStatus(output.action, locale);
+}
+
+function signalPreviewReason(
+  output: StrategySignalPreviewOutput,
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+) {
+  if (output.action === 'buy') {
+    return labels.signalPreviewReasons.buy;
+  }
+  if (output.action === 'sell') {
+    return labels.signalPreviewReasons.sell;
+  }
+  if (output.action === 'rebalance') {
+    return labels.signalPreviewReasons.rebalance;
+  }
+  return labels.signalPreviewReasons.no_action;
 }
 
 function StrategyEvidenceGatePanel({

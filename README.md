@@ -222,7 +222,8 @@ overlays buy/sell markers and a compact marker summary beside the curve. Those
 markers are research evidence from the saved backtest fills only; they do not
 approve execution or attribute live account returns by themselves.
 `POST /api/backtest/signal-preview` can run a registered strategy over explicit
-single-symbol bars and return research-only strategy-runtime audit records
+single-symbol bars or a server-side single-symbol date range and return
+research-only strategy-runtime audit records
 (`buy`, `sell`, `rebalance`, or `no_action`) with dataset snapshot and data
 quality context. It validates the same strategy parameter schema as backtests
 and does not persist signals, create action tasks, submit orders, create fills,

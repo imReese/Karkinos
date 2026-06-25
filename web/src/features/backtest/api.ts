@@ -197,6 +197,54 @@ export type BacktestRunRequest = {
   assets?: Array<{ symbol: string; asset_class: string }>;
 };
 
+export type StrategySignalPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  params?: Record<string, number | string | boolean | null>;
+};
+
+export type StrategySignalPreviewOutput = {
+  output_id: string;
+  output_type: string;
+  record_kind: string;
+  action: string;
+  reason: string;
+  symbol: string;
+  target_weight?: string | null;
+  quantity?: number | string | null;
+  price?: string | null;
+  evidence: {
+    bar_count?: number;
+    dataset_snapshot_id?: string | null;
+    data_quality_status?: string | null;
+    signal_timestamp?: string | null;
+    reference_price?: string | null;
+    research_only?: boolean;
+    does_not_enable_execution?: boolean;
+  };
+  requires_risk_gate: boolean;
+  requires_account_truth_gate: boolean;
+  requires_paper_shadow_review: boolean;
+  requires_manual_review: boolean;
+  does_not_enable_execution: boolean;
+};
+
+export type StrategySignalPreviewResponse = {
+  schema_version: string;
+  strategy_id: string;
+  symbol: string;
+  params: Record<string, number | string | boolean | null>;
+  run_id: string;
+  dataset_snapshot_id?: string | null;
+  record_count: number;
+  outputs: StrategySignalPreviewOutput[];
+  limitations: string[];
+  does_not_enable_execution: boolean;
+};
+
 export type BacktestSweepRequest = {
   start_date: string;
   end_date: string;
@@ -510,6 +558,16 @@ export function useRunBacktestMutation() {
         }),
       ]);
     },
+  });
+}
+
+export function useStrategySignalPreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: StrategySignalPreviewRequest) =>
+      postJson<StrategySignalPreviewResponse>(
+        '/api/backtest/signal-preview',
+        payload,
+      ),
   });
 }
 

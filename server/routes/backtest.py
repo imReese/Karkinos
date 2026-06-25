@@ -142,8 +142,10 @@ class StrategySignalPreviewRequest(BaseModel):
     strategy: str = "dual_ma"
     symbol: str
     asset_class: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
     params: dict[str, Any] | None = None
-    bars: list[StrategySignalPreviewBar] = Field(min_length=1)
+    bars: list[StrategySignalPreviewBar] = Field(default_factory=list)
     dataset_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -317,7 +319,7 @@ def _preview_bar_to_market_event(
     asset_class: str | None,
 ) -> MarketEvent:
     close = bar.close
-    parsed_asset_class = AssetClass(asset_class) if asset_class else None
+    _, parsed_asset_class = _signal_preview_symbol_asset_class(symbol, asset_class)
     return MarketEvent(
         timestamp=bar.timestamp,
         symbol=Symbol(symbol),
@@ -331,26 +333,113 @@ def _preview_bar_to_market_event(
     )
 
 
+def _signal_preview_symbol_asset_class(
+    symbol: str,
+    asset_class: str | None,
+) -> tuple[Symbol, AssetClass]:
+    return build_watchlist(
+        BacktestConfig(
+            assets=[
+                {
+                    "symbol": symbol,
+                    "asset_class": asset_class or AssetClass.STOCK.value,
+                }
+            ]
+        )
+    )[0]
+
+
+def _load_signal_preview_bars(
+    request: StrategySignalPreviewRequest,
+    config: Any,
+) -> tuple[tuple[MarketEvent, ...], dict[str, Any]]:
+    """Load single-symbol preview bars through the backtest data plane."""
+    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+    from data.manager import DataManager, build_sources
+    from data.store import DataStore
+
+    start_date = request.start_date or getattr(config, "start_date", None)
+    end_date = request.end_date or getattr(config, "end_date", None)
+    if not start_date or not end_date:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "strategy": request.strategy,
+                "errors": [
+                    {
+                        "field": "start_date",
+                        "code": "required_field_missing",
+                        "message": (
+                            "start_date and end_date are required when bars are "
+                            "not supplied explicitly."
+                        ),
+                    }
+                ],
+            },
+        )
+
+    symbol, asset_class = _signal_preview_symbol_asset_class(
+        request.symbol,
+        request.asset_class,
+    )
+    store = None
+    try:
+        store = DataStore()
+    except Exception:
+        pass
+
+    sources = build_sources(
+        data_source=getattr(config, "data_source", "akshare"),
+        tushare_token=getattr(config, "tushare_token", ""),
+    )
+    manager = DataManager(
+        sources=sources,
+        store=store,
+        default_source=getattr(config, "data_source", "akshare"),
+    )
+    handler = manager.get_bars(
+        symbol,
+        datetime.strptime(start_date, "%Y-%m-%d"),
+        datetime.strptime(end_date, "%Y-%m-%d"),
+        asset_class=asset_class,
+    )
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=start_date,
+        end_date=end_date,
+        configured_source=getattr(config, "data_source", None),
+        data_handlers={symbol: handler},
+        store=store,
+        source_names=list(sources.keys()),
+    )
+    return tuple(handler), snapshot
+
+
 def _run_strategy_signal_preview(
     request: StrategySignalPreviewRequest,
+    config: Any,
 ) -> dict[str, Any]:
-    """Run a research-only strategy signal preview from explicit bars."""
+    """Run a research-only strategy signal preview from bars or data config."""
     from analytics.strategy_signal_preview import build_strategy_signal_preview
 
-    bars = tuple(
-        _preview_bar_to_market_event(
-            bar,
-            symbol=request.symbol,
-            asset_class=request.asset_class,
+    if request.bars:
+        bars = tuple(
+            _preview_bar_to_market_event(
+                bar,
+                symbol=request.symbol,
+                asset_class=request.asset_class,
+            )
+            for bar in request.bars
         )
-        for bar in request.bars
-    )
+        dataset_snapshot = request.dataset_snapshot
+    else:
+        bars, dataset_snapshot = _load_signal_preview_bars(request, config)
+
     return build_strategy_signal_preview(
         strategy_id=request.strategy,
         symbol=request.symbol,
         params=request.params,
         bars=bars,
-        dataset_snapshot=request.dataset_snapshot,
+        dataset_snapshot=dataset_snapshot,
     )
 
 
@@ -901,8 +990,12 @@ def create_router() -> APIRouter:
         request: StrategySignalPreviewRequest,
     ) -> StrategySignalPreviewResponse:
         """Preview strategy outputs as research evidence without persistence."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        config = state.config or BacktestConfig()
         request = _validate_signal_preview_strategy_params(request)
-        preview = await asyncio.to_thread(_run_strategy_signal_preview, request)
+        preview = await asyncio.to_thread(_run_strategy_signal_preview, request, config)
         return StrategySignalPreviewResponse(**preview)
 
     @r.post("/run", response_model=BacktestResponse)

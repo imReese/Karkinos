@@ -63,6 +63,75 @@ def test_backtest_signal_preview_route_returns_research_only_candidate() -> None
     assert record["does_not_enable_execution"] is True
 
 
+def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) -> None:
+    import pandas as pd
+
+    from core.types import AssetClass, BarFrequency, Symbol
+    from data.handler import DataHandler
+    from server.routes import backtest as backtest_routes
+
+    class FakeStore:
+        pass
+
+    class FakeDataManager:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_bars(self, symbol, start, end, asset_class):
+            assert symbol == Symbol("600000")
+            assert asset_class == AssetClass.STOCK
+            assert start.strftime("%Y-%m-%d") == "2026-06-01"
+            assert end.strftime("%Y-%m-%d") == "2026-06-04"
+            prices = [3, 2, 1, 4]
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2026-06-01", periods=4),
+                    "open": prices,
+                    "high": prices,
+                    "low": prices,
+                    "close": prices,
+                    "volume": [1000] * 4,
+                }
+            )
+            return DataHandler(
+                df,
+                symbol,
+                frequency=BarFrequency.DAILY,
+                asset_class=asset_class,
+            )
+
+    monkeypatch.setattr("data.store.DataStore", FakeStore)
+    monkeypatch.setattr("data.manager.DataManager", FakeDataManager)
+    monkeypatch.setattr(
+        "data.manager.build_sources", lambda **kwargs: {"fixture": object()}
+    )
+
+    router = backtest_routes.create_router()
+    endpoint = _route(router, "/api/backtest/signal-preview", "POST").endpoint
+
+    response = asyncio.run(
+        endpoint(
+            backtest_routes.StrategySignalPreviewRequest(
+                strategy="dual_ma",
+                symbol="600000",
+                asset_class="stock",
+                start_date="2026-06-01",
+                end_date="2026-06-04",
+                params={"short_period": "2", "long_period": "3"},
+            )
+        )
+    )
+
+    assert response.dataset_snapshot_id is not None
+    assert response.record_count == 1
+    record = response.outputs[0]
+    assert record["output_type"] == "buy_candidate"
+    assert record["evidence"]["bar_count"] == 4
+    assert record["evidence"]["data_quality_status"] == "ok"
+    assert record["requires_risk_gate"] is True
+    assert record["does_not_enable_execution"] is True
+
+
 def test_backtest_signal_preview_route_rejects_unknown_params_before_running(
     monkeypatch,
 ) -> None:
