@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Web Backtest now renders a localized single-instrument loop
+  readiness card for the current result. The card summarizes dataset snapshot,
+  strategy registry, after-cost backtest, signal preview, risk gate,
+  paper/shadow simulation, and attribution-boundary evidence as user-readable
+  review states without exposing internal reason codes. It is display and
+  review guidance only; it does not mutate ledger entries, create orders or
+  fills, submit broker orders, claim strategy P/L, or change automatic-trading
+  defaults.
 * 2026-06-25: Added a capability-based acceptance audit manifest and CLI
   registry entry for the data-trusted single-instrument strategy loop. The
   audit covers dataset snapshot and strategy registry evidence, one-symbol

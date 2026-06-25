@@ -39,6 +39,11 @@ Key Features:
 - **Account Truth gate linkage** — Decision and Strategy Lab promotion review
   surfaces show Account Truth gate status, score, unresolved-difference
   context, and evidence availability before manual review or research promotion
+- **Single-instrument loop summary** — Web Backtest summarizes dataset
+  snapshot, strategy registry, after-cost backtest, today's signal, risk gate,
+  paper/shadow simulation, and attribution boundary as a readable review card;
+  it is research evidence only and does not create orders, fills, ledger
+  entries, or broker submissions
 - **Docker One-Click Deploy** — Multi-stage build, all-in-one frontend + backend image
 
 ## Architecture

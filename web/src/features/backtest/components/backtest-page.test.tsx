@@ -1953,10 +1953,70 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   );
   expect(await screen.findByText('No order or ledger write')).toBeTruthy();
   expect(
+    await screen.findByText('Single-instrument loop readiness'),
+  ).toBeTruthy();
+  expect(await screen.findByText('Ready for manual review')).toBeTruthy();
+  expect(await screen.findByText('Dataset snapshot ready')).toBeTruthy();
+  expect(await screen.findByText('Strategy registry ready')).toBeTruthy();
+  expect(await screen.findByText('After-cost backtest ready')).toBeTruthy();
+  expect(await screen.findByText('Signal preview ready')).toBeTruthy();
+  expect(await screen.findByText('Risk gate passed')).toBeTruthy();
+  expect(await screen.findByText('Paper/shadow simulation ready')).toBeTruthy();
+  expect(await screen.findByText('Attribution boundary ready')).toBeTruthy();
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review dataset snapshot evidence',
+      })
+    ).getAttribute('href'),
+  ).toBe('#backtest-dataset-evidence');
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review strategy registry evidence',
+      })
+    ).getAttribute('href'),
+  ).toBe('#backtest-strategy-catalog');
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review after-cost backtest evidence',
+      })
+    ).getAttribute('href'),
+  ).toBe('#backtest-after-cost-evidence');
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review signal preview evidence',
+      })
+    ).getAttribute('href'),
+  ).toBe('#backtest-signal-review-evidence');
+  expect(
+    (
+      await screen.findByRole('link', { name: 'Review risk gate evidence' })
+    ).getAttribute('href'),
+  ).toBe('#backtest-signal-review-evidence');
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review paper/shadow simulation evidence',
+      })
+    ).getAttribute('href'),
+  ).toBe('#backtest-signal-review-evidence');
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review attribution boundary evidence',
+      })
+    ).getAttribute('href'),
+  ).toBe('#backtest-signal-review-evidence');
+  expect(
     await screen.findByText(
       'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
     ),
   ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('ready_for_review_linkage');
+  expect(document.body.textContent).not.toContain('paper_shadow_order');
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(

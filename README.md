@@ -68,6 +68,10 @@ public demos and development.
   parameter controls with readable labels, exposes strategy metadata and
   validation requirements, and can run a single-symbol research backtest from
   the browser
+- Web Backtest now summarizes the single-instrument research loop from dataset
+  snapshot through signal preview, risk gate, paper/shadow simulation, and
+  attribution boundary in user-readable copy without exposing internal reason
+  codes or enabling execution
 - Multi-asset: A-shares / ETF / Gold / Bond
 - Target-weight signals — strategy outputs 0~1, Portfolio handles share counts
 - T+1 freeze/thaw built into Position
