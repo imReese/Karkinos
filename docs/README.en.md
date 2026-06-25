@@ -495,7 +495,7 @@ fill.
 | GET | `/api/backtest/strategies` | List strategies with typed parameter schemas and benchmark / OOS / after-cost requirements |
 | GET | `/api/backtest/strategy-validation` | Get the benchmark strategy after-cost / OOS evidence matrix |
 | GET | `/api/backtest/strategy-promotion-readiness` | Get promotion-readiness gates for benchmark strategies |
-| POST | `/api/backtest/signal-preview` | Preview strategy outputs from explicit single-symbol bars as research-only audit records without writing signals, orders, fills, or ledger entries |
+| POST | `/api/backtest/signal-preview` | Preview strategy outputs from explicit single-symbol bars or a server-side single-symbol date range as research-only audit records without writing signals, orders, fills, or ledger entries |
 | POST | `/api/backtest/run` | Run backtest (in thread pool), return result |
 | POST | `/api/backtest/sweep` | Run bounded parameter grids, persist each tested configuration, and return deterministic rankings with multiple-testing warnings |
 | POST | `/api/backtest/compare` | Compare multiple strategies or explicit strategy parameter sets on one frozen dataset snapshot |
@@ -513,8 +513,9 @@ evidence for research comparison, not a guarantee of market-data completeness.
 The Web Backtest report surfaces the same snapshot as a data-audit panel for
 both freshly run results and saved report history.
 `POST /api/backtest/signal-preview` uses the same strategy registry and
-parameter schema to convert explicit single-symbol bars into research-only
-strategy-runtime audit records. The response marks
+parameter schema to convert explicit single-symbol bars, or backend-loaded
+data for a single symbol and date range, into research-only strategy-runtime
+audit records. The response marks
 `does_not_enable_execution=true`, includes dataset snapshot id and data-quality
 status, and states the downstream risk, account-truth, paper/shadow, and manual
 review gates required for candidate actions. It does not write to `signals`,

@@ -867,6 +867,48 @@ export const copy = {
         currentTitle: 'Run output',
         emptyCurrent:
           'Run a backtest to inspect the current result. Saved reports remain available below.',
+        signalPreviewKicker: 'Strategy signal',
+        signalPreviewTitle: 'Strategy signal preview',
+        signalPreviewDetail:
+          'Uses the selected strategy and the same server-side market-data path to preview the latest research signal for this single-symbol run.',
+        signalPreviewResearchOnly: 'Research only',
+        signalPreviewSkipped:
+          'Signal preview is available after running a single-symbol backtest.',
+        signalPreviewLoading: 'Loading strategy signal preview.',
+        signalPreviewUnavailable:
+          'Strategy signal preview is unavailable; the backtest result remains research evidence.',
+        signalPreviewPending:
+          'Run a single-symbol backtest to preview the latest strategy signal.',
+        signalPreviewAction: 'Action',
+        signalPreviewActions: {
+          buy: 'Buy candidate',
+          sell: 'Sell candidate',
+          rebalance: 'Rebalance candidate',
+          no_action: 'No action',
+        },
+        signalPreviewReason: 'Why',
+        signalPreviewReasons: {
+          buy: 'Strategy generated a buy candidate from the selected backtest data.',
+          sell: 'Strategy generated a sell candidate from the selected backtest data.',
+          rebalance:
+            'Strategy generated a rebalance candidate from the selected backtest data.',
+          no_action:
+            'Strategy did not generate a candidate action from the selected backtest data.',
+        },
+        signalPreviewDataQualityLabel: 'Data quality',
+        signalPreviewDataQuality: (status: string) => `Data quality: ${status}`,
+        signalPreviewBars: 'Bars',
+        signalPreviewBarCount: (count: number) => `${count} bars`,
+        signalPreviewReferencePriceLabel: 'Reference price',
+        signalPreviewReferencePrice: (price: string) =>
+          `Reference price ${price}`,
+        signalPreviewDataset: 'Dataset snapshot',
+        signalPreviewGateRequired:
+          'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
+        signalPreviewNoGateRequired:
+          'No candidate action was generated; no downstream trade gate is required.',
+        signalPreviewExecutionBoundary:
+          'This preview does not create signals, action tasks, orders, fills, ledger entries, or broker submissions.',
         totalReturn: 'Total return',
         maxDrawdown: 'Max drawdown',
         totalCost: 'Total cost',
@@ -2540,6 +2582,42 @@ export const copy = {
         currentKicker: '当前运行',
         currentTitle: '运行结果',
         emptyCurrent: '运行一次回测后可查看当前结果；已保存报告仍在下方可选。',
+        signalPreviewKicker: '策略信号',
+        signalPreviewTitle: '策略信号预览',
+        signalPreviewDetail:
+          '使用当前策略和同一条服务端行情数据路径，为本次单标的回测预览最新研究信号。',
+        signalPreviewResearchOnly: '仅研究',
+        signalPreviewSkipped: '运行单标的回测后可预览策略信号。',
+        signalPreviewLoading: '正在加载策略信号预览。',
+        signalPreviewUnavailable:
+          '策略信号预览暂不可用；回测结果仍可作为研究证据查看。',
+        signalPreviewPending: '运行单标的回测后可预览最新策略信号。',
+        signalPreviewAction: '候选动作',
+        signalPreviewActions: {
+          buy: '买入候选',
+          sell: '卖出候选',
+          rebalance: '再平衡候选',
+          no_action: '不操作',
+        },
+        signalPreviewReason: '原因',
+        signalPreviewReasons: {
+          buy: '策略基于本次回测数据生成了买入候选。',
+          sell: '策略基于本次回测数据生成了卖出候选。',
+          rebalance: '策略基于本次回测数据生成了再平衡候选。',
+          no_action: '策略基于本次回测数据没有生成候选动作。',
+        },
+        signalPreviewDataQualityLabel: '数据质量',
+        signalPreviewDataQuality: (status: string) => `数据质量：${status}`,
+        signalPreviewBars: 'K 线数量',
+        signalPreviewBarCount: (count: number) => `${count} 根`,
+        signalPreviewReferencePriceLabel: '参考价格',
+        signalPreviewReferencePrice: (price: string) => `参考价格 ${price}`,
+        signalPreviewDataset: '数据快照',
+        signalPreviewGateRequired:
+          '需要先经过风控、账户事实、paper/shadow 和人工复核，才能进入任何类 live 流程。',
+        signalPreviewNoGateRequired: '未生成候选动作；不需要进入交易闸门。',
+        signalPreviewExecutionBoundary:
+          '该预览不会创建信号、动作任务、订单、成交、账本记录或券商提交。',
         totalReturn: '总收益率',
         maxDrawdown: '最大回撤',
         totalCost: '总成本',

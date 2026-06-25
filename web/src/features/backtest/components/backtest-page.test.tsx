@@ -398,6 +398,54 @@ const compareResponse = {
   ],
 };
 
+const signalPreviewResponse = {
+  schema_version: 'karkinos.strategy_signal_preview.v1',
+  strategy_id: 'dual_ma',
+  symbol: '600002',
+  params: { short_period: 3, long_period: 9 },
+  run_id: 'preview-run-001',
+  dataset_snapshot_id: 'sha256:preview-dataset',
+  record_count: 1,
+  does_not_enable_execution: true,
+  limitations: [
+    'Strategy signal preview is research evidence only.',
+    'Candidate actions require data, account-truth, risk, paper/shadow, and manual-review gates before any live-like workflow.',
+  ],
+  outputs: [
+    {
+      schema_version: 'karkinos.strategy_runtime_output.v1',
+      output_id: 'preview-run-001:0001:buy_candidate',
+      strategy_id: 'dual_ma',
+      run_id: 'preview-run-001',
+      hook: 'on_bar',
+      output_type: 'buy_candidate',
+      record_kind: 'candidate_action',
+      action: 'buy',
+      reason: 'Strategy emitted a buy candidate from the supplied market bars.',
+      source_event_id: '600002:2026-06-18T15:00:00+08:00',
+      symbol: '600002',
+      confidence: null,
+      target_weight: '1.0',
+      quantity: null,
+      price: '29.17',
+      evidence: {
+        bar_count: 120,
+        dataset_snapshot_id: 'sha256:preview-dataset',
+        data_quality_status: 'ok',
+        research_only: true,
+        does_not_enable_execution: true,
+        signal_timestamp: '2026-06-18T15:00:00+08:00',
+        reference_price: '29.17',
+      },
+      requires_risk_gate: true,
+      requires_account_truth_gate: true,
+      requires_paper_shadow_review: true,
+      requires_manual_review: true,
+      does_not_enable_execution: true,
+    },
+  ],
+};
+
 const strategyCatalog = [
   {
     strategy_id: 'dual_ma',
@@ -701,6 +749,7 @@ function installBacktestFetchMock({
     ],
   },
   strategyPromotionReadinessResponse = strategyPromotionReadiness,
+  signalPreview = signalPreviewResponse,
   savedBacktestReport = savedReport,
   portfolio = portfolioSnapshot,
 }: {
@@ -713,6 +762,7 @@ function installBacktestFetchMock({
   accountStrategyAttribution?: unknown;
   accountStrategyContribution?: unknown;
   strategyPromotionReadinessResponse?: unknown;
+  signalPreview?: unknown;
   savedBacktestReport?: unknown;
   portfolio?: unknown;
 } = {}) {
@@ -769,6 +819,9 @@ function installBacktestFetchMock({
         return runFails
           ? jsonResponse({ detail: 'backtest unavailable' }, { status: 503 })
           : jsonResponse(runReport);
+      }
+      if (url.includes('/api/backtest/signal-preview')) {
+        return jsonResponse(signalPreview);
       }
       if (url.includes('/api/backtest/sweep')) {
         return sweepFails
@@ -1473,6 +1526,64 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
     ),
   ).toBeTruthy();
   expect(screen.queryByText('NaN')).toBeNull();
+});
+
+test('previews research-only strategy signal after a single-symbol backtest', async () => {
+  const { fetchMock } = renderBacktestPage({ results: [] });
+
+  await screen.findByText('Strategy replay');
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '600002' },
+  });
+  fireEvent.change(
+    await screen.findByLabelText('Short moving-average window'),
+    {
+      target: { value: '3' },
+    },
+  );
+  fireEvent.change(await screen.findByLabelText('Long moving-average window'), {
+    target: { value: '9' },
+  });
+
+  const runButton = screen.getByRole('button', { name: 'Run backtest' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+  expect(await screen.findByText('Strategy signal preview')).toBeTruthy();
+  expect(await screen.findByText('Buy candidate')).toBeTruthy();
+  expect((await screen.findAllByText('Research only')).length).toBeGreaterThan(
+    0,
+  );
+  expect(await screen.findByText('sha256:preview-dataset')).toBeTruthy();
+  expect(await screen.findByText('Data quality: OK')).toBeTruthy();
+  expect(await screen.findByText('Reference price CN¥29.17')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
+    ),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('buy_candidate');
+  expect(document.body.textContent).not.toContain('requires_risk_gate');
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/backtest/signal-preview',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  const previewCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/backtest/signal-preview'),
+  );
+  const payload = JSON.parse(String(previewCall?.[1]?.body));
+  expect(payload).toMatchObject({
+    strategy: 'dual_ma',
+    symbol: '600002',
+    asset_class: 'stock',
+    start_date: '2025-01-02',
+    end_date: expect.any(String),
+    params: { short_period: 3, long_period: 9 },
+  });
+  expect(payload.bars).toBeUndefined();
+  expect(payload.dataset_snapshot).toBeUndefined();
 });
 
 test('renders dataset snapshot metadata for saved reports', async () => {
