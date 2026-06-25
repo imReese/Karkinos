@@ -422,6 +422,10 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'Local valuation is missing for linked evidence.',
     'Order evidence is present, but fills are blocked.':
       'Order evidence is present, but fills are blocked.',
+    'Preview evidence is not production attribution evidence.':
+      'Preview evidence is not production attribution evidence.',
+    'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.':
+      'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.',
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.':
       'This assignment only sets research context; contribution is shown only after signals, reviews, orders, and fills are linked.',
     'Requires paper/shadow review before promotion.':
@@ -511,6 +515,10 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '已归属证据缺少本地估值。',
     'Order evidence is present, but fills are blocked.':
       '已有订单证据，但成交证据仍被阻断。',
+    'Preview evidence is not production attribution evidence.':
+      '当前只是预览证据，还不是可用于正式归因的生产证据。',
+    'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.':
+      '只有信号、复核、订单和成交事实全部关联后，才允许计算策略收益。',
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.':
       '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
     'Requires paper/shadow review before promotion.':

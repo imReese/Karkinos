@@ -944,6 +944,27 @@ export const copy = {
         signalPreviewPaperShadowFee: 'Estimated cost',
         signalPreviewPaperShadowEstimatedFee: (fee: string) =>
           `Estimated fee ${fee}`,
+        signalPreviewAttributionTitle: 'Attribution evidence preview',
+        signalPreviewAttributionLoading: 'Checking attribution evidence',
+        signalPreviewAttributionUnavailable:
+          'Attribution preview is unavailable; no P/L was attributed.',
+        signalPreviewAttributionReady: 'Ready for review linkage',
+        signalPreviewAttributionIncomplete: 'Evidence still incomplete',
+        signalPreviewAttributionNoPnl: 'Preview only, P/L not attributed',
+        signalPreviewAttributionEvidence: 'Evidence boundary',
+        signalPreviewAttributionEvidenceSummary: (
+          previewEvidence: number,
+          productionFacts: number,
+        ) =>
+          `Preview evidence ${previewEvidence} / Production facts ${productionFacts}`,
+        signalPreviewAttributionBoundary: 'Attribution boundary',
+        signalPreviewAttributionPreviewOnly:
+          'Signal, review, order, and fill facts must be linked before strategy P/L attribution.',
+        signalPreviewReviewLinkageTitle: 'Review linkage candidate',
+        signalPreviewReviewLinkageManual: 'Manual review required',
+        signalPreviewReviewLinkageNoWrite: 'No order or ledger write',
+        signalPreviewReviewLinkageDetail:
+          'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
         signalPreviewGateLabels: {
           dataReady: 'Data ready',
           dataNeedsReview: 'Data needs review',
@@ -2704,6 +2725,26 @@ export const copy = {
         signalPreviewPaperShadowFee: '预估成本',
         signalPreviewPaperShadowEstimatedFee: (fee: string) =>
           `预估费用 ${fee}`,
+        signalPreviewAttributionTitle: '归因证据预览',
+        signalPreviewAttributionLoading: '正在检查归因证据',
+        signalPreviewAttributionUnavailable:
+          '归因预览暂不可用；未归因任何收益。',
+        signalPreviewAttributionReady: '可进入复核关联',
+        signalPreviewAttributionIncomplete: '证据仍不完整',
+        signalPreviewAttributionNoPnl: '仅预览，不归因收益',
+        signalPreviewAttributionEvidence: '证据边界',
+        signalPreviewAttributionEvidenceSummary: (
+          previewEvidence: number,
+          productionFacts: number,
+        ) => `预览证据 ${previewEvidence} / 真实事实 ${productionFacts}`,
+        signalPreviewAttributionBoundary: '归因边界',
+        signalPreviewAttributionPreviewOnly:
+          '只有信号、复核、订单和成交事实全部关联后，才允许归因策略收益。',
+        signalPreviewReviewLinkageTitle: '复核关联候选',
+        signalPreviewReviewLinkageManual: '需要人工复核',
+        signalPreviewReviewLinkageNoWrite: '不写订单或账本',
+        signalPreviewReviewLinkageDetail:
+          '信号、风控和 paper/shadow 证据可以人工复核并关联。',
         signalPreviewGateLabels: {
           dataReady: '数据可用',
           dataNeedsReview: '数据需复核',

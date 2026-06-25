@@ -239,6 +239,11 @@ mutate ledger entries.
 candidate as paper/shadow evidence. It returns paper order/fill evidence,
 after-cost fee breakdown, and a shadow-review summary without writing order
 facts, fills, ledger entries, or broker submissions.
+`POST /api/backtest/attribution-preview` summarizes the same single-symbol
+preview chain into an attribution evidence boundary. It reports preview
+evidence versus production order/fill facts, returns a read-only manual review
+linkage candidate, and keeps strategy P/L unavailable until real signal, review,
+order, and fill evidence are linked.
 
 For CI, release review, or manual acceptance checks, export the current
 acceptance audit manifests as JSON:

@@ -28,6 +28,7 @@ import {
   useAccountStrategyAssignmentQuery,
   useAccountStrategyAttributionQuery,
   useAccountStrategyContributionQuery,
+  useBacktestAttributionPreviewMutation,
   useUpdateAccountStrategyAssignmentMutation,
   useRunBacktestMutation,
   useBacktestPaperShadowPreviewMutation,
@@ -39,6 +40,7 @@ import {
   type AccountStrategyAssignment,
   type AccountStrategyAttributionSummary,
   type AccountStrategyContributionReport,
+  type BacktestAttributionPreviewResponse,
   type BacktestReport,
   type BacktestPaperShadowPreviewRequest,
   type BacktestPaperShadowPreviewResponse,
@@ -314,6 +316,7 @@ export function BacktestPage() {
   const signalPreview = useStrategySignalPreviewMutation();
   const riskPreview = useBacktestRiskPreviewMutation();
   const paperShadowPreview = useBacktestPaperShadowPreviewMutation();
+  const attributionPreview = useBacktestAttributionPreviewMutation();
   const strategies = useBacktestStrategiesQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
@@ -398,6 +401,7 @@ export function BacktestPage() {
       signalPreview.reset();
       riskPreview.reset();
       paperShadowPreview.reset();
+      attributionPreview.reset();
       const previewAsset = payload.assets?.[0];
       if (previewAsset) {
         signalPreview.mutate({
@@ -704,13 +708,37 @@ export function BacktestPage() {
                 <StrategySignalPreviewPanel
                   error={signalPreview.isError}
                   loading={signalPreview.isPending}
-                  onPaperShadowPreview={(payload) =>
-                    paperShadowPreview.mutate(payload)
-                  }
+                  onPaperShadowPreview={(payload) => {
+                    attributionPreview.reset();
+                    paperShadowPreview.mutate(payload, {
+                      onSuccess: (result) => {
+                        attributionPreview.mutate({
+                          strategy: payload.strategy,
+                          symbol: payload.symbol,
+                          asset_class: payload.asset_class,
+                          signal_id: payload.signal_id ?? null,
+                          dataset_snapshot_id:
+                            payload.dataset_snapshot_id ?? null,
+                          risk_preview_passed: payload.risk_preview_passed,
+                          risk_reasons: payload.risk_reasons,
+                          paper_shadow_status: result.status,
+                          paper_shadow_order: result.order,
+                          paper_shadow_fill: result.fill as Record<
+                            string,
+                            unknown
+                          > | null,
+                        });
+                      },
+                    });
+                  }}
                   onRiskPreview={(payload) => {
                     paperShadowPreview.reset();
+                    attributionPreview.reset();
                     riskPreview.mutate(payload);
                   }}
+                  attributionPreviewError={attributionPreview.isError}
+                  attributionPreviewLoading={attributionPreview.isPending}
+                  attributionPreviewResult={attributionPreview.data ?? null}
                   paperShadowPreviewError={paperShadowPreview.isError}
                   paperShadowPreviewLoading={paperShadowPreview.isPending}
                   paperShadowPreviewResult={paperShadowPreview.data ?? null}
@@ -1220,6 +1248,9 @@ function StrategySignalPreviewPanel({
   paperShadowPreviewResult,
   paperShadowPreviewLoading,
   paperShadowPreviewError,
+  attributionPreviewResult,
+  attributionPreviewLoading,
+  attributionPreviewError,
 }: {
   preview: StrategySignalPreviewResponse | null;
   loading: boolean;
@@ -1233,6 +1264,9 @@ function StrategySignalPreviewPanel({
   paperShadowPreviewResult: BacktestPaperShadowPreviewResponse | null;
   paperShadowPreviewLoading: boolean;
   paperShadowPreviewError: boolean;
+  attributionPreviewResult: BacktestAttributionPreviewResponse | null;
+  attributionPreviewLoading: boolean;
+  attributionPreviewError: boolean;
 }) {
   const labels = useCopy().backtest.page;
   const { locale } = usePreferences();
@@ -1535,6 +1569,19 @@ function StrategySignalPreviewPanel({
                       result={paperShadowPreviewResult}
                     />
                   ) : null}
+                  {attributionPreviewLoading ? (
+                    <p className="app-muted mt-3 text-sm">
+                      {labels.signalPreviewAttributionLoading}
+                    </p>
+                  ) : attributionPreviewError ? (
+                    <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+                      {labels.signalPreviewAttributionUnavailable}
+                    </p>
+                  ) : attributionPreviewResult ? (
+                    <AttributionPreviewResult
+                      result={attributionPreviewResult}
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -1703,6 +1750,98 @@ function PaperShadowPreviewResult({
           {labels.signalPreviewPaperShadowBlocked}
         </p>
       )}
+    </div>
+  );
+}
+
+function AttributionPreviewResult({
+  result,
+}: {
+  result: BacktestAttributionPreviewResponse;
+}) {
+  const labels = useCopy().backtest.page;
+  const { locale } = usePreferences();
+  const previewEvidence =
+    result.evidence_counts.signal_preview +
+    result.evidence_counts.risk_preview +
+    result.evidence_counts.paper_shadow_order +
+    result.evidence_counts.paper_shadow_fill;
+  const productionFacts =
+    result.evidence_counts.production_order +
+    result.evidence_counts.production_fill;
+  const isReady = result.status === 'ready_for_review_linkage';
+
+  return (
+    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-3">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="app-muted text-xs font-semibold">
+            {labels.signalPreviewAttributionTitle}
+          </div>
+          <div className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {isReady
+              ? labels.signalPreviewAttributionReady
+              : labels.signalPreviewAttributionIncomplete}
+          </div>
+        </div>
+        {!result.can_attribute_pnl ? (
+          <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
+            {labels.signalPreviewAttributionNoPnl}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <MetadataItem
+          label={labels.signalPreviewAttributionEvidence}
+          value={labels.signalPreviewAttributionEvidenceSummary(
+            previewEvidence,
+            productionFacts,
+          )}
+        />
+        <MetadataItem
+          label={labels.signalPreviewAttributionBoundary}
+          value={labels.signalPreviewAttributionPreviewOnly}
+        />
+      </div>
+      {result.review_linkage_candidate ? (
+        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-4 py-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-[var(--app-text)]">
+                {labels.signalPreviewReviewLinkageTitle}
+              </div>
+              <p className="app-muted mt-1 text-sm leading-5">
+                {labels.signalPreviewReviewLinkageDetail}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {result.review_linkage_candidate.manual_confirmation_required ? (
+                <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                  {labels.signalPreviewReviewLinkageManual}
+                </span>
+              ) : null}
+              {result.review_linkage_candidate.does_not_create_order &&
+              result.review_linkage_candidate.does_not_mutate_ledger ? (
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]">
+                  {labels.signalPreviewReviewLinkageNoWrite}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {result.limitations.length ? (
+        <div className="mt-3 grid gap-2">
+          {result.limitations.map((limitation) => (
+            <p
+              className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-sm text-[var(--app-text)]"
+              key={limitation}
+            >
+              {formatPublicNote(limitation, locale)}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
