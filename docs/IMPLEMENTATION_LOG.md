@@ -6,6 +6,26 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-25: Web Backtest single-instrument loop readiness now includes a
+  localized next-review-step guide. After a run produces signal evidence, the
+  card tells the user whether to inspect after-cost evidence, wait for signal
+  preview, run risk preview, run paper/shadow simulation, or review the
+  attribution boundary, without exposing internal reason codes or triggering
+  broker execution.
+* 2026-06-25: Web Backtest now shows a localized Decision handoff context
+  panel when opened from a candidate action with `symbol`, `assetClass`, or
+  `strategy` query parameters. The panel summarizes the carried instrument,
+  asset class, and strategy and explicitly marks the flow as research-only so
+  users can continue from daily candidate review into reproducible after-cost
+  research without mistaking it for broker execution.
+* 2026-06-25: Decision candidate Backtest evidence links now carry
+  single-instrument context through `symbol`, `assetClass`, and `strategy`
+  query parameters, and the Web Backtest page reads those values as initial
+  form defaults. This lets a daily candidate hand off to a reproducible
+  after-cost research run for the same instrument and strategy without manual
+  re-entry. It is UI/default-state plumbing only; it does not create signals,
+  orders, fills, ledger entries, broker submissions, or change
+  automatic-trading defaults.
 * 2026-06-25: Decision candidate cards now provide localized handoff links
   from each candidate to Backtest evidence, the single-instrument holding
   detail page, and Trading approvals when manual confirmation is ready. This

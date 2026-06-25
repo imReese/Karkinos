@@ -374,6 +374,24 @@ function decisionWorkflowTarget(
   }
 }
 
+function decisionCandidateBacktestHref(candidate: DecisionCandidate) {
+  const params = new URLSearchParams();
+  const symbol = candidate.symbol.trim();
+  const assetClass = candidate.asset_class?.trim() ?? '';
+  const strategyId = candidate.evidence.strategy.strategy_id?.trim() ?? '';
+  if (symbol) {
+    params.set('symbol', symbol);
+  }
+  if (assetClass) {
+    params.set('assetClass', assetClass);
+  }
+  if (strategyId) {
+    params.set('strategy', strategyId);
+  }
+  const query = params.toString();
+  return query ? `/backtest?${query}` : '/backtest';
+}
+
 export function DecisionCockpitPage() {
   const copy = useCopy();
   const labels = copy.decision;
@@ -1143,6 +1161,7 @@ function DecisionCandidateCard({
   );
   const strategyId = candidate.evidence.strategy.strategy_id;
   const strategyAuditId = strategyAuditIdFromDisplay(strategyId, strategyNames);
+  const backtestHref = decisionCandidateBacktestHref(candidate);
   const holdingDetailHref = `/portfolio/${encodeURIComponent(candidate.symbol)}`;
   return (
     <article
@@ -1166,7 +1185,7 @@ function DecisionCandidateCard({
         <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
           <a
             className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
-            href="/backtest"
+            href={backtestHref}
             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
           >
             {labels.openBacktestEvidence}
