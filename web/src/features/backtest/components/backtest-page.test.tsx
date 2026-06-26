@@ -2131,6 +2131,50 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
   expect(paperShadowPayload.order_type).toBeUndefined();
 });
 
+test('uses Chinese simulation-review wording instead of paper-shadow jargon', async () => {
+  renderBacktestPage({
+    results: [],
+    riskPreview: passedRiskPreviewResponse,
+    locale: 'zh',
+  });
+
+  await screen.findByText('策略回放');
+  fireEvent.change(await screen.findByLabelText('标的代码'), {
+    target: { value: '600002' },
+  });
+  fireEvent.change(await screen.findByLabelText('短期均线周期'), {
+    target: { value: '3' },
+  });
+  fireEvent.change(await screen.findByLabelText('长期均线周期'), {
+    target: { value: '9' },
+  });
+  fireEvent.submit(
+    screen
+      .getByRole('button', { name: '运行回测' })
+      .closest('form') as HTMLFormElement,
+  );
+
+  fireEvent.change(await screen.findByLabelText('风控预检数量'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '预检风控' }));
+  expect(await screen.findByText('风控通过')).toBeTruthy();
+  expect(await screen.findByText('模拟复核下一步')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      '风控预检已通过。先运行模拟复核，再进入任何人工步骤。',
+    ),
+  ).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: '预览模拟复核' }));
+  expect(await screen.findByText('模拟复核预览')).toBeTruthy();
+  expect(await screen.findByText('模拟成交')).toBeTruthy();
+  expect(await screen.findByText('模拟复核订单')).toBeTruthy();
+  expect(await screen.findByText('模拟复核成交')).toBeTruthy();
+  expect(await screen.findByText('模拟复核已就绪')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('paper/shadow');
+});
+
 test('summarizes attribution preview evidence without claiming strategy pnl', async () => {
   const { fetchMock } = renderBacktestPage({
     results: [],
