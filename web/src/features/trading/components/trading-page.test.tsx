@@ -330,6 +330,31 @@ test('runs daily simulation review from the execution audit panel', async () => 
   ).toBeTruthy();
 });
 
+test('uses consistent Chinese simulation-review wording in execution audit', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderTradingPage({ locale: 'zh' });
+
+  expect(await screen.findByText('执行审计')).toBeTruthy();
+  expect(await screen.findByText('订单事实、成交事实与模拟复核')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      '查看归一化订单/成交证据，并手动触发模拟复核；不会提交券商订单。',
+    ),
+  ).toBeTruthy();
+
+  await user.click(screen.getByRole('button', { name: '运行当日模拟复核' }));
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/trading/shadow-runs/daily',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+  expect(await screen.findByText(/模拟复核准备 1 笔订单/)).toBeTruthy();
+  expect(document.body.textContent).not.toContain('shadow');
+  expect(document.body.textContent).not.toContain('模拟复盘');
+});
+
 test('uses execution fact display names when the instrument is not in current holdings', async () => {
   renderTradingPage({
     locale: 'zh',

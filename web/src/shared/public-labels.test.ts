@@ -136,13 +136,13 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
 
   expect(
     formatPublicNote('Requires paper/shadow review before promotion.', 'zh'),
-  ).toBe('进入人工复核前，需要完成模拟盘复盘。');
+  ).toBe('进入人工复核前，需要完成模拟复核。');
   expect(
     formatPublicNote(
       'Candidate actions should be compared against paper/shadow evidence.',
       'zh',
     ),
-  ).toBe('候选动作需要先和模拟盘证据对比复核。');
+  ).toBe('候选动作需要先和模拟复核证据对比。');
   expect(
     formatPublicNote(
       'Candidate actions should be compared against paper/shadow evidence.',
@@ -161,12 +161,15 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
       'zh',
     ),
   ).toBe('只有信号、复核、订单和成交事实全部关联后，才允许计算策略收益。');
-  expect(formatPublicCode('paper_shadow_evidence', 'zh')).toBe(
-    '模拟盘复核证据',
-  );
+  expect(formatPublicCode('paper_shadow_evidence', 'zh')).toBe('模拟复核证据');
   expect(formatPublicCode('review_paper_shadow_evidence', 'zh')).toBe(
-    '复核模拟盘证据',
+    '查看模拟复核证据',
   );
+  expect(formatPublicCode('paper_shadow_review', 'zh')).toBe('模拟复核');
+  expect(formatPublicStatus('shadow_review', 'zh')).toBe('模拟复核');
+  expect(
+    formatPublicNote('Requires paper/shadow review before promotion.', 'zh'),
+  ).not.toContain('模拟复盘');
 });
 
 test('formats strategy review statuses without exposing backend promotion codes', () => {
@@ -174,7 +177,7 @@ test('formats strategy review statuses without exposing backend promotion codes'
     'Ready for simulation review',
   );
   expect(formatPublicStatus('promotable_for_paper_review', 'zh')).toBe(
-    '可进入模拟盘复核',
+    '可进入模拟复核',
   );
   expect(formatPublicStatus('not_promotable', 'en')).toBe(
     'Not ready for review',

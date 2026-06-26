@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-26: Shared Web public labels now use one Chinese term,
+  "simulation review" / `模拟复核`, for paper/shadow review evidence across
+  Backtest, Decision, and Trading surfaces. The shared formatter maps backend
+  `paper_shadow_*` codes and known paper/shadow notes to localized public copy,
+  and Backtest copy tests prevent the older mixed terms from reappearing. This
+  is UI wording only and keeps API paths, schema versions, ledger isolation,
+  broker submission, and manual-confirm defaults unchanged.
+* 2026-06-26: Web Trading Chinese execution-audit copy now uses the same
+  simulation-review wording as Backtest for the post-risk paper/shadow review
+  stage. The Trading page keeps the existing daily shadow-run API and ledger
+  isolation but no longer presents the Chinese UI as a separate "simulation
+  replay" concept. Deterministic Trading tests assert the localized title,
+  action button, result banner, and absence of `shadow` jargon in rendered
+  Chinese text.
 * 2026-06-26: Web Backtest Chinese copy now presents the paper/shadow preview
   step as localized simulation-review language in the single-instrument
   strategy loop. The UI describes the post-risk simulated review, simulated

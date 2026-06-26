@@ -2663,9 +2663,9 @@ export const copy = {
         statusCanceled: '已取消',
         rejectConfirm: '填写原因并拒绝',
         executionAudit: '执行审计',
-        executionAuditTitle: '订单事实、成交事实与模拟复盘',
+        executionAuditTitle: '订单事实、成交事实与模拟复核',
         executionAuditDetail:
-          '查看归一化订单/成交证据，并手动触发模拟复盘；不会提交券商订单。',
+          '查看归一化订单/成交证据，并手动触发模拟复核；不会提交券商订单。',
         auditLoading: '正在加载执行证据。',
         auditLoadFailed: '执行证据暂不可用。',
         orderFacts: '订单事实',
@@ -2673,10 +2673,10 @@ export const copy = {
         noOrderFacts: '当前还没有归一化订单事实。',
         noFills: '当前还没有成交事实。',
         commission: '手续费',
-        runShadowReview: '运行当日模拟复盘',
-        runningShadowReview: '模拟复盘中',
+        runShadowReview: '运行当日模拟复核',
+        runningShadowReview: '模拟复核中',
         shadowRunResult: (processed: number, reused: number) =>
-          `模拟复盘准备 ${processed} 笔订单，复用 ${reused} 笔。`,
+          `模拟复核准备 ${processed} 笔订单，复用 ${reused} 笔。`,
       },
       killSwitch: {
         kicker: '交易控制',
@@ -2836,8 +2836,8 @@ export const copy = {
           '账户策略绑定暂不可用；回测仍可作为研究证据运行。',
         accountStrategyStatus: {
           research_only: '仅研究',
-          paper_review: '模拟盘复核',
-          shadow_review: '模拟复盘',
+          paper_review: '模拟复核',
+          shadow_review: '模拟复核',
           manual_confirm: '人工确认',
           disabled: '已停用',
         },
@@ -3119,7 +3119,7 @@ export const copy = {
         evidenceGate: '研究门槛',
         evidenceGateTitle: '策略验证与复核状态',
         evidenceGateDetail:
-          '查看扣除成本后、样本外、风控、模拟盘复核与账户事实证据，判断策略是否具备进入人工复核或模拟盘复核流程的条件；不会自动上线或下单。',
+          '查看扣除成本后、样本外、风控、模拟复核与账户事实证据，判断策略是否具备进入人工复核流程的条件；不会自动上线或下单。',
         evidenceGateLoading: '正在加载策略证据门槛。',
         evidenceGateFailed: '策略证据门槛暂不可用。',
         validationMatrix: '验证覆盖',
