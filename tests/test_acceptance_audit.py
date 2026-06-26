@@ -320,7 +320,7 @@ def test_broker_fee_cost_basis_goal_completed_checkboxes_match_audit() -> None:
 def test_single_instrument_strategy_loop_acceptance_audit_has_evidence() -> None:
     audit = build_single_instrument_strategy_loop_acceptance_audit()
 
-    assert audit.required_count == 8
+    assert audit.required_count == 10
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -331,6 +331,8 @@ def test_single_instrument_strategy_loop_acceptance_audit_has_evidence() -> None
         "risk_gate_preview",
         "paper_shadow_preview",
         "attribution_preview_boundary",
+        "holding_level_attribution_review_readiness",
+        "decision_to_holding_attribution_handoff",
         "web_paper_shadow_attribution_boundary",
         "web_user_readable_loop_surface",
     }

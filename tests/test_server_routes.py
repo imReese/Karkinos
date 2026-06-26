@@ -84,7 +84,7 @@ def test_acceptance_audit_route_returns_single_instrument_loop_manifest():
     assert response["selected_audit"] == "single_instrument_strategy_loop"
     assert response["overall_is_complete"] is True
     assert audit["key"] == "single_instrument_strategy_loop"
-    assert audit["required_count"] == 8
+    assert audit["required_count"] == 10
     assert audit["completed_count"] == audit["required_count"]
     assert {criterion["key"] for criterion in audit["criteria"]} >= {
         "dataset_snapshot_and_strategy_registry",

@@ -2112,6 +2112,53 @@ def build_single_instrument_strategy_loop_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="holding_level_attribution_review_readiness",
+                checkbox_text=(
+                    "* [x] Portfolio holding detail exposes symbol-filtered "
+                    "attribution evidence, evidence-chain refs, and "
+                    "review-readiness prerequisites without claiming strategy P/L."
+                ),
+                evidence_paths=(
+                    "server/models.py",
+                    "server/routes/account_strategy.py",
+                    "tests/server/test_account_strategy_routes.py",
+                    "web/src/app/copy.ts",
+                    "web/src/features/account-strategy/api.ts",
+                    "web/src/features/backtest/components/backtest-page.tsx",
+                    "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.test.tsx",
+                    "web/src/shared/public-labels.ts",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/server/test_account_strategy_routes.py -k holding_strategy_attribution",
+                    "npm --prefix web test -- backtest-page -t 'summarizes attribution preview evidence without claiming strategy pnl'",
+                    "npm --prefix web test -- holding-detail-page -t 'holding attribution evidence|attribution review readiness'",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k single_instrument_strategy_loop",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="decision_to_holding_attribution_handoff",
+                checkbox_text=(
+                    "* [x] Decision candidate cards link directly to "
+                    "symbol-scoped holding attribution review without "
+                    "creating orders or mutating the ledger."
+                ),
+                evidence_paths=(
+                    "web/src/app/copy.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- decision-cockpit-page -t 'links decision candidates to holding attribution review'",
+                    "npm --prefix web test -- backtest-page -t 'summarizes attribution preview evidence without claiming strategy pnl'",
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k single_instrument_strategy_loop",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="web_paper_shadow_attribution_boundary",
                 checkbox_text=(
                     "* [x] Web Backtest explicitly explains the post-risk "

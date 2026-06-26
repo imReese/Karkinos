@@ -618,6 +618,7 @@ export const copy = {
       openTradingApprovals: 'Open Trading approvals',
       openBacktestEvidence: 'Open Backtest evidence',
       openHoldingDetail: 'Open holding detail',
+      openAttributionReview: 'Open attribution review',
       signalQueue: 'Signal action queue',
       signalQueueTitle: 'Signals, action tasks, and manual-order handoff',
       signalQueueDetail:
@@ -1047,6 +1048,7 @@ export const copy = {
         signalPreviewReviewLinkageNoWrite: 'No order or ledger write',
         signalPreviewReviewLinkageDetail:
           'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
+        signalPreviewReviewHoldingAttribution: 'Review holding attribution',
         signalPreviewGateLabels: {
           dataReady: 'Data ready',
           dataNeedsReview: 'Data needs review',
@@ -2559,6 +2561,7 @@ export const copy = {
       openTradingApprovals: '打开交易审批',
       openBacktestEvidence: '打开回测证据',
       openHoldingDetail: '打开持仓明细',
+      openAttributionReview: '打开归因复核',
       signalQueue: '信号动作队列',
       signalQueueTitle: '信号、动作任务与人工订单交接',
       signalQueueDetail:
@@ -2964,6 +2967,7 @@ export const copy = {
         signalPreviewReviewLinkageNoWrite: '不写订单或账本',
         signalPreviewReviewLinkageDetail:
           '信号、风控和 paper/shadow 证据可以人工复核并关联。',
+        signalPreviewReviewHoldingAttribution: '查看持仓归因复核',
         signalPreviewGateLabels: {
           dataReady: '数据可用',
           dataNeedsReview: '数据需复核',
