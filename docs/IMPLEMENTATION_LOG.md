@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-26: Decision candidate cards now include a localized, symbol-scoped
+  handoff to the holding attribution review section. This lets a daily
+  candidate continue into the same holding-level attribution boundary used by
+  Backtest paper/shadow evidence. It is navigation-only and does not create
+  orders, fills, ledger entries, broker submissions, or automatic real-money
+  trading.
+* 2026-06-26: Web Backtest attribution preview now links directly to the
+  matching holding's strategy-attribution review section after paper/shadow
+  evidence is generated. The link is localized, symbol-scoped, and anchored to
+  the holding attribution boundary so users can continue the single-instrument
+  loop without hunting through pages. This is navigation-only: it does not
+  create orders, fills, ledger entries, broker submissions, or automatic
+  real-money trading.
+* 2026-06-26: The `single_instrument_strategy_loop` acceptance audit now
+  includes holding-level attribution review readiness. The manifest points to
+  the read-only holding attribution API, localized evidence-chain display, and
+  deterministic backend/frontend tests that prove symbol-filtered evidence is
+  visible before any strategy P/L claim. This does not mutate ledger records,
+  submit broker orders, or enable automatic real-money trading.
 * 2026-06-25: Web strategy-contribution surfaces now include a stable
   localized explanation that only linked signal, review, order, and fill
   evidence is counted while manual trades and cash flows remain separate.
@@ -22,7 +41,7 @@ roadmap promises.
   real-money trading.
 * 2026-06-25: Web Backtest now surfaces the
   `single_instrument_strategy_loop` acceptance audit coverage directly inside
-  the single-instrument readiness card. Users can see the 8/8 verified
+  the single-instrument readiness card. Users can see the verified
   product-readiness criteria without reading CLI JSON, with explicit wording
   that the audit does not enable broker execution and is not investment advice.
 * 2026-06-25: The Data-Trusted Single-Instrument Strategy Loop acceptance

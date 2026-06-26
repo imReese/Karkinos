@@ -160,6 +160,12 @@ function currentBacktestSearchDefaults() {
   return readBacktestSearchDefaults(window.location.search);
 }
 
+function buildHoldingAttributionReviewHref(symbol: string) {
+  return `/portfolio/${encodeURIComponent(
+    symbol,
+  )}#holding-strategy-attribution-boundary`;
+}
+
 function isPositiveNumber(value: string) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0;
@@ -2316,6 +2322,14 @@ function AttributionPreviewResult({
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
+              <a
+                className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                href={buildHoldingAttributionReviewHref(
+                  result.review_linkage_candidate.symbol || result.symbol,
+                )}
+              >
+                {labels.signalPreviewReviewHoldingAttribution}
+              </a>
               {result.review_linkage_candidate.manual_confirmation_required ? (
                 <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
                   {labels.signalPreviewReviewLinkageManual}

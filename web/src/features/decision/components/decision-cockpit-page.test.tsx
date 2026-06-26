@@ -1117,6 +1117,21 @@ test('shows instrument names before symbols across decision candidates and signa
   expect(document.body.textContent).not.toContain('Increase 600519');
 });
 
+test('links decision candidates to holding attribution review', async () => {
+  renderDecisionCockpit();
+
+  const candidateCard = await screen.findByTestId(
+    'decision-candidate-card-600519',
+  );
+  const attributionLink = within(candidateCard).getByRole('link', {
+    name: 'Open attribution review: 贵州茅台 600519',
+  });
+
+  expect(attributionLink.getAttribute('href')).toBe(
+    '/portfolio/600519#holding-strategy-attribution-boundary',
+  );
+});
+
 test('keeps decision cockpit candidates accessible on narrow responsive layouts', async () => {
   renderDecisionCockpit();
 

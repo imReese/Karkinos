@@ -392,6 +392,12 @@ function decisionCandidateBacktestHref(candidate: DecisionCandidate) {
   return query ? `/backtest?${query}` : '/backtest';
 }
 
+function decisionCandidateHoldingAttributionHref(candidate: DecisionCandidate) {
+  return `/portfolio/${encodeURIComponent(
+    candidate.symbol,
+  )}#holding-strategy-attribution-boundary`;
+}
+
 export function DecisionCockpitPage() {
   const copy = useCopy();
   const labels = copy.decision;
@@ -1163,6 +1169,8 @@ function DecisionCandidateCard({
   const strategyAuditId = strategyAuditIdFromDisplay(strategyId, strategyNames);
   const backtestHref = decisionCandidateBacktestHref(candidate);
   const holdingDetailHref = `/portfolio/${encodeURIComponent(candidate.symbol)}`;
+  const holdingAttributionHref =
+    decisionCandidateHoldingAttributionHref(candidate);
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
@@ -1196,6 +1204,13 @@ function DecisionCandidateCard({
             aria-label={`${labels.openHoldingDetail}: ${instrumentLabel}`}
           >
             {labels.openHoldingDetail}
+          </a>
+          <a
+            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+            href={holdingAttributionHref}
+            aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
+          >
+            {labels.openAttributionReview}
           </a>
           {readyForManual ? (
             <a

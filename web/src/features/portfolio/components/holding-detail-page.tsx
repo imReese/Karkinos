@@ -814,6 +814,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
           <section
             data-testid="holding-strategy-attribution-boundary"
+            id="holding-strategy-attribution-boundary"
             className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
           >
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">

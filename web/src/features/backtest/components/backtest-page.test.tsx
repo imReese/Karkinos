@@ -658,8 +658,8 @@ const singleInstrumentAcceptanceAudit = {
     {
       key: 'single_instrument_strategy_loop',
       name: 'Single-Instrument Strategy Loop acceptance audit',
-      required_count: 8,
-      completed_count: 8,
+      required_count: 10,
+      completed_count: 10,
       is_complete: true,
       criteria: [
         {
@@ -2090,10 +2090,17 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(await screen.findByText('Paper/shadow simulation ready')).toBeTruthy();
   expect(await screen.findByText('Attribution boundary ready')).toBeTruthy();
   expect(await screen.findByText('Acceptance audit coverage')).toBeTruthy();
-  expect(await screen.findByText('8/8 criteria verified')).toBeTruthy();
+  expect(await screen.findByText('10/10 criteria verified')).toBeTruthy();
   expect(
     await screen.findByText('single_instrument_strategy_loop'),
   ).toBeTruthy();
+  expect(
+    (
+      await screen.findByRole('link', {
+        name: 'Review holding attribution',
+      })
+    ).getAttribute('href'),
+  ).toBe('/portfolio/600002#holding-strategy-attribution-boundary');
   await waitFor(() =>
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(

@@ -142,7 +142,7 @@ def test_acceptance_audit_cli_single_instrument_strategy_loop_filter_outputs_one
         "single_instrument_strategy_loop"
     ]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 8
+    assert audit["required_count"] == 10
     assert audit["completed_count"] == audit["required_count"]
     assert audit["criteria"]
 
