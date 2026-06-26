@@ -5,6 +5,7 @@ import {
   useAccountStrategyAssignmentQuery,
   useAccountStrategyAttributionQuery,
   useAccountStrategyContributionQuery,
+  useHoldingStrategyAttributionQuery,
 } from '../../account-strategy/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
@@ -48,6 +49,30 @@ type DetailMetric = {
   value: string;
   tone?: 'success' | 'danger' | 'warning';
 };
+
+type EvidenceRefType =
+  | 'signal'
+  | 'action'
+  | 'risk'
+  | 'review'
+  | 'order'
+  | 'fill'
+  | 'unknown';
+
+type EvidenceRefItem = {
+  kind: EvidenceRefType;
+  label: string;
+  auditRef: string;
+};
+
+const EVIDENCE_REF_TYPES = new Set<EvidenceRefType>([
+  'signal',
+  'action',
+  'risk',
+  'review',
+  'order',
+  'fill',
+]);
 
 function normalizeSymbol(symbol: string) {
   return symbol.trim().toLowerCase();
@@ -114,6 +139,72 @@ function buildBacktestHandoffHref(symbol: string, assetClass: string) {
   return `/backtest?${params.toString()}`;
 }
 
+function buildEvidenceRefItems(
+  refs: string[],
+  labels: Record<EvidenceRefType, string>,
+) {
+  return refs.map((ref): EvidenceRefItem => {
+    const [rawKind, ...auditParts] = ref.split(':');
+    const kind = EVIDENCE_REF_TYPES.has(rawKind as EvidenceRefType)
+      ? (rawKind as EvidenceRefType)
+      : 'unknown';
+    const auditRef = auditParts.join(':') || ref;
+    return {
+      kind,
+      label: labels[kind] ?? labels.unknown,
+      auditRef,
+    };
+  });
+}
+
+function buildAttributionReadinessItems(
+  report: {
+    signal_count: number;
+    review_count?: number;
+    risk_decision_count: number;
+    order_count: number;
+    fill_count: number;
+  },
+  labels: {
+    signalLinked: string;
+    signalMissing: string;
+    reviewLinked: string;
+    reviewMissing: string;
+    riskLinked: string;
+    riskMissing: string;
+    orderLinked: string;
+    orderMissing: string;
+    fillLinked: string;
+    fillMissing: string;
+  },
+) {
+  const reviewCount = report.review_count ?? report.signal_count;
+  return [
+    {
+      passed: report.signal_count > 0,
+      label:
+        report.signal_count > 0 ? labels.signalLinked : labels.signalMissing,
+    },
+    {
+      passed: reviewCount > 0,
+      label: reviewCount > 0 ? labels.reviewLinked : labels.reviewMissing,
+    },
+    {
+      passed: report.risk_decision_count > 0,
+      label:
+        report.risk_decision_count > 0 ? labels.riskLinked : labels.riskMissing,
+    },
+    {
+      passed: report.order_count > 0,
+      label: report.order_count > 0 ? labels.orderLinked : labels.orderMissing,
+    },
+    {
+      passed: report.fill_count > 0,
+      label: report.fill_count > 0 ? labels.fillLinked : labels.fillMissing,
+    },
+  ];
+}
+
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -130,6 +221,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
   const accountStrategyContribution = useAccountStrategyContributionQuery();
+  const holdingStrategyAttribution =
+    useHoldingStrategyAttributionQuery(decodedSymbol);
   const refreshQuote = useRefreshMarketQuotesMutation();
 
   const allPositions = positions.data ?? snapshot.data?.positions ?? [];
@@ -302,16 +395,56 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const strategyAssignment = accountStrategy.data ?? null;
   const strategyAttribution = accountStrategyAttribution.data ?? null;
   const strategyContribution = accountStrategyContribution.data ?? null;
-  const hasSymbolStrategyEvidence =
+  const holdingAttribution = holdingStrategyAttribution.data ?? null;
+  const hasHoldingStrategyEvidence =
+    holdingAttribution?.assignment_applies_to_symbol === true &&
+    (holdingAttribution?.fill_count ?? 0) > 0 &&
+    (holdingAttribution?.evidence_refs.length ?? 0) > 0;
+  const hasAggregateSymbolStrategyEvidence =
     strategyAssignment?.scope === 'symbol' &&
     normalizeSymbol(strategyAssignment.symbol ?? '') === normalizedSymbol &&
     (strategyAttribution?.fill_count ?? 0) > 0 &&
     (strategyContribution?.linked_fill_count ?? 0) > 0 &&
     (strategyContribution?.evidence_refs.length ?? 0) > 0;
+  const hasSymbolStrategyEvidence =
+    hasHoldingStrategyEvidence ||
+    (!holdingAttribution && hasAggregateSymbolStrategyEvidence);
+  const strategyEvidenceFillCount = hasHoldingStrategyEvidence
+    ? (holdingAttribution?.fill_count ?? 0)
+    : (strategyContribution?.linked_fill_count ?? 0);
+  const strategyEvidenceRefCount = hasHoldingStrategyEvidence
+    ? (holdingAttribution?.evidence_refs.length ?? 0)
+    : (strategyContribution?.evidence_refs.length ?? 0);
+  const strategyEvidenceItems = hasHoldingStrategyEvidence
+    ? buildEvidenceRefItems(
+        holdingAttribution?.evidence_refs ?? [],
+        labels.strategyAttributionEvidenceTypeLabels,
+      )
+    : [];
+  const attributionReadinessItems = holdingAttribution
+    ? buildAttributionReadinessItems(
+        {
+          signal_count: holdingAttribution.signal_count,
+          review_count: holdingAttribution.evidence_refs.filter((ref) =>
+            ref.startsWith('review:'),
+          ).length,
+          risk_decision_count: holdingAttribution.risk_decision_count,
+          order_count: holdingAttribution.order_count,
+          fill_count: holdingAttribution.fill_count,
+        },
+        labels.strategyAttributionReadinessItems,
+      )
+    : [];
+  const attributionReviewReady =
+    attributionReadinessItems.length > 0 &&
+    attributionReadinessItems.every((item) => item.passed);
   const strategyDisplayName = formatStrategyDisplayName(
-    strategyContribution?.strategy_id || strategyAssignment?.strategy_id
+    holdingAttribution?.strategy_id ||
+      strategyContribution?.strategy_id ||
+      strategyAssignment?.strategy_id
       ? {
           strategy_id:
+            holdingAttribution?.strategy_id ??
             strategyContribution?.strategy_id ??
             strategyAssignment?.strategy_id,
           name: strategyAssignment?.strategy_name,
@@ -324,6 +457,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         strategyContribution.contribution_status as keyof typeof copy.backtest.page.accountStrategyContributionStatusMap
       ] ?? formatPublicCode(strategyContribution.contribution_status, locale))
     : '--';
+  const attributionStatusLabel = holdingAttribution?.attribution_status
+    ? formatPublicCode(holdingAttribution.attribution_status, locale)
+    : contributionStatusLabel;
   const portfolioWeight = allocation?.weight ?? null;
   const marketOpen = marketHealth.data?.market_open;
   const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
@@ -696,26 +832,98 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   ? labels.strategyAttributionLinkedDetail
                   : labels.strategyAttributionDetail}
               </p>
-              {hasSymbolStrategyEvidence && strategyContribution ? (
+              {attributionReadinessItems.length > 0 ? (
+                <div
+                  data-testid="holding-strategy-attribution-readiness"
+                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
+                >
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <div className="app-product-mark">
+                      {labels.strategyAttributionReviewReadiness}
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        attributionReviewReady
+                          ? 'bg-[color-mix(in_srgb,var(--app-success)_14%,transparent)] text-[var(--app-success)]'
+                          : 'bg-[color-mix(in_srgb,var(--app-warning)_14%,transparent)] text-[var(--app-warning)]'
+                      }`}
+                    >
+                      {attributionReviewReady
+                        ? labels.strategyAttributionReviewReady
+                        : labels.strategyAttributionReviewIncomplete}
+                    </span>
+                  </div>
+                  <ul className="mt-3 grid gap-2">
+                    {attributionReadinessItems.map((item) => (
+                      <li
+                        key={item.label}
+                        className="flex min-w-0 items-center gap-2 text-sm text-[var(--app-muted)]"
+                      >
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            item.passed
+                              ? 'bg-[var(--app-success)]'
+                              : 'bg-[var(--app-warning)]'
+                          }`}
+                        />
+                        <span className="min-w-0 break-words">
+                          {item.label}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
+                    {labels.strategyAttributionReviewBoundary}
+                  </p>
+                </div>
+              ) : null}
+              {hasSymbolStrategyEvidence ? (
                 <div className="mt-4 grid gap-2">
                   <InfoRow
                     label={labels.strategyAttributionStrategy}
                     value={strategyDisplayName}
                   />
                   <InfoRow
-                    label={labels.strategyAttributionContributionStatus}
-                    value={contributionStatusLabel}
+                    label={labels.strategyAttributionEvidenceStatus}
+                    value={attributionStatusLabel}
                   />
                   <InfoRow
                     label={labels.strategyAttributionLinkedFillsLabel}
                     value={labels.strategyAttributionLinkedFills(
-                      strategyContribution.linked_fill_count,
+                      strategyEvidenceFillCount,
                     )}
                   />
                   <InfoRow
                     label={labels.strategyAttributionEvidenceRefs}
-                    value={String(strategyContribution.evidence_refs.length)}
+                    value={String(strategyEvidenceRefCount)}
                   />
+                  {strategyEvidenceItems.length > 0 ? (
+                    <div
+                      data-testid="holding-strategy-evidence-chain"
+                      className="mt-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
+                    >
+                      <div className="app-product-mark">
+                        {labels.strategyAttributionEvidenceChain}
+                      </div>
+                      <ul className="mt-3 grid gap-2">
+                        {strategyEvidenceItems.map((item, index) => (
+                          <li
+                            key={`${item.kind}-${item.auditRef}-${index}`}
+                            className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-3 py-2"
+                          >
+                            <div className="text-sm font-semibold text-[var(--app-text)]">
+                              {item.label}
+                            </div>
+                            <div className="mt-1 break-all font-mono text-xs text-[var(--app-muted)]">
+                              {labels.strategyAttributionEvidenceAuditRef(
+                                item.auditRef,
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="mt-4">

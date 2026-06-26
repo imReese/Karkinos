@@ -178,6 +178,10 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     estimated_from_linked_fills: 'Estimated from linked fills',
     fee_missing: 'Fee evidence is missing',
     gross_amount: 'Gross amount',
+    holding_evidence_linked_review_required:
+      'Holding evidence linked; review required',
+    holding_orders_linked_no_fills: 'Holding orders linked; fills pending',
+    holding_signal_chain_pending: 'Holding signals pending order/fill evidence',
     import_and_reconcile_broker_evidence:
       'Import broker evidence and run reconciliation',
     link_strategy_signals_orders_fills_and_contribution:
@@ -279,6 +283,9 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     estimated_from_linked_fills: '基于已归属成交估算',
     fee_missing: '缺少费用凭证',
     gross_amount: '成交总额',
+    holding_evidence_linked_review_required: '持仓证据已关联，等待复核',
+    holding_orders_linked_no_fills: '持仓订单已关联，成交待补齐',
+    holding_signal_chain_pending: '持仓信号待补齐订单/成交证据',
     import_and_reconcile_broker_evidence: '导入并对账券商证据',
     link_strategy_signals_orders_fills_and_contribution:
       '串联策略信号、复核、订单、成交与收益归因证据',

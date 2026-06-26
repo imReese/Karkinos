@@ -1675,3 +1675,26 @@ roadmap promises.
   still withholds strategy P/L amounts until attribution review is complete.
   This is read-only evidence surfacing; it does not mutate attribution records,
   production ledger entries, broker orders, or manual-confirmation state.
+* 2026-06-26: Account Strategy now exposes a read-only holding-level
+  attribution report at `/api/account-strategy/holdings/{symbol}/attribution`.
+  The report filters linked signal, action, risk, review, order, and fill
+  evidence to the requested symbol, and Portfolio holding detail uses that
+  symbol-level report before showing evidence counts. It remains evidence
+  indexing only; it does not calculate strategy P/L for the holding, mutate
+  production ledger entries, submit broker orders, enable automatic trading, or
+  bypass manual confirmation.
+* 2026-06-26: Portfolio holding detail now renders the symbol-level
+  attribution report as a localized evidence chain. Signal, candidate-action,
+  risk, review, order, and fill references are shown as user-readable evidence
+  types with audit identifiers instead of raw internal ref strings. This is
+  read-only audit surfacing; it does not attribute P/L by default, mutate
+  production ledger entries, submit broker orders, enable automatic trading, or
+  bypass manual confirmation.
+* 2026-06-26: Portfolio holding detail now includes a localized attribution
+  review readiness gate. The gate shows whether strategy signal, manual
+  review, risk check, order evidence, and fill evidence are linked for the
+  current holding, and it keeps the explicit boundary that holding P/L is not
+  assigned to the strategy until review is complete. This is explanatory UI
+  only; it does not calculate strategy-attributed holding P/L, mutate
+  production ledger entries, submit broker orders, enable automatic trading, or
+  bypass manual confirmation.

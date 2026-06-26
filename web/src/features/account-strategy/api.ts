@@ -58,11 +58,41 @@ export type AccountStrategyContributionReport = {
   limitations: string[];
 };
 
+export type HoldingStrategyAttributionReport = {
+  strategy_id: string;
+  symbol: string;
+  assignment_scope: string;
+  assignment_applies_to_symbol: boolean;
+  attribution_status: string;
+  signal_count: number;
+  action_count: number;
+  risk_decision_count: number;
+  order_count: number;
+  fill_count: number;
+  evidence_refs: string[];
+  limitations: string[];
+};
+
 export function useAccountStrategyAssignmentQuery() {
   return useQuery({
     queryKey: ['account-strategy-assignment'],
     queryFn: () =>
       apiClient<AccountStrategyAssignment>('/api/account-strategy'),
+    staleTime: 10_000,
+  });
+}
+
+export function useHoldingStrategyAttributionQuery(symbol: string) {
+  const normalizedSymbol = symbol.trim();
+  return useQuery({
+    queryKey: ['holding-strategy-attribution', normalizedSymbol],
+    queryFn: () =>
+      apiClient<HoldingStrategyAttributionReport>(
+        `/api/account-strategy/holdings/${encodeURIComponent(
+          normalizedSymbol,
+        )}/attribution`,
+      ),
+    enabled: normalizedSymbol.length > 0,
     staleTime: 10_000,
   });
 }
