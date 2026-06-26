@@ -470,11 +470,31 @@ class PortfolioCockpitPosition(BaseModel):
     action_task: ActionCard | None = None
 
 
+class PortfolioConstructionRecommendation(BaseModel):
+    symbol: str
+    name: str
+    asset_class: str
+    direction: str
+    status: str
+    actionable: bool
+    actual_weight: float
+    target_weight: float
+    drift: float
+    account_truth_gate_status: str
+    risk_gate_status: str
+    required_actions: list[str] = Field(default_factory=list)
+    rationale: str
+    source_action_task_id: int | None = None
+
+
 class PortfolioCockpitResponse(BaseModel):
     summary: AccountOverview
     positions: list[PortfolioCockpitPosition]
     action_queue: list[ActionCard]
     risk_alerts: list[RiskSummaryItem]
+    construction_recommendations: list[PortfolioConstructionRecommendation] = Field(
+        default_factory=list
+    )
 
 
 class SignalJournalRiskDecision(BaseModel):

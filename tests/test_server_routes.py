@@ -6081,7 +6081,111 @@ def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(
     assert response.action_queue[0].risk_gate_status == "blocked"
     assert response.action_queue[0].manual_confirmation_required is True
     assert response.action_queue[0].manual_confirmation_status == "blocked_by_risk_gate"
+    assert len(response.construction_recommendations) == 1
+    construction = response.construction_recommendations[0]
+    assert construction.symbol == "600519"
+    assert construction.actionable is False
+    assert construction.status == "blocked"
+    assert construction.account_truth_gate_status == "blocked"
+    assert construction.risk_gate_status == "blocked"
+    assert construction.actual_weight == pytest.approx(0.8)
+    assert construction.target_weight == pytest.approx(0.5)
+    assert construction.drift == pytest.approx(-0.3)
+    assert construction.required_actions == [
+        "import_and_reconcile_broker_evidence",
+        "resolve_account_truth_before_rebalance",
+        "review_blocked_risk_gate",
+    ]
+    assert "账户事实" in construction.rationale
     assert response.risk_alerts[0].title == "仓位集中度偏高"
+
+
+def test_portfolio_cockpit_marks_construction_recommendation_actionable_only_after_gates(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    cockpit_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/cockpit"
+    )
+    endpoint = cockpit_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=400,
+        unrealized_pnl=25,
+        realized_pnl=0,
+        commission_paid=2,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    async def fake_get_action_tasks(statuses=None, limit=10):
+        return [
+            {
+                "id": 8,
+                "source_signal_id": 4,
+                "symbol": "600519",
+                "title": "建议调至目标仓位",
+                "detail": "monthly_rebalance target 50%",
+                "direction": "buy",
+                "urgency": "medium",
+                "target_weight": 0.5,
+                "price": 4.0,
+                "strategy_id": "monthly_rebalance",
+                "timestamp": "2026-04-18T09:40:00",
+                "asset_class": "stock",
+                "status": "pending",
+                "risk_decision_id": "RISK-PASSED",
+                "risk_gate_passed": True,
+                "risk_gate_severity": "info",
+                "risk_gate_reasons": [],
+                "risk_gate_status": "passed",
+                "manual_confirmation_required": True,
+                "manual_confirmation_status": "ready_for_manual_confirmation",
+                "manual_confirmation_reason": "Risk gate passed; manual confirmation is required before any live-like execution.",
+            }
+        ]
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=SimpleNamespace(
+            get_total_deposits=fake_get_total_deposits,
+            get_action_tasks=fake_get_action_tasks,
+            get_account_truth_score_sync=lambda: {"gate_status": "pass", "score": 92},
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=600,
+                positions={"600519": fake_position},
+            ),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    construction = response.construction_recommendations[0]
+    assert construction.symbol == "600519"
+    assert construction.actionable is True
+    assert construction.status == "actionable"
+    assert construction.account_truth_gate_status == "pass"
+    assert construction.risk_gate_status == "passed"
+    assert construction.required_actions == []
+    assert construction.actual_weight == pytest.approx(0.4)
+    assert construction.target_weight == pytest.approx(0.5)
+    assert construction.drift == pytest.approx(0.1)
+    assert "人工复核" in construction.rationale
 
 
 def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):

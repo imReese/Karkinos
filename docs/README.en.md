@@ -410,6 +410,13 @@ Standalone compatibility monitor, independent of the Web server. It reads `confi
 | GET | `/api/portfolio/allocation` | Get asset allocation weights |
 | GET | `/api/portfolio/equity-curve` | Get equity curve |
 
+`/api/portfolio/cockpit` includes read-only
+`construction_recommendations` evidence. A recommendation is marked
+`actionable=true` only when the account-truth gate is `pass` and the matching
+risk gate is `passed`; missing or degraded account truth, unchecked risk, or
+blocked risk returns review rationale and required next actions instead of
+submitting broker orders or bypassing manual confirmation.
+
 #### Signals — /api/signals
 
 | Method | Path | Description |
