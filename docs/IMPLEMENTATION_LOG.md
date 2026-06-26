@@ -1634,3 +1634,11 @@ roadmap promises.
   candidates only after account-truth and risk gates pass. This is UI evidence
   surfacing only; it does not write production ledger entries, submit broker
   orders, enable automatic trading, or bypass manual confirmation.
+* 2026-06-26: Portfolio holding detail now links each held instrument directly
+  into the Backtest single-instrument strategy research flow with the current
+  symbol and asset class prefilled. This improves the user-visible path from a
+  specific holding to dataset snapshot, strategy registry, after-cost backtest,
+  signal preview, risk preview, paper/shadow simulation, and attribution
+  boundary review. It is navigation/context handoff only; it does not run a
+  strategy automatically, write ledger entries, submit broker orders, enable
+  automatic trading, or bypass manual confirmation.

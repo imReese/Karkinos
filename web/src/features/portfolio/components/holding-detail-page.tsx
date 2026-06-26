@@ -97,6 +97,13 @@ function formatCostBasisMethod(
   return formatLedgerCostBasisMethodLabel(method, locale);
 }
 
+function buildBacktestHandoffHref(symbol: string, assetClass: string) {
+  const params = new URLSearchParams();
+  params.set('symbol', symbol);
+  params.set('assetClass', assetClass);
+  return `/backtest?${params.toString()}`;
+}
+
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -638,6 +645,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <div className="app-product-mark">{labels.relatedActions}</div>
               <div className="mt-4 grid gap-2">
+                <ActionLink
+                  href={buildBacktestHandoffHref(position.symbol, assetClass)}
+                  label={labels.actionStrategyResearch}
+                />
                 <ActionLink href="/portfolio" label={labels.actionPortfolio} />
                 <ActionLink href="/market" label={labels.actionMarket} />
                 <ActionLink href="/trading" label={labels.actionTrading} />

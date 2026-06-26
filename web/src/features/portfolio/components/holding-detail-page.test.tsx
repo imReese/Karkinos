@@ -518,6 +518,20 @@ test('keeps quote status and action panels readable with long runtime values', a
   }
 });
 
+test('links the holding detail to a single-instrument strategy loop with symbol context', async () => {
+  renderHoldingDetail();
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const link = screen.getByRole('link', {
+    name: 'Run strategy research for this holding',
+  });
+  expect(link.getAttribute('href')).toBe(
+    '/backtest?symbol=600519&assetClass=stock',
+  );
+  expect(link.textContent).not.toContain('strategy_loop');
+});
+
 test('shows not found state when the symbol is absent', async () => {
   renderHoldingDetail({ includePosition: false });
 

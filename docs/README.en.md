@@ -22,6 +22,10 @@ Key Features:
 - **Notifications** — Console / Telegram / WeChat (ServerChan) channels
 - **Web UI** — React + TypeScript + TanStack Router + TanStack Query + ECharts personal finance app
 - **Holdings and market detail** — the Portfolio quote board summarizes asset classes, while instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page
+- **Single-instrument strategy research entry** — holding detail pages can hand
+  the current symbol and asset class into the Strategy Lab one-symbol research
+  flow for dataset, backtest, signal, risk-preview, simulation, and attribution
+  boundary review
 - **Responsive Platform Layout** — Primary pages reflow across desktop and narrow widths, with wide tables scrolling only inside their own panels
 - **Return Calendar** — Review monthly day-by-day, yearly month-by-month, and annual return attribution from audited timeline data; estimated, cached, stale, or confirmed-NAV-missing periods still show their return value but are marked unconfirmed, while only missing or unavailable prices are shown as valuation gaps
 - **Account Truth review API** — Read-only endpoints list staged import runs
