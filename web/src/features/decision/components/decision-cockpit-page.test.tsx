@@ -976,7 +976,7 @@ test('renders localized decision workflow tasks before candidate actions', async
   expect(workflow.textContent).toContain('预览券商凭证导入并完成对账');
   expect(workflow.textContent).toContain('风险复核');
   expect(workflow.textContent).toContain('策略证据');
-  expect(workflow.textContent).toContain('模拟复盘');
+  expect(workflow.textContent).toContain('模拟复核');
   expect(workflow.textContent).toContain('人工确认');
   expect(
     screen
@@ -995,7 +995,7 @@ test('renders localized decision workflow tasks before candidate actions', async
   ).toBe('/backtest');
   expect(
     screen
-      .getByRole('link', { name: '打开回测实验室：模拟复盘' })
+      .getByRole('link', { name: '打开回测实验室：模拟复核' })
       .getAttribute('href'),
   ).toBe('/backtest');
   expect(
@@ -1009,6 +1009,7 @@ test('renders localized decision workflow tasks before candidate actions', async
   expect(workflow.textContent).not.toContain('refresh_or_confirm_market_data');
   expect(workflow.textContent).not.toContain('paper_shadow_review');
   expect(workflow.textContent).not.toContain('paper/shadow evidence');
+  expect(workflow.textContent).not.toContain('模拟复盘');
   expect(
     workflow.textContent?.indexOf('数据刷新') ?? Number.POSITIVE_INFINITY,
   ).toBeLessThan(workflow.textContent?.indexOf('策略证据') ?? -1);
