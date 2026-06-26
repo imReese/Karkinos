@@ -1661,3 +1661,17 @@ roadmap promises.
   evidence into strategy research and back to holding/PnL review. The link is a
   read-only navigation affordance; it does not mutate attribution records,
   production ledger entries, broker orders, or manual-confirmation state.
+* 2026-06-26: Portfolio holding detail now shows a localized strategy
+  attribution boundary card whenever holding PnL is still account-level
+  evidence. The card explains that PnL is not assigned to a strategy until a
+  strategy signal, review decision, order, and fill can all be linked, and it
+  points back to the single-instrument strategy research evidence flow. This is
+  read-only attribution guidance; it does not mutate attribution records,
+  production ledger entries, broker orders, or manual-confirmation state.
+* 2026-06-26: Portfolio holding detail now upgrades the attribution boundary
+  card only when a symbol-level account-strategy assignment matches the current
+  holding and linked fill/evidence references exist. The card shows strategy,
+  contribution status, linked-fill count, and evidence-reference count, but it
+  still withholds strategy P/L amounts until attribution review is complete.
+  This is read-only evidence surfacing; it does not mutate attribution records,
+  production ledger entries, broker orders, or manual-confirmation state.
