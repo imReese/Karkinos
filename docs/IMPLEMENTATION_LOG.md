@@ -6,6 +6,19 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-26: Web Backtest run configuration now includes a localized
+  pre-run single-instrument readiness summary before submission. It shows the
+  selected strategy, strategy source, instrument, asset class, configured
+  parameter count, and the boundary that the dataset snapshot is frozen when
+  the backtest runs. This is a research-input review surface only and does not
+  run strategies, create orders or fills, mutate the ledger, submit broker
+  orders, or enable automatic real-money trading.
+* 2026-06-26: Web Backtest strategy catalog now labels each registry entry as
+  a built-in strategy or local extension using localized user-facing copy. This
+  makes custom strategy discovery clearer in the single-instrument research
+  loop while keeping strategy source fields as audit metadata only; it does not
+  execute extension code from the browser, submit broker orders, mutate the
+  ledger, or enable automatic real-money trading.
 * 2026-06-26: Web Backtest attribution preview now renders a localized,
   user-readable evidence-chain card for strategy signal, dataset snapshot,
   risk-gate preview, paper-shadow order, and paper-shadow fill evidence. The

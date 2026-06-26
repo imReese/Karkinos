@@ -164,6 +164,8 @@ export type BacktestStrategyInfo = {
   supported_frequencies?: string[];
   benchmark_role?: string | null;
   benchmark_universe?: string[];
+  source_type?: string;
+  is_extension?: boolean;
   requires_out_of_sample_validation?: boolean;
   requires_after_cost_report?: boolean;
   validation_notes?: string[];

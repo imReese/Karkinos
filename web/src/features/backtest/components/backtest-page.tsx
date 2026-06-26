@@ -76,6 +76,8 @@ const fallbackStrategies: BacktestStrategyInfo[] = [
     name: 'dual_ma',
     display_name: 'Dual Moving Average',
     description: 'Dual moving-average crossover baseline.',
+    source_type: 'builtin',
+    is_extension: false,
     params: [],
     parameter_schema: [
       {
@@ -349,6 +351,15 @@ function strategyDescription(
     localizedDescriptions[strategy.strategy_id] ??
     strategy.description
   );
+}
+
+function strategySourceDisplayName(
+  strategy: BacktestStrategyInfo,
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+) {
+  return strategy.is_extension || strategy.source_type === 'extension'
+    ? labels.strategySourceExtension
+    : labels.strategySourceBuiltin;
 }
 
 function benchmarkRoleDisplayName(
@@ -924,6 +935,14 @@ export function BacktestPage() {
                 </span>
               </div>
 
+              <RunReadinessSummary
+                assetClassLabel={selectedAssetClassLabel}
+                labels={labels}
+                parameterCount={parameterSchema.length}
+                selectedStrategy={selectedStrategy}
+                symbol={symbol}
+              />
+
               {formError ? (
                 <div
                   className="rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger)]"
@@ -1142,6 +1161,63 @@ export function BacktestPage() {
       />
 
       <BacktestReportView />
+    </section>
+  );
+}
+
+function RunReadinessSummary({
+  assetClassLabel,
+  labels,
+  parameterCount,
+  selectedStrategy,
+  symbol,
+}: {
+  assetClassLabel: string;
+  labels: ReturnType<typeof useCopy>['backtest']['page'];
+  parameterCount: number;
+  selectedStrategy: BacktestStrategyInfo;
+  symbol: string;
+}) {
+  return (
+    <section
+      className="rounded-3xl border border-[color-mix(in_srgb,var(--app-accent)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-4"
+      data-testid="backtest-run-readiness-summary"
+    >
+      <div className="min-w-0">
+        <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          {labels.runReadinessTitle}
+        </div>
+        <p className="app-muted mt-2 text-sm leading-6">
+          {labels.runReadinessDetail}
+        </p>
+      </div>
+      <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
+        <RunContextValue
+          label={labels.runReadinessStrategy}
+          value={strategyDisplayName(selectedStrategy, labels.strategyNames)}
+        />
+        <RunContextValue
+          label={labels.runReadinessStrategySource}
+          value={strategySourceDisplayName(selectedStrategy, labels)}
+        />
+        <RunContextValue
+          label={labels.runReadinessInstrument}
+          value={symbol.trim() || labels.notDeclared}
+          numeric
+        />
+        <RunContextValue
+          label={labels.runReadinessAssetClass}
+          value={assetClassLabel}
+        />
+        <RunContextValue
+          label={labels.runReadinessParams}
+          value={labels.runReadinessParameterCount(parameterCount)}
+        />
+        <RunContextValue
+          label={labels.runReadinessDataset}
+          value={labels.runReadinessDatasetPending}
+        />
+      </div>
     </section>
   );
 }
@@ -1445,6 +1521,7 @@ function StrategyCatalogPanel({
             );
             const selected = item.name === selectedStrategyName;
             const badges = [
+              strategySourceDisplayName(item, labels),
               item.requires_out_of_sample_validation
                 ? labels.oosRequired
                 : null,
