@@ -834,8 +834,23 @@ export const copy = {
         strategyCatalogTitle: 'Available strategies',
         strategyCatalogDetail:
           'Choose the research strategy first, then run it on a target and inspect after-cost evidence.',
+        strategySourceBuiltin: 'Built-in strategy',
+        strategySourceExtension: 'Local extension',
         selectStrategy: (name: string) => `Select ${name}`,
         selectedStrategy: 'Selected',
+        runReadinessTitle: 'Run readiness summary',
+        runReadinessDetail:
+          'Review the research inputs before freezing data and running the after-cost backtest.',
+        runReadinessStrategy: 'Strategy',
+        runReadinessStrategySource: 'Strategy source',
+        runReadinessInstrument: 'Instrument',
+        runReadinessAssetClass: 'Asset class',
+        runReadinessParams: 'Parameters',
+        runReadinessDataset: 'Dataset snapshot',
+        runReadinessDatasetPending:
+          'Dataset snapshot will be frozen when this backtest runs.',
+        runReadinessParameterCount: (count: number) =>
+          `${count} configured ${count === 1 ? 'parameter' : 'parameters'}`,
         accountStrategyKicker: 'Account strategy',
         accountStrategyTitle: 'Current account strategy',
         accountStrategyDetail:
@@ -2798,8 +2813,20 @@ export const copy = {
         strategyCatalogTitle: '可用回测策略',
         strategyCatalogDetail:
           '先选择研究策略，再指定标的运行回测并查看扣除成本后证据。',
+        strategySourceBuiltin: '内置策略',
+        strategySourceExtension: '本地扩展',
         selectStrategy: (name: string) => `选择${name}`,
         selectedStrategy: '已选',
+        runReadinessTitle: '运行前摘要',
+        runReadinessDetail: '运行扣费后回测并冻结数据前，先核对本次研究输入。',
+        runReadinessStrategy: '策略',
+        runReadinessStrategySource: '策略来源',
+        runReadinessInstrument: '标的',
+        runReadinessAssetClass: '资产类别',
+        runReadinessParams: '参数',
+        runReadinessDataset: '数据快照',
+        runReadinessDatasetPending: '运行回测时会冻结本次数据快照。',
+        runReadinessParameterCount: (count: number) => `${count} 个已配置参数`,
         accountStrategyKicker: '账户策略',
         accountStrategyTitle: '当前账户策略',
         accountStrategyDetail:

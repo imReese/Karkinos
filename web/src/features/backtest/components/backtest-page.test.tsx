@@ -773,6 +773,8 @@ const strategyCatalog = [
     ],
     benchmark_role: 'etf_rotation_trend_following',
     benchmark_universe: ['etf'],
+    source_type: 'builtin',
+    is_extension: false,
     requires_out_of_sample_validation: true,
     requires_after_cost_report: true,
     validation_notes: [
@@ -869,6 +871,8 @@ const extensionStrategy = {
   supported_frequencies: ['1d'],
   benchmark_role: 'custom_momentum_research',
   benchmark_universe: ['stock'],
+  source_type: 'extension',
+  is_extension: true,
   requires_out_of_sample_validation: true,
   requires_after_cost_report: true,
   validation_notes: ['Requires paper/shadow review before promotion.'],
@@ -1479,6 +1483,64 @@ test('selects a strategy from the visible strategy catalog', async () => {
     await screen.findByLabelText('Standard-deviation multiplier'),
   ).toBeTruthy();
   expect(screen.queryByLabelText('Short moving-average window')).toBeNull();
+});
+
+test('shows user-readable strategy source badges in the catalog', async () => {
+  renderBacktestPage({
+    results: [],
+    strategies: [...strategyCatalog, extensionStrategy],
+  });
+
+  const builtInCard = (
+    await screen.findByRole('button', {
+      name: 'Select Dual Moving Average',
+    })
+  ).closest('button');
+  const extensionCard = (
+    await screen.findByRole('button', {
+      name: 'Select Custom Momentum Extension',
+    })
+  ).closest('button');
+
+  expect(builtInCard).toBeTruthy();
+  expect(extensionCard).toBeTruthy();
+  expect(within(builtInCard!).getByText('Built-in strategy')).toBeTruthy();
+  expect(within(extensionCard!).getByText('Local extension')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('source_type');
+  expect(document.body.textContent).not.toContain('is_extension');
+});
+
+test('shows a pre-run single-instrument evidence summary before submission', async () => {
+  renderBacktestPage({
+    results: [],
+    strategies: [...strategyCatalog, extensionStrategy],
+  });
+
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Select Custom Momentum Extension',
+    }),
+  );
+  fireEvent.change(await screen.findByLabelText('Symbol'), {
+    target: { value: '600002' },
+  });
+
+  const summary = within(
+    await screen.findByTestId('backtest-run-readiness-summary'),
+  );
+  expect(summary.getByText('Run readiness summary')).toBeTruthy();
+  expect(summary.getByText('Custom Momentum Extension')).toBeTruthy();
+  expect(summary.getByText('Local extension')).toBeTruthy();
+  expect(summary.getByText('600002')).toBeTruthy();
+  expect(summary.getByText('Stock')).toBeTruthy();
+  expect(summary.getByText('1 configured parameter')).toBeTruthy();
+  expect(
+    summary.getByText(
+      'Dataset snapshot will be frozen when this backtest runs.',
+    ),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('source_type');
+  expect(document.body.textContent).not.toContain('is_extension');
 });
 
 test('assigns the selected strategy as research-only account context', async () => {
