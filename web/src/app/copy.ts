@@ -2744,7 +2744,7 @@ export const copy = {
         runContextKicker: '运行上下文',
         runContextTitle: '单标的研究上下文',
         runContextDetail:
-          '这条上下文会跟随本次运行进入数据、信号、风控、paper/shadow 和归因复核链路。',
+          '这条上下文会跟随本次运行进入数据、信号、风控、模拟复核和归因复核链路。',
         runContextSource: '来源',
         runContextSourcePortfolio: '来自持仓详情',
         runContextSourceDecision: '来自决策候选动作',
@@ -2991,17 +2991,16 @@ export const copy = {
           orderNotional: '订单金额超过策略限制',
           positionWeight: '持仓集中度超过策略限制',
         },
-        signalPreviewPaperShadowTitle: 'paper/shadow 预览',
-        signalPreviewPaperShadowNextStep: 'paper/shadow 下一步',
+        signalPreviewPaperShadowTitle: '模拟复核预览',
+        signalPreviewPaperShadowNextStep: '模拟复核下一步',
         signalPreviewPaperShadowReady:
-          '风控预检已通过。先运行 paper/shadow 模拟，再进入任何人工步骤。',
-        signalPreviewPaperShadowBlocked:
-          'paper/shadow 预览需要等待风控预检通过。',
-        signalPreviewPaperShadowButton: '预览 paper/shadow',
-        signalPreviewPaperShadowLoading: '正在模拟 paper/shadow',
+          '风控预检已通过。先运行模拟复核，再进入任何人工步骤。',
+        signalPreviewPaperShadowBlocked: '模拟复核预览需要等待风控预检通过。',
+        signalPreviewPaperShadowButton: '预览模拟复核',
+        signalPreviewPaperShadowLoading: '正在运行模拟复核',
         signalPreviewPaperShadowUnavailable:
-          'paper/shadow 预览暂不可用；未创建账本记录。',
-        signalPreviewPaperShadowResultTitle: 'paper/shadow 预览',
+          '模拟复核预览暂不可用；未创建账本记录。',
+        signalPreviewPaperShadowResultTitle: '模拟复核预览',
         signalPreviewPaperShadowSimulatedFill: '模拟成交',
         signalPreviewPaperShadowBlockedResult: '等待风控通过',
         signalPreviewPaperShadowNoLedgerMutation: '不改真实账本',
@@ -3039,13 +3038,13 @@ export const copy = {
         signalPreviewEvidenceChainSignal: '策略信号',
         signalPreviewEvidenceChainDataset: '数据快照',
         signalPreviewEvidenceChainRisk: '风控闸门预览',
-        signalPreviewEvidenceChainPaperOrder: 'paper/shadow 订单',
-        signalPreviewEvidenceChainPaperFill: 'paper/shadow 成交',
+        signalPreviewEvidenceChainPaperOrder: '模拟复核订单',
+        signalPreviewEvidenceChainPaperFill: '模拟复核成交',
         signalPreviewReviewLinkageTitle: '复核关联候选',
         signalPreviewReviewLinkageManual: '需要人工复核',
         signalPreviewReviewLinkageNoWrite: '不写订单或账本',
         signalPreviewReviewLinkageDetail:
-          '信号、风控和 paper/shadow 证据可以人工复核并关联。',
+          '信号、风控和模拟复核证据可以人工复核并关联。',
         signalPreviewReviewHoldingAttribution: '查看持仓归因复核',
         signalPreviewHoldingAttributionReadiness: '持仓归因准备度',
         signalPreviewGateLabels: {
@@ -3054,13 +3053,13 @@ export const copy = {
           dataBlocked: '数据阻断',
           accountTruthRequired: '账户事实待复核',
           riskRequired: '风控闸门待执行',
-          paperShadowWaiting: 'paper/shadow 待前置闸门',
+          paperShadowWaiting: '模拟复核待前置闸门',
           manualReviewRequired: '人工复核必需',
           notRequired: '无需执行',
           unknown: '需要复核',
         },
         signalPreviewGateRequired:
-          '需要先经过风控、账户事实、paper/shadow 和人工复核，才能进入任何类 live 流程。',
+          '需要先经过风控、账户事实、模拟复核和人工复核，才能进入任何类实时流程。',
         signalPreviewNoGateRequired: '未生成候选动作；不需要进入交易闸门。',
         signalPreviewExecutionBoundary:
           '该预览不会创建信号、动作任务、订单、成交、账本记录或券商提交。',
@@ -3075,12 +3074,10 @@ export const copy = {
         singleInstrumentLoopNextBacktest:
           '先查看扣费后回测证据，再生成今日信号。',
         singleInstrumentLoopNextSignal: '等待这个单标的回测生成策略信号预览。',
-        singleInstrumentLoopNextRisk:
-          '先运行风控预览，再进入 paper/shadow 模拟。',
+        singleInstrumentLoopNextRisk: '先运行风控预览，再进入模拟复核。',
         singleInstrumentLoopNextBlocked:
           '风控预览已阻断；先复核阻断原因再模拟。',
-        singleInstrumentLoopNextPaper:
-          '风控预览通过后，运行 paper/shadow 模拟。',
+        singleInstrumentLoopNextPaper: '风控预览通过后，运行模拟复核。',
         singleInstrumentLoopNextAttribution:
           '复核归因边界；只有信号、复核、订单与成交证据串起后，才展示策略收益。',
         singleInstrumentLoopNextComplete:
@@ -3098,7 +3095,7 @@ export const copy = {
         singleInstrumentLoopBacktestEvidence: '查看扣费后回测证据',
         singleInstrumentLoopSignalEvidence: '查看今日信号证据',
         singleInstrumentLoopRiskEvidence: '查看风控闸门证据',
-        singleInstrumentLoopPaperEvidence: '查看 paper/shadow 模拟证据',
+        singleInstrumentLoopPaperEvidence: '查看模拟复核证据',
         singleInstrumentLoopAttributionEvidence: '查看归因边界证据',
         singleInstrumentLoopDatasetReady: '数据快照已就绪',
         singleInstrumentLoopDatasetWaiting: '等待数据快照',
@@ -3111,8 +3108,8 @@ export const copy = {
         singleInstrumentLoopRiskPassed: '风控闸门已通过',
         singleInstrumentLoopRiskBlocked: '风控闸门已阻断',
         singleInstrumentLoopRiskWaiting: '等待风控闸门',
-        singleInstrumentLoopPaperReady: 'paper/shadow 模拟已就绪',
-        singleInstrumentLoopPaperWaiting: '等待 paper/shadow 模拟',
+        singleInstrumentLoopPaperReady: '模拟复核已就绪',
+        singleInstrumentLoopPaperWaiting: '等待模拟复核',
         singleInstrumentLoopAttributionReady: '归因边界已就绪',
         singleInstrumentLoopAttributionWaiting: '等待归因边界',
         totalReturn: '总收益率',

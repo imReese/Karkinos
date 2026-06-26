@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-26: Web Backtest Chinese copy now presents the paper/shadow preview
+  step as localized simulation-review language in the single-instrument
+  strategy loop. The UI describes the post-risk simulated review, simulated
+  order/fill evidence, and no-ledger-mutation boundary without exposing the
+  `paper/shadow` jargon to Chinese users. This is a copy-only presentation
+  change and does not alter API paths, strategy runtime behavior, risk gates,
+  paper/shadow isolation, ledger mutation rules, broker submission, or
+  automatic real-money trading defaults.
 * 2026-06-26: Web Backtest run configuration now includes a localized
   pre-run single-instrument readiness summary before submission. It shows the
   selected strategy, strategy source, instrument, asset class, configured
