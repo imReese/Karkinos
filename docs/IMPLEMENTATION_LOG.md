@@ -6,6 +6,27 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-26: Web Backtest attribution preview now reads the same structured
+  holding-level attribution prerequisites used by Portfolio holding detail.
+  After paper/shadow preview evidence is available, the Backtest page surfaces
+  the holding attribution readiness, first missing prerequisite, and localized
+  next manual review step before users leave the single-instrument loop. This
+  is a read-only evidence handoff and does not create orders, fills, ledger
+  entries, broker submissions, or automatic real-money trading.
+* 2026-06-26: Portfolio holding attribution readiness now surfaces the next
+  manual review action for the first missing prerequisite, routing users back
+  to the single-instrument strategy loop, Decision review, or execution review
+  as appropriate. The action is navigation-only and localized; it does not
+  create orders, fills, ledger entries, broker submissions, or automatic
+  real-money trading.
+* 2026-06-26: Holding-level strategy attribution reports now include
+  structured review prerequisites for strategy signal, candidate action, risk
+  gate, manual review, order evidence, and fill evidence. Portfolio holding
+  detail consumes those typed prerequisites instead of inferring readiness from
+  audit-reference string prefixes, keeping the review boundary deterministic
+  and localized. This is read-only evidence surfacing; it does not mutate
+  attribution records, ledger facts, broker state, risk gates, or trading
+  behavior.
 * 2026-06-26: Decision candidate cards now include a localized, symbol-scoped
   handoff to the holding attribution review section. This lets a daily
   candidate continue into the same holding-level attribution boundary used by

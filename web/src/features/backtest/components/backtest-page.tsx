@@ -3,6 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
+import {
+  useHoldingStrategyAttributionQuery,
+  type HoldingStrategyAttributionReport,
+} from '../../account-strategy/api';
+import {
+  buildAttributionReadinessItems,
+  type AttributionReadinessItem,
+} from '../../account-strategy/attribution-readiness';
 import { apiClient } from '../../../lib/api/client';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import {
@@ -98,6 +106,12 @@ type BacktestPortfolioInstrumentSnapshot = {
   positions: InstrumentDisplayRecord[];
 };
 
+type BacktestAttributionNextAction = {
+  detail: string;
+  href: string;
+  label: string;
+};
+
 function useBacktestPortfolioInstrumentsQuery() {
   return useQuery({
     queryKey: ['backtest-portfolio-instruments'],
@@ -164,6 +178,73 @@ function buildHoldingAttributionReviewHref(symbol: string) {
   return `/portfolio/${encodeURIComponent(
     symbol,
   )}#holding-strategy-attribution-boundary`;
+}
+
+function buildBacktestHoldingAttributionNextAction({
+  missingItem,
+  labels,
+  holdingLabels,
+}: {
+  missingItem: AttributionReadinessItem | null;
+  labels: ReturnType<typeof useCopy>['backtest']['page'];
+  holdingLabels: ReturnType<typeof useCopy>['portfolio']['detail'];
+}): BacktestAttributionNextAction | null {
+  if (!missingItem) {
+    return null;
+  }
+  if (
+    missingItem.key === 'strategy_signal' ||
+    missingItem.key === 'candidate_action' ||
+    missingItem.key === 'risk_gate'
+  ) {
+    return {
+      detail: holdingLabels.strategyAttributionNextActionResearch,
+      href: '#backtest-signal-review-evidence',
+      label: labels.singleInstrumentLoopSignalEvidence,
+    };
+  }
+  if (missingItem.key === 'manual_review') {
+    return {
+      detail: holdingLabels.strategyAttributionNextActionManualReview,
+      href: '/decision',
+      label: holdingLabels.strategyAttributionOpenDecisionReview,
+    };
+  }
+  if (
+    missingItem.key === 'order_evidence' ||
+    missingItem.key === 'fill_evidence'
+  ) {
+    return {
+      detail: holdingLabels.strategyAttributionNextActionExecution,
+      href: '/trading',
+      label: holdingLabels.strategyAttributionOpenExecutionReview,
+    };
+  }
+  return {
+    detail: holdingLabels.strategyAttributionNextActionGeneric,
+    href: '#backtest-signal-review-evidence',
+    label: labels.singleInstrumentLoopAttributionEvidence,
+  };
+}
+
+function buildBacktestHoldingAttributionReadinessItems(
+  report: HoldingStrategyAttributionReport,
+  holdingLabels: ReturnType<typeof useCopy>['portfolio']['detail'],
+) {
+  return buildAttributionReadinessItems(
+    {
+      signal_count: report.signal_count,
+      action_count: report.action_count,
+      review_count: report.evidence_refs.filter((ref) =>
+        ref.startsWith('review:'),
+      ).length,
+      risk_decision_count: report.risk_decision_count,
+      order_count: report.order_count,
+      fill_count: report.fill_count,
+      review_prerequisites: report.review_prerequisites,
+    },
+    holdingLabels.strategyAttributionReadinessItems,
+  );
 }
 
 function isPositiveNumber(value: string) {
@@ -2256,8 +2337,32 @@ function AttributionPreviewResult({
 }: {
   result: BacktestAttributionPreviewResponse;
 }) {
-  const labels = useCopy().backtest.page;
+  const copy = useCopy();
+  const labels = copy.backtest.page;
+  const holdingLabels = copy.portfolio.detail;
   const { locale } = usePreferences();
+  const holdingAttributionSymbol =
+    result.review_linkage_candidate?.symbol || result.symbol;
+  const holdingAttribution = useHoldingStrategyAttributionQuery(
+    holdingAttributionSymbol,
+  );
+  const holdingAttributionReport = holdingAttribution.data ?? null;
+  const holdingAttributionReadinessItems = holdingAttributionReport
+    ? buildBacktestHoldingAttributionReadinessItems(
+        holdingAttributionReport,
+        holdingLabels,
+      )
+    : [];
+  const holdingAttributionReady =
+    holdingAttributionReadinessItems.length > 0 &&
+    holdingAttributionReadinessItems.every((item) => item.passed);
+  const holdingAttributionNextAction =
+    buildBacktestHoldingAttributionNextAction({
+      missingItem:
+        holdingAttributionReadinessItems.find((item) => !item.passed) ?? null,
+      labels,
+      holdingLabels,
+    });
   const previewEvidence =
     result.evidence_counts.signal_preview +
     result.evidence_counts.risk_preview +
@@ -2343,6 +2448,59 @@ function AttributionPreviewResult({
               ) : null}
             </div>
           </div>
+        </div>
+      ) : null}
+      {holdingAttributionReadinessItems.length > 0 ? (
+        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-[var(--app-text)]">
+              {labels.signalPreviewHoldingAttributionReadiness}
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                holdingAttributionReady
+                  ? 'bg-[color-mix(in_srgb,var(--app-success)_14%,transparent)] text-[var(--app-success)]'
+                  : 'bg-[color-mix(in_srgb,var(--app-warning)_14%,transparent)] text-[var(--app-warning)]'
+              }`}
+            >
+              {holdingAttributionReady
+                ? holdingLabels.strategyAttributionReviewReady
+                : holdingLabels.strategyAttributionReviewIncomplete}
+            </span>
+          </div>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {holdingAttributionReadinessItems.map((item) => (
+              <li
+                key={item.key}
+                className="flex min-w-0 items-center gap-2 text-sm text-[var(--app-muted)]"
+              >
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    item.passed
+                      ? 'bg-[var(--app-success)]'
+                      : 'bg-[var(--app-warning)]'
+                  }`}
+                />
+                <span className="min-w-0 break-words">{item.label}</span>
+              </li>
+            ))}
+          </ul>
+          {holdingAttributionNextAction ? (
+            <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3">
+              <div className="app-product-mark">
+                {holdingLabels.strategyAttributionNextActionTitle}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
+                {holdingAttributionNextAction.detail}
+              </p>
+              <a
+                className="mt-3 inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                href={holdingAttributionNextAction.href}
+              >
+                {holdingAttributionNextAction.label}
+              </a>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {result.limitations.length ? (

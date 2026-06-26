@@ -58,6 +58,12 @@ export type AccountStrategyContributionReport = {
   limitations: string[];
 };
 
+export type AttributionReviewPrerequisite = {
+  key: string;
+  passed: boolean;
+  evidence_count: number;
+};
+
 export type HoldingStrategyAttributionReport = {
   strategy_id: string;
   symbol: string;
@@ -70,6 +76,7 @@ export type HoldingStrategyAttributionReport = {
   order_count: number;
   fill_count: number;
   evidence_refs: string[];
+  review_prerequisites?: AttributionReviewPrerequisite[];
   limitations: string[];
 };
 

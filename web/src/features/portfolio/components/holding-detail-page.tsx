@@ -7,6 +7,10 @@ import {
   useAccountStrategyContributionQuery,
   useHoldingStrategyAttributionQuery,
 } from '../../account-strategy/api';
+import {
+  buildAttributionReadinessItems,
+  type AttributionReadinessItem,
+} from '../../account-strategy/attribution-readiness';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
   formatLedgerActivitySummary,
@@ -63,6 +67,12 @@ type EvidenceRefItem = {
   kind: EvidenceRefType;
   label: string;
   auditRef: string;
+};
+
+type AttributionNextAction = {
+  detail: string;
+  href: string;
+  label: string;
 };
 
 const EVIDENCE_REF_TYPES = new Set<EvidenceRefType>([
@@ -157,52 +167,53 @@ function buildEvidenceRefItems(
   });
 }
 
-function buildAttributionReadinessItems(
-  report: {
-    signal_count: number;
-    review_count?: number;
-    risk_decision_count: number;
-    order_count: number;
-    fill_count: number;
-  },
-  labels: {
-    signalLinked: string;
-    signalMissing: string;
-    reviewLinked: string;
-    reviewMissing: string;
-    riskLinked: string;
-    riskMissing: string;
-    orderLinked: string;
-    orderMissing: string;
-    fillLinked: string;
-    fillMissing: string;
-  },
-) {
-  const reviewCount = report.review_count ?? report.signal_count;
-  return [
-    {
-      passed: report.signal_count > 0,
-      label:
-        report.signal_count > 0 ? labels.signalLinked : labels.signalMissing,
-    },
-    {
-      passed: reviewCount > 0,
-      label: reviewCount > 0 ? labels.reviewLinked : labels.reviewMissing,
-    },
-    {
-      passed: report.risk_decision_count > 0,
-      label:
-        report.risk_decision_count > 0 ? labels.riskLinked : labels.riskMissing,
-    },
-    {
-      passed: report.order_count > 0,
-      label: report.order_count > 0 ? labels.orderLinked : labels.orderMissing,
-    },
-    {
-      passed: report.fill_count > 0,
-      label: report.fill_count > 0 ? labels.fillLinked : labels.fillMissing,
-    },
-  ];
+function buildAttributionNextAction({
+  missingItem,
+  symbol,
+  assetClass,
+  labels,
+}: {
+  missingItem: AttributionReadinessItem | null;
+  symbol: string;
+  assetClass: string;
+  labels: ReturnType<typeof useCopy>['portfolio']['detail'];
+}): AttributionNextAction | null {
+  if (!missingItem) {
+    return null;
+  }
+  if (
+    missingItem.key === 'strategy_signal' ||
+    missingItem.key === 'candidate_action' ||
+    missingItem.key === 'risk_gate'
+  ) {
+    return {
+      detail: labels.strategyAttributionNextActionResearch,
+      href: buildBacktestHandoffHref(symbol, assetClass),
+      label: labels.actionStrategyEvidence,
+    };
+  }
+  if (missingItem.key === 'manual_review') {
+    return {
+      detail: labels.strategyAttributionNextActionManualReview,
+      href: '/decision',
+      label: labels.strategyAttributionOpenDecisionReview,
+    };
+  }
+  if (
+    missingItem.key === 'order_evidence' ||
+    missingItem.key === 'fill_evidence'
+  ) {
+    return {
+      detail: labels.strategyAttributionNextActionExecution,
+      href: '/trading',
+      label: labels.strategyAttributionOpenExecutionReview,
+    };
+  }
+  return {
+    detail: labels.strategyAttributionNextActionGeneric,
+    href: buildBacktestHandoffHref(symbol, assetClass),
+    label: labels.actionStrategyEvidence,
+  };
 }
 
 export function HoldingDetailPage({ symbol }: { symbol: string }) {
@@ -425,12 +436,14 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     ? buildAttributionReadinessItems(
         {
           signal_count: holdingAttribution.signal_count,
+          action_count: holdingAttribution.action_count,
           review_count: holdingAttribution.evidence_refs.filter((ref) =>
             ref.startsWith('review:'),
           ).length,
           risk_decision_count: holdingAttribution.risk_decision_count,
           order_count: holdingAttribution.order_count,
           fill_count: holdingAttribution.fill_count,
+          review_prerequisites: holdingAttribution.review_prerequisites,
         },
         labels.strategyAttributionReadinessItems,
       )
@@ -438,6 +451,12 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const attributionReviewReady =
     attributionReadinessItems.length > 0 &&
     attributionReadinessItems.every((item) => item.passed);
+  const attributionNextAction = buildAttributionNextAction({
+    missingItem: attributionReadinessItems.find((item) => !item.passed) ?? null,
+    symbol: position.symbol,
+    assetClass,
+    labels,
+  });
   const strategyDisplayName = formatStrategyDisplayName(
     holdingAttribution?.strategy_id ||
       strategyContribution?.strategy_id ||
@@ -876,6 +895,25 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
                     {labels.strategyAttributionReviewBoundary}
                   </p>
+                  {attributionNextAction ? (
+                    <div
+                      data-testid="holding-strategy-attribution-next-action"
+                      className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3"
+                    >
+                      <div className="app-product-mark">
+                        {labels.strategyAttributionNextActionTitle}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
+                        {attributionNextAction.detail}
+                      </p>
+                      <div className="mt-3">
+                        <ActionLink
+                          href={attributionNextAction.href}
+                          label={attributionNextAction.label}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {hasSymbolStrategyEvidence ? (
@@ -927,12 +965,14 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   ) : null}
                 </div>
               ) : null}
-              <div className="mt-4">
-                <ActionLink
-                  href={buildBacktestHandoffHref(position.symbol, assetClass)}
-                  label={labels.actionStrategyEvidence}
-                />
-              </div>
+              {!attributionNextAction ? (
+                <div className="mt-4">
+                  <ActionLink
+                    href={buildBacktestHandoffHref(position.symbol, assetClass)}
+                    label={labels.actionStrategyEvidence}
+                  />
+                </div>
+              ) : null}
             </div>
           </section>
 

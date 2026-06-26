@@ -568,6 +568,40 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
         "order:ORD-HOLDING-1",
         "fill:FILL-HOLDING-1",
     ]
+    assert [
+        prerequisite.model_dump() for prerequisite in response.review_prerequisites
+    ] == [
+        {
+            "key": "strategy_signal",
+            "passed": True,
+            "evidence_count": 1,
+        },
+        {
+            "key": "candidate_action",
+            "passed": True,
+            "evidence_count": 1,
+        },
+        {
+            "key": "risk_gate",
+            "passed": True,
+            "evidence_count": 1,
+        },
+        {
+            "key": "manual_review",
+            "passed": True,
+            "evidence_count": 1,
+        },
+        {
+            "key": "order_evidence",
+            "passed": True,
+            "evidence_count": 1,
+        },
+        {
+            "key": "fill_evidence",
+            "passed": True,
+            "evidence_count": 1,
+        },
+    ]
     assert response.limitations == [
         "Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history."
     ]
