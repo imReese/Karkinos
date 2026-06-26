@@ -949,6 +949,21 @@ class AccountStrategyContributionReport(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
+class HoldingStrategyAttributionReport(BaseModel):
+    strategy_id: str
+    symbol: str
+    assignment_scope: str
+    assignment_applies_to_symbol: bool = False
+    attribution_status: str = "not_started"
+    signal_count: int = 0
+    action_count: int = 0
+    risk_decision_count: int = 0
+    order_count: int = 0
+    fill_count: int = 0
+    evidence_refs: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
 # ---------- Settings ----------
 
 

@@ -440,6 +440,140 @@ async def test_account_strategy_attribution_links_signal_order_and_fill_without_
 
 
 @pytest.mark.asyncio
+async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
+    monkeypatch,
+):
+    from server.routes import account_strategy as account_strategy_routes
+
+    class FakeDb:
+        def get_runtime_control_sync(self, key):
+            return {
+                "strategy_id": "dual_ma",
+                "strategy_name": "dual_ma",
+                "status": "research_only",
+                "scope": "account",
+                "auto_trade_enabled": False,
+                "attribution_status": "assignment_only",
+                "limitations": [
+                    "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+                ],
+            }
+
+        def list_signal_journal_sync(self, limit=500, offset=0):
+            return [
+                {
+                    "signal": {
+                        "id": 1,
+                        "strategy_id": "dual_ma",
+                        "symbol": "510300",
+                        "asset_class": "fund",
+                    },
+                    "action_task": {"id": 101},
+                    "risk_decision": {
+                        "decision_id": "RISK-HOLDING-1",
+                        "intent_id": "INTENT-HOLDING-1",
+                    },
+                    "review": {"signal_id": 1},
+                },
+                {
+                    "signal": {
+                        "id": 2,
+                        "strategy_id": "dual_ma",
+                        "symbol": "600000",
+                        "asset_class": "stock",
+                    },
+                    "action_task": {"id": 202},
+                    "risk_decision": {
+                        "decision_id": "RISK-OTHER-1",
+                        "intent_id": "INTENT-OTHER-1",
+                    },
+                    "review": {"signal_id": 2},
+                },
+            ]
+
+        def list_orders_sync(self, limit=1000, offset=0):
+            return [
+                {
+                    "order_id": "ORD-HOLDING-1",
+                    "symbol": "510300",
+                    "payload_json": '{"source_signal_id":1}',
+                    "risk_decision_id": "RISK-HOLDING-1",
+                    "intent_id": "INTENT-HOLDING-1",
+                },
+                {
+                    "order_id": "ORD-OTHER-1",
+                    "symbol": "600000",
+                    "payload_json": '{"source_signal_id":2}',
+                    "risk_decision_id": "RISK-OTHER-1",
+                    "intent_id": "INTENT-OTHER-1",
+                },
+            ]
+
+        def list_fills_sync(self, limit=1000, offset=0):
+            return [
+                {
+                    "fill_id": "FILL-HOLDING-1",
+                    "order_id": "ORD-HOLDING-1",
+                    "timestamp": "2026-06-18T09:35:00",
+                    "symbol": "510300",
+                    "side": "buy",
+                    "fill_price": 4.57,
+                    "fill_quantity": 100,
+                    "commission": 5.0,
+                    "slippage": 0,
+                    "asset_class": "fund",
+                    "metadata_json": '{"strategy_id":"dual_ma","source_signal_id":1}',
+                },
+                {
+                    "fill_id": "FILL-OTHER-1",
+                    "order_id": "ORD-OTHER-1",
+                    "timestamp": "2026-06-18T10:00:00",
+                    "symbol": "600000",
+                    "side": "buy",
+                    "fill_price": 10,
+                    "fill_quantity": 10,
+                    "commission": 1,
+                    "slippage": 0,
+                    "asset_class": "stock",
+                    "metadata_json": '{"strategy_id":"dual_ma","source_signal_id":2}',
+                },
+            ]
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    router = account_strategy_routes.create_router()
+    endpoint = _route(
+        router,
+        "/api/account-strategy/holdings/{symbol}/attribution",
+        "GET",
+    ).endpoint
+
+    response = await endpoint(symbol="510300")
+
+    assert response.strategy_id == "dual_ma"
+    assert response.symbol == "510300"
+    assert response.assignment_scope == "account"
+    assert response.assignment_applies_to_symbol is True
+    assert response.attribution_status == "holding_evidence_linked_review_required"
+    assert response.signal_count == 1
+    assert response.action_count == 1
+    assert response.risk_decision_count == 1
+    assert response.order_count == 1
+    assert response.fill_count == 1
+    assert response.evidence_refs == [
+        "signal:1",
+        "action:101",
+        "risk:RISK-HOLDING-1",
+        "review:1",
+        "order:ORD-HOLDING-1",
+        "fill:FILL-HOLDING-1",
+    ]
+    assert response.limitations == [
+        "Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history."
+    ]
+
+
+@pytest.mark.asyncio
 async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
     monkeypatch, tmp_path
 ):

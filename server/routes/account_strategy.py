@@ -13,6 +13,7 @@ from server.models import (
     AccountStrategyAssignmentUpdate,
     AccountStrategyAttributionSummary,
     AccountStrategyContributionReport,
+    HoldingStrategyAttributionReport,
 )
 
 _CONTROL_KEY = "account_strategy_assignment"
@@ -28,6 +29,10 @@ _CONTRIBUTION_LIMITATION = (
     "Contribution is estimated only from fully linked strategy fills and latest "
     "local quotes; manual, cash-flow, and missing-evidence movements are "
     "separated and excluded from net contribution."
+)
+_HOLDING_ATTRIBUTION_LIMITATION = (
+    "Holding-level strategy attribution is evidence-only until the linked fills "
+    "are reviewed against the production ledger and valuation history."
 )
 
 
@@ -102,6 +107,10 @@ def _source_signal_id(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _same_symbol(left: Any, right: str) -> bool:
+    return str(left or "").strip().lower() == right.strip().lower()
 
 
 def _assignment_matches_signal(
@@ -197,7 +206,9 @@ def _linked_strategy_evidence(
         if risk and risk.get("decision_id")
     }
     intent_ids = {
-        str(risk["intent_id"]) for risk in risk_decisions if risk and risk.get("intent_id")
+        str(risk["intent_id"])
+        for risk in risk_decisions
+        if risk and risk.get("intent_id")
     }
 
     orders = order_reader(limit=1000, offset=0) if callable(order_reader) else []
@@ -312,6 +323,159 @@ def _build_attribution_summary(
         realized_pnl=None,
         unrealized_pnl=None,
         evidence_refs=evidence_refs,
+        limitations=limitations,
+    )
+
+
+def _assignment_applies_to_symbol(
+    assignment: AccountStrategyAssignment,
+    *,
+    symbol: str,
+    signal_entries: list[dict[str, Any]],
+    linked_fills: list[dict[str, Any]],
+) -> bool:
+    if assignment.scope == "symbol":
+        return _same_symbol(assignment.symbol, symbol)
+    if assignment.scope != "asset_class" or not assignment.asset_class:
+        return True
+    matching_asset_classes = {
+        str((entry.get("signal") or {}).get("asset_class") or "")
+        for entry in signal_entries
+    }
+    matching_asset_classes.update(
+        str(fill.get("asset_class") or "") for fill in linked_fills
+    )
+    return assignment.asset_class in matching_asset_classes
+
+
+def _build_holding_attribution_report(
+    db: Any,
+    assignment: AccountStrategyAssignment,
+    *,
+    symbol: str,
+) -> HoldingStrategyAttributionReport:
+    evidence = _linked_strategy_evidence(db, assignment)
+    strategy_entries = [
+        entry
+        for entry in evidence["strategy_entries"]
+        if _same_symbol((entry.get("signal") or {}).get("symbol"), symbol)
+    ]
+    signal_ids = {
+        int(entry["signal"]["id"])
+        for entry in strategy_entries
+        if (entry.get("signal") or {}).get("id") is not None
+    }
+    risk_decisions = [
+        entry.get("risk_decision")
+        for entry in strategy_entries
+        if entry.get("risk_decision") is not None
+    ]
+    risk_decision_ids = {
+        str(risk["decision_id"])
+        for risk in risk_decisions
+        if risk and risk.get("decision_id")
+    }
+    intent_ids = {
+        str(risk["intent_id"])
+        for risk in risk_decisions
+        if risk and risk.get("intent_id")
+    }
+    linked_orders = [
+        order
+        for order in evidence["linked_orders"]
+        if _same_symbol(order.get("symbol"), symbol)
+        or _order_source_signal_id(order) in signal_ids
+        or order.get("risk_decision_id") in risk_decision_ids
+        or order.get("intent_id") in intent_ids
+    ]
+    linked_order_ids = {str(order["order_id"]) for order in linked_orders}
+    linked_fills = [
+        fill
+        for fill in evidence["linked_fills"]
+        if _same_symbol(fill.get("symbol"), symbol)
+        and (
+            str(fill.get("order_id")) in linked_order_ids
+            or _source_signal_id(
+                _fill_metadata(fill).get("source_signal_id")
+                or _fill_metadata(fill).get("signal_id")
+            )
+            in signal_ids
+        )
+    ]
+    assignment_applies = _assignment_applies_to_symbol(
+        assignment,
+        symbol=symbol,
+        signal_entries=strategy_entries,
+        linked_fills=linked_fills,
+    )
+
+    if not assignment_applies:
+        status = "assignment_not_applicable"
+        limitations = [
+            "The current strategy assignment does not apply to this holding."
+        ]
+    elif linked_fills:
+        status = "holding_evidence_linked_review_required"
+        limitations = [_HOLDING_ATTRIBUTION_LIMITATION]
+    elif linked_orders:
+        status = "holding_orders_linked_no_fills"
+        limitations = [
+            "Orders are linked for this holding, but no fills are available."
+        ]
+    elif strategy_entries:
+        status = "holding_signal_chain_pending"
+        limitations = [
+            "Signals exist for this holding, but order/fill evidence is not linked yet."
+        ]
+    else:
+        status = "not_started"
+        limitations = [_ASSIGNMENT_LIMITATION]
+
+    action_refs = sorted(
+        {
+            f"action:{entry['action_task']['id']}"
+            for entry in strategy_entries
+            if entry.get("action_task") and entry["action_task"].get("id") is not None
+        }
+    )
+    risk_refs = sorted(
+        {
+            f"risk:{risk['decision_id']}"
+            for risk in risk_decisions
+            if risk and risk.get("decision_id")
+        }
+    )
+    review_refs = sorted(
+        {
+            f"review:{entry['review']['signal_id']}"
+            for entry in strategy_entries
+            if entry.get("review") and entry["review"].get("signal_id") is not None
+        }
+    )
+    evidence_refs = [
+        *(f"signal:{signal_id}" for signal_id in sorted(signal_ids)),
+        *action_refs,
+        *risk_refs,
+        *review_refs,
+        *(f"order:{order['order_id']}" for order in linked_orders),
+        *(f"fill:{fill['fill_id']}" for fill in linked_fills),
+    ]
+    return HoldingStrategyAttributionReport(
+        strategy_id=assignment.strategy_id,
+        symbol=symbol,
+        assignment_scope=assignment.scope,
+        assignment_applies_to_symbol=assignment_applies,
+        attribution_status=status,
+        signal_count=len(strategy_entries) if assignment_applies else 0,
+        action_count=(
+            sum(1 for entry in strategy_entries if entry.get("action_task"))
+            if assignment_applies
+            else 0
+        ),
+        risk_decision_count=len(risk_decisions) if assignment_applies else 0,
+        order_count=len(linked_orders) if assignment_applies else 0,
+        fill_count=len(linked_fills) if assignment_applies else 0,
+        evidence_refs=evidence_refs if assignment_applies else [],
         limitations=limitations,
     )
 
@@ -629,6 +793,27 @@ def create_router() -> APIRouter:
             else _default_assignment(state.config)
         )
         return _build_contribution_report(db, assignment)
+
+    @r.get(
+        "/holdings/{symbol}/attribution",
+        response_model=HoldingStrategyAttributionReport,
+    )
+    async def get_holding_strategy_attribution(
+        symbol: str,
+    ) -> HoldingStrategyAttributionReport:
+        """Read symbol-filtered strategy attribution evidence without mutation."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        reader = getattr(db, "get_runtime_control_sync", None)
+        payload = reader(_CONTROL_KEY) if callable(reader) else None
+        assignment = (
+            _assignment_from_payload(payload, fallback_config=state.config)
+            if isinstance(payload, dict)
+            else _default_assignment(state.config)
+        )
+        return _build_holding_attribution_report(db, assignment, symbol=symbol)
 
     @r.put("", response_model=AccountStrategyAssignment)
     async def update_account_strategy(

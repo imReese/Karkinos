@@ -138,6 +138,22 @@ function installHoldingFetchMock({
       'Contribution is estimated only from fully linked strategy fills and latest local quotes; manual, cash-flow, and missing-evidence movements are separated and excluded from net contribution.',
     ],
   },
+  holdingStrategyAttribution = {
+    strategy_id: 'dual_ma',
+    symbol: '600519',
+    assignment_scope: 'account',
+    assignment_applies_to_symbol: true,
+    attribution_status: 'not_started',
+    signal_count: 0,
+    action_count: 0,
+    risk_decision_count: 0,
+    order_count: 0,
+    fill_count: 0,
+    evidence_refs: [],
+    limitations: [
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    ],
+  },
 }: {
   includePosition?: boolean;
   includeLedger?: boolean;
@@ -149,6 +165,7 @@ function installHoldingFetchMock({
   accountStrategy?: Record<string, unknown>;
   accountStrategyAttribution?: Record<string, unknown>;
   accountStrategyContribution?: Record<string, unknown>;
+  holdingStrategyAttribution?: Record<string, unknown>;
 } = {}) {
   const resolvedPosition = { ...position, ...positionOverride };
   const positions = includePosition ? [resolvedPosition] : [];
@@ -303,6 +320,9 @@ function installHoldingFetchMock({
           volume: 130000,
         },
       ]);
+    }
+    if (url.includes('/api/account-strategy/holdings/600519/attribution')) {
+      return jsonResponse(holdingStrategyAttribution);
     }
     if (url.includes('/api/account-strategy/attribution')) {
       return jsonResponse(accountStrategyAttribution);
@@ -623,6 +643,24 @@ test('explains that holding PnL is not attributed to strategy without linked fil
   );
 });
 
+test('shows missing attribution prerequisites before linked fills exist', async () => {
+  renderHoldingDetail();
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = screen.getByTestId('holding-strategy-attribution-boundary');
+  expect(card.textContent).toContain('Attribution review readiness');
+  expect(card.textContent).toContain('Evidence still incomplete');
+  expect(card.textContent).toContain('Strategy signal missing');
+  expect(card.textContent).toContain('Manual review missing');
+  expect(card.textContent).toContain('Risk check missing');
+  expect(card.textContent).toContain('Order evidence missing');
+  expect(card.textContent).toContain('Fill evidence missing');
+  expect(card.textContent).toContain(
+    'Holding PnL is still not assigned to the strategy until review is complete.',
+  );
+});
+
 test('shows linked symbol-level attribution evidence without claiming holding PnL', async () => {
   renderHoldingDetail({
     accountStrategy: {
@@ -682,6 +720,22 @@ test('shows linked symbol-level attribution evidence without claiming holding Pn
         'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
       ],
     },
+    holdingStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      symbol: '600519',
+      assignment_scope: 'symbol',
+      assignment_applies_to_symbol: true,
+      attribution_status: 'holding_evidence_linked_review_required',
+      signal_count: 2,
+      action_count: 2,
+      risk_decision_count: 2,
+      order_count: 2,
+      fill_count: 2,
+      evidence_refs: ['signal:1', 'order:ORD-1', 'fill:FILL-1'],
+      limitations: [
+        'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+      ],
+    },
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
@@ -694,8 +748,228 @@ test('shows linked symbol-level attribution evidence without claiming holding Pn
     'Strategy contribution remains review-only for this holding; manual trades and cash flows stay separate until attribution is reviewed.',
   );
   expect(card.textContent).toContain('Dual Moving Average');
-  expect(card.textContent).toContain('Estimated from linked fills');
+  expect(card.textContent).toContain(
+    'Holding evidence linked; review required',
+  );
   expect(card.textContent).toContain('2 linked fills');
+  expect(card.textContent).not.toContain('CN¥23.80');
+});
+
+test('uses holding-level attribution report for exact strategy evidence counts', async () => {
+  renderHoldingDetail({
+    accountStrategy: {
+      strategy_id: 'dual_ma',
+      strategy_name: 'dual_ma',
+      status: 'research_only',
+      scope: 'account',
+      asset_class: null,
+      symbol: null,
+      effective_from: '2026-06-18',
+      auto_trade_enabled: false,
+      attribution_status: 'assignment_only',
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      total_fees: null,
+      notes: '',
+      updated_at: '2026-06-18T10:00:00+08:00',
+      limitations: [],
+    },
+    accountStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      attribution_status: 'evidence_linked_pnl_pending',
+      signal_count: 8,
+      action_count: 8,
+      risk_decision_count: 8,
+      order_count: 8,
+      fill_count: 8,
+      unattributed_fill_count: 0,
+      total_fees: 32,
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      evidence_refs: [
+        'signal:1',
+        'signal:2',
+        'order:ORD-OTHER',
+        'fill:FILL-OTHER',
+      ],
+      limitations: [],
+    },
+    accountStrategyContribution: {
+      strategy_id: 'dual_ma',
+      contribution_status: 'estimated_from_linked_fills',
+      strategy_health_status: 'healthy',
+      strategy_health_reasons: ['linked_fill_evidence_available'],
+      linked_fill_count: 8,
+      gross_realized_pnl: 0,
+      gross_unrealized_pnl: 32,
+      total_commission: 7,
+      total_slippage: 1,
+      total_tax: 0.2,
+      net_contribution: 23.8,
+      unattributed_account_pnl: 4,
+      manual_unattributed_pnl: 12,
+      cash_flow_pnl: 3,
+      missing_valuation_symbols: [],
+      evidence_refs: ['fill:FILL-OTHER'],
+      limitations: [],
+    },
+    holdingStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      symbol: '600519',
+      assignment_scope: 'account',
+      assignment_applies_to_symbol: true,
+      attribution_status: 'holding_evidence_linked_review_required',
+      signal_count: 1,
+      action_count: 1,
+      risk_decision_count: 1,
+      order_count: 1,
+      fill_count: 1,
+      evidence_refs: ['signal:1', 'order:ORD-HOLDING-1', 'fill:FILL-HOLDING-1'],
+      limitations: [
+        'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('Linked strategy evidence available');
+  expect(card.textContent).toContain('1 linked fills');
+  expect(card.textContent).toContain('3');
+  expect(card.textContent).not.toContain('8 linked fills');
+  expect(card.textContent).not.toContain('CN¥23.80');
+});
+
+test('shows holding attribution evidence refs as localized audit chain items', async () => {
+  renderHoldingDetail({
+    accountStrategy: {
+      strategy_id: 'dual_ma',
+      strategy_name: 'dual_ma',
+      status: 'research_only',
+      scope: 'account',
+      asset_class: null,
+      symbol: null,
+      effective_from: '2026-06-18',
+      auto_trade_enabled: false,
+      attribution_status: 'assignment_only',
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      total_fees: null,
+      notes: '',
+      updated_at: '2026-06-18T10:00:00+08:00',
+      limitations: [],
+    },
+    holdingStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      symbol: '600519',
+      assignment_scope: 'account',
+      assignment_applies_to_symbol: true,
+      attribution_status: 'holding_evidence_linked_review_required',
+      signal_count: 1,
+      action_count: 1,
+      risk_decision_count: 1,
+      order_count: 1,
+      fill_count: 1,
+      evidence_refs: [
+        'signal:1',
+        'action:101',
+        'risk:RISK-HOLDING-1',
+        'review:1',
+        'order:ORD-HOLDING-1',
+        'fill:FILL-HOLDING-1',
+      ],
+      limitations: [
+        'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('Evidence chain');
+  expect(card.textContent).toContain('Signal evidence');
+  expect(card.textContent).toContain('Candidate action');
+  expect(card.textContent).toContain('Risk check');
+  expect(card.textContent).toContain('Manual review');
+  expect(card.textContent).toContain('Order evidence');
+  expect(card.textContent).toContain('Fill evidence');
+  expect(card.textContent).toContain('Audit ref 1');
+  expect(card.textContent).toContain('Audit ref ORD-HOLDING-1');
+  expect(card.textContent).toContain('Audit ref FILL-HOLDING-1');
+  expect(card.textContent).not.toContain('signal:1');
+  expect(card.textContent).not.toContain('order:ORD-HOLDING-1');
+  expect(card.textContent).not.toContain('fill:FILL-HOLDING-1');
+});
+
+test('explains attribution review readiness before assigning holding PnL to strategy', async () => {
+  renderHoldingDetail({
+    accountStrategy: {
+      strategy_id: 'dual_ma',
+      strategy_name: 'dual_ma',
+      status: 'research_only',
+      scope: 'account',
+      asset_class: null,
+      symbol: null,
+      effective_from: '2026-06-18',
+      auto_trade_enabled: false,
+      attribution_status: 'assignment_only',
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      total_fees: null,
+      notes: '',
+      updated_at: '2026-06-18T10:00:00+08:00',
+      limitations: [],
+    },
+    holdingStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      symbol: '600519',
+      assignment_scope: 'account',
+      assignment_applies_to_symbol: true,
+      attribution_status: 'holding_evidence_linked_review_required',
+      signal_count: 1,
+      action_count: 1,
+      risk_decision_count: 1,
+      order_count: 1,
+      fill_count: 1,
+      evidence_refs: [
+        'signal:1',
+        'action:101',
+        'risk:RISK-HOLDING-1',
+        'review:1',
+        'order:ORD-HOLDING-1',
+        'fill:FILL-HOLDING-1',
+      ],
+      limitations: [
+        'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('Attribution review readiness');
+  expect(card.textContent).toContain('Ready for review');
+  expect(card.textContent).toContain('Strategy signal linked');
+  expect(card.textContent).toContain('Manual review linked');
+  expect(card.textContent).toContain('Risk check linked');
+  expect(card.textContent).toContain('Order evidence linked');
+  expect(card.textContent).toContain('Fill evidence linked');
+  expect(card.textContent).toContain(
+    'Holding PnL is still not assigned to the strategy until review is complete.',
+  );
   expect(card.textContent).not.toContain('CN¥23.80');
 });
 
