@@ -134,12 +134,14 @@ function readBacktestSearchDefaults(search: string) {
   const rawAssetClass =
     params.get('assetClass')?.trim() ?? params.get('asset_class')?.trim() ?? '';
   const strategy = params.get('strategy')?.trim() ?? '';
+  const source = params.get('source')?.trim() ?? '';
   return {
     symbol,
     assetClass: allowedBacktestAssetClasses.has(rawAssetClass)
       ? rawAssetClass
       : 'stock',
     strategy: strategy || 'dual_ma',
+    handoffSource: source === 'portfolio' ? 'portfolio' : 'decision',
     hasHandoffContext:
       Boolean(symbol) || hasAssetClassParam || Boolean(strategy),
   };
@@ -151,6 +153,7 @@ function currentBacktestSearchDefaults() {
       symbol: '',
       assetClass: 'stock',
       strategy: 'dual_ma',
+      handoffSource: 'decision',
       hasHandoffContext: false,
     };
   }
@@ -431,6 +434,38 @@ export function BacktestPage() {
   const selectedAssetClassLabel =
     assetClassOptions.find((option) => option.value === assetClass)?.label ??
     assetClass;
+  const handoffLabels =
+    searchDefaults.handoffSource === 'portfolio'
+      ? {
+          kicker: labels.holdingHandoffKicker,
+          title: labels.holdingHandoffTitle,
+          detail: labels.holdingHandoffDetail,
+          badge: labels.decisionHandoffResearchOnly,
+        }
+      : {
+          kicker: labels.decisionHandoffKicker,
+          title: labels.decisionHandoffTitle,
+          detail: labels.decisionHandoffDetail,
+          badge: labels.decisionHandoffResearchOnly,
+        };
+  const runContextSourceLabel =
+    searchDefaults.handoffSource === 'portfolio'
+      ? labels.runContextSourcePortfolio
+      : searchDefaults.hasHandoffContext
+        ? labels.runContextSourceDecision
+        : labels.runContextSourceManual;
+  const reportAsset = latestReport?.config.assets?.[0] ?? null;
+  const reportSymbol = reportAsset?.symbol ?? symbol;
+  const reportAssetClass = reportAsset?.asset_class ?? assetClass;
+  const reportAssetClassLabel =
+    assetClassOptions.find((option) => option.value === reportAssetClass)
+      ?.label ?? reportAssetClass;
+  const reportStrategy =
+    strategyCatalog.find(
+      (item) =>
+        item.name === latestReport?.config.strategy ||
+        item.strategy_id === latestReport?.config.strategy,
+    ) ?? selectedStrategy;
 
   useEffect(() => {
     setParameterValues(buildParamValues(parameterSchema));
@@ -553,22 +588,22 @@ export function BacktestPage() {
             {searchDefaults.hasHandoffContext ? (
               <section
                 className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_34%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] p-3.5"
-                data-testid="backtest-decision-handoff"
+                data-testid="backtest-handoff-context"
               >
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                      {labels.decisionHandoffKicker}
+                      {handoffLabels.kicker}
                     </div>
                     <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">
-                      {labels.decisionHandoffTitle}
+                      {handoffLabels.title}
                     </h3>
                     <p className="app-muted mt-1.5 text-xs leading-5">
-                      {labels.decisionHandoffDetail}
+                      {handoffLabels.detail}
                     </p>
                   </div>
                   <span className="inline-flex shrink-0 items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
-                    {labels.decisionHandoffResearchOnly}
+                    {handoffLabels.badge}
                   </span>
                 </div>
                 <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
@@ -819,6 +854,59 @@ export function BacktestPage() {
 
             {latestReport ? (
               <div className="mt-5 space-y-5">
+                <section
+                  className="rounded-3xl border border-[color-mix(in_srgb,var(--app-accent)_30%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-4"
+                  data-testid="backtest-run-context-summary"
+                >
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                        {labels.runContextKicker}
+                      </div>
+                      <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+                        {labels.runContextTitle}
+                      </h3>
+                      <p className="app-muted mt-2 text-sm leading-6">
+                        {labels.runContextDetail}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      {reportSymbol ? (
+                        <a
+                          className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                          href={`/portfolio/${encodeURIComponent(reportSymbol)}`}
+                        >
+                          {labels.runContextReviewHolding}
+                        </a>
+                      ) : null}
+                      <span className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                        {labels.decisionHandoffResearchOnly}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                    <RunContextValue
+                      label={labels.runContextSource}
+                      value={runContextSourceLabel}
+                    />
+                    <RunContextValue
+                      label={labels.runContextInstrument}
+                      value={reportSymbol || labels.notDeclared}
+                      numeric
+                    />
+                    <RunContextValue
+                      label={labels.runContextAssetClass}
+                      value={reportAssetClassLabel}
+                    />
+                    <RunContextValue
+                      label={labels.runContextStrategy}
+                      value={strategyDisplayName(
+                        reportStrategy,
+                        labels.strategyNames,
+                      )}
+                    />
+                  </div>
+                </section>
                 <SingleInstrumentLoopReadinessCard
                   acceptanceAudit={
                     singleInstrumentAudit.data?.audits[0] ?? null
@@ -914,6 +1002,29 @@ export function BacktestPage() {
 
       <BacktestReportView />
     </section>
+  );
+}
+
+function RunContextValue({
+  label,
+  value,
+  numeric = false,
+}: {
+  label: string;
+  value: string;
+  numeric?: boolean;
+}) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-2.5">
+      <div className="app-muted text-[11px] font-semibold">{label}</div>
+      <div
+        className={`mt-1 truncate text-sm font-semibold text-[var(--app-text)] ${
+          numeric ? 'tabular-nums' : ''
+        }`}
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 

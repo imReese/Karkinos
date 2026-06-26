@@ -101,6 +101,7 @@ function buildBacktestHandoffHref(symbol: string, assetClass: string) {
   const params = new URLSearchParams();
   params.set('symbol', symbol);
   params.set('assetClass', assetClass);
+  params.set('source', 'portfolio');
   return `/backtest?${params.toString()}`;
 }
 

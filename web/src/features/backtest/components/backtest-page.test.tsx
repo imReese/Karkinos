@@ -1203,11 +1203,26 @@ test('prefills single-instrument research context from decision handoff query', 
   expect((screen.getByLabelText('Strategy') as HTMLSelectElement).value).toBe(
     'dual_ma',
   );
-  const handoff = await screen.findByTestId('backtest-decision-handoff');
+  const handoff = await screen.findByTestId('backtest-handoff-context');
   expect(handoff.textContent).toContain('Decision handoff context');
   expect(handoff.textContent).toContain('600519');
   expect(handoff.textContent).toContain('Dual Moving Average');
   expect(handoff.textContent).toContain('Research only');
+});
+
+test('labels portfolio handoff context as holding research instead of decision handoff', async () => {
+  window.history.pushState(
+    {},
+    '',
+    '/backtest?symbol=600519&assetClass=stock&strategy=dual_ma&source=portfolio',
+  );
+
+  renderBacktestPage({ results: [] });
+
+  const handoff = await screen.findByTestId('backtest-handoff-context');
+  expect(handoff.textContent).toContain('Holding research handoff');
+  expect(handoff.textContent).toContain('Holding research context');
+  expect(handoff.textContent).not.toContain('Decision handoff');
 });
 
 test('shows current account strategy without claiming live attribution', async () => {
@@ -1817,6 +1832,33 @@ test('runs a backtest and displays metrics_json and cost_summary_json fields', a
     ),
   ).toBeTruthy();
   expect(screen.queryByText('NaN')).toBeNull();
+});
+
+test('keeps portfolio handoff context visible beside the run evidence chain', async () => {
+  window.history.pushState(
+    {},
+    '',
+    '/backtest?symbol=600519&assetClass=stock&strategy=dual_ma&source=portfolio',
+  );
+  renderBacktestPage({ results: [] });
+
+  await screen.findByText('Strategy replay');
+  const runButton = screen.getByRole('button', { name: 'Run backtest' });
+  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+  const runContext = await screen.findByTestId('backtest-run-context-summary');
+  expect(runContext.textContent).toContain('Run context');
+  expect(runContext.textContent).toContain('From holding detail');
+  expect(runContext.textContent).toContain('600519');
+  expect(runContext.textContent).toContain('Stock');
+  expect(runContext.textContent).toContain('Dual Moving Average');
+  expect(runContext.textContent).toContain(
+    'Research only; no broker order is created.',
+  );
+  const holdingLink = within(runContext).getByRole('link', {
+    name: 'Review holding detail',
+  });
+  expect(holdingLink.getAttribute('href')).toBe('/portfolio/600519');
 });
 
 test('previews research-only strategy signal after a single-symbol backtest', async () => {
