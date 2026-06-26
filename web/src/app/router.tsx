@@ -98,12 +98,14 @@ import {
   type AllocationGroup,
   type AllocationItem,
   useLiveHoldingsQuery,
+  usePortfolioCockpitQuery,
   usePortfolioSnapshotQuery,
   usePositionsQuery,
 } from '../features/portfolio/api';
 import { AllocationCard } from '../features/portfolio/components/allocation-card';
 import { AllocationGroupsCard } from '../features/portfolio/components/allocation-groups-card';
 import { LiveHoldingsBoard } from '../features/portfolio/components/live-holdings-board';
+import { PortfolioConstructionRecommendationsCard } from '../features/portfolio/components/portfolio-construction-recommendations-card';
 import { HoldingDetailPage } from '../features/portfolio/components/holding-detail-page';
 import { PositionsTable } from '../features/portfolio/components/positions-table';
 import { WorkspaceToolbar } from '../features/portfolio/components/workspace-toolbar';
@@ -741,6 +743,7 @@ export function PortfolioPage() {
   const overview = useAccountOverviewQuery();
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
+  const cockpit = usePortfolioCockpitQuery();
   const liveHoldings = useLiveHoldingsQuery();
   const strategyContribution = useAccountStrategyContributionQuery();
   const search = searchState.q;
@@ -939,6 +942,14 @@ export function PortfolioPage() {
                 isError={strategyContribution.isError}
                 onRetry={() => void strategyContribution.refetch()}
                 instruments={positions.data ?? snapshot.data.positions}
+              />
+              <PortfolioConstructionRecommendationsCard
+                recommendations={
+                  cockpit.data?.construction_recommendations ?? []
+                }
+                isLoading={cockpit.isLoading}
+                isError={cockpit.isError}
+                onRetry={() => void cockpit.refetch()}
               />
               <RiskSummaryCard
                 overview={overview.data}

@@ -479,6 +479,11 @@ uv run python -m tools.live_monitor
 | GET | `/api/portfolio/allocation` | 获取资产配置权重 |
 | GET | `/api/portfolio/equity-curve` | 获取权益曲线 |
 
+`/api/portfolio/cockpit` 的 `construction_recommendations` 是只读组合构建证据。
+只有账户事实闸门为 `pass` 且对应动作的风控闸门为 `passed` 时，建议才会标记为
+`actionable=true`；账户事实缺失、账户事实降级或风控未通过时，只返回复核原因和
+下一步动作，不会提交券商订单，也不会绕过人工确认。
+
 #### 信号 — /api/signals
 
 | 方法 | 路径 | 说明 |

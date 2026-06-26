@@ -1619,3 +1619,18 @@ roadmap promises.
   coverage only; it does not change UI behavior, ledger storage, broker
   behavior, order submission, automatic trading defaults, or manual-confirmation
   requirements.
+* 2026-06-26: Portfolio cockpit responses now include read-only construction
+  recommendation evidence for action-linked positions. A recommendation is
+  marked actionable only when account-truth status is `pass` and the matching
+  risk gate is `passed`; missing/degraded account truth or blocked/unchecked
+  risk returns required review actions and a localized rationale instead. This
+  is portfolio-construction evidence only; it does not write production ledger
+  entries, submit broker orders, enable automatic trading, or bypass manual
+  confirmation.
+* 2026-06-26: Portfolio now surfaces cockpit construction recommendations in a
+  localized read-only card next to strategy attribution and risk summaries.
+  Blocked/degraded items show user-readable review actions instead of raw
+  internal action codes, while actionable items are labeled as manual-review
+  candidates only after account-truth and risk gates pass. This is UI evidence
+  surfacing only; it does not write production ledger entries, submit broker
+  orders, enable automatic trading, or bypass manual confirmation.

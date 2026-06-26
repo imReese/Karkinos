@@ -36,6 +36,7 @@ from server.models import (
     LiveHoldingItemResponse,
     LiveHoldingsResponse,
     PendingFundOrderResponse,
+    PortfolioConstructionRecommendation,
     PortfolioCockpitPosition,
     PortfolioCockpitResponse,
     PortfolioSnapshot,
@@ -3383,6 +3384,143 @@ def _with_overview_quote_metadata(
     )
 
 
+def _portfolio_account_truth_gate_status(state: object) -> str:
+    db = getattr(state, "db", None)
+    if db is None:
+        return "blocked"
+
+    payload: dict[str, object] | None = None
+    reader = getattr(db, "get_account_truth_score_sync", None)
+    if callable(reader):
+        payload = _dict_payload(reader())
+    if not payload:
+        list_reader = getattr(db, "list_account_truth_scores_sync", None)
+        if callable(list_reader):
+            rows = list_reader(limit=1, offset=0)
+            payload = _dict_payload(rows[0]) if rows else None
+
+    if not payload:
+        return "blocked"
+
+    gate_status = str(payload.get("gate_status") or "").strip().lower()
+    if gate_status in {"pass", "degraded", "blocked"}:
+        return gate_status
+
+    score = payload.get("score")
+    if isinstance(score, int | float):
+        if score >= 80:
+            return "pass"
+        if score >= 60:
+            return "degraded"
+    return "blocked"
+
+
+def _dict_payload(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _portfolio_construction_recommendations(
+    positions: list[PortfolioCockpitPosition],
+    *,
+    account_truth_gate_status: str,
+) -> list[PortfolioConstructionRecommendation]:
+    recommendations: list[PortfolioConstructionRecommendation] = []
+    for position in positions:
+        action = position.action_task
+        if action is None:
+            continue
+
+        risk_gate_status = str(action.risk_gate_status or "not_checked")
+        actionable = (
+            account_truth_gate_status == "pass" and risk_gate_status == "passed"
+        )
+        required_actions = _portfolio_construction_required_actions(
+            account_truth_gate_status=account_truth_gate_status,
+            risk_gate_status=risk_gate_status,
+        )
+        recommendations.append(
+            PortfolioConstructionRecommendation(
+                symbol=position.symbol,
+                name=position.name,
+                asset_class=position.asset_class,
+                direction=action.direction,
+                status=_portfolio_construction_status(
+                    account_truth_gate_status=account_truth_gate_status,
+                    risk_gate_status=risk_gate_status,
+                ),
+                actionable=actionable,
+                actual_weight=position.actual_weight,
+                target_weight=position.target_weight,
+                drift=position.drift,
+                account_truth_gate_status=account_truth_gate_status,
+                risk_gate_status=risk_gate_status,
+                required_actions=required_actions,
+                rationale=_portfolio_construction_rationale(
+                    account_truth_gate_status=account_truth_gate_status,
+                    risk_gate_status=risk_gate_status,
+                    actionable=actionable,
+                ),
+                source_action_task_id=action.id,
+            )
+        )
+    return recommendations
+
+
+def _portfolio_construction_status(
+    *,
+    account_truth_gate_status: str,
+    risk_gate_status: str,
+) -> str:
+    if account_truth_gate_status == "pass" and risk_gate_status == "passed":
+        return "actionable"
+    if account_truth_gate_status == "degraded":
+        return "degraded"
+    return "blocked"
+
+
+def _portfolio_construction_required_actions(
+    *,
+    account_truth_gate_status: str,
+    risk_gate_status: str,
+) -> list[str]:
+    actions: list[str] = []
+    if account_truth_gate_status != "pass":
+        actions.extend(
+            [
+                "import_and_reconcile_broker_evidence",
+                "resolve_account_truth_before_rebalance",
+            ]
+        )
+    if risk_gate_status == "blocked":
+        actions.append("review_blocked_risk_gate")
+    elif risk_gate_status != "passed":
+        actions.append("run_pre_trade_risk_gate")
+    return actions
+
+
+def _portfolio_construction_rationale(
+    *,
+    account_truth_gate_status: str,
+    risk_gate_status: str,
+    actionable: bool,
+) -> str:
+    if actionable:
+        return "账户事实与风控闸门均已通过，组合构建建议可进入人工复核。"
+    if account_truth_gate_status != "pass":
+        return "账户事实未通过，组合构建建议只能用于复核，不能作为可执行候选。"
+    if risk_gate_status == "blocked":
+        return "风控闸门阻断了该组合构建建议，需要先复核风险原因。"
+    return "风控闸门尚未完成检查，该组合构建建议不能作为可执行候选。"
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -3652,6 +3790,10 @@ def create_router() -> APIRouter:
             positions=positions,
             action_queue=action_queue,
             risk_alerts=projection.risks,
+            construction_recommendations=_portfolio_construction_recommendations(
+                positions,
+                account_truth_gate_status=_portfolio_account_truth_gate_status(state),
+            ),
         )
 
     @r.get("/risk-summary", response_model=list[RiskSummaryItem])
