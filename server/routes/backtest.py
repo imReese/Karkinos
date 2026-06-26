@@ -797,6 +797,10 @@ def _run_backtest_attribution_preview(
         for ref in (
             _preview_ref("signal_preview", request.signal_id),
             _preview_ref("dataset_snapshot", request.dataset_snapshot_id),
+            _preview_ref(
+                "risk_preview",
+                request.risk_reasons[0] if request.risk_reasons else None,
+            ),
             _preview_ref("paper_shadow_order", order_id),
             _preview_ref("paper_shadow_fill", fill_id),
         )

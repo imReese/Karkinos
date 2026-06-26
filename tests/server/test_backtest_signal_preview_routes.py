@@ -379,6 +379,7 @@ def test_backtest_attribution_preview_summarizes_preview_evidence_without_writes
     assert response["evidence_refs"] == [
         "signal_preview:preview-run-001:0001:buy_candidate",
         "dataset_snapshot:sha256:preview-dataset",
+        "risk_preview:approved",
         "paper_shadow_order:paper-shadow-preview:dual_ma:600000:buy:100:10",
         "paper_shadow_fill:paper-shadow-preview:dual_ma:600000:buy:100:10:fill:1",
     ]

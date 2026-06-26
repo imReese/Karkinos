@@ -112,6 +112,12 @@ type BacktestAttributionNextAction = {
   label: string;
 };
 
+type BacktestAttributionEvidenceChainItem = {
+  key: string;
+  label: string;
+  present: boolean;
+};
+
 function useBacktestPortfolioInstrumentsQuery() {
   return useQuery({
     queryKey: ['backtest-portfolio-instruments'],
@@ -225,6 +231,54 @@ function buildBacktestHoldingAttributionNextAction({
     href: '#backtest-signal-review-evidence',
     label: labels.singleInstrumentLoopAttributionEvidence,
   };
+}
+
+function hasAttributionEvidenceRef(
+  result: BacktestAttributionPreviewResponse,
+  prefix: string,
+) {
+  return result.evidence_refs.some((ref) => ref.startsWith(`${prefix}:`));
+}
+
+function buildBacktestAttributionEvidenceChainItems(
+  result: BacktestAttributionPreviewResponse,
+  labels: ReturnType<typeof useCopy>['backtest']['page'],
+): BacktestAttributionEvidenceChainItem[] {
+  return [
+    {
+      key: 'signal_preview',
+      label: labels.signalPreviewEvidenceChainSignal,
+      present:
+        result.evidence_counts.signal_preview > 0 &&
+        hasAttributionEvidenceRef(result, 'signal_preview'),
+    },
+    {
+      key: 'dataset_snapshot',
+      label: labels.signalPreviewEvidenceChainDataset,
+      present: hasAttributionEvidenceRef(result, 'dataset_snapshot'),
+    },
+    {
+      key: 'risk_preview',
+      label: labels.signalPreviewEvidenceChainRisk,
+      present:
+        result.evidence_counts.risk_preview > 0 &&
+        hasAttributionEvidenceRef(result, 'risk_preview'),
+    },
+    {
+      key: 'paper_shadow_order',
+      label: labels.signalPreviewEvidenceChainPaperOrder,
+      present:
+        result.evidence_counts.paper_shadow_order > 0 &&
+        hasAttributionEvidenceRef(result, 'paper_shadow_order'),
+    },
+    {
+      key: 'paper_shadow_fill',
+      label: labels.signalPreviewEvidenceChainPaperFill,
+      present:
+        result.evidence_counts.paper_shadow_fill > 0 &&
+        hasAttributionEvidenceRef(result, 'paper_shadow_fill'),
+    },
+  ];
 }
 
 function buildBacktestHoldingAttributionReadinessItems(
@@ -2371,6 +2425,8 @@ function AttributionPreviewResult({
   const productionFacts =
     result.evidence_counts.production_order +
     result.evidence_counts.production_fill;
+  const attributionEvidenceChainItems =
+    buildBacktestAttributionEvidenceChainItems(result, labels);
   const isReady = result.status === 'ready_for_review_linkage';
 
   return (
@@ -2450,6 +2506,40 @@ function AttributionPreviewResult({
           </div>
         </div>
       ) : null}
+      <div
+        className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3"
+        data-testid="backtest-attribution-evidence-chain"
+      >
+        <div className="text-sm font-semibold text-[var(--app-text)]">
+          {labels.signalPreviewEvidenceChainTitle}
+        </div>
+        <p className="app-muted mt-1 text-sm leading-5">
+          {labels.signalPreviewEvidenceChainDetail}
+        </p>
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+          {attributionEvidenceChainItems.map((item) => (
+            <li
+              key={item.key}
+              className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 break-words font-semibold text-[var(--app-text)]">
+                {item.label}
+              </span>
+              <span
+                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  item.present
+                    ? 'bg-[color-mix(in_srgb,var(--app-success)_14%,transparent)] text-[var(--app-success)]'
+                    : 'bg-[color-mix(in_srgb,var(--app-warning)_14%,transparent)] text-[var(--app-warning)]'
+                }`}
+              >
+                {item.present
+                  ? labels.signalPreviewEvidenceChainPresent
+                  : labels.signalPreviewEvidenceChainMissing}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
       {holdingAttributionReadinessItems.length > 0 ? (
         <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
