@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -79,6 +79,65 @@ function installHoldingFetchMock({
   liveItemOverride = {},
   healthQuoteOverride = {},
   marketHealthOverride = {},
+  accountStrategy = {
+    strategy_id: 'dual_ma',
+    strategy_name: 'dual_ma',
+    status: 'research_only',
+    scope: 'account',
+    asset_class: null,
+    symbol: null,
+    effective_from: null,
+    auto_trade_enabled: false,
+    attribution_status: 'assignment_only',
+    attributed_pnl: null,
+    realized_pnl: null,
+    unrealized_pnl: null,
+    total_fees: null,
+    notes: '',
+    updated_at: '2026-06-18T10:00:00+08:00',
+    limitations: [
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    ],
+  },
+  accountStrategyAttribution = {
+    strategy_id: 'dual_ma',
+    attribution_status: 'assignment_only',
+    signal_count: 0,
+    action_count: 0,
+    risk_decision_count: 0,
+    order_count: 0,
+    fill_count: 0,
+    unattributed_fill_count: 0,
+    total_fees: 0,
+    attributed_pnl: null,
+    realized_pnl: null,
+    unrealized_pnl: null,
+    evidence_refs: [],
+    limitations: [
+      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    ],
+  },
+  accountStrategyContribution = {
+    strategy_id: 'dual_ma',
+    contribution_status: 'no_linked_fills',
+    strategy_health_status: 'needs_review',
+    strategy_health_reasons: ['linked_fill_evidence_missing'],
+    linked_fill_count: 0,
+    gross_realized_pnl: 0,
+    gross_unrealized_pnl: 0,
+    total_commission: 0,
+    total_slippage: 0,
+    total_tax: 0,
+    net_contribution: 0,
+    unattributed_account_pnl: null,
+    manual_unattributed_pnl: null,
+    cash_flow_pnl: null,
+    missing_valuation_symbols: [],
+    evidence_refs: [],
+    limitations: [
+      'Contribution is estimated only from fully linked strategy fills and latest local quotes; manual, cash-flow, and missing-evidence movements are separated and excluded from net contribution.',
+    ],
+  },
 }: {
   includePosition?: boolean;
   includeLedger?: boolean;
@@ -87,6 +146,9 @@ function installHoldingFetchMock({
   liveItemOverride?: Record<string, unknown>;
   healthQuoteOverride?: Record<string, unknown>;
   marketHealthOverride?: Record<string, unknown>;
+  accountStrategy?: Record<string, unknown>;
+  accountStrategyAttribution?: Record<string, unknown>;
+  accountStrategyContribution?: Record<string, unknown>;
 } = {}) {
   const resolvedPosition = { ...position, ...positionOverride };
   const positions = includePosition ? [resolvedPosition] : [];
@@ -241,6 +303,15 @@ function installHoldingFetchMock({
           volume: 130000,
         },
       ]);
+    }
+    if (url.includes('/api/account-strategy/attribution')) {
+      return jsonResponse(accountStrategyAttribution);
+    }
+    if (url.includes('/api/account-strategy/contribution')) {
+      return jsonResponse(accountStrategyContribution);
+    }
+    if (url.includes('/api/account-strategy')) {
+      return jsonResponse(accountStrategy);
     }
     return new Response('Not found', { status: 404 });
   });
@@ -530,6 +601,102 @@ test('links the holding detail to a single-instrument strategy loop with symbol 
     '/backtest?symbol=600519&assetClass=stock&source=portfolio',
   );
   expect(link.textContent).not.toContain('strategy_loop');
+});
+
+test('explains that holding PnL is not attributed to strategy without linked fills', async () => {
+  renderHoldingDetail();
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = screen.getByTestId('holding-strategy-attribution-boundary');
+  expect(card.textContent).toContain('Strategy attribution boundary');
+  expect(card.textContent).toContain('No linked strategy fills yet');
+  expect(card.textContent).toContain(
+    'Holding PnL stays account-level until a strategy signal, review decision, order, and fill can all be linked.',
+  );
+
+  const researchLink = within(card).getByRole('link', {
+    name: 'Review strategy research evidence',
+  });
+  expect(researchLink.getAttribute('href')).toBe(
+    '/backtest?symbol=600519&assetClass=stock&source=portfolio',
+  );
+});
+
+test('shows linked symbol-level attribution evidence without claiming holding PnL', async () => {
+  renderHoldingDetail({
+    accountStrategy: {
+      strategy_id: 'dual_ma',
+      strategy_name: 'dual_ma',
+      status: 'research_only',
+      scope: 'symbol',
+      asset_class: null,
+      symbol: '600519',
+      effective_from: '2026-06-18',
+      auto_trade_enabled: false,
+      attribution_status: 'evidence_linked_pnl_pending',
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      total_fees: null,
+      notes: '',
+      updated_at: '2026-06-18T10:00:00+08:00',
+      limitations: [],
+    },
+    accountStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      attribution_status: 'evidence_linked_pnl_pending',
+      signal_count: 2,
+      action_count: 2,
+      risk_decision_count: 2,
+      order_count: 2,
+      fill_count: 2,
+      unattributed_fill_count: 0,
+      total_fees: 8.2,
+      attributed_pnl: null,
+      realized_pnl: null,
+      unrealized_pnl: null,
+      evidence_refs: ['signal:1', 'order:ORD-1', 'fill:FILL-1'],
+      limitations: [
+        'P/L contribution is not calculated until fills are reconciled with position and valuation history.',
+      ],
+    },
+    accountStrategyContribution: {
+      strategy_id: 'dual_ma',
+      contribution_status: 'estimated_from_linked_fills',
+      strategy_health_status: 'healthy',
+      strategy_health_reasons: ['linked_fill_evidence_available'],
+      linked_fill_count: 2,
+      gross_realized_pnl: 0,
+      gross_unrealized_pnl: 32,
+      total_commission: 7,
+      total_slippage: 1,
+      total_tax: 0.2,
+      net_contribution: 23.8,
+      unattributed_account_pnl: 4,
+      manual_unattributed_pnl: 12,
+      cash_flow_pnl: 3,
+      missing_valuation_symbols: [],
+      evidence_refs: ['fill:FILL-1', 'fill:FILL-2'],
+      limitations: [
+        'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('Linked strategy evidence available');
+  expect(card.textContent).toContain(
+    'Strategy contribution remains review-only for this holding; manual trades and cash flows stay separate until attribution is reviewed.',
+  );
+  expect(card.textContent).toContain('Dual Moving Average');
+  expect(card.textContent).toContain('Estimated from linked fills');
+  expect(card.textContent).toContain('2 linked fills');
+  expect(card.textContent).not.toContain('CN¥23.80');
 });
 
 test('shows not found state when the symbol is absent', async () => {

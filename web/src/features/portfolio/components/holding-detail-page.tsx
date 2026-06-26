@@ -1,6 +1,11 @@
 import { useMemo } from 'react';
 
 import { useAccountOverviewQuery } from '../../account/api';
+import {
+  useAccountStrategyAssignmentQuery,
+  useAccountStrategyAttributionQuery,
+  useAccountStrategyContributionQuery,
+} from '../../account-strategy/api';
 import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
 import {
   formatLedgerActivitySummary,
@@ -25,8 +30,12 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
-import { formatPublicStatus } from '../../../shared/public-labels';
+import {
+  formatPublicCode,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
+import { formatStrategyDisplayName } from '../../../shared/strategy-display';
 import {
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
@@ -118,6 +127,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const marketHealth = useMarketDataHealthQuery();
   const kline = useKlineQuery(decodedSymbol);
   const ledger = useLedgerEntriesQuery(200);
+  const accountStrategy = useAccountStrategyAssignmentQuery();
+  const accountStrategyAttribution = useAccountStrategyAttributionQuery();
+  const accountStrategyContribution = useAccountStrategyContributionQuery();
   const refreshQuote = useRefreshMarketQuotesMutation();
 
   const allPositions = positions.data ?? snapshot.data?.positions ?? [];
@@ -287,6 +299,31 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     position.asset_class ??
     '--';
   const assetClassDisplay = formatAssetClassLabel(assetClass, copy.common);
+  const strategyAssignment = accountStrategy.data ?? null;
+  const strategyAttribution = accountStrategyAttribution.data ?? null;
+  const strategyContribution = accountStrategyContribution.data ?? null;
+  const hasSymbolStrategyEvidence =
+    strategyAssignment?.scope === 'symbol' &&
+    normalizeSymbol(strategyAssignment.symbol ?? '') === normalizedSymbol &&
+    (strategyAttribution?.fill_count ?? 0) > 0 &&
+    (strategyContribution?.linked_fill_count ?? 0) > 0 &&
+    (strategyContribution?.evidence_refs.length ?? 0) > 0;
+  const strategyDisplayName = formatStrategyDisplayName(
+    strategyContribution?.strategy_id || strategyAssignment?.strategy_id
+      ? {
+          strategy_id:
+            strategyContribution?.strategy_id ??
+            strategyAssignment?.strategy_id,
+          name: strategyAssignment?.strategy_name,
+        }
+      : null,
+    copy.backtest.page.strategyNames,
+  );
+  const contributionStatusLabel = strategyContribution?.contribution_status
+    ? (copy.backtest.page.accountStrategyContributionStatusMap[
+        strategyContribution.contribution_status as keyof typeof copy.backtest.page.accountStrategyContributionStatusMap
+      ] ?? formatPublicCode(strategyContribution.contribution_status, locale))
+    : '--';
   const portfolioWeight = allocation?.weight ?? null;
   const marketOpen = marketHealth.data?.market_open;
   const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
@@ -634,6 +671,57 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   label={labels.unrealizedPnl}
                   value={formatCurrency(position.unrealized_pnl)}
                   tone={position.unrealized_pnl >= 0 ? 'success' : 'danger'}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section
+            data-testid="holding-strategy-attribution-boundary"
+            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+          >
+            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+              <div className="app-product-mark">
+                {labels.strategyAttributionBoundary}
+              </div>
+              <div className="mt-3 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                <span className="truncate">
+                  {hasSymbolStrategyEvidence
+                    ? labels.strategyAttributionLinkedEvidence
+                    : labels.strategyAttributionNoLinkedFills}
+                </span>
+              </div>
+              <p className="app-muted mt-3 text-sm leading-6">
+                {hasSymbolStrategyEvidence
+                  ? labels.strategyAttributionLinkedDetail
+                  : labels.strategyAttributionDetail}
+              </p>
+              {hasSymbolStrategyEvidence && strategyContribution ? (
+                <div className="mt-4 grid gap-2">
+                  <InfoRow
+                    label={labels.strategyAttributionStrategy}
+                    value={strategyDisplayName}
+                  />
+                  <InfoRow
+                    label={labels.strategyAttributionContributionStatus}
+                    value={contributionStatusLabel}
+                  />
+                  <InfoRow
+                    label={labels.strategyAttributionLinkedFillsLabel}
+                    value={labels.strategyAttributionLinkedFills(
+                      strategyContribution.linked_fill_count,
+                    )}
+                  />
+                  <InfoRow
+                    label={labels.strategyAttributionEvidenceRefs}
+                    value={String(strategyContribution.evidence_refs.length)}
+                  />
+                </div>
+              ) : null}
+              <div className="mt-4">
+                <ActionLink
+                  href={buildBacktestHandoffHref(position.symbol, assetClass)}
+                  label={labels.actionStrategyEvidence}
                 />
               </div>
             </div>
