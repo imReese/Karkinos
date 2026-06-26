@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-26: Web Backtest attribution preview now renders a localized,
+  user-readable evidence-chain card for strategy signal, dataset snapshot,
+  risk-gate preview, paper-shadow order, and paper-shadow fill evidence. The
+  card derives readiness from evidence refs and counts but hides raw internal
+  refs such as `signal_preview:*`, `dataset_snapshot:*`, and
+  `risk_preview:*` from the workflow UI. This is display-only and does not
+  create orders, fills, ledger entries, broker submissions, or automatic
+  real-money trading.
+* 2026-06-26: Backtest attribution preview evidence refs now include the
+  read-only risk-gate preview reference alongside signal, dataset,
+  paper-shadow order, and paper-shadow fill refs. This tightens the
+  single-instrument audit chain from signal through risk and paper/shadow
+  evidence before any manual attribution review, without creating orders,
+  fills, ledger entries, broker submissions, or automatic real-money trading.
 * 2026-06-26: Web Backtest attribution preview now reads the same structured
   holding-level attribution prerequisites used by Portfolio holding detail.
   After paper/shadow preview evidence is available, the Backtest page surfaces

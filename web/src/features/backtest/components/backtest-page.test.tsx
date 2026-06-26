@@ -618,6 +618,7 @@ const attributionPreviewResponse = {
   evidence_refs: [
     'signal_preview:preview-run-001:0001:buy_candidate',
     'dataset_snapshot:sha256:preview-dataset',
+    'risk_preview:approved',
     'paper_shadow_order:paper-shadow-preview:dual_ma:600002:buy:100:29.17',
     'paper_shadow_fill:paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1',
   ],
@@ -2110,6 +2111,15 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
     await screen.findByText('Preview evidence 4 / Production facts 0'),
   ).toBeTruthy();
   expect(await screen.findByText('Review linkage candidate')).toBeTruthy();
+  const evidenceChain = within(
+    await screen.findByTestId('backtest-attribution-evidence-chain'),
+  );
+  expect(evidenceChain.getByText('Evidence chain')).toBeTruthy();
+  expect(evidenceChain.getByText('Strategy signal')).toBeTruthy();
+  expect(evidenceChain.getByText('Dataset snapshot')).toBeTruthy();
+  expect(evidenceChain.getByText('Risk gate preview')).toBeTruthy();
+  expect(evidenceChain.getByText('Paper/shadow order')).toBeTruthy();
+  expect(evidenceChain.getByText('Paper/shadow fill')).toBeTruthy();
   expect(await screen.findByText('Holding attribution readiness')).toBeTruthy();
   expect(await screen.findByText('Evidence still incomplete')).toBeTruthy();
   expect(await screen.findByText('Manual review missing')).toBeTruthy();
@@ -2217,6 +2227,9 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
       'Strategy P/L is unavailable until signal, review, order, and fill evidence are linked.',
     ),
   ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('signal_preview:');
+  expect(document.body.textContent).not.toContain('dataset_snapshot:');
+  expect(document.body.textContent).not.toContain('risk_preview:approved');
   expect(document.body.textContent).not.toContain('ready_for_review_linkage');
   expect(document.body.textContent).not.toContain('paper_shadow_order');
 

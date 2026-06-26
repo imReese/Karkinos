@@ -1058,6 +1058,16 @@ export const copy = {
           'No linked production fills',
         signalPreviewAttributionNoLinkedFillsDetail:
           'Strategy P/L is unavailable until signal, review, order, and fill evidence are linked.',
+        signalPreviewEvidenceChainTitle: 'Evidence chain',
+        signalPreviewEvidenceChainDetail:
+          'Readable audit steps for this preview. Raw evidence references stay hidden from the workflow UI.',
+        signalPreviewEvidenceChainPresent: 'Linked',
+        signalPreviewEvidenceChainMissing: 'Missing',
+        signalPreviewEvidenceChainSignal: 'Strategy signal',
+        signalPreviewEvidenceChainDataset: 'Dataset snapshot',
+        signalPreviewEvidenceChainRisk: 'Risk gate preview',
+        signalPreviewEvidenceChainPaperOrder: 'Paper/shadow order',
+        signalPreviewEvidenceChainPaperFill: 'Paper/shadow fill',
         signalPreviewReviewLinkageTitle: 'Review linkage candidate',
         signalPreviewReviewLinkageManual: 'Manual review required',
         signalPreviewReviewLinkageNoWrite: 'No order or ledger write',
@@ -2994,6 +3004,16 @@ export const copy = {
         signalPreviewAttributionNoLinkedFillsTitle: '没有关联真实成交',
         signalPreviewAttributionNoLinkedFillsDetail:
           '只有信号、复核、订单与成交证据全部串起后，才展示策略收益归因。',
+        signalPreviewEvidenceChainTitle: '证据链',
+        signalPreviewEvidenceChainDetail:
+          '本次预览的可读审计步骤。原始证据引用不会直接暴露在操作界面。',
+        signalPreviewEvidenceChainPresent: '已关联',
+        signalPreviewEvidenceChainMissing: '缺失',
+        signalPreviewEvidenceChainSignal: '策略信号',
+        signalPreviewEvidenceChainDataset: '数据快照',
+        signalPreviewEvidenceChainRisk: '风控闸门预览',
+        signalPreviewEvidenceChainPaperOrder: 'paper/shadow 订单',
+        signalPreviewEvidenceChainPaperFill: 'paper/shadow 成交',
         signalPreviewReviewLinkageTitle: '复核关联候选',
         signalPreviewReviewLinkageManual: '需要人工复核',
         signalPreviewReviewLinkageNoWrite: '不写订单或账本',
