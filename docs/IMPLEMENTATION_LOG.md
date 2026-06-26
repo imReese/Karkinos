@@ -1642,3 +1642,22 @@ roadmap promises.
   boundary review. It is navigation/context handoff only; it does not run a
   strategy automatically, write ledger entries, submit broker orders, enable
   automatic trading, or bypass manual confirmation.
+* 2026-06-26: Portfolio-to-Backtest handoff now carries an explicit
+  `source=portfolio` query context, and Backtest displays a localized holding
+  research context instead of reusing decision handoff wording. This keeps the
+  single-instrument strategy loop user-readable when launched from a holding
+  detail page. It remains navigation/context handoff only; it does not run a
+  strategy automatically, write ledger entries, submit broker orders, enable
+  automatic trading, or bypass manual confirmation.
+* 2026-06-26: Backtest run results now keep a localized single-instrument run
+  context summary beside the evidence chain, including handoff source, symbol,
+  asset class, strategy, and the research-only/no-broker-order boundary. This
+  helps users keep the selected holding context visible while reviewing dataset,
+  signal, risk, paper/shadow, and attribution evidence. It does not change
+  strategy execution, ledger writes, broker order submission, automatic trading,
+  or manual-confirmation defaults.
+* 2026-06-26: Backtest run context now links back to the current instrument's
+  Portfolio holding detail page, closing the user-visible loop from holding
+  evidence into strategy research and back to holding/PnL review. The link is a
+  read-only navigation affordance; it does not mutate attribution records,
+  production ledger entries, broker orders, or manual-confirmation state.

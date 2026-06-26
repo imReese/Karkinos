@@ -527,7 +527,7 @@ test('links the holding detail to a single-instrument strategy loop with symbol 
     name: 'Run strategy research for this holding',
   });
   expect(link.getAttribute('href')).toBe(
-    '/backtest?symbol=600519&assetClass=stock',
+    '/backtest?symbol=600519&assetClass=stock&source=portfolio',
   );
   expect(link.textContent).not.toContain('strategy_loop');
 });
