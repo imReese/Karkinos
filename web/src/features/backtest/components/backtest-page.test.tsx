@@ -650,6 +650,37 @@ const attributionPreviewResponse = {
   ],
 };
 
+const holdingStrategyAttributionResponse = {
+  strategy_id: 'dual_ma',
+  symbol: '600002',
+  assignment_scope: 'account',
+  assignment_applies_to_symbol: true,
+  attribution_status: 'holding_evidence_linked_review_required',
+  signal_count: 1,
+  action_count: 1,
+  risk_decision_count: 1,
+  order_count: 1,
+  fill_count: 1,
+  evidence_refs: [
+    'signal:1',
+    'action:101',
+    'risk:RISK-HOLDING-1',
+    'order:ORD-HOLDING-1',
+    'fill:FILL-HOLDING-1',
+  ],
+  review_prerequisites: [
+    { key: 'strategy_signal', passed: true, evidence_count: 1 },
+    { key: 'candidate_action', passed: true, evidence_count: 1 },
+    { key: 'risk_gate', passed: true, evidence_count: 1 },
+    { key: 'manual_review', passed: false, evidence_count: 0 },
+    { key: 'order_evidence', passed: true, evidence_count: 1 },
+    { key: 'fill_evidence', passed: true, evidence_count: 1 },
+  ],
+  limitations: [
+    'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+  ],
+};
+
 const singleInstrumentAcceptanceAudit = {
   generated_at: '2026-06-25T12:00:00Z',
   selected_audit: 'single_instrument_strategy_loop',
@@ -996,6 +1027,7 @@ function installBacktestFetchMock({
   riskPreview = riskPreviewResponse,
   paperShadowPreview = paperShadowPreviewResponse,
   attributionPreview = attributionPreviewResponse,
+  holdingStrategyAttribution = holdingStrategyAttributionResponse,
   acceptanceAudit = singleInstrumentAcceptanceAudit,
   savedBacktestReport = savedReport,
   portfolio = portfolioSnapshot,
@@ -1013,6 +1045,7 @@ function installBacktestFetchMock({
   riskPreview?: unknown;
   paperShadowPreview?: unknown;
   attributionPreview?: unknown;
+  holdingStrategyAttribution?: unknown;
   acceptanceAudit?: unknown;
   savedBacktestReport?: unknown;
   portfolio?: unknown;
@@ -1039,6 +1072,9 @@ function installBacktestFetchMock({
         url.includes('/api/acceptance-audits/single_instrument_strategy_loop')
       ) {
         return jsonResponse(acceptanceAudit);
+      }
+      if (url.includes('/api/account-strategy/holdings/')) {
+        return jsonResponse(holdingStrategyAttribution);
       }
       if (url.includes('/api/account-strategy/attribution')) {
         return jsonResponse(accountStrategyAttribution);
@@ -2074,6 +2110,15 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
     await screen.findByText('Preview evidence 4 / Production facts 0'),
   ).toBeTruthy();
   expect(await screen.findByText('Review linkage candidate')).toBeTruthy();
+  expect(await screen.findByText('Holding attribution readiness')).toBeTruthy();
+  expect(await screen.findByText('Evidence still incomplete')).toBeTruthy();
+  expect(await screen.findByText('Manual review missing')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Review the strategy candidate in Decision before this holding can enter attribution review.',
+    ),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('manual_review');
   expect(await screen.findAllByText('Manual review required')).not.toHaveLength(
     0,
   );

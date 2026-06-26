@@ -13,6 +13,7 @@ from server.models import (
     AccountStrategyAssignmentUpdate,
     AccountStrategyAttributionSummary,
     AccountStrategyContributionReport,
+    AttributionReviewPrerequisite,
     HoldingStrategyAttributionReport,
 )
 
@@ -327,6 +328,49 @@ def _build_attribution_summary(
     )
 
 
+def _build_attribution_review_prerequisites(
+    *,
+    signal_count: int,
+    action_count: int,
+    risk_decision_count: int,
+    review_count: int,
+    order_count: int,
+    fill_count: int,
+) -> list[AttributionReviewPrerequisite]:
+    return [
+        AttributionReviewPrerequisite(
+            key="strategy_signal",
+            passed=signal_count > 0,
+            evidence_count=signal_count,
+        ),
+        AttributionReviewPrerequisite(
+            key="candidate_action",
+            passed=action_count > 0,
+            evidence_count=action_count,
+        ),
+        AttributionReviewPrerequisite(
+            key="risk_gate",
+            passed=risk_decision_count > 0,
+            evidence_count=risk_decision_count,
+        ),
+        AttributionReviewPrerequisite(
+            key="manual_review",
+            passed=review_count > 0,
+            evidence_count=review_count,
+        ),
+        AttributionReviewPrerequisite(
+            key="order_evidence",
+            passed=order_count > 0,
+            evidence_count=order_count,
+        ),
+        AttributionReviewPrerequisite(
+            key="fill_evidence",
+            passed=fill_count > 0,
+            evidence_count=fill_count,
+        ),
+    ]
+
+
 def _assignment_applies_to_symbol(
     assignment: AccountStrategyAssignment,
     *,
@@ -460,22 +504,36 @@ def _build_holding_attribution_report(
         *(f"order:{order['order_id']}" for order in linked_orders),
         *(f"fill:{fill['fill_id']}" for fill in linked_fills),
     ]
+    signal_count = len(strategy_entries) if assignment_applies else 0
+    action_count = (
+        sum(1 for entry in strategy_entries if entry.get("action_task"))
+        if assignment_applies
+        else 0
+    )
+    risk_decision_count = len(risk_decisions) if assignment_applies else 0
+    review_count = len(review_refs) if assignment_applies else 0
+    order_count = len(linked_orders) if assignment_applies else 0
+    fill_count = len(linked_fills) if assignment_applies else 0
     return HoldingStrategyAttributionReport(
         strategy_id=assignment.strategy_id,
         symbol=symbol,
         assignment_scope=assignment.scope,
         assignment_applies_to_symbol=assignment_applies,
         attribution_status=status,
-        signal_count=len(strategy_entries) if assignment_applies else 0,
-        action_count=(
-            sum(1 for entry in strategy_entries if entry.get("action_task"))
-            if assignment_applies
-            else 0
-        ),
-        risk_decision_count=len(risk_decisions) if assignment_applies else 0,
-        order_count=len(linked_orders) if assignment_applies else 0,
-        fill_count=len(linked_fills) if assignment_applies else 0,
+        signal_count=signal_count,
+        action_count=action_count,
+        risk_decision_count=risk_decision_count,
+        order_count=order_count,
+        fill_count=fill_count,
         evidence_refs=evidence_refs if assignment_applies else [],
+        review_prerequisites=_build_attribution_review_prerequisites(
+            signal_count=signal_count,
+            action_count=action_count,
+            risk_decision_count=risk_decision_count,
+            review_count=review_count,
+            order_count=order_count,
+            fill_count=fill_count,
+        ),
         limitations=limitations,
     )
 

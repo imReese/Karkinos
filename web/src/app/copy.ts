@@ -365,9 +365,22 @@ export const copy = {
         strategyAttributionReviewIncomplete: 'Evidence still incomplete',
         strategyAttributionReviewBoundary:
           'Holding PnL is still not assigned to the strategy until review is complete.',
+        strategyAttributionNextActionTitle: 'Next review step',
+        strategyAttributionNextActionResearch:
+          'Run or refresh the single-instrument strategy loop before this holding can enter attribution review.',
+        strategyAttributionNextActionManualReview:
+          'Review the strategy candidate in Decision before this holding can enter attribution review.',
+        strategyAttributionNextActionExecution:
+          'Check execution evidence before this holding can enter attribution review.',
+        strategyAttributionNextActionGeneric:
+          'Resolve the missing evidence before this holding can enter attribution review.',
+        strategyAttributionOpenDecisionReview: 'Open Decision review',
+        strategyAttributionOpenExecutionReview: 'Open execution review',
         strategyAttributionReadinessItems: {
           signalLinked: 'Strategy signal linked',
           signalMissing: 'Strategy signal missing',
+          actionLinked: 'Candidate action linked',
+          actionMissing: 'Candidate action missing',
           reviewLinked: 'Manual review linked',
           reviewMissing: 'Manual review missing',
           riskLinked: 'Risk check linked',
@@ -376,6 +389,8 @@ export const copy = {
           orderMissing: 'Order evidence missing',
           fillLinked: 'Fill evidence linked',
           fillMissing: 'Fill evidence missing',
+          unknownLinked: 'Evidence linked',
+          unknownMissing: 'Evidence missing',
         },
         displayName: 'Display Name',
         assetClass: 'Asset Class',
@@ -1049,6 +1064,8 @@ export const copy = {
         signalPreviewReviewLinkageDetail:
           'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
         signalPreviewReviewHoldingAttribution: 'Review holding attribution',
+        signalPreviewHoldingAttributionReadiness:
+          'Holding attribution readiness',
         signalPreviewGateLabels: {
           dataReady: 'Data ready',
           dataNeedsReview: 'Data needs review',
@@ -2320,9 +2337,22 @@ export const copy = {
         strategyAttributionReviewIncomplete: '证据仍未补齐',
         strategyAttributionReviewBoundary:
           '持仓收益在复核完成前仍不会归因到该策略。',
+        strategyAttributionNextActionTitle: '下一步复核动作',
+        strategyAttributionNextActionResearch:
+          '先运行或刷新单标的策略闭环，再让该持仓进入归因复核。',
+        strategyAttributionNextActionManualReview:
+          '先在决策页复核策略候选动作，再让该持仓进入归因复核。',
+        strategyAttributionNextActionExecution:
+          '先核对执行证据，再让该持仓进入归因复核。',
+        strategyAttributionNextActionGeneric:
+          '先补齐缺失证据，再让该持仓进入归因复核。',
+        strategyAttributionOpenDecisionReview: '打开决策复核',
+        strategyAttributionOpenExecutionReview: '打开执行复核',
         strategyAttributionReadinessItems: {
           signalLinked: '策略信号已关联',
           signalMissing: '缺少策略信号',
+          actionLinked: '候选动作已关联',
+          actionMissing: '缺少候选动作',
           reviewLinked: '人工复核已关联',
           reviewMissing: '缺少人工复核',
           riskLinked: '风控检查已关联',
@@ -2331,6 +2361,8 @@ export const copy = {
           orderMissing: '缺少订单证据',
           fillLinked: '成交证据已关联',
           fillMissing: '缺少成交证据',
+          unknownLinked: '证据已关联',
+          unknownMissing: '缺少证据',
         },
         displayName: '名称',
         assetClass: '资产类别',
@@ -2968,6 +3000,7 @@ export const copy = {
         signalPreviewReviewLinkageDetail:
           '信号、风控和 paper/shadow 证据可以人工复核并关联。',
         signalPreviewReviewHoldingAttribution: '查看持仓归因复核',
+        signalPreviewHoldingAttributionReadiness: '持仓归因准备度',
         signalPreviewGateLabels: {
           dataReady: '数据可用',
           dataNeedsReview: '数据需复核',

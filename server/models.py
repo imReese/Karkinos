@@ -949,6 +949,12 @@ class AccountStrategyContributionReport(BaseModel):
     limitations: list[str] = Field(default_factory=list)
 
 
+class AttributionReviewPrerequisite(BaseModel):
+    key: str
+    passed: bool
+    evidence_count: int = 0
+
+
 class HoldingStrategyAttributionReport(BaseModel):
     strategy_id: str
     symbol: str
@@ -961,6 +967,9 @@ class HoldingStrategyAttributionReport(BaseModel):
     order_count: int = 0
     fill_count: int = 0
     evidence_refs: list[str] = Field(default_factory=list)
+    review_prerequisites: list[AttributionReviewPrerequisite] = Field(
+        default_factory=list
+    )
     limitations: list[str] = Field(default_factory=list)
 
 

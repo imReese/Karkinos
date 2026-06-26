@@ -973,6 +973,103 @@ test('explains attribution review readiness before assigning holding PnL to stra
   expect(card.textContent).not.toContain('CN¥23.80');
 });
 
+test('uses structured holding attribution prerequisites instead of parsing evidence refs', async () => {
+  renderHoldingDetail({
+    holdingStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      symbol: '600519',
+      assignment_scope: 'account',
+      assignment_applies_to_symbol: true,
+      attribution_status: 'holding_evidence_linked_review_required',
+      signal_count: 1,
+      action_count: 1,
+      risk_decision_count: 1,
+      order_count: 1,
+      fill_count: 1,
+      evidence_refs: [
+        'signal:1',
+        'action:101',
+        'risk:RISK-HOLDING-1',
+        'order:ORD-HOLDING-1',
+        'fill:FILL-HOLDING-1',
+      ],
+      review_prerequisites: [
+        { key: 'strategy_signal', passed: true, evidence_count: 1 },
+        { key: 'candidate_action', passed: true, evidence_count: 1 },
+        { key: 'risk_gate', passed: true, evidence_count: 1 },
+        { key: 'manual_review', passed: true, evidence_count: 1 },
+        { key: 'order_evidence', passed: true, evidence_count: 1 },
+        { key: 'fill_evidence', passed: true, evidence_count: 1 },
+        { key: 'future_gate', passed: false, evidence_count: 0 },
+      ],
+      limitations: [
+        'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('Candidate action linked');
+  expect(card.textContent).toContain('Manual review linked');
+  expect(card.textContent).toContain('Evidence missing');
+  expect(card.textContent).not.toContain('Manual review missing');
+  expect(card.textContent).not.toContain('future_gate');
+});
+
+test('shows a localized next action for the first missing attribution prerequisite', async () => {
+  renderHoldingDetail({
+    holdingStrategyAttribution: {
+      strategy_id: 'dual_ma',
+      symbol: '600519',
+      assignment_scope: 'account',
+      assignment_applies_to_symbol: true,
+      attribution_status: 'holding_evidence_linked_review_required',
+      signal_count: 1,
+      action_count: 1,
+      risk_decision_count: 1,
+      order_count: 1,
+      fill_count: 1,
+      evidence_refs: [
+        'signal:1',
+        'action:101',
+        'risk:RISK-HOLDING-1',
+        'order:ORD-HOLDING-1',
+        'fill:FILL-HOLDING-1',
+      ],
+      review_prerequisites: [
+        { key: 'strategy_signal', passed: true, evidence_count: 1 },
+        { key: 'candidate_action', passed: true, evidence_count: 1 },
+        { key: 'risk_gate', passed: true, evidence_count: 1 },
+        { key: 'manual_review', passed: false, evidence_count: 0 },
+        { key: 'order_evidence', passed: true, evidence_count: 1 },
+        { key: 'fill_evidence', passed: true, evidence_count: 1 },
+      ],
+      limitations: [
+        'Holding-level strategy attribution is evidence-only until the linked fills are reviewed against the production ledger and valuation history.',
+      ],
+    },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('Next review step');
+  expect(card.textContent).toContain(
+    'Review the strategy candidate in Decision before this holding can enter attribution review.',
+  );
+  const actionLink = within(card).getByRole('link', {
+    name: 'Open Decision review',
+  });
+  expect(actionLink.getAttribute('href')).toBe('/decision');
+  expect(card.textContent).not.toContain('manual_review');
+});
+
 test('shows not found state when the symbol is absent', async () => {
   renderHoldingDetail({ includePosition: false });
 
