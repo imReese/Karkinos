@@ -80,6 +80,8 @@ public demos and development.
 - Responsive platform layout: primary pages reflow at desktop/narrow widths, while wide tables scroll inside their own panels
 - Portfolio quote board summarizes asset classes; instrument-level quote, cost, and OHLC/K-line context lives in holding detail pages and the Market research page.
 - Portfolio holdings and detail pages expose per-instrument daily PnL, daily return, quote price, cost basis, and baseline source so account-level changes can be traced back to individual stocks or funds.
+- Holding detail pages link directly into the single-instrument Strategy Lab
+  flow with the current symbol and asset class prefilled for research review.
 - Portfolio cockpit construction recommendations are read-only evidence: they
   become actionable only after account-truth and risk gates pass, and they do
   not submit broker orders or bypass manual confirmation.
