@@ -106,7 +106,7 @@ export type LedgerExplainabilityItem = {
 
 const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
   en: {
-    broker_statement_manual_correction: 'Broker statement correction',
+    broker_statement_manual_correction: 'Reconciliation adjustment',
     manual: 'Manual entry',
     portfolio_trade: 'Portfolio trade',
     review: 'Source needs review',
@@ -114,9 +114,9 @@ const SOURCE_LABELS: Record<Locale, Record<string, string>> = {
     unknown: 'Source unknown',
   },
   zh: {
-    broker_statement_manual_correction: '券商对账修正',
+    broker_statement_manual_correction: '对账校正',
     manual: '手工录入',
-    portfolio_trade: '组合交易',
+    portfolio_trade: '交易流水',
     review: '账本来源待确认',
     system: '系统生成',
     unknown: '来源未知',
@@ -167,7 +167,7 @@ const ENTRY_TYPE_LABELS: Record<Locale, Record<LedgerSummaryKind, string>> = {
     trade_sell: '卖出',
     cash_deposit: '资金转入',
     cash_withdrawal: '资金转出',
-    cash_interest: '现金利息',
+    cash_interest: '结息入账',
     dividend: '分红',
     manual_adjustment: '手动调整',
     other: '账本变动',
@@ -278,31 +278,31 @@ const ACTIVITY_LABELS: Record<
     trade_sell: {
       label: '证券卖出',
       shortLabel: '卖',
-      cashImpactLabel: '增加现金或确认回款',
+      cashImpactLabel: '成交回款',
       tone: 'credit',
     },
     cash_deposit: {
-      label: '现金入金',
+      label: '资金转入',
       shortLabel: '入',
-      cashImpactLabel: '增加现金或确认回款',
+      cashImpactLabel: '现金增加',
       tone: 'credit',
     },
     cash_withdrawal: {
-      label: '现金出金',
+      label: '资金转出',
       shortLabel: '出',
-      cashImpactLabel: '占用现金',
+      cashImpactLabel: '现金减少',
       tone: 'debit',
     },
     cash_interest: {
-      label: '现金利息',
+      label: '结息入账',
       shortLabel: '息',
-      cashImpactLabel: '增加现金或确认回款',
+      cashImpactLabel: '现金利息',
       tone: 'credit',
     },
     dividend: {
       label: '分红入账',
       shortLabel: '息',
-      cashImpactLabel: '增加现金或确认回款',
+      cashImpactLabel: '持仓现金收入',
       tone: 'credit',
     },
     manual_adjustment: {
@@ -369,7 +369,7 @@ export function formatLedgerDashboardPresentation(
   assetClassLabel: string,
 ): LedgerDashboardPresentation {
   const entryType = formatLedgerEntryTypeLabel(entry, locale);
-  const instrumentName = formatLedgerInstrumentLabel(entry);
+  const instrumentName = formatLedgerInstrumentLabel(entry, locale);
   const detailLines = formatLedgerExecutionDetailLines(
     entry,
     labels,
@@ -496,7 +496,11 @@ export function formatLedgerExplainabilityTitle(
   }
   const entry = toExplainabilityLedgerEntry(item, instrumentNames);
   const entryType = formatLedgerEntryTypeLabel(entry, locale);
-  const instrument = formatLedgerInstrumentLabel(entry);
+  const shouldShowInstrument =
+    !isCashLedgerEntry(entry) || Boolean(entry.symbol || entry.display_name);
+  const instrument = shouldShowInstrument
+    ? formatLedgerInstrumentLabel(entry, locale)
+    : '';
   return instrument ? `${entryType} ${instrument}` : entryType;
 }
 
@@ -537,8 +541,11 @@ export function formatLedgerExplainabilityDetail(
   }
 }
 
-export function formatLedgerInstrumentLabel(entry: PublicLedgerEntry) {
-  const name = resolveLedgerInstrumentName(entry);
+export function formatLedgerInstrumentLabel(
+  entry: PublicLedgerEntry,
+  locale?: Locale,
+) {
+  const name = resolveLedgerInstrumentName(entry, locale);
   const symbol = entry.symbol?.trim();
   if (!symbol) {
     return name;
@@ -549,10 +556,17 @@ export function formatLedgerInstrumentLabel(entry: PublicLedgerEntry) {
   return `${name} ${symbol}`;
 }
 
-export function resolveLedgerInstrumentName(entry: PublicLedgerEntry) {
+export function resolveLedgerInstrumentName(
+  entry: PublicLedgerEntry,
+  locale?: Locale,
+) {
   const displayName = entry.display_name?.trim();
   if (displayName) {
     return displayName;
+  }
+  const symbol = entry.symbol?.trim();
+  if (!symbol && isCashLedgerEntry(entry)) {
+    return locale === 'en' ? 'Cash account' : '人民币现金';
   }
   const noteName = readableLedgerNoteSegments(entry.note)
     .map((segment) => extractInstrumentNameFromSegment(segment, entry.symbol))
@@ -590,6 +604,7 @@ export function formatLedgerExecutionDetailLines(
     finiteNumber(entry.net_cash_impact) !== null ||
     Boolean(entry.fee_breakdown);
   const breakdown = entry.fee_breakdown ?? null;
+  const isCashEntry = isCashLedgerEntry(entry);
   const lines: LedgerExecutionDetailLine[] = [];
 
   addLine(
@@ -624,6 +639,20 @@ export function formatLedgerExecutionDetailLines(
       }
       return lines;
     }
+    if (isCashEntry) {
+      const cashFee = sumBreakdownNumbers(
+        breakdown,
+        'commission',
+        'stamp_tax',
+        'tax',
+        'transfer_fee',
+        'other_fees',
+      );
+      if (cashFee !== null && cashFee !== 0) {
+        addLine(lines, labels.fee, formatCurrency(cashFee));
+      }
+      return lines;
+    }
     addLine(
       lines,
       labels.commission,
@@ -645,7 +674,10 @@ export function formatLedgerExecutionDetailLines(
     }
   } else {
     const fee = finiteNumber(entry.commission);
-    if (!isFundLedgerEntry(entry) || (fee !== null && fee !== 0)) {
+    if (
+      (!isFundLedgerEntry(entry) && !isCashEntry) ||
+      (fee !== null && fee !== 0)
+    ) {
       addLine(lines, labels.fee, formatCurrency(fee));
     }
   }
@@ -841,6 +873,13 @@ function isFundLedgerEntry(entry: PublicLedgerEntry) {
   return entry.asset_class?.trim().toLowerCase() === 'fund';
 }
 
+function isCashLedgerEntry(entry: PublicLedgerEntry) {
+  return (
+    entry.asset_class?.trim().toLowerCase() === 'cash' ||
+    normalizeLedgerKind(entry.entry_type).startsWith('cash_')
+  );
+}
+
 function isTechnicalNoteSegment(segment: string) {
   return (
     /(^|\s)[a-z][a-z0-9_]*=/i.test(segment) ||
@@ -954,7 +993,7 @@ function isGeneratedStructuredCashNote(
       : kind === 'dividend'
         ? /(分红|股息|红利|dividend)/i
         : kind === 'cash_deposit'
-          ? /(现金入金|资金转入|入金|转入|cash deposit|deposit)/i
+          ? /(现金入金|资金转入|入金|转入|开户时间|人民币|cash deposit|deposit)/i
           : /(现金出金|资金转出|出金|转出|cash withdrawal|withdrawal|withdraw)/i;
   return keywordPattern.test(normalized);
 }

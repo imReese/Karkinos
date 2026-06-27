@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-27: Backtest signal preview now groups the selected symbol's
+  research data basis into a user-readable evidence block. It shows the
+  formatted dataset snapshot reference, the underlying snapshot id for audit
+  traceability, and the signal-preview data quality status together before
+  risk preview or paper/shadow simulation. This improves the
+  data-trusted single-instrument loop without changing backtest execution,
+  strategy signal generation, risk gates, paper/shadow simulation, production
+  ledger entries, broker submission, automatic trading defaults, or manual
+  confirmation behavior.
+* 2026-06-27: Decision signal journal entries now show structured source
+  evidence references through the shared public evidence formatter and link
+  each logged signal back to the single-instrument Backtest evidence view and
+  symbol-scoped holding attribution review. Unstructured raw source references
+  are not displayed as user-facing evidence labels. This is read-only
+  navigation and presentation only; it does not create orders, mutate
+  production ledger entries, submit broker orders, claim strategy P/L
+  attribution, enable automatic trading, or bypass manual confirmation.
 * 2026-06-27: Decision signal action queue cards now link each persisted
   signal action back to its single-instrument Backtest evidence view and
   symbol-scoped holding attribution review. The links preserve symbol, asset

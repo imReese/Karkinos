@@ -1010,6 +1010,7 @@ export const copy = {
         signalPreviewReferencePriceLabel: 'Reference price',
         signalPreviewReferencePrice: (price: string) =>
           `Reference price ${price}`,
+        signalPreviewDataBasis: 'Signal data basis',
         signalPreviewDataset: 'Dataset snapshot',
         signalPreviewReviewGates: 'Review gates',
         signalPreviewRiskQuantity: 'Risk quantity',
@@ -1684,7 +1685,7 @@ export const copy = {
           adjustment: 'Adjustments',
           other: 'Other',
         },
-        noDetail: 'No public note',
+        noDetail: '--',
         columns: {
           time: 'Time',
           activity: 'Activity',
@@ -1708,7 +1709,7 @@ export const copy = {
         entryTypes: {
           tradeBuy: 'Security buy',
           tradeSell: 'Security sell',
-          cashDeposit: 'Cash deposit',
+          cashDeposit: 'Cash transfer in',
           cashWithdrawal: 'Cash withdrawal',
           dividend: 'Dividend received',
           adjustment: 'Manual adjustment',
@@ -2983,6 +2984,7 @@ export const copy = {
         signalPreviewBarCount: (count: number) => `${count} 根`,
         signalPreviewReferencePriceLabel: '参考价格',
         signalPreviewReferencePrice: (price: string) => `参考价格 ${price}`,
+        signalPreviewDataBasis: '信号数据依据',
         signalPreviewDataset: '数据快照',
         signalPreviewReviewGates: '复核闸门',
         signalPreviewRiskQuantity: '风控预检数量',
@@ -3634,7 +3636,7 @@ export const copy = {
           adjustment: '调整',
           other: '其他',
         },
-        noDetail: '无公开备注',
+        noDetail: '--',
         columns: {
           time: '时间',
           activity: '业务类型',
@@ -3658,8 +3660,8 @@ export const copy = {
         entryTypes: {
           tradeBuy: '证券买入',
           tradeSell: '证券卖出',
-          cashDeposit: '现金入金',
-          cashWithdrawal: '现金出金',
+          cashDeposit: '资金转入',
+          cashWithdrawal: '资金转出',
           dividend: '分红入账',
           adjustment: '手工调整',
           other: '账本流水',
@@ -3674,7 +3676,7 @@ export const copy = {
           other: '流',
         },
         cashImpact: {
-          credit: '增加现金或确认回款',
+          credit: '现金增加',
           debit: '占用现金',
           adjustment: '人工校正',
           neutral: '参考流水',

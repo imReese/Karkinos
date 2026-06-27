@@ -1985,8 +1985,12 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect((await screen.findAllByText('Research only')).length).toBeGreaterThan(
     0,
   );
-  expect(await screen.findByText('sha256:preview-dataset')).toBeTruthy();
+  expect(await screen.findByText(/sha256:preview-dataset/)).toBeTruthy();
   expect(await screen.findByText('Data quality: OK')).toBeTruthy();
+  expect(await screen.findByText('Signal data basis')).toBeTruthy();
+  expect(
+    await screen.findByText('Dataset snapshot · preview-dataset'),
+  ).toBeTruthy();
   expect(await screen.findByText('Reference price CN¥29.17')).toBeTruthy();
   expect(await screen.findByText('Review gates')).toBeTruthy();
   expect(await screen.findByText('Data ready')).toBeTruthy();
