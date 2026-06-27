@@ -193,139 +193,58 @@ export function DashboardQuickActions({
     .slice(0, 4);
 
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-      <div className="app-panel rounded-[1.75rem] p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.dataStatus}</div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                  isStale
-                    ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
-                    : 'border-[color-mix(in_srgb,var(--app-success)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] text-[var(--app-success)]'
-                }`}
-                title={`${labels.staleReason}: ${staleReason}`}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                {quoteStatus === 'missing' ||
-                marketHealth?.persistent_cache_status === 'missing'
-                  ? copy.market.providerActions.run_first_sync
-                  : isStale
-                    ? copy.shell.cachedQuotes
-                    : copy.shell.valuationMode}
-              </span>
-              <span className="app-muted text-xs">
-                {labels.staleReason}: {staleReason}
-              </span>
-            </div>
-          </div>
-          <div className="grid min-w-0 gap-2 text-left sm:grid-cols-2 xl:w-[26rem] xl:max-w-full">
-            {statusRows.map((row) => (
-              <div
-                key={row.label}
-                className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2"
-              >
-                <div className="app-kicker text-[10px] tracking-[0.14em]">
-                  {row.label}
-                </div>
-                <div className="mt-1 font-mono text-xs font-semibold text-[var(--app-soft)] tabular-nums">
-                  {row.value}
-                </div>
-              </div>
-            ))}
+    <section
+      className="app-panel min-w-0 rounded-[1.75rem] p-4 sm:p-5"
+      data-testid="overview-operations-panel"
+    >
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="min-w-0">
+          <div className="app-product-mark">{labels.dataStatus}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                isStale
+                  ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
+                  : 'border-[color-mix(in_srgb,var(--app-success)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] text-[var(--app-success)]'
+              }`}
+              title={`${labels.staleReason}: ${staleReason}`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {quoteStatus === 'missing' ||
+              marketHealth?.persistent_cache_status === 'missing'
+                ? copy.market.providerActions.run_first_sync
+                : isStale
+                  ? copy.shell.cachedQuotes
+                  : copy.shell.valuationMode}
+            </span>
+            <span className="app-muted min-w-0 text-xs">
+              {labels.staleReason}: {staleReason}
+            </span>
           </div>
         </div>
-        {actionableDiagnostics.length > 0 ? (
-          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="app-product-mark">{labels.affectedHoldings}</div>
-              <div className="app-muted text-xs">
-                {labels.affectedCount(actionableDiagnostics.length)}
-              </div>
-            </div>
-            <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
-              {actionableDiagnostics.map((item) => {
-                const displayName =
-                  item.display_name ?? item.name ?? item.symbol;
-                const quoteSource =
-                  item.quote_source === 'eastmoney_fund_estimate'
-                    ? labels.usingEstimate
-                    : normalizeStatus(item.quote_source);
-                return (
-                  <div
-                    key={`${item.symbol}-${item.quote_source ?? 'quote'}`}
-                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2"
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
-                          {displayName}
-                        </div>
-                        <div className="mt-1 text-xs text-[var(--app-subtext-0)]">
-                          {item.symbol} ·{' '}
-                          {assetClassLabel(item.asset_class, copy)}
-                        </div>
-                      </div>
-                      <span className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_26%,transparent)] px-2 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
-                        {quoteSource}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-subtext-0)]">
-                      <span>
-                        {diagnosticActionLabel(
-                          item,
-                          locale,
-                          copy.common.staleReasons,
-                        )}
-                      </span>
-                      {item.quote_timestamp ? (
-                        <span className="font-mono tabular-nums">
-                          {formatTimestamp(item.quote_timestamp)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-        {marketHealth?.last_refresh_attempt ||
-        marketHealth?.last_refresh_error ? (
-          <div className="app-muted mt-3 text-xs">
-            {labels.refreshQuotes}:{' '}
-            {formatTimestamp(marketHealth.last_refresh_attempt)}
-            {marketHealth.last_refresh_error
-              ? ` · ${formatStaleReason(
-                  marketHealth.last_refresh_error,
-                  copy.common.staleReasons,
-                )}`
-              : ''}
-          </div>
-        ) : null}
-      </div>
 
-      <div className="app-panel min-w-0 rounded-[1.75rem] p-4 sm:p-5 lg:w-[18rem] lg:max-w-full">
-        <div className="app-product-mark">{labels.quickActions}</div>
-        <div className="mt-3 grid gap-2">
-          <button
-            type="button"
-            className="app-button-primary justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={refreshQuotes.isPending}
-            aria-busy={refreshQuotes.isPending}
-            onClick={() => {
-              void refreshQuotes.mutateAsync({
-                symbols: symbols.length > 0 ? symbols : undefined,
-                force: true,
-              });
-            }}
-          >
-            {refreshQuotes.isPending
-              ? labels.refreshingQuotes
-              : labels.refreshQuotes}
-          </button>
-          <div className="grid grid-cols-2 gap-2">
+        <div
+          className="flex min-w-0 flex-col gap-2 xl:items-end"
+          data-testid="overview-quick-actions"
+        >
+          <div className="app-product-mark">{labels.quickActions}</div>
+          <div className="flex min-w-0 flex-wrap gap-2 xl:justify-end">
+            <button
+              type="button"
+              className="app-button-primary justify-center rounded-2xl px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={refreshQuotes.isPending}
+              aria-busy={refreshQuotes.isPending}
+              onClick={() => {
+                void refreshQuotes.mutateAsync({
+                  symbols: symbols.length > 0 ? symbols : undefined,
+                  force: true,
+                });
+              }}
+            >
+              {refreshQuotes.isPending
+                ? labels.refreshingQuotes
+                : labels.refreshQuotes}
+            </button>
             <a
               href="/activity"
               className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
@@ -351,11 +270,95 @@ export function DashboardQuickActions({
               {labels.dataSettings}
             </a>
           </div>
-        </div>
-        <div className="app-muted mt-3 min-h-4 text-xs" aria-live="polite">
-          {refreshMessage}
+          <div className="app-muted min-h-4 text-xs" aria-live="polite">
+            {refreshMessage}
+          </div>
         </div>
       </div>
+
+      <div className="mt-4 grid min-w-0 gap-2 text-left sm:grid-cols-2 xl:grid-cols-5">
+        {statusRows.map((row) => (
+          <div
+            key={row.label}
+            className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2"
+          >
+            <div className="app-kicker text-[10px] tracking-[0.14em]">
+              {row.label}
+            </div>
+            <div className="mt-1 break-words font-mono text-xs font-semibold text-[var(--app-soft)] tabular-nums">
+              {row.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {actionableDiagnostics.length > 0 ? (
+        <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="app-product-mark">{labels.affectedHoldings}</div>
+            <div className="app-muted text-xs">
+              {labels.affectedCount(actionableDiagnostics.length)}
+            </div>
+          </div>
+          <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+            {actionableDiagnostics.map((item) => {
+              const displayName = item.display_name ?? item.name ?? item.symbol;
+              const quoteSource =
+                item.quote_source === 'eastmoney_fund_estimate'
+                  ? labels.usingEstimate
+                  : normalizeStatus(item.quote_source);
+              return (
+                <div
+                  key={`${item.symbol}-${item.quote_source ?? 'quote'}`}
+                  className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2"
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
+                        {displayName}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--app-subtext-0)]">
+                        {item.symbol} ·{' '}
+                        {assetClassLabel(item.asset_class, copy)}
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_26%,transparent)] px-2 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
+                      {quoteSource}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-subtext-0)]">
+                    <span>
+                      {diagnosticActionLabel(
+                        item,
+                        locale,
+                        copy.common.staleReasons,
+                      )}
+                    </span>
+                    {item.quote_timestamp ? (
+                      <span className="font-mono tabular-nums">
+                        {formatTimestamp(item.quote_timestamp)}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {marketHealth?.last_refresh_attempt ||
+      marketHealth?.last_refresh_error ? (
+        <div className="app-muted mt-3 text-xs">
+          {labels.refreshQuotes}:{' '}
+          {formatTimestamp(marketHealth.last_refresh_attempt)}
+          {marketHealth.last_refresh_error
+            ? ` · ${formatStaleReason(
+                marketHealth.last_refresh_error,
+                copy.common.staleReasons,
+              )}`
+            : ''}
+        </div>
+      ) : null}
     </section>
   );
 }

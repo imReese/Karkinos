@@ -18,6 +18,7 @@ type Props = {
   isError?: boolean;
   onRetry?: () => void;
   instruments?: InstrumentDisplayRecord[];
+  variant?: 'full' | 'compact';
 };
 
 function canShowContribution(
@@ -38,10 +39,12 @@ export function StrategyContributionGateCard({
   isError = false,
   onRetry,
   instruments = [],
+  variant = 'full',
 }: Props) {
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.backtest.page;
+  const isCompact = variant === 'compact';
   const isSupported = canShowContribution(report);
   const contributionStatus = (report?.contribution_status ??
     'no_linked_fills') as keyof typeof labels.accountStrategyContributionStatusMap;
@@ -63,19 +66,33 @@ export function StrategyContributionGateCard({
       : null;
 
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
+    <section
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
+      data-testid="strategy-contribution-gate-card"
+      data-variant={variant}
+    >
       <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div
+          className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${
+            isCompact ? 'mb-3' : 'mb-4'
+          }`}
+        >
           <div className="min-w-0">
             <div className="app-product-mark">
               {labels.accountStrategyContributionReport}
             </div>
-            <h2 className="app-card-title mt-1.5 text-xl">
+            <h2
+              className={`app-card-title mt-1.5 ${
+                isCompact ? 'text-lg' : 'text-xl'
+              }`}
+            >
               {labels.accountStrategyContributionPublicTitle}
             </h2>
-            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-              {labels.accountStrategyContributionExplanation}
-            </p>
+            {isCompact ? null : (
+              <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+                {labels.accountStrategyContributionExplanation}
+              </p>
+            )}
           </div>
           <span
             className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
@@ -111,32 +128,42 @@ export function StrategyContributionGateCard({
           </div>
         ) : isSupported && report ? (
           <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div
+              className={
+                isCompact
+                  ? 'grid gap-2 sm:grid-cols-2'
+                  : 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4'
+              }
+            >
               <Metric label={labels.strategy} value={strategyLabel} />
-              <Metric
-                label={labels.accountStrategyGrossRealizedPnl}
-                value={formatCurrency(report.gross_realized_pnl)}
-              />
-              <Metric
-                label={labels.accountStrategyGrossUnrealizedPnl}
-                value={formatCurrency(report.gross_unrealized_pnl)}
-              />
-              <Metric
-                label={labels.accountStrategyCommissionSlippage}
-                value={`${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`}
-              />
-              <Metric
-                label={labels.accountStrategyTax}
-                value={formatCurrency(report.total_tax)}
-              />
-              <Metric
-                label={labels.accountStrategyManualCashFlowMovement}
-                value={`${formatCurrency(report.manual_unattributed_pnl)} / ${formatCurrency(report.cash_flow_pnl)}`}
-              />
-              <Metric
-                label={labels.accountStrategyTaxExcludedMovement}
-                value={`${formatCurrency(report.total_tax)} / ${formatCurrency(report.unattributed_account_pnl)}`}
-              />
+              {isCompact ? null : (
+                <>
+                  <Metric
+                    label={labels.accountStrategyGrossRealizedPnl}
+                    value={formatCurrency(report.gross_realized_pnl)}
+                  />
+                  <Metric
+                    label={labels.accountStrategyGrossUnrealizedPnl}
+                    value={formatCurrency(report.gross_unrealized_pnl)}
+                  />
+                  <Metric
+                    label={labels.accountStrategyCommissionSlippage}
+                    value={`${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`}
+                  />
+                  <Metric
+                    label={labels.accountStrategyTax}
+                    value={formatCurrency(report.total_tax)}
+                  />
+                  <Metric
+                    label={labels.accountStrategyManualCashFlowMovement}
+                    value={`${formatCurrency(report.manual_unattributed_pnl)} / ${formatCurrency(report.cash_flow_pnl)}`}
+                  />
+                  <Metric
+                    label={labels.accountStrategyTaxExcludedMovement}
+                    value={`${formatCurrency(report.total_tax)} / ${formatCurrency(report.unattributed_account_pnl)}`}
+                  />
+                </>
+              )}
               <Metric
                 label={labels.accountStrategyNetContribution}
                 value={formatCurrency(report.net_contribution)}
@@ -154,10 +181,12 @@ export function StrategyContributionGateCard({
                 label={labels.accountStrategyOrdersFills}
                 value={String(report.linked_fill_count)}
               />
-              <Metric
-                label={labels.accountStrategyEvidenceRefs}
-                value={String(report.evidence_refs.length)}
-              />
+              {isCompact ? null : (
+                <Metric
+                  label={labels.accountStrategyEvidenceRefs}
+                  value={String(report.evidence_refs.length)}
+                />
+              )}
             </div>
             {strategyAuditId ? (
               <div className="app-muted text-xs font-semibold">

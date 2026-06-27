@@ -22,6 +22,19 @@ type LedgerEntryCategory =
   | 'adjustment'
   | 'other';
 
+type LedgerSubcategory =
+  | 'all'
+  | 'stock'
+  | 'fund'
+  | 'cashAccount'
+  | 'otherAsset'
+  | 'cashDeposit'
+  | 'cashWithdrawal'
+  | 'cashInterest'
+  | 'otherCash';
+
+type SpecificLedgerSubcategory = Exclude<LedgerSubcategory, 'all'>;
+
 const LEDGER_ENTRY_CATEGORIES: LedgerEntryCategory[] = [
   'all',
   'trade',
@@ -31,12 +44,23 @@ const LEDGER_ENTRY_CATEGORIES: LedgerEntryCategory[] = [
   'other',
 ];
 
+const LEDGER_SUBCATEGORIES_BY_CATEGORY: Partial<
+  Record<LedgerEntryCategory, SpecificLedgerSubcategory[]>
+> = {
+  trade: ['stock', 'fund', 'otherAsset'],
+  cash: ['cashDeposit', 'cashWithdrawal', 'cashInterest', 'otherCash'],
+  dividend: ['stock', 'fund', 'otherAsset'],
+  adjustment: ['stock', 'fund', 'cashAccount', 'otherAsset'],
+};
+
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.activity.feed;
   const [selectedCategory, setSelectedCategory] =
     useState<LedgerEntryCategory>('all');
+  const [selectedSubcategory, setSelectedSubcategory] =
+    useState<LedgerSubcategory>('all');
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
   const categorizedEntries = useMemo(
@@ -57,6 +81,50 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
     }
     return counts;
   }, [categorizedEntries, entries.length]);
+  const subcategoryOptions = useMemo(() => {
+    if (selectedCategory === 'all') {
+      return [];
+    }
+    const selectedCategoryEntries = categorizedEntries.filter(
+      (item) => item.category === selectedCategory,
+    );
+    if (selectedCategoryEntries.length === 0) {
+      return [];
+    }
+    const counts = new Map<SpecificLedgerSubcategory, number>();
+    for (const item of categorizedEntries) {
+      if (item.category !== selectedCategory) {
+        continue;
+      }
+      const subcategory = classifyLedgerSubcategory(
+        item.entry,
+        selectedCategory,
+      );
+      counts.set(subcategory, (counts.get(subcategory) ?? 0) + 1);
+    }
+
+    const configuredSubcategories =
+      LEDGER_SUBCATEGORIES_BY_CATEGORY[selectedCategory] ?? [];
+    return [
+      {
+        key: 'all' as LedgerSubcategory,
+        label: labels.subcategoryAllLabels[selectedCategory],
+        count: selectedCategoryEntries.length,
+      },
+      ...configuredSubcategories
+        .map((subcategory) => ({
+          key: subcategory as LedgerSubcategory,
+          label: labels.subcategoryLabels[subcategory],
+          count: counts.get(subcategory) ?? 0,
+        }))
+        .filter((option) => option.count > 0),
+    ];
+  }, [categorizedEntries, labels, selectedCategory]);
+  const effectiveSubcategory = subcategoryOptions.some(
+    (option) => option.key === selectedSubcategory,
+  )
+    ? selectedSubcategory
+    : 'all';
   const visibleEntries =
     selectedCategory === 'all' && normalizedQuery === ''
       ? entries
@@ -64,8 +132,14 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           .filter((item) => {
             const matchesCategory =
               selectedCategory === 'all' || item.category === selectedCategory;
+            const matchesSubcategory =
+              selectedCategory === 'all' ||
+              effectiveSubcategory === 'all' ||
+              classifyLedgerSubcategory(item.entry, selectedCategory) ===
+                effectiveSubcategory;
             return (
               matchesCategory &&
+              matchesSubcategory &&
               ledgerEntryMatchesQuery(item.entry, normalizedQuery)
             );
           })
@@ -109,7 +183,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
                       : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
                   }`}
-                  onClick={() => setSelectedCategory(category)}
+                  onClick={() => {
+                    setSelectedCategory(category);
+                    setSelectedSubcategory('all');
+                  }}
                   type="button"
                 >
                   {labels.categoryLabels[category]} {labels.count(count)}
@@ -129,6 +206,32 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             />
           </label>
         </div>
+        {subcategoryOptions.length > 1 ? (
+          <div
+            aria-label={labels.subcategoryFilter}
+            className="mt-3 flex min-w-0 flex-wrap gap-2"
+            role="group"
+          >
+            {subcategoryOptions.map((option) => {
+              const isSelected = effectiveSubcategory === option.key;
+              return (
+                <button
+                  key={option.key}
+                  aria-pressed={isSelected}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    isSelected
+                      ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
+                      : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
+                  }`}
+                  onClick={() => setSelectedSubcategory(option.key)}
+                  type="button"
+                >
+                  {option.label} {labels.count(option.count)}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
       <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
         <table className="app-data-table w-full min-w-[820px] text-left text-sm">
@@ -298,6 +401,51 @@ function classifyLedgerEntry(entry: LedgerEntry): LedgerEntryCategory {
     return 'cash';
   }
   return 'other';
+}
+
+function classifyLedgerSubcategory(
+  entry: LedgerEntry,
+  category: LedgerEntryCategory,
+): SpecificLedgerSubcategory {
+  if (category === 'cash') {
+    return classifyCashLedgerSubcategory(entry);
+  }
+  return classifyLedgerAssetSubcategory(entry, category === 'adjustment');
+}
+
+function classifyLedgerAssetSubcategory(
+  entry: LedgerEntry,
+  includeCash: boolean,
+): SpecificLedgerSubcategory {
+  const assetClass = entry.asset_class.toLowerCase();
+
+  if (assetClass === 'stock') {
+    return 'stock';
+  }
+  if (assetClass === 'fund' || assetClass === 'etf') {
+    return 'fund';
+  }
+  if (includeCash && assetClass === 'cash') {
+    return 'cashAccount';
+  }
+  return 'otherAsset';
+}
+
+function classifyCashLedgerSubcategory(
+  entry: LedgerEntry,
+): SpecificLedgerSubcategory {
+  const entryType = entry.entry_type.toLowerCase();
+
+  if (entryType.includes('interest')) {
+    return 'cashInterest';
+  }
+  if (entryType.includes('deposit')) {
+    return 'cashDeposit';
+  }
+  if (entryType.includes('withdraw')) {
+    return 'cashWithdrawal';
+  }
+  return 'otherCash';
 }
 
 function ledgerEntryMatchesQuery(entry: LedgerEntry, normalizedQuery: string) {

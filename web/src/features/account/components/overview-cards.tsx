@@ -44,7 +44,13 @@ function moneyTone(value: number) {
   return 'text-[var(--app-soft)]';
 }
 
-export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
+export function OverviewCards({
+  overview,
+  variant = 'rail',
+}: {
+  overview: OverviewCardMetrics;
+  variant?: 'rail' | 'workbench';
+}) {
   const copy = useCopy();
   const { locale } = usePreferences();
   const valuationStatus = normalizeMarketDataStatus(overview.quote_status);
@@ -107,7 +113,11 @@ export function OverviewCards({ overview }: { overview: OverviewCardMetrics }) {
   return (
     <div
       data-testid="account-metrics-rail"
-      className="app-terminal-panel grid min-w-0 overflow-hidden rounded-[2rem] font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
+      className={`app-terminal-panel grid min-w-0 overflow-hidden rounded-[2rem] font-mono tabular-nums sm:grid-cols-2 ${
+        variant === 'workbench'
+          ? 'self-start 2xl:grid-cols-[1.35fr_repeat(2,minmax(0,1fr))]'
+          : 'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]'
+      }`}
     >
       {items.map((item, index) => (
         <div

@@ -19,6 +19,7 @@ import { ToastStack, type ToastItem } from './components/toast-stack';
 import { AppShell } from './layout/app-shell';
 import { usePreferences, type Locale } from './preferences';
 import {
+  type AccountOverview,
   useAccountOverviewQuery,
   type EquityCurveRange,
   useAccountStateQuery,
@@ -31,8 +32,14 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
-import { DashboardQuickActions } from '../features/account/components/dashboard-quick-actions';
-import { useAccountStrategyContributionQuery } from '../features/account-strategy/api';
+import {
+  DashboardQuickActions,
+  type QuoteDiagnosticItem,
+} from '../features/account/components/dashboard-quick-actions';
+import {
+  useAccountStrategyContributionQuery,
+  type AccountStrategyContributionReport,
+} from '../features/account-strategy/api';
 import { StrategyContributionGateCard } from '../features/account-strategy/components/strategy-contribution-gate-card';
 import { AccountTruthReviewPage } from '../features/account-truth/components/account-truth-review-page';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
@@ -97,6 +104,7 @@ import {
 import {
   type AllocationGroup,
   type AllocationItem,
+  type LiveHoldingItem,
   useLiveHoldingsQuery,
   usePortfolioCockpitQuery,
   usePortfolioSnapshotQuery,
@@ -118,6 +126,7 @@ import {
   useKlineQuery,
   useMarketBarsBackfillMutation,
   useMarketDataHealthQuery,
+  type MarketDataHealthResponse,
   useQuoteFetchRunsQuery,
   useResearchBoardQuery,
   useResearchNotesQuery,
@@ -423,16 +432,33 @@ export function OverviewPage() {
         />
       ) : enhancedOverview && snapshot.data ? (
         <div className="space-y-5">
-          <OverviewCards overview={enhancedOverview} />
+          <div
+            className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]"
+            data-testid="overview-daily-workbench"
+          >
+            <div className="min-w-0 space-y-5">
+              <OverviewCards overview={enhancedOverview} variant="workbench" />
+              <DashboardHoldingMovers
+                items={liveItems}
+                isLoading={liveHoldings.isLoading}
+                isError={liveHoldings.isError}
+                variant="compact"
+              />
+            </div>
+            <DashboardTodayQueue
+              overview={enhancedOverview}
+              marketHealth={marketHealth.data}
+              quoteDiagnostics={positions}
+              pendingOrders={pendingOrders.data ?? []}
+              pendingOrdersLoading={pendingOrders.isLoading}
+              pendingOrdersError={pendingOrders.isError}
+              strategyContribution={strategyContribution.data}
+              strategyContributionLoading={strategyContribution.isLoading}
+              strategyContributionError={strategyContribution.isError}
+            />
+          </div>
 
-          <DashboardQuickActions
-            overview={enhancedOverview}
-            marketHealth={marketHealth.data}
-            symbols={positions.map((position) => position.symbol)}
-            quoteDiagnostics={positions}
-          />
-
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] 2xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="grid gap-5">
             <section
               className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
               data-testid="overview-performance-card"
@@ -465,7 +491,17 @@ export function OverviewPage() {
               </div>
             </section>
 
-            <aside className="min-w-0 space-y-5">
+            <DashboardQuickActions
+              overview={enhancedOverview}
+              marketHealth={marketHealth.data}
+              symbols={positions.map((position) => position.symbol)}
+              quoteDiagnostics={positions}
+            />
+
+            <aside
+              className="grid min-w-0 gap-5 xl:grid-cols-2"
+              data-testid="overview-review-strip"
+            >
               <div className="app-terminal-panel rounded-[2rem] p-1.5">
                 <div className="app-terminal-inner h-full p-4 sm:p-5">
                   <div className="mb-5 flex items-start justify-between gap-4">
@@ -497,13 +533,16 @@ export function OverviewPage() {
                   />
                 </div>
               </div>
-              <StrategyContributionGateCard
-                report={strategyContribution.data}
-                isLoading={strategyContribution.isLoading}
-                isError={strategyContribution.isError}
-                onRetry={() => void strategyContribution.refetch()}
-                instruments={positions}
-              />
+              <div className="min-w-0">
+                <StrategyContributionGateCard
+                  report={strategyContribution.data}
+                  isLoading={strategyContribution.isLoading}
+                  isError={strategyContribution.isError}
+                  onRetry={() => void strategyContribution.refetch()}
+                  instruments={positions}
+                  variant="compact"
+                />
+              </div>
             </aside>
           </div>
 
@@ -546,6 +585,436 @@ export function OverviewPage() {
       ) : (
         <StatusCard title={copy.states.empty} detail={copy.overview.empty} />
       )}
+    </section>
+  );
+}
+
+type TodayQueueTone = 'success' | 'warning' | 'danger' | 'neutral';
+
+type TodayQueueItem = {
+  key: string;
+  title: string;
+  detail: string;
+  meta: string;
+  href: string;
+  actionLabel: string;
+  tone: TodayQueueTone;
+};
+
+function todayQueueToneClasses(tone: TodayQueueTone) {
+  if (tone === 'success') {
+    return {
+      card: 'border-[color-mix(in_srgb,var(--app-success)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)]',
+      dot: 'bg-[var(--app-success)]',
+      text: 'text-[var(--app-success)]',
+    };
+  }
+  if (tone === 'danger') {
+    return {
+      card: 'border-[color-mix(in_srgb,var(--app-danger)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_9%,transparent)]',
+      dot: 'bg-[var(--app-danger)]',
+      text: 'text-[var(--app-danger)]',
+    };
+  }
+  if (tone === 'warning') {
+    return {
+      card: 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)]',
+      dot: 'bg-[var(--app-warning)]',
+      text: 'text-[var(--app-warning)]',
+    };
+  }
+  return {
+    card: 'border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)]',
+    dot: 'bg-[var(--app-muted)]',
+    text: 'text-[var(--app-soft)]',
+  };
+}
+
+function canUseStrategyContribution(
+  report?: AccountStrategyContributionReport | null,
+) {
+  return Boolean(
+    report &&
+    report.contribution_status === 'estimated_from_linked_fills' &&
+    report.linked_fill_count > 0 &&
+    report.evidence_refs.length > 0 &&
+    report.missing_valuation_symbols.length === 0,
+  );
+}
+
+function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
+  return items.filter((item) => {
+    const quoteStatus = item.quote_status?.toLowerCase();
+    const quoteSource = item.quote_source?.toLowerCase();
+    return (
+      Boolean(item.stale_reason) ||
+      isUnconfirmedMarketDataStatus(quoteStatus) ||
+      quoteStatus === 'error' ||
+      quoteSource === 'eastmoney_fund_estimate'
+    );
+  });
+}
+
+function DashboardTodayQueue({
+  overview,
+  marketHealth,
+  quoteDiagnostics,
+  pendingOrders,
+  pendingOrdersLoading,
+  pendingOrdersError,
+  strategyContribution,
+  strategyContributionLoading,
+  strategyContributionError,
+}: {
+  overview: AccountOverview;
+  marketHealth?: MarketDataHealthResponse;
+  quoteDiagnostics: QuoteDiagnosticItem[];
+  pendingOrders: ManualOrder[];
+  pendingOrdersLoading: boolean;
+  pendingOrdersError: boolean;
+  strategyContribution?: AccountStrategyContributionReport | null;
+  strategyContributionLoading: boolean;
+  strategyContributionError: boolean;
+}) {
+  const copy = useCopy();
+  const { locale } = usePreferences();
+  const labels = copy.overview.dashboard;
+  const quoteStatus = overview.quote_status ?? marketHealth?.source_health;
+  const diagnostics = actionableQuoteDiagnostics(quoteDiagnostics);
+  const dataNeedsReview =
+    diagnostics.length > 0 ||
+    isUnconfirmedMarketDataStatus(quoteStatus) ||
+    isUnconfirmedMarketDataStatus(marketHealth?.source_health) ||
+    marketHealth?.persistent_cache_status === 'missing';
+  const marketDataNextAction =
+    formatMarketDataStatusNextAction(overview.stale_reason, locale) ??
+    formatMarketDataStatusNextAction(quoteStatus, locale) ??
+    formatMarketDataStatusNextAction(marketHealth?.source_health, locale) ??
+    formatMarketDataStatusNextAction(
+      marketHealth?.persistent_cache_status,
+      locale,
+    ) ??
+    labels.checkDataSource;
+  const readableStaleReason = formatStaleReason(
+    overview.stale_reason ??
+      marketHealth?.provider_last_error ??
+      marketHealth?.last_refresh_error,
+    copy.common.staleReasons,
+  );
+  const dataMeta = dataNeedsReview
+    ? diagnostics.length > 0
+      ? labels.affectedCount(diagnostics.length)
+      : readableStaleReason
+    : formatPublicStatus(quoteStatus, locale);
+  const strategyReady = canUseStrategyContribution(strategyContribution);
+  const strategyStatus = strategyContribution?.contribution_status
+    ? (copy.backtest.page.accountStrategyContributionStatusMap[
+        strategyContribution.contribution_status as keyof typeof copy.backtest.page.accountStrategyContributionStatusMap
+      ] ?? formatPublicStatus(strategyContribution.contribution_status, locale))
+    : copy.backtest.page.accountStrategyContributionStatusMap.no_linked_fills;
+
+  const items: TodayQueueItem[] = [
+    {
+      key: 'data',
+      title: dataNeedsReview ? labels.dataNeedsReview : labels.dataUsable,
+      detail: dataNeedsReview
+        ? marketDataNextAction
+        : `${labels.valuationTime}: ${formatTimestamp(
+            overview.valuation_timestamp,
+          )}`,
+      meta: dataMeta,
+      href: '/market',
+      actionLabel: labels.viewData,
+      tone: dataNeedsReview ? 'warning' : 'success',
+    },
+    {
+      key: 'orders',
+      title: pendingOrdersError
+        ? copy.trading.orders.loadFailed
+        : pendingOrders.length > 0
+          ? labels.pendingOrdersReady
+          : labels.pendingOrdersClear,
+      detail: pendingOrdersLoading
+        ? copy.trading.orders.loading
+        : pendingOrders.length > 0
+          ? labels.pendingCount(pendingOrders.length)
+          : labels.pendingEmptyDetail,
+      meta: pendingOrdersLoading
+        ? copy.states.loading
+        : labels.pendingCount(pendingOrders.length),
+      href: '/trading',
+      actionLabel: labels.viewTrading,
+      tone: pendingOrdersError
+        ? 'danger'
+        : pendingOrders.length > 0
+          ? 'warning'
+          : 'success',
+    },
+    {
+      key: 'strategy',
+      title: strategyContributionError
+        ? labels.strategyUnavailable
+        : strategyReady
+          ? labels.strategyEvidenceLinked
+          : labels.strategyEvidenceRequired,
+      detail: strategyContributionLoading
+        ? copy.backtest.page.accountStrategyContributionLoading
+        : strategyReady && strategyContribution
+          ? `${copy.backtest.page.accountStrategyNetContribution}: ${formatCurrencyValue(
+              strategyContribution.net_contribution,
+            )}`
+          : copy.backtest.page.accountStrategyContributionHiddenUntilEvidence,
+      meta: strategyContributionLoading ? copy.states.loading : strategyStatus,
+      href: '/backtest',
+      actionLabel: labels.viewStrategy,
+      tone: strategyContributionError
+        ? 'danger'
+        : strategyReady
+          ? 'success'
+          : 'warning',
+    },
+  ];
+
+  return (
+    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
+      <div className="app-terminal-inner flex h-full min-w-0 flex-col p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.dailyWorkbench}</div>
+            <h2 className="app-card-title mt-1.5 text-xl">
+              {labels.todayToReview}
+            </h2>
+          </div>
+          <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
+            {items.filter((item) => item.tone !== 'success').length}
+          </div>
+        </div>
+
+        <div className="mt-4 grid min-w-0 gap-2.5">
+          {items.map((item) => {
+            const tone = todayQueueToneClasses(item.tone);
+            return (
+              <a
+                href={item.href}
+                key={item.key}
+                className={`group grid min-w-0 gap-3 rounded-3xl border px-4 py-3.5 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 ${tone.card}`}
+              >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
+                      />
+                      <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
+                        {item.title}
+                      </div>
+                    </div>
+                    <div className="app-muted mt-2 text-xs leading-5">
+                      {item.detail}
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}
+                  >
+                    {item.meta}
+                  </span>
+                </div>
+                <div className="text-xs font-semibold text-[var(--app-accent)]">
+                  {item.actionLabel}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function holdingMoveToneClass(value: number | null) {
+  if (value == null || value === 0) {
+    return 'text-[var(--app-soft)]';
+  }
+  return value > 0 ? 'text-[var(--app-success)]' : 'text-[var(--app-danger)]';
+}
+
+function DashboardHoldingMovers({
+  items,
+  isLoading,
+  isError,
+  variant = 'full',
+}: {
+  items: LiveHoldingItem[];
+  isLoading: boolean;
+  isError: boolean;
+  variant?: 'full' | 'compact';
+}) {
+  const copy = useCopy();
+  const { locale } = usePreferences();
+  const labels = copy.overview.dashboard;
+  const isCompact = variant === 'compact';
+  const movers = useMemo(
+    () =>
+      items
+        .filter((item) => item.today_change !== null)
+        .sort(
+          (left, right) =>
+            Math.abs(right.today_change ?? 0) -
+            Math.abs(left.today_change ?? 0),
+        )
+        .slice(0, isCompact ? 3 : 4),
+    [isCompact, items],
+  );
+
+  return (
+    <section
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
+      data-testid="overview-holding-movers"
+    >
+      <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.holdingMovers}</div>
+            <div className="app-muted mt-2 max-w-3xl text-sm">
+              {labels.holdingMoversDetail}
+            </div>
+          </div>
+          <a
+            href="/portfolio"
+            className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_45%,transparent)] hover:text-[var(--app-text)]"
+          >
+            {copy.shell.nav.portfolio}
+          </a>
+        </div>
+
+        {isLoading ? (
+          <div className="app-muted mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 text-sm">
+            {copy.states.loading}
+          </div>
+        ) : isError ? (
+          <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_8%,transparent)] px-4 py-4 text-sm font-semibold text-[var(--app-danger)]">
+            {copy.states.error}
+          </div>
+        ) : movers.length === 0 ? (
+          <div className="app-muted mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 text-sm">
+            {labels.holdingMoversEmpty}
+          </div>
+        ) : (
+          <div
+            className={
+              isCompact
+                ? 'mt-4 grid min-w-0 gap-2.5'
+                : 'mt-4 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4'
+            }
+          >
+            {movers.map((item) => {
+              const displayName =
+                item.display_name?.trim() || item.name?.trim() || item.symbol;
+              const quoteStatus = formatPublicStatus(item.quote_status, locale);
+              const quoteNeedsReview = isUnconfirmedMarketDataStatus(
+                item.quote_status,
+              );
+              return (
+                <a
+                  href={`/portfolio/${encodeURIComponent(item.symbol)}`}
+                  key={item.symbol}
+                  className={`group grid min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--app-accent)_36%,transparent)] ${
+                    isCompact
+                      ? 'grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3'
+                      : 'gap-4 px-4 py-4'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-semibold text-[var(--app-text)]">
+                      {displayName}
+                    </div>
+                    <div className="app-muted mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <span className="font-mono">{item.symbol}</span>
+                      <span>{getAssetClassLabel(copy, item.asset_class)}</span>
+                      {isCompact ? (
+                        <span
+                          className={`rounded-full border px-2 py-0.5 font-semibold ${
+                            quoteNeedsReview
+                              ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] text-[var(--app-warning)]'
+                              : 'border-[color-mix(in_srgb,var(--app-success)_24%,transparent)] text-[var(--app-success)]'
+                          }`}
+                        >
+                          {quoteStatus}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div
+                    className={
+                      isCompact
+                        ? 'grid shrink-0 justify-items-end gap-1'
+                        : 'grid min-w-0 gap-2'
+                    }
+                  >
+                    <div className="flex min-w-0 items-baseline justify-between gap-3">
+                      <span
+                        className={`app-kicker text-[10px] uppercase tracking-[0.14em] ${
+                          isCompact ? 'sr-only' : ''
+                        }`}
+                      >
+                        {labels.todayMove}
+                      </span>
+                      <span
+                        className={`shrink-0 font-mono font-semibold tabular-nums ${holdingMoveToneClass(
+                          item.today_change,
+                        )} ${isCompact ? 'text-base' : 'text-lg'}`}
+                      >
+                        {formatCurrencyValue(item.today_change ?? 0)}
+                      </span>
+                    </div>
+                    <div
+                      className={`flex min-w-0 items-baseline justify-between gap-3 text-xs ${
+                        isCompact ? 'justify-end' : ''
+                      }`}
+                    >
+                      <span className="app-muted">{labels.sinceBuyMove}</span>
+                      <span
+                        className={`shrink-0 font-mono font-semibold tabular-nums ${holdingMoveToneClass(
+                          item.since_buy_pnl,
+                        )}`}
+                      >
+                        {formatCurrencyValue(item.since_buy_pnl)}
+                      </span>
+                    </div>
+                    <div
+                      className={`flex min-w-0 items-center justify-between gap-3 text-xs ${
+                        isCompact ? 'hidden' : ''
+                      }`}
+                    >
+                      <span className="app-muted">
+                        {labels.quoteStatusLabel}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${
+                          quoteNeedsReview
+                            ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] text-[var(--app-warning)]'
+                            : 'border-[color-mix(in_srgb,var(--app-success)_24%,transparent)] text-[var(--app-success)]'
+                        }`}
+                      >
+                        {quoteStatus}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`text-xs font-semibold text-[var(--app-accent)] ${
+                      isCompact ? 'col-span-2' : ''
+                    }`}
+                  >
+                    {labels.viewHoldingDetail}
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

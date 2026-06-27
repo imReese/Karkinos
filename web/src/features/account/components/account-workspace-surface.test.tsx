@@ -65,6 +65,22 @@ test('renders account metrics as a single integrated terminal rail', () => {
   expect(screen.getByText('Cash Ratio')).toBeTruthy();
 });
 
+test('renders account metrics in a compact homepage workbench layout', () => {
+  renderWithPreferences(
+    <OverviewCards overview={overview} variant="workbench" />,
+  );
+
+  const rail = screen.getByTestId('account-metrics-rail');
+
+  expect(rail.className).toContain('self-start');
+  expect(rail.className).toContain(
+    '2xl:grid-cols-[1.35fr_repeat(2,minmax(0,1fr))]',
+  );
+  expect(rail.className).not.toContain(
+    'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
+  );
+});
+
 test('renders a responsive shimmering metrics rail skeleton', () => {
   render(<OverviewCardsSkeleton />);
 

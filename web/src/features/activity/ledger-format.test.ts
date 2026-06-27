@@ -483,10 +483,7 @@ describe('ledger formatter', () => {
         },
         'zh',
       ),
-    ).toEqual([
-      { label: '成交总额', value: 'CN¥0.27' },
-      { label: '净现金影响', value: 'CN¥0.27' },
-    ]);
+    ).toEqual([{ label: '金额', value: 'CN¥0.27' }]);
   });
 
   test('keeps cash notes when the mentioned amount does not match the structured amount', () => {

@@ -112,7 +112,7 @@ export const copy = {
       kicker: 'Overview',
       title: 'Portfolio platform',
       subtitle:
-        'Track capital structure, return breakdown, and equity movement in one place.',
+        'Review asset status, today PnL, data confidence, and items that need attention.',
       modeHelper:
         'Account view focuses on capital structure. Strategy view focuses on return quality.',
       loading: 'Loading account overview and portfolio snapshot.',
@@ -124,7 +124,7 @@ export const copy = {
         totalAssets: 'Total Assets',
         availableCash: 'Available Cash',
         todayPnl: 'Today PnL',
-        todayStocks: 'A-shares',
+        todayStocks: 'Stocks',
         todayFunds: 'Funds',
         todayTotal: 'Total',
         unrealizedPnl: 'Unrealized PnL',
@@ -135,7 +135,31 @@ export const copy = {
       },
       dashboard: {
         equityPanel: 'Equity curve',
-        opsPanel: 'Execution queue',
+        opsPanel: 'Review queue',
+        dailyWorkbench: 'Daily workbench',
+        todayToReview: 'Today to review',
+        noActionItems: 'No urgent items right now.',
+        noActionItemsDetail:
+          'Market data, approvals, and strategy evidence do not need immediate action.',
+        dataUsable: 'Market data and NAV are usable.',
+        dataNeedsReview: 'Market data or NAV needs review.',
+        pendingOrdersReady: 'Orders awaiting manual confirmation',
+        pendingOrdersClear: 'No orders awaiting confirmation',
+        strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
+        strategyEvidenceRequired: 'Strategy contribution needs linked evidence',
+        strategyUnavailable: 'Strategy contribution is temporarily unavailable',
+        viewData: 'View data status',
+        viewTrading: 'Review trading queue',
+        viewStrategy: 'Review strategy evidence',
+        holdingMovers: 'Holding movers',
+        holdingMoversDetail:
+          'Largest single-position moves from the current live holdings projection.',
+        holdingMoversEmpty:
+          'No position-level today PnL is available yet. Check data status or refresh quotes.',
+        viewHoldingDetail: 'Open holding detail',
+        todayMove: 'Today move',
+        sinceBuyMove: 'Since buy',
+        quoteStatusLabel: 'Quote status',
         pendingApprovals: 'Pending approvals',
         pendingEmpty: 'No orders require approval.',
         pendingEmptyDetail:
@@ -367,7 +391,7 @@ export const copy = {
           'Holding PnL is still not assigned to the strategy until review is complete.',
         strategyAttributionNextActionTitle: 'Next review step',
         strategyAttributionNextActionResearch:
-          'Run or refresh the single-instrument strategy loop before this holding can enter attribution review.',
+          'Run or refresh the single-instrument strategy loop for this holding, then review signal, risk, simulation, and attribution evidence together.',
         strategyAttributionNextActionManualReview:
           'Review the strategy candidate in Decision before this holding can enter attribution review.',
         strategyAttributionNextActionExecution:
@@ -1675,6 +1699,7 @@ export const copy = {
           'No ledger activity yet. Submit a trade, cash flow, dividend, or adjustment to build the timeline.',
         filteredEmpty: 'No matching ledger entries.',
         categoryFilter: 'Ledger category filter',
+        subcategoryFilter: 'Ledger detail filter',
         searchLabel: 'Search instrument name or symbol',
         searchPlaceholder: 'Search name / symbol',
         categoryLabels: {
@@ -1684,6 +1709,23 @@ export const copy = {
           dividend: 'Dividends',
           adjustment: 'Adjustments',
           other: 'Other',
+        },
+        subcategoryAllLabels: {
+          trade: 'All trades',
+          cash: 'All cash',
+          dividend: 'All dividends',
+          adjustment: 'All adjustments',
+          other: 'All other',
+        },
+        subcategoryLabels: {
+          stock: 'Stocks',
+          fund: 'Funds',
+          cashAccount: 'Cash account',
+          otherAsset: 'Other assets',
+          cashDeposit: 'Deposits',
+          cashWithdrawal: 'Withdrawals',
+          cashInterest: 'Interest',
+          otherCash: 'Other cash',
         },
         noDetail: '--',
         columns: {
@@ -2132,7 +2174,7 @@ export const copy = {
     overview: {
       kicker: '总览',
       title: '资产平台',
-      subtitle: '同时查看资金结构、收益拆解和净值走势，快速判断组合当前状态。',
+      subtitle: '查看资产状态、今日盈亏、数据可信度和需要处理的事项。',
       modeHelper: '账户视角看资本结构，策略视角看收益质量和执行结果。',
       loading: '正在加载账户总览和组合快照。',
       error: '账户总览或组合快照读取失败。',
@@ -2143,7 +2185,7 @@ export const copy = {
         totalAssets: '总资产',
         availableCash: '可用现金',
         todayPnl: '今日盈亏',
-        todayStocks: 'A股',
+        todayStocks: '股票',
         todayFunds: '基金',
         todayTotal: '合计',
         unrealizedPnl: '浮动盈亏',
@@ -2154,7 +2196,29 @@ export const copy = {
       },
       dashboard: {
         equityPanel: '资金曲线',
-        opsPanel: '执行队列',
+        opsPanel: '复核队列',
+        dailyWorkbench: '每日工作台',
+        todayToReview: '今天需要处理',
+        noActionItems: '当前没有紧急事项。',
+        noActionItemsDetail: '行情、审批和策略证据暂时不需要立即处理。',
+        dataUsable: '行情与净值可用于解读。',
+        dataNeedsReview: '行情或净值需要复核。',
+        pendingOrdersReady: '订单等待人工确认',
+        pendingOrdersClear: '暂无待确认订单',
+        strategyEvidenceLinked: '策略贡献已连接证据',
+        strategyEvidenceRequired: '策略贡献需要补充证据',
+        strategyUnavailable: '策略贡献暂不可用',
+        viewData: '查看数据状态',
+        viewTrading: '复核交易队列',
+        viewStrategy: '查看策略证据',
+        holdingMovers: '持仓异动',
+        holdingMoversDetail: '来自当前持仓行情投影的单只标的今日变化排行。',
+        holdingMoversEmpty:
+          '暂时没有单只持仓今日盈亏。可以先检查数据状态或刷新行情。',
+        viewHoldingDetail: '查看持仓详情',
+        todayMove: '今日变化',
+        sinceBuyMove: '持有以来',
+        quoteStatusLabel: '行情状态',
         pendingApprovals: '待审批订单',
         pendingEmpty: '当前没有需要审批的订单。',
         pendingEmptyDetail: '通过风控后的订单会先进入这里，确认后才继续执行。',
@@ -2376,7 +2440,7 @@ export const copy = {
           '持仓收益在复核完成前仍不会归因到该策略。',
         strategyAttributionNextActionTitle: '下一步复核动作',
         strategyAttributionNextActionResearch:
-          '先运行或刷新单标的策略闭环，再让该持仓进入归因复核。',
+          '先到回测页运行或刷新这只持仓的单标的策略闭环，再一起检查信号、风控、模拟复核和归因证据。',
         strategyAttributionNextActionManualReview:
           '先在决策页复核策略候选动作，再让该持仓进入归因复核。',
         strategyAttributionNextActionExecution:
@@ -3626,6 +3690,7 @@ export const copy = {
           '还没有账本流水。先录入交易、现金流、分红或手工调整，时间线就会开始累计。',
         filteredEmpty: '没有匹配的账本流水。',
         categoryFilter: '账本流水分类筛选',
+        subcategoryFilter: '账本二级筛选',
         searchLabel: '搜索标的名称 / 代码',
         searchPlaceholder: '搜索名称 / 代码',
         categoryLabels: {
@@ -3635,6 +3700,23 @@ export const copy = {
           dividend: '分红',
           adjustment: '调整',
           other: '其他',
+        },
+        subcategoryAllLabels: {
+          trade: '全部交易',
+          cash: '全部现金',
+          dividend: '全部分红',
+          adjustment: '全部调整',
+          other: '全部其他',
+        },
+        subcategoryLabels: {
+          stock: '股票',
+          fund: '基金',
+          cashAccount: '现金账户',
+          otherAsset: '其他资产',
+          cashDeposit: '资金转入',
+          cashWithdrawal: '资金转出',
+          cashInterest: '结息',
+          otherCash: '其他现金',
         },
         noDetail: '--',
         columns: {

@@ -145,7 +145,27 @@ function installOverviewFetchMock(
             total_market_value: 12000,
             total_today_change: 98.85,
             total_since_buy_pnl: 480,
-            items: [],
+            items: [
+              {
+                symbol: '600003',
+                name: '示例制造',
+                display_name: '示例制造',
+                asset_class: 'stock',
+                quantity: 200,
+                avg_cost: 16.25,
+                market_value: 3400,
+                latest_price: 17,
+                quote_timestamp: '2026-02-10T14:30:00+08:00',
+                since_buy_pnl: 150,
+                since_buy_pnl_pct: 0.046,
+                today_change: 98.85,
+                today_change_pct: 0.03,
+                baseline_price: 16.5,
+                baseline_timestamp: '2026-02-10T09:30:00+08:00',
+                baseline_source: 'previous_close',
+                quote_status: 'live',
+              },
+            ],
           },
           {
             asset_class: 'fund',
@@ -153,7 +173,28 @@ function installOverviewFetchMock(
             total_market_value: 9000,
             total_today_change: -10.68,
             total_since_buy_pnl: 120,
-            items: [],
+            items: [
+              {
+                symbol: '019999',
+                name: '示例稳健混合C',
+                display_name: '示例稳健混合C',
+                asset_class: 'fund',
+                quantity: 3000,
+                avg_cost: 1,
+                market_value: 3000,
+                latest_price: 1,
+                quote_timestamp: '2026-02-10T15:00:00+08:00',
+                since_buy_pnl: -25,
+                since_buy_pnl_pct: -0.008,
+                today_change: -10.68,
+                today_change_pct: -0.003,
+                baseline_price: 1.003,
+                baseline_timestamp: '2026-02-10T09:30:00+08:00',
+                baseline_source: 'previous_nav',
+                quote_status: 'estimated',
+                quote_source: 'eastmoney_fund_estimate',
+              },
+            ],
           },
         ],
       });
@@ -323,12 +364,102 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
 
   const metricsRail = await screen.findByTestId('account-metrics-rail');
   expect(within(metricsRail).getByText('Today PnL')).toBeTruthy();
-  expect(within(metricsRail).getByText('A-shares')).toBeTruthy();
+  expect(within(metricsRail).getByText('Stocks')).toBeTruthy();
   expect(within(metricsRail).getByText('Funds')).toBeTruthy();
   expect(within(metricsRail).getByText('Total')).toBeTruthy();
   expect(within(metricsRail).getByText('CN¥98.85')).toBeTruthy();
   expect(within(metricsRail).getByText('-CN¥10.68')).toBeTruthy();
   expect(within(metricsRail).getByText('CN¥88.17')).toBeTruthy();
+});
+
+test('renders the daily workbench before chart and detail panels', async () => {
+  renderOverviewPage();
+
+  const workbench = await screen.findByTestId('overview-daily-workbench');
+  const holdingMovers = await screen.findByTestId('overview-holding-movers');
+  const performanceCard = await screen.findByTestId(
+    'overview-performance-card',
+  );
+  const operationsPanel = await screen.findByTestId(
+    'overview-operations-panel',
+  );
+  const reviewStrip = await screen.findByTestId('overview-review-strip');
+
+  expect(within(workbench).getByText('Today to review')).toBeTruthy();
+  expect(
+    within(workbench).getByText('Market data and NAV are usable.'),
+  ).toBeTruthy();
+  expect(
+    within(workbench).getByText('No orders awaiting confirmation'),
+  ).toBeTruthy();
+  expect(
+    within(workbench).getByText('Strategy contribution is evidence-linked'),
+  ).toBeTruthy();
+  expect(within(holdingMovers).getByText('Holding movers')).toBeTruthy();
+  expect(within(holdingMovers).getByText('示例制造')).toBeTruthy();
+  expect(within(holdingMovers).getByText('CN¥98.85')).toBeTruthy();
+  expect(
+    within(holdingMovers).getAllByText('Open holding detail').length,
+  ).toBeGreaterThan(0);
+  expect(
+    workbench.compareDocumentPosition(performanceCard) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    holdingMovers.compareDocumentPosition(performanceCard) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(within(operationsPanel).getByText('Data status')).toBeTruthy();
+  expect(within(operationsPanel).getByText('Quick actions')).toBeTruthy();
+  expect(
+    within(operationsPanel).getByRole('button', { name: 'Refresh quotes' }),
+  ).toBeTruthy();
+  expect(
+    performanceCard.compareDocumentPosition(operationsPanel) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    operationsPanel.compareDocumentPosition(reviewStrip) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    within(reviewStrip)
+      .getByTestId('strategy-contribution-gate-card')
+      .getAttribute('data-variant'),
+  ).toBe('compact');
+});
+
+test('keeps user-readable data work items on stale homepage status', async () => {
+  installOverviewFetchMock({
+    quote_status: 'stale',
+    stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+    refresh_policy: 'cache_only',
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OverviewPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const workbench = await screen.findByTestId('overview-daily-workbench');
+  expect(within(workbench).getByText('Today to review')).toBeTruthy();
+  expect(
+    within(workbench).getByText('Market data or NAV needs review.'),
+  ).toBeTruthy();
+  expect(
+    within(workbench).getAllByText(
+      'Wait for confirmed fund NAV or sync NAV data',
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(within(workbench).queryByText('cache_only')).toBeNull();
+  expect(
+    within(workbench).queryByText('confirmed_fund_nav_missing_estimate_only'),
+  ).toBeNull();
 });
 
 test('renders overview ledger cards with shared public ledger formatting', async () => {

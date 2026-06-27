@@ -12,7 +12,7 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function installActivityFetchMock() {
+function installActivityFetchMock(extraLedgerEntries: unknown[] = []) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
       typeof input === 'string'
@@ -69,6 +69,7 @@ function installActivityFetchMock() {
           source_ref: 'synthetic-trade-buy',
           created_at: null,
         },
+        ...extraLedgerEntries,
       ]);
     }
     if (url.includes('/api/portfolio/pending-fund-orders')) {
@@ -104,7 +105,10 @@ function installActivityFetchMock() {
   return fetchMock;
 }
 
-function renderActivityPage(locale?: 'en' | 'zh') {
+function renderActivityPage(
+  locale?: 'en' | 'zh',
+  extraLedgerEntries: unknown[] = [],
+) {
   window.localStorage.clear();
   if (locale) {
     window.localStorage.setItem('karkinos.locale', locale);
@@ -115,7 +119,7 @@ function renderActivityPage(locale?: 'en' | 'zh') {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  installActivityFetchMock();
+  installActivityFetchMock(extraLedgerEntries);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -172,21 +176,112 @@ test('filters recent ledger entries by category', async () => {
 
   expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
   expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+  expect(screen.queryByText('全部交易 1 条')).toBeNull();
+  expect(screen.queryByText('全部现金 1 条')).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: '现金 1 条' }));
 
+  expect(screen.getByRole('button', { name: '全部现金 1 条' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '结息 1 条' })).toBeTruthy();
+  expect(screen.queryByText('全部交易 1 条')).toBeNull();
   expect(screen.getAllByText('现金利息').length).toBeGreaterThan(0);
   expect(screen.queryByText('合成标的 SYN001')).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: '交易 1 条' }));
 
+  expect(screen.getByRole('button', { name: '全部交易 1 条' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '股票 1 条' })).toBeTruthy();
+  expect(screen.queryByText('全部现金 1 条')).toBeNull();
   expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
   expect(screen.queryByText('现金利息')).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: '全部 2 条' }));
 
+  expect(screen.queryByText('全部交易 1 条')).toBeNull();
+  expect(screen.queryByText('全部现金 1 条')).toBeNull();
   expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
   expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+});
+
+test('shows contextual second-level filters for the selected ledger category', async () => {
+  renderActivityPage('zh', [
+    {
+      id: 3,
+      entry_type: 'trade_buy',
+      timestamp: '2026-02-03T03:04:56+00:00',
+      amount: 200,
+      symbol: 'FUND001',
+      display_name: '合成基金',
+      direction: 'buy',
+      quantity: 100,
+      price: 2,
+      commission: 0,
+      gross_amount: 200,
+      net_cash_impact: -200,
+      fee_breakdown: {
+        commission: '0',
+        subscription_fee: '0',
+        redemption_fee: '0',
+        stamp_tax: '0',
+        transfer_fee: '0',
+        other_fees: '0',
+      },
+      fee_rule_id: 'synthetic_fee_rule',
+      fee_rule_version: 'fixture',
+      cost_basis_method: 'moving_average_buy_cost',
+      asset_class: 'fund',
+      note: '手工录入基金申购：合成基金，申购金额 200.00',
+      source: 'manual',
+      source_ref: 'synthetic-fund-buy',
+      created_at: null,
+    },
+  ]);
+
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+  expect(await screen.findByText('合成基金 FUND001')).toBeTruthy();
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('全部资产 3 条')).toBeNull();
+  expect(screen.queryByText('股票 1 条')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '交易 2 条' }));
+
+  expect(screen.getByRole('button', { name: '全部交易 2 条' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '股票 1 条' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '基金 1 条' })).toBeTruthy();
+  expect(screen.queryByText('现金账户 1 条')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '股票 1 条' }));
+
+  expect(screen.getByText('合成标的 SYN001')).toBeTruthy();
+  expect(screen.queryByText('合成基金 FUND001')).toBeNull();
+  expect(screen.queryByText('现金利息')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '基金 1 条' }));
+
+  expect(await screen.findByText('合成基金 FUND001')).toBeTruthy();
+  expect(screen.queryByText('合成标的 SYN001')).toBeNull();
+  expect(screen.queryByText('现金利息')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '现金 1 条' }));
+
+  expect(screen.getByRole('button', { name: '全部现金 1 条' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '结息 1 条' })).toBeTruthy();
+  expect(screen.queryByText('股票 1 条')).toBeNull();
+  expect(screen.queryByText('基金 1 条')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '结息 1 条' }));
+
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('合成标的 SYN001')).toBeNull();
+  expect(screen.queryByText('合成基金 FUND001')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '全部 3 条' }));
+
+  expect(screen.queryByText('全部交易 2 条')).toBeNull();
+  expect(screen.queryByText('全部现金 1 条')).toBeNull();
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+  expect(await screen.findByText('合成基金 FUND001')).toBeTruthy();
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
 });
 
 test('filters recent ledger entries by instrument search', async () => {
