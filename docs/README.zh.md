@@ -773,7 +773,7 @@ React + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 
 | 视图 | 路径 | 说明 |
 |------|------|------|
-| Overview | `/` | 账户概览、实时持仓摘要、权益曲线 |
+| Overview | `/` | 每日资产工作台：资产状态、今日盈亏、数据可信度、待处理事项、净值与收益摘要 |
 | Portfolio | `/portfolio` | 持仓明细、资产筛选、配置分组 |
 | Activity | `/activity` | 交易、分红、现金流、手工调整流水 |
 | Risk | `/risk` | 风险指标、回撤、集中度、权益解释 |

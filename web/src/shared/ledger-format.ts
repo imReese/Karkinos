@@ -607,6 +607,29 @@ export function formatLedgerExecutionDetailLines(
   const isCashEntry = isCashLedgerEntry(entry);
   const lines: LedgerExecutionDetailLine[] = [];
 
+  if (isCashEntry) {
+    const cashAmount =
+      finiteNumber(entry.net_cash_impact) ??
+      finiteNumber(entry.gross_amount) ??
+      finiteNumber(entry.amount);
+    addLine(lines, labels.amount, formatCurrency(cashAmount));
+
+    const cashFee = breakdown
+      ? sumBreakdownNumbers(
+          breakdown,
+          'commission',
+          'stamp_tax',
+          'tax',
+          'transfer_fee',
+          'other_fees',
+        )
+      : finiteNumber(entry.commission);
+    if (cashFee !== null && cashFee !== 0) {
+      addLine(lines, labels.fee, formatCurrency(cashFee));
+    }
+    return lines;
+  }
+
   addLine(
     lines,
     hasStructuredCosts ? labels.grossAmount : labels.amount,
@@ -639,20 +662,6 @@ export function formatLedgerExecutionDetailLines(
       }
       return lines;
     }
-    if (isCashEntry) {
-      const cashFee = sumBreakdownNumbers(
-        breakdown,
-        'commission',
-        'stamp_tax',
-        'tax',
-        'transfer_fee',
-        'other_fees',
-      );
-      if (cashFee !== null && cashFee !== 0) {
-        addLine(lines, labels.fee, formatCurrency(cashFee));
-      }
-      return lines;
-    }
     addLine(
       lines,
       labels.commission,
@@ -674,10 +683,7 @@ export function formatLedgerExecutionDetailLines(
     }
   } else {
     const fee = finiteNumber(entry.commission);
-    if (
-      (!isFundLedgerEntry(entry) && !isCashEntry) ||
-      (fee !== null && fee !== 0)
-    ) {
+    if (!isFundLedgerEntry(entry) || (fee !== null && fee !== 0)) {
       addLine(lines, labels.fee, formatCurrency(fee));
     }
   }

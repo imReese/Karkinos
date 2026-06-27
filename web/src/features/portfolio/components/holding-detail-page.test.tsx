@@ -165,7 +165,7 @@ function installHoldingFetchMock({
   accountStrategy?: Record<string, unknown>;
   accountStrategyAttribution?: Record<string, unknown>;
   accountStrategyContribution?: Record<string, unknown>;
-  holdingStrategyAttribution?: Record<string, unknown>;
+  holdingStrategyAttribution?: Record<string, unknown> | null;
 } = {}) {
   const resolvedPosition = { ...position, ...positionOverride };
   const positions = includePosition ? [resolvedPosition] : [];
@@ -1074,6 +1074,27 @@ test('shows a localized next action for the first missing attribution prerequisi
   });
   expect(actionLink.getAttribute('href')).toBe('/decision');
   expect(card.textContent).not.toContain('manual_review');
+});
+
+test('shows a next action when holding-level attribution readiness is unavailable', async () => {
+  renderHoldingDetail({ holdingStrategyAttribution: null });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+
+  const card = await screen.findByTestId(
+    'holding-strategy-attribution-boundary',
+  );
+  expect(card.textContent).toContain('No linked strategy fills yet');
+  expect(card.textContent).toContain('Next review step');
+  expect(card.textContent).toContain(
+    'Run or refresh the single-instrument strategy loop for this holding, then review signal, risk, simulation, and attribution evidence together.',
+  );
+  const actionLink = within(card).getByRole('link', {
+    name: 'Review strategy research evidence',
+  });
+  expect(actionLink.getAttribute('href')).toBe(
+    '/backtest?symbol=600519&assetClass=stock&source=portfolio',
+  );
 });
 
 test('shows not found state when the symbol is absent', async () => {

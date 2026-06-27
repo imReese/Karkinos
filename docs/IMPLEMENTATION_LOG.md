@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-27: Portfolio holding strategy-attribution cards now show a concrete
+  next review step even when holding-level attribution readiness evidence is
+  unavailable. The card points the user back to the single-instrument Strategy
+  Lab flow for the current holding and explains that signal, risk, simulation,
+  and attribution evidence should be reviewed together before strategy P/L can
+  be assigned. This is read-only guidance and navigation only; it does not
+  create orders, mutate production ledger entries, submit broker orders,
+  enable automatic trading, or bypass manual confirmation.
 * 2026-06-27: Backtest signal preview now groups the selected symbol's
   research data basis into a user-readable evidence block. It shows the
   formatted dataset snapshot reference, the underlying snapshot id for audit
@@ -1853,3 +1861,11 @@ roadmap promises.
   leak back into user-facing strategy-loop surfaces. This is audit coverage
   only; it does not mutate attribution records, production ledger entries,
   broker orders, automatic trading defaults, or manual-confirmation state.
+* 2026-06-27: Overview now starts with a daily asset workbench that puts account
+  state, A-share/fund/total daily PnL, data confidence, manual-confirmation
+  queue state, and strategy-evidence readiness before chart and position
+  details. The detailed quote diagnostics, equity curve, return calendar,
+  ledger, strategy contribution report, and holding table remain available
+  below the first screen. This is presentation-only; it does not mutate
+  valuation, ledger, trading, broker, risk-gate, automatic-trading, or
+  manual-confirmation behavior.

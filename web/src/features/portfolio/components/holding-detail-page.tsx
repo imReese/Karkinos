@@ -182,13 +182,22 @@ function buildAttributionNextAction({
   symbol,
   assetClass,
   labels,
+  shouldStartResearchReview = false,
 }: {
   missingItem: AttributionReadinessItem | null;
   symbol: string;
   assetClass: string;
   labels: ReturnType<typeof useCopy>['portfolio']['detail'];
+  shouldStartResearchReview?: boolean;
 }): AttributionNextAction | null {
   if (!missingItem) {
+    if (shouldStartResearchReview) {
+      return {
+        detail: labels.strategyAttributionNextActionResearch,
+        href: buildBacktestHandoffHref(symbol, assetClass),
+        label: labels.actionStrategyEvidence,
+      };
+    }
     return null;
   }
   if (
@@ -467,6 +476,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     symbol: position.symbol,
     assetClass,
     labels,
+    shouldStartResearchReview: !hasSymbolStrategyEvidence,
   });
   const strategyDisplayName = formatStrategyDisplayName(
     holdingAttribution?.strategy_id ||
@@ -906,25 +916,25 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
                     {labels.strategyAttributionReviewBoundary}
                   </p>
-                  {attributionNextAction ? (
-                    <div
-                      data-testid="holding-strategy-attribution-next-action"
-                      className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3"
-                    >
-                      <div className="app-product-mark">
-                        {labels.strategyAttributionNextActionTitle}
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
-                        {attributionNextAction.detail}
-                      </p>
-                      <div className="mt-3">
-                        <ActionLink
-                          href={attributionNextAction.href}
-                          label={attributionNextAction.label}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
+                </div>
+              ) : null}
+              {attributionNextAction ? (
+                <div
+                  data-testid="holding-strategy-attribution-next-action"
+                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3"
+                >
+                  <div className="app-product-mark">
+                    {labels.strategyAttributionNextActionTitle}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
+                    {attributionNextAction.detail}
+                  </p>
+                  <div className="mt-3">
+                    <ActionLink
+                      href={attributionNextAction.href}
+                      label={attributionNextAction.label}
+                    />
+                  </div>
                 </div>
               ) : null}
               {hasSymbolStrategyEvidence ? (
