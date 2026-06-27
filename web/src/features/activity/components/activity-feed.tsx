@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+
 import { useCopy } from '../../../app/copy';
 import { usePreferences } from '../../../app/preferences';
 import { formatTimestamp } from '../../../shared/format';
@@ -12,10 +14,53 @@ import {
   type LedgerActivitySummaryTone,
 } from '../ledger-format';
 
+type LedgerEntryCategory =
+  | 'all'
+  | 'trade'
+  | 'cash'
+  | 'dividend'
+  | 'adjustment'
+  | 'other';
+
+const LEDGER_ENTRY_CATEGORIES: LedgerEntryCategory[] = [
+  'all',
+  'trade',
+  'cash',
+  'dividend',
+  'adjustment',
+  'other',
+];
+
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.activity.feed;
+  const [selectedCategory, setSelectedCategory] =
+    useState<LedgerEntryCategory>('all');
+  const categorizedEntries = useMemo(
+    () =>
+      entries.map((entry) => ({
+        entry,
+        category: classifyLedgerEntry(entry),
+      })),
+    [entries],
+  );
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<LedgerEntryCategory, number>();
+    for (const category of LEDGER_ENTRY_CATEGORIES) {
+      counts.set(category, category === 'all' ? entries.length : 0);
+    }
+    for (const item of categorizedEntries) {
+      counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
+    }
+    return counts;
+  }, [categorizedEntries, entries.length]);
+  const visibleEntries =
+    selectedCategory === 'all'
+      ? entries
+      : categorizedEntries
+          .filter((item) => item.category === selectedCategory)
+          .map((item) => item.entry);
 
   if (entries.length === 0) {
     return (
@@ -33,8 +78,35 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           <h2 className="mt-2 text-base font-semibold">{labels.title}</h2>
         </div>
         <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-soft)]">
-          {labels.count(entries.length)}
+          {labels.count(visibleEntries.length)}
         </span>
+      </div>
+      <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-5 py-3">
+        <div
+          aria-label={labels.categoryFilter}
+          className="flex min-w-0 flex-wrap gap-2"
+          role="group"
+        >
+          {LEDGER_ENTRY_CATEGORIES.map((category) => {
+            const count = categoryCounts.get(category) ?? 0;
+            const isSelected = selectedCategory === category;
+            return (
+              <button
+                key={category}
+                aria-pressed={isSelected}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  isSelected
+                    ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
+                    : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
+                }`}
+                onClick={() => setSelectedCategory(category)}
+                type="button"
+              >
+                {labels.categoryLabels[category]} {labels.count(count)}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
         <table className="app-data-table w-full min-w-[820px] text-left text-sm">
@@ -48,7 +120,17 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             </tr>
           </thead>
           <tbody>
-            {entries.map((entry) => {
+            {visibleEntries.length === 0 ? (
+              <tr>
+                <td
+                  className="px-5 py-8 text-center text-sm text-[var(--app-muted)]"
+                  colSpan={5}
+                >
+                  {labels.filteredEmpty}
+                </td>
+              </tr>
+            ) : null}
+            {visibleEntries.map((entry) => {
               const summary = formatLedgerActivitySummary(entry, locale);
               return (
                 <tr key={entry.id}>
@@ -165,4 +247,33 @@ function formatAssetClass(
   copy: ReturnType<typeof useCopy>,
 ) {
   return formatAssetClassLabel(assetClass, copy.common);
+}
+
+function classifyLedgerEntry(entry: LedgerEntry): LedgerEntryCategory {
+  const entryType = entry.entry_type.toLowerCase();
+  const assetClass = entry.asset_class.toLowerCase();
+  const direction = entry.direction?.toLowerCase() ?? '';
+
+  if (
+    entryType.includes('trade') ||
+    direction === 'buy' ||
+    direction === 'sell'
+  ) {
+    return 'trade';
+  }
+  if (entryType.includes('dividend')) {
+    return 'dividend';
+  }
+  if (entryType.includes('adjust')) {
+    return 'adjustment';
+  }
+  if (
+    assetClass === 'cash' ||
+    entryType.includes('cash') ||
+    entryType.includes('deposit') ||
+    entryType.includes('withdraw')
+  ) {
+    return 'cash';
+  }
+  return 'other';
 }

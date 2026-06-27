@@ -6,6 +6,32 @@ roadmap promises.
 
 ## v1.4 Progress
 
+* 2026-06-27: Decision signal action queue cards now link each persisted
+  signal action back to its single-instrument Backtest evidence view and
+  symbol-scoped holding attribution review. The links preserve symbol, asset
+  class, and strategy parameters where available, so users can move from a
+  daily signal task to the same read-only research and attribution evidence
+  chain before preparing any manual order. This is navigation-only and does not
+  create orders, mutate production ledger entries, submit broker orders, enable
+  automatic trading, or bypass manual confirmation.
+* 2026-06-27: Decision candidate cards now expose risk-gate reasons as
+  localized read-only evidence when a candidate is blocked or degraded. Known
+  risk reason codes render through shared public labels and unknown backend
+  reason codes fall back to review-note wording instead of raw identifiers.
+  This strengthens the single-instrument signal-to-risk-gate explanation
+  without changing signal generation, risk decisions, paper/shadow isolation,
+  production ledger entries, broker submission, automatic trading defaults, or
+  manual-confirmation behavior.
+* 2026-06-27: Decision workflow cards now format required actions and blocking
+  reasons through separate public-label paths. Required actions remain
+  user-facing next steps, while blocking reasons render as localized review
+  notes, so future backend reason codes do not leak into the Decision cockpit
+  as raw internal identifiers or misleading action chips. The single-instrument
+  strategy-loop acceptance audit now includes Decision cockpit source and tests
+  in the user-readable surface contract. This is presentation and audit
+  coverage only; it does not change signal generation, risk gates,
+  paper/shadow isolation, production ledger entries, broker submission,
+  automatic trading defaults, or manual-confirmation behavior.
 * 2026-06-26: Shared Web public labels now use one Chinese term,
   "simulation review" / `模拟复核`, for paper/shadow review evidence across
   Backtest, Decision, and Trading surfaces. The shared formatter maps backend

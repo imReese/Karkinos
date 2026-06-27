@@ -360,8 +360,13 @@ def test_single_instrument_strategy_loop_user_readable_surface_audit_covers_web_
         "web/src/features/portfolio/components/holding-detail-page.test.tsx"
         in user_readable.evidence_paths
     )
+    assert (
+        "web/src/features/decision/components/decision-cockpit-page.test.tsx"
+        in user_readable.evidence_paths
+    )
     assert any(
-        "copy public-labels holding-detail-page" in command
+        "copy public-labels holding-detail-page decision-cockpit-page"
+        in command
         for command in user_readable.validation_commands
     )
 

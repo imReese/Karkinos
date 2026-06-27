@@ -355,6 +355,26 @@ function gateRequirementLabels(
   return values.map((value) => labels.gateRequirementLabel(value));
 }
 
+function gateBlockingReasonLabels(values: string[], locale: Locale) {
+  return values.map((value) => formatPublicNote(value, locale));
+}
+
+function decisionGateDetailLabels({
+  requiredActions,
+  blockingReasons,
+  labels,
+  locale,
+}: {
+  requiredActions: string[];
+  blockingReasons: string[];
+  labels: ReturnType<typeof useCopy>['decision'];
+  locale: Locale;
+}) {
+  return requiredActions.length > 0
+    ? gateRequirementLabels(requiredActions, labels)
+    : gateBlockingReasonLabels(blockingReasons, locale);
+}
+
 function decisionWorkflowTarget(
   taskId: string,
   labels: ReturnType<typeof useCopy>['decision'],
@@ -392,9 +412,33 @@ function decisionCandidateBacktestHref(candidate: DecisionCandidate) {
   return query ? `/backtest?${query}` : '/backtest';
 }
 
+function signalActionBacktestHref(action: ActionCard) {
+  const params = new URLSearchParams();
+  const symbol = action.symbol.trim();
+  const assetClass = action.asset_class.trim();
+  const strategyId = action.strategy_id.trim();
+  if (symbol) {
+    params.set('symbol', symbol);
+  }
+  if (assetClass) {
+    params.set('assetClass', assetClass);
+  }
+  if (strategyId) {
+    params.set('strategy', strategyId);
+  }
+  const query = params.toString();
+  return query ? `/backtest?${query}` : '/backtest';
+}
+
 function decisionCandidateHoldingAttributionHref(candidate: DecisionCandidate) {
   return `/portfolio/${encodeURIComponent(
     candidate.symbol,
+  )}#holding-strategy-attribution-boundary`;
+}
+
+function signalActionHoldingAttributionHref(action: ActionCard) {
+  return `/portfolio/${encodeURIComponent(
+    action.symbol,
   )}#holding-strategy-attribution-boundary`;
 }
 
@@ -674,13 +718,12 @@ function DecisionWorkflowTaskCard({
   locale: Locale;
 }) {
   const labels = useCopy().decision;
-  const actionCodes =
-    task.required_actions.length > 0
-      ? task.required_actions
-      : task.blocking_reasons;
-  const actionLabels = actionCodes.map((code) =>
-    labels.workflowActionLabel(code),
-  );
+  const actionLabels = decisionGateDetailLabels({
+    requiredActions: task.required_actions,
+    blockingReasons: task.blocking_reasons,
+    labels,
+    locale,
+  });
   const taskLabel = labels.workflowTaskLabel(task.id);
   const target = decisionWorkflowTarget(task.id, labels);
 
@@ -817,61 +860,82 @@ function SignalQueuePanel({
                   {labels.noSignalActions}
                 </div>
               ) : (
-                actions.slice(0, 4).map((action) => (
-                  <div
-                    key={action.id ?? action.symbol}
-                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
-                  >
-                    <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <div className="font-semibold text-[var(--app-text)]">
-                          {formatInstrumentDisplayLabel(action)}
+                actions.slice(0, 4).map((action) => {
+                  const instrumentLabel = formatInstrumentDisplayLabel(action);
+                  const actionId = action.id;
+                  return (
+                    <div
+                      key={action.id ?? action.symbol}
+                      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                    >
+                      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-[var(--app-text)]">
+                            {instrumentLabel}
+                          </div>
+                          <div className="app-muted mt-1 break-words text-xs">
+                            {formatPublicStatus(action.direction, locale)} ·{' '}
+                            {formatPublicStatus(
+                              action.risk_gate_status,
+                              locale,
+                            )}{' '}
+                            ·{' '}
+                            {formatPublicStatus(
+                              action.manual_confirmation_status,
+                              locale,
+                            )}
+                          </div>
+                          <div className="app-muted mt-2 break-words text-xs leading-5">
+                            {formatPublicNote(action.detail, locale)}
+                          </div>
                         </div>
-                        <div className="app-muted mt-1 break-words text-xs">
-                          {formatPublicStatus(action.direction, locale)} ·{' '}
-                          {formatPublicStatus(action.risk_gate_status, locale)}{' '}
-                          ·{' '}
-                          {formatPublicStatus(
-                            action.manual_confirmation_status,
-                            locale,
-                          )}
-                        </div>
-                        <div className="app-muted mt-2 break-words text-xs leading-5">
-                          {formatPublicNote(action.detail, locale)}
+                        <div className="grid shrink-0 gap-2 sm:grid-cols-2 lg:min-w-[280px]">
+                          <a
+                            className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-semibold whitespace-normal"
+                            href={signalActionBacktestHref(action)}
+                            aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
+                          >
+                            {labels.openBacktestEvidence}
+                          </a>
+                          <a
+                            className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-semibold whitespace-normal"
+                            href={signalActionHoldingAttributionHref(action)}
+                            aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
+                          >
+                            {labels.openAttributionReview}
+                          </a>
+                          {actionId !== null &&
+                          action.manual_confirmation_status ===
+                            'ready_for_manual_confirmation' ? (
+                            <>
+                              <input
+                                className="app-field rounded-2xl px-3 py-2 text-xs tabular-nums"
+                                type="number"
+                                min="1"
+                                value={quantities[actionId] ?? '100'}
+                                aria-label={`${labels.orderQuantity}: ${instrumentLabel}`}
+                                onChange={(event) =>
+                                  setQuantities((current) => ({
+                                    ...current,
+                                    [actionId]: event.target.value,
+                                  }))
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="app-button-primary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={createManualOrder.isPending}
+                                onClick={() => void prepareManualOrder(action)}
+                              >
+                                {labels.prepareManualOrder}
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </div>
-                      {action.id !== null &&
-                      action.manual_confirmation_status ===
-                        'ready_for_manual_confirmation' ? (
-                        <div className="grid shrink-0 gap-2 sm:grid-cols-[92px_132px]">
-                          <input
-                            className="app-field rounded-2xl px-3 py-2 text-xs tabular-nums"
-                            type="number"
-                            min="1"
-                            value={quantities[action.id] ?? '100'}
-                            aria-label={`${labels.orderQuantity}: ${formatInstrumentDisplayLabel(
-                              action,
-                            )}`}
-                            onChange={(event) =>
-                              setQuantities((current) => ({
-                                ...current,
-                                [action.id as number]: event.target.value,
-                              }))
-                            }
-                          />
-                          <button
-                            type="button"
-                            className="app-button-primary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={createManualOrder.isPending}
-                            onClick={() => void prepareManualOrder(action)}
-                          >
-                            {labels.prepareManualOrder}
-                          </button>
-                        </div>
-                      ) : null}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -1015,10 +1079,12 @@ function AccountTruthGateTile({ lane }: { lane: DecisionResponse }) {
   const unresolvedDetail = labels.accountTruthUnresolved(
     accountTruth?.unresolved_mismatch_count ?? 0,
   );
-  const actionDetail =
-    requiredActions.length > 0
-      ? gateRequirementLabels(requiredActions, labels).join(' · ')
-      : gateRequirementLabels(blockingReasons, labels).join(' · ');
+  const actionDetail = decisionGateDetailLabels({
+    requiredActions,
+    blockingReasons,
+    labels,
+    locale,
+  }).join(' · ');
   const detail =
     actionDetail.length > 0
       ? `${unresolvedDetail} · ${actionDetail}`
@@ -1059,9 +1125,12 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
         )}`
       : '',
     ...strategyContributionDetailItems(strategyAttribution, copy.backtest.page),
-    requiredActions.length > 0
-      ? gateRequirementLabels(requiredActions, labels).join(' · ')
-      : gateRequirementLabels(blockingReasons, labels).join(' · '),
+    decisionGateDetailLabels({
+      requiredActions,
+      blockingReasons,
+      labels,
+      locale,
+    }).join(' · '),
   ].filter(Boolean);
 
   return (
@@ -1171,6 +1240,9 @@ function DecisionCandidateCard({
   const holdingDetailHref = `/portfolio/${encodeURIComponent(candidate.symbol)}`;
   const holdingAttributionHref =
     decisionCandidateHoldingAttributionHref(candidate);
+  const riskGateReasons = candidate.evidence.risk_gate.reasons.map((reason) =>
+    formatPublicNote(reason, locale),
+  );
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
@@ -1299,6 +1371,13 @@ function DecisionCandidateCard({
           label={labels.riskDecision}
           value={String(candidate.evidence.risk_gate.decision_id ?? '--')}
         />
+        {riskGateReasons.length > 0 ? (
+          <EvidenceLine
+            label={formatPublicCode('risk_block_evidence', locale)}
+            value={riskGateReasons.join('；')}
+            tone={decisionTone(candidate.evidence.risk_gate.status)}
+          />
+        ) : null}
       </div>
 
       <CandidateEvidenceChain candidate={candidate} />
