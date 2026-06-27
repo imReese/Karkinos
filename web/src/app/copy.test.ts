@@ -21,3 +21,11 @@ test('uses one Chinese simulation-review term in strategy loop copy', () => {
   expect(backtestCopy).not.toContain('模拟复盘');
   expect(backtestCopy).not.toContain('模拟盘复核');
 });
+
+test('uses user-readable English simulation-review wording in strategy loop copy', () => {
+  const backtestCopy = JSON.stringify(copy.en.backtest);
+
+  expect(backtestCopy).toContain('simulation review');
+  expect(backtestCopy).not.toContain('paper/shadow');
+  expect(backtestCopy).not.toContain('Paper/shadow');
+});

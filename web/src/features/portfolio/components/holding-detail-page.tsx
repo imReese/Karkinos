@@ -37,6 +37,7 @@ import {
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatPublicCode,
+  formatPublicEvidenceReference,
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
@@ -152,16 +153,25 @@ function buildBacktestHandoffHref(symbol: string, assetClass: string) {
 function buildEvidenceRefItems(
   refs: string[],
   labels: Record<EvidenceRefType, string>,
+  locale: ReturnType<typeof usePreferences>['locale'],
 ) {
   return refs.map((ref): EvidenceRefItem => {
     const [rawKind, ...auditParts] = ref.split(':');
     const kind = EVIDENCE_REF_TYPES.has(rawKind as EvidenceRefType)
       ? (rawKind as EvidenceRefType)
       : 'unknown';
-    const auditRef = auditParts.join(':') || ref;
+    const publicReference = formatPublicEvidenceReference(ref, locale);
+    const [publicLabel, publicAuditRef] = publicReference.split(' · ');
+    const auditRef =
+      kind === 'unknown'
+        ? publicAuditRef || publicReference
+        : auditParts.join(':') || ref;
     return {
       kind,
-      label: labels[kind] ?? labels.unknown,
+      label:
+        kind === 'unknown'
+          ? publicLabel || labels.unknown
+          : (labels[kind] ?? labels.unknown),
       auditRef,
     };
   });
@@ -430,6 +440,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     ? buildEvidenceRefItems(
         holdingAttribution?.evidence_refs ?? [],
         labels.strategyAttributionEvidenceTypeLabels,
+        locale,
       )
     : [];
   const attributionReadinessItems = holdingAttribution

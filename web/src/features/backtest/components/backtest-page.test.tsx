@@ -1991,12 +1991,10 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect(await screen.findByText('Review gates')).toBeTruthy();
   expect(await screen.findByText('Data ready')).toBeTruthy();
   expect(await screen.findByText('Risk gate required')).toBeTruthy();
-  expect(await screen.findByText('Paper/shadow waiting')).toBeTruthy();
+  expect(await screen.findByText('Simulation review waiting')).toBeTruthy();
   expect(await screen.findByText('Next review step')).toBeTruthy();
   expect(
-    await screen.findByText(
-      'Run the risk preview before paper/shadow simulation.',
-    ),
+    await screen.findByText('Run the risk preview before simulation review.'),
   ).toBeTruthy();
   fireEvent.change(await screen.findByLabelText('Risk quantity'), {
     target: { value: '100' },
@@ -2008,7 +2006,7 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect(await screen.findByText('No order created')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
+      'Requires risk, account-truth, simulation review, and manual review before any live-like workflow.',
     ),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain('buy_candidate');
@@ -2090,15 +2088,17 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
   fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
   expect(await screen.findByText('Risk passed')).toBeTruthy();
   expect(await screen.findByText('Approved for manual review')).toBeTruthy();
-  expect(await screen.findByText('Paper/shadow next step')).toBeTruthy();
+  expect(await screen.findByText('Simulation review next step')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Risk preview passed. Run paper/shadow simulation before any manual step.',
+      'Risk preview passed. Run the simulation review before any manual step.',
     ),
   ).toBeTruthy();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Preview paper/shadow' }));
-  expect(await screen.findByText('Paper/shadow preview')).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Preview simulation review' }),
+  );
+  expect(await screen.findByText('Simulation review preview')).toBeTruthy();
   expect(await screen.findByText('Simulated fill')).toBeTruthy();
   expect(await screen.findByText('Filled 100 @ CN¥29.17')).toBeTruthy();
   expect(await screen.findByText('Estimated fee CN¥5.03')).toBeTruthy();
@@ -2206,7 +2206,9 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   fireEvent.click(screen.getByRole('button', { name: 'Preview risk' }));
   expect(await screen.findByText('Risk passed')).toBeTruthy();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Preview paper/shadow' }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Preview simulation review' }),
+  );
   expect(await screen.findByText('Simulated fill')).toBeTruthy();
   expect(await screen.findByText('Attribution evidence preview')).toBeTruthy();
   expect(await screen.findByText('Ready for review linkage')).toBeTruthy();
@@ -2224,8 +2226,8 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(evidenceChain.getByText('Strategy signal')).toBeTruthy();
   expect(evidenceChain.getByText('Dataset snapshot')).toBeTruthy();
   expect(evidenceChain.getByText('Risk gate preview')).toBeTruthy();
-  expect(evidenceChain.getByText('Paper/shadow order')).toBeTruthy();
-  expect(evidenceChain.getByText('Paper/shadow fill')).toBeTruthy();
+  expect(evidenceChain.getByText('Simulation review order')).toBeTruthy();
+  expect(evidenceChain.getByText('Simulation review fill')).toBeTruthy();
   expect(await screen.findByText('Holding attribution readiness')).toBeTruthy();
   expect(await screen.findByText('Evidence still incomplete')).toBeTruthy();
   expect(await screen.findByText('Manual review missing')).toBeTruthy();
@@ -2248,7 +2250,7 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(await screen.findByText('After-cost backtest ready')).toBeTruthy();
   expect(await screen.findByText('Signal preview ready')).toBeTruthy();
   expect(await screen.findByText('Risk gate passed')).toBeTruthy();
-  expect(await screen.findByText('Paper/shadow simulation ready')).toBeTruthy();
+  expect(await screen.findByText('Simulation review ready')).toBeTruthy();
   expect(await screen.findByText('Attribution boundary ready')).toBeTruthy();
   expect(await screen.findByText('Acceptance audit coverage')).toBeTruthy();
   expect(await screen.findByText('10/10 criteria verified')).toBeTruthy();
@@ -2311,7 +2313,7 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   expect(
     (
       await screen.findByRole('link', {
-        name: 'Review paper/shadow simulation evidence',
+        name: 'Review simulation evidence',
       })
     ).getAttribute('href'),
   ).toBe('#backtest-signal-review-evidence');
@@ -2324,7 +2326,7 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
   ).toBe('#backtest-signal-review-evidence');
   expect(
     await screen.findByText(
-      'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
+      'Signal, risk, and simulation review evidence can be reviewed and linked manually.',
     ),
   ).toBeTruthy();
   expect(await screen.findByText('No linked production fills')).toBeTruthy();

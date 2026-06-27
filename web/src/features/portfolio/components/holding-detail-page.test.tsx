@@ -881,6 +881,7 @@ test('shows holding attribution evidence refs as localized audit chain items', a
         'action:101',
         'risk:RISK-HOLDING-1',
         'review:1',
+        'paper_shadow_order:paper-shadow-preview:dual_ma:600519:buy:100:29.17',
         'order:ORD-HOLDING-1',
         'fill:FILL-HOLDING-1',
       ],
@@ -900,12 +901,17 @@ test('shows holding attribution evidence refs as localized audit chain items', a
   expect(card.textContent).toContain('Candidate action');
   expect(card.textContent).toContain('Risk check');
   expect(card.textContent).toContain('Manual review');
+  expect(card.textContent).toContain('Simulation review order');
+  expect(card.textContent).toContain('Audit ref 29.17');
   expect(card.textContent).toContain('Order evidence');
   expect(card.textContent).toContain('Fill evidence');
   expect(card.textContent).toContain('Audit ref 1');
   expect(card.textContent).toContain('Audit ref ORD-HOLDING-1');
   expect(card.textContent).toContain('Audit ref FILL-HOLDING-1');
   expect(card.textContent).not.toContain('signal:1');
+  expect(card.textContent).not.toContain('paper_shadow_order');
+  expect(card.textContent).not.toContain('paper-shadow-preview');
+  expect(card.textContent).not.toContain('dual_ma');
   expect(card.textContent).not.toContain('order:ORD-HOLDING-1');
   expect(card.textContent).not.toContain('fill:FILL-HOLDING-1');
 });

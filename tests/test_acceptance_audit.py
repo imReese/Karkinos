@@ -345,6 +345,27 @@ def test_single_instrument_strategy_loop_acceptance_audit_has_evidence() -> None
             assert Path(evidence_path).exists(), evidence_path
 
 
+def test_single_instrument_strategy_loop_user_readable_surface_audit_covers_web_ux_contract() -> (
+    None
+):
+    audit = build_single_instrument_strategy_loop_acceptance_audit()
+    user_readable = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "web_user_readable_loop_surface"
+    )
+
+    assert "web/src/app/copy.test.ts" in user_readable.evidence_paths
+    assert (
+        "web/src/features/portfolio/components/holding-detail-page.test.tsx"
+        in user_readable.evidence_paths
+    )
+    assert any(
+        "copy public-labels holding-detail-page" in command
+        for command in user_readable.validation_commands
+    )
+
+
 def test_single_instrument_strategy_loop_goal_checkboxes_match_audit() -> None:
     audit = build_single_instrument_strategy_loop_acceptance_audit()
     roadmap_text = Path("docs/ROADMAP.md").read_text()
