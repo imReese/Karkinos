@@ -412,12 +412,15 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect(
     screen.queryByText('no_intraday_stock_or_etf_action_tasks'),
   ).toBeNull();
+  const candidateCard = await screen.findByTestId(
+    'decision-candidate-card-600519',
+  );
   expect(
-    screen
+    within(candidateCard)
       .getByRole('link', { name: 'Open Trading approvals: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/trading');
-  const backtestEvidenceHref = screen
+  const backtestEvidenceHref = within(candidateCard)
     .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })
     .getAttribute('href');
   const backtestEvidenceUrl = new URL(
@@ -429,7 +432,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect(backtestEvidenceUrl.searchParams.get('assetClass')).toBe('stock');
   expect(backtestEvidenceUrl.searchParams.get('strategy')).toBe('dual_ma');
   expect(
-    screen
+    within(candidateCard)
       .getByRole('link', { name: 'Open holding detail: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/portfolio/600519');
@@ -469,6 +472,35 @@ test('prepares manual orders with public notes instead of internal action ids', 
   expect(body.note).toBe('Prepared from Decision action queue.');
   expect(body.note).not.toContain('signal action');
   expect(body.note).not.toContain('9');
+});
+
+test('links signal action queue cards back to single-instrument evidence surfaces', async () => {
+  renderDecisionCockpit();
+
+  const signalQueue = (await screen.findByText('Signal action queue')).closest(
+    'section',
+  );
+  if (!signalQueue) {
+    throw new Error('Signal queue section missing');
+  }
+
+  const backtestEvidenceHref = within(signalQueue)
+    .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })
+    .getAttribute('href');
+  const backtestEvidenceUrl = new URL(
+    String(backtestEvidenceHref),
+    'http://localhost',
+  );
+  expect(backtestEvidenceUrl.pathname).toBe('/backtest');
+  expect(backtestEvidenceUrl.searchParams.get('symbol')).toBe('600519');
+  expect(backtestEvidenceUrl.searchParams.get('assetClass')).toBe('stock');
+  expect(backtestEvidenceUrl.searchParams.get('strategy')).toBe('dual_ma');
+
+  expect(
+    within(signalQueue)
+      .getByRole('link', { name: 'Open attribution review: 贵州茅台 600519' })
+      .getAttribute('href'),
+  ).toBe('/portfolio/600519#holding-strategy-attribution-boundary');
 });
 
 test('surfaces degraded and blocked account-truth gates in decision summaries', async () => {
@@ -808,6 +840,43 @@ test('marks stale data candidates as review-only instead of certain actions', as
   expect(card.textContent).not.toContain('quote_older_than_expected_session');
 });
 
+test('shows localized risk gate reasons on blocked decision candidates', async () => {
+  const blockedToday = {
+    ...dailyDecision,
+    summary: {
+      ...dailyDecision.summary,
+      risk_blocked_count: 1,
+      ready_for_manual_confirmation_count: 0,
+    },
+    candidates: dailyDecision.candidates.map((candidate) => ({
+      ...candidate,
+      risk_gate_status: 'blocked',
+      manual_confirmation_status: 'blocked',
+      evidence: {
+        ...candidate.evidence,
+        risk_gate: {
+          ...candidate.evidence.risk_gate,
+          status: 'blocked',
+          passed: false,
+          severity: 'error',
+          reasons: ['risk_gate_blocked', 'new_backend_risk_reason'],
+        },
+      },
+    })),
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: blockedToday, locale: 'zh' });
+
+  const candidateCard = await screen.findByTestId(
+    'decision-candidate-card-600519',
+  );
+  expect(candidateCard.textContent).toContain('风控阻断证据');
+  expect(candidateCard.textContent).toContain('风控闸门正在阻断动作');
+  expect(candidateCard.textContent).toContain('待人工复核说明');
+  expect(candidateCard.textContent).not.toContain('risk_gate_blocked');
+  expect(candidateCard.textContent).not.toContain('new_backend_risk_reason');
+});
+
 test('localizes no-action, degraded, blocked, and review-required decision states', async () => {
   const localizedToday = {
     ...dailyDecision,
@@ -1050,6 +1119,36 @@ test('uses generic review labels for unknown decision workflow action codes', as
   expect(workflow.textContent).not.toContain('未映射状态');
 });
 
+test('uses generic review-note labels for unknown decision workflow blocking reasons', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        {
+          id: 'account_truth',
+          priority: 10,
+          status: 'blocked',
+          title: 'New backend workflow step',
+          description: 'A future backend reason should not leak into the UI.',
+          required_actions: [],
+          blocking_reasons: ['new_backend_blocking_reason'],
+          evidence: {},
+        },
+      ],
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
+
+  const workflow = await screen.findByTestId('decision-workflow-tasks');
+  expect(workflow.textContent).toContain('待人工复核说明');
+  expect(workflow.textContent).not.toContain('待人工复核项');
+  expect(workflow.textContent).not.toContain('new_backend_blocking_reason');
+  expect(workflow.textContent).not.toContain('未映射原因');
+});
+
 test('uses generic English review labels for unknown decision workflow action codes', async () => {
   const workflowToday = {
     ...dailyDecision,
@@ -1080,6 +1179,36 @@ test('uses generic English review labels for unknown decision workflow action co
   expect(workflow.textContent).not.toContain('New Backend Required Action');
   expect(workflow.textContent).not.toContain('new_backend_workflow_step');
   expect(workflow.textContent).not.toContain('New Backend Workflow Step');
+});
+
+test('uses generic English review-note labels for unknown decision workflow blocking reasons', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        {
+          id: 'account_truth',
+          priority: 10,
+          status: 'blocked',
+          title: 'New backend workflow step',
+          description: 'A future backend reason should not leak into the UI.',
+          required_actions: [],
+          blocking_reasons: ['new_backend_blocking_reason'],
+          evidence: {},
+        },
+      ],
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'en' });
+
+  const workflow = await screen.findByTestId('decision-workflow-tasks');
+  expect(workflow.textContent).toContain('Review note');
+  expect(workflow.textContent).not.toContain('Review item');
+  expect(workflow.textContent).not.toContain('new_backend_blocking_reason');
+  expect(workflow.textContent).not.toContain('New Backend Blocking Reason');
 });
 
 test('shows strategy display names before internal ids in candidate evidence', async () => {

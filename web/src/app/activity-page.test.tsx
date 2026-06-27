@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from './preferences';
@@ -29,7 +29,7 @@ function installActivityFetchMock() {
           timestamp: '2026-06-22T06:24:15+00:00',
           amount: 0.27,
           symbol: null,
-          display_name: null,
+          display_name: '现金利息',
           direction: null,
           quantity: null,
           price: null,
@@ -153,4 +153,26 @@ test('renders public localized notes instead of raw backend note codes', async (
 
   expect(await screen.findByText('待人工复核说明')).toBeTruthy();
   expect(screen.queryByText('internal_fee_rule_missing')).toBeNull();
+});
+
+test('filters recent ledger entries by category', async () => {
+  renderActivityPage('zh');
+
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: '现金 1 条' }));
+
+  expect(screen.getAllByText('现金利息').length).toBeGreaterThan(0);
+  expect(screen.queryByText('合成标的 SYN001')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '交易 1 条' }));
+
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+  expect(screen.queryByText('现金利息')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '全部 2 条' }));
+
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
 });

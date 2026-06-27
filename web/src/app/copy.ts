@@ -1672,6 +1672,16 @@ export const copy = {
         count: (count: number) => `${count} entries`,
         empty:
           'No ledger activity yet. Submit a trade, cash flow, dividend, or adjustment to build the timeline.',
+        filteredEmpty: 'No ledger entries in this category.',
+        categoryFilter: 'Ledger category filter',
+        categoryLabels: {
+          all: 'All',
+          trade: 'Trades',
+          cash: 'Cash',
+          dividend: 'Dividends',
+          adjustment: 'Adjustments',
+          other: 'Other',
+        },
         noDetail: 'No public note',
         columns: {
           time: 'Time',
@@ -3610,6 +3620,16 @@ export const copy = {
         count: (count: number) => `${count} 条`,
         empty:
           '还没有账本流水。先录入交易、现金流、分红或手工调整，时间线就会开始累计。',
+        filteredEmpty: '这个分类下暂无账本流水。',
+        categoryFilter: '账本流水分类筛选',
+        categoryLabels: {
+          all: '全部',
+          trade: '交易',
+          cash: '现金',
+          dividend: '分红',
+          adjustment: '调整',
+          other: '其他',
+        },
         noDetail: '无公开备注',
         columns: {
           time: '时间',
