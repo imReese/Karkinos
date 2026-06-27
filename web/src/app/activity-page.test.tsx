@@ -176,3 +176,30 @@ test('filters recent ledger entries by category', async () => {
   expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
   expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
 });
+
+test('filters recent ledger entries by instrument search', async () => {
+  renderActivityPage('zh');
+
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
+
+  fireEvent.change(screen.getByLabelText('搜索标的名称 / 代码'), {
+    target: { value: 'SYN001' },
+  });
+
+  expect(await screen.findByText('合成标的 SYN001')).toBeTruthy();
+  expect(screen.queryByText('现金利息')).toBeNull();
+
+  fireEvent.change(screen.getByLabelText('搜索标的名称 / 代码'), {
+    target: { value: '现金' },
+  });
+
+  expect((await screen.findAllByText('现金利息')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('合成标的 SYN001')).toBeNull();
+
+  fireEvent.change(screen.getByLabelText('搜索标的名称 / 代码'), {
+    target: { value: '不存在' },
+  });
+
+  expect(await screen.findByText('没有匹配的账本流水。')).toBeTruthy();
+});
