@@ -10,6 +10,7 @@ import {
 } from '../../../shared/format';
 import {
   formatPublicCode,
+  formatPublicEvidenceReference,
   formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
@@ -30,6 +31,7 @@ import {
   type DecisionResponse,
   type DecisionWorkflowTask,
   type SignalJournalEntry,
+  type SignalResponse,
   type StrategyAttributionGateEvidence,
 } from '../api';
 
@@ -439,6 +441,30 @@ function decisionCandidateHoldingAttributionHref(candidate: DecisionCandidate) {
 function signalActionHoldingAttributionHref(action: ActionCard) {
   return `/portfolio/${encodeURIComponent(
     action.symbol,
+  )}#holding-strategy-attribution-boundary`;
+}
+
+function signalBacktestHref(signal: SignalResponse) {
+  const params = new URLSearchParams();
+  const symbol = signal.symbol.trim();
+  const assetClass = signal.asset_class.trim();
+  const strategyId = signal.strategy_id.trim();
+  if (symbol) {
+    params.set('symbol', symbol);
+  }
+  if (assetClass) {
+    params.set('assetClass', assetClass);
+  }
+  if (strategyId) {
+    params.set('strategy', strategyId);
+  }
+  const query = params.toString();
+  return query ? `/backtest?${query}` : '/backtest';
+}
+
+function signalHoldingAttributionHref(signal: SignalResponse) {
+  return `/portfolio/${encodeURIComponent(
+    signal.symbol,
   )}#holding-strategy-attribution-boundary`;
 }
 
@@ -866,6 +892,7 @@ function SignalQueuePanel({
                   return (
                     <div
                       key={action.id ?? action.symbol}
+                      data-testid={`signal-action-card-${action.id ?? action.symbol}`}
                       className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
                     >
                       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -939,7 +966,10 @@ function SignalQueuePanel({
               )}
             </div>
 
-            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4">
+            <div
+              data-testid="signal-journal-panel"
+              className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4"
+            >
               <div className="app-product-mark">{labels.signalJournal}</div>
               <div className="mt-3 grid gap-2">
                 {latestJournal.length === 0 ? (
@@ -949,6 +979,9 @@ function SignalQueuePanel({
                 ) : (
                   latestJournal.map((entry) => {
                     const strategyNames = copy.backtest.page.strategyNames;
+                    const instrumentLabel = formatInstrumentDisplayLabel(
+                      entry.signal,
+                    );
                     const strategyLabel = strategyDisplayNameFromId(
                       entry.signal.strategy_id,
                       strategyNames,
@@ -957,14 +990,18 @@ function SignalQueuePanel({
                       entry.signal.strategy_id,
                       strategyNames,
                     );
+                    const latestSourceRef = entry.latest_event?.source_ref;
+                    const publicSourceRef =
+                      latestSourceRef && latestSourceRef.includes(':')
+                        ? formatPublicEvidenceReference(latestSourceRef, locale)
+                        : null;
                     return (
                       <div
                         key={`${entry.signal.id}-${entry.signal.timestamp}`}
                         className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
                       >
                         <div className="font-semibold text-[var(--app-soft)]">
-                          {formatInstrumentDisplayLabel(entry.signal)} ·{' '}
-                          {strategyLabel}
+                          {instrumentLabel} · {strategyLabel}
                         </div>
                         {strategyAuditId ? (
                           <div className="app-muted mt-1 break-words">
@@ -980,12 +1017,33 @@ function SignalQueuePanel({
                             locale,
                           )}
                         </div>
+                        {publicSourceRef ? (
+                          <div className="mt-1 break-words text-[var(--app-soft)]">
+                            {publicSourceRef}
+                          </div>
+                        ) : null}
                         <div className="app-muted mt-1 font-mono tabular-nums">
                           {formatTimestamp(
                             entry.latest_event?.timestamp ??
                               entry.review?.reviewed_at ??
                               entry.signal.timestamp,
                           )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <a
+                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
+                            href={signalBacktestHref(entry.signal)}
+                            aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
+                          >
+                            {labels.openBacktestEvidence}
+                          </a>
+                          <a
+                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
+                            href={signalHoldingAttributionHref(entry.signal)}
+                            aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
+                          >
+                            {labels.openAttributionReview}
+                          </a>
                         </div>
                       </div>
                     );

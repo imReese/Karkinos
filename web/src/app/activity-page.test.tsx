@@ -155,6 +155,18 @@ test('renders public localized notes instead of raw backend note codes', async (
   expect(screen.queryByText('internal_fee_rule_missing')).toBeNull();
 });
 
+test('renders professional cash ledger rows without internal noise', async () => {
+  renderActivityPage('zh');
+
+  expect(await screen.findByText('结息入账')).toBeTruthy();
+  expect(await screen.findByText('对账校正')).toBeTruthy();
+  expect(screen.getAllByText('现金利息').length).toBeGreaterThan(0);
+  expect(screen.queryByText('券商对账修正')).toBeNull();
+  expect(screen.queryByText('无公开备注')).toBeNull();
+  expect(screen.queryByText(/批量结息归本/u)).toBeNull();
+  expect(screen.queryByText('手续费 ¥0.00')).toBeNull();
+});
+
 test('filters recent ledger entries by category', async () => {
   renderActivityPage('zh');
 

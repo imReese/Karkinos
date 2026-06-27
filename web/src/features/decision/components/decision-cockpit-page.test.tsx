@@ -201,10 +201,12 @@ function installDecisionFetchMock({
   todayResponse = dailyDecision,
   intradayResponse = intradayDecision,
   signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
+  journalSourceRef = 'RISK-1',
 }: {
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
   signalActionDetail?: string;
+  journalSourceRef?: string | null;
 } = {}) {
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, _init?: RequestInit) => {
@@ -270,7 +272,7 @@ function installDecisionFetchMock({
               event_type: 'risk.signal.recorded',
               timestamp: '2026-06-12T09:31:00+08:00',
               source: 'risk_decisions',
-              source_ref: 'RISK-1',
+              source_ref: journalSourceRef,
             },
           },
         ]);
@@ -448,6 +450,40 @@ test('localizes signal journal audit events without exposing dotted event keys',
   expect(document.body.textContent).not.toContain('risk.signal.recorded');
 });
 
+test('links signal journal entries to single-instrument evidence surfaces with public source refs', async () => {
+  renderDecisionCockpit({
+    journalSourceRef:
+      'paper_shadow_order:paper-shadow-preview:dual_ma:600519:buy:100:29.17',
+  });
+
+  await screen.findByText('Signal journal');
+  const signalJournal = await screen.findByTestId('signal-journal-panel');
+
+  expect(
+    within(signalJournal).getByText('Simulation review order · 29.17'),
+  ).toBeTruthy();
+  expect(signalJournal.textContent).not.toContain('paper_shadow_order');
+  expect(signalJournal.textContent).not.toContain('paper-shadow-preview');
+
+  const backtestEvidenceHref = within(signalJournal)
+    .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })
+    .getAttribute('href');
+  const backtestEvidenceUrl = new URL(
+    String(backtestEvidenceHref),
+    'http://localhost',
+  );
+  expect(backtestEvidenceUrl.pathname).toBe('/backtest');
+  expect(backtestEvidenceUrl.searchParams.get('symbol')).toBe('600519');
+  expect(backtestEvidenceUrl.searchParams.get('assetClass')).toBe('stock');
+  expect(backtestEvidenceUrl.searchParams.get('strategy')).toBe('dual_ma');
+
+  expect(
+    within(signalJournal)
+      .getByRole('link', { name: 'Open attribution review: 贵州茅台 600519' })
+      .getAttribute('href'),
+  ).toBe('/portfolio/600519#holding-strategy-attribution-boundary');
+});
+
 test('prepares manual orders with public notes instead of internal action ids', async () => {
   const { fetchMock } = renderDecisionCockpit();
 
@@ -477,12 +513,8 @@ test('prepares manual orders with public notes instead of internal action ids', 
 test('links signal action queue cards back to single-instrument evidence surfaces', async () => {
   renderDecisionCockpit();
 
-  const signalQueue = (await screen.findByText('Signal action queue')).closest(
-    'section',
-  );
-  if (!signalQueue) {
-    throw new Error('Signal queue section missing');
-  }
+  await screen.findByText('Signal action queue');
+  const signalQueue = await screen.findByTestId('signal-action-card-9');
 
   const backtestEvidenceHref = within(signalQueue)
     .getByRole('link', { name: 'Open Backtest evidence: 贵州茅台 600519' })

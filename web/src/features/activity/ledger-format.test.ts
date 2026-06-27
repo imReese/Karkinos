@@ -264,12 +264,61 @@ describe('ledger formatter', () => {
         'zh',
       ),
     ).toMatchObject({
-      label: '现金入金',
+      label: '资金转入',
       shortLabel: '入',
-      cashImpactLabel: '增加现金或确认回款',
+      cashImpactLabel: '现金增加',
       amount: '+CN¥3,000.00',
       tone: 'credit',
     });
+  });
+
+  test('formats cash movements as professional public ledger rows', () => {
+    const cashDeposit: LedgerEntry = {
+      ...yutongBuy,
+      entry_type: 'cash_deposit',
+      amount: 12000,
+      symbol: null,
+      display_name: null,
+      direction: null,
+      quantity: null,
+      price: null,
+      commission: 0,
+      gross_amount: null,
+      net_cash_impact: null,
+      fee_breakdown: null,
+      asset_class: 'cash',
+      note: '手工录入现金入金：人民币 12000 元，开户时间 2026-04-27',
+      source: 'manual',
+    };
+
+    expect(formatLedgerInstrumentLabel(cashDeposit)).toBe('人民币现金');
+    expect(formatLedgerPublicNote(cashDeposit, 'zh')).toBeNull();
+    expect(formatLedgerActivitySummary(cashDeposit, 'zh')).toMatchObject({
+      label: '资金转入',
+      shortLabel: '入',
+      cashImpactLabel: '现金增加',
+      amount: '+CN¥12,000.00',
+      tone: 'credit',
+    });
+    expect(
+      formatLedgerExecutionDetailLines(
+        cashDeposit,
+        {
+          amount: '金额',
+          grossAmount: '成交总额',
+          netCashImpact: '净现金影响',
+          quantity: '份额/数量',
+          price: '价格',
+          fee: '手续费',
+          commission: '佣金',
+          stampTax: '印花税',
+          transferFee: '过户费',
+          otherFees: '其他费用',
+          costBasis: '成本口径',
+        },
+        'zh',
+      ),
+    ).toEqual([{ label: '金额', value: 'CN¥12,000.00' }]);
   });
 
   test('builds overview dashboard ledger presentation from shared formatter', () => {
@@ -377,9 +426,9 @@ describe('ledger formatter', () => {
       grossAmount: 0.27,
     });
     expect(formatLedgerActivitySummary(cashInterest, 'zh')).toMatchObject({
-      label: '现金利息',
+      label: '结息入账',
       shortLabel: '息',
-      cashImpactLabel: '增加现金或确认回款',
+      cashImpactLabel: '现金利息',
       amount: '+CN¥0.27',
       tone: 'credit',
     });
@@ -391,6 +440,53 @@ describe('ledger formatter', () => {
       tone: 'credit',
     });
     expect(formatLedgerPublicNote(cashInterest)).toBeNull();
+  });
+
+  test('hides zero stock-fee labels for cash interest rows', () => {
+    const cashInterest: LedgerEntry = {
+      ...yutongBuy,
+      entry_type: 'cash_interest',
+      amount: 0.27,
+      symbol: null,
+      display_name: null,
+      direction: null,
+      quantity: null,
+      price: null,
+      commission: 0,
+      gross_amount: 0.27,
+      net_cash_impact: 0.27,
+      fee_breakdown: {
+        commission: '0',
+        stamp_tax: '0',
+        transfer_fee: '0',
+        other_fees: '0',
+      },
+      asset_class: 'cash',
+      note: '批量结息归本：现金利息 0.27 元',
+    };
+
+    expect(
+      formatLedgerExecutionDetailLines(
+        cashInterest,
+        {
+          amount: '金额',
+          grossAmount: '成交总额',
+          netCashImpact: '净现金影响',
+          quantity: '份额/数量',
+          price: '价格',
+          fee: '手续费',
+          commission: '佣金',
+          stampTax: '印花税',
+          transferFee: '过户费',
+          otherFees: '其他费用',
+          costBasis: '成本口径',
+        },
+        'zh',
+      ),
+    ).toEqual([
+      { label: '成交总额', value: 'CN¥0.27' },
+      { label: '净现金影响', value: 'CN¥0.27' },
+    ]);
   });
 
   test('keeps cash notes when the mentioned amount does not match the structured amount', () => {
@@ -409,11 +505,11 @@ describe('ledger formatter', () => {
   test('localizes internal ledger source codes for public activity rows', () => {
     expect(
       formatLedgerSourceLabel('broker_statement_manual_correction', 'zh'),
-    ).toBe('券商对账修正');
-    expect(formatLedgerSourceLabel('portfolio_trade', 'zh')).toBe('组合交易');
+    ).toBe('对账校正');
+    expect(formatLedgerSourceLabel('portfolio_trade', 'zh')).toBe('交易流水');
     expect(
       formatLedgerSourceLabel('broker_statement_manual_correction', 'en'),
-    ).toBe('Broker statement correction');
+    ).toBe('Reconciliation adjustment');
   });
 
   test('uses public fallbacks for future ledger source codes', () => {

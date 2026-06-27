@@ -20,6 +20,7 @@ import {
 import {
   formatPublicCode,
   formatPublicCodeList,
+  formatPublicEvidenceReference,
   formatPublicNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
@@ -1982,6 +1983,16 @@ function StrategySignalPreviewPanel({
   const output = preview?.outputs[0] ?? null;
   const [riskQuantity, setRiskQuantity] = useState('');
   const dataQuality = output?.evidence.data_quality_status ?? 'unknown';
+  const datasetSnapshotId =
+    preview?.dataset_snapshot_id ??
+    output?.evidence.dataset_snapshot_id ??
+    null;
+  const datasetEvidenceLabel = datasetSnapshotId
+    ? formatPublicEvidenceReference(
+        `dataset_snapshot:${datasetSnapshotId}`,
+        locale,
+      )
+    : labels.notDeclared;
   const referencePrice = output?.price ?? output?.evidence.reference_price;
   const parsedReferencePrice =
     referencePrice === null || referencePrice === undefined
@@ -2131,12 +2142,14 @@ function StrategySignalPreviewPanel({
             </div>
             <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_16%,transparent)] px-4 py-3">
               <div className="app-muted text-xs font-semibold">
-                {labels.signalPreviewDataset}
+                {labels.signalPreviewDataBasis}
               </div>
               <p className="mt-2 break-words text-sm font-semibold text-[var(--app-text)]">
-                {preview?.dataset_snapshot_id ??
-                  output.evidence.dataset_snapshot_id ??
-                  labels.notDeclared}
+                {datasetEvidenceLabel}
+              </p>
+              <p className="app-muted mt-2 break-words text-xs leading-5">
+                {labels.signalPreviewDataset}:&nbsp;
+                {datasetSnapshotId ?? labels.notDeclared}
               </p>
               <p className="app-muted mt-2 text-sm leading-6">
                 {labels.signalPreviewDataQuality(
