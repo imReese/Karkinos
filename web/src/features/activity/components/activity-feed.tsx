@@ -37,6 +37,8 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const labels = copy.activity.feed;
   const [selectedCategory, setSelectedCategory] =
     useState<LedgerEntryCategory>('all');
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
   const categorizedEntries = useMemo(
     () =>
       entries.map((entry) => ({
@@ -56,10 +58,17 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
     return counts;
   }, [categorizedEntries, entries.length]);
   const visibleEntries =
-    selectedCategory === 'all'
+    selectedCategory === 'all' && normalizedQuery === ''
       ? entries
       : categorizedEntries
-          .filter((item) => item.category === selectedCategory)
+          .filter((item) => {
+            const matchesCategory =
+              selectedCategory === 'all' || item.category === selectedCategory;
+            return (
+              matchesCategory &&
+              ledgerEntryMatchesQuery(item.entry, normalizedQuery)
+            );
+          })
           .map((item) => item.entry);
 
   if (entries.length === 0) {
@@ -82,30 +91,43 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
         </span>
       </div>
       <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-5 py-3">
-        <div
-          aria-label={labels.categoryFilter}
-          className="flex min-w-0 flex-wrap gap-2"
-          role="group"
-        >
-          {LEDGER_ENTRY_CATEGORIES.map((category) => {
-            const count = categoryCounts.get(category) ?? 0;
-            const isSelected = selectedCategory === category;
-            return (
-              <button
-                key={category}
-                aria-pressed={isSelected}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  isSelected
-                    ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
-                    : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
-                }`}
-                onClick={() => setSelectedCategory(category)}
-                type="button"
-              >
-                {labels.categoryLabels[category]} {labels.count(count)}
-              </button>
-            );
-          })}
+        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div
+            aria-label={labels.categoryFilter}
+            className="flex min-w-0 flex-wrap gap-2"
+            role="group"
+          >
+            {LEDGER_ENTRY_CATEGORIES.map((category) => {
+              const count = categoryCounts.get(category) ?? 0;
+              const isSelected = selectedCategory === category;
+              return (
+                <button
+                  key={category}
+                  aria-pressed={isSelected}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    isSelected
+                      ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
+                      : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
+                  }`}
+                  onClick={() => setSelectedCategory(category)}
+                  type="button"
+                >
+                  {labels.categoryLabels[category]} {labels.count(count)}
+                </button>
+              );
+            })}
+          </div>
+          <label className="min-w-0 lg:w-[260px]">
+            <span className="sr-only">{labels.searchLabel}</span>
+            <input
+              aria-label={labels.searchLabel}
+              className="app-field h-9 w-full rounded-full px-3 text-xs font-semibold"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={labels.searchPlaceholder}
+              type="search"
+              value={query}
+            />
+          </label>
         </div>
       </div>
       <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
@@ -276,4 +298,26 @@ function classifyLedgerEntry(entry: LedgerEntry): LedgerEntryCategory {
     return 'cash';
   }
   return 'other';
+}
+
+function ledgerEntryMatchesQuery(entry: LedgerEntry, normalizedQuery: string) {
+  if (normalizedQuery === '') {
+    return true;
+  }
+
+  const searchableText = [
+    entry.display_name,
+    entry.symbol,
+    entry.entry_type,
+    entry.asset_class,
+    entry.direction,
+    entry.note,
+    entry.source,
+    entry.source_ref,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return searchableText.includes(normalizedQuery);
 }

@@ -1672,8 +1672,10 @@ export const copy = {
         count: (count: number) => `${count} entries`,
         empty:
           'No ledger activity yet. Submit a trade, cash flow, dividend, or adjustment to build the timeline.',
-        filteredEmpty: 'No ledger entries in this category.',
+        filteredEmpty: 'No matching ledger entries.',
         categoryFilter: 'Ledger category filter',
+        searchLabel: 'Search instrument name or symbol',
+        searchPlaceholder: 'Search name / symbol',
         categoryLabels: {
           all: 'All',
           trade: 'Trades',
@@ -3620,8 +3622,10 @@ export const copy = {
         count: (count: number) => `${count} 条`,
         empty:
           '还没有账本流水。先录入交易、现金流、分红或手工调整，时间线就会开始累计。',
-        filteredEmpty: '这个分类下暂无账本流水。',
+        filteredEmpty: '没有匹配的账本流水。',
         categoryFilter: '账本流水分类筛选',
+        searchLabel: '搜索标的名称 / 代码',
+        searchPlaceholder: '搜索名称 / 代码',
         categoryLabels: {
           all: '全部',
           trade: '交易',
