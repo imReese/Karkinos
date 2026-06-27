@@ -74,7 +74,7 @@ test('renders account metrics in a compact homepage workbench layout', () => {
 
   expect(rail.className).toContain('self-start');
   expect(rail.className).toContain(
-    '2xl:grid-cols-[1.35fr_repeat(2,minmax(0,1fr))]',
+    'lg:grid-cols-[minmax(0,1.05fr)_minmax(290px,0.95fr)]',
   );
   expect(rail.className).not.toContain(
     'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',

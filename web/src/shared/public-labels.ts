@@ -472,7 +472,9 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
     'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.':
       'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.',
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.':
-      'This assignment only sets research context; contribution is shown only after signals, reviews, orders, and fills are linked.',
+      'This assignment only sets research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
+    'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.':
+      'This assignment only sets research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
     'Requires paper/shadow review before promotion.':
       'Requires simulation review before manual review.',
     'Candidate actions should be compared against paper/shadow evidence.':
@@ -565,7 +567,9 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
     'Strategy P/L stays unavailable until signal, review, order, and fill facts are linked.':
       '只有信号、复核、订单和成交事实全部关联后，才允许计算策略收益。',
     'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.':
-      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+      '策略绑定只设置研究上下文；只有当前账户具备可追溯的信号、复核、订单与成交引用后，才展示策略收益。',
+    'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.':
+      '策略绑定只设置研究上下文；只有当前账户具备可追溯的信号、复核、订单与成交引用后，才展示策略收益。',
     'Requires paper/shadow review before promotion.':
       '进入人工复核前，需要完成模拟复核。',
     'Candidate actions should be compared against paper/shadow evidence.':

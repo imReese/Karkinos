@@ -43,7 +43,7 @@ class StrategyHealthFakeDb:
             "auto_trade_enabled": False,
             "attribution_status": "assignment_only",
             "limitations": [
-                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+                "Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references."
             ],
         }
 
@@ -141,7 +141,7 @@ async def test_account_strategy_defaults_to_research_only_config_strategy(monkey
     assert response.auto_trade_enabled is False
     assert response.attribution_status == "not_started"
     assert response.limitations == [
-        "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+        "Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references."
     ]
 
 
@@ -318,7 +318,7 @@ async def test_account_strategy_attribution_links_signal_order_and_fill_without_
             "notes": "fixture assignment",
             "updated_at": "2026-06-18T10:00:00",
             "limitations": [
-                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+                "Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references."
             ],
         },
     )
@@ -455,7 +455,7 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
                 "auto_trade_enabled": False,
                 "attribution_status": "assignment_only",
                 "limitations": [
-                    "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+                    "Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references."
                 ],
             }
 
@@ -628,7 +628,7 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
             "auto_trade_enabled": False,
             "attribution_status": "assignment_only",
             "limitations": [
-                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+                "Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references."
             ],
         },
     )
@@ -769,7 +769,7 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
             "auto_trade_enabled": False,
             "attribution_status": "assignment_only",
             "limitations": [
-                "Strategy assignment is research evidence only until signals, reviews, and fills are attributed."
+                "Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references."
             ],
         },
     )

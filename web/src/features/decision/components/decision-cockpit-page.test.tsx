@@ -778,17 +778,17 @@ test('renders localized candidate evidence chain for decision review', async () 
 test('localizes decision action details before rendering the signal queue', async () => {
   renderDecisionCockpit({
     signalActionDetail:
-      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
     locale: 'zh',
   });
 
   expect(
     await screen.findByText(
-      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+      '策略绑定只设置研究上下文；只有当前账户具备可追溯的信号、复核、订单与成交引用后，才展示策略收益。',
     ),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain(
-    'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
   );
 });
 
@@ -800,7 +800,7 @@ test('localizes decision candidate details before rendering action cards', async
         {
           ...dailyDecision.candidates[0],
           detail:
-            'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+            'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
         },
       ],
     },
@@ -811,11 +811,11 @@ test('localizes decision candidate details before rendering action cards', async
 
   expect(
     within(card).getByText(
-      '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+      '策略绑定只设置研究上下文；只有当前账户具备可追溯的信号、复核、订单与成交引用后，才展示策略收益。',
     ),
   ).toBeTruthy();
   expect(card.textContent).not.toContain(
-    'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+    'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
   );
 });
 

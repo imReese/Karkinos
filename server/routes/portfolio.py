@@ -48,6 +48,8 @@ from server.models import (
     RiskMetricItem,
     RiskSummaryItem,
     RiskWorkspaceResponse,
+    TodayPnlBreakdown,
+    TodayPnlContributor,
     TradeCreate,
     TradePreviewResponse,
     TradeResponse,
@@ -93,7 +95,7 @@ _INTRADAY_ASSET_CLASS_MAP = {
 }
 
 _ASSET_CLASS_LABELS = {
-    "stock": "A股",
+    "stock": "股票",
     "fund": "基金",
     "etf": "ETF",
     "gold": "黄金",
@@ -3384,6 +3386,53 @@ def _with_overview_quote_metadata(
     )
 
 
+def _overview_today_pnl_update(
+    live_holdings: LiveHoldingsResponse,
+) -> dict[str, object]:
+    stocks = 0.0
+    funds = 0.0
+    others = 0.0
+    contributors: list[TodayPnlContributor] = []
+
+    for group in live_holdings.groups:
+        asset_class = _normalize_asset_class(group.asset_class)
+        value = float(group.total_today_change)
+        if asset_class == "stock":
+            stocks += value
+        elif asset_class in {"fund", "etf"}:
+            funds += value
+        else:
+            others += value
+
+        for item in group.items:
+            if item.today_change is None:
+                continue
+            contributors.append(
+                TodayPnlContributor(
+                    symbol=item.symbol,
+                    name=item.name,
+                    display_name=item.display_name,
+                    asset_class=item.asset_class,
+                    today_change=float(item.today_change),
+                    today_change_pct=item.today_change_pct,
+                    quote_status=item.quote_status,
+                )
+            )
+
+    contributors.sort(key=lambda item: abs(item.today_change), reverse=True)
+    total = stocks + funds + others
+    return {
+        "today_pnl": total,
+        "today_pnl_breakdown": TodayPnlBreakdown(
+            stocks=stocks,
+            funds=funds,
+            others=others,
+            total=total,
+        ),
+        "today_contributors": contributors[:3],
+    }
+
+
 def _portfolio_account_truth_gate_status(state: object) -> str:
     db = getattr(state, "db", None)
     if db is None:
@@ -3725,7 +3774,27 @@ def create_router() -> APIRouter:
             snapshot,
             build_risk_summary(snapshot, _collect_latest_quote_timestamps(state)),
         )
-        return _with_overview_quote_metadata(projection.summary, snapshot)
+        overview = _with_overview_quote_metadata(projection.summary, snapshot)
+        live_holdings = _build_live_holdings_response(state)
+        equity_series = await get_equity_curve_series("all")
+        equity_curve = _equity_points_from_series(equity_series)
+        if not equity_curve:
+            equity_curve = await get_equity_curve()
+        risk_workspace = build_risk_workspace(snapshot, equity_curve)
+        return overview.model_copy(
+            update={
+                **_overview_today_pnl_update(live_holdings),
+                "current_drawdown": risk_workspace.drawdown.current_drawdown,
+                "current_drawdown_amount": max(
+                    risk_workspace.drawdown.peak_equity
+                    - risk_workspace.drawdown.latest_equity,
+                    0.0,
+                ),
+                "drawdown_peak_equity": risk_workspace.drawdown.peak_equity,
+                "drawdown_latest_equity": risk_workspace.drawdown.latest_equity,
+                "drawdown_peak_timestamp": risk_workspace.drawdown.peak_timestamp,
+            }
+        )
 
     @r.get("/state", response_model=AccountStateResponse)
     async def get_account_state() -> AccountStateResponse:
@@ -3848,9 +3917,10 @@ def create_router() -> APIRouter:
                 for ts, eq in points
             ]
 
+        legacy_equity_curve = getattr(portfolio, "equity_curve", [])
         return [
             EquityPoint(timestamp=ts.isoformat(), equity=float(eq))
-            for ts, eq in portfolio.equity_curve
+            for ts, eq in legacy_equity_curve
         ]
 
     @r.get("/equity-curve/series", response_model=list[EquitySeriesPoint])
@@ -4040,7 +4110,10 @@ def create_router() -> APIRouter:
     async def get_risk_workspace() -> RiskWorkspaceResponse:
         """Return richer drawdown, exposure, and concentration diagnostics."""
         snapshot = await get_portfolio()
-        equity_curve = await get_equity_curve()
+        equity_series = await get_equity_curve_series("all")
+        equity_curve = _equity_points_from_series(equity_series)
+        if not equity_curve:
+            equity_curve = await get_equity_curve()
         return build_risk_workspace(snapshot, equity_curve)
 
     # ---------- Cash Flows ----------

@@ -96,7 +96,7 @@ function installHoldingFetchMock({
     notes: '',
     updated_at: '2026-06-18T10:00:00+08:00',
     limitations: [
-      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
     ],
   },
   accountStrategyAttribution = {
@@ -114,7 +114,7 @@ function installHoldingFetchMock({
     unrealized_pnl: null,
     evidence_refs: [],
     limitations: [
-      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
     ],
   },
   accountStrategyContribution = {
@@ -151,7 +151,7 @@ function installHoldingFetchMock({
     fill_count: 0,
     evidence_refs: [],
     limitations: [
-      'Strategy assignment is research evidence only until signals, reviews, and fills are attributed.',
+      'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
     ],
   },
 }: {
@@ -632,7 +632,7 @@ test('explains that holding PnL is not attributed to strategy without linked fil
   expect(card.textContent).toContain('Strategy attribution boundary');
   expect(card.textContent).toContain('No linked strategy fills yet');
   expect(card.textContent).toContain(
-    'Holding PnL stays account-level until a strategy signal, review decision, order, and fill can all be linked.',
+    'This holding does not yet have a complete strategy attribution evidence chain. Its P/L stays account-level until the missing signal, review, order, or fill reference is available.',
   );
 
   const researchLink = within(card).getByRole('link', {

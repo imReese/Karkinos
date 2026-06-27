@@ -5,8 +5,15 @@ import { apiClient } from '../../lib/api/client';
 export type MarketHealthQuote = {
   symbol: string;
   asset_class: string;
+  name?: string | null;
+  display_name?: string | null;
   timestamp: string | null;
   price: number | null;
+  daily_change?: number | null;
+  daily_change_pct?: number | null;
+  change?: number | null;
+  change_pct?: number | null;
+  pct_chg?: number | null;
   quote_status:
     | 'cache'
     | 'confirmed'

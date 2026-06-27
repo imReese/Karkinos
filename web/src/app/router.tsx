@@ -104,7 +104,6 @@ import {
 import {
   type AllocationGroup,
   type AllocationItem,
-  type LiveHoldingItem,
   useLiveHoldingsQuery,
   usePortfolioCockpitQuery,
   usePortfolioSnapshotQuery,
@@ -127,6 +126,7 @@ import {
   useMarketBarsBackfillMutation,
   useMarketDataHealthQuery,
   type MarketDataHealthResponse,
+  type MarketHealthQuote,
   useQuoteFetchRunsQuery,
   useResearchBoardQuery,
   useResearchNotesQuery,
@@ -328,7 +328,6 @@ export function OverviewPage() {
   const snapshot = usePortfolioSnapshotQuery();
   const liveHoldings = useLiveHoldingsQuery();
   const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
-  const riskWorkspace = useRiskWorkspaceQuery();
   const explainability = useExplainabilityQuery();
   const ledgerEntries = useLedgerEntriesQuery(8);
   const pendingOrders = usePendingManualOrdersQuery();
@@ -342,39 +341,6 @@ export function OverviewPage() {
   const liveItems = useMemo(
     () => liveGroups.flatMap((group) => group.items),
     [liveGroups],
-  );
-  const todayPnlBreakdown = useMemo(
-    () =>
-      liveGroups.reduce(
-        (breakdown, group) => {
-          const assetClass = group.asset_class.toLowerCase();
-          const value = group.total_today_change;
-          if (assetClass === 'stock') {
-            breakdown.stocks += value;
-          }
-          if (assetClass === 'fund' || assetClass === 'etf') {
-            breakdown.funds += value;
-          }
-          breakdown.total += value;
-          return breakdown;
-        },
-        { stocks: 0, funds: 0, total: 0 },
-      ),
-    [liveGroups],
-  );
-  const todayPnl = todayPnlBreakdown.total;
-  const currentDrawdown = riskWorkspace.data?.drawdown.current_drawdown ?? 0;
-  const enhancedOverview = useMemo(
-    () =>
-      overview.data
-        ? {
-            ...overview.data,
-            today_pnl: todayPnl,
-            today_pnl_breakdown: todayPnlBreakdown,
-            current_drawdown: currentDrawdown,
-          }
-        : null,
-    [currentDrawdown, overview.data, todayPnl, todayPnlBreakdown],
   );
   const latestPriceBySymbol = useMemo(
     () =>
@@ -430,23 +396,22 @@ export function OverviewPage() {
             void snapshot.refetch();
           }}
         />
-      ) : enhancedOverview && snapshot.data ? (
+      ) : overview.data && snapshot.data ? (
         <div className="space-y-5">
           <div
             className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]"
             data-testid="overview-daily-workbench"
           >
             <div className="min-w-0 space-y-5">
-              <OverviewCards overview={enhancedOverview} variant="workbench" />
-              <DashboardHoldingMovers
-                items={liveItems}
-                isLoading={liveHoldings.isLoading}
-                isError={liveHoldings.isError}
-                variant="compact"
+              <OverviewCards overview={overview.data} variant="workbench" />
+              <DashboardMarketPulse
+                marketHealth={marketHealth.data}
+                isLoading={marketHealth.isLoading}
+                isError={marketHealth.isError}
               />
             </div>
             <DashboardTodayQueue
-              overview={enhancedOverview}
+              overview={overview.data}
               marketHealth={marketHealth.data}
               quoteDiagnostics={positions}
               pendingOrders={pendingOrders.data ?? []}
@@ -492,7 +457,7 @@ export function OverviewPage() {
             </section>
 
             <DashboardQuickActions
-              overview={enhancedOverview}
+              overview={overview.data}
               marketHealth={marketHealth.data}
               symbols={positions.map((position) => position.symbol)}
               quoteDiagnostics={positions}
@@ -831,59 +796,136 @@ function DashboardTodayQueue({
   );
 }
 
-function holdingMoveToneClass(value: number | null) {
+const MARKET_INDEX_DISPLAY_NAMES: Record<string, { en: string; zh: string }> = {
+  '000001': { en: 'Shanghai Composite', zh: '上证指数' },
+  '399001': { en: 'Shenzhen Component', zh: '深证成指' },
+  '399006': { en: 'ChiNext Index', zh: '创业板指' },
+  '000300': { en: 'CSI 300', zh: '沪深300' },
+  '000905': { en: 'CSI 500', zh: '中证500' },
+  '000016': { en: 'SSE 50', zh: '上证50' },
+};
+
+function marketPulseToneClass(value: number | null) {
   if (value == null || value === 0) {
     return 'text-[var(--app-soft)]';
   }
   return value > 0 ? 'text-[var(--app-success)]' : 'text-[var(--app-danger)]';
 }
 
-function DashboardHoldingMovers({
-  items,
+function normalizeMarketPulsePercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.abs(value) > 1.5 ? value / 100 : value;
+}
+
+function marketPulseChangePct(quote: MarketHealthQuote) {
+  return normalizeMarketPulsePercent(
+    quote.daily_change_pct ?? quote.change_pct ?? quote.pct_chg,
+  );
+}
+
+function isMarketIndexQuote(quote: MarketHealthQuote) {
+  const symbol = quote.symbol.trim();
+  const assetClass = quote.asset_class.toLowerCase();
+  const text = `${quote.display_name ?? ''} ${quote.name ?? ''}`.toLowerCase();
+  return (
+    assetClass === 'index' ||
+    symbol in MARKET_INDEX_DISPLAY_NAMES ||
+    text.includes('index') ||
+    text.includes('指数') ||
+    text.includes('上证') ||
+    text.includes('深证') ||
+    text.includes('创业板') ||
+    text.includes('沪深') ||
+    text.includes('中证')
+  );
+}
+
+function marketIndexDisplayName(quote: MarketHealthQuote, locale: Locale) {
+  const fallback = MARKET_INDEX_DISPLAY_NAMES[quote.symbol];
+  return (
+    quote.display_name?.trim() ||
+    quote.name?.trim() ||
+    (fallback ? fallback[locale] : null) ||
+    quote.symbol
+  );
+}
+
+function marketPulseSignalLabel(
+  quotes: MarketHealthQuote[],
+  labels: AppCopy['overview']['dashboard'],
+) {
+  const changes = quotes
+    .map((quote) => marketPulseChangePct(quote))
+    .filter((value): value is number => value !== null);
+  if (quotes.length === 0) {
+    return labels.marketPulsePending;
+  }
+  if (changes.length === 0) {
+    return labels.marketPulseNoSignal;
+  }
+  const positiveCount = changes.filter((value) => value > 0).length;
+  const negativeCount = changes.filter((value) => value < 0).length;
+  if (positiveCount > negativeCount) {
+    return labels.marketPulsePositive;
+  }
+  if (negativeCount > positiveCount) {
+    return labels.marketPulseNegative;
+  }
+  return labels.marketPulseMixed;
+}
+
+function DashboardMarketPulse({
+  marketHealth,
   isLoading,
   isError,
-  variant = 'full',
 }: {
-  items: LiveHoldingItem[];
+  marketHealth?: MarketDataHealthResponse;
   isLoading: boolean;
   isError: boolean;
-  variant?: 'full' | 'compact';
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.overview.dashboard;
-  const isCompact = variant === 'compact';
-  const movers = useMemo(
+  const indexQuotes = useMemo(
     () =>
-      items
-        .filter((item) => item.today_change !== null)
-        .sort(
-          (left, right) =>
-            Math.abs(right.today_change ?? 0) -
-            Math.abs(left.today_change ?? 0),
-        )
-        .slice(0, isCompact ? 3 : 4),
-    [isCompact, items],
+      (marketHealth?.quotes ?? [])
+        .filter(isMarketIndexQuote)
+        .sort((left, right) => {
+          const leftKnown = left.symbol in MARKET_INDEX_DISPLAY_NAMES ? 0 : 1;
+          const rightKnown = right.symbol in MARKET_INDEX_DISPLAY_NAMES ? 0 : 1;
+          return (
+            leftKnown - rightKnown || left.symbol.localeCompare(right.symbol)
+          );
+        })
+        .slice(0, 4),
+    [marketHealth?.quotes],
+  );
+  const signalLabel = marketPulseSignalLabel(indexQuotes, labels);
+  const sourceStatus = formatPublicStatus(
+    marketHealth?.source_health ?? marketHealth?.provider_status,
+    locale,
   );
 
   return (
     <section
       className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
-      data-testid="overview-holding-movers"
+      data-testid="overview-market-pulse"
     >
       <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="app-product-mark">{labels.holdingMovers}</div>
+            <div className="app-product-mark">{labels.marketPulse}</div>
             <div className="app-muted mt-2 max-w-3xl text-sm">
-              {labels.holdingMoversDetail}
+              {labels.marketPulseDetail}
             </div>
           </div>
           <a
-            href="/portfolio"
+            href="/market"
             className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_45%,transparent)] hover:text-[var(--app-text)]"
           >
-            {copy.shell.nav.portfolio}
+            {labels.viewMarket}
           </a>
         </div>
 
@@ -895,123 +937,82 @@ function DashboardHoldingMovers({
           <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_8%,transparent)] px-4 py-4 text-sm font-semibold text-[var(--app-danger)]">
             {copy.states.error}
           </div>
-        ) : movers.length === 0 ? (
-          <div className="app-muted mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 text-sm">
-            {labels.holdingMoversEmpty}
+        ) : indexQuotes.length === 0 ? (
+          <div className="mt-4 rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-4 py-4">
+            <div className="text-sm font-semibold text-[var(--app-warning)]">
+              {labels.marketPulsePending}
+            </div>
+            <div className="app-muted mt-2 text-xs leading-5">
+              {labels.marketPulseMissing}
+            </div>
           </div>
         ) : (
-          <div
-            className={
-              isCompact
-                ? 'mt-4 grid min-w-0 gap-2.5'
-                : 'mt-4 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4'
-            }
-          >
-            {movers.map((item) => {
-              const displayName =
-                item.display_name?.trim() || item.name?.trim() || item.symbol;
-              const quoteStatus = formatPublicStatus(item.quote_status, locale);
-              const quoteNeedsReview = isUnconfirmedMarketDataStatus(
-                item.quote_status,
-              );
-              return (
-                <a
-                  href={`/portfolio/${encodeURIComponent(item.symbol)}`}
-                  key={item.symbol}
-                  className={`group grid min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--app-accent)_36%,transparent)] ${
-                    isCompact
-                      ? 'grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3'
-                      : 'gap-4 px-4 py-4'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-base font-semibold text-[var(--app-text)]">
-                      {displayName}
-                    </div>
-                    <div className="app-muted mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                      <span className="font-mono">{item.symbol}</span>
-                      <span>{getAssetClassLabel(copy, item.asset_class)}</span>
-                      {isCompact ? (
-                        <span
-                          className={`rounded-full border px-2 py-0.5 font-semibold ${
-                            quoteNeedsReview
-                              ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] text-[var(--app-warning)]'
-                              : 'border-[color-mix(in_srgb,var(--app-success)_24%,transparent)] text-[var(--app-success)]'
-                          }`}
-                        >
-                          {quoteStatus}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div
-                    className={
-                      isCompact
-                        ? 'grid shrink-0 justify-items-end gap-1'
-                        : 'grid min-w-0 gap-2'
-                    }
+          <div className="mt-4 grid min-w-0 gap-3">
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                  {labels.marketPulseDisclosure}
+                </div>
+                <div className="mt-1 truncate text-lg font-semibold text-[var(--app-text)]">
+                  {signalLabel}
+                </div>
+              </div>
+              <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-xs">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                  {labels.dataStatus}
+                </div>
+                <div className="mt-1 font-semibold text-[var(--app-soft)]">
+                  {sourceStatus}
+                </div>
+              </div>
+            </div>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+              {indexQuotes.map((quote) => {
+                const changePct = marketPulseChangePct(quote);
+                const changeAmount = quote.daily_change ?? quote.change ?? null;
+                const displayName = marketIndexDisplayName(quote, locale);
+                const quoteStatus = formatPublicStatus(
+                  quote.quote_status,
+                  locale,
+                );
+                return (
+                  <a
+                    href={`/market?symbol=${encodeURIComponent(quote.symbol)}`}
+                    key={quote.symbol}
+                    className="group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--app-accent)_36%,transparent)]"
                   >
-                    <div className="flex min-w-0 items-baseline justify-between gap-3">
-                      <span
-                        className={`app-kicker text-[10px] uppercase tracking-[0.14em] ${
-                          isCompact ? 'sr-only' : ''
-                        }`}
-                      >
-                        {labels.todayMove}
-                      </span>
-                      <span
-                        className={`shrink-0 font-mono font-semibold tabular-nums ${holdingMoveToneClass(
-                          item.today_change,
-                        )} ${isCompact ? 'text-base' : 'text-lg'}`}
-                      >
-                        {formatCurrencyValue(item.today_change ?? 0)}
-                      </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-[var(--app-text)]">
+                        {displayName}
+                      </div>
+                      <div className="app-muted mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                        <span className="font-mono">{quote.symbol}</span>
+                        <span>{quoteStatus}</span>
+                        <span>{formatTimestamp(quote.timestamp)}</span>
+                      </div>
                     </div>
-                    <div
-                      className={`flex min-w-0 items-baseline justify-between gap-3 text-xs ${
-                        isCompact ? 'justify-end' : ''
-                      }`}
-                    >
-                      <span className="app-muted">{labels.sinceBuyMove}</span>
+
+                    <div className="grid shrink-0 justify-items-end gap-1">
+                      <span className="font-mono text-sm font-semibold text-[var(--app-soft)] tabular-nums">
+                        {formatPrice(quote.price)}
+                      </span>
                       <span
-                        className={`shrink-0 font-mono font-semibold tabular-nums ${holdingMoveToneClass(
-                          item.since_buy_pnl,
+                        className={`font-mono text-xs font-semibold tabular-nums ${marketPulseToneClass(
+                          changePct ?? changeAmount,
                         )}`}
                       >
-                        {formatCurrencyValue(item.since_buy_pnl)}
+                        {changePct === null
+                          ? '--'
+                          : formatPercentValue(changePct, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
                       </span>
                     </div>
-                    <div
-                      className={`flex min-w-0 items-center justify-between gap-3 text-xs ${
-                        isCompact ? 'hidden' : ''
-                      }`}
-                    >
-                      <span className="app-muted">
-                        {labels.quoteStatusLabel}
-                      </span>
-                      <span
-                        className={`shrink-0 rounded-full border px-2 py-0.5 font-semibold ${
-                          quoteNeedsReview
-                            ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] text-[var(--app-warning)]'
-                            : 'border-[color-mix(in_srgb,var(--app-success)_24%,transparent)] text-[var(--app-success)]'
-                        }`}
-                      >
-                        {quoteStatus}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div
-                    className={`text-xs font-semibold text-[var(--app-accent)] ${
-                      isCompact ? 'col-span-2' : ''
-                    }`}
-                  >
-                    {labels.viewHoldingDetail}
-                  </div>
-                </a>
-              );
-            })}
+                  </a>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

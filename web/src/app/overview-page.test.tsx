@@ -107,8 +107,41 @@ function installOverviewFetchMock(
   overviewOverrides: Record<string, unknown> = {},
   {
     pendingOrders = [],
+    marketQuotes = [
+      {
+        symbol: '000001',
+        asset_class: 'index',
+        display_name: 'Shanghai Composite',
+        name: 'Shanghai Composite',
+        timestamp: '2026-02-10T14:30:00+08:00',
+        price: 3120.5,
+        quote_status: 'live',
+        quote_source: 'fixture',
+        quote_age_seconds: 60,
+        stale_reason: null,
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        daily_change_pct: 0.012,
+      },
+      {
+        symbol: '399001',
+        asset_class: 'index',
+        display_name: 'Shenzhen Component',
+        name: 'Shenzhen Component',
+        timestamp: '2026-02-10T14:30:00+08:00',
+        price: 9870.2,
+        quote_status: 'live',
+        quote_source: 'fixture',
+        quote_age_seconds: 60,
+        stale_reason: null,
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        daily_change_pct: -0.004,
+      },
+    ],
   }: {
     pendingOrders?: unknown[];
+    marketQuotes?: unknown[];
   } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -130,6 +163,25 @@ function installOverviewFetchMock(
         cash_ratio: 0.75,
         valuation_timestamp: '2026-02-10T15:00:00+08:00',
         quote_status: 'live',
+        today_pnl: 29,
+        today_pnl_breakdown: {
+          stocks: 33,
+          funds: -4,
+          others: 0,
+          total: 29,
+        },
+        today_contributors: [
+          {
+            symbol: 'SYN999',
+            name: '后端权威贡献',
+            display_name: '后端权威贡献',
+            asset_class: 'stock',
+            today_change: 33,
+            today_change_pct: 0.012,
+            quote_status: 'live',
+          },
+        ],
+        current_drawdown: 0.0459,
         ...overviewOverrides,
       });
     }
@@ -141,7 +193,7 @@ function installOverviewFetchMock(
         groups: [
           {
             asset_class: 'stock',
-            label: 'A股',
+            label: '股票',
             total_market_value: 12000,
             total_today_change: 98.85,
             total_since_buy_pnl: 480,
@@ -243,7 +295,7 @@ function installOverviewFetchMock(
     }
     if (url.includes('/api/market/data-health')) {
       return jsonResponse({
-        quotes: [],
+        quotes: marketQuotes,
         market_open: true,
         refresh_policy: 'live',
         provider_status: 'live',
@@ -367,16 +419,20 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getByText('Stocks')).toBeTruthy();
   expect(within(metricsRail).getByText('Funds')).toBeTruthy();
   expect(within(metricsRail).getByText('Total')).toBeTruthy();
-  expect(within(metricsRail).getByText('CN¥98.85')).toBeTruthy();
-  expect(within(metricsRail).getByText('-CN¥10.68')).toBeTruthy();
-  expect(within(metricsRail).getByText('CN¥88.17')).toBeTruthy();
+  expect(within(metricsRail).getAllByText('CN¥33.00').length).toBe(2);
+  expect(within(metricsRail).getByText('-CN¥4.00')).toBeTruthy();
+  expect(within(metricsRail).getByText('CN¥29.00')).toBeTruthy();
+  expect(within(metricsRail).getByText('4.6%')).toBeTruthy();
+  expect(within(metricsRail).getByText('Top contributors')).toBeTruthy();
+  expect(within(metricsRail).getByText('后端权威贡献')).toBeTruthy();
+  expect(within(metricsRail).queryByText('示例稳健混合C')).toBeNull();
 });
 
 test('renders the daily workbench before chart and detail panels', async () => {
   renderOverviewPage();
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
-  const holdingMovers = await screen.findByTestId('overview-holding-movers');
+  const marketPulse = await screen.findByTestId('overview-market-pulse');
   const performanceCard = await screen.findByTestId(
     'overview-performance-card',
   );
@@ -395,18 +451,16 @@ test('renders the daily workbench before chart and detail panels', async () => {
   expect(
     within(workbench).getByText('Strategy contribution is evidence-linked'),
   ).toBeTruthy();
-  expect(within(holdingMovers).getByText('Holding movers')).toBeTruthy();
-  expect(within(holdingMovers).getByText('示例制造')).toBeTruthy();
-  expect(within(holdingMovers).getByText('CN¥98.85')).toBeTruthy();
-  expect(
-    within(holdingMovers).getAllByText('Open holding detail').length,
-  ).toBeGreaterThan(0);
+  expect(within(marketPulse).getByText('Market pulse')).toBeTruthy();
+  expect(within(marketPulse).getByText('Shanghai Composite')).toBeTruthy();
+  expect(within(marketPulse).getByText('Shenzhen Component')).toBeTruthy();
+  expect(screen.queryByTestId('overview-holding-movers')).toBeNull();
   expect(
     workbench.compareDocumentPosition(performanceCard) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    holdingMovers.compareDocumentPosition(performanceCard) &
+    marketPulse.compareDocumentPosition(performanceCard) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(within(operationsPanel).getByText('Data status')).toBeTruthy();

@@ -330,7 +330,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <main className="app-shell-main flex min-w-0 flex-1 flex-col">
-          <header className="app-toolbar-shell shrink-0 border-b">
+          <header className="app-toolbar-shell relative z-[80] shrink-0 overflow-visible border-b">
             <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-5 lg:px-6">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-3.5">
