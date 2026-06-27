@@ -22,6 +22,27 @@ export type AccountOverview = {
   unrealized_pnl: number;
   realized_pnl: number;
   cash_ratio: number;
+  today_pnl?: number | null;
+  today_pnl_breakdown?: {
+    stocks?: number | null;
+    funds?: number | null;
+    others?: number | null;
+    total?: number | null;
+  } | null;
+  today_contributors?: Array<{
+    symbol: string;
+    name?: string | null;
+    display_name?: string | null;
+    asset_class: string;
+    today_change: number;
+    today_change_pct?: number | null;
+    quote_status?: string;
+  }>;
+  current_drawdown?: number | null;
+  current_drawdown_amount?: number | null;
+  drawdown_peak_equity?: number | null;
+  drawdown_latest_equity?: number | null;
+  drawdown_peak_timestamp?: string | null;
   valuation_timestamp?: string | null;
   quote_status?: string;
   quote_age_seconds?: number | null;

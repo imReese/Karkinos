@@ -124,7 +124,7 @@ test('localizes the contribution explanation before showing estimates', () => {
   expect(screen.getByText('策略贡献')).toBeTruthy();
   expect(
     screen.getByText(
-      '这里只统计已连接的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
+      '这里只统计当前已经可追溯到策略的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
     ),
   ).toBeTruthy();
   expect(screen.getByText('证据链已连接')).toBeTruthy();

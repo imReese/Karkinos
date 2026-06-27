@@ -714,7 +714,7 @@ React 19 + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vi
 
 | View | Path | Description |
 |------|------|-------------|
-| DashboardView | `/` | Daily asset workbench with account status, today PnL, data confidence, review items, equity, and return summaries |
+| DashboardView | `/` | Daily asset workbench with account status, stock/fund/total today PnL, position contributors, market pulse, data confidence, review items, equity, and return summaries |
 | PortfolioView | `/portfolio` | Position details + allocation pie chart |
 | ActivityView | `/activity` | Trades, dividends, cash flows, and manual adjustments |
 | DecisionView | `/decision` | Daily / intraday candidate actions, risk state, evidence, and manual-confirmation entry point |

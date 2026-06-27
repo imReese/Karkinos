@@ -132,7 +132,7 @@ test('formats strategy assignment and simulation notes as user-readable Chinese'
       'zh',
     ),
   ).toBe(
-    '当前只是把策略绑定到研究上下文；只有信号、复核、订单和成交都串起来后，才会计算它带来的收益。',
+    '策略绑定只设置研究上下文；只有当前账户具备可追溯的信号、复核、订单与成交引用后，才展示策略收益。',
   );
 
   expect(

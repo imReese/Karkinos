@@ -100,10 +100,11 @@ public demos and development.
 - Decision and Strategy Lab promotion review surfaces show Account Truth gate
   status, score, unresolved-difference context, and evidence availability so
   account-truth issues are visible before manual review or research promotion.
-- Overview daily workbench: review total assets, A-share/fund/total daily PnL,
-  valuation confidence, manual-confirmation queue state, strategy evidence
-  status, equity curve, and return calendar summaries before drilling into
-  Portfolio, Market, Trading, or Backtest.
+- Overview daily workbench: review total assets, stock/fund/total daily PnL,
+  top position contributors, market pulse, valuation confidence,
+  manual-confirmation queue state, strategy evidence status, equity curve, and
+  return calendar summaries before drilling into Portfolio, Market, Trading, or
+  Backtest.
 - Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, treats estimated, cached, stale, or confirmed-NAV-missing periods as valuation gaps instead of confirmed returns, and includes axes in the curve view.
 - Read-only decision APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy

@@ -477,6 +477,6 @@ def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypat
 
     assert len(response.groups) == 1
     assert response.groups[0].asset_class == "stock"
-    assert response.groups[0].label == "A股"
+    assert response.groups[0].label == "股票"
     assert response.groups[0].items[0].display_name == "示例材料"
     assert response.groups[0].items[0].asset_class == "stock"

@@ -328,8 +328,12 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   renderShell();
 
   const toolbarTitle = await screen.findByText('Workspace toolbar');
+  const toolbarShell = toolbarTitle.closest('header') as HTMLElement | null;
   const toolbarRow = toolbarTitle.closest('header')
     ?.firstElementChild as HTMLElement | null;
+  expect(toolbarShell?.className).toContain('relative');
+  expect(toolbarShell?.className).toContain('z-[80]');
+  expect(toolbarShell?.className).toContain('overflow-visible');
   expect(toolbarRow).toBeTruthy();
   expect(toolbarRow?.className).toContain('h-14');
   expect(toolbarRow?.className).toContain('items-center');

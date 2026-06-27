@@ -19,8 +19,8 @@ from server.models import (
 
 _CONTROL_KEY = "account_strategy_assignment"
 _ASSIGNMENT_LIMITATION = (
-    "Strategy assignment is research evidence only until signals, reviews, and "
-    "fills are attributed."
+    "Strategy assignment is research context; contribution is shown only when "
+    "current signals, reviews, orders, and fills have traceable references."
 )
 _PNL_PENDING_LIMITATION = (
     "P/L contribution is not calculated until fills are reconciled with position "

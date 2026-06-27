@@ -4078,7 +4078,10 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
     fake_portfolio = SimpleNamespace(
         cash=500,
         positions={"600519": fake_position},
-        equity_curve=[],
+        equity_curve=[
+            (datetime.fromisoformat("2026-06-21T15:00:00+08:00"), Decimal("2200")),
+            (datetime.fromisoformat("2026-06-22T15:00:00+08:00"), Decimal("2000")),
+        ],
     )
 
     async def fake_get_total_deposits():
@@ -4095,6 +4098,70 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
         ),
     )
 
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_build_live_holdings_response",
+        lambda state: portfolio_routes.LiveHoldingsResponse(
+            groups=[
+                portfolio_routes.LiveHoldingGroupResponse(
+                    asset_class="stock",
+                    label="股票",
+                    total_market_value=1500.0,
+                    total_today_change=50.0,
+                    total_since_buy_pnl=500.0,
+                    items=[
+                        portfolio_routes.LiveHoldingItemResponse(
+                            symbol="600519",
+                            name="示例股票",
+                            display_name="示例股票",
+                            asset_class="stock",
+                            quantity=100.0,
+                            avg_cost=10.0,
+                            market_value=1500.0,
+                            latest_price=15.0,
+                            quote_timestamp="2026-06-22T15:00:00+08:00",
+                            since_buy_pnl=500.0,
+                            since_buy_pnl_pct=0.5,
+                            today_change=50.0,
+                            today_change_pct=0.0345,
+                            baseline_price=14.5,
+                            baseline_timestamp="2026-06-21T15:00:00+08:00",
+                            baseline_source="daily_close",
+                            quote_status="live",
+                        )
+                    ],
+                ),
+                portfolio_routes.LiveHoldingGroupResponse(
+                    asset_class="fund",
+                    label="基金",
+                    total_market_value=800.0,
+                    total_today_change=-10.0,
+                    total_since_buy_pnl=-20.0,
+                    items=[
+                        portfolio_routes.LiveHoldingItemResponse(
+                            symbol="019999",
+                            name="示例基金",
+                            display_name="示例基金",
+                            asset_class="fund",
+                            quantity=800.0,
+                            avg_cost=1.0,
+                            market_value=800.0,
+                            latest_price=1.0,
+                            quote_timestamp="2026-06-22T15:00:00+08:00",
+                            since_buy_pnl=-20.0,
+                            since_buy_pnl_pct=-0.0244,
+                            today_change=-10.0,
+                            today_change_pct=-0.0123,
+                            baseline_price=1.0123,
+                            baseline_timestamp="2026-06-21T15:00:00+08:00",
+                            baseline_source="daily_close",
+                            quote_status="live",
+                        )
+                    ],
+                ),
+            ],
+        ),
+    )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
@@ -4105,6 +4172,15 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
     assert response.unrealized_pnl == 500
     assert response.realized_pnl == 120
     assert response.cash_ratio == 0.25
+    assert response.today_pnl == pytest.approx(40.0)
+    assert response.today_pnl_breakdown.stocks == pytest.approx(50.0)
+    assert response.today_pnl_breakdown.funds == pytest.approx(-10.0)
+    assert response.today_pnl_breakdown.total == pytest.approx(40.0)
+    assert [item.symbol for item in response.today_contributors] == [
+        "600519",
+        "019999",
+    ]
+    assert response.current_drawdown == pytest.approx(200 / 2200)
 
 
 def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
@@ -5992,6 +6068,106 @@ def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch
     assert response.metrics[0].key == "current_drawdown"
     assert response.exposure_buckets[0].positions_count == 1
     assert response.concentration[0].symbol == "600519"
+
+
+def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    workspace_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/risk-workspace"
+    )
+    endpoint = workspace_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=1200,
+        unrealized_pnl=180,
+        realized_pnl=50,
+        commission_paid=3,
+    )
+
+    async def fake_get_total_deposits():
+        return 1000.0
+
+    class FakeDb:
+        def get_cash_flows_sync(self, limit=1, offset=0):
+            return [{"id": 1}]
+
+        def get_trades_sync(self, limit=1, offset=0):
+            return []
+
+        def get_ledger_entries_sync(self, limit=1, offset=0):
+            return [{"id": 1}]
+
+        async def get_total_deposits(self):
+            return await fake_get_total_deposits()
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=FakeDb(),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=800,
+                positions={"600519": fake_position},
+                equity_curve=[],
+            ),
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_resolve_projection_sources",
+        lambda state: (fake_state.scheduler.portfolio, {}),
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_daily_equity_series_from_ledger_history",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_current_equity_series_point",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "build_equity_series_from_db",
+        lambda *args, **kwargs: [
+            {
+                "timestamp": datetime.fromisoformat("2026-06-22T15:00:00+08:00"),
+                "total": Decimal("1600"),
+                "stocks": Decimal("800"),
+                "funds": Decimal("0"),
+                "others": Decimal("0"),
+                "cash": Decimal("800"),
+            },
+            {
+                "timestamp": datetime.fromisoformat("2026-06-26T15:00:00+08:00"),
+                "total": Decimal("1200"),
+                "stocks": Decimal("400"),
+                "funds": Decimal("0"),
+                "others": Decimal("0"),
+                "cash": Decimal("800"),
+            },
+        ],
+    )
+
+    response = asyncio.run(endpoint())
+
+    assert response.drawdown.latest_equity == pytest.approx(1200)
+    assert response.drawdown.peak_equity == pytest.approx(1600)
+    assert response.drawdown.current_drawdown == pytest.approx(0.25)
 
 
 def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(

@@ -265,6 +265,23 @@ class LiveHoldingsResponse(BaseModel):
     groups: list[LiveHoldingGroupResponse]
 
 
+class TodayPnlBreakdown(BaseModel):
+    stocks: float = 0.0
+    funds: float = 0.0
+    others: float = 0.0
+    total: float = 0.0
+
+
+class TodayPnlContributor(BaseModel):
+    symbol: str
+    name: str | None = None
+    display_name: str | None = None
+    asset_class: str
+    today_change: float
+    today_change_pct: float | None = None
+    quote_status: str = "live"
+
+
 class AccountOverview(BaseModel):
     total_equity: float
     available_cash: float
@@ -273,6 +290,14 @@ class AccountOverview(BaseModel):
     unrealized_pnl: float
     realized_pnl: float
     cash_ratio: float
+    today_pnl: float | None = None
+    today_pnl_breakdown: TodayPnlBreakdown | None = None
+    today_contributors: list[TodayPnlContributor] = Field(default_factory=list)
+    current_drawdown: float | None = None
+    current_drawdown_amount: float | None = None
+    drawdown_peak_equity: float | None = None
+    drawdown_latest_equity: float | None = None
+    drawdown_peak_timestamp: str | None = None
     valuation_timestamp: str | None = None
     quote_status: str = "live"
     quote_age_seconds: int | None = None

@@ -127,9 +127,11 @@ export const copy = {
         todayStocks: 'Stocks',
         todayFunds: 'Funds',
         todayTotal: 'Total',
+        todayContributors: 'Top contributors',
         unrealizedPnl: 'Unrealized PnL',
         cashRatio: 'Cash Ratio',
         currentDrawdown: 'Current Drawdown',
+        positionsCount: 'Active Positions',
         cachedValuation: 'Cached quotes · valuation time',
         valuationStatus: (status: string) => `Valuation status: ${status}`,
       },
@@ -151,11 +153,18 @@ export const copy = {
         viewData: 'View data status',
         viewTrading: 'Review trading queue',
         viewStrategy: 'Review strategy evidence',
-        holdingMovers: 'Holding movers',
-        holdingMoversDetail:
-          'Largest single-position moves from the current live holdings projection.',
-        holdingMoversEmpty:
-          'No position-level today PnL is available yet. Check data status or refresh quotes.',
+        marketPulse: 'Market pulse',
+        marketPulseDetail:
+          'Broad-market quote context for today. It is background only, not a trading instruction.',
+        marketPulseMissing:
+          'No broad-market index quotes are available yet. Add or refresh index data in Market.',
+        marketPulsePositive: 'Broad market positive',
+        marketPulseNegative: 'Broad market weak',
+        marketPulseMixed: 'Mixed market',
+        marketPulsePending: 'Index data pending',
+        marketPulseNoSignal: 'Trend unavailable',
+        marketPulseDisclosure: 'Market context only',
+        viewMarket: 'Open Market',
         viewHoldingDetail: 'Open holding detail',
         todayMove: 'Today move',
         sinceBuyMove: 'Since buy',
@@ -361,7 +370,7 @@ export const copy = {
         strategyAttributionBoundary: 'Strategy attribution boundary',
         strategyAttributionNoLinkedFills: 'No linked strategy fills yet',
         strategyAttributionDetail:
-          'Holding PnL stays account-level until a strategy signal, review decision, order, and fill can all be linked.',
+          'This holding does not yet have a complete strategy attribution evidence chain. Its P/L stays account-level until the missing signal, review, order, or fill reference is available.',
         strategyAttributionLinkedEvidence: 'Linked strategy evidence available',
         strategyAttributionLinkedDetail:
           'Strategy contribution remains review-only for this holding; manual trades and cash flows stay separate until attribution is reviewed.',
@@ -908,7 +917,7 @@ export const copy = {
         },
         accountStrategyAutoTradeOff: 'Auto trading off',
         accountStrategyPnlPending:
-          'Strategy P/L attribution is pending until signals, reviews, and fills are linked.',
+          'The current account strategy does not yet have a complete P/L attribution evidence chain; strategy P/L is shown only after traceable signal, review, order, and fill references are available.',
         accountStrategyPnlAttributionStatus: 'P/L attribution status',
         accountStrategyPnlAttributionTier: {
           not_started: 'Attribution not started',
@@ -2188,9 +2197,11 @@ export const copy = {
         todayStocks: '股票',
         todayFunds: '基金',
         todayTotal: '合计',
+        todayContributors: '今日贡献',
         unrealizedPnl: '浮动盈亏',
         cashRatio: '现金占比',
         currentDrawdown: '当前回撤',
+        positionsCount: '活跃持仓',
         cachedValuation: '行情缓存 · 估值时间',
         valuationStatus: (status: string) => `估值状态：${status}`,
       },
@@ -2211,10 +2222,18 @@ export const copy = {
         viewData: '查看数据状态',
         viewTrading: '复核交易队列',
         viewStrategy: '查看策略证据',
-        holdingMovers: '持仓异动',
-        holdingMoversDetail: '来自当前持仓行情投影的单只标的今日变化排行。',
-        holdingMoversEmpty:
-          '暂时没有单只持仓今日盈亏。可以先检查数据状态或刷新行情。',
+        marketPulse: '市场脉搏',
+        marketPulseDetail:
+          '查看今日大盘行情背景。这里只展示市场环境，不给出交易指令。',
+        marketPulseMissing:
+          '暂时没有可用的大盘指数行情。可以在 Market 中补充或刷新指数数据。',
+        marketPulsePositive: '大盘偏强',
+        marketPulseNegative: '大盘偏弱',
+        marketPulseMixed: '大盘分化',
+        marketPulsePending: '指数待补齐',
+        marketPulseNoSignal: '趋势待确认',
+        marketPulseDisclosure: '仅作市场背景',
+        viewMarket: '打开 Market',
         viewHoldingDetail: '查看持仓详情',
         todayMove: '今日变化',
         sinceBuyMove: '持有以来',
@@ -2410,7 +2429,7 @@ export const copy = {
         strategyAttributionBoundary: '策略归因边界',
         strategyAttributionNoLinkedFills: '尚未关联策略成交',
         strategyAttributionDetail:
-          '在策略信号、复核决定、订单和成交能够完整关联前，该持仓收益仍按账户层级展示，不归因给某个策略。',
+          '当前这只持仓暂无完整的策略归因证据链；缺少可追溯的信号、复核、订单或成交引用时，持仓收益仍按账户层级展示，不归因给某个策略。',
         strategyAttributionLinkedEvidence: '已有策略证据可复核',
         strategyAttributionLinkedDetail:
           '该持仓的策略贡献仍是复核证据；手工交易和现金流会保持拆分，等待归因复核后再使用。',
@@ -2936,7 +2955,7 @@ export const copy = {
         },
         accountStrategyAutoTradeOff: '自动交易关闭',
         accountStrategyPnlPending:
-          '策略收益归因需要先串起信号、复核与成交链路。',
+          '当前账户策略暂无完整收益归因证据链；需要可追溯的信号、复核、订单与成交引用后再展示策略收益。',
         accountStrategyPnlAttributionStatus: '收益归因状态',
         accountStrategyPnlAttributionTier: {
           not_started: '尚未开始归因',
@@ -2946,8 +2965,8 @@ export const copy = {
           complete: '归因完整',
         },
         accountStrategyPnlAttributionTierDetail: {
-          not_started: '当前还没有可归属到策略的信号、复核、订单或成交。',
-          partial: '已有部分证据，但策略收益链路尚未完整。',
+          not_started: '当前还没有可归属到策略的信号、复核、订单或成交引用。',
+          partial: '已有部分证据，但当前策略收益归因证据链仍缺少必要引用。',
           stale: '已有归因证据，但估值数据陈旧或缺失。',
           blocked: '归因被阻断，需要先复核缺失或无效证据。',
           complete: '策略证据链足够完整，可以展示贡献。',
@@ -2972,11 +2991,11 @@ export const copy = {
         accountStrategyContributionLoading: '正在加载策略贡献报告。',
         accountStrategyContributionUnavailable: '策略贡献报告暂不可用。',
         accountStrategyContributionExplanation:
-          '这里只统计已连接的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
+          '这里只统计当前已经可追溯到策略的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
         accountStrategyEvidenceLinked: '证据链已连接',
         accountStrategyEvidenceRequired: '需要补齐证据',
         accountStrategyContributionHiddenUntilEvidence:
-          '策略贡献会在信号、复核、订单与成交链路连接后展示。',
+          '策略贡献会在当前账户具备可追溯的信号、复核、订单与成交引用后展示。',
         accountStrategyEvidenceRefs: '证据引用',
         accountStrategyAuditId: '审计 ID',
         accountStrategyContributionStatus: '贡献状态',
@@ -3103,10 +3122,10 @@ export const copy = {
         ) => `预览证据 ${previewEvidence} / 真实事实 ${productionFacts}`,
         signalPreviewAttributionBoundary: '归因边界',
         signalPreviewAttributionPreviewOnly:
-          '只有信号、复核、订单和成交事实全部关联后，才允许归因策略收益。',
+          '该预览只说明当前证据状态；只有真实信号、复核、订单和成交事实全部关联后，才允许归因策略收益。',
         signalPreviewAttributionNoLinkedFillsTitle: '没有关联真实成交',
         signalPreviewAttributionNoLinkedFillsDetail:
-          '只有信号、复核、订单与成交证据全部串起后，才展示策略收益归因。',
+          '当前还没有可追溯的真实成交引用；缺少信号、复核、订单或成交证据时，不展示策略收益归因。',
         signalPreviewEvidenceChainTitle: '证据链',
         signalPreviewEvidenceChainDetail:
           '本次预览的可读审计步骤。原始证据引用不会直接暴露在操作界面。',
@@ -3143,7 +3162,7 @@ export const copy = {
         singleInstrumentLoopKicker: '单标的证据闭环',
         singleInstrumentLoopTitle: '单标的策略闭环就绪度',
         singleInstrumentLoopDetail:
-          '查看冻结数据、策略、信号、风控、模拟复核和归因边界是否已经串起来。',
+          '查看冻结数据、策略、信号、风控、模拟复核和归因边界当前缺少哪些证据引用。',
         singleInstrumentLoopReady: '可进入人工复核',
         singleInstrumentLoopWaiting: '等待证据',
         singleInstrumentLoopBlocked: '被复核闸门阻断',
@@ -3156,7 +3175,7 @@ export const copy = {
           '风控预览已阻断；先复核阻断原因再模拟。',
         singleInstrumentLoopNextPaper: '风控预览通过后，运行模拟复核。',
         singleInstrumentLoopNextAttribution:
-          '复核归因边界；只有信号、复核、订单与成交证据串起后，才展示策略收益。',
+          '复核归因边界；当前缺少信号、复核、订单或成交引用时，不展示策略收益。',
         singleInstrumentLoopNextComplete:
           '研究证据已就绪，可进入人工复核；这里不会创建券商订单。',
         singleInstrumentLoopAuditCoverage: '验收审计覆盖',
