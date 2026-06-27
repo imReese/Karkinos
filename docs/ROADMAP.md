@@ -746,7 +746,7 @@ submission, or automatic real-money trading.
 * [x] Portfolio holding detail exposes symbol-filtered attribution evidence, evidence-chain refs, and review-readiness prerequisites without claiming strategy P/L.
 * [x] Decision candidate cards link directly to symbol-scoped holding attribution review without creating orders or mutating the ledger.
 * [x] Web Backtest explicitly explains the post-risk paper/shadow next step and blocks strategy P/L attribution when production fills are not linked.
-* [x] Web Backtest surfaces the loop in localized, user-readable language without exposing internal reason codes.
+* [x] Web strategy-loop surfaces use localized, user-readable language without exposing internal reason codes or raw evidence refs.
 
 ## Target for v1.5
 

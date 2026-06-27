@@ -373,6 +373,39 @@ const EVIDENCE_SOURCE_LABELS: Record<Locale, LabelMap> = {
   },
 };
 
+const EVIDENCE_REFERENCE_TYPE_LABELS: Record<Locale, LabelMap> = {
+  en: {
+    action: 'Candidate action',
+    dataset_snapshot: 'Dataset snapshot',
+    fill: 'Fill evidence',
+    order: 'Order evidence',
+    paper_shadow_fill: 'Simulation review fill',
+    paper_shadow_order: 'Simulation review order',
+    review: 'Manual review',
+    risk: 'Risk check',
+    risk_decision: 'Risk check',
+    risk_gate: 'Risk gate',
+    signal: 'Signal evidence',
+    signal_preview: 'Signal preview',
+    strategy_signal: 'Strategy signal',
+  },
+  zh: {
+    action: '候选动作',
+    dataset_snapshot: '数据快照',
+    fill: '成交证据',
+    order: '订单证据',
+    paper_shadow_fill: '模拟复核成交',
+    paper_shadow_order: '模拟复核订单',
+    review: '人工复核',
+    risk: '风控检查',
+    risk_decision: '风控检查',
+    risk_gate: '风控闸门',
+    signal: '信号证据',
+    signal_preview: '信号预览',
+    strategy_signal: '策略信号',
+  },
+};
+
 const BROKER_EVIDENCE_TYPE_LABELS: Record<Locale, LabelMap> = {
   en: {
     cash_snapshot: 'Cash snapshot',
@@ -726,7 +759,35 @@ export function formatPublicEvidenceReference(
       .join(' · ');
   }
 
+  const publicReference = parsePublicEvidenceReference(key, locale);
+  if (publicReference) {
+    return publicReference;
+  }
+
   return formatPublicCode(key, locale);
+}
+
+function parsePublicEvidenceReference(reference: string, locale: Locale) {
+  const [rawType, ...parts] = reference.split(':');
+  if (parts.length === 0) {
+    return null;
+  }
+  const label = EVIDENCE_REFERENCE_TYPE_LABELS[locale][rawType];
+  if (!label) {
+    return null;
+  }
+  const auditRef = publicEvidenceAuditRef(parts);
+  return auditRef ? `${label} · ${auditRef}` : label;
+}
+
+function publicEvidenceAuditRef(parts: string[]) {
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const candidate = parts[index]?.trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function parseBrokerEvidenceReference(reference: string) {

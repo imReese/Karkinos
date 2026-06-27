@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import {
   formatPublicCode,
+  formatPublicEvidenceReference,
   formatPublicNote,
   formatPublicOperationalNote,
   formatPublicReviewActionLabel,
@@ -184,6 +185,29 @@ test('formats strategy review statuses without exposing backend promotion codes'
   );
   expect(formatPublicStatus('not_promotable', 'zh')).toBe('暂不满足复核条件');
   expect(formatPublicStatus('not_evaluated', 'zh')).toBe('尚未完成复核评估');
+});
+
+test('formats internal evidence references as public audit labels', () => {
+  const paperShadowOrder =
+    'paper_shadow_order:paper-shadow-preview:dual_ma:600002:buy:100:29.17';
+  const paperShadowFill =
+    'paper_shadow_fill:paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1';
+  const datasetSnapshot = 'dataset_snapshot:sha256:preview-dataset';
+
+  expect(formatPublicEvidenceReference(paperShadowOrder, 'zh')).toBe(
+    '模拟复核订单 · 29.17',
+  );
+  expect(formatPublicEvidenceReference(paperShadowFill, 'zh')).toBe(
+    '模拟复核成交 · 1',
+  );
+  expect(formatPublicEvidenceReference(datasetSnapshot, 'zh')).toBe(
+    '数据快照 · preview-dataset',
+  );
+
+  const formattedOrder = formatPublicEvidenceReference(paperShadowOrder, 'zh');
+  expect(formattedOrder).not.toContain('paper_shadow_order');
+  expect(formattedOrder).not.toContain('paper-shadow-preview');
+  expect(formattedOrder).not.toContain('dual_ma');
 });
 
 test('formats manual review actions as user actions instead of status nouns', () => {

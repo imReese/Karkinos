@@ -2180,20 +2180,24 @@ def build_single_instrument_strategy_loop_acceptance_audit() -> AcceptanceAudit:
             AcceptanceCriterion(
                 key="web_user_readable_loop_surface",
                 checkbox_text=(
-                    "* [x] Web Backtest surfaces the loop in localized, "
-                    "user-readable language without exposing internal reason codes."
+                    "* [x] Web strategy-loop surfaces use localized, "
+                    "user-readable language without exposing internal reason "
+                    "codes or raw evidence refs."
                 ),
                 evidence_paths=(
                     "web/src/app/copy.ts",
+                    "web/src/app/copy.test.ts",
                     "web/src/shared/public-labels.ts",
                     "web/src/shared/public-labels.test.ts",
                     "web/src/features/backtest/components/backtest-page.tsx",
                     "web/src/features/backtest/components/backtest-page.test.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.tsx",
+                    "web/src/features/portfolio/components/holding-detail-page.test.tsx",
                     "docs/README.zh.md",
                     "docs/README.en.md",
                 ),
                 validation_commands=(
-                    "npm --prefix web test -- backtest-page public-labels",
+                    "npm --prefix web test -- backtest-page copy public-labels holding-detail-page",
                     "npm --prefix web run format:check",
                 ),
             ),

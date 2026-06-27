@@ -764,7 +764,7 @@ export const copy = {
         runContextKicker: 'Run context',
         runContextTitle: 'Single-instrument research context',
         runContextDetail:
-          'This context follows the run through dataset, signal, risk, paper/shadow, and attribution review.',
+          'This context follows the run through dataset, signal, risk, simulation review, and attribution review.',
         runContextSource: 'Source',
         runContextSourcePortfolio: 'From holding detail',
         runContextSourceDecision: 'From decision candidate',
@@ -1031,17 +1031,17 @@ export const copy = {
           orderNotional: 'Order amount exceeds policy',
           positionWeight: 'Position concentration exceeds policy',
         },
-        signalPreviewPaperShadowTitle: 'Paper/shadow preview',
-        signalPreviewPaperShadowNextStep: 'Paper/shadow next step',
+        signalPreviewPaperShadowTitle: 'Simulation review preview',
+        signalPreviewPaperShadowNextStep: 'Simulation review next step',
         signalPreviewPaperShadowReady:
-          'Risk preview passed. Run paper/shadow simulation before any manual step.',
+          'Risk preview passed. Run the simulation review before any manual step.',
         signalPreviewPaperShadowBlocked:
-          'Paper/shadow preview waits for a passed risk preview.',
-        signalPreviewPaperShadowButton: 'Preview paper/shadow',
-        signalPreviewPaperShadowLoading: 'Simulating paper/shadow',
+          'Simulation review waits for a passed risk preview.',
+        signalPreviewPaperShadowButton: 'Preview simulation review',
+        signalPreviewPaperShadowLoading: 'Running simulation review',
         signalPreviewPaperShadowUnavailable:
-          'Paper/shadow preview is unavailable; no ledger entry was created.',
-        signalPreviewPaperShadowResultTitle: 'Paper/shadow preview',
+          'Simulation review is unavailable; no ledger entry was created.',
+        signalPreviewPaperShadowResultTitle: 'Simulation review preview',
         signalPreviewPaperShadowSimulatedFill: 'Simulated fill',
         signalPreviewPaperShadowBlockedResult: 'Waiting for risk pass',
         signalPreviewPaperShadowNoLedgerMutation: 'No ledger mutation',
@@ -1081,13 +1081,13 @@ export const copy = {
         signalPreviewEvidenceChainSignal: 'Strategy signal',
         signalPreviewEvidenceChainDataset: 'Dataset snapshot',
         signalPreviewEvidenceChainRisk: 'Risk gate preview',
-        signalPreviewEvidenceChainPaperOrder: 'Paper/shadow order',
-        signalPreviewEvidenceChainPaperFill: 'Paper/shadow fill',
+        signalPreviewEvidenceChainPaperOrder: 'Simulation review order',
+        signalPreviewEvidenceChainPaperFill: 'Simulation review fill',
         signalPreviewReviewLinkageTitle: 'Review linkage candidate',
         signalPreviewReviewLinkageManual: 'Manual review required',
         signalPreviewReviewLinkageNoWrite: 'No order or ledger write',
         signalPreviewReviewLinkageDetail:
-          'Signal, risk, and paper/shadow evidence can be reviewed and linked manually.',
+          'Signal, risk, and simulation review evidence can be reviewed and linked manually.',
         signalPreviewReviewHoldingAttribution: 'Review holding attribution',
         signalPreviewHoldingAttributionReadiness:
           'Holding attribution readiness',
@@ -1097,13 +1097,13 @@ export const copy = {
           dataBlocked: 'Data blocked',
           accountTruthRequired: 'Account truth required',
           riskRequired: 'Risk gate required',
-          paperShadowWaiting: 'Paper/shadow waiting',
+          paperShadowWaiting: 'Simulation review waiting',
           manualReviewRequired: 'Manual review required',
           notRequired: 'Not required',
           unknown: 'Review required',
         },
         signalPreviewGateRequired:
-          'Requires risk, account-truth, paper/shadow, and manual review before any live-like workflow.',
+          'Requires risk, account-truth, simulation review, and manual review before any live-like workflow.',
         signalPreviewNoGateRequired:
           'No candidate action was generated; no downstream trade gate is required.',
         signalPreviewExecutionBoundary:
@@ -1121,11 +1121,11 @@ export const copy = {
         singleInstrumentLoopNextSignal:
           'Wait for the strategy signal preview for this single-instrument run.',
         singleInstrumentLoopNextRisk:
-          'Run the risk preview before paper/shadow simulation.',
+          'Run the risk preview before simulation review.',
         singleInstrumentLoopNextBlocked:
           'Risk preview is blocked; review the risk reasons before simulation.',
         singleInstrumentLoopNextPaper:
-          'Run paper/shadow simulation after the risk preview passes.',
+          'Run simulation review after the risk preview passes.',
         singleInstrumentLoopNextAttribution:
           'Review the attribution boundary; strategy P/L stays unavailable until signal, review, order, and fill evidence is linked.',
         singleInstrumentLoopNextComplete:
@@ -1145,8 +1145,7 @@ export const copy = {
           'Review after-cost backtest evidence',
         singleInstrumentLoopSignalEvidence: 'Review signal preview evidence',
         singleInstrumentLoopRiskEvidence: 'Review risk gate evidence',
-        singleInstrumentLoopPaperEvidence:
-          'Review paper/shadow simulation evidence',
+        singleInstrumentLoopPaperEvidence: 'Review simulation evidence',
         singleInstrumentLoopAttributionEvidence:
           'Review attribution boundary evidence',
         singleInstrumentLoopDatasetReady: 'Dataset snapshot ready',
@@ -1160,8 +1159,8 @@ export const copy = {
         singleInstrumentLoopRiskPassed: 'Risk gate passed',
         singleInstrumentLoopRiskBlocked: 'Risk gate blocked',
         singleInstrumentLoopRiskWaiting: 'Waiting for risk gate',
-        singleInstrumentLoopPaperReady: 'Paper/shadow simulation ready',
-        singleInstrumentLoopPaperWaiting: 'Waiting for paper/shadow simulation',
+        singleInstrumentLoopPaperReady: 'Simulation review ready',
+        singleInstrumentLoopPaperWaiting: 'Waiting for simulation review',
         singleInstrumentLoopAttributionReady: 'Attribution boundary ready',
         singleInstrumentLoopAttributionWaiting:
           'Waiting for attribution boundary',

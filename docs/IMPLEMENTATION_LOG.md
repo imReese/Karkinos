@@ -1787,3 +1787,26 @@ roadmap promises.
   only; it does not calculate strategy-attributed holding P/L, mutate
   production ledger entries, submit broker orders, enable automatic trading, or
   bypass manual confirmation.
+* 2026-06-26: Shared Web evidence-reference formatting now turns internal
+  dataset, signal, risk, paper/shadow, order, and fill reference strings into
+  localized public audit labels before they appear in Portfolio attribution
+  surfaces. The raw evidence identifiers remain in API/storage for auditability,
+  but user-facing evidence chains no longer expose strategy ids, preview ids,
+  or colon-delimited backend refs. This is presentation-only; it does not
+  mutate attribution records, production ledger entries, broker orders,
+  automatic trading defaults, or manual-confirmation state.
+* 2026-06-26: English Backtest copy now uses user-facing "simulation review"
+  wording instead of the internal "paper/shadow" workflow label across the
+  single-instrument loop, signal preview, evidence chain, and next-step
+  messages. Internal API keys and stored evidence refs are unchanged. This is
+  presentation-only; it does not mutate attribution records, production ledger
+  entries, broker orders, automatic trading defaults, or manual-confirmation
+  state.
+* 2026-06-27: The single-instrument strategy loop acceptance audit now treats
+  localized Web UX and hidden raw evidence refs as an explicit product
+  contract. Its manifest references Backtest, Portfolio holding detail, shared
+  public-label tests, and copy tests so CI/release review can catch regressions
+  where internal reason codes, workflow labels, or colon-delimited evidence refs
+  leak back into user-facing strategy-loop surfaces. This is audit coverage
+  only; it does not mutate attribution records, production ledger entries,
+  broker orders, automatic trading defaults, or manual-confirmation state.
