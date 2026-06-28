@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
+import type { MarketCalendarSnapshot } from '../features/market/api';
 import { PreferencesProvider } from './preferences';
 import { ReturnCalendarCard } from './router';
 
@@ -71,7 +72,49 @@ const positionSnapshot = [
   },
 ];
 
+const januaryCalendarSnapshot: Pick<MarketCalendarSnapshot, 'days' | 'status'> =
+  {
+    status: 'available',
+    days: [
+      {
+        schema_version: 'karkinos.market_calendar.v1',
+        date: '2026-01-01',
+        day_type: 'closed',
+        reason_code: 'market_closed',
+        reason: '官方公告：元旦休市',
+        is_trading_day: false,
+      },
+      {
+        schema_version: 'karkinos.market_calendar.v1',
+        date: '2026-01-04',
+        day_type: 'weekend',
+        reason_code: 'weekend',
+        reason: '周末',
+        is_trading_day: false,
+      },
+    ],
+  };
+
+const dragonBoatCalendarSnapshot: Pick<
+  MarketCalendarSnapshot,
+  'days' | 'status'
+> = {
+  status: 'available',
+  days: [
+    {
+      schema_version: 'karkinos.market_calendar.v1',
+      date: '2026-06-19',
+      day_type: 'closed',
+      reason_code: 'market_closed',
+      reason: '端午节休市',
+      is_trading_day: false,
+    },
+  ],
+};
+
 beforeEach(() => {
+  window.localStorage.clear();
+  document.documentElement.lang = 'en-US';
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -97,11 +140,21 @@ function renderCalendar({ compact = false }: { compact?: boolean } = {}) {
 
 function renderCalendarWithTimeline(
   customTimeline: typeof timeline,
-  { compact = false }: { compact?: boolean } = {},
+  {
+    compact = false,
+    marketCalendar = undefined,
+  }: {
+    compact?: boolean;
+    marketCalendar?: typeof januaryCalendarSnapshot;
+  } = {},
 ) {
   return render(
     <PreferencesProvider>
-      <ReturnCalendarCard timeline={customTimeline} compact={compact} />
+      <ReturnCalendarCard
+        timeline={customTimeline}
+        compact={compact}
+        marketCalendar={marketCalendar}
+      />
     </PreferencesProvider>,
   );
 }
@@ -209,10 +262,37 @@ test('uses Sunday as the first weekday column in the return calendar', async () 
   ]);
 });
 
-test('explains market holidays and weekends without showing missing prices', async () => {
+test('uses backend market calendar snapshot for closed-day labels', async () => {
+  renderCalendarWithTimeline(
+    [
+      {
+        date: '2026-01-06',
+        equity: 100200,
+        delta: 200,
+        external_flow: 0,
+        market_pnl: 200,
+        valuation_status: 'confirmed',
+        missing_price_symbols: [],
+      },
+    ],
+    {
+      marketCalendar: januaryCalendarSnapshot,
+    },
+  );
+
+  expect(await screen.findByText('官方公告：元旦休市')).toBeTruthy();
+  expect(screen.getAllByText('周末').length).toBeGreaterThan(0);
+  expect(screen.queryByRole('button', { name: /2026-01-01/ })).not.toBeTruthy();
+  expect(screen.queryByRole('button', { name: /2026-01-04/ })).not.toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Price gap/ })).toBeNull();
+});
+
+test('does not invent holiday names when no market calendar snapshot exists', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+
   renderCalendarWithTimeline([
     {
-      date: '2026-01-06',
+      date: '2026-05-06',
       equity: 100200,
       delta: 200,
       external_flow: 0,
@@ -222,11 +302,38 @@ test('explains market holidays and weekends without showing missing prices', asy
     },
   ]);
 
-  expect(await screen.findByText('Holiday')).toBeTruthy();
-  expect(screen.getAllByText('Weekend').length).toBeGreaterThan(0);
-  expect(screen.queryByRole('button', { name: /2026-01-01/ })).not.toBeTruthy();
-  expect(screen.queryByRole('button', { name: /2026-01-04/ })).not.toBeTruthy();
-  expect(screen.queryByRole('button', { name: /Price gap/ })).toBeNull();
+  expect(await screen.findByText('收益日历')).toBeTruthy();
+  expect(screen.queryByText('劳动节')).toBeNull();
+  expect(screen.queryByText('缺价')).toBeNull();
+});
+
+test('shows calendar closed reason even when a return row exists', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+
+  renderCalendarWithTimeline(
+    [
+      {
+        date: '2026-06-19',
+        equity: 100200,
+        delta: 0,
+        external_flow: 0,
+        market_pnl: 0,
+        valuation_status: 'confirmed',
+        missing_price_symbols: [],
+      },
+    ],
+    {
+      marketCalendar: dragonBoatCalendarSnapshot,
+    },
+  );
+
+  const closedReason = await screen.findByText('端午节休市');
+  const cell = closedReason.closest('button');
+  expect(cell).not.toBeNull();
+  if (!cell)
+    throw new Error('Expected closed reason to render inside a day cell');
+  expect(within(cell).getByText('端午节休市')).toBeTruthy();
+  expect(within(cell).queryByText(/0\.00/)).toBeNull();
 });
 
 test('shows live returns normally and only true missing rows as price gaps', async () => {

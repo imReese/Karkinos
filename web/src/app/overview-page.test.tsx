@@ -422,7 +422,7 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getAllByText('CN¥33.00').length).toBe(2);
   expect(within(metricsRail).getByText('-CN¥4.00')).toBeTruthy();
   expect(within(metricsRail).getByText('CN¥29.00')).toBeTruthy();
-  expect(within(metricsRail).getByText('4.6%')).toBeTruthy();
+  expect(within(metricsRail).getByText('-4.59%')).toBeTruthy();
   expect(within(metricsRail).getByText('Top contributors')).toBeTruthy();
   expect(within(metricsRail).getByText('后端权威贡献')).toBeTruthy();
   expect(within(metricsRail).queryByText('示例稳健混合C')).toBeNull();

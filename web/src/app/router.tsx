@@ -58,6 +58,7 @@ import {
   type ManualOrder,
 } from '../features/trading/api';
 import {
+  MARKET_CALENDAR_SCHEMA_VERSION,
   explainMarketCalendarDate,
   type MarketCalendarDay,
 } from '../shared/market-calendar';
@@ -124,7 +125,9 @@ import {
   useInstrumentMetadataBackfillMutation,
   useKlineQuery,
   useMarketBarsBackfillMutation,
+  useMarketCalendarQuery,
   useMarketDataHealthQuery,
+  type MarketCalendarSnapshot,
   type MarketDataHealthResponse,
   type MarketHealthQuote,
   useQuoteFetchRunsQuery,
@@ -367,6 +370,17 @@ export function OverviewPage() {
     () => snapshot.data?.positions ?? [],
     [snapshot.data],
   );
+  const marketCalendarYear = useMemo(() => {
+    const years = Array.from(
+      new Set(
+        (explainability.data?.timeline ?? [])
+          .map((row) => row.date?.slice(0, 4))
+          .filter((year): year is string => /^\d{4}$/.test(year ?? '')),
+      ),
+    ).sort();
+    return years[years.length - 1] ?? null;
+  }, [explainability.data]);
+  const marketCalendar = useMarketCalendarQuery(marketCalendarYear);
 
   return (
     <section className="space-y-5">
@@ -450,6 +464,7 @@ export function OverviewPage() {
                   <ReturnCalendarCard
                     timeline={explainability.data?.timeline ?? []}
                     positions={positions}
+                    marketCalendar={marketCalendar.data}
                     compact
                   />
                 </div>
@@ -3705,9 +3720,15 @@ type ReturnCalendarPosition = {
   realized_pnl: number;
 };
 
+type ReturnCalendarMarketCalendar = Pick<
+  MarketCalendarSnapshot,
+  'days' | 'status'
+>;
+
 export function ReturnCalendarCard({
   timeline,
   positions = [],
+  marketCalendar,
   compact = false,
 }: {
   timeline: Array<{
@@ -3722,6 +3743,7 @@ export function ReturnCalendarCard({
     external_flow_breakdown?: ReturnCalendarBreakdownItem[];
   }>;
   positions?: ReturnCalendarPosition[];
+  marketCalendar?: ReturnCalendarMarketCalendar | null;
   compact?: boolean;
 }) {
   const copy = useCopy();
@@ -3765,6 +3787,10 @@ export function ReturnCalendarCard({
     aggregated.find((row) => row.label === selectedLabel) ??
     aggregated[aggregated.length - 1] ??
     null;
+  const marketCalendarDays = useMemo(
+    () => buildMarketCalendarDayMap(marketCalendar),
+    [marketCalendar],
+  );
   const panelClass = compact ? 'p-4' : 'app-panel rounded-2xl p-4 sm:p-5';
   const contentGridClass =
     period === 'week'
@@ -3919,6 +3945,7 @@ export function ReturnCalendarCard({
             compact={compact}
             selectedLabel={selectedRow?.label ?? null}
             onSelect={setSelectedLabel}
+            marketCalendarDays={marketCalendarDays}
           />
           <ReturnCalendarDetail
             row={selectedRow}
@@ -4726,6 +4753,7 @@ function ReturnCalendarGrid({
   compact,
   selectedLabel,
   onSelect,
+  marketCalendarDays,
 }: {
   rows: ReturnCalendarRow[];
   period: ReturnCalendarPeriod;
@@ -4736,6 +4764,7 @@ function ReturnCalendarGrid({
   compact: boolean;
   selectedLabel: string | null;
   onSelect: (label: string) => void;
+  marketCalendarDays: Map<string, MarketCalendarDay>;
 }) {
   const maxMagnitude = Math.max(
     ...rows.map((row) =>
@@ -4755,6 +4784,7 @@ function ReturnCalendarGrid({
         maxMagnitude={maxMagnitude}
         selectedLabel={selectedLabel}
         onSelect={onSelect}
+        marketCalendarDays={marketCalendarDays}
       />
     );
   }
@@ -4810,6 +4840,7 @@ function ReturnMonthGrid({
   maxMagnitude,
   selectedLabel,
   onSelect,
+  marketCalendarDays,
 }: {
   rows: ReturnCalendarRow[];
   activeMonth: string;
@@ -4819,6 +4850,7 @@ function ReturnMonthGrid({
   maxMagnitude: number;
   selectedLabel: string | null;
   onSelect: (label: string) => void;
+  marketCalendarDays: Map<string, MarketCalendarDay>;
 }) {
   const rowsByLabel = new Map(rows.map((row) => [row.label, row]));
   const firstDay = new Date(`${activeMonth}-01T00:00:00`);
@@ -4861,7 +4893,8 @@ function ReturnMonthGrid({
           }
           const label = `${activeMonth}-${String(day).padStart(2, '0')}`;
           const row = rowsByLabel.get(label);
-          const calendarDay = explainMarketCalendarDate(label);
+          const calendarDay =
+            marketCalendarDays.get(label) ?? explainMarketCalendarDate(label);
           return (
             <ReturnCalendarCell
               key={label}
@@ -5071,10 +5104,17 @@ function ReturnCalendarCell({
     !row && calendarDay && !calendarDay.isTradingDay
       ? formatMarketCalendarClosedLabel(calendarDay, copy)
       : null;
+  const rowNonTradingLabel =
+    row && calendarDay && !calendarDay.isTradingDay
+      ? formatMarketCalendarClosedLabel(calendarDay, copy)
+      : null;
   const cellDisplayValue =
-    compact && row && !hasMissingValuation && metric === 'amount'
+    rowNonTradingLabel ??
+    (compact && row && !hasMissingValuation && metric === 'amount'
       ? formatCompactReturnCurrency(row.marketPnl)
-      : (nonTradingLabel ?? displayValue);
+      : (nonTradingLabel ?? displayValue));
+  const cellAccessibleValue =
+    rowNonTradingLabel ?? nonTradingLabel ?? displayValue;
   const tone = row
     ? hasMissingValuation
       ? 'border-dashed border-[color-mix(in_srgb,var(--app-border)_72%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_64%,transparent)] text-[var(--app-muted)]'
@@ -5117,7 +5157,7 @@ function ReturnCalendarCell({
     <button
       type="button"
       aria-pressed={selected}
-      aria-label={`${label} · ${displayValue}`}
+      aria-label={`${label} · ${cellAccessibleValue}`}
       onClick={() => onSelect(label)}
       className={`${cellClass} border text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] ${
         selected ? 'ring-2 ring-[var(--app-accent)]' : ''
@@ -5253,17 +5293,52 @@ function ReturnCalendarDetail({
   );
 }
 
+function buildMarketCalendarDayMap(
+  marketCalendar?: ReturnCalendarMarketCalendar | null,
+) {
+  const days =
+    marketCalendar?.status === 'missing' ? [] : (marketCalendar?.days ?? []);
+  return new Map(
+    days.map((day) => [
+      day.date,
+      {
+        schemaVersion: MARKET_CALENDAR_SCHEMA_VERSION,
+        date: day.date,
+        dayType: day.day_type,
+        reasonCode: day.reason_code,
+        reason: day.reason,
+        isTradingDay: day.is_trading_day,
+      } satisfies MarketCalendarDay,
+    ]),
+  );
+}
+
 function formatMarketCalendarClosedLabel(
   day: MarketCalendarDay,
   copy: AppCopy,
 ) {
   if (day.dayType === 'holiday') {
-    return copy.explainability.marketHolidayShort;
+    return isGenericMarketCalendarReason(day.reason)
+      ? copy.explainability.marketHolidayShort
+      : day.reason;
   }
   if (day.dayType === 'weekend') {
-    return copy.explainability.marketWeekendShort;
+    return isGenericMarketCalendarReason(day.reason)
+      ? copy.explainability.marketWeekendShort
+      : day.reason;
   }
-  return copy.explainability.marketClosedShort;
+  return isGenericMarketCalendarReason(day.reason)
+    ? copy.explainability.marketClosedShort
+    : day.reason;
+}
+
+function isGenericMarketCalendarReason(reason: string | null | undefined) {
+  const normalized = (reason ?? '').trim().toLowerCase();
+  return (
+    normalized === '' ||
+    normalized === 'weekend' ||
+    normalized === 'exchange closed'
+  );
 }
 
 function CalendarDetailMetric({

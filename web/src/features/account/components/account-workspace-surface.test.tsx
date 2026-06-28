@@ -56,28 +56,68 @@ test('renders account metrics as a single integrated terminal rail', () => {
   expect(rail.className).toContain('tabular-nums');
   expect(rail.className).toContain('app-terminal-panel');
   expect(rail.className).toContain(
-    'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
+    'xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]',
   );
   expect(totalAssetsLabel.className).toContain('font-bold');
   expect(totalAssetsLabel.className).toContain('text-[10px]');
   expect(totalAssetsLabel.className).toContain('text-[var(--app-subtext-0)]');
   expect(screen.getByText('Total Assets')).toBeTruthy();
+  expect(screen.getByText('Cumulative Return')).toBeTruthy();
+  expect(screen.getByText('CN¥1,550.00 / +1.55%')).toBeTruthy();
   expect(screen.getByText('Cash Ratio')).toBeTruthy();
+});
+
+test('shows current drawdown as a signed downside metric', () => {
+  renderWithPreferences(
+    <OverviewCards
+      overview={{
+        ...overview,
+        current_drawdown: 0.048,
+      }}
+    />,
+  );
+
+  expect(screen.getByText('Current Drawdown')).toBeTruthy();
+  expect(screen.getByText('-4.80%')).toBeTruthy();
 });
 
 test('renders account metrics in a compact homepage workbench layout', () => {
   renderWithPreferences(
-    <OverviewCards overview={overview} variant="workbench" />,
+    <OverviewCards
+      overview={{
+        ...overview,
+        current_drawdown: 0.048,
+        drawdown_peak_equity: 106_650,
+      }}
+      variant="workbench"
+    />,
   );
 
   const rail = screen.getByTestId('account-metrics-rail');
+  const coreMetrics = screen.getByTestId('account-core-metrics-stack');
+  const totalAssetsValue = screen.getByTestId('overview-total-assets-value');
+  const sideMetrics = screen.getByTestId('today-pnl-side-metrics');
+  const drawdownPeak = screen.getByTestId('drawdown-peak-detail');
 
   expect(rail.className).toContain('self-start');
   expect(rail.className).toContain(
     'lg:grid-cols-[minmax(0,1.05fr)_minmax(290px,0.95fr)]',
   );
+  expect(sideMetrics.className).toContain('mt-auto');
+  expect(sideMetrics.textContent).toContain('Available Cash');
+  expect(sideMetrics.textContent).toContain('Active Positions');
   expect(rail.className).not.toContain(
     'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
+  );
+  expect(coreMetrics.className).toContain('gap-2');
+  expect(coreMetrics.textContent).toBe(
+    'Net DepositsCN¥100,000.00Unrealized PnLCN¥1,550.00Current Drawdown-4.80%Peak CN¥106,650.00Cumulative ReturnCN¥1,550.00 / +1.55%',
+  );
+  expect(drawdownPeak.className).toContain('text-right');
+  expect(totalAssetsValue.className).not.toContain('xl:text-5xl');
+  expect(screen.getByText('CN¥1,550.00 / +1.55%')).toBeTruthy();
+  expect(screen.getByTestId('available-cash-ratio').textContent).toBe(
+    'Cash Ratio 74.8%',
   );
 });
 
@@ -89,7 +129,7 @@ test('renders a responsive shimmering metrics rail skeleton', () => {
   expect(skeleton.className).toContain('animate-pulse');
   expect(skeleton.className).toContain('app-terminal-panel');
   expect(skeleton.className).toContain(
-    'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
+    'xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]',
   );
 });
 

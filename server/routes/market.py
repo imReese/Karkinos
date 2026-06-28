@@ -15,8 +15,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from core.types import AssetClass, BarFrequency, Symbol
+from data.market_calendar import build_market_calendar_provider
 from server.models import (
     KlineBar,
+    MarketCalendarSnapshotResponse,
+    MarketCalendarSyncRequest,
+    MarketCalendarVerificationRequest,
     MarketDataHealthResponse,
     MarketHealthQuote,
     MarketQuote,
@@ -425,6 +429,55 @@ def _provider_next_action(
     }:
         return "refresh_quotes_or_check_source"
     return None
+
+
+def _json_array(value: str | None) -> list:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _market_calendar_snapshot_response(
+    row: dict | None,
+    *,
+    exchange: str,
+    year: int,
+) -> MarketCalendarSnapshotResponse:
+    if row is None:
+        return MarketCalendarSnapshotResponse(
+            exchange=exchange.upper(),
+            year=int(year),
+            provider="none",
+            status="missing",
+            source_fingerprint=None,
+            limitations=[
+                "market_calendar_snapshot_missing",
+                "Run explicit market calendar sync before using holiday labels.",
+            ],
+        )
+    return MarketCalendarSnapshotResponse(
+        schema_version=str(row.get("schema_version") or "karkinos.market_calendar.v1"),
+        exchange=str(row.get("exchange") or exchange).upper(),
+        year=int(row.get("year") or year),
+        provider=str(row.get("provider") or "unknown"),
+        status=str(row.get("status") or "available"),
+        trading_day_count=int(row.get("trading_day_count") or 0),
+        closed_day_count=int(row.get("closed_day_count") or 0),
+        source_fingerprint=row.get("source_fingerprint"),
+        official_verification_status=str(
+            row.get("official_verification_status") or "unverified"
+        ),
+        official_source_url=row.get("official_source_url"),
+        official_verified_at=row.get("official_verified_at"),
+        official_verified_by=row.get("official_verified_by"),
+        limitations=_json_array(row.get("limitations_json")),
+        days=_json_array(row.get("days_json")),
+        updated_at=row.get("updated_at"),
+    )
 
 
 def _aggregate_market_data_health_status(
@@ -1720,6 +1773,100 @@ def _maybe_schedule_quote_refresh(
 
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/market", tags=["market"])
+
+    @r.get("/calendar", response_model=MarketCalendarSnapshotResponse)
+    async def get_market_calendar(
+        exchange: str = "SSE",
+        year: int = 2026,
+    ) -> MarketCalendarSnapshotResponse:
+        """Read the stored exchange calendar snapshot without network access."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        getter = getattr(db, "get_market_calendar_snapshot_sync", None)
+        if not callable(getter):
+            raise HTTPException(
+                status_code=503, detail="market calendar storage unavailable"
+            )
+        row = getter(exchange=exchange, year=year)
+        return _market_calendar_snapshot_response(row, exchange=exchange, year=year)
+
+    @r.post("/calendar/sync", response_model=MarketCalendarSnapshotResponse)
+    async def sync_market_calendar(
+        request: MarketCalendarSyncRequest,
+    ) -> MarketCalendarSnapshotResponse:
+        """Synchronize a provider calendar snapshot into local storage."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        upsert = getattr(db, "upsert_market_calendar_snapshot_sync", None)
+        if not callable(upsert):
+            raise HTTPException(
+                status_code=503, detail="market calendar storage unavailable"
+            )
+        provider_name = str(
+            request.provider
+            or getattr(state.config, "data_source", "akshare")
+            or "akshare"
+        ).lower()
+        try:
+            provider = build_market_calendar_provider(
+                provider_name,
+                tushare_token=getattr(state.config, "tushare_token", ""),
+            )
+            snapshot = provider.fetch_snapshot(
+                exchange=request.exchange.upper(),
+                year=request.year,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"market calendar provider failed: {exc}",
+            ) from exc
+
+        row = upsert(snapshot)
+        return _market_calendar_snapshot_response(
+            row,
+            exchange=request.exchange,
+            year=request.year,
+        )
+
+    @r.put("/calendar/verification", response_model=MarketCalendarSnapshotResponse)
+    async def update_market_calendar_verification(
+        request: MarketCalendarVerificationRequest,
+    ) -> MarketCalendarSnapshotResponse:
+        """Record manual official-notice verification for a stored snapshot."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        updater = getattr(db, "update_market_calendar_verification_sync", None)
+        if not callable(updater):
+            raise HTTPException(
+                status_code=503, detail="market calendar storage unavailable"
+            )
+        row = updater(
+            exchange=request.exchange,
+            year=request.year,
+            verification_status=request.verification_status,
+            official_source_url=request.official_source_url,
+            verified_by=request.verified_by,
+            review_notes=request.review_notes,
+            day_labels=request.day_labels,
+        )
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail="market calendar snapshot not found"
+            )
+        return _market_calendar_snapshot_response(
+            row,
+            exchange=request.exchange,
+            year=request.year,
+        )
 
     @r.get("/watchlist", response_model=list[WatchlistItem])
     async def get_watchlist() -> list[WatchlistItem]:

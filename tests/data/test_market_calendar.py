@@ -8,6 +8,8 @@ from data.market_calendar import (
     MARKET_CALENDAR_SCHEMA_VERSION,
     MarketCalendar,
     MarketCalendarDayType,
+    MarketCalendarSnapshot,
+    build_static_market_calendar_snapshot,
 )
 
 
@@ -30,3 +32,40 @@ def test_market_calendar_explains_trading_weekend_and_holiday_dates() -> None:
     assert holiday.reason_code == "market_holiday"
     assert holiday.reason == "New Year's Day"
     assert holiday.to_payload()["schema_version"] == MARKET_CALENDAR_SCHEMA_VERSION
+
+
+def test_default_market_calendar_does_not_hardcode_annual_holidays() -> None:
+    calendar = MarketCalendar()
+
+    labor_day_without_snapshot = calendar.explain_date("2026-05-01")
+    weekend_makeup_day = calendar.explain_date("2026-02-14")
+
+    assert labor_day_without_snapshot.day_type is MarketCalendarDayType.TRADING_DAY
+    assert weekend_makeup_day.day_type is MarketCalendarDayType.WEEKEND
+    assert weekend_makeup_day.is_trading_day is False
+
+
+def test_static_market_calendar_snapshot_normalizes_trading_and_closed_days() -> None:
+    snapshot = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2026,
+        provider="unit_fixture",
+        open_dates={"2026-01-02", "2026-01-05"},
+        closed_reasons={"2026-01-01": "官方公告：元旦休市"},
+        fetched_at="2026-01-06T00:00:00+08:00",
+    )
+
+    assert isinstance(snapshot, MarketCalendarSnapshot)
+    assert snapshot.exchange == "SSE"
+    assert snapshot.provider == "unit_fixture"
+    assert snapshot.trading_day_count == 2
+    assert snapshot.closed_day_count == 363
+    assert snapshot.source_fingerprint
+    assert snapshot.official_verification_status == "unverified"
+
+    by_date = {day.date: day for day in snapshot.days}
+    assert by_date["2026-01-01"].day_type is MarketCalendarDayType.CLOSED
+    assert by_date["2026-01-01"].reason == "官方公告：元旦休市"
+    assert by_date["2026-01-02"].day_type is MarketCalendarDayType.TRADING_DAY
+    assert by_date["2026-01-03"].day_type is MarketCalendarDayType.WEEKEND
+    assert snapshot.to_payload()["schema_version"] == MARKET_CALENDAR_SCHEMA_VERSION
