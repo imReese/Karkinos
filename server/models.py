@@ -105,6 +105,49 @@ class QuoteFetchRunResponse(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class MarketCalendarDayResponse(BaseModel):
+    schema_version: str
+    date: str
+    day_type: str
+    reason_code: str
+    reason: str
+    is_trading_day: bool
+
+
+class MarketCalendarSnapshotResponse(BaseModel):
+    schema_version: str = "karkinos.market_calendar.v1"
+    exchange: str
+    year: int
+    provider: str
+    status: str
+    trading_day_count: int = 0
+    closed_day_count: int = 0
+    source_fingerprint: str | None = None
+    official_verification_status: str = "unverified"
+    official_source_url: str | None = None
+    official_verified_at: str | None = None
+    official_verified_by: str | None = None
+    limitations: list[str] = Field(default_factory=list)
+    days: list[MarketCalendarDayResponse] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class MarketCalendarSyncRequest(BaseModel):
+    exchange: str = "SSE"
+    year: int = 2026
+    provider: str | None = None
+
+
+class MarketCalendarVerificationRequest(BaseModel):
+    exchange: str = "SSE"
+    year: int = 2026
+    verification_status: str
+    official_source_url: str | None = None
+    verified_by: str | None = None
+    review_notes: str | None = None
+    day_labels: dict[str, str] = Field(default_factory=dict)
+
+
 class ResearchBoardItem(BaseModel):
     symbol: str
     asset_class: str

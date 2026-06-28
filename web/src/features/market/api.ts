@@ -154,6 +154,38 @@ export type QuoteFetchRun = {
   metadata: Record<string, unknown> | null;
 };
 
+export type MarketCalendarDay = {
+  schema_version: string;
+  date: string;
+  day_type: 'trading_day' | 'weekend' | 'holiday' | 'closed';
+  reason_code:
+    | 'trading_day'
+    | 'extra_trading_day'
+    | 'weekend'
+    | 'market_holiday'
+    | 'market_closed';
+  reason: string;
+  is_trading_day: boolean;
+};
+
+export type MarketCalendarSnapshot = {
+  schema_version: string;
+  exchange: string;
+  year: number;
+  provider: string;
+  status: string;
+  trading_day_count: number;
+  closed_day_count: number;
+  source_fingerprint: string | null;
+  official_verification_status: string;
+  official_source_url: string | null;
+  official_verified_at: string | null;
+  official_verified_by: string | null;
+  limitations: string[];
+  days: MarketCalendarDay[];
+  updated_at: string | null;
+};
+
 export type InstrumentMetadataBackfillResponse = {
   provider: string;
   requested_count: number;
@@ -249,6 +281,26 @@ export function useMarketDataHealthQuery() {
       return 10_000;
     },
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useMarketCalendarQuery(
+  year: string | number | null,
+  exchange = 'SSE',
+) {
+  return useQuery({
+    queryKey: ['market-calendar', exchange, year],
+    enabled: year !== null && year !== '',
+    queryFn: () => {
+      const params = new URLSearchParams({
+        exchange,
+        year: String(year),
+      });
+      return apiClient<MarketCalendarSnapshot>(
+        `/api/market/calendar?${params.toString()}`,
+      );
+    },
+    staleTime: 60_000,
   });
 }
 

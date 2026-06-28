@@ -4,6 +4,7 @@ import {
   formatCurrency,
   formatDateTime,
   formatPercent,
+  formatReturnPercent,
 } from '../../../shared/format';
 import {
   isCacheLikeMarketDataStatus,
@@ -62,6 +63,21 @@ function metricToneClass(tone: OverviewCardItem['tone']) {
   return 'text-[var(--app-soft)]';
 }
 
+function formatSignedReturnPercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '--';
+  }
+  const formatted = formatReturnPercent(value);
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
+function formatDrawdownPercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) {
+    return formatReturnPercent(0);
+  }
+  return `-${formatReturnPercent(Math.abs(value))}`;
+}
+
 export function OverviewCards({
   overview,
   variant = 'rail',
@@ -85,6 +101,11 @@ export function OverviewCards({
     funds: overview.today_pnl_breakdown?.funds ?? 0,
     total: overview.today_pnl_breakdown?.total ?? overview.today_pnl ?? 0,
   };
+  const cumulativeReturn = overview.total_equity - overview.total_deposits;
+  const cumulativeReturnRate =
+    overview.total_deposits > 0
+      ? cumulativeReturn / overview.total_deposits
+      : null;
   const items: OverviewCardItem[] = [
     {
       label: copy.overview.cards.totalAssets,
@@ -113,6 +134,13 @@ export function OverviewCards({
       contributors: overview.today_contributors ?? [],
     },
     {
+      label: copy.overview.cards.cumulativeReturn,
+      value: `${formatCurrency(cumulativeReturn)} / ${formatSignedReturnPercent(
+        cumulativeReturnRate,
+      )}`,
+      tone: cumulativeReturn >= 0 ? 'positive' : 'negative',
+    },
+    {
       label: copy.overview.cards.unrealizedPnl,
       value: formatCurrency(overview.unrealized_pnl),
       tone: overview.unrealized_pnl >= 0 ? 'positive' : 'negative',
@@ -124,14 +152,25 @@ export function OverviewCards({
     },
     {
       label: copy.overview.cards.currentDrawdown,
-      value: formatPercent(overview.current_drawdown ?? 0),
+      value: formatDrawdownPercent(overview.current_drawdown),
       tone: (overview.current_drawdown ?? 0) > 0 ? 'negative' : 'neutral',
     },
   ];
 
   if (variant === 'workbench') {
-    const [totalAssets, todayPnlItem, unrealizedPnl, cashRatio, drawdown] =
-      items;
+    const [
+      totalAssets,
+      todayPnlItem,
+      cumulativeReturnItem,
+      unrealizedPnl,
+      cashRatio,
+      drawdown,
+    ] = items;
+    const drawdownPeakValue =
+      typeof overview.drawdown_peak_equity === 'number' &&
+      Number.isFinite(overview.drawdown_peak_equity)
+        ? formatCurrency(overview.drawdown_peak_equity)
+        : '--';
     const valuationBadge = valuationStatusText ? (
       <div className="mt-4 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
@@ -151,53 +190,86 @@ export function OverviewCards({
           <div className="app-kicker app-tier-4-label text-[10px] font-bold text-[var(--app-subtext-0)]">
             {totalAssets.label}
           </div>
-          <div className="mt-3 truncate text-4xl font-semibold tracking-[-0.035em] text-[var(--app-text)] sm:text-[2.65rem] xl:text-5xl">
+          <div
+            data-testid="overview-total-assets-value"
+            className="mt-3 whitespace-nowrap text-[2.35rem] font-semibold tracking-[-0.035em] text-[var(--app-text)]"
+          >
             {totalAssets.value}
           </div>
           <div className="mt-5 h-px w-36 bg-gradient-to-r from-[var(--app-accent)] to-transparent opacity-60" />
           {valuationBadge}
 
-          <div className="mt-8 grid min-w-0 gap-3 sm:grid-cols-2">
-            {[unrealizedPnl, drawdown].map((item) => (
-              <div
-                key={item.label}
-                className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3"
-              >
+          <div
+            data-testid="account-core-metrics-stack"
+            className="mt-6 grid min-w-0 gap-2"
+          >
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-2.5">
+              <div className="flex min-w-0 items-baseline justify-between gap-3">
                 <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
-                  {item.label}
+                  {copy.overview.cards.netDeposits}
                 </div>
-                <div
-                  className={`mt-2 truncate text-xl font-semibold tracking-[-0.02em] ${metricToneClass(
-                    item.tone,
-                  )}`}
-                >
-                  {item.value}
+                <div className="shrink-0 whitespace-nowrap text-base font-semibold text-[var(--app-soft)]">
+                  {formatCurrency(overview.total_deposits)}
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
-            <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_7%,transparent)] px-4 py-3">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
-                {copy.overview.cards.availableCash}
-              </div>
-              <div className="mt-2 truncate text-lg font-semibold text-[var(--app-soft)]">
-                {formatCurrency(overview.available_cash)}
               </div>
             </div>
-            <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_7%,transparent)] px-4 py-3">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
-                {copy.overview.cards.positionsCount}
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-2.5">
+              <div className="flex min-w-0 items-baseline justify-between gap-3">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
+                  {unrealizedPnl.label}
+                </div>
+                <div
+                  className={`shrink-0 whitespace-nowrap text-base font-semibold tracking-[-0.02em] ${metricToneClass(
+                    unrealizedPnl.tone,
+                  )}`}
+                >
+                  {unrealizedPnl.value}
+                </div>
               </div>
-              <div className="mt-2 truncate text-lg font-semibold text-[var(--app-soft)]">
-                {overview.positions_count}
+            </div>
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-2.5">
+              <div className="flex min-w-0 items-baseline justify-between gap-3">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
+                  {drawdown.label}
+                </div>
+                <div className="min-w-0 shrink-0 text-right">
+                  <div
+                    className={`whitespace-nowrap text-base font-semibold tracking-[-0.02em] ${metricToneClass(
+                      drawdown.tone,
+                    )}`}
+                  >
+                    {drawdown.value}
+                  </div>
+                  <div
+                    data-testid="drawdown-peak-detail"
+                    className="mt-1 whitespace-nowrap text-right text-[11px] font-semibold text-[var(--app-subtext-1)]"
+                  >
+                    {copy.overview.cards.drawdownPeak} {drawdownPeakValue}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div
+              data-testid="cumulative-return-strip"
+              className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-2.5"
+            >
+              <div className="flex min-w-0 items-baseline justify-between gap-3">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
+                  {cumulativeReturnItem.label}
+                </div>
+                <div
+                  className={`shrink-0 whitespace-nowrap text-base font-semibold tracking-[-0.02em] ${metricToneClass(
+                    cumulativeReturnItem.tone,
+                  )}`}
+                >
+                  {cumulativeReturnItem.value}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="grid min-w-0 content-start divide-y divide-[color-mix(in_srgb,var(--app-border)_30%,transparent)]">
+        <div className="flex min-w-0 flex-col">
           <div className="min-w-0 p-5 xl:p-6">
             <div className="app-kicker app-tier-4-label text-[10px] font-bold text-[var(--app-subtext-0)]">
               {todayPnlItem.label}
@@ -259,13 +331,31 @@ export function OverviewCards({
               </div>
             ) : null}
           </div>
-
-          <div className="min-w-0 p-5 xl:p-6">
-            <div className="app-kicker app-tier-4-label text-[10px] font-bold text-[var(--app-subtext-0)]">
-              {cashRatio.label}
+          <div
+            data-testid="today-pnl-side-metrics"
+            className="mt-auto grid min-w-0 gap-3 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] p-5 sm:grid-cols-2 xl:p-6"
+          >
+            <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_7%,transparent)] px-4 py-3">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
+                {copy.overview.cards.availableCash}
+              </div>
+              <div className="mt-2 whitespace-nowrap text-base font-semibold text-[var(--app-soft)]">
+                {formatCurrency(overview.available_cash)}
+              </div>
+              <div
+                data-testid="available-cash-ratio"
+                className="mt-2 text-[11px] font-semibold text-[var(--app-subtext-1)]"
+              >
+                {cashRatio.label} {cashRatio.value}
+              </div>
             </div>
-            <div className="mt-3 text-2xl font-semibold tracking-[-0.02em] text-[var(--app-soft)]">
-              {cashRatio.value}
+            <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_7%,transparent)] px-4 py-3">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-0)]">
+                {copy.overview.cards.positionsCount}
+              </div>
+              <div className="mt-2 whitespace-nowrap text-base font-semibold text-[var(--app-soft)]">
+                {overview.positions_count}
+              </div>
             </div>
           </div>
         </div>
@@ -276,7 +366,7 @@ export function OverviewCards({
   return (
     <div
       data-testid="account-metrics-rail"
-      className="app-terminal-panel grid min-w-0 overflow-hidden rounded-[2rem] font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
+      className="app-terminal-panel grid min-w-0 overflow-hidden rounded-[2rem] font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]"
     >
       {items.map((item, index) => (
         <div
@@ -395,9 +485,9 @@ export function OverviewCardsSkeleton() {
     <div
       data-testid="account-metrics-skeleton"
       aria-hidden="true"
-      className="app-terminal-panel grid min-w-0 animate-pulse overflow-hidden rounded-[2rem] sm:grid-cols-2 xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]"
+      className="app-terminal-panel grid min-w-0 animate-pulse overflow-hidden rounded-[2rem] sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]"
     >
-      {Array.from({ length: 5 }).map((_, index) => (
+      {Array.from({ length: 6 }).map((_, index) => (
         <div key={index} className="px-4 py-3 sm:px-5">
           <div className="h-3 w-24 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_76%,transparent)]" />
           <div className="mt-3 h-6 w-36 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_88%,transparent)] sm:h-7" />

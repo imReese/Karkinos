@@ -90,6 +90,175 @@ class AppDatabase:
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
+    # ---------- Market Calendar Snapshots ----------
+
+    def upsert_market_calendar_snapshot_sync(self, snapshot: Any) -> dict[str, Any]:
+        """Persist a provider-normalized market calendar snapshot."""
+        payload = (
+            snapshot.to_payload() if hasattr(snapshot, "to_payload") else dict(snapshot)
+        )
+        now = datetime.now().isoformat()
+        days = payload.get("days") or []
+        limitations = payload.get("limitations") or []
+        exchange = str(payload["exchange"]).upper()
+        year = int(payload["year"])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT INTO market_calendar_snapshots (
+                    exchange, year, provider, schema_version, status,
+                    trading_day_count, closed_day_count, source_fingerprint,
+                    official_verification_status, official_source_url,
+                    official_verified_at, official_verified_by, limitations_json,
+                    days_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(exchange, year) DO UPDATE SET
+                    provider = excluded.provider,
+                    schema_version = excluded.schema_version,
+                    status = excluded.status,
+                    trading_day_count = excluded.trading_day_count,
+                    closed_day_count = excluded.closed_day_count,
+                    source_fingerprint = excluded.source_fingerprint,
+                    official_verification_status = excluded.official_verification_status,
+                    official_source_url = excluded.official_source_url,
+                    official_verified_at = excluded.official_verified_at,
+                    official_verified_by = excluded.official_verified_by,
+                    limitations_json = excluded.limitations_json,
+                    days_json = excluded.days_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    exchange,
+                    year,
+                    str(payload.get("provider") or "unknown"),
+                    str(payload.get("schema_version") or "karkinos.market_calendar.v1"),
+                    str(payload.get("status") or "available"),
+                    int(payload.get("trading_day_count") or 0),
+                    int(payload.get("closed_day_count") or 0),
+                    str(payload.get("source_fingerprint") or ""),
+                    str(payload.get("official_verification_status") or "unverified"),
+                    payload.get("official_source_url"),
+                    payload.get("official_verified_at"),
+                    payload.get("official_verified_by"),
+                    json.dumps(limitations, ensure_ascii=False, sort_keys=True),
+                    json.dumps(days, ensure_ascii=False, sort_keys=True),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                """
+                SELECT *
+                FROM market_calendar_snapshots
+                WHERE exchange = ? AND year = ?
+                LIMIT 1
+                """,
+                (exchange, year),
+            ).fetchone()
+            return dict(row)
+
+    def get_market_calendar_snapshot_sync(
+        self,
+        *,
+        exchange: str,
+        year: int,
+    ) -> dict[str, Any] | None:
+        """Fetch the latest stored market calendar snapshot for an exchange/year."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT *
+                FROM market_calendar_snapshots
+                WHERE exchange = ? AND year = ?
+                LIMIT 1
+                """,
+                (str(exchange).upper(), int(year)),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def update_market_calendar_verification_sync(
+        self,
+        *,
+        exchange: str,
+        year: int,
+        verification_status: str,
+        official_source_url: str | None = None,
+        verified_by: str | None = None,
+        review_notes: str | None = None,
+        day_labels: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Attach manual official-notice verification metadata to a snapshot."""
+        row = self.get_market_calendar_snapshot_sync(exchange=exchange, year=year)
+        if row is None:
+            return None
+        now = datetime.now().isoformat()
+        limitations = json.loads(row.get("limitations_json") or "[]")
+        days = json.loads(row.get("days_json") or "[]")
+        normalized_day_labels = {
+            str(day).strip()[:10]: str(label).strip()
+            for day, label in (day_labels or {}).items()
+            if str(day).strip() and str(label).strip()
+        }
+        if normalized_day_labels:
+            days = [
+                (
+                    {
+                        **day,
+                        "reason": normalized_day_labels[day.get("date")],
+                        "day_type": "holiday",
+                        "reason_code": "market_holiday",
+                        "is_trading_day": False,
+                    }
+                    if isinstance(day, dict)
+                    and day.get("date") in normalized_day_labels
+                    and not bool(day.get("is_trading_day"))
+                    else day
+                )
+                for day in days
+            ]
+        if review_notes:
+            limitations = [*limitations, review_notes]
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                UPDATE market_calendar_snapshots
+                SET official_verification_status = ?,
+                    official_source_url = ?,
+                    official_verified_at = ?,
+                    official_verified_by = ?,
+                    limitations_json = ?,
+                    days_json = ?,
+                    updated_at = ?
+                WHERE exchange = ? AND year = ?
+                """,
+                (
+                    verification_status,
+                    official_source_url,
+                    now,
+                    verified_by,
+                    json.dumps(limitations, ensure_ascii=False, sort_keys=True),
+                    json.dumps(days, ensure_ascii=False, sort_keys=True),
+                    now,
+                    str(exchange).upper(),
+                    int(year),
+                ),
+            )
+            conn.commit()
+            updated = conn.execute(
+                """
+                SELECT *
+                FROM market_calendar_snapshots
+                WHERE exchange = ? AND year = ?
+                LIMIT 1
+                """,
+                (str(exchange).upper(), int(year)),
+            ).fetchone()
+            return dict(updated) if updated else None
+
     # ---------- Watchlist Assets ----------
 
     def upsert_watchlist_asset_sync(
@@ -2885,6 +3054,27 @@ CREATE TABLE IF NOT EXISTS latest_quotes (
     UNIQUE(symbol, asset_type)
 );
 
+CREATE TABLE IF NOT EXISTS market_calendar_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exchange TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    status TEXT NOT NULL,
+    trading_day_count INTEGER NOT NULL DEFAULT 0,
+    closed_day_count INTEGER NOT NULL DEFAULT 0,
+    source_fingerprint TEXT NOT NULL,
+    official_verification_status TEXT NOT NULL DEFAULT 'unverified',
+    official_source_url TEXT,
+    official_verified_at TEXT,
+    official_verified_by TEXT,
+    limitations_json TEXT NOT NULL DEFAULT '[]',
+    days_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(exchange, year)
+);
+
 CREATE TABLE IF NOT EXISTS action_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_signal_id INTEGER NOT NULL UNIQUE,
@@ -2920,6 +3110,10 @@ CREATE INDEX IF NOT EXISTS idx_latest_quotes_symbol_asset_type ON latest_quotes(
 CREATE INDEX IF NOT EXISTS idx_latest_quotes_quote_timestamp ON latest_quotes(quote_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_latest_quotes_provider_status ON latest_quotes(provider_status);
 CREATE INDEX IF NOT EXISTS idx_latest_quotes_quote_status ON latest_quotes(quote_status);
+CREATE INDEX IF NOT EXISTS idx_market_calendar_exchange_year
+ON market_calendar_snapshots(exchange, year);
+CREATE INDEX IF NOT EXISTS idx_market_calendar_status
+ON market_calendar_snapshots(status, official_verification_status);
 CREATE INDEX IF NOT EXISTS idx_action_tasks_status_ts ON action_tasks(status, timestamp DESC);
 
 CREATE TABLE IF NOT EXISTS quote_fetch_runs (

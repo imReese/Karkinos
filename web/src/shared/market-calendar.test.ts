@@ -23,4 +23,17 @@ describe('market calendar', () => {
     expect(holiday.reason).toBe("New Year's Day");
     expect(holiday.isTradingDay).toBe(false);
   });
+
+  test('does not ship an annual holiday registry in frontend code', () => {
+    expect(explainMarketCalendarDate('2026-05-01')).toMatchObject({
+      dayType: 'trading_day',
+      reasonCode: 'trading_day',
+      isTradingDay: true,
+    });
+    expect(explainMarketCalendarDate('2026-02-14')).toMatchObject({
+      dayType: 'weekend',
+      reasonCode: 'weekend',
+      isTradingDay: false,
+    });
+  });
 });

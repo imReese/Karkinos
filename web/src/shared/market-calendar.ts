@@ -26,9 +26,7 @@ export type MarketCalendarOptions = {
   closedDays?: Record<string, string>;
 };
 
-const DEFAULT_MARKET_HOLIDAYS: Record<string, string> = {
-  '2026-01-01': "New Year's Day",
-};
+const DEFAULT_MARKET_HOLIDAYS: Record<string, string> = Object.freeze({});
 
 export function explainMarketCalendarDate(
   value: string | Date,
