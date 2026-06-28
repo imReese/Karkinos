@@ -124,6 +124,9 @@ export const copy = {
         totalAssets: 'Total Assets',
         availableCash: 'Available Cash',
         todayPnl: 'Today PnL',
+        latestTradingDayPnl: 'Latest trading-day PnL',
+        marketClosedPnlContext:
+          'Market is closed today; showing the latest available PnL.',
         todayStocks: 'Stocks',
         todayFunds: 'Funds',
         todayTotal: 'Total',
@@ -2197,6 +2200,8 @@ export const copy = {
         totalAssets: '总资产',
         availableCash: '可用现金',
         todayPnl: '今日盈亏',
+        latestTradingDayPnl: '最近交易日盈亏',
+        marketClosedPnlContext: '今日休市，展示最近可用估值的盈亏。',
         todayStocks: '股票',
         todayFunds: '基金',
         todayTotal: '合计',

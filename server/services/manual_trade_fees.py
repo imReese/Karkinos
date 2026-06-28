@@ -151,6 +151,9 @@ def _decimal_config_value(config, name: str, fallback: str) -> Decimal:
 
 def _fee_rule_version(schedule) -> str:
     schedule_id = str(getattr(schedule, "schedule_id", "") or "").strip()
+    account_profile_id = str(getattr(schedule, "account_profile_id", "") or "").strip()
+    if schedule_id and account_profile_id:
+        return f"{account_profile_id}/{schedule_id}"
     return schedule_id or MANUAL_CONFIGURED_FEE_RULE_VERSION
 
 

@@ -28,6 +28,7 @@ type OverviewCardItem = {
   label: string;
   value: string;
   tone: 'anchor' | 'positive' | 'negative' | 'neutral';
+  context?: string | null;
   breakdown?: Array<{
     label: string;
     value: number;
@@ -81,9 +82,13 @@ function formatDrawdownPercent(value: number | null | undefined) {
 export function OverviewCards({
   overview,
   variant = 'rail',
+  todayPnlLabel,
+  todayPnlContext,
 }: {
   overview: OverviewCardMetrics;
   variant?: 'rail' | 'workbench';
+  todayPnlLabel?: string;
+  todayPnlContext?: string | null;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -113,9 +118,10 @@ export function OverviewCards({
       tone: 'anchor',
     },
     {
-      label: copy.overview.cards.todayPnl,
+      label: todayPnlLabel ?? copy.overview.cards.todayPnl,
       value: formatCurrency(todayBreakdown.total),
       tone: todayBreakdown.total >= 0 ? 'positive' : 'negative',
+      context: todayPnlContext,
       breakdown: [
         {
           label: copy.overview.cards.todayStocks,
@@ -274,6 +280,14 @@ export function OverviewCards({
             <div className="app-kicker app-tier-4-label text-[10px] font-bold text-[var(--app-subtext-0)]">
               {todayPnlItem.label}
             </div>
+            {todayPnlItem.context ? (
+              <div
+                data-testid="today-pnl-period-context"
+                className="mt-1.5 text-[11px] font-semibold leading-relaxed text-[var(--app-subtext-1)]"
+              >
+                {todayPnlItem.context}
+              </div>
+            ) : null}
             <div className="mt-3 grid min-w-0 gap-2">
               {todayPnlItem.breakdown?.map((row) => (
                 <div

@@ -323,6 +323,31 @@ function HoldingDetailRoutePage() {
   return <HoldingDetailPage symbol={symbol} />;
 }
 
+function formatShanghaiDateKey(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).formatToParts(value);
+  const byType = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return `${byType.year ?? '0000'}-${byType.month ?? '00'}-${byType.day ?? '00'}`;
+}
+
+function isTradingDayForOverviewPnl(
+  calendar: Pick<MarketCalendarSnapshot, 'days'> | null | undefined,
+  dateText: string,
+) {
+  const calendarDay = calendar?.days.find((day) => day.date === dateText);
+  if (calendarDay) {
+    return calendarDay.is_trading_day;
+  }
+  return explainMarketCalendarDate(dateText).isTradingDay;
+}
+
 export function OverviewPage() {
   const copy = useCopy();
   const [equityCurveRange, setEquityCurveRange] =
@@ -381,6 +406,20 @@ export function OverviewPage() {
     return years[years.length - 1] ?? null;
   }, [explainability.data]);
   const marketCalendar = useMarketCalendarQuery(marketCalendarYear);
+  const currentShanghaiDate = useMemo(
+    () => formatShanghaiDateKey(new Date()),
+    [],
+  );
+  const isCurrentMarketTradingDay = useMemo(
+    () => isTradingDayForOverviewPnl(marketCalendar.data, currentShanghaiDate),
+    [currentShanghaiDate, marketCalendar.data],
+  );
+  const todayPnlLabel = isCurrentMarketTradingDay
+    ? copy.overview.cards.todayPnl
+    : copy.overview.cards.latestTradingDayPnl;
+  const todayPnlContext = isCurrentMarketTradingDay
+    ? null
+    : copy.overview.cards.marketClosedPnlContext;
 
   return (
     <section className="space-y-5">
@@ -417,7 +456,12 @@ export function OverviewPage() {
             data-testid="overview-daily-workbench"
           >
             <div className="min-w-0 space-y-5">
-              <OverviewCards overview={overview.data} variant="workbench" />
+              <OverviewCards
+                overview={overview.data}
+                variant="workbench"
+                todayPnlLabel={todayPnlLabel}
+                todayPnlContext={todayPnlContext}
+              />
               <DashboardMarketPulse
                 marketHealth={marketHealth.data}
                 isLoading={marketHealth.isLoading}
