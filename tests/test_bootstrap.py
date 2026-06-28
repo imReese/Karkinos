@@ -281,6 +281,8 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
             {
                 "broker_fee_schedule": {
                     "schedule_id": "local-cash-account",
+                    "account_profile_id": "primary-citic-securities",
+                    "broker_name": "中信证券",
                     "stock_a_commission_rate": 0.00015,
                     "stock_a_min_commission": 5,
                     "fund_etf_commission_rate": 0.00015,
@@ -305,6 +307,8 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
 
     assert config.broker_fee_schedule == BrokerFeeScheduleConfig(
         schedule_id="local-cash-account",
+        account_profile_id="primary-citic-securities",
+        broker_name="中信证券",
         stock_a_commission_rate=Decimal("0.00015"),
         stock_a_min_commission=Decimal("5"),
         fund_etf_commission_rate=Decimal("0.00015"),

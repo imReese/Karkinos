@@ -87,7 +87,7 @@ def test_manual_trade_fee_service_uses_symbol_exchange_transfer_fee_split():
     assert shanghai.fee_breakdown_json["total_fee"] == "10.100000"
 
 
-def test_manual_trade_fee_service_uses_schedule_id_as_fee_rule_version():
+def test_manual_trade_fee_service_uses_account_profile_and_schedule_as_fee_rule_version():
     from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
     resolved = resolve_manual_trade_fee_breakdown(
@@ -95,7 +95,8 @@ def test_manual_trade_fee_service_uses_schedule_id_as_fee_rule_version():
             account_commission_rate=0.00015,
             account_min_commission=5,
             broker_fee_schedule=SimpleNamespace(
-                schedule_id="local_broker_fee_schedule_v2",
+                schedule_id="local_broker_fee_schedule",
+                account_profile_id="primary-citic-securities",
                 stamp_tax_rate=0.0005,
                 transfer_fee_rate=0.00001,
                 other_fee_rate=0,
@@ -110,7 +111,10 @@ def test_manual_trade_fee_service_uses_schedule_id_as_fee_rule_version():
 
     assert resolved is not None
     assert resolved.fee_rule_id == "manual_configured_commission"
-    assert resolved.fee_rule_version == "local_broker_fee_schedule_v2"
+    assert (
+        resolved.fee_rule_version
+        == "primary-citic-securities/local_broker_fee_schedule"
+    )
 
 
 def test_manual_trade_fee_service_formats_etf_without_stamp_tax():

@@ -28,6 +28,8 @@ _BROKER_FEE_SCHEDULE_ALLOWED_FIELDS = frozenset(
     {
         "schedule_id",
         "profile_id",
+        "account_profile_id",
+        "broker_name",
         "display_name",
         "schema_version",
         "source",
@@ -86,6 +88,8 @@ class BrokerFeeScheduleConfig:
     """Local broker fee rules stored in ignored runtime config."""
 
     schedule_id: str = "local_broker_fee_schedule_v1"
+    account_profile_id: str = ""
+    broker_name: str = ""
     stock_a_commission_rate: Decimal = Decimal("0.0001")
     stock_a_min_commission: Decimal = Decimal("5")
     fund_etf_commission_rate: Decimal = Decimal("0.0001")
@@ -291,6 +295,8 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
     return BrokerFeeScheduleConfig(
         schedule_id=str(_fee_schedule_id(value)).strip()
         or BrokerFeeScheduleConfig().schedule_id,
+        account_profile_id=str(value.get("account_profile_id", "")).strip(),
+        broker_name=str(value.get("broker_name", "")).strip(),
         stock_a_commission_rate=_decimal_fee_config(
             value,
             "stock_a_commission_rate",

@@ -99,6 +99,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -316,6 +317,42 @@ function installOverviewFetchMock(
         stale_symbols_sample: [],
       });
     }
+    if (url.includes('/api/market/calendar')) {
+      return jsonResponse({
+        schema_version: 'karkinos.market_calendar.v1',
+        exchange: 'SSE',
+        year: 2026,
+        provider: 'fixture',
+        status: 'complete',
+        trading_day_count: 1,
+        closed_day_count: 1,
+        source_fingerprint: 'calendar-fixture',
+        official_verification_status: 'unverified',
+        official_source_url: null,
+        official_verified_at: null,
+        official_verified_by: null,
+        limitations: [],
+        days: [
+          {
+            schema_version: 'karkinos.market_calendar.v1',
+            date: '2026-06-26',
+            day_type: 'trading_day',
+            reason_code: 'trading_day',
+            reason: 'Trading day',
+            is_trading_day: true,
+          },
+          {
+            schema_version: 'karkinos.market_calendar.v1',
+            date: '2026-06-28',
+            day_type: 'weekend',
+            reason_code: 'weekend',
+            reason: 'Weekend',
+            is_trading_day: false,
+          },
+        ],
+        updated_at: '2026-06-26T15:30:00+08:00',
+      });
+    }
     if (url.includes('/api/account-strategy/contribution')) {
       return jsonResponse({
         strategy_id: 'dual_ma',
@@ -412,6 +449,9 @@ test('renders the compact return calendar on the overview page', async () => {
 });
 
 test('splits today pnl into stocks funds and total on overview cards', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date('2026-02-10T10:00:00+08:00'));
+
   renderOverviewPage();
 
   const metricsRail = await screen.findByTestId('account-metrics-rail');
@@ -426,6 +466,22 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getByText('Top contributors')).toBeTruthy();
   expect(within(metricsRail).getByText('后端权威贡献')).toBeTruthy();
   expect(within(metricsRail).queryByText('示例稳健混合C')).toBeNull();
+});
+
+test('labels overview pnl as latest trading day when today is market closed', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date('2026-06-28T10:00:00+08:00'));
+
+  renderOverviewPage();
+
+  const metricsRail = await screen.findByTestId('account-metrics-rail');
+  expect(within(metricsRail).getByText('Latest trading-day PnL')).toBeTruthy();
+  expect(
+    within(metricsRail).getByText(
+      'Market is closed today; showing the latest available PnL.',
+    ),
+  ).toBeTruthy();
+  expect(within(metricsRail).queryByText('Today PnL')).toBeNull();
 });
 
 test('renders the daily workbench before chart and detail panels', async () => {

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
-import hashlib
-import json
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Protocol
 
@@ -102,6 +102,99 @@ class MarketCalendarProvider(Protocol):
 
 
 @dataclass(frozen=True)
+class HolidayLabel:
+    """Traceable label for a non-trading market calendar date."""
+
+    date: str
+    label: str
+    source: str
+    confidence: str
+    source_url: str | None = None
+
+
+class HolidayLabelProvider(Protocol):
+    """Provider interface for naming non-trading days after sync."""
+
+    provider_name: str
+
+    def labels_for(
+        self,
+        *,
+        exchange: str,
+        year: int,
+        closed_dates: Iterable[str],
+    ) -> Mapping[str, HolidayLabel]:
+        """Return labels keyed by ISO date for known non-trading days."""
+
+
+@dataclass(frozen=True)
+class StaticHolidayLabelProvider:
+    """Deterministic label provider for official notices and tests."""
+
+    labels: Mapping[str, HolidayLabel]
+    source_url: str | None = None
+    provider_name: str = "static_holiday_labels"
+
+    def labels_for(
+        self,
+        *,
+        exchange: str,
+        year: int,
+        closed_dates: Iterable[str],
+    ) -> Mapping[str, HolidayLabel]:
+        closed = {_parse_calendar_date(value).isoformat() for value in closed_dates}
+        result: dict[str, HolidayLabel] = {}
+        for value, label in self.labels.items():
+            date_text = _parse_calendar_date(value).isoformat()
+            if date_text not in closed:
+                continue
+            result[date_text] = HolidayLabel(
+                date=date_text,
+                label=label.label,
+                source=label.source,
+                confidence=label.confidence,
+                source_url=label.source_url or self.source_url,
+            )
+        return result
+
+
+@dataclass(frozen=True)
+class ChinaExchangeHolidayLabelProvider:
+    """Conservative labels derived from confirmed China-market closed dates.
+
+    This provider never marks a trading day as a holiday. It only names already
+    closed weekdays in well-known China-market holiday windows; official notice
+    or manual labels should override these derived labels when available.
+    """
+
+    provider_name: str = "china_exchange_holiday_labels"
+
+    def labels_for(
+        self,
+        *,
+        exchange: str,
+        year: int,
+        closed_dates: Iterable[str],
+    ) -> Mapping[str, HolidayLabel]:
+        labels: dict[str, HolidayLabel] = {}
+        for value in closed_dates:
+            day = _parse_calendar_date(value)
+            if day.year != int(year) or day.weekday() >= 5:
+                continue
+            label = _derive_china_market_holiday_label(day)
+            if label is None:
+                continue
+            date_text = day.isoformat()
+            labels[date_text] = HolidayLabel(
+                date=date_text,
+                label=label,
+                source="derived_from_exchange_closed_dates",
+                confidence="derived",
+            )
+        return labels
+
+
+@dataclass(frozen=True)
 class MarketCalendar:
     """Small deterministic market calendar with configurable holidays."""
 
@@ -170,6 +263,7 @@ def build_static_market_calendar_snapshot(
     provider: str,
     open_dates: Iterable[str],
     closed_reasons: Mapping[str, str] | None = None,
+    holiday_label_provider: HolidayLabelProvider | None = None,
     fetched_at: str | None = None,
     limitations: Iterable[str] = (),
 ) -> MarketCalendarSnapshot:
@@ -186,6 +280,30 @@ def build_static_market_calendar_snapshot(
         _parse_calendar_date(value).isoformat(): reason
         for value, reason in (closed_reasons or {}).items()
     }
+    all_date_texts: list[str] = []
+    current = date(year, 1, 1)
+    end = date(year + 1, 1, 1)
+    while current < end:
+        all_date_texts.append(current.isoformat())
+        current += timedelta(days=1)
+    normalized_closed_dates = [
+        date_text
+        for date_text in all_date_texts
+        if date_text not in normalized_open_dates
+    ]
+    holiday_labels = _normalize_holiday_labels(
+        holiday_label_provider.labels_for(
+            exchange=exchange,
+            year=year,
+            closed_dates=normalized_closed_dates,
+        )
+        if holiday_label_provider
+        else {}
+    )
+    combined_limitations = (
+        *tuple(limitations),
+        *_holiday_label_limitations(holiday_labels),
+    )
     days: list[MarketCalendarDay] = []
     current = date(year, 1, 1)
     end = date(year + 1, 1, 1)
@@ -199,6 +317,16 @@ def build_static_market_calendar_snapshot(
                     reason_code="trading_day",
                     reason="Exchange trading day",
                     is_trading_day=True,
+                )
+            )
+        elif date_text in holiday_labels:
+            days.append(
+                MarketCalendarDay(
+                    date=date_text,
+                    day_type=MarketCalendarDayType.HOLIDAY,
+                    reason_code="market_holiday",
+                    reason=holiday_labels[date_text].label,
+                    is_trading_day=False,
                 )
             )
         elif date_text in normalized_closed_reasons:
@@ -248,7 +376,7 @@ def build_static_market_calendar_snapshot(
         days=tuple(days),
         source_fingerprint=fingerprint,
         fetched_at=fetched_at or datetime.now().isoformat(),
-        limitations=tuple(limitations),
+        limitations=tuple(dict.fromkeys(combined_limitations)),
     )
 
 
@@ -257,8 +385,13 @@ class TushareMarketCalendarProvider:
 
     provider_name = "tushare"
 
-    def __init__(self, token: str | None = None) -> None:
+    def __init__(
+        self,
+        token: str | None = None,
+        holiday_label_provider: HolidayLabelProvider | None = None,
+    ) -> None:
         self._token = token
+        self._holiday_label_provider = holiday_label_provider
 
     def fetch_snapshot(self, *, exchange: str, year: int) -> MarketCalendarSnapshot:
         try:
@@ -290,9 +423,10 @@ class TushareMarketCalendarProvider:
             provider=self.provider_name,
             open_dates=open_dates,
             closed_reasons=closed_reasons,
+            holiday_label_provider=self._holiday_label_provider,
             limitations=(
                 "Tushare trade_cal gives open/closed dates but not official holiday names.",
-                "Official exchange notices still require manual verification.",
+                "Derived holiday labels require official exchange notice review before being treated as official.",
             ),
         )
 
@@ -301,6 +435,12 @@ class AkShareMarketCalendarProvider:
     """AkShare/Sina trading-date based exchange calendar provider."""
 
     provider_name = "akshare"
+
+    def __init__(
+        self,
+        holiday_label_provider: HolidayLabelProvider | None = None,
+    ) -> None:
+        self._holiday_label_provider = holiday_label_provider
 
     def fetch_snapshot(self, *, exchange: str, year: int) -> MarketCalendarSnapshot:
         try:
@@ -322,9 +462,10 @@ class AkShareMarketCalendarProvider:
             year=year,
             provider=self.provider_name,
             open_dates=open_dates,
+            holiday_label_provider=self._holiday_label_provider,
             limitations=(
                 "AkShare Sina trade-date data lists trading days only; closure names require manual verification.",
-                "Official exchange notices still require manual verification.",
+                "Derived holiday labels require official exchange notice review before being treated as official.",
             ),
         )
 
@@ -333,12 +474,17 @@ def build_market_calendar_provider(
     provider: str,
     *,
     tushare_token: str | None = None,
+    holiday_label_provider: HolidayLabelProvider | None = None,
 ) -> MarketCalendarProvider:
     provider_name = (provider or "akshare").strip().lower()
+    labels = holiday_label_provider or ChinaExchangeHolidayLabelProvider()
     if provider_name == "tushare":
-        return TushareMarketCalendarProvider(token=tushare_token)
+        return TushareMarketCalendarProvider(
+            token=tushare_token,
+            holiday_label_provider=labels,
+        )
     if provider_name == "akshare":
-        return AkShareMarketCalendarProvider()
+        return AkShareMarketCalendarProvider(holiday_label_provider=labels)
     raise ValueError(f"Unsupported market calendar provider: {provider}")
 
 
@@ -348,6 +494,56 @@ def _parse_calendar_date(value: str | date | datetime) -> date:
     if isinstance(value, date):
         return value
     return date.fromisoformat(value[:10])
+
+
+def _normalize_holiday_labels(
+    labels: Mapping[str, HolidayLabel],
+) -> dict[str, HolidayLabel]:
+    normalized: dict[str, HolidayLabel] = {}
+    for value, label in labels.items():
+        date_text = _parse_calendar_date(value).isoformat()
+        normalized[date_text] = HolidayLabel(
+            date=date_text,
+            label=str(label.label).strip(),
+            source=str(label.source).strip(),
+            confidence=str(label.confidence).strip(),
+            source_url=label.source_url,
+        )
+    return {
+        date_text: label
+        for date_text, label in normalized.items()
+        if label.label and label.source and label.confidence
+    }
+
+
+def _holiday_label_limitations(labels: Mapping[str, HolidayLabel]) -> tuple[str, ...]:
+    if not labels:
+        return ()
+    sources = sorted({label.source for label in labels.values() if label.source})
+    urls = sorted({label.source_url for label in labels.values() if label.source_url})
+    limitations = [
+        *(f"Holiday labels source: {source}" for source in sources),
+        *urls,
+    ]
+    return tuple(limitations)
+
+
+def _derive_china_market_holiday_label(day: date) -> str | None:
+    if day.month == 1 and day.day <= 3:
+        return "元旦休市"
+    if day.month == 2:
+        return "春节休市"
+    if day.month == 4 and day.day <= 7:
+        return "清明节休市"
+    if day.month == 5 and day.day <= 7:
+        return "劳动节休市"
+    if (day.month == 5 and day.day >= 20) or (day.month == 6 and day.day <= 25):
+        return "端午节休市"
+    if day.month == 9 and day.day >= 15:
+        return "中秋节休市"
+    if day.month == 10 and day.day <= 7:
+        return "国庆节休市"
+    return None
 
 
 def _normalize_provider_date(value: Any) -> str | None:

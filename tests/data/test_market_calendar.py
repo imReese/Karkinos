@@ -6,9 +6,12 @@ from datetime import date
 
 from data.market_calendar import (
     MARKET_CALENDAR_SCHEMA_VERSION,
+    ChinaExchangeHolidayLabelProvider,
+    HolidayLabel,
     MarketCalendar,
     MarketCalendarDayType,
     MarketCalendarSnapshot,
+    StaticHolidayLabelProvider,
     build_static_market_calendar_snapshot,
 )
 
@@ -69,3 +72,54 @@ def test_static_market_calendar_snapshot_normalizes_trading_and_closed_days() ->
     assert by_date["2026-01-02"].day_type is MarketCalendarDayType.TRADING_DAY
     assert by_date["2026-01-03"].day_type is MarketCalendarDayType.WEEKEND
     assert snapshot.to_payload()["schema_version"] == MARKET_CALENDAR_SCHEMA_VERSION
+
+
+def test_static_market_calendar_snapshot_applies_traceable_holiday_labels() -> None:
+    snapshot = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2026,
+        provider="unit_fixture",
+        open_dates={"2026-06-18", "2026-06-22"},
+        holiday_label_provider=StaticHolidayLabelProvider(
+            labels={
+                "2026-06-19": HolidayLabel(
+                    date="2026-06-19",
+                    label="端午节休市",
+                    source="official_exchange_notice",
+                    confidence="official",
+                )
+            },
+            source_url="https://example.test/exchange-holiday-notice",
+        ),
+        fetched_at="2026-06-20T00:00:00+08:00",
+    )
+
+    by_date = {day.date: day for day in snapshot.days}
+    assert by_date["2026-06-19"].day_type is MarketCalendarDayType.HOLIDAY
+    assert by_date["2026-06-19"].reason_code == "market_holiday"
+    assert by_date["2026-06-19"].reason == "端午节休市"
+    assert "Holiday labels source: official_exchange_notice" in snapshot.limitations
+    assert "https://example.test/exchange-holiday-notice" in snapshot.limitations
+
+
+def test_china_exchange_holiday_label_provider_derives_common_holiday_names() -> None:
+    snapshot = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2026,
+        provider="unit_fixture",
+        open_dates={"2026-06-18", "2026-06-22", "2026-10-08"},
+        holiday_label_provider=ChinaExchangeHolidayLabelProvider(),
+        fetched_at="2026-06-20T00:00:00+08:00",
+    )
+
+    by_date = {day.date: day for day in snapshot.days}
+    assert by_date["2026-06-19"].day_type is MarketCalendarDayType.HOLIDAY
+    assert by_date["2026-06-19"].reason == "端午节休市"
+    assert by_date["2026-06-19"].reason_code == "market_holiday"
+    assert by_date["2026-10-01"].day_type is MarketCalendarDayType.HOLIDAY
+    assert by_date["2026-10-01"].reason == "国庆节休市"
+    assert by_date["2026-07-01"].day_type is MarketCalendarDayType.CLOSED
+    assert by_date["2026-07-01"].reason == "Exchange closed"
+    assert "Holiday labels source: derived_from_exchange_closed_dates" in (
+        snapshot.limitations
+    )

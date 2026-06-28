@@ -25,6 +25,63 @@ def _ensure_column(
     conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
+def _merge_market_calendar_snapshot_payload(
+    payload: dict[str, Any],
+    existing: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve reviewed holiday labels when refreshing provider snapshots."""
+    merged = dict(payload)
+    existing_days = _json_list(existing.get("days_json"))
+    incoming_days = list(merged.get("days") or [])
+    existing_holiday_labels = {
+        str(day.get("date")): day
+        for day in existing_days
+        if isinstance(day, dict)
+        and day.get("reason_code") == "market_holiday"
+        and not bool(day.get("is_trading_day"))
+        and day.get("date")
+        and day.get("reason")
+    }
+    if existing_holiday_labels:
+        merged_days: list[dict[str, Any]] = []
+        for day in incoming_days:
+            if not isinstance(day, dict):
+                merged_days.append(day)
+                continue
+            label = existing_holiday_labels.get(str(day.get("date")))
+            if label and not bool(day.get("is_trading_day")):
+                merged_days.append(
+                    {
+                        **day,
+                        "day_type": "holiday",
+                        "reason_code": "market_holiday",
+                        "reason": label["reason"],
+                        "is_trading_day": False,
+                    }
+                )
+            else:
+                merged_days.append(day)
+        merged["days"] = merged_days
+
+    existing_status = str(existing.get("official_verification_status") or "unverified")
+    incoming_status = str(merged.get("official_verification_status") or "unverified")
+    if existing_status != "unverified" and incoming_status == "unverified":
+        merged["official_verification_status"] = existing_status
+        merged["official_source_url"] = existing.get("official_source_url")
+        merged["official_verified_at"] = existing.get("official_verified_at")
+        merged["official_verified_by"] = existing.get("official_verified_by")
+
+    merged["limitations"] = list(
+        dict.fromkeys(
+            [
+                *(merged.get("limitations") or []),
+                *_json_list(existing.get("limitations_json")),
+            ]
+        )
+    )
+    return merged
+
+
 def _apply_manual_confirmation_readiness(
     task: dict[str, Any],
     *,
@@ -104,6 +161,22 @@ class AppDatabase:
         year = int(payload["year"])
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT *
+                FROM market_calendar_snapshots
+                WHERE exchange = ? AND year = ?
+                LIMIT 1
+                """,
+                (exchange, year),
+            ).fetchone()
+            if existing is not None:
+                payload = _merge_market_calendar_snapshot_payload(
+                    payload,
+                    dict(existing),
+                )
+                days = payload.get("days") or []
+                limitations = payload.get("limitations") or []
             conn.execute(
                 """
                 INSERT INTO market_calendar_snapshots (

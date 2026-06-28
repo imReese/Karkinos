@@ -7,7 +7,9 @@
     "account_commission_rate": 0.0001,
     "account_min_commission": 5.0,
     "broker_fee_schedule": {
-        "schedule_id": "local_broker_fee_schedule_v1",
+        "account_profile_id": "primary-broker-account",
+        "broker_name": "示例券商",
+        "schedule_id": "local_broker_fee_schedule",
         "stock_a_commission_rate": 0.0001,
         "stock_a_min_commission": 5.0,
         "fund_etf_commission_rate": 0.0001,
