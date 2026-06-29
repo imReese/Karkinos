@@ -32,10 +32,7 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
-import {
-  DashboardQuickActions,
-  type QuoteDiagnosticItem,
-} from '../features/account/components/dashboard-quick-actions';
+import type { QuoteDiagnosticItem } from '../features/account/components/dashboard-quick-actions';
 import {
   useAccountStrategyContributionQuery,
   type AccountStrategyContributionReport,
@@ -458,7 +455,7 @@ export function OverviewPage() {
       ) : overview.data && snapshot.data ? (
         <div className="space-y-5">
           <div
-            className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]"
+            className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]"
             data-testid="overview-daily-workbench"
           >
             <div className="min-w-0 space-y-5">
@@ -475,13 +472,6 @@ export function OverviewPage() {
               />
             </div>
             <div className="min-w-0 space-y-5">
-              <DashboardQuickActions
-                overview={overview.data}
-                marketHealth={marketHealth.data}
-                symbols={positions.map((position) => position.symbol)}
-                quoteDiagnostics={positions}
-                compact
-              />
               <DashboardTodayQueue
                 overview={overview.data}
                 marketHealth={marketHealth.data}
@@ -625,6 +615,7 @@ export function OverviewPage() {
 }
 
 type TodayQueueTone = 'success' | 'warning' | 'danger' | 'neutral';
+type TodayQueuePriority = 'first' | 'watch' | 'normal';
 
 type TodayQueueItem = {
   key: string;
@@ -634,7 +625,14 @@ type TodayQueueItem = {
   href: string;
   actionLabel: string;
   tone: TodayQueueTone;
+  priority: TodayQueuePriority;
 };
+
+const TODAY_QUEUE_PRIORITY_ORDER: TodayQueuePriority[] = [
+  'first',
+  'watch',
+  'normal',
+];
 
 function todayQueueToneClasses(tone: TodayQueueTone) {
   if (tone === 'success') {
@@ -663,6 +661,19 @@ function todayQueueToneClasses(tone: TodayQueueTone) {
     dot: 'bg-[var(--app-muted)]',
     text: 'text-[var(--app-soft)]',
   };
+}
+
+function todayQueuePriorityLabel(
+  priority: TodayQueuePriority,
+  labels: AppCopy['overview']['dashboard'],
+) {
+  if (priority === 'first') {
+    return labels.queuePriorityFirst;
+  }
+  if (priority === 'watch') {
+    return labels.queuePriorityWatch;
+  }
+  return labels.queuePriorityNormal;
 }
 
 function canUseStrategyContribution(
@@ -786,6 +797,7 @@ function DashboardTodayQueue({
       href: '/market',
       actionLabel: labels.viewData,
       tone: dataNeedsReview ? 'warning' : 'success',
+      priority: dataNeedsReview ? 'first' : 'normal',
     },
     {
       key: 'decision',
@@ -807,6 +819,8 @@ function DashboardTodayQueue({
         : candidates.length > 0
           ? 'warning'
           : 'success',
+      priority:
+        todayDecisionError || candidates.length > 0 ? 'watch' : 'normal',
     },
     {
       key: 'orders',
@@ -830,6 +844,8 @@ function DashboardTodayQueue({
         : pendingOrders.length > 0
           ? 'warning'
           : 'success',
+      priority:
+        pendingOrdersError || pendingOrders.length > 0 ? 'first' : 'normal',
     },
     {
       key: 'strategy',
@@ -853,8 +869,20 @@ function DashboardTodayQueue({
         : strategyReady
           ? 'success'
           : 'warning',
+      priority: strategyContributionError
+        ? 'watch'
+        : strategyReady
+          ? 'normal'
+          : 'watch',
     },
   ];
+  const priorityGroups = TODAY_QUEUE_PRIORITY_ORDER.map((priority) => ({
+    priority,
+    items: items.filter((item) => item.priority === priority),
+  })).filter((group) => group.items.length > 0);
+  const actionableCount = items.filter(
+    (item) => item.priority !== 'normal',
+  ).length;
 
   return (
     <section
@@ -870,45 +898,59 @@ function DashboardTodayQueue({
             </h2>
           </div>
           <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
-            {items.filter((item) => item.tone !== 'success').length}
+            {actionableCount}
           </div>
         </div>
 
-        <div className="mt-4 grid min-w-0 gap-2.5">
-          {items.map((item) => {
-            const tone = todayQueueToneClasses(item.tone);
-            return (
-              <a
-                href={item.href}
-                key={item.key}
-                className={`group grid min-w-0 gap-3 rounded-3xl border px-4 py-3.5 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 ${tone.card}`}
-              >
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
-                      />
-                      <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
-                        {item.title}
-                      </div>
-                    </div>
-                    <div className="app-muted mt-2 text-xs leading-5">
-                      {item.detail}
-                    </div>
-                  </div>
-                  <span
-                    className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}
+        <div className="mt-4 grid min-w-0 gap-3">
+          {priorityGroups.map((group) => (
+            <div
+              className="grid min-w-0 gap-2"
+              data-testid={`overview-today-queue-${group.priority}`}
+              key={group.priority}
+            >
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                {todayQueuePriorityLabel(group.priority, labels)}
+              </div>
+              {group.items.map((item) => {
+                const tone = todayQueueToneClasses(item.tone);
+                const compactNormal = group.priority === 'normal';
+                return (
+                  <a
+                    href={item.href}
+                    key={item.key}
+                    className={`group grid min-w-0 gap-3 rounded-3xl border px-4 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 ${
+                      compactNormal ? 'py-3 opacity-85' : 'py-3.5'
+                    } ${tone.card}`}
                   >
-                    {item.meta}
-                  </span>
-                </div>
-                <div className="text-xs font-semibold text-[var(--app-accent)]">
-                  {item.actionLabel}
-                </div>
-              </a>
-            );
-          })}
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
+                          />
+                          <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
+                            {item.title}
+                          </div>
+                        </div>
+                        <div className="app-muted mt-2 text-xs leading-5">
+                          {item.detail}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}
+                      >
+                        {item.meta}
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold text-[var(--app-accent)]">
+                      {item.actionLabel}
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -944,6 +986,51 @@ function marketPulseChangePct(quote: MarketHealthQuote) {
   );
 }
 
+function finiteMarketPulseNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function marketPulseChangeAmount(quote: MarketHealthQuote) {
+  return finiteMarketPulseNumber(quote.daily_change ?? quote.change);
+}
+
+function marketPulseSignalValue(quote: MarketHealthQuote) {
+  return marketPulseChangePct(quote) ?? marketPulseChangeAmount(quote);
+}
+
+function formatMarketPulseSignedValue(value: number, locale: Locale) {
+  const absolute = new Intl.NumberFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(value));
+  if (value > 0) {
+    return `+${absolute}`;
+  }
+  if (value < 0) {
+    return `-${absolute}`;
+  }
+  return absolute;
+}
+
+function marketPulseMoveLabel(
+  quote: MarketHealthQuote,
+  labels: AppCopy['overview']['dashboard'],
+  locale: Locale,
+) {
+  const changePct = marketPulseChangePct(quote);
+  if (changePct !== null) {
+    return formatPercentValue(changePct, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  const changeAmount = marketPulseChangeAmount(quote);
+  if (changeAmount !== null) {
+    return formatMarketPulseSignedValue(changeAmount, locale);
+  }
+  return labels.marketPulseMoveMissing;
+}
+
 function isMarketIndexQuote(quote: MarketHealthQuote) {
   const symbol = quote.symbol.trim();
   const assetClass = quote.asset_class.toLowerCase();
@@ -976,7 +1063,7 @@ function marketPulseSignalLabel(
   labels: AppCopy['overview']['dashboard'],
 ) {
   const changes = quotes
-    .map((quote) => marketPulseChangePct(quote))
+    .map((quote) => marketPulseSignalValue(quote))
     .filter((value): value is number => value !== null);
   if (quotes.length === 0) {
     return labels.marketPulsePending;
@@ -1022,6 +1109,17 @@ function DashboardMarketPulse({
     [marketHealth?.quotes],
   );
   const signalLabel = marketPulseSignalLabel(indexQuotes, labels);
+  const changeValues = indexQuotes
+    .map((quote) => marketPulseSignalValue(quote))
+    .filter((value): value is number => value !== null);
+  const missingChangeCount = indexQuotes.length - changeValues.length;
+  const marketPulseCoverageLabel =
+    missingChangeCount > 0
+      ? labels.marketPulseMissingChanges(missingChangeCount)
+      : labels.marketPulseChangeCoverage(
+          changeValues.length,
+          indexQuotes.length,
+        );
   const sourceStatus = formatPublicStatus(
     marketHealth?.source_health ?? marketHealth?.provider_status,
     locale,
@@ -1083,12 +1181,21 @@ function DashboardMarketPulse({
                 <div className="mt-1 font-semibold text-[var(--app-soft)]">
                   {sourceStatus}
                 </div>
+                <div
+                  className={`mt-1 font-semibold ${
+                    missingChangeCount > 0
+                      ? 'text-[var(--app-warning)]'
+                      : 'text-[var(--app-muted)]'
+                  }`}
+                >
+                  {marketPulseCoverageLabel}
+                </div>
               </div>
             </div>
             <div className="grid min-w-0 gap-2 sm:grid-cols-2">
               {indexQuotes.map((quote) => {
-                const changePct = marketPulseChangePct(quote);
-                const changeAmount = quote.daily_change ?? quote.change ?? null;
+                const changeValue = marketPulseSignalValue(quote);
+                const changeMissing = changeValue === null;
                 const displayName = marketIndexDisplayName(quote, locale);
                 const quoteStatus = formatPublicStatus(
                   quote.quote_status,
@@ -1117,15 +1224,10 @@ function DashboardMarketPulse({
                       </span>
                       <span
                         className={`font-mono text-xs font-semibold tabular-nums ${marketPulseToneClass(
-                          changePct ?? changeAmount,
-                        )}`}
+                          changeValue,
+                        )} ${changeMissing ? 'text-[var(--app-warning)]' : ''}`}
                       >
-                        {changePct === null
-                          ? '--'
-                          : formatPercentValue(changePct, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
+                        {marketPulseMoveLabel(quote, labels, locale)}
                       </span>
                     </div>
                   </a>

@@ -1,55 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-
-type ChunkName = string | undefined;
-
-function normalizeModuleId(id: string) {
-  return id.replace(/\\/g, '/');
-}
-
-function appFeatureChunk(id: string): ChunkName {
-  const normalizedId = normalizeModuleId(id);
-
-  if (
-    normalizedId.includes('node_modules') ||
-    !normalizedId.includes('/src/features/')
-  ) {
-    return undefined;
-  }
-
-  if (normalizedId.includes('/src/features/account-strategy/')) {
-    return 'feature-account-strategy';
-  }
-  if (normalizedId.includes('/src/features/account-truth/')) {
-    return 'feature-account-truth';
-  }
-  if (
-    normalizedId.includes('/src/features/account/') ||
-    normalizedId.includes('/src/features/market/')
-  ) {
-    return 'feature-account-market';
-  }
-  if (normalizedId.includes('/src/features/activity/')) {
-    return 'feature-activity';
-  }
-  if (normalizedId.includes('/src/features/backtest/')) {
-    return 'feature-backtest';
-  }
-  if (normalizedId.includes('/src/features/decision/')) {
-    return 'feature-decision';
-  }
-  if (normalizedId.includes('/src/features/portfolio/')) {
-    return 'feature-portfolio';
-  }
-  if (normalizedId.includes('/src/features/settings/')) {
-    return 'feature-settings';
-  }
-  if (normalizedId.includes('/src/features/trading/')) {
-    return 'feature-trading';
-  }
-
-  return undefined;
-}
+import {
+  appFeatureChunk,
+  normalizeModuleId,
+  type ChunkName,
+} from './src/app/chunk-config';
 
 function vendorChunk(id: string): ChunkName {
   const normalizedId = normalizeModuleId(id);

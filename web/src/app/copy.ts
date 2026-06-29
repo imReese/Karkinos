@@ -149,6 +149,9 @@ export const copy = {
         noActionItems: 'No urgent items right now.',
         noActionItemsDetail:
           'Market data, approvals, and strategy evidence do not need immediate action.',
+        queuePriorityFirst: 'Handle first',
+        queuePriorityWatch: 'Watch today',
+        queuePriorityNormal: 'Normal status',
         dataUsable: 'Market data and NAV are usable.',
         dataNeedsReview: 'Market data or NAV needs review.',
         pendingOrdersReady: 'Orders awaiting manual confirmation',
@@ -187,6 +190,11 @@ export const copy = {
         marketPulsePending: 'Index data pending',
         marketPulseNoSignal: 'Trend unavailable',
         marketPulseDisclosure: 'Market context only',
+        marketPulseMoveMissing: 'Move missing',
+        marketPulseMissingChanges: (count: number) =>
+          `${count} index move${count === 1 ? '' : 's'} missing`,
+        marketPulseChangeCoverage: (available: number, total: number) =>
+          `${available}/${total} moves available`,
         viewMarket: 'Open Market',
         viewHoldingDetail: 'Open holding detail',
         todayMove: 'Today move',
@@ -2259,6 +2267,9 @@ export const copy = {
         todayToReview: '今天需要处理',
         noActionItems: '当前没有紧急事项。',
         noActionItemsDetail: '行情、审批和策略证据暂时不需要立即处理。',
+        queuePriorityFirst: '先处理',
+        queuePriorityWatch: '今日关注',
+        queuePriorityNormal: '正常状态',
         dataUsable: '行情与净值可用于解读。',
         dataNeedsReview: '行情或净值需要复核。',
         pendingOrdersReady: '订单等待人工确认',
@@ -2296,6 +2307,10 @@ export const copy = {
         marketPulsePending: '指数待补齐',
         marketPulseNoSignal: '趋势待确认',
         marketPulseDisclosure: '仅作市场背景',
+        marketPulseMoveMissing: '涨跌缺失',
+        marketPulseMissingChanges: (count: number) => `${count} 个指数涨跌缺失`,
+        marketPulseChangeCoverage: (available: number, total: number) =>
+          `涨跌覆盖 ${available}/${total}`,
         viewMarket: '打开 Market',
         viewHoldingDetail: '查看持仓详情',
         todayMove: '今日变化',

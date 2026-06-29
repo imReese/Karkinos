@@ -104,11 +104,13 @@ public demos and development.
   top position contributors, market pulse, valuation confidence,
   manual-confirmation queue state, strategy candidate actions, strategy
   evidence status, equity curve, and return calendar summaries before drilling
-  into Portfolio, Market, Trading, Decision, or Backtest.
+  into Portfolio, Market, Trading, Decision, or Backtest. Workbench items are
+  grouped by review priority instead of shown as an undifferentiated list.
 - Market pulse uses a small default China-market index universe as background
   context. Manual quote refresh and the Web scheduler can refresh those index
-  quotes alongside account holdings, but index quotes do not become user
-  holdings, strategy tradables, broker orders, or execution approval.
+  quotes alongside account holdings, and missing index move fields are shown as
+  data gaps instead of empty values; index quotes do not become user holdings,
+  strategy tradables, broker orders, or execution approval.
 - Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, treats estimated, cached, stale, or confirmed-NAV-missing periods as valuation gaps instead of confirmed returns, and includes axes in the curve view.
 - Read-only decision APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
