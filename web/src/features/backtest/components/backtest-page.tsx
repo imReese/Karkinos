@@ -35,10 +35,12 @@ import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
   useAccountStrategyAssignmentQuery,
+  useAccountStrategyAssignmentsQuery,
   useAccountStrategyAttributionQuery,
   useAccountStrategyContributionQuery,
   useBacktestAttributionPreviewMutation,
   useUpdateAccountStrategyAssignmentMutation,
+  useUpdateScopedAccountStrategyAssignmentMutation,
   useRunBacktestMutation,
   useBacktestPaperShadowPreviewMutation,
   useBacktestRiskPreviewMutation,
@@ -538,10 +540,13 @@ export function BacktestPage() {
   const attributionPreview = useBacktestAttributionPreviewMutation();
   const strategies = useBacktestStrategiesQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery();
+  const accountStrategyAssignments = useAccountStrategyAssignmentsQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
   const accountStrategyContribution = useAccountStrategyContributionQuery();
   const portfolioInstruments = useBacktestPortfolioInstrumentsQuery();
   const updateAccountStrategy = useUpdateAccountStrategyAssignmentMutation();
+  const updateScopedAccountStrategy =
+    useUpdateScopedAccountStrategyAssignmentMutation();
   const validation = useStrategyValidationQuery();
   const readiness = useStrategyPromotionReadinessQuery();
   const singleInstrumentAudit =
@@ -688,6 +693,22 @@ export function BacktestPage() {
     });
   };
 
+  const assignSelectedStrategyToSymbol = async () => {
+    const trimmedSymbol = symbol.trim();
+    if (!trimmedSymbol) {
+      return;
+    }
+    await updateScopedAccountStrategy.mutateAsync({
+      strategy_id: selectedStrategy.name,
+      status: 'research_only',
+      scope: 'symbol',
+      symbol: trimmedSymbol,
+      asset_class: assetClass,
+      notes:
+        'Assigned from Backtest page for single-instrument research review.',
+    });
+  };
+
   return (
     <section className="space-y-5 sm:space-y-6">
       <header className="app-page-header pb-1">
@@ -715,17 +736,24 @@ export function BacktestPage() {
         attribution={accountStrategyAttribution.data ?? null}
         contribution={accountStrategyContribution.data ?? null}
         instruments={portfolioInstruments.data?.positions ?? []}
+        scopedAssignments={accountStrategyAssignments.data ?? []}
+        targetSymbol={symbol}
         selectedStrategy={selectedStrategy}
         strategyCatalog={strategyCatalog}
         loading={accountStrategy.isLoading}
         error={accountStrategy.isError}
+        scopedAssignmentsLoading={accountStrategyAssignments.isLoading}
+        scopedAssignmentsError={accountStrategyAssignments.isError}
         attributionLoading={accountStrategyAttribution.isLoading}
         attributionError={accountStrategyAttribution.isError}
         contributionLoading={accountStrategyContribution.isLoading}
         contributionError={accountStrategyContribution.isError}
         assigning={updateAccountStrategy.isPending}
+        assigningScoped={updateScopedAccountStrategy.isPending}
         assignError={updateAccountStrategy.isError}
+        assignScopedError={updateScopedAccountStrategy.isError}
         onAssignSelected={assignSelectedStrategy}
+        onAssignSelectedToSymbol={assignSelectedStrategyToSymbol}
       />
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(360px,0.72fr)_minmax(0,1.28fr)]">
@@ -1584,14 +1612,21 @@ function AccountStrategyPanel({
   strategyCatalog,
   loading,
   error,
+  scopedAssignmentsLoading,
+  scopedAssignmentsError,
   attributionLoading,
   attributionError,
   contributionLoading,
   contributionError,
   instruments,
+  scopedAssignments,
+  targetSymbol,
   assigning,
+  assigningScoped,
   assignError,
+  assignScopedError,
   onAssignSelected,
+  onAssignSelectedToSymbol,
 }: {
   assignment: AccountStrategyAssignment | null;
   attribution: AccountStrategyAttributionSummary | null;
@@ -1600,14 +1635,21 @@ function AccountStrategyPanel({
   strategyCatalog: BacktestStrategyInfo[];
   loading: boolean;
   error: boolean;
+  scopedAssignmentsLoading: boolean;
+  scopedAssignmentsError: boolean;
   attributionLoading: boolean;
   attributionError: boolean;
   contributionLoading: boolean;
   contributionError: boolean;
   instruments: InstrumentDisplayRecord[];
+  scopedAssignments: AccountStrategyAssignment[];
+  targetSymbol: string;
   assigning: boolean;
+  assigningScoped: boolean;
   assignError: boolean;
+  assignScopedError: boolean;
   onAssignSelected: () => void;
+  onAssignSelectedToSymbol: () => void;
 }) {
   const labels = useCopy().backtest.page;
   const { locale } = usePreferences();
@@ -1655,9 +1697,26 @@ function AccountStrategyPanel({
     selectedStrategy,
     labels.strategyNames,
   );
-  const selectedIsAssigned =
-    assignment?.strategy_id === selectedStrategy.name ||
-    assignment?.strategy_id === selectedStrategy.strategy_id;
+  const selectedStrategyMatches = (
+    currentAssignment: AccountStrategyAssignment | null | undefined,
+  ) =>
+    currentAssignment?.strategy_id === selectedStrategy.name ||
+    currentAssignment?.strategy_id === selectedStrategy.strategy_id;
+  const selectedAccountIsAssigned =
+    selectedStrategyMatches(assignment) && assignment?.scope === 'account';
+  const normalizedTargetSymbol = targetSymbol.trim();
+  const targetSymbolAssignment = scopedAssignments.find(
+    (item) =>
+      item.scope === 'symbol' &&
+      (item.symbol ?? '').trim().toLowerCase() ===
+        normalizedTargetSymbol.toLowerCase(),
+  );
+  const selectedSymbolIsAssigned =
+    Boolean(normalizedTargetSymbol) &&
+    selectedStrategyMatches(targetSymbolAssignment);
+  const visibleScopedAssignments = scopedAssignments
+    .filter((item) => item.scope === 'symbol' && item.symbol)
+    .slice(0, 4);
   const pnlAttributionTier = accountStrategyPnlAttributionTier(
     attribution,
     contribution,
@@ -1696,22 +1755,46 @@ function AccountStrategyPanel({
           </span>
         </div>
 
-        <div className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <p className="app-muted min-w-0 text-sm leading-6">
             {labels.accountStrategySelectedHint(selectedStrategyName)}
           </p>
-          <button
-            className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={loading || error || assigning || selectedIsAssigned}
-            onClick={onAssignSelected}
-            type="button"
-          >
-            {selectedIsAssigned
-              ? labels.accountStrategyAssigned
-              : assigning
-                ? labels.accountStrategyAssigning
-                : labels.accountStrategyAssignSelected}
-          </button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              className="app-button-secondary rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={
+                loading || error || assigning || selectedAccountIsAssigned
+              }
+              onClick={onAssignSelected}
+              type="button"
+            >
+              {selectedAccountIsAssigned
+                ? labels.accountStrategyAssigned
+                : assigning
+                  ? labels.accountStrategyAssigning
+                  : labels.accountStrategyAssignSelected}
+            </button>
+            <button
+              className="app-button-secondary rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={
+                !normalizedTargetSymbol ||
+                scopedAssignmentsLoading ||
+                scopedAssignmentsError ||
+                assigningScoped ||
+                selectedSymbolIsAssigned
+              }
+              onClick={onAssignSelectedToSymbol}
+              type="button"
+            >
+              {!normalizedTargetSymbol
+                ? labels.accountStrategySymbolNeedsInput
+                : selectedSymbolIsAssigned
+                  ? labels.accountStrategySymbolAssigned
+                  : assigningScoped
+                    ? labels.accountStrategyAssigning
+                    : labels.accountStrategyAssignSelectedSymbol}
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -1739,6 +1822,66 @@ function AccountStrategyPanel({
             {labels.accountStrategyAssignFailed}
           </p>
         ) : null}
+        {assignScopedError ? (
+          <p className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
+            {labels.accountStrategyScopedAssignFailed}
+          </p>
+        ) : null}
+
+        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+              {labels.accountStrategyScopedAssignmentsTitle}
+            </div>
+            {scopedAssignmentsLoading ? (
+              <span className="app-muted text-xs">
+                {labels.accountStrategyScopedAssignmentsLoading}
+              </span>
+            ) : null}
+          </div>
+          {scopedAssignmentsError ? (
+            <p className="mt-3 text-sm text-[var(--app-warning)]">
+              {labels.accountStrategyScopedAssignmentsUnavailable}
+            </p>
+          ) : visibleScopedAssignments.length ? (
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {visibleScopedAssignments.map((item) => {
+                const itemStrategy =
+                  strategyCatalog.find(
+                    (strategyItem) =>
+                      strategyItem.strategy_id === item.strategy_id ||
+                      strategyItem.name === item.strategy_id,
+                  ) ?? null;
+                return (
+                  <div
+                    className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-3"
+                    key={`${item.scope}:${item.symbol}`}
+                  >
+                    <div className="text-sm font-semibold text-[var(--app-text)]">
+                      {formatInstrumentDisplayLabelsBySymbol(
+                        [item.symbol ?? ''],
+                        instruments,
+                      )}
+                    </div>
+                    <div className="app-muted mt-1 text-xs">
+                      {strategyDisplayName(
+                        itemStrategy ?? {
+                          strategy_id: item.strategy_id,
+                          name: item.strategy_name,
+                        },
+                        labels.strategyNames,
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="app-muted mt-3 text-sm">
+              {labels.accountStrategyScopedAssignmentsEmpty}
+            </p>
+          )}
+        </div>
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">

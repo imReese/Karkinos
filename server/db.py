@@ -566,10 +566,10 @@ class AppDatabase:
         target_weight: float,
         price: float | None,
         asset_class: str,
-    ) -> None:
+    ) -> int:
         """同步写入信号（后台线程调用）。"""
         with sqlite3.connect(self._path) as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT INTO signals
                    (timestamp, strategy_id, symbol, direction, target_weight, price, asset_class)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -584,6 +584,7 @@ class AppDatabase:
                 ),
             )
             conn.commit()
+            return int(cursor.lastrowid)
 
     async def get_signals(
         self, limit: int = 50, offset: int = 0

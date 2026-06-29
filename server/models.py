@@ -51,8 +51,15 @@ class KlineBar(BaseModel):
 class MarketHealthQuote(BaseModel):
     symbol: str
     asset_class: str
+    name: str | None = None
+    display_name: str | None = None
     timestamp: str | None = None
     price: float | None = None
+    daily_change: float | None = None
+    daily_change_pct: float | None = None
+    change: float | None = None
+    change_pct: float | None = None
+    pct_chg: float | None = None
     quote_status: str = "unknown"
     quote_source: str | None = None
     quote_age_seconds: int | None = None

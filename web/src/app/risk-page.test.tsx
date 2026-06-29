@@ -345,7 +345,7 @@ test('renders recent risk drivers as readable audit events', async () => {
   expect(await screen.findByText('Buy 示例制造 600003')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Gross amount CN¥3,250.00 · Cash impact -CN¥3,255.00 · Quantity 200 · Price CN¥16.25 · Fee CN¥5.00',
+      'Gross amount ¥3,250.00 · Cash impact -¥3,255.00 · Quantity 200 · Price ¥16.25 · Fee ¥5.00',
     ),
   ).toBeTruthy();
   expect(
@@ -354,7 +354,7 @@ test('renders recent risk drivers as readable audit events', async () => {
   expect(
     (await screen.findAllByText(/-.*¥3,255\.00/)).length,
   ).toBeGreaterThanOrEqual(2);
-  expect(await screen.findAllByText('Amount CN¥3,000.00')).toHaveLength(2);
+  expect(await screen.findAllByText('Amount ¥3,000.00')).toHaveLength(2);
   expect(screen.queryByText('现金流入组合。')).toBeNull();
   expect(
     screen.queryByText('RMB cash deposit recorded from user request'),

@@ -111,3 +111,17 @@ def make_bond(symbol: str, name: str) -> Instrument:
         price_tick=Decimal("0.001"),
         limit_pct=Decimal("0"),
     )
+
+
+def make_index(symbol: str, name: str) -> Instrument:
+    """创建只读市场指数标的。"""
+    return Instrument(
+        symbol=Symbol(symbol),
+        name=name,
+        asset_class=AssetClass.INDEX,
+        commission_type=CommissionType.STOCK_A,
+        settlement=Settlement.T_PLUS_0,
+        lot_size=Decimal("1"),
+        price_tick=Decimal("0.01"),
+        limit_pct=Decimal("0"),
+    )

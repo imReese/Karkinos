@@ -18,6 +18,7 @@ _ASSET_CLASS_MAP = {
     "fund": AssetClass.FUND,
     "gold": AssetClass.GOLD,
     "bond": AssetClass.BOND,
+    "index": AssetClass.INDEX,
 }
 
 _NON_STRATEGY_FIELDS = {

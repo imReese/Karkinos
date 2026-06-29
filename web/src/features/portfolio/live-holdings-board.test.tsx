@@ -111,7 +111,7 @@ test('renders holdings quote board in english', () => {
   expect(screen.queryByText('600519')).toBeNull();
   expect(screen.queryByText('-1.10%')).toBeNull();
   expect(screen.queryByRole('link')).toBeNull();
-  expect(screen.queryByText('Avg Cost CN¥1,500.00')).toBeNull();
+  expect(screen.queryByText('Avg Cost ¥1,500.00')).toBeNull();
   expect(screen.queryByText('-1.1%')).toBeNull();
 });
 
@@ -131,13 +131,13 @@ test('groups summary values with their labels in the asset cards', () => {
   );
 
   expect(within(stockMarketValue).getByText(copy.portfolio.table.marketValue));
-  expect(within(stockMarketValue).getByText('CN¥1,800.00'));
+  expect(within(stockMarketValue).getByText('¥1,800.00'));
   expect(within(stockTodayMove).getByText(copy.portfolio.liveBoard.todayMove));
-  expect(within(stockTodayMove).getByText('-CN¥20.00'));
+  expect(within(stockTodayMove).getByText('-¥20.00'));
   expect(
     within(stockSinceBuy).getByText(copy.portfolio.liveBoard.sinceBuyReturn),
   );
-  expect(within(stockSinceBuy).getByText('CN¥300.00'));
+  expect(within(stockSinceBuy).getByText('¥300.00'));
 });
 
 test('renders localized holdings quote board in chinese', () => {

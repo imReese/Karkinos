@@ -23,8 +23,10 @@ from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
 from server.services.fund_nav_sync import refresh_fund_nav_quotes
 from server.services.live_context import LiveContextProvider
+from server.services.market_indices import default_market_index_assets
 from server.services.market_hours import is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.recommendation_flow import build_recommendation_cycle
 from server.services.trading_controls import TradingControlState
 
 if TYPE_CHECKING:
@@ -502,6 +504,153 @@ class TradingScheduler:
             with self._lock:
                 self._latest_quotes.update(result.quotes)
 
+    def _fetch_market_index_snapshot(
+        self,
+        source,
+        fallback_source,
+        symbol: Symbol,
+    ) -> dict | None:
+        for candidate_source in (source, fallback_source):
+            if candidate_source is None or not hasattr(candidate_source, "fetch_latest"):
+                continue
+            try:
+                snapshot = candidate_source.fetch_latest(symbol, AssetClass.INDEX)
+            except Exception:
+                logger.warning(
+                    "默认指数行情同步失败: %s (%s)",
+                    symbol,
+                    AssetClass.INDEX.value,
+                    exc_info=True,
+                )
+                snapshot = None
+            if snapshot is not None:
+                return snapshot
+        return None
+
+    @staticmethod
+    def _optional_float(value) -> float | None:
+        if value in {None, ""}:
+            return None
+        try:
+            return float(str(value).replace("%", "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _sync_default_market_index_quotes(self, source, fallback_source=None) -> None:
+        """Refresh broad-market index quotes without feeding them to strategies."""
+        current = datetime.now()
+        for asset in default_market_index_assets():
+            symbol = Symbol(asset["symbol"])
+            snapshot = self._fetch_market_index_snapshot(
+                source,
+                fallback_source,
+                symbol,
+            )
+            if snapshot is None:
+                continue
+            price = snapshot.get("price")
+            if price in {None, ""}:
+                continue
+            try:
+                price_value = float(price)
+            except (TypeError, ValueError):
+                continue
+            if price_value <= 0:
+                continue
+
+            timestamp = str(snapshot.get("timestamp") or current.isoformat())
+            quote_source = str(
+                snapshot.get("quote_source")
+                or snapshot.get("source")
+                or snapshot.get("provider")
+                or self._config.data_source
+            )
+            provider_name = str(
+                snapshot.get("provider_name")
+                or snapshot.get("provider")
+                or snapshot.get("source")
+                or self._config.data_source
+            )
+            display_name = str(
+                snapshot.get("display_name")
+                or snapshot.get("name")
+                or asset["display_name"]
+            ).strip()
+            cached_quote = {
+                "price": price_value,
+                "volume": self._optional_float(snapshot.get("volume")) or 0,
+                "timestamp": timestamp,
+                "asset_class": AssetClass.INDEX.value,
+                "quote_source": quote_source,
+                "provider_name": provider_name,
+                "quote_status": "live",
+                "provider_status": "live",
+                "captured_reason": "scheduler_market_index_sync",
+                "display_name": display_name,
+                "name": display_name,
+                "daily_change": self._optional_float(
+                    snapshot.get("daily_change") or snapshot.get("change")
+                ),
+                "daily_change_pct": self._optional_float(
+                    snapshot.get("daily_change_pct")
+                    or snapshot.get("change_pct")
+                    or snapshot.get("pct_chg")
+                ),
+            }
+            with self._lock:
+                self._latest_quotes[str(symbol)] = cached_quote
+
+            if self._db is None:
+                continue
+            self._db.save_quote_snapshot_sync(
+                symbol=str(symbol),
+                asset_class=AssetClass.INDEX.value,
+                price=price_value,
+                volume=cached_quote["volume"],
+                timestamp=timestamp,
+                quote_source=quote_source,
+                provider_name=provider_name,
+                quote_status="live",
+                provider_status="live",
+                captured_reason="scheduler_market_index_sync",
+            )
+            if hasattr(self._db, "upsert_latest_quote_sync"):
+                self._db.upsert_latest_quote_sync(
+                    symbol=str(symbol),
+                    asset_type=AssetClass.INDEX.value,
+                    price=price_value,
+                    change=cached_quote["daily_change"],
+                    change_percent=cached_quote["daily_change_pct"],
+                    volume=cached_quote["volume"],
+                    quote_timestamp=timestamp,
+                    quote_source=quote_source,
+                    provider_name=provider_name,
+                    provider_status="live",
+                    quote_status="live",
+                    captured_at=current.isoformat(),
+                    captured_reason="scheduler_market_index_sync",
+                    metadata={
+                        "source": snapshot.get("source") or quote_source,
+                        "display_name": display_name,
+                        "daily_change": cached_quote["daily_change"],
+                        "daily_change_pct": cached_quote["daily_change_pct"],
+                    },
+                )
+            if hasattr(self._db, "upsert_instrument_metadata_sync"):
+                self._db.upsert_instrument_metadata_sync(
+                    symbol=str(symbol),
+                    asset_type=AssetClass.INDEX.value,
+                    display_name=display_name,
+                    provider_symbol=str(symbol),
+                    provider_name=provider_name,
+                    source="default_market_index",
+                    fetched_at=timestamp,
+                    metadata={
+                        "source": snapshot.get("source") or quote_source,
+                        "quote_source": quote_source,
+                    },
+                )
+
     def _run_loop(self) -> None:
         """后台线程主循环。"""
         # 初始化组件
@@ -663,8 +812,7 @@ class TradingScheduler:
         self._bridge.rebind(self._event_bus)
 
         # 订阅信号 → 通知
-        if self._notifier is not None:
-            self._event_bus.subscribe(SignalEvent, self._on_signal)
+        self._event_bus.subscribe(SignalEvent, self._on_signal)
 
         logger.info(
             "Trading loop started, watching %d symbols, interval=%ds",
@@ -689,6 +837,7 @@ class TradingScheduler:
                 continue
 
             self._sync_fund_nav_quotes()
+            self._sync_default_market_index_quotes(source, fallback_source)
 
             try:
                 events = self._poll_watchlist_quotes(feed)
@@ -852,13 +1001,71 @@ class TradingScheduler:
             self._stop_requested.wait(timeout=self._config.live_poll_interval)
 
     def _on_signal(self, event: SignalEvent) -> None:
-        """信号回调：推送通知。"""
+        """信号回调：持久化候选动作并按需推送通知。"""
         direction = "买入" if event.target_weight > 0 else "卖出"
+        action_direction = "buy" if event.target_weight > 0 else "sell"
         ac_str = "stock"
         for sym, ac in self._watchlist:
             if sym == event.symbol:
                 ac_str = ac.value
                 break
+
+        if self._db is not None:
+            signal_id = self._db.save_signal_sync(
+                timestamp=str(event.timestamp),
+                strategy_id=event.strategy_id,
+                symbol=str(event.symbol),
+                direction=action_direction,
+                target_weight=float(event.target_weight),
+                price=float(event.price) if event.price else None,
+                asset_class=ac_str,
+            )
+            cycle = build_recommendation_cycle(
+                signals=[
+                    {
+                        "id": signal_id,
+                        "timestamp": str(event.timestamp),
+                        "strategy_id": event.strategy_id,
+                        "symbol": str(event.symbol),
+                        "direction": action_direction,
+                        "target_weight": float(event.target_weight),
+                        "price": float(event.price) if event.price else None,
+                        "asset_class": ac_str,
+                    }
+                ],
+                available_cash=(
+                    0.0 if self._portfolio is None else float(self._portfolio.cash)
+                ),
+                existing_positions=(
+                    {}
+                    if self._portfolio is None
+                    else {
+                        str(symbol): position
+                        for symbol, position in self._portfolio.positions.items()
+                    }
+                ),
+            )
+            for task in cycle.tasks:
+                self._db.upsert_action_task_sync(
+                    source_signal_id=task.source_signal_id,
+                    symbol=task.symbol,
+                    title=task.title,
+                    detail=task.detail,
+                    direction=task.direction,
+                    urgency=(
+                        "high"
+                        if task.direction == "buy" and task.target_weight > 0
+                        else "medium"
+                    ),
+                    target_weight=task.target_weight,
+                    price=task.price,
+                    strategy_id=task.strategy_id,
+                    timestamp=task.timestamp,
+                    asset_class=task.asset_class,
+                )
+
+        if self._notifier is None:
+            return
 
         message = format_signal_message(
             symbol=str(event.symbol),

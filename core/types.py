@@ -17,6 +17,7 @@ class AssetClass(Enum):
     FUND = "fund"
     GOLD = "gold"
     BOND = "bond"
+    INDEX = "index"
 
 
 class BarFrequency(Enum):

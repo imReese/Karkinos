@@ -1138,6 +1138,39 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     assert response.refresh_policy == "cache_only"
 
 
+def test_market_data_health_includes_default_market_indices(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    health_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/data-health"
+    )
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[], data_source="akshare"),
+        scheduler=SimpleNamespace(watchlist=[], latest_quotes={}),
+        db=SimpleNamespace(
+            get_latest_quotes_sync=lambda: [],
+            list_latest_quotes_sync=lambda: [],
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+
+    response = asyncio.run(health_route.endpoint())
+
+    index_quotes = [quote for quote in response.quotes if quote.asset_class == "index"]
+    assert [quote.symbol for quote in index_quotes[:4]] == [
+        "000001",
+        "399001",
+        "399006",
+        "000300",
+    ]
+    assert index_quotes[0].display_name == "上证指数"
+
+
 def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
     from server.routes import market as market_routes
 
@@ -1449,7 +1482,10 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
 
     response = asyncio.run(health_route.endpoint())
 
-    assert {quote.symbol for quote in response.quotes} == {"600001", "600002"}
+    account_quote_symbols = {
+        quote.symbol for quote in response.quotes if quote.asset_class != "index"
+    }
+    assert account_quote_symbols == {"600001", "600002"}
     ledger_quote = next(quote for quote in response.quotes if quote.symbol == "600002")
     assert ledger_quote.price == 28.4
     assert ledger_quote.quote_source == "tushare_daily"
@@ -1622,6 +1658,76 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     assert response.last_refresh_attempt == response.started_at
     assert response.last_refresh_error is None
     assert fake_scheduler.latest_quotes["600519"]["price"] == 12.5
+
+
+def test_market_quote_refresh_without_symbols_includes_default_indices(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    refresh_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
+    )
+
+    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[],
+            data_source="akshare",
+            tushare_token="",
+            live_poll_interval=60,
+        ),
+        scheduler=fake_scheduler,
+        db=SimpleNamespace(
+            get_latest_quotes_sync=lambda: [],
+            list_latest_quotes_sync=lambda: [],
+        ),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        market_routes,
+        "_resolve_quote_status",
+        lambda state, quote: "live",
+    )
+
+    seen: list[tuple[str, str]] = []
+
+    def fake_load_latest_snapshot(state, symbol, asset_class):
+        seen.append((symbol, asset_class.value))
+        return {
+            "symbol": symbol,
+            "asset_class": asset_class.value,
+            "price": 3000.0,
+            "volume": 1.0,
+            "timestamp": "2026-06-29T09:35:00+08:00",
+        }
+
+    monkeypatch.setattr(
+        market_routes,
+        "_load_latest_snapshot_from_provider",
+        fake_load_latest_snapshot,
+    )
+
+    response = asyncio.run(
+        refresh_route.endpoint(market_routes.QuoteRefreshRequest(symbols=[]))
+    )
+
+    assert response.requested_symbols[:4] == [
+        "000001",
+        "399001",
+        "399006",
+        "000300",
+    ]
+    assert seen[:4] == [
+        ("000001", "index"),
+        ("399001", "index"),
+        ("399006", "index"),
+        ("000300", "index"),
+    ]
+    assert response.refreshed[0].asset_class == "index"
 
 
 def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path):
@@ -2423,7 +2529,9 @@ def test_refresh_one_quote_uses_persistent_real_cache_when_provider_fails(
     assert response.reason == "行情源没有返回新报价，继续使用本地缓存"
 
 
-def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
+def test_market_quote_refresh_defaults_to_holding_symbols_and_market_indices(
+    monkeypatch,
+):
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -2469,7 +2577,16 @@ def test_market_quote_refresh_defaults_to_holding_symbols(monkeypatch):
 
     response = asyncio.run(endpoint(market_routes.QuoteRefreshRequest()))
 
-    assert response.requested_symbols == ["019999"]
+    assert response.requested_symbols == [
+        "019999",
+        "000001",
+        "399001",
+        "399006",
+        "000300",
+        "000905",
+        "000016",
+    ]
+    assert "示例基金" not in response.requested_symbols
 
 
 def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
@@ -2986,9 +3103,7 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
         scheduler=SimpleNamespace(
             is_running=False,
             latest_quotes={},
-            portfolio=SimpleNamespace(
-                positions={"示例成长混合C": fake_position}
-            ),
+            portfolio=SimpleNamespace(positions={"示例成长混合C": fake_position}),
             instruments={},
         ),
         db=FakeDb(),
@@ -3972,6 +4087,12 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
         live_poll_interval=60,
         account_commission_rate=Decimal("0.0001"),
         account_min_commission=Decimal("5"),
+        broker_fee_schedule=SimpleNamespace(
+            schedule_id="local_broker_fee_schedule",
+            account_profile_id="primary-account",
+            stock_a_commission_rate=Decimal("0.0001"),
+            stock_a_min_commission=Decimal("5"),
+        ),
     )
     fake_state = SimpleNamespace(config=config)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
@@ -3980,6 +4101,14 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
     original_config = {
         "data_source": "akshare",
         "tushare_token": "secret-token",
+        "account_commission_rate": 0.0001,
+        "account_min_commission": 5.0,
+        "broker_fee_schedule": {
+            "schedule_id": "local_broker_fee_schedule",
+            "account_profile_id": "primary-account",
+            "stock_a_commission_rate": 0.0001,
+            "stock_a_min_commission": 5.0,
+        },
         "sentinel": "preserve-me",
     }
     config_path.write_text(json.dumps(original_config), encoding="utf-8")
@@ -4009,8 +4138,13 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
 
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert response.account_commission_rate == pytest.approx(0.00015)
-    assert persisted["account_commission_rate"] == 0.00015
-    assert persisted["account_min_commission"] == 5.0
+    assert "account_commission_rate" not in persisted
+    assert "account_min_commission" not in persisted
+    assert persisted["broker_fee_schedule"]["stock_a_commission_rate"] == 0.00015
+    assert persisted["broker_fee_schedule"]["stock_a_min_commission"] == 5.0
+    assert (
+        persisted["broker_fee_schedule"]["schedule_id"] == "local_broker_fee_schedule"
+    )
     assert persisted["data_source"] == "akshare"
     assert persisted["tushare_token"] == "secret-token"
     assert persisted["sentinel"] == "preserve-me"
@@ -6609,7 +6743,7 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
         "total_fee": "3.057640",
     }
     assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
-    assert ledger_entry["fee_rule_version"] == "account_commission_rate"
+    assert ledger_entry["fee_rule_version"] == "broker_fee_schedule"
     assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
 
 
@@ -6622,8 +6756,7 @@ def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
     preview_route = next(
         route
         for route in router.routes
-        if isinstance(route, APIRoute)
-        and route.path == "/api/portfolio/trade/preview"
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade/preview"
     )
 
     class FakeDb:
@@ -6673,7 +6806,7 @@ def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
         "total_fee": "5.939640",
     }
     assert response.fee_rule_id == "manual_configured_commission"
-    assert response.fee_rule_version == "account_commission_rate"
+    assert response.fee_rule_version == "broker_fee_schedule"
     assert response.cost_basis_method == "moving_average_buy_cost"
     assert response.note == "账户佣金配置：佣金率万2.5，最低3元"
     assert fake_state.db.trades == []
@@ -6749,7 +6882,7 @@ def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
         "total_fee": "5.939640",
     }
     assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
-    assert ledger_entry["fee_rule_version"] == "account_commission_rate"
+    assert ledger_entry["fee_rule_version"] == "broker_fee_schedule"
 
 
 def test_portfolio_trade_with_explicit_commission_keeps_manual_fee_marker(

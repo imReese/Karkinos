@@ -20,6 +20,7 @@ export function formatCurrency(
   return new Intl.NumberFormat(resolveLocale(), {
     style: 'currency',
     currency: 'CNY',
+    currencyDisplay: 'narrowSymbol',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
     ...options,

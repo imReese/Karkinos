@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
@@ -293,4 +293,67 @@ test('points provider timeouts to data source settings', () => {
   expect(
     screen.getByRole('link', { name: 'Data settings' }).getAttribute('href'),
   ).toBe('/settings');
+});
+
+test('renders compact dashboard operations for the top-right workbench rail', () => {
+  renderWithProviders(
+    <DashboardQuickActions
+      overview={{
+        total_equity: 4260.88,
+        available_cash: 0,
+        total_deposits: 4000,
+        positions_count: 1,
+        unrealized_pnl: 260.88,
+        realized_pnl: 0,
+        cash_ratio: 0,
+        valuation_timestamp: '2026-05-18T10:18:00+08:00',
+        quote_status: 'live',
+        quote_age_seconds: 120,
+        refresh_policy: 'live',
+      }}
+      marketHealth={{
+        quotes: [],
+        market_open: true,
+        refresh_policy: 'live',
+        provider_status: 'live',
+        provider_name: 'akshare',
+        provider_configured: true,
+        provider_requires_token: false,
+        provider_supports_funds: true,
+        provider_last_error: null,
+        provider_timeout_seconds: 8,
+        next_action: null,
+        metadata_configured_count: 1,
+        source_health: 'live',
+        cache_age_seconds: 120,
+        latest_quote_timestamp: '2026-05-18T10:18:00+08:00',
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+        stale_symbols_count: 0,
+        stale_symbols_sample: [],
+        has_persistent_cache: true,
+        persistent_cache_status: 'available',
+      }}
+      quoteDiagnostics={[
+        {
+          symbol: '019999',
+          name: 'Everwin Advanced Manufacturing Fund C',
+          asset_class: 'fund',
+          quote_status: 'stale',
+          quote_source: 'eastmoney_fund_estimate',
+          stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+          quote_timestamp: '2026-06-17 15:00',
+        },
+      ]}
+      symbols={['019999']}
+      compact
+    />,
+  );
+
+  const panel = screen.getByTestId('overview-operations-panel');
+  expect(panel.getAttribute('data-compact')).toBe('true');
+  expect(within(panel).getByRole('button', { name: 'Refresh quotes' }));
+  expect(within(panel).getByText('Data status')).toBeTruthy();
+  expect(within(panel).getByText('Quick actions')).toBeTruthy();
+  expect(within(panel).queryByText('Affected holdings')).toBeNull();
 });

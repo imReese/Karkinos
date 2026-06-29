@@ -402,11 +402,11 @@ test('shows order facts with shared ledger action and detail formatting', async 
   expect(await screen.findByText('Buy 贵州茅台 600519')).toBeTruthy();
   expect(
     await screen.findByText(
-      /Amount CN¥172,025\.00 · Quantity 100 · Price CN¥1,720\.25 · Status Confirmed/,
+      /Amount ¥172,025\.00 · Quantity 100 · Price ¥1,720\.25 · Status Confirmed/,
     ),
   ).toBeTruthy();
   expect(screen.queryByText('贵州茅台 600519 · Confirmed')).toBeNull();
-  expect(screen.queryByText('Buy 100 @ CN¥1,720.25')).toBeNull();
+  expect(screen.queryByText('Buy 100 @ ¥1,720.25')).toBeNull();
 });
 
 test('does not default unknown execution fact sides to buy', async () => {
@@ -453,19 +453,17 @@ test('shows structured fill cash impact and fee breakdown in execution audit', a
             total_fee: '5.20',
           },
           fee_rule_id: 'manual_configured_commission',
-          fee_rule_version: 'account_commission_rate',
+          fee_rule_version: 'broker_fee_schedule',
         }),
       },
     ],
   });
 
-  expect(await screen.findByText(/Gross amount CN¥172,025\.00/)).toBeTruthy();
-  expect(
-    await screen.findByText(/Net cash impact -CN¥172,030\.20/),
-  ).toBeTruthy();
-  expect(await screen.findByText(/Commission CN¥5\.00/)).toBeTruthy();
-  expect(await screen.findByText(/Stamp tax CN¥0\.00/)).toBeTruthy();
-  expect(await screen.findByText(/Transfer fee CN¥0\.20/)).toBeTruthy();
+  expect(await screen.findByText(/Gross amount ¥172,025\.00/)).toBeTruthy();
+  expect(await screen.findByText(/Net cash impact -¥172,030\.20/)).toBeTruthy();
+  expect(await screen.findByText(/Commission ¥5\.00/)).toBeTruthy();
+  expect(await screen.findByText(/Stamp tax ¥0\.00/)).toBeTruthy();
+  expect(await screen.findByText(/Transfer fee ¥0\.20/)).toBeTruthy();
   expect(screen.queryByText(/manual_configured_commission/)).toBeNull();
   expect(screen.queryByText(/fee_breakdown/)).toBeNull();
 });

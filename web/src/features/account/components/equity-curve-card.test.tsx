@@ -496,7 +496,7 @@ test('does not show portfolio unrealized pnl as cash-line pnl', async () => {
   await waitFor(() => {
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
     expect(tooltip?.textContent).toContain('Cash');
-    expect(tooltip?.textContent).toContain('CN¥5,800');
+    expect(tooltip?.textContent).toContain('¥5,800');
     expect(tooltip?.textContent).not.toContain('Unrealized P/L');
   });
 });
@@ -549,12 +549,12 @@ test('shows category point-in-time change and portfolio context for a single sto
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
     expect(tooltip?.textContent).toContain('Stocks');
     expect(tooltip?.textContent).toContain('Stocks change at this point');
-    expect(tooltip?.textContent).toContain('CN¥98');
-    expect(tooltip?.textContent).not.toContain('CN¥120');
+    expect(tooltip?.textContent).toContain('¥98');
+    expect(tooltip?.textContent).not.toContain('¥120');
     expect(tooltip?.textContent).toContain('Portfolio total');
-    expect(tooltip?.textContent).toContain('CN¥15,530');
+    expect(tooltip?.textContent).toContain('¥15,530');
     expect(tooltip?.textContent).toContain('Portfolio unrealized P/L');
-    expect(tooltip?.textContent).toContain('CN¥230');
+    expect(tooltip?.textContent).toContain('¥230');
   });
 });
 
@@ -577,7 +577,7 @@ test('shows intraday category change against the session baseline', async () => 
   await waitFor(() => {
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
     expect(tooltip?.textContent).toContain('Stocks change at this point');
-    expect(tooltip?.textContent).toContain('CN¥100');
+    expect(tooltip?.textContent).toContain('¥100');
   });
 });
 
@@ -631,7 +631,7 @@ test('marks 1d category changes as unconfirmed when valuation status is estimate
   await waitFor(() => {
     const tooltip = container.querySelector('.recharts-tooltip-wrapper');
     expect(tooltip?.textContent).toContain('Stocks change needs confirmation');
-    expect(tooltip?.textContent).toContain('CN¥98');
+    expect(tooltip?.textContent).toContain('¥98');
     expect(tooltip?.textContent).toContain('Quote status');
     expect(tooltip?.textContent).toContain('Estimated');
   });
@@ -687,9 +687,9 @@ test('does not fabricate quote-dependent values for missing 1d observations', as
     expect(tooltip?.textContent).toContain('Quote status');
     expect(tooltip?.textContent).toContain('Missing');
     expect(tooltip?.textContent).toContain('Cash');
-    expect(tooltip?.textContent).toContain('CN¥5,800');
-    expect(tooltip?.textContent).not.toContain('CN¥15,580');
-    expect(tooltip?.textContent).not.toContain('CN¥6,980');
+    expect(tooltip?.textContent).toContain('¥5,800');
+    expect(tooltip?.textContent).not.toContain('¥15,580');
+    expect(tooltip?.textContent).not.toContain('¥6,980');
     expect(tooltip?.textContent).not.toContain(
       'Stocks change needs confirmation',
     );
@@ -706,7 +706,7 @@ test('shows the highest visible value for every selected equity series in the ac
   );
   expect(within(totalHighMarker).getByText('Total')).toBeTruthy();
   expect(within(totalHighMarker).getByText('05/11')).toBeTruthy();
-  expect(within(totalHighMarker).getByText('CN¥104,200')).toBeTruthy();
+  expect(within(totalHighMarker).getByText('¥104,200')).toBeTruthy();
   expect(totalHighMarker.getAttribute('data-label-side')).toBe('left');
 
   const stocksHighMarker = await screen.findByTestId(
@@ -714,7 +714,7 @@ test('shows the highest visible value for every selected equity series in the ac
   );
   expect(within(stocksHighMarker).getByText('Stocks')).toBeTruthy();
   expect(within(stocksHighMarker).getByText('05/11')).toBeTruthy();
-  expect(within(stocksHighMarker).getByText('CN¥12,600')).toBeTruthy();
+  expect(within(stocksHighMarker).getByText('¥12,600')).toBeTruthy();
 
   await user.click(await screen.findByRole('button', { name: 'Stocks' }));
 

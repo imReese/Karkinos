@@ -71,6 +71,10 @@ replay 数据集：`confirmed`、`live`、`cache`、`estimated`、`missing`、
 market-data dataset 可以用于回测、策略 runtime dry-run、paper/shadow 复核和审计
 回放，确保同一份输入可以重复验证。
 
+Overview 的市场脉搏使用一组默认中国市场指数作为大盘背景。手动刷新和 Web 调度器会
+在刷新账户持仓行情时同步刷新这些指数；它们只用于市场背景和数据状态，不会变成用户
+持仓、策略可交易标的、券商订单或执行授权。
+
 估算、缓存、陈旧、缺失或确认净值缺失的数据只代表数据质量状态。它们不能被展示成
 已确认收益，也不构成投资建议、收益承诺或执行授权。行情、历史 K 线和本地缓存属于
 SQLite / 数据缓存中的运行时金融事实；`config.json` 只保存本机运行偏好和数据源配置，
@@ -117,9 +121,9 @@ CSV 格式、安全合成样例和隐私边界见
 [Account Truth 导入预览](account-truth-import.zh.md)。
 
 手工交易流水如果未显式填写 `fee`，会使用本地 `config.json` 中的
-`account_commission_rate`、`account_min_commission` 和结构化
 `broker_fee_schedule` 记录佣金、印花税、按交易所配置的过户费、其他费用、
-总费用与现金影响。
+总费用与现金影响。旧版顶层 `account_commission_rate` /
+`account_min_commission` 仅作为本地老配置的迁移输入读取。
 如果调用方显式填写 `fee`，该条流水会保留 `manual_fee_input` 审计标记，表示费用
 来自用户手工输入。
 
@@ -382,8 +386,6 @@ uv run python scripts/configure_data_source.py
 | `tushare_token` | string | `""` | 由配置引导脚本写入的本地 TuShare token；也可使用环境变量 `TUSHARE_TOKEN` |
 | `notification` | object | `{"type":"console"}` | 通知配置 |
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
-| `account_commission_rate` | number | `0.0001` | 当前账户股票 / ETF 佣金率规则，例如万2写作 `0.0002` |
-| `account_min_commission` | number | `5.0` | 当前账户单笔最低佣金规则 |
 | `broker_fee_schedule` | object | local defaults | 本地券商费用规则参数，包括股票/ETF 佣金率、最低佣金、印花税、默认过户费、可选沪深过户费率、债券/可转债交易所费用、其他费用率、规则 id 和已知限制；不得保存账户号、截图、交割单、券商密码、token、secret 或 credential |
 | `broker_connectors` | array | `[]` | 只读券商事实 connector 的本地配置，只允许 `connector_id`、`connector_type`、`enabled`、`client_path`、`account_alias`；不得保存券商密码、token、secret 或 credential |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
@@ -677,10 +679,12 @@ review 证据。它不会自动晋级策略，也不会改变执行默认值。
 |------|------|------|
 | GET | `/api/account-strategy` | 读取当前账户研究策略绑定；不会启用自动交易 |
 | PUT | `/api/account-strategy` | 保存研究上下文中的策略绑定；服务端强制 `auto_trade_enabled=false` |
+| GET | `/api/account-strategy/assignments` | 读取账户、资产类别或单标的研究策略绑定列表 |
+| PUT | `/api/account-strategy/assignments` | 保存单个研究策略绑定；可用于不同标的绑定不同回测策略，不会创建订单或账本流水 |
 | GET | `/api/account-strategy/attribution` | 汇总当前策略可串联到的信号、动作、风控、订单与成交证据 |
 | GET | `/api/account-strategy/contribution` | 基于已归属成交和本地最新估值估算策略贡献 |
 
-账户策略绑定只用于研究、复核和审计上下文，不会修改订单、成交、持仓或账本。
+账户策略和标的策略绑定只用于研究、复核和审计上下文，不会修改订单、成交、持仓或账本。
 贡献报告只从可确定归属到当前策略的成交估算已实现 / 未实现收益、佣金、滑点和净贡献；
 手工交易、现金流和缺少证据的市场变动不会默认归到策略收益里。
 
@@ -773,7 +777,7 @@ React + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vite
 
 | 视图 | 路径 | 说明 |
 |------|------|------|
-| Overview | `/` | 每日资产工作台：资产状态、股票/基金/合计今日盈亏、持仓贡献、市场脉搏、数据可信度、待处理事项、净值与收益摘要 |
+| Overview | `/` | 每日资产工作台：资产状态、股票/基金/合计今日盈亏、持仓贡献、市场脉搏、数据可信度、策略候选动作、待处理事项、净值与收益摘要 |
 | Portfolio | `/portfolio` | 持仓明细、资产筛选、配置分组 |
 | Activity | `/activity` | 交易、分红、现金流、手工调整流水 |
 | Risk | `/risk` | 风险指标、回撤、集中度、权益解释 |

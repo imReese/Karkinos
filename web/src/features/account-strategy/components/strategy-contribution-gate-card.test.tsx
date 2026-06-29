@@ -71,19 +71,19 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   expect(screen.getByText('Audit id dual_ma')).toBeTruthy();
   expect(screen.queryByText('Dual Moving Average · dual_ma')).toBeNull();
   expect(screen.getByText('Gross realized P/L')).toBeTruthy();
-  expect(screen.getByText('CN¥8.00')).toBeTruthy();
+  expect(screen.getByText('¥8.00')).toBeTruthy();
   expect(screen.getByText('Gross unrealized P/L')).toBeTruthy();
-  expect(screen.getByText('CN¥128.50')).toBeTruthy();
+  expect(screen.getByText('¥128.50')).toBeTruthy();
   expect(screen.getByText('Commission / slippage')).toBeTruthy();
-  expect(screen.getByText('CN¥5.00 / CN¥1.50')).toBeTruthy();
+  expect(screen.getByText('¥5.00 / ¥1.50')).toBeTruthy();
   expect(screen.getByText('Tax')).toBeTruthy();
   expect(screen.getAllByText(/0\.50/).length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText('Manual / cash-flow movement')).toBeTruthy();
-  expect(screen.getByText('CN¥12.00 / CN¥3.00')).toBeTruthy();
+  expect(screen.getByText('¥12.00 / ¥3.00')).toBeTruthy();
   expect(screen.getByText('Tax / excluded movement')).toBeTruthy();
-  expect(screen.getByText('CN¥0.50 / CN¥4.00')).toBeTruthy();
+  expect(screen.getByText('¥0.50 / ¥4.00')).toBeTruthy();
   expect(screen.getByText('Net contribution')).toBeTruthy();
-  expect(screen.getByText('CN¥129.50')).toBeTruthy();
+  expect(screen.getByText('¥129.50')).toBeTruthy();
   expect(screen.getByText('Evidence refs')).toBeTruthy();
   expect(
     screen.getByText(
@@ -161,7 +161,7 @@ test('does not expose contribution amount when evidence chain is unsupported', (
       'Contribution is hidden until signals, reviews, orders, and fills are linked.',
     ),
   ).toBeTruthy();
-  expect(screen.queryByText('CN¥999.00')).toBeNull();
+  expect(screen.queryByText('¥999.00')).toBeNull();
 });
 
 test('shows readable instrument labels for missing valuation warnings', () => {

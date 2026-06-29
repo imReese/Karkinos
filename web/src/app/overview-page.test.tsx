@@ -140,9 +140,24 @@ function installOverviewFetchMock(
         daily_change_pct: -0.004,
       },
     ],
+    decision = {
+      lane: 'daily',
+      decision_date: '2026-02-10',
+      generated_at: '2026-02-10T10:00:00+08:00',
+      decision: 'no_action',
+      requires_manual_confirmation: false,
+      summary: {
+        candidate_count: 0,
+        ready_for_manual_confirmation_count: 0,
+      },
+      candidates: [],
+      no_action_reasons: ['no_pending_action_tasks'],
+      limitations: [],
+    },
   }: {
     pendingOrders?: unknown[];
     marketQuotes?: unknown[];
+    decision?: Record<string, unknown>;
   } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -294,6 +309,9 @@ function installOverviewFetchMock(
     if (url.includes('/api/trading/orders')) {
       return jsonResponse(pendingOrders);
     }
+    if (url.includes('/api/decision/today')) {
+      return jsonResponse(decision);
+    }
     if (url.includes('/api/market/data-health')) {
       return jsonResponse({
         quotes: marketQuotes,
@@ -383,8 +401,12 @@ function installOverviewFetchMock(
   return fetchMock;
 }
 
-function renderOverviewPage() {
-  installOverviewFetchMock();
+function renderOverviewPage({
+  installFetch = true,
+}: { installFetch?: boolean } = {}) {
+  if (installFetch) {
+    installOverviewFetchMock();
+  }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -428,7 +450,7 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(await screen.findByText('Return calendar')).toBeTruthy();
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
-    await screen.findByRole('button', { name: '2026-02-10 · CN¥600.00' }),
+    await screen.findByRole('button', { name: '2026-02-10 · ¥600.00' }),
   ).toBeTruthy();
   expect(await screen.findByText(/示例材料 600002/)).toBeTruthy();
   expect(await screen.findByText(/示例制造 600003/)).toBeTruthy();
@@ -436,7 +458,7 @@ test('renders the compact return calendar on the overview page', async () => {
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText('Quantity 100')).toBeTruthy();
-  expect(screen.getAllByText('Fee CN¥5.00').length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText('Fee ¥5.00').length).toBeGreaterThanOrEqual(2);
   expect(screen.queryByText('stock')).toBeNull();
   expect(
     warnSpy.mock.calls.some(([message]) => {
@@ -459,9 +481,9 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
   expect(within(metricsRail).getByText('Stocks')).toBeTruthy();
   expect(within(metricsRail).getByText('Funds')).toBeTruthy();
   expect(within(metricsRail).getByText('Total')).toBeTruthy();
-  expect(within(metricsRail).getAllByText('CN¥33.00').length).toBe(2);
-  expect(within(metricsRail).getByText('-CN¥4.00')).toBeTruthy();
-  expect(within(metricsRail).getByText('CN¥29.00')).toBeTruthy();
+  expect(within(metricsRail).getAllByText('¥33.00').length).toBe(2);
+  expect(within(metricsRail).getByText('-¥4.00')).toBeTruthy();
+  expect(within(metricsRail).getByText('¥29.00')).toBeTruthy();
   expect(within(metricsRail).getByText('-4.59%')).toBeTruthy();
   expect(within(metricsRail).getByText('Top contributors')).toBeTruthy();
   expect(within(metricsRail).getByText('后端权威贡献')).toBeTruthy();
@@ -489,14 +511,16 @@ test('renders the daily workbench before chart and detail panels', async () => {
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
   const marketPulse = await screen.findByTestId('overview-market-pulse');
-  const performanceCard = await screen.findByTestId(
-    'overview-performance-card',
-  );
   const operationsPanel = await screen.findByTestId(
     'overview-operations-panel',
   );
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+  const performanceCard = await screen.findByTestId(
+    'overview-performance-card',
+  );
   const reviewStrip = await screen.findByTestId('overview-review-strip');
 
+  expect(within(workbench).getByText('Quick actions')).toBeTruthy();
   expect(within(workbench).getByText('Today to review')).toBeTruthy();
   expect(
     within(workbench).getByText('Market data and NAV are usable.'),
@@ -521,15 +545,16 @@ test('renders the daily workbench before chart and detail panels', async () => {
   ).toBeTruthy();
   expect(within(operationsPanel).getByText('Data status')).toBeTruthy();
   expect(within(operationsPanel).getByText('Quick actions')).toBeTruthy();
+  expect(operationsPanel.getAttribute('data-compact')).toBe('true');
   expect(
     within(operationsPanel).getByRole('button', { name: 'Refresh quotes' }),
   ).toBeTruthy();
   expect(
-    performanceCard.compareDocumentPosition(operationsPanel) &
+    operationsPanel.compareDocumentPosition(todayQueue) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    operationsPanel.compareDocumentPosition(reviewStrip) &
+    performanceCard.compareDocumentPosition(reviewStrip) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
@@ -537,6 +562,54 @@ test('renders the daily workbench before chart and detail panels', async () => {
       .getByTestId('strategy-contribution-gate-card')
       .getAttribute('data-variant'),
   ).toBe('compact');
+});
+
+test('surfaces strategy candidate actions in the overview workbench', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      decision: {
+        lane: 'daily',
+        decision_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        decision: 'buy',
+        requires_manual_confirmation: false,
+        summary: {
+          candidate_count: 1,
+          ready_for_manual_confirmation_count: 0,
+        },
+        candidates: [
+          {
+            id: 'candidate-1',
+            action: 'buy',
+            symbol: '600003',
+            display_name: '示例制造',
+            name: '示例制造',
+            strategy_id: 'dual_ma',
+            strategy_name: '双均线策略',
+            target_weight: 0.2,
+            price: 17,
+            asset_class: 'stock',
+            risk_gate_status: 'not_checked',
+            manual_confirmation_status: 'awaiting_risk_gate',
+            evidence: {
+              strategy: { strategy_id: 'dual_ma' },
+              risk_gate: { status: 'not_checked' },
+            },
+          },
+        ],
+        no_action_reasons: [],
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const workbench = await screen.findByTestId('overview-daily-workbench');
+  expect(within(workbench).getByText('Strategy candidate action')).toBeTruthy();
+  expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
+  expect(within(workbench).getByText('Review decision evidence')).toBeTruthy();
 });
 
 test('keeps user-readable data work items on stale homepage status', async () => {
@@ -656,7 +729,7 @@ test('shows evidence-gated strategy contribution on overview', async () => {
 
   expect(await screen.findByText('Strategy contribution')).toBeTruthy();
   expect(await screen.findByText('Evidence-linked')).toBeTruthy();
-  expect(await screen.findByText('CN¥122.00')).toBeTruthy();
+  expect(await screen.findByText('¥122.00')).toBeTruthy();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {

@@ -109,6 +109,7 @@ export type KlineBar = {
 
 export type MarketQuoteRefreshResult = {
   symbol: string;
+  asset_class?: string;
   status: 'refreshed' | 'stale' | 'failed' | 'skipped';
   quote_timestamp: string | null;
   quote_source: string | null;

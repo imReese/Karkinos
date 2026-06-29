@@ -223,6 +223,77 @@ async def test_account_strategy_update_persists_manual_confirm_assignment(monkey
 
 
 @pytest.mark.asyncio
+async def test_account_strategy_scoped_assignments_support_different_symbol_strategies(
+    monkeypatch,
+):
+    from server.models import AccountStrategyAssignmentUpdate
+    from server.routes import account_strategy as account_strategy_routes
+
+    router = account_strategy_routes.create_router()
+    list_endpoint = _route(
+        router,
+        "/api/account-strategy/assignments",
+        "GET",
+    ).endpoint
+    upsert_endpoint = _route(
+        router,
+        "/api/account-strategy/assignments",
+        "PUT",
+    ).endpoint
+    persisted: dict[str, object] = {}
+
+    class FakeDb:
+        def get_runtime_control_sync(self, key):
+            return persisted.get(key)
+
+        def set_runtime_control_sync(self, key, value):
+            persisted[key] = value
+
+    state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+
+    await upsert_endpoint(
+        AccountStrategyAssignmentUpdate(
+            strategy_id="dual_ma",
+            scope="symbol",
+            symbol="600002",
+            asset_class="stock",
+            notes="symbol lane",
+        )
+    )
+    await upsert_endpoint(
+        AccountStrategyAssignmentUpdate(
+            strategy_id="bollinger",
+            scope="symbol",
+            symbol="000001",
+            asset_class="stock",
+            notes="second symbol lane",
+        )
+    )
+    await upsert_endpoint(
+        AccountStrategyAssignmentUpdate(
+            strategy_id="monthly_rebalance",
+            scope="symbol",
+            symbol="600002",
+            asset_class="stock",
+            notes="replace symbol lane",
+        )
+    )
+
+    response = await list_endpoint()
+
+    assert [(item.symbol, item.strategy_id) for item in response] == [
+        ("000001", "bollinger"),
+        ("600002", "monthly_rebalance"),
+    ]
+    assert (
+        persisted["instrument_strategy_assignments"]["assignments"][0]["symbol"]
+        == "000001"
+    )
+    assert len(persisted["instrument_strategy_assignments"]["assignments"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_account_strategy_asset_class_scope_filters_attribution(monkeypatch):
     from server.models import AccountStrategyAssignmentUpdate
     from server.routes import account_strategy as account_strategy_routes

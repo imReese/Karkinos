@@ -662,6 +662,17 @@ export function useAccountStrategyAssignmentQuery() {
   });
 }
 
+export function useAccountStrategyAssignmentsQuery() {
+  return useQuery({
+    queryKey: ['account-strategy-assignments'],
+    queryFn: () =>
+      apiClient<AccountStrategyAssignment[]>(
+        '/api/account-strategy/assignments',
+      ),
+    staleTime: 10_000,
+  });
+}
+
 export function useAccountStrategyAttributionQuery() {
   return useQuery({
     queryKey: ['account-strategy-attribution'],
@@ -702,6 +713,28 @@ export function useUpdateAccountStrategyAssignmentMutation() {
       putJson<AccountStrategyAssignment>('/api/account-strategy', payload),
     onSuccess: (assignment) => {
       queryClient.setQueryData(['account-strategy-assignment'], assignment);
+      void queryClient.invalidateQueries({
+        queryKey: ['account-strategy-attribution'],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['account-strategy-contribution'],
+      });
+    },
+  });
+}
+
+export function useUpdateScopedAccountStrategyAssignmentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: AccountStrategyAssignmentUpdate) =>
+      putJson<AccountStrategyAssignment>(
+        '/api/account-strategy/assignments',
+        payload,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['account-strategy-assignments'],
+      });
       void queryClient.invalidateQueries({
         queryKey: ['account-strategy-attribution'],
       });

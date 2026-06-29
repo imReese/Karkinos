@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import is_dataclass, replace
 from decimal import Decimal
 
 from fastapi import APIRouter
@@ -88,6 +89,7 @@ def _settings_assets_payload(state) -> list[dict]:
 
 def _settings_response(state) -> SettingsResponse:
     config = state.config
+    account_rate, account_minimum = _account_cost_settings(config)
     return SettingsResponse(
         host=config.host,
         port=config.port,
@@ -103,11 +105,51 @@ def _settings_response(state) -> SettingsResponse:
         tushare_token=_mask_token(config.tushare_token),
         notification=config.notification,
         live_poll_interval=config.live_poll_interval,
-        account_commission_rate=float(
-            getattr(config, "account_commission_rate", 0.0001)
-        ),
-        account_min_commission=float(getattr(config, "account_min_commission", 5)),
+        account_commission_rate=float(account_rate),
+        account_min_commission=float(account_minimum),
     )
+
+
+def _account_cost_settings(config) -> tuple[Decimal, Decimal]:
+    schedule = getattr(config, "broker_fee_schedule", None)
+    rate = getattr(schedule, "stock_a_commission_rate", None)
+    minimum = getattr(schedule, "stock_a_min_commission", None)
+    return (
+        Decimal(
+            str(
+                rate
+                if rate is not None
+                else getattr(config, "account_commission_rate", 0.0001)
+            )
+        ),
+        Decimal(
+            str(
+                minimum
+                if minimum is not None
+                else getattr(config, "account_min_commission", 5)
+            )
+        ),
+    )
+
+
+def _set_account_cost_settings(config, rate: Decimal, minimum: Decimal) -> None:
+    config.account_commission_rate = rate
+    config.account_min_commission = minimum
+    schedule = getattr(config, "broker_fee_schedule", None)
+    if schedule is None:
+        return
+    if is_dataclass(schedule):
+        config.broker_fee_schedule = replace(
+            schedule,
+            stock_a_commission_rate=rate,
+            stock_a_min_commission=minimum,
+        )
+        return
+    try:
+        schedule.stock_a_commission_rate = rate
+        schedule.stock_a_min_commission = minimum
+    except AttributeError:
+        logger.debug("broker fee schedule object is immutable; keeping legacy aliases")
 
 
 def _json_number(value: Decimal | float | int | str) -> float:
@@ -144,12 +186,20 @@ def _persist_runtime_config(
 
 
 def _persist_account_cost_settings(config) -> None:
-    _persist_runtime_config(
+    rate, minimum = _account_cost_settings(config)
+    persisted = _read_persisted_config()
+    raw_schedule = persisted.get("broker_fee_schedule")
+    schedule = dict(raw_schedule) if isinstance(raw_schedule, dict) else {}
+    schedule.update(
         {
-            "account_commission_rate": _json_number(config.account_commission_rate),
-            "account_min_commission": _json_number(config.account_min_commission),
+            "stock_a_commission_rate": _json_number(rate),
+            "stock_a_min_commission": _json_number(minimum),
         }
     )
+    persisted.pop("account_commission_rate", None)
+    persisted.pop("account_min_commission", None)
+    persisted["broker_fee_schedule"] = schedule
+    _write_persisted_config(persisted)
 
 
 def _data_source_next_action(
@@ -242,8 +292,11 @@ def create_router() -> APIRouter:
             config.tushare_token = new_token
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
-        config.account_commission_rate = Decimal(str(settings.account_commission_rate))
-        config.account_min_commission = Decimal(str(settings.account_min_commission))
+        _set_account_cost_settings(
+            config,
+            Decimal(str(settings.account_commission_rate)),
+            Decimal(str(settings.account_min_commission)),
+        )
         _persist_account_cost_settings(config)
 
         return _settings_response(state)
