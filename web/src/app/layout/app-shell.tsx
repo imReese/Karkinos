@@ -10,8 +10,10 @@ import {
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useAccountOverviewQuery } from '../../features/account/api';
-import { useMarketDataHealthQuery } from '../../features/market/api';
-import { useLiveStatusQuery } from '../../features/settings/api';
+import {
+  useMarketDataHealthQuery,
+  useRefreshMarketQuotesMutation,
+} from '../../features/market/api';
 import { useCopy } from '../copy';
 import {
   usePreferences,
@@ -34,7 +36,7 @@ const navItems = [
 ] as const;
 
 type ToolbarStatusTone = 'success' | 'warning' | 'error';
-type ToolbarPopoverKey = 'ledger' | 'broker' | 'valuation' | 'market' | null;
+type ToolbarPopoverKey = 'valuation' | 'market' | null;
 type ToolbarStatusIndicator = 'dot' | 'syncing';
 type ToolbarStatusAffordance = 'resync' | 'details';
 
@@ -67,10 +69,6 @@ function formatToolbarTimestamp(
   }).format(timestamp);
 }
 
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -78,8 +76,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { locale, setLocale, theme, setTheme } = usePreferences();
   const copy = useCopy();
   const accountOverview = useAccountOverviewQuery();
-  const liveStatus = useLiveStatusQuery();
   const marketHealth = useMarketDataHealthQuery();
+  const refreshQuotes = useRefreshMarketQuotesMutation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
@@ -135,54 +133,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const marketQuotesUnconfirmed = isUnconfirmedMarketDataStatus(
     marketHealth.data?.source_health,
   );
-
-  const ledgerStatus = accountOverview.isLoading
-    ? {
-        value: copy.shell.checking,
-        tone: 'warning' as ToolbarStatusTone,
-        indicator: 'syncing' as ToolbarStatusIndicator,
-      }
-    : accountOverview.isError
-      ? {
-          value: copy.shell.ledgerUnavailable,
-          tone: 'error' as ToolbarStatusTone,
-          indicator: 'dot' as ToolbarStatusIndicator,
-        }
-      : overview
-        ? {
-            value: copy.shell.ledgerMode,
-            tone: 'success' as ToolbarStatusTone,
-            indicator: 'dot' as ToolbarStatusIndicator,
-          }
-        : {
-            value: copy.shell.statusUnknown,
-            tone: 'warning' as ToolbarStatusTone,
-            indicator: 'dot' as ToolbarStatusIndicator,
-          };
-
-  const brokerStatus = liveStatus.isLoading
-    ? {
-        value: copy.shell.checking,
-        tone: 'warning' as ToolbarStatusTone,
-        indicator: 'syncing' as ToolbarStatusIndicator,
-      }
-    : liveStatus.isError
-      ? {
-          value: copy.shell.brokerError,
-          tone: 'error' as ToolbarStatusTone,
-          indicator: 'dot' as ToolbarStatusIndicator,
-        }
-      : liveStatus.data?.running
-        ? {
-            value: copy.shell.brokerMode,
-            tone: 'success' as ToolbarStatusTone,
-            indicator: 'dot' as ToolbarStatusIndicator,
-          }
-        : {
-            value: copy.shell.brokerStopped,
-            tone: 'warning' as ToolbarStatusTone,
-            indicator: 'dot' as ToolbarStatusIndicator,
-          };
 
   const valuationStatus = accountOverview.isLoading
     ? {
@@ -258,6 +208,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const valuationMeta = valuationTimestamp
     ? copy.shell.valuationAt(valuationTimestamp)
     : undefined;
+  const marketTimestamp = formatToolbarTimestamp(
+    marketHealth.data?.latest_quote_timestamp ??
+      marketHealth.data?.last_refresh_attempt,
+    locale,
+  );
 
   return (
     <div className="app-root min-h-[100dvh] w-full">
@@ -331,8 +286,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main className="app-shell-main flex min-w-0 flex-1 flex-col">
           <header className="app-toolbar-shell relative z-[80] shrink-0 overflow-visible border-b">
-            <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-5 lg:px-6">
-              <div className="min-w-0 flex-1">
+            <div className="flex h-14 items-center gap-4 px-4 sm:px-5 lg:px-6">
+              <div className="min-w-0 shrink-0">
                 <div className="flex min-w-0 items-center gap-3.5">
                   <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold text-[10px]">
                     Karkinos
@@ -347,164 +302,93 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              <div className="flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
-                <div
-                  ref={statusRailRef}
-                  className="hidden flex-row flex-nowrap items-center gap-3 self-center 2xl:flex"
-                  aria-label={copy.shell.accountStatus}
-                >
-                  <StatusChip
-                    testId="status-pill-ledger"
-                    label={copy.shell.accountStatus}
-                    value={ledgerStatus.value}
-                    tone={ledgerStatus.tone}
-                    indicator={ledgerStatus.indicator}
-                    hoverHint={copy.shell.viewStatusDetails}
-                    affordance="details"
-                    expanded={openStatusPanel === 'ledger'}
-                    title={`${copy.shell.accountStatus}: ${ledgerStatus.value}`}
-                    popup={
-                      <StatusPopover
-                        title={copy.shell.accountStatus}
-                        rows={[
-                          {
-                            label: copy.shell.details,
-                            value: ledgerStatus.value,
-                          },
-                          {
-                            label: copy.shell.valuationUpdated,
-                            value: valuationMeta ?? copy.shell.statusUnknown,
-                          },
-                        ]}
-                      />
-                    }
-                    onClick={() =>
-                      setOpenStatusPanel((current) =>
-                        current === 'ledger' ? null : 'ledger',
-                      )
-                    }
-                  />
-                  <StatusChip
-                    testId="status-pill-broker"
-                    label={copy.shell.apiStatus}
-                    value={brokerStatus.value}
-                    tone={brokerStatus.tone}
-                    indicator={brokerStatus.indicator}
-                    hoverHint={copy.shell.viewStatusDetails}
-                    affordance="details"
-                    expanded={openStatusPanel === 'broker'}
-                    title={`${copy.shell.apiStatus}: ${brokerStatus.value}`}
-                    popup={
-                      <StatusPopover
-                        title={copy.shell.apiStatus}
-                        rows={[
-                          {
-                            label: copy.shell.details,
-                            value: brokerStatus.value,
-                          },
-                          {
-                            label: copy.shell.marketSession,
-                            value:
-                              liveStatus.data?.market_open === undefined
-                                ? copy.shell.statusUnknown
-                                : liveStatus.data.market_open
-                                  ? copy.shell.marketOpen
-                                  : copy.shell.marketClosed,
-                          },
-                          {
-                            label: copy.shell.details,
-                            value: liveStatus.isError
-                              ? getErrorMessage(
-                                  liveStatus.error,
-                                  copy.shell.brokerError,
-                                )
-                              : copy.shell.statusUnknown,
-                          },
-                        ]}
-                      />
-                    }
-                    onClick={() =>
-                      setOpenStatusPanel((current) =>
-                        current === 'broker' ? null : 'broker',
-                      )
-                    }
-                  />
-                  <StatusChip
-                    testId="status-pill-valuation"
-                    label={copy.shell.navStatus}
-                    value={valuationStatus.value}
-                    meta={valuationMeta}
-                    tone={valuationStatus.tone}
-                    indicator={valuationStatus.indicator}
-                    hoverHint={copy.shell.viewValuationDetails}
-                    affordance="details"
-                    expanded={openStatusPanel === 'valuation'}
-                    title={`${copy.shell.navStatus}: ${valuationStatus.value}${
-                      valuationMeta ? ` · ${valuationMeta}` : ''
-                    }`}
-                    popup={
-                      <StatusPopover
-                        title={copy.shell.navStatus}
-                        rows={[
-                          {
-                            label: copy.shell.valuationUpdated,
-                            value: valuationMeta ?? copy.shell.statusUnknown,
-                          },
-                          {
-                            label: copy.shell.quoteStatus,
-                            value: quoteStatus,
-                          },
-                        ]}
-                      />
-                    }
-                    onClick={() =>
-                      setOpenStatusPanel((current) =>
-                        current === 'valuation' ? null : 'valuation',
-                      )
-                    }
-                  />
-                  <StatusChip
-                    testId="status-pill-market"
-                    label={copy.shell.marketStatus}
-                    value={marketStatus.value}
-                    tone={marketStatus.tone}
-                    indicator={marketStatus.indicator}
-                    hoverHint={copy.shell.viewStatusDetails}
-                    affordance="details"
-                    expanded={openStatusPanel === 'market'}
-                    title={`${copy.shell.marketStatus}: ${marketStatus.value}`}
-                    popup={
-                      <StatusPopover
-                        title={copy.shell.marketStatus}
-                        rows={[
-                          {
-                            label: copy.shell.marketSession,
-                            value: marketOpenText,
-                          },
-                          {
-                            label: copy.shell.refreshPolicy,
-                            value: refreshPolicy,
-                          },
-                          {
-                            label: copy.shell.quoteStatus,
-                            value: quoteStatus,
-                          },
-                        ]}
-                      />
-                    }
-                    onClick={() =>
-                      setOpenStatusPanel((current) =>
-                        current === 'market' ? null : 'market',
-                      )
-                    }
-                  />
-                </div>
-
-                <div
-                  className="hidden h-6 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_26%,transparent)] 2xl:block"
-                  aria-hidden="true"
+              <div
+                ref={statusRailRef}
+                className="hidden min-w-0 flex-1 flex-row flex-nowrap items-center justify-end gap-2 overflow-hidden self-center xl:flex"
+                aria-label={copy.shell.accountStatus}
+              >
+                <StatusChip
+                  testId="status-pill-valuation"
+                  label={copy.shell.navStatus}
+                  value={valuationStatus.value}
+                  meta={valuationTimestamp ?? undefined}
+                  tone={valuationStatus.tone}
+                  indicator={valuationStatus.indicator}
+                  hoverHint={copy.shell.viewValuationDetails}
+                  affordance="details"
+                  expanded={openStatusPanel === 'valuation'}
+                  title={`${copy.shell.navStatus}: ${valuationStatus.value}${
+                    valuationMeta ? ` · ${valuationMeta}` : ''
+                  }`}
+                  popup={
+                    <StatusPopover
+                      title={copy.shell.navStatus}
+                      rows={[
+                        {
+                          label: copy.shell.valuationUpdated,
+                          value: valuationMeta ?? copy.shell.statusUnknown,
+                        },
+                        {
+                          label: copy.shell.quoteStatus,
+                          value: quoteStatus,
+                        },
+                      ]}
+                    />
+                  }
+                  onClick={() =>
+                    setOpenStatusPanel((current) =>
+                      current === 'valuation' ? null : 'valuation',
+                    )
+                  }
                 />
+                <StatusChip
+                  testId="status-pill-market"
+                  label={copy.shell.marketStatus}
+                  value={marketStatus.value}
+                  meta={marketTimestamp ?? undefined}
+                  tone={marketStatus.tone}
+                  indicator={marketStatus.indicator}
+                  hoverHint={copy.shell.viewStatusDetails}
+                  affordance="details"
+                  refreshLabel={`${copy.market.refreshQuotes}: ${copy.shell.marketStatus}`}
+                  refreshing={refreshQuotes.isPending}
+                  onRefresh={() =>
+                    void refreshQuotes.mutateAsync({
+                      force: true,
+                    })
+                  }
+                  expanded={openStatusPanel === 'market'}
+                  title={`${copy.shell.marketStatus}: ${marketStatus.value}${
+                    marketTimestamp ? ` · ${marketTimestamp}` : ''
+                  }`}
+                  popup={
+                    <StatusPopover
+                      title={copy.shell.marketStatus}
+                      rows={[
+                        {
+                          label: copy.shell.marketSession,
+                          value: marketOpenText,
+                        },
+                        {
+                          label: copy.shell.refreshPolicy,
+                          value: refreshPolicy,
+                        },
+                        {
+                          label: copy.shell.quoteStatus,
+                          value: quoteStatus,
+                        },
+                      ]}
+                    />
+                  }
+                  onClick={() =>
+                    setOpenStatusPanel((current) =>
+                      current === 'market' ? null : 'market',
+                    )
+                  }
+                />
+              </div>
 
+              <div className="flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
                 <button
                   type="button"
                   className="app-button-secondary h-8 rounded-2xl px-3 text-sm lg:hidden"
@@ -606,7 +490,7 @@ function LanguageMenu({
     <div ref={rootRef} className="relative w-auto">
       <button
         type="button"
-        className={`inline-flex h-9 w-auto items-center gap-2 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 text-[11px] font-semibold tracking-[0.08em] text-[var(--app-muted)] backdrop-blur-md transition-[background-color,border-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
+        className={`inline-flex h-9 w-auto items-center gap-2 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3.5 text-[12px] font-semibold tracking-[0.06em] text-[var(--app-muted)] backdrop-blur-md transition-[background-color,border-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
           open
             ? 'border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] text-[var(--app-text)]'
             : ''
@@ -674,7 +558,7 @@ function ThemeSwitcher({
 }) {
   return (
     <div
-      className="inline-flex flex-row items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] p-1 backdrop-blur-md"
+      className="inline-flex h-9 flex-row items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] p-1 backdrop-blur-md"
       role="group"
       aria-label={label}
     >
@@ -772,6 +656,9 @@ function StatusChip({
   affordance,
   meta,
   popup,
+  onRefresh,
+  refreshLabel,
+  refreshing = false,
   celebrate = false,
   expanded = false,
   testId,
@@ -787,12 +674,15 @@ function StatusChip({
   affordance: ToolbarStatusAffordance;
   meta?: string;
   popup?: ReactNode;
+  onRefresh?: () => void;
+  refreshLabel?: string;
+  refreshing?: boolean;
   celebrate?: boolean;
   expanded?: boolean;
   testId?: string;
 }) {
   return (
-    <div className="group relative">
+    <div className="group relative inline-flex h-9 w-[15rem] shrink-0">
       <button
         type="button"
         data-testid={testId}
@@ -803,20 +693,20 @@ function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
         onClick={onClick}
-        className={`inline-flex min-h-10 items-center overflow-hidden rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-sm text-[var(--app-soft)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] backdrop-blur-md transition-[background-color,transform,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:cursor-pointer hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] hover:text-[var(--app-text)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_20%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
+        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[12px] text-[var(--app-soft)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] backdrop-blur-md transition-[background-color,transform,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:cursor-pointer hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] hover:text-[var(--app-text)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_20%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
           expanded
             ? 'border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] text-[var(--app-text)] shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_22%,transparent)]'
             : ''
         }`}
       >
-        <span className="font-mono inline-flex h-full items-center bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-3 text-xs uppercase tracking-[0.22em] text-[var(--app-subtext-0)] transition-colors duration-300 group-hover:bg-transparent">
+        <span className="font-mono inline-flex h-full w-14 shrink-0 items-center justify-center bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-2 text-[12px] uppercase tracking-[0.1em] text-[var(--app-subtext-0)] transition-colors duration-300 group-hover:bg-transparent">
           {label}
         </span>
         <span
           className="h-5 w-px shrink-0 bg-[color-mix(in_srgb,var(--app-border)_18%,transparent)]"
           aria-hidden="true"
         />
-        <span className="font-mono inline-flex h-full items-center gap-2 bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3.5 py-1.5 tabular-nums transition-colors duration-200 group-hover:bg-transparent">
+        <span className="font-mono inline-flex h-full min-w-0 flex-1 items-center gap-2 bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-1.5 pr-8 tabular-nums transition-colors duration-200 group-hover:bg-transparent">
           <span className="relative flex h-3.5 w-3.5 items-center justify-center">
             {indicator === 'syncing' ? (
               <RotateCwIcon
@@ -827,7 +717,11 @@ function StatusChip({
             ) : (
               <>
                 <span
-                  className={`absolute inset-[1px] rounded-full transition-opacity duration-200 ${affordance === 'resync' ? 'group-hover:opacity-0' : ''} ${celebrate ? 'animate-[bounce_320ms_ease-out_1]' : ''}`}
+                  className={`absolute inset-[1px] rounded-full transition-opacity duration-200 ${
+                    affordance === 'resync' || onRefresh
+                      ? 'group-hover:opacity-0 group-focus-within:opacity-0'
+                      : ''
+                  } ${celebrate ? 'animate-[bounce_320ms_ease-out_1]' : ''}`}
                   style={{ backgroundColor: STATUS_COLORS[tone] }}
                   aria-hidden="true"
                   data-testid={testId ? `${testId}-indicator` : undefined}
@@ -842,18 +736,41 @@ function StatusChip({
               </>
             )}
           </span>
-          <span className="font-medium text-[var(--app-text)]">{value}</span>
+          <span className="min-w-[4.25rem] max-w-[7.5rem] truncate text-[12px] font-semibold text-[var(--app-text)]">
+            {value}
+          </span>
           {meta ? (
-            <span className="text-[var(--app-muted)]">{meta}</span>
+            <span className="shrink-0 text-[12px] font-semibold text-[var(--app-muted)]">
+              {meta}
+            </span>
           ) : null}
           {affordance === 'details' ? (
             <ChevronDownIcon
-              className="h-3.5 w-3.5 shrink-0 text-[var(--app-subtext-0)] opacity-40 transition-[opacity,color] duration-200 group-hover:text-[var(--app-accent)] group-hover:opacity-100"
+              className="absolute right-3 h-3.5 w-3.5 shrink-0 text-[var(--app-subtext-0)] opacity-40 transition-[opacity,color] duration-200 group-hover:text-[var(--app-accent)] group-hover:opacity-100"
               aria-hidden="true"
             />
           ) : null}
         </span>
       </button>
+      {onRefresh ? (
+        <button
+          type="button"
+          aria-label={refreshLabel ?? hoverHint ?? title ?? label}
+          className="absolute left-[4.75rem] top-1/2 z-10 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent text-[var(--app-accent)] opacity-0 transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-105 hover:bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] group-focus-within:opacity-100 group-hover:opacity-100"
+          disabled={refreshing}
+          aria-busy={refreshing}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRefresh();
+          }}
+        >
+          <RotateCwIcon
+            className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
+            color="currentColor"
+            aria-hidden="true"
+          />
+        </button>
+      ) : null}
       {hoverHint && !expanded ? (
         <div className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-[75] -translate-x-1/2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[0_12px_30px_color-mix(in_srgb,var(--app-mantle)_18%,transparent)] backdrop-blur-md transition-opacity duration-75 group-hover:opacity-100 group-focus-visible:opacity-100">
           {hoverHint}

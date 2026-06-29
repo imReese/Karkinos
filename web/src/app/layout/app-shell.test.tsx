@@ -101,6 +101,23 @@ function installShellStatusFetchMock({
       if (url.includes('/api/market/data-health')) {
         return jsonResponse(resolvedMarketHealth);
       }
+      if (url.includes('/api/market/quotes/refresh')) {
+        return jsonResponse({
+          requested_symbols: [],
+          refreshed: [],
+          failed: [],
+          skipped: [],
+          refresh_policy: 'live',
+          market_open: true,
+          started_at: '2026-05-16T22:40:00+08:00',
+          completed_at: '2026-05-16T22:40:01+08:00',
+          duration_ms: 100,
+          quote_status: 'live',
+          last_refresh_attempt: '2026-05-16T22:40:01+08:00',
+          last_refresh_error: null,
+          message: 'ok',
+        });
+      }
       return new Response('Not found', { status: 404 });
     });
 
@@ -347,13 +364,61 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(themeSwitcher.className).toContain('flex-row');
   expect(themeSwitcher.className).toContain('items-center');
   expect(themeSwitcher.className).toContain('rounded-full');
+  expect(themeSwitcher.className).toContain('h-9');
 
   const languageButton = await screen.findByRole('button', {
     name: 'Language',
   });
+  expect(languageButton.className).toContain('h-9');
   expect(languageButton.className).toContain('w-auto');
   expect(languageButton.className).toContain('whitespace-nowrap');
+  expect(languageButton.className).toContain('text-[12px]');
   expect(languageButton.textContent).toBe('English');
+});
+
+test('surfaces compact status without duplicate nav links in the header rail', async () => {
+  renderShell();
+
+  const headerRail = await screen.findByLabelText('Account Status');
+  expect(headerRail.className).toContain('xl:flex');
+  expect(headerRail.className).toContain('flex-1');
+  const valuationStatus = within(headerRail).getByTestId(
+    'status-pill-valuation',
+  );
+  const marketStatus = within(headerRail).getByTestId('status-pill-market');
+  expect(valuationStatus).toBeTruthy();
+  expect(marketStatus).toBeTruthy();
+  const valuationShell = valuationStatus.closest('.group');
+  const marketShell = marketStatus.closest('.group');
+  expect(valuationShell?.className).toContain('h-9');
+  expect(valuationShell?.className).toContain('w-[15rem]');
+  expect(valuationStatus.className).toContain('text-[12px]');
+  expect(valuationStatus.className).toContain('whitespace-nowrap');
+  expect(marketShell?.className).toContain('h-9');
+  expect(marketShell?.className).toContain('w-[15rem]');
+  expect(marketStatus.className).toContain('text-[12px]');
+  expect(marketStatus.className).toContain('whitespace-nowrap');
+  const marketRefresh = within(headerRail).getByRole('button', {
+    name: 'Refresh quotes: Market',
+  });
+  expect(
+    within(headerRail).queryByRole('button', {
+      name: 'Refresh quotes: NAV',
+    }),
+  ).toBeNull();
+  expect(marketRefresh.className).toContain('h-5');
+  expect(marketRefresh.className).toContain('w-5');
+  expect(marketRefresh.className).toContain('group-hover:opacity-100');
+  expect(marketRefresh.className).toContain('hover:opacity-100');
+  expect(marketRefresh.className).not.toContain('!opacity');
+  expect(marketRefresh.className).not.toContain('border');
+  expect(marketRefresh.className).not.toContain('shadow-');
+  expect(within(headerRail).queryByTestId('status-pill-ledger')).toBeNull();
+  expect(within(headerRail).queryByTestId('status-pill-broker')).toBeNull();
+  expect(within(headerRail).queryByRole('link', { name: 'Market' })).toBeNull();
+  expect(
+    within(headerRail).queryByRole('link', { name: 'Execution' }),
+  ).toBeNull();
 });
 
 test('keeps app shell overflow from clipping responsive content', async () => {
@@ -420,12 +485,75 @@ test('shows cached quote status and valuation time from account overview', async
       valuation_timestamp: '2026-05-16T22:40:00+08:00',
     },
   });
+  const user = userEvent.setup();
 
   expect((await screen.findAllByText('缓存行情')).length).toBeGreaterThan(0);
-  expect(await screen.findByText('估值 22:40')).toBeTruthy();
+  expect(await screen.findByText('22:40')).toBeTruthy();
+  await user.click(await screen.findByTestId('status-pill-valuation'));
+  const valuationDialog = await screen.findByRole('dialog', { name: '净值' });
+  expect(within(valuationDialog).getByText('估值 22:40')).toBeTruthy();
   expect(screen.queryByText('行情实时')).toBeNull();
   expect(screen.queryByText('估值已启用')).toBeNull();
   expect(screen.queryByText('账本已同步')).toBeNull();
+});
+
+test('keeps the compact header refresh affordance actionable', async () => {
+  const fetchMock = installShellStatusFetchMock({
+    marketHealth: {
+      source_health: 'cache',
+      provider_status: 'cache',
+      refresh_policy: 'live',
+    },
+  });
+  window.scrollTo = () => {};
+  window.localStorage.clear();
+  installMatchMediaMock();
+
+  const rootRoute = createRootRoute({
+    component: () => (
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    ),
+  });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    component: () => <div>Overview page</div>,
+  });
+  const routeTree = rootRoute.addChildren([indexRoute]);
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const user = userEvent.setup();
+  const headerRail = await screen.findByLabelText('Account Status');
+  await user.click(
+    within(headerRail).getByRole('button', { name: 'Refresh quotes: Market' }),
+  );
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/market/quotes/refresh',
+    expect.objectContaining({
+      method: 'POST',
+    }),
+  );
+  expect(screen.queryByRole('dialog', { name: 'Market' })).toBeNull();
 });
 
 test('shows cache-only market state from data health', async () => {
@@ -509,24 +637,22 @@ test('shows degraded states when status APIs fail', async () => {
     }),
   });
 
-  expect(await screen.findByText('账本异常')).toBeTruthy();
-  expect(await screen.findByText('接口异常')).toBeTruthy();
   expect(await screen.findByText('估值异常')).toBeTruthy();
   expect(await screen.findByText('行情异常')).toBeTruthy();
   expect(screen.queryByText('券商接口可用')).toBeNull();
 });
 
-test('shows broker status details without simulated latency', async () => {
+test('shows market status details without simulated latency', async () => {
   renderShell();
   const user = userEvent.setup();
 
-  await user.click(await screen.findByTestId('status-pill-broker'));
+  await user.click(await screen.findByTestId('status-pill-market'));
 
   const dialog = await screen.findByRole('dialog', {
-    name: 'API',
+    name: 'Market',
   });
   expect(dialog).toBeTruthy();
-  expect(within(dialog).getByText('Broker API available')).toBeTruthy();
+  expect(within(dialog).getByText('Market open')).toBeTruthy();
   expect(screen.queryByText('42ms')).toBeNull();
 });
 

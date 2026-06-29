@@ -511,16 +511,12 @@ test('renders the daily workbench before chart and detail panels', async () => {
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
   const marketPulse = await screen.findByTestId('overview-market-pulse');
-  const operationsPanel = await screen.findByTestId(
-    'overview-operations-panel',
-  );
   const todayQueue = await screen.findByTestId('overview-today-queue');
   const performanceCard = await screen.findByTestId(
     'overview-performance-card',
   );
   const reviewStrip = await screen.findByTestId('overview-review-strip');
 
-  expect(within(workbench).getByText('Quick actions')).toBeTruthy();
   expect(within(workbench).getByText('Today to review')).toBeTruthy();
   expect(
     within(workbench).getByText('Market data and NAV are usable.'),
@@ -531,6 +527,7 @@ test('renders the daily workbench before chart and detail panels', async () => {
   expect(
     within(workbench).getByText('Strategy contribution is evidence-linked'),
   ).toBeTruthy();
+  expect(screen.queryByTestId('overview-operations-panel')).toBeNull();
   expect(within(marketPulse).getByText('Market pulse')).toBeTruthy();
   expect(within(marketPulse).getByText('Shanghai Composite')).toBeTruthy();
   expect(within(marketPulse).getByText('Shenzhen Component')).toBeTruthy();
@@ -543,16 +540,7 @@ test('renders the daily workbench before chart and detail panels', async () => {
     marketPulse.compareDocumentPosition(performanceCard) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(within(operationsPanel).getByText('Data status')).toBeTruthy();
-  expect(within(operationsPanel).getByText('Quick actions')).toBeTruthy();
-  expect(operationsPanel.getAttribute('data-compact')).toBe('true');
-  expect(
-    within(operationsPanel).getByRole('button', { name: 'Refresh quotes' }),
-  ).toBeTruthy();
-  expect(
-    operationsPanel.compareDocumentPosition(todayQueue) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(workbench.contains(todayQueue)).toBe(true);
   expect(
     performanceCard.compareDocumentPosition(reviewStrip) &
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -562,6 +550,69 @@ test('renders the daily workbench before chart and detail panels', async () => {
       .getByTestId('strategy-contribution-gate-card')
       .getAttribute('data-variant'),
   ).toBe('compact');
+});
+
+test('orders overview workbench items by user-facing priority', async () => {
+  installOverviewFetchMock(
+    {
+      quote_status: 'stale',
+      stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+      refresh_policy: 'cache_only',
+    },
+    {
+      decision: {
+        lane: 'daily',
+        decision_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        decision: 'buy',
+        requires_manual_confirmation: false,
+        summary: {
+          candidate_count: 1,
+          ready_for_manual_confirmation_count: 0,
+        },
+        candidates: [
+          {
+            id: 'candidate-1',
+            action: 'buy',
+            symbol: '600003',
+            display_name: '示例制造',
+            name: '示例制造',
+            strategy_id: 'dual_ma',
+            strategy_name: '双均线策略',
+            target_weight: 0.2,
+            price: 17,
+            asset_class: 'stock',
+            risk_gate_status: 'not_checked',
+            manual_confirmation_status: 'awaiting_risk_gate',
+            evidence: {
+              strategy: { strategy_id: 'dual_ma' },
+              risk_gate: { status: 'not_checked' },
+            },
+          },
+        ],
+        no_action_reasons: [],
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('Handle first')).toBeTruthy();
+  expect(within(queue).getByText('Watch today')).toBeTruthy();
+  expect(within(queue).getByText('Normal status')).toBeTruthy();
+
+  const text = queue.textContent ?? '';
+  expect(text.indexOf('Market data or NAV needs review.')).toBeGreaterThan(-1);
+  expect(text.indexOf('Strategy candidate action')).toBeGreaterThan(-1);
+  expect(text.indexOf('No orders awaiting confirmation')).toBeGreaterThan(-1);
+  expect(text.indexOf('Market data or NAV needs review.')).toBeLessThan(
+    text.indexOf('Strategy candidate action'),
+  );
+  expect(text.indexOf('Strategy candidate action')).toBeLessThan(
+    text.indexOf('No orders awaiting confirmation'),
+  );
 });
 
 test('surfaces strategy candidate actions in the overview workbench', async () => {
@@ -610,6 +661,52 @@ test('surfaces strategy candidate actions in the overview workbench', async () =
   expect(within(workbench).getByText('Strategy candidate action')).toBeTruthy();
   expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
   expect(within(workbench).getByText('Review decision evidence')).toBeTruthy();
+});
+
+test('shows missing market pulse move fields as explicit data gaps', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      marketQuotes: [
+        {
+          symbol: '000001',
+          asset_class: 'index',
+          display_name: 'Shanghai Composite',
+          name: 'Shanghai Composite',
+          timestamp: '2026-02-10T14:30:00+08:00',
+          price: 3120.5,
+          quote_status: 'live',
+          quote_source: 'fixture',
+          quote_age_seconds: 60,
+          stale_reason: null,
+          last_refresh_attempt: null,
+          last_refresh_error: null,
+        },
+        {
+          symbol: '000300',
+          asset_class: 'index',
+          display_name: 'CSI 300',
+          name: 'CSI 300',
+          timestamp: '2026-02-10T14:30:00+08:00',
+          price: 3910.2,
+          quote_status: 'live',
+          quote_source: 'fixture',
+          quote_age_seconds: 60,
+          stale_reason: null,
+          last_refresh_attempt: null,
+          last_refresh_error: null,
+        },
+      ],
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const marketPulse = await screen.findByTestId('overview-market-pulse');
+  expect(within(marketPulse).getByText('Trend unavailable')).toBeTruthy();
+  expect(within(marketPulse).getByText('2 index moves missing')).toBeTruthy();
+  expect(within(marketPulse).getAllByText('Move missing')).toHaveLength(2);
+  expect(within(marketPulse).queryByText('--')).toBeNull();
 });
 
 test('keeps user-readable data work items on stale homepage status', async () => {

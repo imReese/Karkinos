@@ -93,10 +93,12 @@ confirmation. Frozen market-data datasets can be replayed for backtests,
 strategy runtime dry-runs, paper/shadow review, and audit replay so the same
 inputs can be checked deterministically.
 
-Overview market pulse uses a small default China-market index universe as broad
+Overview daily workbench groups review items by priority before normal status
+items. Market pulse uses a small default China-market index universe as broad
 market context. Manual refresh and the Web scheduler can refresh those index
-quotes alongside account holdings; they remain background data and do not
-become user holdings, strategy tradables, broker orders, or execution approval.
+quotes alongside account holdings; missing index move fields are displayed as
+data gaps instead of empty values. They remain background data and do not become
+user holdings, strategy tradables, broker orders, or execution approval.
 
 Estimated, cached, stale, missing, or confirmed-NAV-missing data is data-quality
 evidence. It must not be displayed as confirmed returns and is not investment
