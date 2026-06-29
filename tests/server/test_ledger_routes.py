@@ -226,7 +226,7 @@ def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
         "total_fee": "6.657500",
     }
     assert saved.fee_rule_id == "manual_configured_commission"
-    assert saved.fee_rule_version == "account_commission_rate"
+    assert saved.fee_rule_version == "broker_fee_schedule"
     assert saved.cost_basis_method == "moving_average_buy_cost"
 
 

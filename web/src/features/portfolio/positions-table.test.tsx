@@ -111,7 +111,7 @@ test('renders cost and quote prices with four decimal places', () => {
   expect(screen.getAllByText('16.2750').length).toBeGreaterThan(0);
   expect(screen.getAllByText('16.2608').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Today PnL').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('-CN¥3.00').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('-¥3.00').length).toBeGreaterThan(0);
   expect(screen.getByTestId('position-avg-cost-600003').textContent).toBe(
     '16.2750',
   );
@@ -124,11 +124,11 @@ test('renders cost and quote prices with four decimal places', () => {
   expect(
     screen.getByTestId('position-latest-price-600003').className,
   ).toContain('min-w-28');
-  expect(screen.getAllByText('CN¥3,252.00').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('¥3,252.00').length).toBeGreaterThan(0);
   expect(screen.queryByText('16.28')).toBeNull();
   expect(screen.queryByText('16.26')).toBeNull();
-  expect(screen.queryByText('CN¥16.2750')).toBeNull();
-  expect(screen.queryByText('CN¥16.2608')).toBeNull();
+  expect(screen.queryByText('¥16.2750')).toBeNull();
+  expect(screen.queryByText('¥16.2608')).toBeNull();
 });
 
 test('shows broker displayed cost basis beside local moving average cost when evidence exists', () => {
@@ -288,11 +288,11 @@ test('warns when broker displayed cost basis differs from local cost basis', () 
 
   expect(
     screen.getByTestId('position-broker-cost-600003').textContent,
-  ).toContain('Cost basis difference CN¥10.00');
+  ).toContain('Cost basis difference ¥10.00');
   expect(
     screen.getByTestId('position-mobile-broker-cost-600003').parentElement
       ?.textContent,
-  ).toContain('Cost basis difference CN¥10.00');
+  ).toContain('Cost basis difference ¥10.00');
 });
 
 test('uses shared public fallback for unknown broker cost-basis methods', () => {
@@ -436,18 +436,18 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
   ).toBe('16.2608');
   expect(
     screen.getByTestId('position-mobile-market-value-600003').textContent,
-  ).toBe('CN¥3,252.00');
+  ).toBe('¥3,252.00');
   expect(
     screen.getByTestId('position-mobile-today-change-600003').textContent,
-  ).toBe('-CN¥3.00');
+  ).toBe('-¥3.00');
   expect(
     screen.getByTestId('position-mobile-today-change-600003').className,
   ).toContain('text-[var(--app-danger)]');
   expect(
     screen.getByTestId('position-mobile-return-pct-600003').className,
   ).toContain('text-[var(--app-danger)]');
-  expect(screen.queryByText('CN¥16.2750')).toBeNull();
-  expect(screen.queryByText('CN¥16.2608')).toBeNull();
+  expect(screen.queryByText('¥16.2750')).toBeNull();
+  expect(screen.queryByText('¥16.2608')).toBeNull();
 });
 
 test('shows cached quote copy for stale positions', () => {

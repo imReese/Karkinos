@@ -153,12 +153,29 @@ export const copy = {
         dataNeedsReview: 'Market data or NAV needs review.',
         pendingOrdersReady: 'Orders awaiting manual confirmation',
         pendingOrdersClear: 'No orders awaiting confirmation',
+        strategyCandidateAction: 'Strategy candidate action',
+        strategyCandidateClear: 'No strategy candidate actions',
+        strategyCandidateLoading: 'Loading strategy candidates',
+        strategyDecisionUnavailable: 'Strategy candidates are unavailable',
+        strategyCandidateEmptyDetail:
+          'No buy, sell, hold, or rebalance candidates have entered the queue.',
         strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
         strategyEvidenceRequired: 'Strategy contribution needs linked evidence',
         strategyUnavailable: 'Strategy contribution is temporarily unavailable',
         viewData: 'View data status',
+        viewDecision: 'Review decision evidence',
         viewTrading: 'Review trading queue',
         viewStrategy: 'Review strategy evidence',
+        candidateCount: (count: number) =>
+          `${count} candidate${count === 1 ? '' : 's'}`,
+        decisionActionLabels: {
+          buy: 'Buy candidate',
+          sell: 'Sell candidate',
+          hold: 'Hold candidate',
+          rebalance: 'Rebalance candidate',
+          no_action: 'No action',
+          review_required: 'Review required',
+        },
         marketPulse: 'Market pulse',
         marketPulseDetail:
           'Broad-market quote context for today. It is background only, not a trading instruction.',
@@ -950,10 +967,22 @@ export const copy = {
         accountStrategySelectedHint: (name: string) =>
           `Selected backtest strategy: ${name}. Assigning it only changes research context.`,
         accountStrategyAssignSelected: 'Set as account research strategy',
+        accountStrategyAssignSelectedSymbol: 'Set for current symbol',
         accountStrategyAssigning: 'Saving assignment',
         accountStrategyAssigned: 'Already assigned',
+        accountStrategySymbolAssigned: 'Symbol assigned',
+        accountStrategySymbolNeedsInput: 'Enter symbol first',
         accountStrategyAssignFailed:
           'Could not save the account strategy assignment.',
+        accountStrategyScopedAssignFailed:
+          'Could not save the symbol strategy assignment.',
+        accountStrategyScopedAssignmentsTitle: 'Symbol strategy bindings',
+        accountStrategyScopedAssignmentsEmpty:
+          'No symbol-specific strategy bindings yet.',
+        accountStrategyScopedAssignmentsLoading:
+          'Loading symbol strategy bindings.',
+        accountStrategyScopedAssignmentsUnavailable:
+          'Symbol strategy bindings are unavailable.',
         accountStrategyAttributionEvidence: 'Attribution evidence',
         accountStrategyAttributionLoading: 'Loading attribution evidence.',
         accountStrategyAttributionUnavailable:
@@ -1706,6 +1735,13 @@ export const copy = {
         latestActivity: 'Latest activity',
         latestActivityDetail: 'Most recent audited ledger timestamp.',
       },
+      entryTools: {
+        kicker: 'Entry tools',
+        title: 'Add ledger activity',
+        detail:
+          'Choose one activity type, preview the public ledger impact, then save it through the same portfolio refresh path.',
+        ariaLabel: 'Ledger entry tool selector',
+      },
       feed: {
         kicker: 'Audit trail',
         title: 'Recent ledger entries',
@@ -2018,7 +2054,7 @@ export const copy = {
       stockCommissionRate: 'Stock commission rate',
       minimumCommission: 'Minimum commission',
       accountCostPreview: (rate: number, minimum: number) =>
-        `Manual trade default: ${Number(rate * 10000).toFixed(2)} bp, minimum CN¥${Number(
+        `Manual trade default: ${Number(rate * 10000).toFixed(2)} bp, minimum ¥${Number(
           minimum,
         ).toFixed(2)}`,
       saveAccountCosts: 'Save account costs',
@@ -2227,12 +2263,28 @@ export const copy = {
         dataNeedsReview: '行情或净值需要复核。',
         pendingOrdersReady: '订单等待人工确认',
         pendingOrdersClear: '暂无待确认订单',
+        strategyCandidateAction: '策略候选动作',
+        strategyCandidateClear: '暂无策略候选动作',
+        strategyCandidateLoading: '正在加载策略候选动作',
+        strategyDecisionUnavailable: '策略候选动作暂不可用',
+        strategyCandidateEmptyDetail:
+          '当前没有买入、卖出、持有或再平衡候选进入队列。',
         strategyEvidenceLinked: '策略贡献已连接证据',
         strategyEvidenceRequired: '策略贡献需要补充证据',
         strategyUnavailable: '策略贡献暂不可用',
         viewData: '查看数据状态',
+        viewDecision: '查看决策证据',
         viewTrading: '复核交易队列',
         viewStrategy: '查看策略证据',
+        candidateCount: (count: number) => `${count} 个候选动作`,
+        decisionActionLabels: {
+          buy: '买入候选',
+          sell: '卖出候选',
+          hold: '持有候选',
+          rebalance: '再平衡候选',
+          no_action: '不操作',
+          review_required: '需要复核',
+        },
         marketPulse: '市场脉搏',
         marketPulseDetail:
           '查看今日大盘行情背景。这里只展示市场环境，不给出交易指令。',
@@ -2988,9 +3040,17 @@ export const copy = {
         accountStrategySelectedHint: (name: string) =>
           `当前选中的回测策略：${name}。绑定只会改变研究上下文。`,
         accountStrategyAssignSelected: '设为账户研究策略',
+        accountStrategyAssignSelectedSymbol: '设为当前标的策略',
         accountStrategyAssigning: '正在保存绑定',
         accountStrategyAssigned: '已绑定',
+        accountStrategySymbolAssigned: '当前标的已绑定',
+        accountStrategySymbolNeedsInput: '先填写标的',
         accountStrategyAssignFailed: '账户策略绑定保存失败。',
+        accountStrategyScopedAssignFailed: '标的策略绑定保存失败。',
+        accountStrategyScopedAssignmentsTitle: '标的策略绑定',
+        accountStrategyScopedAssignmentsEmpty: '还没有单标的策略绑定。',
+        accountStrategyScopedAssignmentsLoading: '正在加载标的策略绑定。',
+        accountStrategyScopedAssignmentsUnavailable: '标的策略绑定暂不可用。',
         accountStrategyAttributionEvidence: '归因证据',
         accountStrategyAttributionLoading: '正在加载归因证据。',
         accountStrategyAttributionUnavailable: '归因证据暂不可用。',
@@ -3711,6 +3771,13 @@ export const copy = {
         netCashImpactDetail: '按业务方向折算的近期现金变化。',
         latestActivity: '最新活动',
         latestActivityDetail: '最近一条账本审计时间。',
+      },
+      entryTools: {
+        kicker: '录入工具',
+        title: '新增账本流水',
+        detail:
+          '选择一种流水类型，先预览公开账本影响，再走同一套组合刷新路径。',
+        ariaLabel: '账本流水录入工具选择',
       },
       feed: {
         kicker: '审计流水',

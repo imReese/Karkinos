@@ -67,6 +67,19 @@ _HIST_CONFIG: dict[AssetClass, tuple[str, dict, bool]] = {
         },
         False,
     ),
+    AssetClass.INDEX: (
+        "index_zh_a_hist",
+        {
+            "日期": "timestamp",
+            "开盘": "open",
+            "最高": "high",
+            "最低": "low",
+            "收盘": "close",
+            "成交量": "volume",
+            "成交额": "amount",
+        },
+        True,
+    ),
 }
 
 _OPEN_END_FUND_NOISE = ("发起式", "发起", "A类", "C类", "（", "）", "(", ")", " ")
@@ -492,12 +505,20 @@ class AKShareSource(DataSource):
         func_name, col_map, has_volume = config
         func = getattr(ak, func_name)
 
-        # A股/ETF 支持日期范围参数；黄金/债券需全量拉取后过滤
-        if asset_class in (AssetClass.STOCK, AssetClass.FUND):
+        # A股/ETF/指数支持日期范围参数；黄金/债券需全量拉取后过滤
+        if asset_class in (AssetClass.STOCK, AssetClass.FUND, AssetClass.INDEX):
             if asset_class == AssetClass.FUND and self._resolve_open_end_fund_code(
                 symbol
             ):
                 df = self._fetch_open_end_fund_bars(symbol, start, end)
+            elif asset_class == AssetClass.INDEX:
+                df = self._call_with_retry(
+                    func,
+                    symbol=str(symbol),
+                    period="daily",
+                    start_date=start.strftime("%Y%m%d"),
+                    end_date=end.strftime("%Y%m%d"),
+                )
             else:
                 df = self._call_with_retry(
                     func,
@@ -682,6 +703,35 @@ class AKShareSource(DataSource):
                         "quote_source": "akshare_bond_spot",
                     },
                 )
+
+            elif asset_class == AssetClass.INDEX:
+                df = self._call_with_retry(ak.stock_zh_index_spot_em)
+                row = df[df["代码"] == str(symbol)]
+                if row.empty:
+                    return None
+                row = row.iloc[0]
+                payload = {
+                    "price": float(row["最新价"]),
+                    "volume": _row_float(row, "成交额", "成交量"),
+                    "timestamp": str(row.get("时间", "")),
+                    "quote_source": "akshare_index_spot",
+                }
+                previous_close = _row_float(row, "昨收", "昨收价", "昨日收盘")
+                change = _row_float(row, "涨跌额")
+                change_percent = _row_float(row, "涨跌幅")
+                if previous_close is not None:
+                    payload["previous_close"] = previous_close
+                    payload["previous_close_date"] = _previous_weekday(
+                        datetime.now().date()
+                    ).isoformat()
+                if change is not None:
+                    payload["change"] = change
+                if change_percent is not None:
+                    payload["change_percent"] = change_percent / 100
+                if "名称" in row and str(row["名称"]).strip():
+                    payload["name"] = str(row["名称"]).strip()
+                    payload["display_name"] = str(row["名称"]).strip()
+                return self._normalize_latest_quote(symbol, asset_class, payload)
 
         except Exception:
             logger.exception("fetch_latest failed for %s (%s)", symbol, asset_class)

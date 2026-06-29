@@ -195,14 +195,14 @@ test('renders a month calendar with selectable daily return cells by default', a
   expect(statusChip.className).not.toMatch(/text-(amber|emerald|sky)-100/);
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-02-10 · CN¥600.00' }),
+    screen.getByRole('button', { name: '2026-02-10 · ¥600.00' }),
   ).toBeTruthy();
   expect(
-    screen.queryByRole('button', { name: '2026-02-10 · CN¥800.00' }),
+    screen.queryByRole('button', { name: '2026-02-10 · ¥800.00' }),
   ).toBeNull();
 
   await userEvent.click(
-    screen.getByRole('button', { name: '2026-02-10 · CN¥600.00' }),
+    screen.getByRole('button', { name: '2026-02-10 · ¥600.00' }),
   );
 
   expect(await screen.findByText('2026-02-10')).toBeTruthy();
@@ -211,14 +211,14 @@ test('renders a month calendar with selectable daily return cells by default', a
     .closest('div')?.parentElement;
   expect(selectedPeriod).toBeTruthy();
   expect(within(selectedPeriod!).getByText('Market move')).toBeTruthy();
-  expect(within(selectedPeriod!).getByText('CN¥600.00')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('¥600.00')).toBeTruthy();
   expect(within(selectedPeriod!).getByText('Stocks')).toBeTruthy();
-  expect(within(selectedPeriod!).getByText('CN¥650.00')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('¥650.00')).toBeTruthy();
   expect(within(selectedPeriod!).getByText('Funds')).toBeTruthy();
-  expect(within(selectedPeriod!).getByText('-CN¥50.00')).toBeTruthy();
+  expect(within(selectedPeriod!).getByText('-¥50.00')).toBeTruthy();
   expect(within(selectedPeriod!).getByText('Deposits')).toBeTruthy();
   expect(
-    within(selectedPeriod!).getAllByText('CN¥200.00').length,
+    within(selectedPeriod!).getAllByText('¥200.00').length,
   ).toBeGreaterThan(0);
 });
 
@@ -235,7 +235,7 @@ test('keeps the compact calendar toolbar and day cells readable on narrow viewpo
   expect(periodControl.className).toContain('sm:justify-between');
 
   const populatedValue = screen.getByRole('button', {
-    name: '2026-02-10 · CN¥600.00',
+    name: '2026-02-10 · ¥600.00',
   });
   expect(populatedValue.className).toContain('overflow-hidden');
   const cellValue = within(populatedValue).getByTestId(
@@ -378,13 +378,13 @@ test('shows live returns normally and only true missing rows as price gaps', asy
 
   expect(await screen.findByText('Data status')).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-15 · CN¥300.00' }),
+    screen.getByRole('button', { name: '2026-06-15 · ¥300.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-17 · CN¥700.00' }),
+    screen.getByRole('button', { name: '2026-06-17 · ¥700.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-18 · -CN¥100.00' }),
+    screen.getByRole('button', { name: '2026-06-18 · -¥100.00' }),
   ).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-06-19 · Price gap' }),
@@ -392,7 +392,7 @@ test('shows live returns normally and only true missing rows as price gaps', asy
   expect(screen.getAllByText('Unconfirmed').length).toBeGreaterThanOrEqual(2);
 
   await userEvent.click(
-    screen.getByRole('button', { name: '2026-06-17 · CN¥700.00' }),
+    screen.getByRole('button', { name: '2026-06-17 · ¥700.00' }),
   );
 
   const selectedPeriod = screen
@@ -406,7 +406,7 @@ test('shows live returns normally and only true missing rows as price gaps', asy
     ),
   ).toBeTruthy();
   expect(
-    within(selectedPeriod!).getAllByText('CN¥700.00').length,
+    within(selectedPeriod!).getAllByText('¥700.00').length,
   ).toBeGreaterThan(0);
 });
 
@@ -496,22 +496,22 @@ test('keeps live confirmed and cached valuation states distinct from true price 
   ]);
 
   expect(
-    await screen.findByRole('button', { name: '2026-06-15 · CN¥100.00' }),
+    await screen.findByRole('button', { name: '2026-06-15 · ¥100.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-17 · CN¥200.00' }),
+    screen.getByRole('button', { name: '2026-06-17 · ¥200.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-18 · CN¥300.00' }),
+    screen.getByRole('button', { name: '2026-06-18 · ¥300.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-19 · CN¥400.00' }),
+    screen.getByRole('button', { name: '2026-06-19 · ¥400.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-22 · CN¥500.00' }),
+    screen.getByRole('button', { name: '2026-06-22 · ¥500.00' }),
   ).toBeTruthy();
   expect(
-    screen.getByRole('button', { name: '2026-06-23 · CN¥600.00' }),
+    screen.getByRole('button', { name: '2026-06-23 · ¥600.00' }),
   ).toBeTruthy();
   expect(
     screen.getByRole('button', { name: '2026-06-24 · Price gap' }),
@@ -552,7 +552,7 @@ test('switches the return calendar between monthly days, yearly months, and year
 
   const yearGrid = await screen.findByTestId('return-calendar-year-grid');
   const januaryCell = within(yearGrid).getByRole('button', {
-    name: '2026-01 · CN¥200.00',
+    name: '2026-01 · ¥200.00',
   });
   expect(within(januaryCell).getByText('01 Month')).toBeTruthy();
   expect(within(januaryCell).queryByText('01')).toBeNull();
@@ -560,12 +560,12 @@ test('switches the return calendar between monthly days, yearly months, and year
   const januaryCellValue = within(januaryCell).getByTestId(
     'return-calendar-cell-value',
   );
-  expect(januaryCellValue.textContent).toBe('CN¥200.00');
+  expect(januaryCellValue.textContent).toBe('¥200.00');
   expect(januaryCellValue.className).toContain('self-end');
   expect(januaryCellValue.className).toContain('text-right');
   expect(januaryCellValue.className).toContain('text-base');
   expect(
-    within(yearGrid).getByRole('button', { name: '2026-01 · CN¥200.00' }),
+    within(yearGrid).getByRole('button', { name: '2026-01 · ¥200.00' }),
   ).toBeTruthy();
   expect(
     within(yearGrid).getByRole('button', { name: '2026-02 · Price gap' }),
@@ -580,7 +580,7 @@ test('switches the return calendar between monthly days, yearly months, and year
     within(yearsGrid).getByRole('button', { name: '2026 · Price gap' }),
   ).toBeTruthy();
   expect(
-    within(yearsGrid).getByRole('button', { name: '2025 · CN¥500.00' }),
+    within(yearsGrid).getByRole('button', { name: '2025 · ¥500.00' }),
   ).toBeTruthy();
   expect(await screen.findByText('Annual change')).toBeTruthy();
   expect(screen.queryByText('Daily change')).toBeNull();
@@ -622,14 +622,14 @@ test('renders axes when the return calendar switches to curve view', async () =>
   expect(screen.getByTestId('return-curve-y-axis')).toBeTruthy();
   expect(screen.getByTestId('return-curve-zero-axis')).toBeTruthy();
   expect(screen.getByText('2026-02-11')).toBeTruthy();
-  expect(screen.getByText('CN¥600.00')).toBeTruthy();
+  expect(screen.getByText('¥600.00')).toBeTruthy();
 
   const point = screen.getByTestId('return-curve-point-0');
   fireEvent.mouseEnter(point);
 
   const tooltip = await screen.findByTestId('return-curve-tooltip');
   expect(within(tooltip).getByText('2026-02-10')).toBeTruthy();
-  expect(within(tooltip).getByText('CN¥600.00')).toBeTruthy();
+  expect(within(tooltip).getByText('¥600.00')).toBeTruthy();
 
   fireEvent.mouseLeave(point);
   fireEvent.pointerMove(point);
@@ -651,7 +651,7 @@ test('supports a compact cockpit layout for the overview page', async () => {
 
   const yearGrid = await screen.findByTestId('return-calendar-year-grid');
   const januaryCell = within(yearGrid).getByRole('button', {
-    name: '2026-01 · CN¥200.00',
+    name: '2026-01 · ¥200.00',
   });
   const januaryCellValue = within(januaryCell).getByTestId(
     'return-calendar-cell-value',
@@ -669,7 +669,7 @@ test('shows a current-position fallback when daily attribution is not available'
 
   expect(await screen.findByText('Current position PnL')).toBeTruthy();
   expect(screen.getByText('Return calendar is warming up')).toBeTruthy();
-  expect(screen.getAllByText('CN¥80.78').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('¥80.78').length).toBeGreaterThan(0);
   expect(screen.getByText('Rongtong Tech Growth Fund C')).toBeTruthy();
   expect(screen.getByText('029999')).toBeTruthy();
   expect(screen.getByText('Putailai')).toBeTruthy();

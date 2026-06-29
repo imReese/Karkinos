@@ -990,6 +990,7 @@ function installBacktestFetchMock({
       'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
     ],
   },
+  accountStrategyAssignments = [],
   accountStrategyAttribution = {
     strategy_id: 'dual_ma',
     attribution_status: 'evidence_linked_pnl_pending',
@@ -1043,6 +1044,7 @@ function installBacktestFetchMock({
   results?: unknown[];
   strategies?: unknown[];
   accountStrategy?: unknown;
+  accountStrategyAssignments?: unknown[];
   accountStrategyAttribution?: unknown;
   accountStrategyContribution?: unknown;
   strategyPromotionReadinessResponse?: unknown;
@@ -1086,6 +1088,32 @@ function installBacktestFetchMock({
       }
       if (url.includes('/api/account-strategy/contribution')) {
         return jsonResponse(accountStrategyContribution);
+      }
+      if (url.includes('/api/account-strategy/assignments')) {
+        if (init?.method === 'PUT') {
+          const payload = JSON.parse(String(init.body ?? '{}'));
+          return jsonResponse({
+            strategy_id: payload.strategy_id,
+            strategy_name: payload.strategy_id,
+            status: payload.status ?? 'research_only',
+            scope: payload.scope ?? 'symbol',
+            asset_class: payload.asset_class ?? null,
+            symbol: payload.symbol ?? null,
+            effective_from: payload.effective_from ?? null,
+            auto_trade_enabled: false,
+            attribution_status: 'assignment_only',
+            attributed_pnl: null,
+            realized_pnl: null,
+            unrealized_pnl: null,
+            total_fees: null,
+            notes: payload.notes ?? '',
+            updated_at: '2026-06-18T11:00:00+08:00',
+            limitations: [
+              'Strategy assignment is research context; contribution is shown only when current signals, reviews, orders, and fills have traceable references.',
+            ],
+          });
+        }
+        return jsonResponse(accountStrategyAssignments);
       }
       if (url.includes('/api/account-strategy')) {
         if (init?.method === 'PUT') {
@@ -1582,6 +1610,50 @@ test('assigns the selected strategy as research-only account context', async () 
   expect(screen.getByText('Auto trading off')).toBeTruthy();
 });
 
+test('assigns the selected strategy as current-symbol research context', async () => {
+  window.history.pushState(
+    {},
+    '',
+    '/backtest?symbol=600002&assetClass=stock&strategy=dual_ma',
+  );
+  const { fetchMock } = renderBacktestPage({ results: [] });
+
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Select Bollinger Mean Reversion',
+    }),
+  );
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Set for current symbol',
+    }),
+  );
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([url, init]) => {
+        if (!String(url).includes('/api/account-strategy/assignments')) {
+          return false;
+        }
+        const method = (init as RequestInit | undefined)?.method;
+        if (method !== 'PUT') {
+          return false;
+        }
+        const payload = JSON.parse(
+          String((init as RequestInit | undefined)?.body ?? '{}'),
+        );
+        return (
+          payload.strategy_id === 'bollinger' &&
+          payload.status === 'research_only' &&
+          payload.scope === 'symbol' &&
+          payload.symbol === '600002' &&
+          payload.asset_class === 'stock'
+        );
+      }),
+    ).toBe(true);
+  });
+});
+
 test('shows account-truth gate status in strategy review status', async () => {
   renderBacktestPage({ results: [] });
 
@@ -1991,7 +2063,7 @@ test('previews research-only strategy signal after a single-symbol backtest', as
   expect(
     await screen.findByText('Dataset snapshot · preview-dataset'),
   ).toBeTruthy();
-  expect(await screen.findByText('Reference price CN¥29.17')).toBeTruthy();
+  expect(await screen.findByText('Reference price ¥29.17')).toBeTruthy();
   expect(await screen.findByText('Review gates')).toBeTruthy();
   expect(await screen.findByText('Data ready')).toBeTruthy();
   expect(await screen.findByText('Risk gate required')).toBeTruthy();
@@ -2104,8 +2176,8 @@ test('previews paper shadow simulation after a passed risk preview', async () =>
   );
   expect(await screen.findByText('Simulation review preview')).toBeTruthy();
   expect(await screen.findByText('Simulated fill')).toBeTruthy();
-  expect(await screen.findByText('Filled 100 @ CN¥29.17')).toBeTruthy();
-  expect(await screen.findByText('Estimated fee CN¥5.03')).toBeTruthy();
+  expect(await screen.findByText('Filled 100 @ ¥29.17')).toBeTruthy();
+  expect(await screen.findByText('Estimated fee ¥5.03')).toBeTruthy();
   expect(await screen.findByText('No ledger mutation')).toBeTruthy();
 
   await waitFor(() => {

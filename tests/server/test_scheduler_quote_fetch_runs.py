@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
-from core.events import MarketEvent, OrderEvent
+from core.events import MarketEvent, OrderEvent, SignalEvent
 from core.types import AssetClass, BarFrequency, OrderSide, OrderType, Symbol
 from server.db import AppDatabase
 
@@ -66,12 +67,17 @@ def _scheduler_runtime(
     watchlist: list[tuple[Symbol, AssetClass]] | None = None,
     instruments: dict | None = None,
     data_manager=None,
+    sources: dict | None = None,
 ):
     return SimpleNamespace(
-        sources={
-            data_source: object(),
-            "akshare": object(),
-        },
+        sources=(
+            sources
+            if sources is not None
+            else {
+                data_source: object(),
+                "akshare": object(),
+            }
+        ),
         watchlist=(
             [(Symbol("600519"), AssetClass.STOCK)]
             if watchlist is None
@@ -147,6 +153,7 @@ def _run_scheduler_once(
     poll_error: Exception | None = None,
     strategy_factory=None,
     fund_nav_sync=None,
+    sources: dict | None = None,
 ) -> AppDatabase:
     from server import scheduler as scheduler_module
 
@@ -157,7 +164,11 @@ def _run_scheduler_once(
     snapshots = snapshots or {}
 
     config = _scheduler_config(data_source=data_source)
-    runtime = _scheduler_runtime(data_source=data_source, watchlist=watchlist)
+    runtime = _scheduler_runtime(
+        data_source=data_source,
+        watchlist=watchlist,
+        sources=sources,
+    )
 
     holder = {}
 
@@ -237,6 +248,107 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert instrument is not None
     assert instrument["display_name"] == "贵州茅台"
     assert instrument["provider_name"] == "akshare"
+
+
+def test_scheduler_signal_persists_action_task_without_notifier(
+    monkeypatch,
+    tmp_path,
+):
+    class SignalStrategy:
+        def __init__(self, event_bus) -> None:
+            self.event_bus = event_bus
+            self.initialized_symbols = []
+
+        def on_init(self, symbols) -> None:
+            self.initialized_symbols = list(symbols)
+
+        def on_data(self, event) -> None:
+            self.event_bus.publish(
+                SignalEvent(
+                    timestamp=event.timestamp,
+                    strategy_id="dual_ma",
+                    symbol=event.symbol,
+                    target_weight=Decimal("0.20"),
+                    price=event.close,
+                )
+            )
+
+    event = _market_event("600519")
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        events=[event],
+        strategy_factory=lambda bus: SignalStrategy(bus),
+        snapshots={
+            ("600519", AssetClass.STOCK): {
+                "timestamp": "2026-05-23T10:00:00",
+                "source": "akshare",
+                "display_name": "贵州茅台",
+            }
+        },
+    )
+
+    signals = asyncio.run(db.get_latest_signals(limit=5))
+    actions = db.get_action_tasks_sync()
+
+    assert signals[0]["strategy_id"] == "dual_ma"
+    assert signals[0]["symbol"] == "600519"
+    assert signals[0]["direction"] == "buy"
+    assert actions[0]["source_signal_id"] == signals[0]["id"]
+    assert actions[0]["direction"] == "buy"
+    assert actions[0]["title"] == "建议增持 600519"
+    assert actions[0]["manual_confirmation_status"] == "awaiting_risk_gate"
+
+
+def test_scheduler_syncs_default_market_indices_without_strategy_watchlist(
+    monkeypatch,
+    tmp_path,
+):
+    class IndexSource:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def fetch_latest(self, symbol, asset_class):
+            self.calls.append((str(symbol), asset_class))
+            if asset_class is not AssetClass.INDEX:
+                return None
+            return {
+                "price": 3120.5,
+                "volume": "12345",
+                "timestamp": "2026-05-23T10:00:00",
+                "quote_source": "akshare_index_spot",
+                "provider_name": "akshare",
+                "display_name": "上证指数",
+                "daily_change": "10.5",
+                "daily_change_pct": "0.34",
+            }
+
+    source = IndexSource()
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        watchlist=[(Symbol("600519"), AssetClass.STOCK)],
+        events=[],
+        sources={"akshare": source},
+    )
+
+    assert source.calls
+    assert all(asset_class is AssetClass.INDEX for _, asset_class in source.calls)
+    latest = db.get_latest_quote_sync("000001", asset_type="index")
+    metadata = db.get_instrument_metadata_sync("000001", "index")
+    run = db.list_quote_fetch_runs()[0]
+
+    assert latest is not None
+    assert latest["symbol"] == "000001"
+    assert latest["asset_type"] == "index"
+    assert latest["price"] == 3120.5
+    assert latest["change"] == 10.5
+    assert latest["change_percent"] == 0.34
+    assert latest["captured_reason"] == "scheduler_market_index_sync"
+    assert metadata is not None
+    assert metadata["display_name"] == "上证指数"
+    assert run["symbol_count"] == 1
+    assert json.loads(run["metadata_json"])["symbols"] == ["600519"]
 
 
 def test_scheduler_wires_paper_orders_to_persistent_execution_connector(

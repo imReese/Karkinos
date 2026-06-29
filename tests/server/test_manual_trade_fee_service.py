@@ -37,8 +37,37 @@ def test_manual_trade_fee_service_formats_stock_sell_components():
     assert resolved.commission == 5.0
     assert resolved.total_fee == 6.6575
     assert resolved.fee_rule_id == "manual_configured_commission"
-    assert resolved.fee_rule_version == "account_commission_rate"
+    assert resolved.fee_rule_version == "broker_fee_schedule"
     assert "万2" in resolved.note
+
+
+def test_manual_trade_fee_service_prefers_broker_fee_schedule_account_terms():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    resolved = resolve_manual_trade_fee_breakdown(
+        SimpleNamespace(
+            account_commission_rate=0.0002,
+            account_min_commission=5,
+            broker_fee_schedule=SimpleNamespace(
+                schedule_id="citic-account-fees",
+                stock_a_commission_rate=0.00015,
+                stock_a_min_commission=3,
+                stamp_tax_rate=0.0005,
+                transfer_fee_rate=0.00001,
+                other_fee_rate=0,
+            ),
+        ),
+        asset_class="stock",
+        direction="buy",
+        quantity=1000,
+        price=10,
+        symbol="600000",
+    )
+
+    assert resolved is not None
+    assert resolved.fee_breakdown_json["commission"] == "3.00"
+    assert resolved.fee_rule_version == "citic-account-fees"
+    assert "万1.5" in resolved.note
 
 
 def test_manual_trade_fee_service_uses_symbol_exchange_transfer_fee_split():
@@ -171,7 +200,7 @@ def test_manual_trade_fee_service_formats_bond_without_stock_taxes():
     assert resolved.commission == 4.0
     assert resolved.total_fee == 4.0
     assert resolved.fee_rule_id == "manual_configured_commission"
-    assert resolved.fee_rule_version == "account_commission_rate"
+    assert resolved.fee_rule_version == "broker_fee_schedule"
 
 
 def test_manual_trade_fee_service_treats_convertible_bond_as_exchange_bond_fee():
@@ -201,7 +230,7 @@ def test_manual_trade_fee_service_treats_convertible_bond_as_exchange_bond_fee()
     assert resolved.commission == 1.0
     assert resolved.total_fee == 1.0115
     assert resolved.fee_rule_id == "manual_configured_commission"
-    assert resolved.fee_rule_version == "account_commission_rate"
+    assert resolved.fee_rule_version == "broker_fee_schedule"
 
 
 def test_manual_trade_fee_service_leaves_unsupported_assets_to_explicit_fee():

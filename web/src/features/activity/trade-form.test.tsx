@@ -60,7 +60,7 @@ test('prefills manual trade fee from account commission settings', async () => {
   const feeInput = screen.getByLabelText('Fee') as HTMLInputElement;
   expect(feeInput.value).toBe('3');
   expect(
-    screen.getByText('Commission rate 2.5 bp, minimum CN¥3.00'),
+    screen.getByText('Commission rate 2.5 bp, minimum ¥3.00'),
   ).toBeTruthy();
 });
 
@@ -163,17 +163,17 @@ test('shows structured manual trade preview before saving', () => {
 
   expect(screen.getByText('Trade preview')).toBeTruthy();
   expect(screen.getByText('Gross amount')).toBeTruthy();
-  expect(screen.getByText('CN¥5,764.00')).toBeTruthy();
+  expect(screen.getByText('¥5,764.00')).toBeTruthy();
   expect(screen.getByText('Commission')).toBeTruthy();
-  expect(screen.getByText('CN¥3.00')).toBeTruthy();
+  expect(screen.getByText('¥3.00')).toBeTruthy();
   expect(screen.getByText('Stamp tax')).toBeTruthy();
-  expect(screen.getByText('CN¥0.00')).toBeTruthy();
+  expect(screen.getByText('¥0.00')).toBeTruthy();
   expect(screen.getByText('Transfer fee')).toBeTruthy();
-  expect(screen.getByText('CN¥0.06')).toBeTruthy();
+  expect(screen.getByText('¥0.06')).toBeTruthy();
   expect(screen.getByText('Total fee')).toBeTruthy();
-  expect(screen.getByText('CN¥3.06')).toBeTruthy();
+  expect(screen.getByText('¥3.06')).toBeTruthy();
   expect(screen.getByText('Net cash impact')).toBeTruthy();
-  expect(screen.getByText('-CN¥5,767.06')).toBeTruthy();
+  expect(screen.getByText('-¥5,767.06')).toBeTruthy();
   expect(screen.getByText('Fee rule')).toBeTruthy();
   expect(
     screen.getByText(
@@ -423,7 +423,7 @@ test('renders ledger entries as a user-facing audit table', () => {
             total_fee: '5.16',
           },
           fee_rule_id: 'manual_configured_commission',
-          fee_rule_version: 'account_commission_rate',
+          fee_rule_version: 'broker_fee_schedule',
           cost_basis_method: 'moving_average_buy_cost',
         } as unknown as import('./api').LedgerEntry,
       ]}
@@ -433,20 +433,20 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getAllByText('Security buy').length).toBeGreaterThan(1);
   expect(screen.getByText('Fund')).toBeTruthy();
   expect(screen.getAllByText('Manual entry').length).toBeGreaterThan(1);
-  expect(screen.getByText('-CN¥200.00')).toBeTruthy();
+  expect(screen.getByText('-¥200.00')).toBeTruthy();
   expect(screen.getByText('示例稳健混合C 012999')).toBeTruthy();
-  expect(screen.getByText('Amount CN¥200.00')).toBeTruthy();
+  expect(screen.getByText('Amount ¥200.00')).toBeTruthy();
   expect(screen.getByText('Quantity 204.102')).toBeTruthy();
-  expect(screen.getByText('Price CN¥0.98')).toBeTruthy();
-  expect(screen.queryByText('Fee CN¥0.00')).toBeNull();
+  expect(screen.getByText('Price ¥0.98')).toBeTruthy();
+  expect(screen.queryByText('Fee ¥0.00')).toBeNull();
   expect(screen.getByText('示例材料 600002')).toBeTruthy();
   expect(screen.getByText('示例制造 600003')).toBeTruthy();
-  expect(screen.getByText('-CN¥3,255.16')).toBeTruthy();
-  expect(screen.getByText('Gross amount CN¥3,250.00')).toBeTruthy();
-  expect(screen.getByText('Net cash impact -CN¥3,255.16')).toBeTruthy();
-  expect(screen.getByText('Commission CN¥5.00')).toBeTruthy();
-  expect(screen.getByText('Stamp tax CN¥0.00')).toBeTruthy();
-  expect(screen.getByText('Transfer fee CN¥0.16')).toBeTruthy();
+  expect(screen.getByText('-¥3,255.16')).toBeTruthy();
+  expect(screen.getByText('Gross amount ¥3,250.00')).toBeTruthy();
+  expect(screen.getByText('Net cash impact -¥3,255.16')).toBeTruthy();
+  expect(screen.getByText('Commission ¥5.00')).toBeTruthy();
+  expect(screen.getByText('Stamp tax ¥0.00')).toBeTruthy();
+  expect(screen.getByText('Transfer fee ¥0.16')).toBeTruthy();
   expect(screen.queryByText(/Cost basis/)).toBeNull();
   expect(screen.queryByText(/moving_average_buy_cost/)).toBeNull();
   expect(screen.getAllByText('Stock').length).toBeGreaterThanOrEqual(2);

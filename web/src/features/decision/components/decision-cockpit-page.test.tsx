@@ -405,9 +405,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   expect(await screen.findByText('Prepare manual order')).toBeTruthy();
   expect(await screen.findByText('Signal journal')).toBeTruthy();
   expect(await screen.findByText('Market health: Partial')).toBeTruthy();
-  expect(
-    await screen.findByText('Portfolio equity: CN¥40,000.00'),
-  ).toBeTruthy();
+  expect(await screen.findByText('Portfolio equity: ¥40,000.00')).toBeTruthy();
   expect(
     await screen.findByText('No intraday stock or ETF action candidates'),
   ).toBeTruthy();
@@ -714,21 +712,19 @@ test('surfaces strategy contribution components in decision summaries', async ()
   expect(document.body.textContent).not.toContain(
     'estimated_from_linked_fills',
   );
-  expect(await screen.findByText(/Net contribution: CN¥129.50/)).toBeTruthy();
-  expect(await screen.findByText(/Gross realized P\/L: CN¥8.00/)).toBeTruthy();
+  expect(await screen.findByText(/Net contribution: ¥129.50/)).toBeTruthy();
+  expect(await screen.findByText(/Gross realized P\/L: ¥8.00/)).toBeTruthy();
   expect(
-    await screen.findByText(/Gross unrealized P\/L: CN¥128.50/),
+    await screen.findByText(/Gross unrealized P\/L: ¥128.50/),
   ).toBeTruthy();
   expect(
-    await screen.findByText(/Commission \/ slippage: CN¥5.00 \/ CN¥1.50/),
+    await screen.findByText(/Commission \/ slippage: ¥5.00 \/ ¥1.50/),
   ).toBeTruthy();
   expect(
-    await screen.findByText(
-      /Manual \/ cash-flow movement: CN¥12.00 \/ CN¥3.00/,
-    ),
+    await screen.findByText(/Manual \/ cash-flow movement: ¥12.00 \/ ¥3.00/),
   ).toBeTruthy();
   expect(
-    await screen.findByText(/Tax \/ excluded movement: CN¥0.50 \/ CN¥4.00/),
+    await screen.findByText(/Tax \/ excluded movement: ¥0.50 \/ ¥4.00/),
   ).toBeTruthy();
 });
 

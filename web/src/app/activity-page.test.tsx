@@ -142,11 +142,11 @@ test('summarizes activity net cash impact with the shared ledger formatter seman
   renderActivityPage();
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
-  expect(await screen.findByText('-CN¥3,254.89')).toBeTruthy();
-  expect(await screen.findByText('Commission CN¥5.00')).toBeTruthy();
-  expect(await screen.findByText('Stamp tax CN¥0.00')).toBeTruthy();
-  expect(await screen.findByText('Transfer fee CN¥0.16')).toBeTruthy();
-  expect(screen.queryByText('-CN¥3,250.00')).toBeNull();
+  expect(await screen.findByText('-¥3,254.89')).toBeTruthy();
+  expect(await screen.findByText('Commission ¥5.00')).toBeTruthy();
+  expect(await screen.findByText('Stamp tax ¥0.00')).toBeTruthy();
+  expect(await screen.findByText('Transfer fee ¥0.16')).toBeTruthy();
+  expect(screen.queryByText('-¥3,250.00')).toBeNull();
   expect(screen.queryByText('synthetic_fee_rule')).toBeNull();
   expect(screen.queryByText('moving_average_buy_cost')).toBeNull();
   expect(screen.queryByText('fee_breakdown')).toBeNull();
@@ -309,4 +309,22 @@ test('filters recent ledger entries by instrument search', async () => {
   });
 
   expect(await screen.findByText('没有匹配的账本流水。')).toBeTruthy();
+});
+
+test('puts ledger review before manual entry tools and switches the active entry tool', async () => {
+  renderActivityPage('zh');
+
+  const ledgerTitle = await screen.findByText('最近账本流水');
+  const [tradeTitle] = await screen.findAllByText('手工交易');
+
+  expect(
+    ledgerTitle.compareDocumentPosition(tradeTitle) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(screen.queryByLabelText('现金流发生时间')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '现金流水' }));
+
+  expect(await screen.findByLabelText('现金流发生时间')).toBeTruthy();
+  expect(screen.queryByLabelText('证券代码')).toBeNull();
 });

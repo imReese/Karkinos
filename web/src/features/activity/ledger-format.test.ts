@@ -100,7 +100,7 @@ describe('ledger formatter', () => {
           total_fee: '5.032500',
         },
         fee_rule_id: 'manual_configured_commission',
-        fee_rule_version: 'account_commission_rate',
+        fee_rule_version: 'broker_fee_schedule',
         note: '账户佣金配置：佣金率万2，最低5元',
       }),
     ).toBeNull();
@@ -250,7 +250,7 @@ describe('ledger formatter', () => {
       label: 'Security buy',
       shortLabel: 'B',
       cashImpactLabel: 'Consumes cash',
-      amount: '-CN¥3,250.00',
+      amount: '-¥3,250.00',
       tone: 'debit',
     });
     expect(
@@ -267,7 +267,7 @@ describe('ledger formatter', () => {
       label: '资金转入',
       shortLabel: '入',
       cashImpactLabel: '现金增加',
-      amount: '+CN¥3,000.00',
+      amount: '+¥3,000.00',
       tone: 'credit',
     });
   });
@@ -297,7 +297,7 @@ describe('ledger formatter', () => {
       label: '资金转入',
       shortLabel: '入',
       cashImpactLabel: '现金增加',
-      amount: '+CN¥12,000.00',
+      amount: '+¥12,000.00',
       tone: 'credit',
     });
     expect(
@@ -318,7 +318,7 @@ describe('ledger formatter', () => {
         },
         'zh',
       ),
-    ).toEqual([{ label: '金额', value: 'CN¥12,000.00' }]);
+    ).toEqual([{ label: '金额', value: '¥12,000.00' }]);
   });
 
   test('builds overview dashboard ledger presentation from shared formatter', () => {
@@ -354,15 +354,15 @@ describe('ledger formatter', () => {
       title: 'Buy 示例制造 600003',
       details: [
         'Stock',
-        'Gross amount CN¥3,250.00',
-        'Net cash impact -CN¥3,255.16',
+        'Gross amount ¥3,250.00',
+        'Net cash impact -¥3,255.16',
         'Quantity 200',
-        'Price CN¥16.25',
-        'Commission CN¥5.00',
-        'Stamp tax CN¥0.00',
-        'Transfer fee CN¥0.16',
+        'Price ¥16.25',
+        'Commission ¥5.00',
+        'Stamp tax ¥0.00',
+        'Transfer fee ¥0.16',
       ],
-      amount: '-CN¥3,255.16',
+      amount: '-¥3,255.16',
       publicNote: null,
     });
   });
@@ -396,9 +396,9 @@ describe('ledger formatter', () => {
       'Stock',
     );
 
-    expect(presentation.amount).toBe('-CN¥3,255.16');
-    expect(presentation.details).toContain('Gross amount CN¥3,250.00');
-    expect(presentation.details).toContain('Cash impact -CN¥3,255.16');
+    expect(presentation.amount).toBe('-¥3,255.16');
+    expect(presentation.details).toContain('Gross amount ¥3,250.00');
+    expect(presentation.details).toContain('Cash impact -¥3,255.16');
   });
 
   test('formats cash interest as a first-class cash income entry', () => {
@@ -429,14 +429,14 @@ describe('ledger formatter', () => {
       label: '结息入账',
       shortLabel: '息',
       cashImpactLabel: '现金利息',
-      amount: '+CN¥0.27',
+      amount: '+¥0.27',
       tone: 'credit',
     });
     expect(formatLedgerActivitySummary(cashInterest, 'en')).toMatchObject({
       label: 'Cash interest',
       shortLabel: 'I',
       cashImpactLabel: 'Adds cash or realized proceeds',
-      amount: '+CN¥0.27',
+      amount: '+¥0.27',
       tone: 'credit',
     });
     expect(formatLedgerPublicNote(cashInterest)).toBeNull();
@@ -483,7 +483,7 @@ describe('ledger formatter', () => {
         },
         'zh',
       ),
-    ).toEqual([{ label: '金额', value: 'CN¥0.27' }]);
+    ).toEqual([{ label: '金额', value: '¥0.27' }]);
   });
 
   test('keeps cash notes when the mentioned amount does not match the structured amount', () => {
@@ -621,7 +621,7 @@ describe('ledger formatter', () => {
         'zh',
         instrumentNames,
       ),
-    ).toBe('金额 CN¥3,000.00');
+    ).toBe('金额 ¥3,000.00');
   });
 
   test('omits cost-basis method from public ledger execution details', () => {
@@ -653,7 +653,7 @@ describe('ledger formatter', () => {
 
     expect(details).toContainEqual({
       label: '净现金影响',
-      value: '-CN¥3,255.00',
+      value: '-¥3,255.00',
     });
     expect(details.some((line) => line.label === '成本口径')).toBe(false);
     expect(details.some((line) => line.value.includes('broker'))).toBe(false);
@@ -708,10 +708,10 @@ describe('ledger formatter', () => {
     );
 
     expect(details).toEqual([
-      { label: '成交总额', value: 'CN¥200.00' },
-      { label: '净现金影响', value: '-CN¥200.00' },
+      { label: '成交总额', value: '¥200.00' },
+      { label: '净现金影响', value: '-¥200.00' },
       { label: '份额/数量', value: '239.8082' },
-      { label: '价格', value: 'CN¥0.83' },
+      { label: '价格', value: '¥0.83' },
     ]);
   });
 });

@@ -14,7 +14,7 @@ from execution.commission import (
 )
 
 MANUAL_CONFIGURED_FEE_RULE_ID = "manual_configured_commission"
-MANUAL_CONFIGURED_FEE_RULE_VERSION = "account_commission_rate"
+MANUAL_CONFIGURED_FEE_RULE_VERSION = "broker_fee_schedule"
 MANUAL_FEE_INPUT_RULE_ID = "manual_fee_input"
 MANUAL_FEE_INPUT_RULE_VERSION = "manual_fee_input"
 
@@ -51,9 +51,12 @@ def resolve_manual_trade_fee_breakdown(
     if normalized_direction not in {"buy", "sell"}:
         return None
 
-    rate = _decimal_config_value(config, "account_commission_rate", "0.0001")
-    min_commission = _decimal_config_value(config, "account_min_commission", "5")
     schedule = getattr(config, "broker_fee_schedule", None)
+    rate, min_commission = _commission_terms(
+        config,
+        schedule,
+        normalized_asset_class,
+    )
     transfer_fee_rate = Decimal(str(getattr(schedule, "transfer_fee_rate", "0.00001")))
     exchange_transfer_fee_rates = _exchange_transfer_fee_rates(schedule)
     other_fee_rate = Decimal(str(getattr(schedule, "other_fee_rate", "0")))
@@ -147,6 +150,38 @@ def fee_breakdown_payload(breakdown: FeeBreakdown) -> dict[str, str]:
 def _decimal_config_value(config, name: str, fallback: str) -> Decimal:
     value = getattr(config, name, fallback)
     return Decimal(str(value))
+
+
+def _schedule_decimal_value(schedule, name: str) -> Decimal | None:
+    value = getattr(schedule, name, None)
+    if value is None:
+        return None
+    return Decimal(str(value))
+
+
+def _commission_terms(
+    config,
+    schedule,
+    normalized_asset_class: str,
+) -> tuple[Decimal, Decimal]:
+    if normalized_asset_class == "etf":
+        rate = _schedule_decimal_value(schedule, "fund_etf_commission_rate")
+        minimum = _schedule_decimal_value(schedule, "fund_etf_min_commission")
+    else:
+        rate = _schedule_decimal_value(schedule, "stock_a_commission_rate")
+        minimum = _schedule_decimal_value(schedule, "stock_a_min_commission")
+    return (
+        (
+            rate
+            if rate is not None
+            else _decimal_config_value(config, "account_commission_rate", "0.0001")
+        ),
+        (
+            minimum
+            if minimum is not None
+            else _decimal_config_value(config, "account_min_commission", "5")
+        ),
+    )
 
 
 def _fee_rule_version(schedule) -> str:

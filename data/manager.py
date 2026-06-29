@@ -16,6 +16,7 @@ from domain.instrument import (
     make_bond,
     make_etf,
     make_gold_spot,
+    make_index,
     make_open_end_fund,
     make_stock,
 )
@@ -44,6 +45,7 @@ _ASSET_NAMES: dict[AssetClass, str] = {
     AssetClass.FUND: "ETF",
     AssetClass.GOLD: "黄金",
     AssetClass.BOND: "债券",
+    AssetClass.INDEX: "指数",
 }
 
 
@@ -354,5 +356,7 @@ class DataManager:
             return make_gold_spot(symbol=sym_str, name=name)
         elif asset_class == AssetClass.BOND:
             return make_bond(sym_str, name)
+        elif asset_class == AssetClass.INDEX:
+            return make_index(sym_str, name)
         else:
             raise ValueError(f"不支持的资产类别: {asset_class}")

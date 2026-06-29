@@ -63,7 +63,7 @@ test('renders account metrics as a single integrated terminal rail', () => {
   expect(totalAssetsLabel.className).toContain('text-[var(--app-subtext-0)]');
   expect(screen.getByText('Total Assets')).toBeTruthy();
   expect(screen.getByText('Cumulative Return')).toBeTruthy();
-  expect(screen.getByText('CN¥1,550.00 / +1.55%')).toBeTruthy();
+  expect(screen.getByText('¥1,550.00 / +1.55%')).toBeTruthy();
   expect(screen.getByText('Cash Ratio')).toBeTruthy();
 });
 
@@ -111,11 +111,11 @@ test('renders account metrics in a compact homepage workbench layout', () => {
   );
   expect(coreMetrics.className).toContain('gap-2');
   expect(coreMetrics.textContent).toBe(
-    'Net DepositsCN¥100,000.00Unrealized PnLCN¥1,550.00Current Drawdown-4.80%Peak CN¥106,650.00Cumulative ReturnCN¥1,550.00 / +1.55%',
+    'Net Deposits¥100,000.00Unrealized PnL¥1,550.00Current Drawdown-4.80%Peak ¥106,650.00Cumulative Return¥1,550.00 / +1.55%',
   );
   expect(drawdownPeak.className).toContain('text-right');
   expect(totalAssetsValue.className).not.toContain('xl:text-5xl');
-  expect(screen.getByText('CN¥1,550.00 / +1.55%')).toBeTruthy();
+  expect(screen.getByText('¥1,550.00 / +1.55%')).toBeTruthy();
   expect(screen.getByTestId('available-cash-ratio').textContent).toBe(
     'Cash Ratio 74.8%',
   );

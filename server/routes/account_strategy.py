@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from server.models import (
     AccountStrategyAssignment,
@@ -18,6 +18,7 @@ from server.models import (
 )
 
 _CONTROL_KEY = "account_strategy_assignment"
+_ASSIGNMENT_REGISTRY_KEY = "instrument_strategy_assignments"
 _ASSIGNMENT_LIMITATION = (
     "Strategy assignment is research context; contribution is shown only when "
     "current signals, reviews, orders, and fills have traceable references."
@@ -87,6 +88,84 @@ def _assignment_update_payload(
         "updated_at": now,
         "limitations": [_ASSIGNMENT_LIMITATION],
     }
+
+
+def _assignment_registry_from_payload(
+    payload: object,
+    *,
+    fallback_config: Any,
+) -> list[AccountStrategyAssignment]:
+    raw_items: object
+    if isinstance(payload, dict):
+        raw_items = payload.get("assignments", [])
+    else:
+        raw_items = payload
+    if not isinstance(raw_items, list):
+        return []
+    assignments: list[AccountStrategyAssignment] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            assignments.append(
+                _assignment_from_payload(item, fallback_config=fallback_config)
+            )
+    return sorted(assignments, key=_assignment_sort_key)
+
+
+def _assignment_sort_key(assignment: AccountStrategyAssignment) -> tuple[str, str, str]:
+    return (
+        assignment.scope or "",
+        assignment.asset_class or "",
+        assignment.symbol or "",
+    )
+
+
+def _assignment_registry_key(
+    assignment: AccountStrategyAssignment,
+) -> tuple[str, str, str]:
+    return (
+        str(assignment.scope or "").strip().lower(),
+        str(assignment.asset_class or "").strip().lower(),
+        str(assignment.symbol or "").strip().lower(),
+    )
+
+
+def _validate_scoped_assignment(update: AccountStrategyAssignmentUpdate) -> None:
+    scope = update.scope.strip().lower()
+    if scope == "symbol" and not str(update.symbol or "").strip():
+        raise HTTPException(status_code=400, detail="symbol is required")
+    if scope == "asset_class" and not str(update.asset_class or "").strip():
+        raise HTTPException(status_code=400, detail="asset_class is required")
+
+
+def _upsert_assignment_registry(
+    assignments: list[AccountStrategyAssignment],
+    assignment: AccountStrategyAssignment,
+) -> list[AccountStrategyAssignment]:
+    target = _assignment_registry_key(assignment)
+    merged = [
+        existing
+        for existing in assignments
+        if _assignment_registry_key(existing) != target
+    ]
+    merged.append(assignment)
+    return sorted(merged, key=_assignment_sort_key)
+
+
+def _assignment_registry_payload(
+    assignments: list[AccountStrategyAssignment],
+) -> dict[str, Any]:
+    return {"assignments": [assignment.model_dump() for assignment in assignments]}
+
+
+def _scoped_assignment_for_symbol(
+    assignments: list[AccountStrategyAssignment],
+    *,
+    symbol: str,
+) -> AccountStrategyAssignment | None:
+    for assignment in assignments:
+        if assignment.scope == "symbol" and _same_symbol(assignment.symbol, symbol):
+            return assignment
+    return None
 
 
 def _json_dict(value: Any) -> dict[str, Any]:
@@ -820,6 +899,20 @@ def create_router() -> APIRouter:
             return _default_assignment(state.config)
         return _assignment_from_payload(payload, fallback_config=state.config)
 
+    @r.get("/assignments", response_model=list[AccountStrategyAssignment])
+    async def list_account_strategy_assignments() -> list[AccountStrategyAssignment]:
+        """List symbol/asset-class strategy assignments for research context."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        reader = getattr(db, "get_runtime_control_sync", None)
+        payload = reader(_ASSIGNMENT_REGISTRY_KEY) if callable(reader) else None
+        return _assignment_registry_from_payload(
+            payload,
+            fallback_config=state.config,
+        )
+
     @r.get("/attribution", response_model=AccountStrategyAttributionSummary)
     async def get_account_strategy_attribution() -> AccountStrategyAttributionSummary:
         """Summarize attribution evidence without mutating account facts."""
@@ -871,6 +964,18 @@ def create_router() -> APIRouter:
             if isinstance(payload, dict)
             else _default_assignment(state.config)
         )
+        registry_payload = (
+            reader(_ASSIGNMENT_REGISTRY_KEY) if callable(reader) else None
+        )
+        scoped_assignment = _scoped_assignment_for_symbol(
+            _assignment_registry_from_payload(
+                registry_payload,
+                fallback_config=state.config,
+            ),
+            symbol=symbol,
+        )
+        if scoped_assignment is not None:
+            assignment = scoped_assignment
         return _build_holding_attribution_report(db, assignment, symbol=symbol)
 
     @r.put("", response_model=AccountStrategyAssignment)
@@ -887,5 +992,33 @@ def create_router() -> APIRouter:
         if callable(writer):
             writer(_CONTROL_KEY, payload)
         return _assignment_from_payload(payload, fallback_config=state.config)
+
+    @r.put("/assignments", response_model=AccountStrategyAssignment)
+    async def upsert_account_strategy_assignment(
+        update: AccountStrategyAssignmentUpdate,
+    ) -> AccountStrategyAssignment:
+        """Persist a scoped research-only strategy assignment."""
+        from server.app import get_app_state
+
+        _validate_scoped_assignment(update)
+        state = get_app_state()
+        db = getattr(state, "db", None)
+        reader = getattr(db, "get_runtime_control_sync", None)
+        writer = getattr(db, "set_runtime_control_sync", None)
+        payload = _assignment_update_payload(update)
+        assignment = _assignment_from_payload(payload, fallback_config=state.config)
+        existing_payload = (
+            reader(_ASSIGNMENT_REGISTRY_KEY) if callable(reader) else None
+        )
+        assignments = _upsert_assignment_registry(
+            _assignment_registry_from_payload(
+                existing_payload,
+                fallback_config=state.config,
+            ),
+            assignment,
+        )
+        if callable(writer):
+            writer(_ASSIGNMENT_REGISTRY_KEY, _assignment_registry_payload(assignments))
+        return assignment
 
     return r

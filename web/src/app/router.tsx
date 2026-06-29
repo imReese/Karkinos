@@ -43,6 +43,11 @@ import {
 import { StrategyContributionGateCard } from '../features/account-strategy/components/strategy-contribution-gate-card';
 import { AccountTruthReviewPage } from '../features/account-truth/components/account-truth-review-page';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
+import {
+  useTodayDecisionQuery,
+  type DecisionCandidate,
+  type DecisionResponse,
+} from '../features/decision/api';
 import { DecisionCockpitPage } from '../features/decision/components/decision-cockpit-page';
 import {
   OverviewCards,
@@ -361,6 +366,7 @@ export function OverviewPage() {
   const pendingOrders = usePendingManualOrdersQuery();
   const marketHealth = useMarketDataHealthQuery();
   const strategyContribution = useAccountStrategyContributionQuery();
+  const todayDecision = useTodayDecisionQuery();
 
   const liveGroups = useMemo(
     () => liveHoldings.data?.groups ?? [],
@@ -468,17 +474,29 @@ export function OverviewPage() {
                 isError={marketHealth.isError}
               />
             </div>
-            <DashboardTodayQueue
-              overview={overview.data}
-              marketHealth={marketHealth.data}
-              quoteDiagnostics={positions}
-              pendingOrders={pendingOrders.data ?? []}
-              pendingOrdersLoading={pendingOrders.isLoading}
-              pendingOrdersError={pendingOrders.isError}
-              strategyContribution={strategyContribution.data}
-              strategyContributionLoading={strategyContribution.isLoading}
-              strategyContributionError={strategyContribution.isError}
-            />
+            <div className="min-w-0 space-y-5">
+              <DashboardQuickActions
+                overview={overview.data}
+                marketHealth={marketHealth.data}
+                symbols={positions.map((position) => position.symbol)}
+                quoteDiagnostics={positions}
+                compact
+              />
+              <DashboardTodayQueue
+                overview={overview.data}
+                marketHealth={marketHealth.data}
+                quoteDiagnostics={positions}
+                pendingOrders={pendingOrders.data ?? []}
+                pendingOrdersLoading={pendingOrders.isLoading}
+                pendingOrdersError={pendingOrders.isError}
+                strategyContribution={strategyContribution.data}
+                strategyContributionLoading={strategyContribution.isLoading}
+                strategyContributionError={strategyContribution.isError}
+                todayDecision={todayDecision.data}
+                todayDecisionLoading={todayDecision.isLoading}
+                todayDecisionError={todayDecision.isError}
+              />
+            </div>
           </div>
 
           <div className="grid gap-5">
@@ -514,13 +532,6 @@ export function OverviewPage() {
                 </div>
               </div>
             </section>
-
-            <DashboardQuickActions
-              overview={overview.data}
-              marketHealth={marketHealth.data}
-              symbols={positions.map((position) => position.symbol)}
-              quoteDiagnostics={positions}
-            />
 
             <aside
               className="grid min-w-0 gap-5 xl:grid-cols-2"
@@ -679,6 +690,16 @@ function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
   });
 }
 
+function decisionCandidateDisplayName(candidate: DecisionCandidate) {
+  return (
+    candidate.display_name ??
+    candidate.name ??
+    candidate.evidence.signal?.display_name ??
+    candidate.evidence.signal?.name ??
+    candidate.symbol
+  );
+}
+
 function DashboardTodayQueue({
   overview,
   marketHealth,
@@ -689,6 +710,9 @@ function DashboardTodayQueue({
   strategyContribution,
   strategyContributionLoading,
   strategyContributionError,
+  todayDecision,
+  todayDecisionLoading,
+  todayDecisionError,
 }: {
   overview: AccountOverview;
   marketHealth?: MarketDataHealthResponse;
@@ -699,6 +723,9 @@ function DashboardTodayQueue({
   strategyContribution?: AccountStrategyContributionReport | null;
   strategyContributionLoading: boolean;
   strategyContributionError: boolean;
+  todayDecision?: DecisionResponse | null;
+  todayDecisionLoading: boolean;
+  todayDecisionError: boolean;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -736,6 +763,15 @@ function DashboardTodayQueue({
         strategyContribution.contribution_status as keyof typeof copy.backtest.page.accountStrategyContributionStatusMap
       ] ?? formatPublicStatus(strategyContribution.contribution_status, locale))
     : copy.backtest.page.accountStrategyContributionStatusMap.no_linked_fills;
+  const candidates = todayDecision?.candidates ?? [];
+  const leadingCandidate = candidates[0];
+  const decisionActionLabel = leadingCandidate
+    ? (labels.decisionActionLabels[leadingCandidate.action] ??
+      formatPublicStatus(leadingCandidate.action, locale))
+    : null;
+  const decisionCandidateDetail = leadingCandidate
+    ? `${decisionActionLabel} · ${decisionCandidateDisplayName(leadingCandidate)}`
+    : labels.strategyCandidateEmptyDetail;
 
   const items: TodayQueueItem[] = [
     {
@@ -750,6 +786,27 @@ function DashboardTodayQueue({
       href: '/market',
       actionLabel: labels.viewData,
       tone: dataNeedsReview ? 'warning' : 'success',
+    },
+    {
+      key: 'decision',
+      title: todayDecisionError
+        ? labels.strategyDecisionUnavailable
+        : candidates.length > 0
+          ? labels.strategyCandidateAction
+          : labels.strategyCandidateClear,
+      detail: todayDecisionLoading
+        ? labels.strategyCandidateLoading
+        : decisionCandidateDetail,
+      meta: todayDecisionLoading
+        ? copy.states.loading
+        : labels.candidateCount(candidates.length),
+      href: '/decision',
+      actionLabel: labels.viewDecision,
+      tone: todayDecisionError
+        ? 'danger'
+        : candidates.length > 0
+          ? 'warning'
+          : 'success',
     },
     {
       key: 'orders',
@@ -800,7 +857,10 @@ function DashboardTodayQueue({
   ];
 
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
+    <section
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
+      data-testid="overview-today-queue"
+    >
       <div className="app-terminal-inner flex h-full min-w-0 flex-col p-4 sm:p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -2787,6 +2847,8 @@ export function MarketPage() {
 export function ActivityPage() {
   const copy = useCopy();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [activeEntryTool, setActiveEntryTool] =
+    useState<ActivityEntryTool>('trade');
   const entries = useLedgerEntriesQuery();
   const pendingFundOrders = usePendingFundOrdersQuery();
   const positions = usePositionsQuery();
@@ -3039,55 +3101,8 @@ export function ActivityPage() {
           />
         </div>
 
-        <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.8fr)]">
-          <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-            <div className="min-w-0 space-y-6">
-              <FundBatchForm
-                candidates={fundBatchCandidates}
-                loadingCandidates={positions.isLoading}
-                onSubmit={handleFundBatchSubmit}
-                pending={createTrade.isPending}
-              />
-              <TradeForm
-                onSubmit={handleTradeSubmit}
-                pending={createTrade.isPending}
-                tradePreview={tradePreview.data ?? null}
-                previewLoading={tradePreview.isPending}
-                previewError={tradePreview.isError}
-                onPreviewChange={handleTradePreviewChange}
-                commissionSettings={
-                  settings.data
-                    ? {
-                        stock_rate: settings.data.account_commission_rate,
-                        stock_min_commission:
-                          settings.data.account_min_commission,
-                      }
-                    : undefined
-                }
-              />
-              <DividendForm
-                onSubmit={handleDividendSubmit}
-                pending={createDividend.isPending}
-              />
-            </div>
-            <div className="min-w-0 space-y-6">
-              <CashFlowForm
-                onSubmit={handleCashFlowSubmit}
-                pending={createCashFlow.isPending}
-              />
-              <ManualAdjustmentForm
-                onSubmit={handleAdjustmentSubmit}
-                pending={createAdjustment.isPending}
-              />
-            </div>
-          </div>
+        <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
           <div className="min-w-0 space-y-6">
-            <PendingFundOrdersCard
-              orders={pendingFundOrders.data ?? []}
-              loading={pendingFundOrders.isLoading}
-              error={pendingFundOrders.isError}
-              onRetry={() => void pendingFundOrders.refetch()}
-            />
             {entries.isLoading ? (
               <StatusCard
                 title={copy.states.loading}
@@ -3105,9 +3120,183 @@ export function ActivityPage() {
               <ActivityFeed entries={entries.data ?? []} />
             )}
           </div>
+          <aside className="min-w-0 space-y-6 2xl:sticky 2xl:top-24 2xl:self-start">
+            <ActivityEntryToolsPanel
+              activeEntryTool={activeEntryTool}
+              candidates={fundBatchCandidates}
+              commissionSettings={
+                settings.data
+                  ? {
+                      stock_rate: settings.data.account_commission_rate,
+                      stock_min_commission:
+                        settings.data.account_min_commission,
+                    }
+                  : undefined
+              }
+              createAdjustmentPending={createAdjustment.isPending}
+              createCashFlowPending={createCashFlow.isPending}
+              createDividendPending={createDividend.isPending}
+              createTradePending={createTrade.isPending}
+              loadingCandidates={positions.isLoading}
+              onAdjustmentSubmit={handleAdjustmentSubmit}
+              onCashFlowSubmit={handleCashFlowSubmit}
+              onDividendSubmit={handleDividendSubmit}
+              onFundBatchSubmit={handleFundBatchSubmit}
+              onSelectEntryTool={setActiveEntryTool}
+              onTradePreviewChange={handleTradePreviewChange}
+              onTradeSubmit={handleTradeSubmit}
+              previewError={tradePreview.isError}
+              previewLoading={tradePreview.isPending}
+              tradePreview={tradePreview.data ?? null}
+            />
+            <PendingFundOrdersCard
+              orders={pendingFundOrders.data ?? []}
+              loading={pendingFundOrders.isLoading}
+              error={pendingFundOrders.isError}
+              onRetry={() => void pendingFundOrders.refetch()}
+            />
+          </aside>
         </div>
       </section>
     </>
+  );
+}
+
+type ActivityEntryTool =
+  | 'trade'
+  | 'fundBatch'
+  | 'cashFlow'
+  | 'dividend'
+  | 'adjustment';
+
+function ActivityEntryToolsPanel({
+  activeEntryTool,
+  candidates,
+  commissionSettings,
+  createAdjustmentPending,
+  createCashFlowPending,
+  createDividendPending,
+  createTradePending,
+  loadingCandidates,
+  onAdjustmentSubmit,
+  onCashFlowSubmit,
+  onDividendSubmit,
+  onFundBatchSubmit,
+  onSelectEntryTool,
+  onTradePreviewChange,
+  onTradeSubmit,
+  previewError,
+  previewLoading,
+  tradePreview,
+}: {
+  activeEntryTool: ActivityEntryTool;
+  candidates: FundBatchCandidate[];
+  commissionSettings?: {
+    stock_rate: number;
+    stock_min_commission: number;
+  };
+  createAdjustmentPending: boolean;
+  createCashFlowPending: boolean;
+  createDividendPending: boolean;
+  createTradePending: boolean;
+  loadingCandidates: boolean;
+  onAdjustmentSubmit: (values: ManualAdjustmentFormValues) => Promise<void>;
+  onCashFlowSubmit: (values: CashFlowFormValues) => Promise<void>;
+  onDividendSubmit: (values: DividendFormValues) => Promise<void>;
+  onFundBatchSubmit: (values: FundBatchFormValues) => Promise<void>;
+  onSelectEntryTool: (tool: ActivityEntryTool) => void;
+  onTradePreviewChange: (values: TradeFormValues) => void;
+  onTradeSubmit: (values: TradeFormValues) => Promise<void>;
+  previewError: boolean;
+  previewLoading: boolean;
+  tradePreview: ReturnType<typeof useTradePreviewMutation>['data'] | null;
+}) {
+  const copy = useCopy();
+  const tools: Array<{ key: ActivityEntryTool; label: string }> = [
+    { key: 'trade', label: copy.activity.forms.trade.title },
+    { key: 'fundBatch', label: copy.activity.forms.fundBatch.title },
+    { key: 'cashFlow', label: copy.activity.forms.cashFlow.title },
+    { key: 'dividend', label: copy.activity.forms.dividend.title },
+    { key: 'adjustment', label: copy.activity.forms.adjustment.title },
+  ];
+
+  return (
+    <div className="app-panel min-w-0 overflow-hidden rounded-2xl">
+      <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-5 py-4">
+        <div className="app-product-mark">
+          {copy.activity.entryTools.kicker}
+        </div>
+        <h2 className="mt-2 text-base font-semibold">
+          {copy.activity.entryTools.title}
+        </h2>
+        <p className="app-muted mt-2 text-xs leading-5">
+          {copy.activity.entryTools.detail}
+        </p>
+        <div
+          aria-label={copy.activity.entryTools.ariaLabel}
+          className="mt-4 grid min-w-0 grid-cols-2 gap-2"
+          role="group"
+        >
+          {tools.map((tool) => {
+            const isSelected = activeEntryTool === tool.key;
+            return (
+              <button
+                key={tool.key}
+                aria-pressed={isSelected}
+                className={`min-w-0 rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                  isSelected
+                    ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
+                    : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-soft)] hover:border-[var(--app-accent-border)]'
+                }`}
+                onClick={() => onSelectEntryTool(tool.key)}
+                type="button"
+              >
+                {tool.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="min-w-0 p-4">
+        {activeEntryTool === 'trade' ? (
+          <TradeForm
+            onSubmit={onTradeSubmit}
+            pending={createTradePending}
+            tradePreview={tradePreview}
+            previewLoading={previewLoading}
+            previewError={previewError}
+            onPreviewChange={onTradePreviewChange}
+            commissionSettings={commissionSettings}
+          />
+        ) : null}
+        {activeEntryTool === 'fundBatch' ? (
+          <FundBatchForm
+            candidates={candidates}
+            loadingCandidates={loadingCandidates}
+            onSubmit={onFundBatchSubmit}
+            pending={createTradePending}
+          />
+        ) : null}
+        {activeEntryTool === 'cashFlow' ? (
+          <CashFlowForm
+            onSubmit={onCashFlowSubmit}
+            pending={createCashFlowPending}
+          />
+        ) : null}
+        {activeEntryTool === 'dividend' ? (
+          <DividendForm
+            onSubmit={onDividendSubmit}
+            pending={createDividendPending}
+          />
+        ) : null}
+        {activeEntryTool === 'adjustment' ? (
+          <ManualAdjustmentForm
+            onSubmit={onAdjustmentSubmit}
+            pending={createAdjustmentPending}
+          />
+        ) : null}
+      </div>
+    </div>
   );
 }
 

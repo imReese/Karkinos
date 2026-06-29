@@ -102,9 +102,13 @@ public demos and development.
   account-truth issues are visible before manual review or research promotion.
 - Overview daily workbench: review total assets, stock/fund/total daily PnL,
   top position contributors, market pulse, valuation confidence,
-  manual-confirmation queue state, strategy evidence status, equity curve, and
-  return calendar summaries before drilling into Portfolio, Market, Trading, or
-  Backtest.
+  manual-confirmation queue state, strategy candidate actions, strategy
+  evidence status, equity curve, and return calendar summaries before drilling
+  into Portfolio, Market, Trading, Decision, or Backtest.
+- Market pulse uses a small default China-market index universe as background
+  context. Manual quote refresh and the Web scheduler can refresh those index
+  quotes alongside account holdings, but index quotes do not become user
+  holdings, strategy tradables, broker orders, or execution approval.
 - Return calendar platform view: inspect audited attribution by day, week, month, or year with calendar/curve/table views and amount/return-rate toggles. The calendar starts weeks on Sunday, uses market PnL for cells, reads historical daily close from the local `market_bars` OHLC cache before falling back to daily-close snapshots, breaks daily market moves into stock/fund/other buckets, keeps deposits, withdrawals, dividends, and manual adjustments as external-flow context, skips non-trading, stale, or intraday terminal quote moves, treats estimated, cached, stale, or confirmed-NAV-missing periods as valuation gaps instead of confirmed returns, and includes axes in the curve view.
 - Read-only decision APIs with portfolio, market-health, and after-cost/OOS evidence review, without automatic trading
 - Docker one-click deploy
@@ -133,7 +137,7 @@ uv run python scripts/configure_data_source.py  # optional: choose AKShare or Tu
 
 `http://localhost:8000` is the product/customer entry. It serves the built React app from `web/dist`, so direct links such as `/portfolio`, `/activity`, `/risk`, `/decision`, `/market`, and `/settings` can be refreshed without returning home.
 
-The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and the current account commission rule (`account_commission_rate`, `account_min_commission`) back into the same ignored config file. Advanced local fee assumptions can use `broker_fee_schedule`, which stores fee rule parameters, optional Shanghai/Shenzhen transfer-fee rates, and known limitations only, not account identifiers or broker credentials.
+The data-source setup command writes ignored local `config.json` for you. It hides TuShare token input, never accepts tokens as CLI arguments, and is optional when you are happy with the default AKShare provider. Settings saved from the Web app persist local runtime preferences such as `data_source`, `live_poll_interval`, and account fee assumptions back into the same ignored config file. Account commission settings are stored under `broker_fee_schedule`; legacy top-level commission fields are read only as a migration path. `broker_fee_schedule` stores fee rule parameters, optional Shanghai/Shenzhen transfer-fee rates, and known limitations only, not account identifiers or broker credentials.
 Manual trade ledger entries that omit an explicit fee use the configured account
 fee rule and structured broker fee schedule to record commission, stamp tax,
 exchange-specific transfer fee when configured, other fees, total fee, and net
@@ -143,7 +147,7 @@ keep the `manual_fee_input` audit marker.
 
 Use this storage boundary:
 
-- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, the current account commission rule, structured broker fee schedule, and read-only broker connector client paths/account aliases. Broker passwords, tokens, secrets, account identifiers, screenshots, and private exports do not belong in broker connector or fee-schedule config.
+- `config.json`: local runtime preferences and deploy-specific knobs, including provider selection, poll interval, notification settings, CORS origins, structured broker fee schedule, and read-only broker connector client paths/account aliases. Broker passwords, tokens, secrets, account identifiers, screenshots, and private exports do not belong in broker connector or fee-schedule config.
 - SQLite under `data/store/`: mutable financial facts and cache state, including watchlists, instrument metadata, ledger entries, quotes, bars, portfolio snapshots, trading controls, and saved backtest indexes.
 - `reports/`: human-readable generated artifacts such as backtest JSON reports and data reconciliation outputs. Reports are runtime evidence, not source code.
 
@@ -337,10 +341,12 @@ investment-advice or return claims.
 **Account Strategy Context**
 
 The Backtest page can show and save the current research-only account strategy
-assignment through `/api/account-strategy`. The assignment never enables
-automatic trading. Its attribution and contribution endpoints summarize linked
-signals, actions, risk decisions, orders, fills, commissions, slippage, and the
-latest local valuation evidence when those references exist.
+assignment through `/api/account-strategy`, and it can save symbol-specific
+research strategy bindings through `/api/account-strategy/assignments`. These
+assignments never enable automatic trading. Attribution and contribution
+endpoints summarize linked signals, actions, risk decisions, orders, fills,
+commissions, slippage, and the latest local valuation evidence when those
+references exist.
 
 Contribution reporting excludes manual trades, cash flows, and missing-evidence
 market movement by default. It is audit tooling and research evidence, not

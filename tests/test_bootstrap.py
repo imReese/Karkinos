@@ -322,6 +322,29 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
         other_fee_rate=Decimal("0"),
         limitations=("broker_regulatory_fees_assumed_absorbed",),
     )
+    assert config.account_commission_rate == Decimal("0.00015")
+    assert config.account_min_commission == Decimal("5")
+
+
+def test_server_config_migrates_legacy_account_cost_fields_to_broker_fee_schedule(
+    tmp_path,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "account_commission_rate": 0.00015,
+                "account_min_commission": 3,
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.account_commission_rate == Decimal("0.00015")
+    assert config.account_min_commission == Decimal("3")
+    assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
+    assert config.broker_fee_schedule.stock_a_min_commission == Decimal("3")
 
 
 def test_server_config_loads_detailed_safe_broker_fee_schedule(tmp_path):

@@ -216,7 +216,7 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   );
   expect(
     await screen.findByText(
-      'Cash difference CN¥120.00 · Fee difference CN¥0.00 · Tax difference CN¥2.50',
+      'Cash difference ¥120.00 · Fee difference ¥0.00 · Tax difference ¥2.50',
     ),
   ).toBeTruthy();
   expect(screen.queryByText('Cash difference 120.00')).toBeNull();

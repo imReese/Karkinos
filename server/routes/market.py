@@ -40,6 +40,10 @@ from server.services.asset_metadata import (
 )
 from server.services.market_hours import is_cn_trading_session
 from server.services.data_health import build_data_health
+from server.services.market_indices import (
+    default_market_index_assets,
+    market_index_display_name,
+)
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 
 logger = logging.getLogger(__name__)
@@ -63,6 +67,7 @@ _ASSET_CLASS_MAP = {
     "fund": AssetClass.FUND,
     "gold": AssetClass.GOLD,
     "bond": AssetClass.BOND,
+    "index": AssetClass.INDEX,
 }
 _TUSHARE_FUND_NAV_PERMISSION_DENIED = "tushare_fund_nav_permission_denied"
 
@@ -74,6 +79,7 @@ class QuoteRefreshRequest(BaseModel):
 
 class QuoteRefreshSymbolResult(BaseModel):
     symbol: str
+    asset_class: str
     status: str
     quote_timestamp: str | None = None
     quote_source: str | None = None
@@ -326,6 +332,30 @@ def _quote_metadata(
     refresh_policy: str,
     now: datetime | None = None,
 ) -> dict:
+    metadata = resolve_asset_metadata(
+        state,
+        symbol,
+        asset_class=asset_class,
+        quote=quote,
+        fallback_name=symbol,
+    )
+    display_name = (
+        str(quote.get("display_name") or quote.get("name") or "").strip()
+        if quote
+        else ""
+    ) or market_index_display_name(symbol) or metadata.display_name
+    daily_change = None if quote is None else _optional_float(
+        quote.get("daily_change")
+        or quote.get("day_change_value")
+        or quote.get("change")
+    )
+    daily_change_pct = None if quote is None else _optional_float(
+        quote.get("daily_change_pct")
+        or quote.get("day_change_pct")
+        or quote.get("change_pct")
+        or quote.get("change_percent")
+        or quote.get("pct_chg")
+    )
     quote_status = (
         "missing"
         if not quote or quote.get("price") in {None, ""}
@@ -343,6 +373,13 @@ def _quote_metadata(
         )
     )
     return {
+        "name": display_name,
+        "display_name": display_name,
+        "daily_change": daily_change,
+        "daily_change_pct": daily_change_pct,
+        "change": daily_change,
+        "change_pct": daily_change_pct,
+        "pct_chg": daily_change_pct,
         "quote_status": quote_status,
         "quote_source": _quote_source(state, quote),
         "quote_age_seconds": _quote_age_seconds(quote, now=now),
@@ -696,6 +733,20 @@ def _merged_watchlist_assets(state) -> list[dict[str, str]]:
     return merged
 
 
+def _with_default_market_indices(
+    assets: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    merged = list(assets)
+    seen = {asset["symbol"] for asset in merged}
+    for asset_cfg in default_market_index_assets():
+        symbol = asset_cfg["symbol"]
+        if symbol in seen:
+            continue
+        merged.append(asset_cfg)
+        seen.add(symbol)
+    return merged
+
+
 def _normalize_refresh_symbols(symbols: list[str] | None) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -713,10 +764,18 @@ def _default_refresh_symbols(state) -> list[str]:
     holding_symbols = _normalize_refresh_symbols(
         [str(raw_symbol) for raw_symbol in positions]
     )
-    if holding_symbols:
-        return holding_symbols
+    persisted_watchlist_symbols: list[str] = []
+    db = getattr(state, "db", None)
+    list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    if callable(list_watchlist):
+        persisted_watchlist_symbols = _normalize_refresh_symbols(
+            [str(asset.get("symbol") or "") for asset in list_watchlist()]
+        )
+    index_symbols = _normalize_refresh_symbols(
+        [asset_cfg["symbol"] for asset_cfg in default_market_index_assets()]
+    )
     return _normalize_refresh_symbols(
-        [asset_cfg["symbol"] for asset_cfg in _merged_watchlist_assets(state)]
+        [*holding_symbols, *persisted_watchlist_symbols, *index_symbols]
     )
 
 
@@ -1624,6 +1683,7 @@ async def _refresh_one_quote(
         )
         return QuoteRefreshSymbolResult(
             symbol=symbol,
+            asset_class=asset_class.value,
             status="failed",
             quote_timestamp=(
                 None if cached_quote is None else cached_quote.get("timestamp")
@@ -1659,6 +1719,7 @@ async def _refresh_one_quote(
         )
         return QuoteRefreshSymbolResult(
             symbol=symbol,
+            asset_class=asset_class.value,
             status="failed",
             quote_timestamp=(
                 None if cached_quote is None else cached_quote.get("timestamp")
@@ -1692,6 +1753,7 @@ async def _refresh_one_quote(
         )
         return QuoteRefreshSymbolResult(
             symbol=symbol,
+            asset_class=asset_class.value,
             status="stale" if cached_quote else "failed",
             quote_timestamp=(
                 None if cached_quote is None else cached_quote.get("timestamp")
@@ -1722,6 +1784,7 @@ async def _refresh_one_quote(
     )
     return QuoteRefreshSymbolResult(
         symbol=symbol,
+        asset_class=asset_class.value,
         status="refreshed" if quote_status == "live" else "stale",
         quote_timestamp=snapshot.get("timestamp"),
         quote_source=metadata["quote_source"],
@@ -2086,9 +2149,12 @@ def create_router() -> APIRouter:
         state = get_app_state()
         scheduler = state.scheduler
 
+        market_health_assets = _with_default_market_indices(
+            _merged_watchlist_assets(state)
+        )
         watchlist = [
             (asset_cfg["symbol"], asset_cfg["asset_class"])
-            for asset_cfg in _merged_watchlist_assets(state)
+            for asset_cfg in market_health_assets
         ]
 
         latest_quotes: dict[str, dict] = {}
@@ -2165,8 +2231,12 @@ def create_router() -> APIRouter:
             cache_age_seconds = max(
                 int((now - max(quote_timestamps)).total_seconds()), 0
             )
+        account_health_quotes = [
+            item for item in health_quotes if item.asset_class != AssetClass.INDEX.value
+        ]
+        status_health_quotes = account_health_quotes or health_quotes
         stale_symbols = [
-            item.symbol for item in health_quotes if item.quote_status != "live"
+            item.symbol for item in status_health_quotes if item.quote_status != "live"
         ]
         latest_attempts = [
             _parse_quote_timestamp(item.last_refresh_attempt)
@@ -2189,14 +2259,16 @@ def create_router() -> APIRouter:
         provider_requires_token = _provider_requires_token(provider_name)
         provider_configured = _provider_configured(state, provider_name)
         provider_supports_funds = _provider_supports_funds(provider_name)
-        source_health = _aggregate_market_data_health_status(health_quotes)
+        source_health = _aggregate_market_data_health_status(status_health_quotes)
         provider_status = (
             "error"
             if latest_refresh_error
-            and not any(item.quote_status == "live" for item in health_quotes)
+            and not any(item.quote_status == "live" for item in status_health_quotes)
             else source_health
         )
-        has_funds = any(asset_class in {"fund", "etf"} for _, asset_class in watchlist)
+        has_funds = any(
+            asset_class in {"fund", "etf"} for _, asset_class in watchlist
+        )
         effective_provider_supports_funds = (
             True
             if has_funds and _has_live_fund_quotes(health_quotes)
@@ -2346,7 +2418,7 @@ def create_router() -> APIRouter:
                 message="没有可刷新的行情标的",
             )
 
-        watchlist_assets = _merged_watchlist_assets(state)
+        watchlist_assets = _with_default_market_indices(_merged_watchlist_assets(state))
         asset_class_by_symbol = {
             asset_cfg["symbol"]: _ASSET_CLASS_MAP.get(
                 asset_cfg["asset_class"], AssetClass.STOCK

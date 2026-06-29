@@ -164,10 +164,28 @@ class BacktestConfig:
             data["broker_connectors"] = _parse_broker_connector_configs(
                 data["broker_connectors"]
             )
-        if "broker_fee_schedule" in data:
+        has_broker_fee_schedule = "broker_fee_schedule" in data
+        if has_broker_fee_schedule:
             data["broker_fee_schedule"] = _parse_broker_fee_schedule_config(
                 data["broker_fee_schedule"]
             )
+        elif "account_commission_rate" in data or "account_min_commission" in data:
+            # Backward-compatible migration path: older ignored local
+            # config.json files stored account cost inputs at top level.
+            data["broker_fee_schedule"] = BrokerFeeScheduleConfig(
+                stock_a_commission_rate=data.get(
+                    "account_commission_rate",
+                    BrokerFeeScheduleConfig().stock_a_commission_rate,
+                ),
+                stock_a_min_commission=data.get(
+                    "account_min_commission",
+                    BrokerFeeScheduleConfig().stock_a_min_commission,
+                ),
+            )
+        if "broker_fee_schedule" in data:
+            schedule = data["broker_fee_schedule"]
+            data["account_commission_rate"] = schedule.stock_a_commission_rate
+            data["account_min_commission"] = schedule.stock_a_min_commission
 
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 

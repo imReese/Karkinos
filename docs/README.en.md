@@ -93,6 +93,11 @@ confirmation. Frozen market-data datasets can be replayed for backtests,
 strategy runtime dry-runs, paper/shadow review, and audit replay so the same
 inputs can be checked deterministically.
 
+Overview market pulse uses a small default China-market index universe as broad
+market context. Manual refresh and the Web scheduler can refresh those index
+quotes alongside account holdings; they remain background data and do not
+become user holdings, strategy tradables, broker orders, or execution approval.
+
 Estimated, cached, stale, missing, or confirmed-NAV-missing data is data-quality
 evidence. It must not be displayed as confirmed returns and is not investment
 advice, a profitability claim, or execution approval. Quotes, bars, and market
@@ -322,9 +327,10 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 
 Capital, holdings, watchlists, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, user-tracked assets come from `watchlist_assets`, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.
 Manual trade ledger entries that omit an explicit `fee` use the configured
-`account_commission_rate`, `account_min_commission`, and structured
 `broker_fee_schedule` to record commission, stamp tax, exchange-specific
 transfer fee when configured, other fees, total fee, and net cash impact.
+Legacy top-level `account_commission_rate` / `account_min_commission` values are
+read only as a local-config migration path.
 Bond and convertible-bond manual trades use the exchange-bond fee model without
 stock stamp tax or transfer fees.
 Entries with an explicit `fee` keep the `manual_fee_input` audit marker.
@@ -615,11 +621,13 @@ automatically and does not change execution defaults.
 |--------|------|-------------|
 | GET | `/api/account-strategy` | Read the current account research strategy assignment without enabling auto trading |
 | PUT | `/api/account-strategy` | Save the research-context strategy assignment; the server forces `auto_trade_enabled=false` |
+| GET | `/api/account-strategy/assignments` | Read account, asset-class, or symbol-level research strategy bindings |
+| PUT | `/api/account-strategy/assignments` | Save one research strategy binding; different symbols can use different backtest strategies without creating orders or ledger entries |
 | GET | `/api/account-strategy/attribution` | Summarize signals, actions, risk decisions, orders, and fills linked to the current strategy |
 | GET | `/api/account-strategy/contribution` | Estimate strategy contribution from linked fills and latest local valuation |
 
-Account strategy assignment is research and audit context only; it does not
-mutate orders, fills, positions, or ledger entries. The contribution report
+Account and symbol strategy assignments are research and audit context only;
+they do not mutate orders, fills, positions, or ledger entries. The contribution report
 estimates realized/unrealized P/L, commission, slippage, and net contribution
 only from fills that can be linked to the assigned strategy. Manual trades,
 cash flows, and market movement without evidence are not attributed to strategy
@@ -714,7 +722,7 @@ React 19 + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vi
 
 | View | Path | Description |
 |------|------|-------------|
-| DashboardView | `/` | Daily asset workbench with account status, stock/fund/total today PnL, position contributors, market pulse, data confidence, review items, equity, and return summaries |
+| DashboardView | `/` | Daily asset workbench with account status, stock/fund/total today PnL, position contributors, market pulse, data confidence, strategy candidate actions, review items, equity, and return summaries |
 | PortfolioView | `/portfolio` | Position details + allocation pie chart |
 | ActivityView | `/activity` | Trades, dividends, cash flows, and manual adjustments |
 | DecisionView | `/decision` | Daily / intraday candidate actions, risk state, evidence, and manual-confirmation entry point |

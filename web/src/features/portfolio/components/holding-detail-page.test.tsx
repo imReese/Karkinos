@@ -54,7 +54,7 @@ const ledgerEntry = {
     total_fee: '35.10',
   },
   fee_rule_id: 'manual_configured_commission',
-  fee_rule_version: 'account_commission_rate',
+  fee_rule_version: 'broker_fee_schedule',
   cost_basis_method: 'moving_average_buy_cost',
   asset_class: 'stock',
   note: 'initial allocation',
@@ -385,25 +385,25 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('Consumes cash')).toBeTruthy();
   expect(screen.queryByText('trade_buy')).toBeNull();
   expect(await screen.findByText('initial allocation')).toBeTruthy();
-  expect(await screen.findByText('-CN¥90,035.10')).toBeTruthy();
-  expect(await screen.findByText('Gross amount CN¥90,000.00')).toBeTruthy();
-  expect(await screen.findByText('Net cash impact -CN¥90,035.10')).toBeTruthy();
-  expect(await screen.findByText('Commission CN¥30.00')).toBeTruthy();
-  expect(await screen.findByText('Stamp tax CN¥0.00')).toBeTruthy();
-  expect(await screen.findByText('Transfer fee CN¥5.10')).toBeTruthy();
+  expect(await screen.findByText('-¥90,035.10')).toBeTruthy();
+  expect(await screen.findByText('Gross amount ¥90,000.00')).toBeTruthy();
+  expect(await screen.findByText('Net cash impact -¥90,035.10')).toBeTruthy();
+  expect(await screen.findByText('Commission ¥30.00')).toBeTruthy();
+  expect(await screen.findByText('Stamp tax ¥0.00')).toBeTruthy();
+  expect(await screen.findByText('Transfer fee ¥5.10')).toBeTruthy();
   expect(screen.queryByText('Cost basis Moving average buy cost')).toBeNull();
   expect(await screen.findByText('akshare')).toBeTruthy();
   expect(await screen.findByText('26d')).toBeTruthy();
   expect(await screen.findByText('6.67%')).toBeTruthy();
   expect(await screen.findByText('Today PnL')).toBeTruthy();
-  expect(await screen.findByText('CN¥240.00')).toBeTruthy();
+  expect(await screen.findByText('¥240.00')).toBeTruthy();
   expect(await screen.findByText('0.25%')).toBeTruthy();
   expect(await screen.findByText('1,596.0000')).toBeTruthy();
   expect(await screen.findByText('Reported previous close')).toBeTruthy();
   expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
   expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
-  expect(await screen.findByText('CN¥1,640.00')).toBeTruthy();
+  expect(await screen.findByText('¥1,640.00')).toBeTruthy();
   expect(screen.queryByText('6.7%')).toBeNull();
   expect(
     await screen.findByText('Market closed; using cached quote'),
@@ -440,7 +440,7 @@ test('explains local average cost and broker displayed cost basis when evidence 
   ).toBeTruthy();
   expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('1,502.3456')).toBeTruthy();
-  expect(await screen.findByText('CN¥140.74')).toBeTruthy();
+  expect(await screen.findByText('¥140.74')).toBeTruthy();
   expect(await screen.findByText('Cost basis review needed')).toBeTruthy();
   expect(
     await screen.findByText(
@@ -475,9 +475,9 @@ test('shows ledger-projected remaining cost without presenting it as broker-conf
     await screen.findByText('Ledger-projected remaining cost'),
   ).toBeTruthy();
   expect(await screen.findByText('Projected from local ledger')).toBeTruthy();
-  expect(await screen.findByText('CN¥1,805.22')).toBeTruthy();
+  expect(await screen.findByText('¥1,805.22')).toBeTruthy();
   expect(await screen.findByText('9.0261')).toBeTruthy();
-  expect(await screen.findByText('-CN¥196.78')).toBeTruthy();
+  expect(await screen.findByText('-¥196.78')).toBeTruthy();
   expect(screen.queryByText('Broker displayed cost')).toBeNull();
   expect(screen.queryByText('Cost basis review needed')).toBeNull();
   expect(
@@ -752,7 +752,7 @@ test('shows linked symbol-level attribution evidence without claiming holding Pn
     'Holding evidence linked; review required',
   );
   expect(card.textContent).toContain('2 linked fills');
-  expect(card.textContent).not.toContain('CN¥23.80');
+  expect(card.textContent).not.toContain('¥23.80');
 });
 
 test('uses holding-level attribution report for exact strategy evidence counts', async () => {
@@ -842,7 +842,7 @@ test('uses holding-level attribution report for exact strategy evidence counts',
   expect(card.textContent).toContain('1 linked fills');
   expect(card.textContent).toContain('3');
   expect(card.textContent).not.toContain('8 linked fills');
-  expect(card.textContent).not.toContain('CN¥23.80');
+  expect(card.textContent).not.toContain('¥23.80');
 });
 
 test('shows holding attribution evidence refs as localized audit chain items', async () => {
@@ -976,7 +976,7 @@ test('explains attribution review readiness before assigning holding PnL to stra
   expect(card.textContent).toContain(
     'Holding PnL is still not assigned to the strategy until review is complete.',
   );
-  expect(card.textContent).not.toContain('CN¥23.80');
+  expect(card.textContent).not.toContain('¥23.80');
 });
 
 test('uses structured holding attribution prerequisites instead of parsing evidence refs', async () => {
