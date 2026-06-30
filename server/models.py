@@ -332,6 +332,26 @@ class TodayPnlContributor(BaseModel):
     quote_status: str = "live"
 
 
+class DailyOperationsSummary(BaseModel):
+    candidate_pool_count: int = 0
+    evidence_passed_count: int = 0
+    risk_checked_count: int = 0
+    risk_passed_count: int = 0
+    risk_blocked_count: int = 0
+    paper_shadow_review_count: int = 0
+    manual_ready_count: int = 0
+    pending_manual_order_count: int = 0
+    execution_record_count: int = 0
+    fill_record_count: int = 0
+    ledger_review_count: int = 0
+    execution_exception_count: int = 0
+    default_execution_mode: str = "manual_confirmation"
+    broker_bridge_status: str = "disabled"
+    conclusion_status: str = "no_manual_action"
+    primary_target: str = "decision"
+    limitations: list[str] = Field(default_factory=list)
+
+
 class AccountOverview(BaseModel):
     total_equity: float
     available_cash: float
@@ -355,6 +375,7 @@ class AccountOverview(BaseModel):
     stale_reason: str | None = None
     refresh_policy: str | None = None
     using_persistent_cache: bool = False
+    daily_operations: DailyOperationsSummary | None = None
 
 
 class AccountStateResponse(BaseModel):
