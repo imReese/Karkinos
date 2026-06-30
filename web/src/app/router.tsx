@@ -3215,25 +3215,7 @@ export function ActivityPage() {
         </div>
 
         <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
-          <div className="min-w-0 space-y-6">
-            {entries.isLoading ? (
-              <StatusCard
-                title={copy.states.loading}
-                detail={copy.activity.loading}
-              />
-            ) : entries.isError ? (
-              <StatusCard
-                tone="danger"
-                title={copy.states.error}
-                detail={copy.activity.error}
-                actionLabel={copy.states.retry}
-                onAction={() => void entries.refetch()}
-              />
-            ) : (
-              <ActivityFeed entries={entries.data ?? []} />
-            )}
-          </div>
-          <aside className="min-w-0 space-y-6 2xl:sticky 2xl:top-24 2xl:self-start">
+          <aside className="order-1 min-w-0 space-y-6 2xl:order-2 2xl:sticky 2xl:top-24 2xl:self-start">
             <ActivityEntryToolsPanel
               activeEntryTool={activeEntryTool}
               candidates={fundBatchCandidates}
@@ -3269,6 +3251,24 @@ export function ActivityPage() {
               onRetry={() => void pendingFundOrders.refetch()}
             />
           </aside>
+          <div className="order-2 min-w-0 space-y-6 2xl:order-1">
+            {entries.isLoading ? (
+              <StatusCard
+                title={copy.states.loading}
+                detail={copy.activity.loading}
+              />
+            ) : entries.isError ? (
+              <StatusCard
+                tone="danger"
+                title={copy.states.error}
+                detail={copy.activity.error}
+                actionLabel={copy.states.retry}
+                onAction={() => void entries.refetch()}
+              />
+            ) : (
+              <ActivityFeed entries={entries.data ?? []} />
+            )}
+          </div>
         </div>
       </section>
     </>
@@ -3327,10 +3327,10 @@ function ActivityEntryToolsPanel({
   const copy = useCopy();
   const tools: Array<{ key: ActivityEntryTool; label: string }> = [
     { key: 'trade', label: copy.activity.forms.trade.title },
-    { key: 'fundBatch', label: copy.activity.forms.fundBatch.title },
     { key: 'cashFlow', label: copy.activity.forms.cashFlow.title },
     { key: 'dividend', label: copy.activity.forms.dividend.title },
     { key: 'adjustment', label: copy.activity.forms.adjustment.title },
+    { key: 'fundBatch', label: copy.activity.forms.fundBatch.title },
   ];
 
   return (
