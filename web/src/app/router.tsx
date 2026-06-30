@@ -364,6 +364,10 @@ export function OverviewPage() {
   const marketHealth = useMarketDataHealthQuery();
   const strategyContribution = useAccountStrategyContributionQuery();
   const todayDecision = useTodayDecisionQuery();
+  const showStrategyContributionCard =
+    strategyContribution.isLoading ||
+    strategyContribution.isError ||
+    canUseStrategyContribution(strategyContribution.data);
 
   const liveGroups = useMemo(
     () => liveHoldings.data?.groups ?? [],
@@ -524,7 +528,9 @@ export function OverviewPage() {
             </section>
 
             <aside
-              className="grid min-w-0 gap-5 xl:grid-cols-2"
+              className={`grid min-w-0 gap-5 ${
+                showStrategyContributionCard ? 'xl:grid-cols-2' : ''
+              }`}
               data-testid="overview-review-strip"
             >
               <div className="app-terminal-panel rounded-[2rem] p-1.5">
@@ -558,16 +564,18 @@ export function OverviewPage() {
                   />
                 </div>
               </div>
-              <div className="min-w-0">
-                <StrategyContributionGateCard
-                  report={strategyContribution.data}
-                  isLoading={strategyContribution.isLoading}
-                  isError={strategyContribution.isError}
-                  onRetry={() => void strategyContribution.refetch()}
-                  instruments={positions}
-                  variant="compact"
-                />
-              </div>
+              {showStrategyContributionCard ? (
+                <div className="min-w-0">
+                  <StrategyContributionGateCard
+                    report={strategyContribution.data}
+                    isLoading={strategyContribution.isLoading}
+                    isError={strategyContribution.isError}
+                    onRetry={() => void strategyContribution.refetch()}
+                    instruments={positions}
+                    variant="compact"
+                  />
+                </div>
+              ) : null}
             </aside>
           </div>
 
@@ -1357,8 +1365,8 @@ function DashboardLedger({
         <div className="app-card-title text-base text-[var(--app-soft)]">
           {copy.overview.dashboard.ledgerPanel}
         </div>
-        <div className="font-mono text-xs text-[var(--app-subtext-0)] tabular-nums">
-          {entries.length}
+        <div className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 font-mono text-xs font-semibold text-[var(--app-subtext-0)] tabular-nums">
+          {copy.overview.dashboard.ledgerCount(entries.length)}
         </div>
       </div>
       {isLoading ? (
@@ -1402,7 +1410,10 @@ function DashboardLedger({
                       </div>
                     ) : null}
                   </div>
-                  <div className="text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
+                  <div
+                    className="shrink-0 whitespace-nowrap text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]"
+                    data-testid={`dashboard-ledger-amount-${entry.id}`}
+                  >
                     {presentation.amount}
                   </div>
                 </div>

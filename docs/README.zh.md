@@ -375,7 +375,7 @@ docker compose logs -f
 uv run python scripts/configure_data_source.py
 ```
 
-该命令会引导你选择 `akshare` 或 `tushare`，仅在选择 TuShare 时隐藏输入 token，并自动写入已被 Git 忽略的本地 `config.json`。`config.example.json` 只作为高级运行字段参考。
+该命令会引导你选择 `akshare` 或 `tushare`，仅在选择 TuShare 时隐藏输入 token，并自动写入已被 Git 忽略的本地 `config.json`。`config.example.json` 只作为高级运行字段参考；字段说明见 [config.json 配置字段参考](config-reference.zh.md)。
 
 #### 服务运行配置
 
@@ -396,7 +396,7 @@ uv run python scripts/configure_data_source.py
 
 #### 本地存储边界
 
-- `config.json`：本机运行偏好和环境相关开关，包括数据源、TuShare token、轮询间隔、通知、CORS origin、当前账户佣金率与最低佣金规则、结构化券商费用规则，以及只读券商 connector 的客户端路径和账户别名；债券/可转债手工交易按交易所债券费用模型记录费用证据，不按股票印花税或过户费处理；券商密码、token、secret、credential、账户号、截图和私有导出不得写入 connector 或费用规则配置。
+- `config.json`：本机运行偏好和环境相关开关，包括数据源、TuShare token、轮询间隔、通知、CORS origin、结构化券商费用规则，以及只读券商 connector 的客户端路径和账户别名；债券/可转债手工交易按交易所债券费用模型记录费用证据，不按股票印花税或过户费处理；券商密码、token、secret、credential、账户号、截图和私有导出不得写入 connector 或费用规则配置。
 - SQLite（`data/store/`）：会变化的金融事实和缓存，包括关注列表、资产元数据、交易流水、行情快照、历史 K 线、组合快照、交易控制状态和已保存回测索引。
 - `reports/`：一次研究或校验运行生成的人类可读证据，例如回测 JSON 报告、行情对账报告。报告属于运行时产物，不应提交到仓库。
 

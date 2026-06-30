@@ -206,6 +206,7 @@ export const copy = {
           'Approved orders will appear here before execution.',
         pendingCount: (count: number) => `${count} pending`,
         ledgerPanel: 'Latest ledger',
+        ledgerCount: (count: number) => `${count} entries`,
         ledgerEmpty: 'No ledger entries yet.',
         positionsPanel: 'Current positions',
         positionsDetail:
@@ -2321,6 +2322,7 @@ export const copy = {
         pendingEmptyDetail: '通过风控后的订单会先进入这里，确认后才继续执行。',
         pendingCount: (count: number) => `${count} 笔待审批`,
         ledgerPanel: '最新流水',
+        ledgerCount: (count: number) => `${count} 条流水`,
         ledgerEmpty: '还没有账本流水。',
         positionsPanel: '当前持仓',
         positionsDetail: '来自后端投影的行情价格、成本、市值与浮动盈亏。',

@@ -318,47 +318,88 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
         stock_a_commission_rate=_decimal_fee_config(
             value,
             "stock_a_commission_rate",
-            _nested_fee_value(
+            _rule_fee_value(
                 value,
-                section="commission",
-                names=("stock_a", "stock", "a_share", "ashare"),
-                default="0.0001",
+                component="commission",
+                asset_classes=("stock",),
+                field_name="rate",
+                default=_nested_fee_value(
+                    value,
+                    section="commission",
+                    names=("stock_a", "stock", "a_share", "ashare"),
+                    default="0.0001",
+                ),
             ),
         ),
         stock_a_min_commission=_decimal_fee_config(
-            value, "stock_a_min_commission", "5"
+            value,
+            "stock_a_min_commission",
+            _rule_fee_value(
+                value,
+                component="commission",
+                asset_classes=("stock",),
+                field_name="min_fee",
+                default="5",
+            ),
         ),
         fund_etf_commission_rate=_decimal_fee_config(
             value,
             "fund_etf_commission_rate",
-            _nested_fee_value(
+            _rule_fee_value(
                 value,
-                section="commission",
-                names=("fund_etf", "etf", "fund"),
-                default="0.0001",
+                component="commission",
+                asset_classes=("fund", "etf"),
+                field_name="rate",
+                default=_nested_fee_value(
+                    value,
+                    section="commission",
+                    names=("fund_etf", "etf", "fund"),
+                    default="0.0001",
+                ),
             ),
         ),
         fund_etf_min_commission=_decimal_fee_config(
-            value, "fund_etf_min_commission", "5"
+            value,
+            "fund_etf_min_commission",
+            _rule_fee_value(
+                value,
+                component="commission",
+                asset_classes=("fund", "etf"),
+                field_name="min_fee",
+                default="5",
+            ),
         ),
         stamp_tax_rate=_decimal_fee_config(
             value,
             "stamp_tax_rate",
-            _nested_fee_value(
+            _rule_fee_value(
                 value,
-                section="taxes_and_fees",
-                names=("stamp_tax", "stamp", "stock_stamp_tax"),
-                default="0.0005",
+                component="stamp_tax",
+                asset_classes=("stock",),
+                field_name="rate",
+                side="sell",
+                default=_nested_fee_value(
+                    value,
+                    section="taxes_and_fees",
+                    names=("stamp_tax", "stamp", "stock_stamp_tax"),
+                    default="0.0005",
+                ),
             ),
         ),
         transfer_fee_rate=_decimal_fee_config(
             value,
             "transfer_fee_rate",
-            _nested_fee_value(
+            _rule_fee_value(
                 value,
-                section="taxes_and_fees",
-                names=("transfer_fee", "stock_transfer_fee"),
-                default="0.00001",
+                component="transfer_fee",
+                asset_classes=("stock",),
+                field_name="rate",
+                default=_nested_fee_value(
+                    value,
+                    section="taxes_and_fees",
+                    names=("transfer_fee", "stock_transfer_fee"),
+                    default="0.00001",
+                ),
             ),
         ),
         exchange_transfer_fee_rates=exchange_transfer_fee_rates,
@@ -396,8 +437,8 @@ def _fee_schedule_id(value: dict[str, object]) -> object:
 def _has_nested_broker_fee_schedule(value: dict[str, object]) -> bool:
     return any(
         isinstance(value.get(section), dict)
-        for section in ("commission", "taxes_and_fees", "rules")
-    )
+        for section in ("commission", "taxes_and_fees")
+    ) or isinstance(value.get("rules"), list)
 
 
 def _nested_fee_value(
@@ -416,6 +457,45 @@ def _nested_fee_value(
     return default
 
 
+def _rule_fee_value(
+    value: dict[str, object],
+    *,
+    component: str,
+    asset_classes: tuple[str, ...],
+    field_name: str,
+    default: object,
+    side: str | None = None,
+) -> object:
+    rules = value.get("rules")
+    if not isinstance(rules, list):
+        return default
+    for raw_rule in rules:
+        if not isinstance(raw_rule, dict):
+            continue
+        if str(raw_rule.get("component", "")).strip().lower() != component:
+            continue
+        if not _rule_has_any(raw_rule.get("asset_classes"), asset_classes):
+            continue
+        if side is not None and not _rule_side_matches(raw_rule.get("side"), side):
+            continue
+        raw_value = raw_rule.get(field_name)
+        if raw_value is not None:
+            return raw_value
+    return default
+
+
+def _rule_has_any(value: object, expected: tuple[str, ...]) -> bool:
+    expected_values = {item.strip().lower() for item in expected}
+    if isinstance(value, list | tuple):
+        return any(str(item).strip().lower() in expected_values for item in value)
+    return str(value).strip().lower() in expected_values
+
+
+def _rule_side_matches(value: object, expected: str) -> bool:
+    side = str(value or "both").strip().lower()
+    return side in {expected, "both", "all"}
+
+
 def _exchange_transfer_fee_rates(value: dict[str, object]) -> dict[str, Decimal]:
     direct_value = value.get("exchange_transfer_fee_rates")
     raw_rates: dict[str, object] = {}
@@ -430,6 +510,24 @@ def _exchange_transfer_fee_rates(value: dict[str, object]) -> dict[str, Decimal]
                 exchange = _normalize_exchange_key(raw_key)
                 if exchange:
                     raw_rates.setdefault(exchange, raw_value)
+
+    rules = value.get("rules")
+    if isinstance(rules, list):
+        for raw_rule in rules:
+            if not isinstance(raw_rule, dict):
+                continue
+            if str(raw_rule.get("component", "")).strip().lower() != "transfer_fee":
+                continue
+            raw_rate = raw_rule.get("rate")
+            if raw_rate is None:
+                continue
+            markets = raw_rule.get("markets")
+            if not isinstance(markets, list | tuple):
+                markets = [markets]
+            for market in markets:
+                exchange = _normalize_exchange_key(market)
+                if exchange:
+                    raw_rates.setdefault(exchange, raw_rate)
 
     parsed: dict[str, Decimal] = {}
     for raw_key, raw_value in raw_rates.items():

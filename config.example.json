@@ -5,9 +5,17 @@
     "data_source": "akshare",
     "tushare_token": "",
     "broker_fee_schedule": {
+        "schema_version": "karkinos.broker_fee_schedule.v1",
         "account_profile_id": "primary-broker-account",
         "broker_name": "示例券商",
         "schedule_id": "local_broker_fee_schedule",
+        "display_name": "示例券商88**16账户费用规则",
+        "currency": "CNY",
+        "source_type": "broker_app_commission_query",
+        "account_identifier_saved": false,
+        "screenshots_saved": false,
+        "private_exports_saved": false,
+        "precedence": "broker_statement_overrides_config",
         "stock_a_commission_rate": 0.0001,
         "stock_a_min_commission": 5.0,
         "fund_etf_commission_rate": 0.0001,
@@ -19,7 +27,48 @@
             "shenzhen": 0.0
         },
         "other_fee_rate": 0.0,
+        "rules": [
+            {
+                "id": "stock_a_commission_sse",
+                "component": "commission",
+                "asset_classes": [
+                    "stock"
+                ],
+                "instrument_types": [
+                    "a_share"
+                ],
+                "markets": [
+                    "SSE"
+                ],
+                "side": "both",
+                "rate": "0.00010",
+                "rate_base": "gross_amount",
+                "min_fee": "5.00",
+                "payer": "account",
+                "included_in_total_fee": true
+            },
+            {
+                "id": "stock_stamp_tax_sell",
+                "component": "stamp_tax",
+                "asset_classes": [
+                    "stock"
+                ],
+                "instrument_types": [
+                    "a_share"
+                ],
+                "markets": [
+                    "SSE",
+                    "SZSE"
+                ],
+                "side": "sell",
+                "rate": "0.00050",
+                "rate_base": "gross_amount",
+                "payer": "seller",
+                "included_in_total_fee": true
+            }
+        ],
         "limitations": [
+            "broker_statements_remain_authoritative",
             "broker_regulatory_fees_assumed_absorbed"
         ]
     },

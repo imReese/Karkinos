@@ -164,6 +164,7 @@ docs/*
 !docs/IMPLEMENTATION_LOG.md
 !docs/BENCHMARKS.md
 !docs/account-truth-import.zh.md
+!docs/config-reference.zh.md
 !docs/strategy/
 !docs/strategy/README.en.md
 !docs/strategy/README.zh.md

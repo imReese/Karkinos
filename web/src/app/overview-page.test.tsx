@@ -154,10 +154,30 @@ function installOverviewFetchMock(
       no_action_reasons: ['no_pending_action_tasks'],
       limitations: [],
     },
+    strategyContribution = {
+      strategy_id: 'dual_ma',
+      contribution_status: 'estimated_from_linked_fills',
+      linked_fill_count: 2,
+      gross_realized_pnl: 0,
+      gross_unrealized_pnl: 128.5,
+      total_commission: 5,
+      total_slippage: 1.5,
+      total_tax: 0,
+      net_contribution: 122,
+      unattributed_account_pnl: null,
+      manual_unattributed_pnl: null,
+      cash_flow_pnl: null,
+      missing_valuation_symbols: [],
+      evidence_refs: ['fill:FILL-1', 'fill:FILL-2'],
+      limitations: [
+        'Contribution is estimated only from linked strategy fills and latest local quotes.',
+      ],
+    },
   }: {
     pendingOrders?: unknown[];
     marketQuotes?: unknown[];
     decision?: Record<string, unknown>;
+    strategyContribution?: Record<string, unknown>;
   } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -372,25 +392,7 @@ function installOverviewFetchMock(
       });
     }
     if (url.includes('/api/account-strategy/contribution')) {
-      return jsonResponse({
-        strategy_id: 'dual_ma',
-        contribution_status: 'estimated_from_linked_fills',
-        linked_fill_count: 2,
-        gross_realized_pnl: 0,
-        gross_unrealized_pnl: 128.5,
-        total_commission: 5,
-        total_slippage: 1.5,
-        total_tax: 0,
-        net_contribution: 122,
-        unattributed_account_pnl: null,
-        manual_unattributed_pnl: null,
-        cash_flow_pnl: null,
-        missing_valuation_symbols: [],
-        evidence_refs: ['fill:FILL-1', 'fill:FILL-2'],
-        limitations: [
-          'Contribution is estimated only from linked strategy fills and latest local quotes.',
-        ],
-      });
+      return jsonResponse(strategyContribution);
     }
     if (url.includes('/api/portfolio/explainability')) {
       return jsonResponse(explainability);
@@ -748,8 +750,14 @@ test('renders overview ledger cards with shared public ledger formatting', async
   const ledgerPanel = await screen.findByText('Latest ledger');
   const ledgerSection = ledgerPanel.closest('div')?.parentElement;
   expect(ledgerSection).toBeTruthy();
+  expect(screen.getByText('2 entries')).toBeTruthy();
 
   expect(await screen.findByText('Buy 示例制造 600003')).toBeTruthy();
+  const firstLedgerAmount = await screen.findByTestId(
+    'dashboard-ledger-amount-2',
+  );
+  expect(firstLedgerAmount.className).toContain('whitespace-nowrap');
+  expect(firstLedgerAmount.className).toContain('shrink-0');
   expect(screen.queryByText('示例制造 买入，按本地费率规则计费')).toBeNull();
   expect(screen.queryByText('trade_buy')).toBeNull();
   expect(screen.queryByText(/示例制造 600003 600003/)).toBeNull();
@@ -824,9 +832,58 @@ test('labels unconfirmed overview valuation status on the total-assets card', as
 test('shows evidence-gated strategy contribution on overview', async () => {
   renderOverviewPage();
 
+  const reviewStrip = await screen.findByTestId('overview-review-strip');
+  expect(reviewStrip.className).toContain('xl:grid-cols-2');
   expect(await screen.findByText('Strategy contribution')).toBeTruthy();
   expect(await screen.findByText('Evidence-linked')).toBeTruthy();
   expect(await screen.findByText('¥122.00')).toBeTruthy();
+});
+
+test('keeps unsupported strategy contribution as a workbench task instead of a large overview card', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      strategyContribution: {
+        strategy_id: 'dual_ma',
+        contribution_status: 'no_linked_fills',
+        strategy_health_status: 'needs_review',
+        strategy_health_reasons: ['linked_fill_evidence_missing'],
+        linked_fill_count: 0,
+        gross_realized_pnl: 0,
+        gross_unrealized_pnl: 0,
+        total_commission: 0,
+        total_slippage: 0,
+        total_tax: 0,
+        net_contribution: 0,
+        unattributed_account_pnl: null,
+        manual_unattributed_pnl: null,
+        cash_flow_pnl: null,
+        missing_valuation_symbols: [],
+        evidence_refs: [],
+        limitations: [
+          'No linked fills are available for strategy attribution.',
+        ],
+      },
+    },
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OverviewPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const workbench = await screen.findByTestId('overview-daily-workbench');
+  expect(
+    within(workbench).getByText('Strategy contribution needs linked evidence'),
+  ).toBeTruthy();
+  const reviewStrip = await screen.findByTestId('overview-review-strip');
+  expect(reviewStrip.className).not.toContain('xl:grid-cols-2');
+  expect(screen.queryByTestId('strategy-contribution-gate-card')).toBeNull();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {
