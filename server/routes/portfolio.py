@@ -36,9 +36,9 @@ from server.models import (
     LiveHoldingItemResponse,
     LiveHoldingsResponse,
     PendingFundOrderResponse,
-    PortfolioConstructionRecommendation,
     PortfolioCockpitPosition,
     PortfolioCockpitResponse,
+    PortfolioConstructionRecommendation,
     PortfolioSnapshot,
     PositionResponse,
     RiskConcentrationItem,
@@ -202,6 +202,9 @@ _EXTERNAL_FLOW_LABELS = {
 }
 
 _CASH_INCOME_LEDGER_TYPES = {"cash_interest", "dividend"}
+
+_CAPITAL_INFLOW_LEDGER_TYPES = {"cash_deposit", "deposit"}
+_CAPITAL_OUTFLOW_LEDGER_TYPES = {"cash_withdrawal", "cash_withdraw", "withdraw"}
 
 _FUND_ESTIMATE_QUOTE_SOURCES = {
     "eastmoney_fund_estimate",
@@ -2775,6 +2778,113 @@ def _equity_points_from_series(
     return list(by_date.values())
 
 
+def _ledger_capital_flow_amount(entry: LedgerEntry) -> Decimal | None:
+    entry_type = (entry.entry_type or "").strip().lower()
+    if entry_type not in _CAPITAL_INFLOW_LEDGER_TYPES | _CAPITAL_OUTFLOW_LEDGER_TYPES:
+        return None
+    if entry.amount is None:
+        return None
+    amount = Decimal(str(entry.amount))
+    if entry_type in _CAPITAL_OUTFLOW_LEDGER_TYPES:
+        return -amount
+    return amount
+
+
+def _cash_flow_adjusted_equity_points_from_series(
+    state,
+    points: list[EquitySeriesPoint],
+) -> list[EquityPoint]:
+    raw_points = _equity_points_from_series(points)
+    if len(raw_points) < 2:
+        return raw_points
+
+    db = getattr(state, "db", None)
+    if db is None or not hasattr(db, "get_ledger_entries_sync"):
+        return raw_points
+
+    by_date: dict[str, EquitySeriesPoint] = {}
+    for point in points:
+        point_date = str(point.timestamp).split("T")[0]
+        if point_date and point.total is not None:
+            by_date[point_date] = point
+
+    parsed_points = [
+        (timestamp, point)
+        for point in by_date.values()
+        if (timestamp := _parse_quote_timestamp(point.timestamp)) is not None
+    ]
+    parsed_points.sort(key=lambda item: item[0])
+    if len(parsed_points) < 2:
+        return raw_points
+
+    try:
+        ledger_entries = _load_ledger_entries_for_equity_series(db)
+    except (KeyError, TypeError, ValueError):
+        return raw_points
+
+    flow_events = []
+    for entry in ledger_entries:
+        timestamp = _ledger_entry_timestamp(entry)
+        amount = _ledger_capital_flow_amount(entry)
+        if timestamp is not None and amount is not None:
+            flow_events.append((timestamp, amount))
+    flow_events.sort(key=lambda item: item[0])
+
+    initial_cash = Decimal(
+        str(getattr(getattr(state, "config", None), "initial_cash", 0) or 0)
+    )
+    event_index = 0
+    first_timestamp, first_point = parsed_points[0]
+    initial_units = initial_cash
+    while (
+        event_index < len(flow_events)
+        and flow_events[event_index][0] <= first_timestamp
+    ):
+        initial_units += flow_events[event_index][1]
+        event_index += 1
+
+    first_total = Decimal(str(first_point.total))
+    if initial_units <= 0 or first_total <= 0:
+        return raw_points
+
+    units = initial_units
+    unit_price = first_total / units
+    unitized_points: list[tuple[EquitySeriesPoint, Decimal]] = [
+        (first_point, unit_price)
+    ]
+
+    for timestamp, point in parsed_points[1:]:
+        period_flow = Decimal("0")
+        while (
+            event_index < len(flow_events) and flow_events[event_index][0] <= timestamp
+        ):
+            period_flow += flow_events[event_index][1]
+            event_index += 1
+
+        total = Decimal(str(point.total))
+        pre_flow_equity = total - period_flow
+        if units <= 0 or pre_flow_equity <= 0:
+            return raw_points
+
+        unit_price = pre_flow_equity / units
+        if unit_price <= 0:
+            return raw_points
+        units += period_flow / unit_price
+        if units <= 0:
+            return raw_points
+
+        unitized_points.append((point, unit_price))
+
+    latest_units = units
+    return [
+        EquityPoint(
+            timestamp=point.timestamp,
+            equity=float(unit_price * latest_units),
+        )
+        for point, unit_price in unitized_points
+    ]
+
+
 def _trim_non_trading_terminal_series_point(
     points: list[EquitySeriesPoint],
 ) -> list[EquitySeriesPoint]:
@@ -3777,7 +3887,10 @@ def create_router() -> APIRouter:
         overview = _with_overview_quote_metadata(projection.summary, snapshot)
         live_holdings = _build_live_holdings_response(state)
         equity_series = await get_equity_curve_series("all")
-        equity_curve = _equity_points_from_series(equity_series)
+        equity_curve = _cash_flow_adjusted_equity_points_from_series(
+            state,
+            equity_series,
+        )
         if not equity_curve:
             equity_curve = await get_equity_curve()
         risk_workspace = build_risk_workspace(snapshot, equity_curve)
@@ -4109,9 +4222,15 @@ def create_router() -> APIRouter:
     @r.get("/risk-workspace", response_model=RiskWorkspaceResponse)
     async def get_risk_workspace() -> RiskWorkspaceResponse:
         """Return richer drawdown, exposure, and concentration diagnostics."""
+        from server.app import get_app_state
+
+        state = get_app_state()
         snapshot = await get_portfolio()
         equity_series = await get_equity_curve_series("all")
-        equity_curve = _equity_points_from_series(equity_series)
+        equity_curve = _cash_flow_adjusted_equity_points_from_series(
+            state,
+            equity_series,
+        )
         if not equity_curve:
             equity_curve = await get_equity_curve()
         return build_risk_workspace(snapshot, equity_curve)

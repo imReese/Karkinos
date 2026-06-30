@@ -4317,6 +4317,124 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
     assert response.current_drawdown == pytest.approx(200 / 2200)
 
 
+def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    overview_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/overview"
+    )
+    endpoint = overview_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=1000,
+        available_qty=1000,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=10000,
+        unrealized_pnl=0,
+        realized_pnl=0,
+        commission_paid=0,
+    )
+    fake_portfolio = SimpleNamespace(
+        cash=10000,
+        positions={"600001": fake_position},
+        total_deposits=20000,
+        equity_curve=[],
+    )
+
+    ledger_rows = [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-06-24T09:00:00+08:00",
+            "amount": 15000,
+        },
+        {
+            "id": 2,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-06-24T10:00:00+08:00",
+            "symbol": "600001",
+            "direction": "buy",
+            "quantity": 1000,
+            "price": 10,
+            "commission": 0,
+            "asset_class": "stock",
+        },
+        {
+            "id": 3,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-06-26T09:00:00+08:00",
+            "amount": 5000,
+        },
+    ]
+
+    class FakeDb:
+        async def get_total_deposits(self):
+            return 20000.0
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return ledger_rows[offset : offset + limit]
+
+        def get_latest_market_bar_before_date_sync(self, symbol, before_date):
+            if symbol != "600001":
+                return None
+            close_by_before_date = {
+                "2026-06-25": 10.5,
+                "2026-06-26": 10.0,
+                "2026-06-27": 10.0,
+            }
+            close = close_by_before_date.get(before_date)
+            if close is None:
+                return None
+            return {
+                "asset_class": "stock",
+                "close": close,
+                "price": close,
+                "timestamp": before_date,
+            }
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0),
+        db=FakeDb(),
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            watchlist=[],
+            instruments={},
+        ),
+    )
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_current_equity_series_point",
+        lambda state, portfolio, instruments: portfolio_routes.EquitySeriesPoint(
+            timestamp="2026-06-26T15:00:00+08:00",
+            total=20000,
+            stocks=10000,
+            funds=0,
+            others=0,
+            cash=10000,
+            unrealized_pnl=0,
+            quote_status="live",
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_build_live_holdings_response",
+        lambda state: portfolio_routes.LiveHoldingsResponse(groups=[]),
+    )
+
+    response = asyncio.run(endpoint())
+
+    assert response.current_drawdown == pytest.approx(1 - (20000 / 20666.6667))
+    assert response.current_drawdown_amount == pytest.approx(666.6667)
+    assert response.drawdown_peak_equity == pytest.approx(20666.6667)
+    assert response.drawdown_latest_equity == pytest.approx(20000)
+
+
 def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
