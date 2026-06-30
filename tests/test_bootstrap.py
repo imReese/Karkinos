@@ -392,6 +392,87 @@ def test_server_config_loads_detailed_safe_broker_fee_schedule(tmp_path):
     )
 
 
+def test_server_config_derives_runtime_terms_from_broker_fee_schedule_rules(
+    tmp_path,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "broker_fee_schedule": {
+                    "schema_version": "karkinos.broker_fee_schedule.v1",
+                    "account_profile_id": "sample-broker-account",
+                    "broker_name": "示例券商",
+                    "display_name": "示例券商88**16账户费用规则",
+                    "account_identifier_saved": False,
+                    "screenshots_saved": False,
+                    "private_exports_saved": False,
+                    "rules": [
+                        {
+                            "id": "stock_a_commission_sse",
+                            "component": "commission",
+                            "asset_classes": ["stock"],
+                            "instrument_types": ["a_share"],
+                            "markets": ["SSE"],
+                            "side": "both",
+                            "rate": "0.00015",
+                            "min_fee": "5.00",
+                        },
+                        {
+                            "id": "fund_etf_commission_sse",
+                            "component": "commission",
+                            "asset_classes": ["fund", "etf"],
+                            "instrument_types": ["etf", "lof"],
+                            "markets": ["SSE"],
+                            "side": "both",
+                            "rate": "0.00012",
+                            "min_fee": "3.00",
+                        },
+                        {
+                            "id": "stock_stamp_tax_sell",
+                            "component": "stamp_tax",
+                            "asset_classes": ["stock"],
+                            "markets": ["SSE", "SZSE"],
+                            "side": "sell",
+                            "rate": "0.00050",
+                        },
+                        {
+                            "id": "stock_transfer_fee_sse",
+                            "component": "transfer_fee",
+                            "asset_classes": ["stock"],
+                            "markets": ["SSE"],
+                            "side": "both",
+                            "rate": "0.00001",
+                        },
+                        {
+                            "id": "stock_transfer_fee_szse_broker_absorbed",
+                            "component": "transfer_fee",
+                            "asset_classes": ["stock"],
+                            "markets": ["SZSE"],
+                            "side": "both",
+                            "rate": "0",
+                            "included_in_total_fee": False,
+                        },
+                    ],
+                }
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
+    assert config.broker_fee_schedule.stock_a_min_commission == Decimal("5.00")
+    assert config.broker_fee_schedule.fund_etf_commission_rate == Decimal("0.00012")
+    assert config.broker_fee_schedule.fund_etf_min_commission == Decimal("3.00")
+    assert config.broker_fee_schedule.stamp_tax_rate == Decimal("0.00050")
+    assert config.broker_fee_schedule.transfer_fee_rate == Decimal("0.00001")
+    assert config.broker_fee_schedule.exchange_transfer_fee_rates == {
+        "shanghai": Decimal("0.00001"),
+        "shenzhen": Decimal("0"),
+    }
+
+
 def test_server_config_rejects_broker_fee_schedule_with_saved_private_artifacts(
     tmp_path,
 ):

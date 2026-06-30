@@ -85,6 +85,8 @@ Latest completed milestone:
 * [account-truth-import.zh.md](account-truth-import.zh.md): canonical broker
   statement CSV format, safe examples, import preview, privacy boundary, and
   reconciliation workflow.
+* [config-reference.zh.md](config-reference.zh.md): local `config.json`
+  field reference, broker fee schedule semantics, and privacy boundary.
 * [return-accounting.zh.md](return-accounting.zh.md): portfolio return,
   cost-basis, cash-flow, and baseline-price semantics.
 
