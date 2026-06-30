@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from './preferences';
@@ -308,23 +308,38 @@ test('filters recent ledger entries by instrument search', async () => {
     target: { value: '不存在' },
   });
 
-  expect(await screen.findByText('没有匹配的账本流水。')).toBeTruthy();
+  expect(await screen.findByText('没有匹配的流水。')).toBeTruthy();
 });
 
-test('puts ledger review before manual entry tools and switches the active entry tool', async () => {
+test('puts manual entry tools before recent ledger review and switches the active entry tool', async () => {
   renderActivityPage('zh');
 
-  const ledgerTitle = await screen.findByText('最近账本流水');
+  const entryTitle = await screen.findByText('新增流水');
+  const ledgerTitle = await screen.findByText('最近流水');
   const [tradeTitle] = await screen.findAllByText('手工交易');
+  const toolButtons = within(
+    screen.getByRole('group', { name: '流水录入工具选择' }),
+  ).getAllByRole('button');
 
   expect(
-    ledgerTitle.compareDocumentPosition(tradeTitle) &
+    entryTitle.compareDocumentPosition(ledgerTitle) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(screen.queryByLabelText('现金流发生时间')).toBeNull();
+  expect(
+    entryTitle.compareDocumentPosition(tradeTitle) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(toolButtons.map((button) => button.textContent)).toEqual([
+    '手工交易',
+    '资金流水',
+    '分红',
+    '手工调整',
+    '批量基金加仓',
+  ]);
+  expect(screen.queryByLabelText('资金流水发生时间')).toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: '现金流水' }));
+  fireEvent.click(screen.getByRole('button', { name: '资金流水' }));
 
-  expect(await screen.findByLabelText('现金流发生时间')).toBeTruthy();
+  expect(await screen.findByLabelText('资金流水发生时间')).toBeTruthy();
   expect(screen.queryByLabelText('证券代码')).toBeNull();
 });
