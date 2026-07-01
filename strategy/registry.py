@@ -79,6 +79,50 @@ _BENCHMARK_METADATA = {
             "Risk gate must be able to block unsafe data or concentration conditions.",
         ],
     },
+    "time_series_momentum": {
+        "asset_universe": ["stock", "etf", "index"],
+        "benchmark_role": "time_series_momentum",
+        "benchmark_universe": ["stock", "etf", "index"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Inspired by time-series momentum literature; requires after-cost, out-of-sample validation before promotion.",
+            "Long-only implementation exits to cash instead of using leverage or short futures exposure.",
+        ],
+    },
+    "donchian_breakout": {
+        "asset_universe": ["stock", "etf", "index"],
+        "benchmark_role": "channel_breakout_trend_following",
+        "benchmark_universe": ["stock", "etf", "index"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Common channel-breakout trend-following baseline; requires turnover, whipsaw, and after-cost review.",
+            "Uses prior high/low channels only and does not approve execution without risk gates.",
+        ],
+    },
+    "volatility_target_trend": {
+        "asset_universe": ["stock", "etf", "index"],
+        "benchmark_role": "volatility_target_trend_following",
+        "benchmark_universe": ["stock", "etf", "index"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Trend-following baseline with realized-volatility sizing; requires volatility-regime and turnover review.",
+            "Long-only volatility targeting caps weight at 1.0 and never implies leverage.",
+        ],
+    },
+    "pairs_ratio_mean_reversion": {
+        "asset_universe": ["stock", "etf"],
+        "benchmark_role": "pair_relative_value_mean_reversion",
+        "benchmark_universe": ["stock", "etf"],
+        "requires_out_of_sample_validation": True,
+        "requires_after_cost_report": True,
+        "validation_notes": [
+            "Inspired by pairs-trading literature but constrained to long-only target weights.",
+            "Requires pair-selection, liquidity, co-movement, and transaction-cost review before promotion.",
+        ],
+    },
 }
 
 _EXTENSION_SCHEMA_VERSION = "karkinos.strategy.v1"

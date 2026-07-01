@@ -98,29 +98,29 @@ export function DailyOperationsTower({
       : summary.broker_bridge_status;
 
   return (
-    <section
-      data-testid="daily-operations-tower"
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
-    >
-      <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-        <div className="flex min-w-0 items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.operationsTower}</div>
-            <h2 className="app-card-title mt-1.5 text-xl">
-              {conclusionText(summary, labels)}
-            </h2>
-            <div className="app-muted mt-2 text-xs">
-              {labels.operationsConclusion}
-            </div>
+    <div data-testid="daily-operations-tower" className="min-w-0">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">{labels.dailyWorkbench}</div>
+          <h2 className="app-card-title mt-1.5 text-xl">
+            {conclusionText(summary, labels)}
+          </h2>
+          <div className="app-muted mt-2 text-xs">
+            {labels.operationsConclusion}
           </div>
-          <a
-            href={target.href}
-            className="app-button-secondary shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold"
-          >
-            {target.label}
-          </a>
         </div>
+        <a
+          href={target.href}
+          className="app-button-secondary w-fit shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold"
+        >
+          {target.label}
+        </a>
+      </div>
 
+      <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+        <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+          {labels.operationsTower}
+        </div>
         <div className="mt-4 grid min-w-0 grid-cols-2 gap-2">
           {metricRows(summary, labels).map(([label, value]) => (
             <div
@@ -156,6 +156,6 @@ export function DailyOperationsTower({
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

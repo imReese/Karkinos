@@ -144,12 +144,12 @@ export const copy = {
       dashboard: {
         equityPanel: 'Equity curve',
         opsPanel: 'Review queue',
-        dailyWorkbench: 'Daily workbench',
+        dailyWorkbench: "Today's to-dos",
         todayToReview: 'Today to review',
         noActionItems: 'No urgent items right now.',
         noActionItemsDetail:
           'Market data, approvals, and strategy evidence do not need immediate action.',
-        operationsTower: 'Daily operations tower',
+        operationsTower: 'Execution status',
         operationsConclusion: 'Today status',
         operationsNoManualAction: 'No manual trading action needed today',
         operationsPendingManual: (count: number) =>
@@ -193,7 +193,8 @@ export const copy = {
         strategyCandidateAction: 'Strategy candidate signal',
         strategyCandidateClear: 'No strategy candidate signals',
         strategyCandidateLoading: 'Loading strategy candidate signals',
-        strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
+        strategyDecisionUnavailable:
+          'Strategy candidate signals are unavailable',
         strategyCandidateEmptyDetail:
           'No buy, sell, hold, or rebalance signals have entered the queue.',
         strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
@@ -885,12 +886,24 @@ export const copy = {
           monthly_rebalance: 'Monthly Rebalance',
           bollinger: 'Bollinger Mean Reversion',
           rsi: 'RSI Momentum / Reversion',
+          time_series_momentum: 'Time Series Momentum',
+          donchian_breakout: 'Donchian Channel Breakout',
+          volatility_target_trend: 'Volatility Target Trend',
+          pairs_ratio_mean_reversion: 'Pairs Ratio Mean Reversion',
         },
         strategyDescriptions: {
           dual_ma: 'Dual moving-average crossover baseline.',
           monthly_rebalance: 'Scheduled allocation rebalance baseline.',
           bollinger: 'Bollinger band mean-reversion baseline.',
           rsi: 'RSI momentum/reversion baseline.',
+          time_series_momentum:
+            'Paper-inspired trend baseline using trailing return persistence.',
+          donchian_breakout:
+            'Common channel-breakout trend baseline using prior highs and lows.',
+          volatility_target_trend:
+            'Trend baseline that scales long-only exposure by realized volatility.',
+          pairs_ratio_mean_reversion:
+            'Long-only relative-value pair rotation using A/B ratio z-scores.',
         },
         benchmarkRoleNames: {
           trend_following: 'Trend-following benchmark',
@@ -899,6 +912,12 @@ export const copy = {
           a_share_or_etf_mean_reversion:
             'A-share / ETF mean-reversion benchmark',
           custom_momentum_research: 'Custom momentum research benchmark',
+          time_series_momentum: 'Time-series momentum benchmark',
+          channel_breakout_trend_following: 'Channel-breakout trend benchmark',
+          volatility_target_trend_following:
+            'Volatility-targeted trend benchmark',
+          pair_relative_value_mean_reversion:
+            'Pair relative-value mean-reversion benchmark',
         },
         validationNotes: {
           'Requires after-cost, out-of-sample ETF trend-following validation before promotion.':
@@ -907,12 +926,48 @@ export const copy = {
             'Requires after-cost, out-of-sample validation across equity ETF, bond, gold, and cash proxy allocations.',
           'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.':
             'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.',
+          'Inspired by time-series momentum literature; requires after-cost, out-of-sample validation before promotion.':
+            'Inspired by time-series momentum literature; requires after-cost, out-of-sample validation before promotion.',
+          'Long-only implementation exits to cash instead of using leverage or short futures exposure.':
+            'Long-only implementation exits to cash instead of using leverage or short futures exposure.',
+          'Common channel-breakout trend-following baseline; requires turnover, whipsaw, and after-cost review.':
+            'Common channel-breakout trend-following baseline; requires turnover, whipsaw, and after-cost review.',
+          'Uses prior high/low channels only and does not approve execution without risk gates.':
+            'Uses prior high/low channels only and does not approve execution without risk gates.',
+          'Trend-following baseline with realized-volatility sizing; requires volatility-regime and turnover review.':
+            'Trend-following baseline with realized-volatility sizing; requires volatility-regime and turnover review.',
+          'Long-only volatility targeting caps weight at 1.0 and never implies leverage.':
+            'Long-only volatility targeting caps weight at 1.0 and never implies leverage.',
+          'Inspired by pairs-trading literature but constrained to long-only target weights.':
+            'Inspired by pairs-trading literature but constrained to long-only target weights.',
+          'Requires pair-selection, liquidity, co-movement, and transaction-cost review before promotion.':
+            'Requires pair-selection, liquidity, co-movement, and transaction-cost review before promotion.',
         },
         parameterLabels: {
           short_period: 'Short moving-average window',
           long_period: 'Long moving-average window',
           bb_period: 'Bollinger lookback window',
           num_std: 'Standard-deviation multiplier',
+          rsi_period: 'RSI smoothing window',
+          oversold: 'Oversold threshold',
+          overbought: 'Overbought threshold',
+          lookback_period: 'Lookback window',
+          min_return: 'Entry return threshold',
+          exit_return: 'Exit return threshold',
+          target_weight: 'Target weight',
+          entry_window: 'Breakout entry window',
+          exit_window: 'Breakout exit window',
+          volatility_window: 'Volatility window',
+          target_annual_volatility: 'Target annual volatility',
+          max_weight: 'Maximum weight',
+          min_momentum: 'Minimum momentum',
+          rebalance_threshold: 'Rebalance threshold',
+          symbol_a: 'Pair leg A',
+          symbol_b: 'Pair leg B',
+          entry_z: 'Entry z-score',
+          exit_z: 'Exit z-score',
+          pair_weight: 'Pair leg weight',
+          neutral_weight: 'Neutral leg weight',
         },
         parameterDescriptions: {
           short_period: 'Fast-average lookback, counted in trading bars.',
@@ -920,6 +975,32 @@ export const copy = {
           bb_period: 'Lookback window used to calculate Bollinger bands.',
           num_std:
             'Number of standard deviations used to place the upper and lower bands.',
+          rsi_period: 'Wilder-smoothed RSI lookback, counted in trading bars.',
+          oversold: 'RSI level crossed upward to emit a long target.',
+          overbought: 'RSI level crossed downward to emit an exit target.',
+          lookback_period:
+            'Trailing window used to measure return, trend, or spread state.',
+          min_return: 'Minimum trailing return required before entering.',
+          exit_return: 'Trailing return threshold that exits to cash.',
+          target_weight: 'Long-only target weight emitted by the strategy.',
+          entry_window: 'Prior high channel window used for breakout entries.',
+          exit_window: 'Prior low channel window used for breakout exits.',
+          volatility_window:
+            'Rolling return window used to estimate realized volatility.',
+          target_annual_volatility:
+            'Annualized volatility target used to scale exposure.',
+          max_weight: 'Maximum long-only target weight. Leverage is not used.',
+          min_momentum: 'Minimum trailing return required to hold risk.',
+          rebalance_threshold:
+            'Minimum target-weight change required before emitting a signal.',
+          symbol_a: 'First pair leg. Empty value uses the first run symbol.',
+          symbol_b: 'Second pair leg. Empty value uses the second run symbol.',
+          entry_z: 'Absolute ratio z-score that rotates into one pair leg.',
+          exit_z: 'Absolute ratio z-score that returns the pair to neutral.',
+          pair_weight:
+            'Target weight assigned to the cheap relative-value leg.',
+          neutral_weight:
+            'Target weight for each leg after the ratio normalizes.',
         },
         parameterCode: (name: string) => `API field: ${name}`,
         strategyMetadata: 'Strategy metadata',
@@ -2302,16 +2383,15 @@ export const copy = {
       dashboard: {
         equityPanel: '资金曲线',
         opsPanel: '复核队列',
-        dailyWorkbench: '每日工作台',
+        dailyWorkbench: '今日待办',
         todayToReview: '今天需要处理',
         noActionItems: '当前没有紧急事项。',
         noActionItemsDetail: '行情、审批和策略证据暂时不需要立即处理。',
-        operationsTower: '今日操作塔台',
+        operationsTower: '执行状态',
         operationsConclusion: '今日状态',
         operationsNoManualAction: '今日无需手动交易',
         operationsPendingManual: (count: number) => `${count} 项待人工确认`,
-        operationsRiskBlocked: (count: number) =>
-          `${count} 项风控阻断需要复核`,
+        operationsRiskBlocked: (count: number) => `${count} 项风控阻断需要复核`,
         operationsAccountTruthBlocked: '账户事实未通过，暂停执行复核',
         operationsDataUnavailable: '行情数据不可用，暂停候选复核',
         operationsExecutionException: (count: number) =>
@@ -3005,12 +3085,22 @@ export const copy = {
           monthly_rebalance: '月度再平衡',
           bollinger: '布林带均值回归',
           rsi: 'RSI 动量/反转',
+          time_series_momentum: '时间序列动量',
+          donchian_breakout: 'Donchian 通道突破',
+          volatility_target_trend: '波动率目标趋势',
+          pairs_ratio_mean_reversion: '配对比值均值回归',
         },
         strategyDescriptions: {
           dual_ma: '用短期均线与长期均线的交叉关系判断趋势方向的基准策略。',
           monthly_rebalance: '按固定周期把组合调回目标权重的再平衡基准策略。',
           bollinger: '基于布林带上下轨偏离程度观察均值回归机会的基准策略。',
           rsi: '基于 RSI 强弱变化观察动量或反转机会的基准策略。',
+          time_series_momentum: '基于过去一段收益延续性的论文型趋势基准策略。',
+          donchian_breakout: '基于前高/前低通道突破的经典趋势跟踪基准策略。',
+          volatility_target_trend:
+            '先判断趋势，再按已实现波动率缩放长仓暴露的风险控制型趋势策略。',
+          pairs_ratio_mean_reversion:
+            '用两只标的 A/B 比值 z-score 做长仓轮动的相对价值策略。',
         },
         benchmarkRoleNames: {
           trend_following: '趋势跟踪基准',
@@ -3018,6 +3108,10 @@ export const copy = {
           allocation_rebalance: '配置再平衡基准',
           a_share_or_etf_mean_reversion: 'A 股 / ETF 均值回归基准',
           custom_momentum_research: '自定义动量研究基准',
+          time_series_momentum: '时间序列动量基准',
+          channel_breakout_trend_following: '通道突破趋势基准',
+          volatility_target_trend_following: '波动率目标趋势基准',
+          pair_relative_value_mean_reversion: '配对相对价值均值回归基准',
         },
         validationNotes: {
           'Requires after-cost, out-of-sample ETF trend-following validation before promotion.':
@@ -3026,12 +3120,48 @@ export const copy = {
             '进入复核前需要覆盖股票 ETF、债券、黄金和现金代理配置的扣除成本后与样本外验证。',
           'Requires after-cost, out-of-sample mean-reversion validation on A-share or ETF fixtures before promotion.':
             '进入复核前需要在 A 股或 ETF 样本上完成扣除成本后与样本外均值回归验证。',
+          'Inspired by time-series momentum literature; requires after-cost, out-of-sample validation before promotion.':
+            '参考时间序列动量研究；进入复核前需要完成扣除成本后与样本外验证。',
+          'Long-only implementation exits to cash instead of using leverage or short futures exposure.':
+            '当前实现是长仓版本，信号失效时退回现金，不使用杠杆或期货做空暴露。',
+          'Common channel-breakout trend-following baseline; requires turnover, whipsaw, and after-cost review.':
+            '经典通道突破趋势基准；需要重点复核换手、震荡假突破和扣费后表现。',
+          'Uses prior high/low channels only and does not approve execution without risk gates.':
+            '仅使用历史前高/前低通道；没有风控闸门时不能进入执行。',
+          'Trend-following baseline with realized-volatility sizing; requires volatility-regime and turnover review.':
+            '带已实现波动率仓位缩放的趋势基准；需要复核波动率阶段和换手成本。',
+          'Long-only volatility targeting caps weight at 1.0 and never implies leverage.':
+            '当前波动率目标是长仓上限 1.0 的版本，不隐含杠杆。',
+          'Inspired by pairs-trading literature but constrained to long-only target weights.':
+            '参考配对交易研究，但受 Karkinos 目标权重约束，当前是长仓轮动版本。',
+          'Requires pair-selection, liquidity, co-movement, and transaction-cost review before promotion.':
+            '进入复核前需要检查配对选择、流动性、共同运动关系和交易成本。',
         },
         parameterLabels: {
           short_period: '短期均线周期',
           long_period: '长期均线周期',
           bb_period: '布林带回看周期',
           num_std: '标准差倍数',
+          rsi_period: 'RSI 平滑周期',
+          oversold: '超卖阈值',
+          overbought: '超买阈值',
+          lookback_period: '回看窗口',
+          min_return: '入场收益阈值',
+          exit_return: '退出收益阈值',
+          target_weight: '目标权重',
+          entry_window: '突破入场窗口',
+          exit_window: '突破退出窗口',
+          volatility_window: '波动率窗口',
+          target_annual_volatility: '目标年化波动率',
+          max_weight: '最大权重',
+          min_momentum: '最小动量',
+          rebalance_threshold: '再平衡阈值',
+          symbol_a: '配对标的 A',
+          symbol_b: '配对标的 B',
+          entry_z: '入场 z-score',
+          exit_z: '退出 z-score',
+          pair_weight: '配对单腿权重',
+          neutral_weight: '中性单腿权重',
         },
         parameterDescriptions: {
           short_period:
@@ -3040,6 +3170,26 @@ export const copy = {
             '用于计算长期移动平均线的 K 线/交易周期数，必须大于短期周期。',
           bb_period: '用于计算布林带上下轨的回看窗口。',
           num_std: '上下轨距离均线的标准差倍数。',
+          rsi_period: 'Wilder 平滑 RSI 使用的回看窗口。',
+          oversold: 'RSI 从下方上穿该水平时发出长仓目标。',
+          overbought: 'RSI 从上方下穿该水平时发出退出目标。',
+          lookback_period: '用于衡量收益、趋势或价差状态的历史窗口。',
+          min_return: '入场前要求达到的最小历史收益。',
+          exit_return: '历史收益低于或等于该阈值时退回现金。',
+          target_weight: '策略发出的长仓目标权重。',
+          entry_window: '用于判断向上突破的历史前高通道窗口。',
+          exit_window: '用于判断向下退出的历史前低通道窗口。',
+          volatility_window: '估计已实现波动率的滚动收益窗口。',
+          target_annual_volatility: '用于缩放仓位的目标年化波动率。',
+          max_weight: '长仓最大目标权重；当前不使用杠杆。',
+          min_momentum: '继续持有风险暴露所需的最小历史收益。',
+          rebalance_threshold: '目标权重变化超过该阈值时才发出信号。',
+          symbol_a: '第一只配对标的；留空时使用本次运行的第一个标的。',
+          symbol_b: '第二只配对标的；留空时使用本次运行的第二个标的。',
+          entry_z: 'A/B 比值偏离到该 z-score 时轮动到其中一腿。',
+          exit_z: 'A/B 比值回到该 z-score 内时恢复中性权重。',
+          pair_weight: '配对偏离时分配给便宜一腿的目标权重。',
+          neutral_weight: '比值回归后每一腿恢复到的目标权重。',
         },
         parameterCode: (name: string) => `参数键：${name}`,
         strategyMetadata: '策略元数据',

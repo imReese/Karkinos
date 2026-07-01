@@ -15,6 +15,7 @@ from fastapi import BackgroundTasks
 from fastapi.routing import APIRoute
 
 from core.types import Symbol
+from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 
 
 @pytest.fixture(autouse=True)
@@ -9382,10 +9383,10 @@ def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch)
     response = asyncio.run(validation_route.endpoint())
     by_strategy = {row.strategy_id: row for row in response.rows}
 
-    assert response.required_strategy_count == 3
-    assert response.ready_strategy_count == 3
+    assert response.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
+    assert response.ready_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert response.is_complete is True
-    assert set(by_strategy) == {"dual_ma", "monthly_rebalance", "bollinger"}
+    assert set(by_strategy) == REQUIRED_STRATEGY_IDS
     assert by_strategy["dual_ma"].benchmark_role == "etf_rotation_trend_following"
     assert by_strategy["monthly_rebalance"].has_after_cost_report is True
     assert by_strategy["bollinger"].has_out_of_sample_validation is True
@@ -9416,7 +9417,7 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
                         }
                     ),
                 }
-                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+                for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
             ]
 
         def list_orders_sync(self, limit=500, offset=0):
@@ -9432,7 +9433,7 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
                         }
                     ),
                 }
-                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+                for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
             ]
 
     monkeypatch.setattr(
@@ -9450,8 +9451,8 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
 
     response = asyncio.run(promotion_route.endpoint())
 
-    assert response.required_strategy_count == 3
-    assert response.promotable_strategy_count == 3
+    assert response.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
+    assert response.promotable_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert response.is_complete is True
     assert all(row.is_promotable for row in response.rows)
     assert all(
@@ -9487,7 +9488,7 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
                         }
                     ),
                 }
-                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+                for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
             ]
 
         def list_orders_sync(self, limit=500, offset=0):
@@ -9503,7 +9504,7 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
                         }
                     ),
                 }
-                for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+                for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
             ]
 
         def get_runtime_control_sync(self, key):
@@ -9535,7 +9536,7 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
     response = asyncio.run(promotion_route.endpoint())
     by_strategy = {row.strategy_id: row for row in response.rows}
 
-    assert response.promotable_strategy_count == 2
+    assert response.promotable_strategy_count == len(REQUIRED_STRATEGY_IDS) - 1
     assert by_strategy["dual_ma"].is_promotable is False
     assert by_strategy["dual_ma"].has_strategy_attribution_evidence is False
     assert by_strategy["dual_ma"].strategy_attribution_status == "no_linked_fills"

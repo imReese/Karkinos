@@ -477,9 +477,9 @@ export function OverviewPage() {
               />
             </div>
             <div className="min-w-0 space-y-5">
-              <DailyOperationsTower summary={overview.data.daily_operations} />
               <DashboardTodayQueue
                 overview={overview.data}
+                dailyOperations={overview.data.daily_operations}
                 marketHealth={marketHealth.data}
                 quoteDiagnostics={positions}
                 pendingOrders={pendingOrders.data ?? []}
@@ -723,6 +723,7 @@ function decisionCandidateDisplayName(candidate: DecisionCandidate) {
 
 function DashboardTodayQueue({
   overview,
+  dailyOperations,
   marketHealth,
   quoteDiagnostics,
   pendingOrders,
@@ -736,6 +737,7 @@ function DashboardTodayQueue({
   todayDecisionError,
 }: {
   overview: AccountOverview;
+  dailyOperations?: AccountOverview['daily_operations'];
   marketHealth?: MarketDataHealthResponse;
   quoteDiagnostics: QuoteDiagnosticItem[];
   pendingOrders: ManualOrder[];
@@ -900,67 +902,82 @@ function DashboardTodayQueue({
       data-testid="overview-today-queue"
     >
       <div className="app-terminal-inner flex h-full min-w-0 flex-col p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.dailyWorkbench}</div>
-            <h2 className="app-card-title mt-1.5 text-xl">
-              {labels.todayToReview}
-            </h2>
+        {dailyOperations ? (
+          <DailyOperationsTower summary={dailyOperations} />
+        ) : (
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="app-product-mark">{labels.dailyWorkbench}</div>
+              <h2 className="app-card-title mt-1.5 text-xl">
+                {labels.todayToReview}
+              </h2>
+            </div>
+            <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
+              {actionableCount}
+            </div>
           </div>
-          <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
-            {actionableCount}
-          </div>
-        </div>
+        )}
 
-        <div className="mt-4 grid min-w-0 gap-3">
-          {priorityGroups.map((group) => (
-            <div
-              className="grid min-w-0 gap-2"
-              data-testid={`overview-today-queue-${group.priority}`}
-              key={group.priority}
-            >
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
-                {todayQueuePriorityLabel(group.priority, labels)}
-              </div>
-              {group.items.map((item) => {
-                const tone = todayQueueToneClasses(item.tone);
-                const compactNormal = group.priority === 'normal';
-                return (
-                  <a
-                    href={item.href}
-                    key={item.key}
-                    className={`group grid min-w-0 gap-3 rounded-3xl border px-4 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 ${
-                      compactNormal ? 'py-3 opacity-85' : 'py-3.5'
-                    } ${tone.card}`}
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
-                          />
-                          <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
-                            {item.title}
+        <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              {labels.opsPanel}
+            </div>
+            <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
+              {actionableCount}
+            </div>
+          </div>
+
+          <div className="mt-4 grid min-w-0 gap-3">
+            {priorityGroups.map((group) => (
+              <div
+                className="grid min-w-0 gap-2"
+                data-testid={`overview-today-queue-${group.priority}`}
+                key={group.priority}
+              >
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                  {todayQueuePriorityLabel(group.priority, labels)}
+                </div>
+                {group.items.map((item) => {
+                  const tone = todayQueueToneClasses(item.tone);
+                  const compactNormal = group.priority === 'normal';
+                  return (
+                    <a
+                      href={item.href}
+                      key={item.key}
+                      className={`group grid min-w-0 gap-3 rounded-3xl border px-4 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 ${
+                        compactNormal ? 'py-3 opacity-85' : 'py-3.5'
+                      } ${tone.card}`}
+                    >
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
+                            />
+                            <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
+                              {item.title}
+                            </div>
+                          </div>
+                          <div className="app-muted mt-2 text-xs leading-5">
+                            {item.detail}
                           </div>
                         </div>
-                        <div className="app-muted mt-2 text-xs leading-5">
-                          {item.detail}
-                        </div>
+                        <span
+                          className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}
+                        >
+                          {item.meta}
+                        </span>
                       </div>
-                      <span
-                        className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}
-                      >
-                        {item.meta}
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-[var(--app-accent)]">
-                      {item.actionLabel}
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          ))}
+                      <div className="text-xs font-semibold text-[var(--app-accent)]">
+                        {item.actionLabel}
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
