@@ -23,6 +23,7 @@ from server.models import (
     AllocationItem,
     CashFlowCreate,
     CashFlowResponse,
+    DailyOperationsSummary,
     EquityPoint,
     EquitySeriesPoint,
     ExplainabilityBridgeItem,
@@ -62,6 +63,7 @@ from server.projections.service import (
 )
 from server.services.account_state import build_account_state_projection
 from server.services.asset_metadata import resolve_asset_metadata
+from server.services.daily_operations import build_daily_operations_summary
 from server.services.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
     MANUAL_FEE_INPUT_RULE_VERSION,
@@ -3543,6 +3545,69 @@ def _overview_today_pnl_update(
     }
 
 
+def _overview_daily_operations_summary(state: object) -> DailyOperationsSummary:
+    db = getattr(state, "db", None)
+    if db is None:
+        return build_daily_operations_summary(
+            decision_summary={
+                "candidate_count": 0,
+                "market_data": {"source_health": "unknown"},
+                "account_truth": {"gate_status": "blocked"},
+            },
+            candidates=[],
+            pending_manual_orders=[],
+            order_facts=[],
+            fill_facts=[],
+            ledger_review_count=0,
+        )
+
+    action_reader = getattr(db, "get_action_tasks_sync", None)
+    actions = (
+        list(action_reader(statuses=["pending", "deferred"], limit=50, offset=0))
+        if callable(action_reader)
+        else []
+    )
+    manual_reader = getattr(db, "list_manual_orders_sync", None)
+    pending_manual_orders = (
+        list(manual_reader(status="pending_confirm", limit=50, offset=0))
+        if callable(manual_reader)
+        else []
+    )
+    order_reader = getattr(db, "list_orders_sync", None)
+    order_facts = (
+        list(order_reader(limit=50, offset=0)) if callable(order_reader) else []
+    )
+    fill_reader = getattr(db, "list_fills_sync", None)
+    fill_facts = list(fill_reader(limit=50, offset=0)) if callable(fill_reader) else []
+    account_truth = {"gate_status": _portfolio_account_truth_gate_status(state)}
+    market_data = {"source_health": "live" if actions else "unknown"}
+
+    return build_daily_operations_summary(
+        decision_summary={
+            "candidate_count": len(actions),
+            "risk_blocked_count": sum(
+                1
+                for action in actions
+                if str(action.get("risk_gate_status") or "").strip().lower()
+                == "blocked"
+            ),
+            "ready_for_manual_confirmation_count": sum(
+                1
+                for action in actions
+                if str(action.get("manual_confirmation_status") or "").strip().lower()
+                == "ready_for_manual_confirmation"
+            ),
+            "market_data": market_data,
+            "account_truth": account_truth,
+        },
+        candidates=actions,
+        pending_manual_orders=pending_manual_orders,
+        order_facts=order_facts,
+        fill_facts=fill_facts,
+        ledger_review_count=0,
+    )
+
+
 def _portfolio_account_truth_gate_status(state: object) -> str:
     db = getattr(state, "db", None)
     if db is None:
@@ -3906,6 +3971,7 @@ def create_router() -> APIRouter:
                 "drawdown_peak_equity": risk_workspace.drawdown.peak_equity,
                 "drawdown_latest_equity": risk_workspace.drawdown.latest_equity,
                 "drawdown_peak_timestamp": risk_workspace.drawdown.peak_timestamp,
+                "daily_operations": _overview_daily_operations_summary(state),
             }
         )
 

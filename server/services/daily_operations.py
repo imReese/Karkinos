@@ -48,9 +48,7 @@ def build_daily_operations_summary(
     candidate_pool_count = _int(summary.get("candidate_count"), len(candidate_rows))
     risk_checked_count = sum(1 for row in candidate_rows if _risk_checked(row))
     risk_passed_count = sum(
-        1
-        for row in candidate_rows
-        if _status(row.get("risk_gate_status")) == "passed"
+        1 for row in candidate_rows if _status(row.get("risk_gate_status")) == "passed"
     )
     risk_blocked_count = max(
         _int(summary.get("risk_blocked_count"), 0),
@@ -64,8 +62,7 @@ def build_daily_operations_summary(
         sum(
             1
             for row in candidate_rows
-            if _status(row.get("manual_confirmation_status"))
-            == _READY_MANUAL_STATUS
+            if _status(row.get("manual_confirmation_status")) == _READY_MANUAL_STATUS
         )
         if account_truth_allows_manual
         else 0
@@ -148,8 +145,7 @@ def _candidate_evidence_passed(
 ) -> bool:
     evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
     return (
-        _status(_nested(evidence, "data_freshness", "status"))
-        in _TRUSTED_STATUSES
+        _status(_nested(evidence, "data_freshness", "status")) in _TRUSTED_STATUSES
         and _status(_nested(evidence, "after_cost_oos_validation", "status"))
         in _TRUSTED_STATUSES
         and _status(

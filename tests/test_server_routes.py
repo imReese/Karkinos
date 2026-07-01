@@ -4317,6 +4317,107 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
     assert response.current_drawdown == pytest.approx(200 / 2200)
 
 
+def test_portfolio_overview_includes_daily_operations_summary(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    overview_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/overview"
+    )
+    endpoint = overview_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        available_qty=100,
+        frozen_qty=0,
+        avg_cost=10,
+        market_value=1500,
+        unrealized_pnl=500,
+        realized_pnl=120,
+        commission_paid=8,
+    )
+    fake_portfolio = SimpleNamespace(
+        cash=500,
+        positions={"600519": fake_position},
+        equity_curve=[
+            (datetime.fromisoformat("2026-06-21T15:00:00+08:00"), Decimal("2200")),
+            (datetime.fromisoformat("2026-06-22T15:00:00+08:00"), Decimal("2000")),
+        ],
+    )
+    action_rows = []
+    for index in range(50):
+        action_rows.append(
+            {
+                "id": index + 1,
+                "symbol": f"600{index:03d}",
+                "direction": "sell",
+                "risk_gate_status": "passed" if index < 3 else "not_checked",
+                "risk_gate_passed": True if index < 3 else None,
+                "manual_confirmation_status": "awaiting_risk_gate",
+                "evidence": {
+                    "data_freshness": {"status": "live"},
+                    "after_cost_oos_validation": {"status": "attached"},
+                    "account_truth": {"gate_status": "pass"},
+                },
+            }
+        )
+
+    async def fake_get_total_deposits():
+        return 2000.0
+
+    order_facts: list[dict] = []
+    fill_facts: list[dict] = []
+    manual_orders: list[dict] = []
+    fake_db = SimpleNamespace(
+        get_total_deposits=fake_get_total_deposits,
+        get_action_tasks_sync=lambda statuses=None, limit=50, offset=0: action_rows[
+            offset : offset + limit
+        ],
+        list_manual_orders_sync=lambda status=None, limit=50, offset=0: manual_orders[
+            offset : offset + limit
+        ],
+        list_orders_sync=lambda **kwargs: order_facts,
+        list_fills_sync=lambda **kwargs: fill_facts,
+        get_account_truth_score_sync=lambda: {
+            "gate_status": "pass",
+            "score": 98,
+            "has_evidence": True,
+            "unresolved_mismatch_count": 0,
+        },
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=1000),
+        db=fake_db,
+        scheduler=SimpleNamespace(
+            portfolio=fake_portfolio,
+            watchlist=[],
+            instruments={},
+        ),
+    )
+
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_build_live_holdings_response",
+        lambda state: portfolio_routes.LiveHoldingsResponse(groups=[]),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(endpoint())
+
+    assert response.daily_operations is not None
+    assert response.daily_operations.candidate_pool_count == 50
+    assert response.daily_operations.risk_passed_count == 3
+    assert response.daily_operations.manual_ready_count == 0
+    assert response.daily_operations.pending_manual_order_count == 0
+    assert response.daily_operations.conclusion_status == "no_manual_action"
+    assert response.daily_operations.broker_bridge_status == "disabled"
+    assert manual_orders == []
+    assert order_facts == []
+    assert fill_facts == []
+
+
 def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
