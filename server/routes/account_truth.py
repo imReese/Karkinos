@@ -12,6 +12,12 @@ from account_truth.broker_evidence import (
     BrokerImportRun,
     StoredBrokerEvidenceEvent,
 )
+from account_truth.broker_statement import (
+    BrokerEvidenceEvent,
+    BrokerStatementPreview,
+    BrokerStatementValidationError,
+    parse_broker_statement_csv,
+)
 from account_truth.manual_review import (
     ManualReviewDecision,
     ManualReviewRepository,
@@ -36,8 +42,49 @@ class ReviewDecisionCreate(BaseModel):
     reviewer: str = "local"
 
 
+class BrokerStatementPreviewCreate(BaseModel):
+    content: str
+    source_name: str = "local-broker-statement.csv"
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/account-truth", tags=["account-truth"])
+
+    @r.post("/broker-statement/preview")
+    async def preview_broker_statement(
+        body: BrokerStatementPreviewCreate,
+    ) -> dict[str, object]:
+        preview = parse_broker_statement_csv(body.content)
+        return _preview_response(preview, source_name=body.source_name)
+
+    @r.post("/broker-statement/import")
+    async def import_broker_statement(
+        body: BrokerStatementPreviewCreate,
+    ) -> dict[str, object]:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        repository = _repository_for_state(state)
+        preview = parse_broker_statement_csv(body.content)
+        if preview.validation_status == "blocked":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Broker statement preview is blocked.",
+                    "preview": _preview_response(preview, source_name=body.source_name),
+                },
+            )
+        import_run = repository.save_preview(
+            preview,
+            source_name=body.source_name.strip() or "local-broker-statement.csv",
+        )
+        report = _build_report_for_import_run(state, repository, import_run)
+        return {
+            "import_run": _import_run_response(import_run),
+            "preview": _preview_response(preview, source_name=body.source_name),
+            "report": _report_summary_response(import_run, report),
+            "does_not_mutate_production_ledger": True,
+        }
 
     @r.get("/import-runs")
     async def list_import_runs(limit: int = 50) -> list[dict[str, object]]:
@@ -160,6 +207,74 @@ def _import_run_response(import_run: BrokerImportRun) -> dict[str, object]:
         "limitations": list(import_run.limitations),
         "duplicate_of_import_run_id": import_run.duplicate_of_import_run_id,
         "created_at": import_run.created_at,
+    }
+
+
+def _preview_response(
+    preview: BrokerStatementPreview,
+    *,
+    source_name: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": preview.schema_version,
+        "source_type": preview.source_type,
+        "source_name": source_name,
+        "generated_at": preview.generated_at,
+        "file_fingerprint": preview.file_fingerprint,
+        "normalized_columns": list(preview.normalized_columns),
+        "row_count": preview.row_count,
+        "valid_row_count": preview.valid_row_count,
+        "invalid_row_count": preview.invalid_row_count,
+        "duplicate_row_count": preview.duplicate_row_count,
+        "validation_status": preview.validation_status,
+        "limitations": list(preview.limitations),
+        "errors": [_preview_error_response(error) for error in preview.errors],
+        "events_preview": [
+            _preview_event_response(event) for event in preview.events[:20]
+        ],
+        "preview_event_count": min(len(preview.events), 20),
+        "total_event_count": len(preview.events),
+        "does_not_mutate_production_ledger": True,
+    }
+
+
+def _preview_error_response(
+    error: BrokerStatementValidationError,
+) -> dict[str, object]:
+    return {
+        "row_number": error.row_number,
+        "code": error.code,
+        "message": error.message,
+    }
+
+
+def _preview_event_response(event: BrokerEvidenceEvent) -> dict[str, object]:
+    return {
+        "row_number": event.row_number,
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "occurred_at": event.occurred_at,
+        "settled_at": event.settled_at,
+        "symbol": event.symbol,
+        "instrument_name": event.instrument_name,
+        "asset_class": event.asset_class,
+        "currency": event.currency,
+        "quantity": str(event.quantity),
+        "price": str(event.price),
+        "gross_amount": str(event.gross_amount),
+        "fee": str(event.fee),
+        "tax": str(event.tax),
+        "net_amount": str(event.net_amount),
+        "cash_balance": (
+            str(event.cash_balance) if event.cash_balance is not None else None
+        ),
+        "position_quantity": (
+            str(event.position_quantity)
+            if event.position_quantity is not None
+            else None
+        ),
+        "cost_basis": str(event.cost_basis) if event.cost_basis is not None else None,
+        "is_duplicate": event.is_duplicate,
     }
 
 

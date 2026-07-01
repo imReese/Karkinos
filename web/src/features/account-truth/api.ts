@@ -103,6 +103,59 @@ export type ReconciliationReportDetail = ReconciliationReportSummary & {
   items: ReconciliationItem[];
 };
 
+export type BrokerStatementPreviewEvent = {
+  row_number: number;
+  event_id: string;
+  event_type: string;
+  occurred_at: string;
+  settled_at: string;
+  symbol: string;
+  instrument_name: string;
+  asset_class: string;
+  currency: string;
+  quantity: string;
+  price: string;
+  gross_amount: string;
+  fee: string;
+  tax: string;
+  net_amount: string;
+  cash_balance: string | null;
+  position_quantity: string | null;
+  cost_basis: string | null;
+  is_duplicate: boolean;
+};
+
+export type BrokerStatementPreview = {
+  schema_version: string;
+  source_type: string;
+  source_name: string;
+  generated_at: string;
+  file_fingerprint: string;
+  normalized_columns: string[];
+  row_count: number;
+  valid_row_count: number;
+  invalid_row_count: number;
+  duplicate_row_count: number;
+  validation_status: string;
+  limitations: string[];
+  errors: Array<{
+    row_number: number | null;
+    code: string;
+    message: string;
+  }>;
+  events_preview: BrokerStatementPreviewEvent[];
+  preview_event_count: number;
+  total_event_count: number;
+  does_not_mutate_production_ledger: boolean;
+};
+
+export type BrokerStatementImportResult = {
+  import_run: ImportRun;
+  preview: BrokerStatementPreview;
+  report: ReconciliationReportSummary;
+  does_not_mutate_production_ledger: boolean;
+};
+
 export function useAccountTruthScoreQuery() {
   return useQuery({
     queryKey: ['account-truth-score'],
@@ -189,6 +242,62 @@ export function useRecordReviewDecisionMutation() {
         queryClient.invalidateQueries({ queryKey: ['account-truth-reports'] }),
         queryClient.invalidateQueries({
           queryKey: ['account-truth-report-detail', variables.importRunId],
+        }),
+      ]);
+    },
+  });
+}
+
+async function postBrokerStatement<T>(
+  path: string,
+  payload: {
+    content: string;
+    source_name: string;
+  },
+) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export function useBrokerStatementPreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: { content: string; source_name: string }) =>
+      postBrokerStatement<BrokerStatementPreview>(
+        '/api/account-truth/broker-statement/preview',
+        payload,
+      ),
+  });
+}
+
+export function useBrokerStatementImportMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { content: string; source_name: string }) =>
+      postBrokerStatement<BrokerStatementImportResult>(
+        '/api/account-truth/broker-statement/import',
+        payload,
+      ),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['account-truth-score'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-truth-import-runs'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-truth-reports'] }),
+        queryClient.invalidateQueries({
+          queryKey: [
+            'account-truth-report-detail',
+            result.import_run.import_run_id,
+          ],
         }),
       ]);
     },
