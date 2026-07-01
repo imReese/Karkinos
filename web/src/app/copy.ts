@@ -223,9 +223,11 @@ export const copy = {
         tradingPlanMeta: (
           manualReady: number,
           candidates: number,
-          blockers: number,
+          blockers: number | string,
         ) =>
-          `${manualReady} ready · ${candidates} pool · ${blockers} blocked`,
+          typeof blockers === 'number'
+            ? `${manualReady} ready · ${candidates} pool · ${blockers} blocked`
+            : `${manualReady} ready · ${candidates} pool · ${blockers}`,
         strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
         strategyEvidenceRequired: 'Strategy contribution needs linked evidence',
         strategyUnavailable: 'Strategy contribution is temporarily unavailable',
@@ -2506,8 +2508,11 @@ export const copy = {
         tradingPlanMeta: (
           manualReady: number,
           candidates: number,
-          blockers: number,
-        ) => `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers} 阻断`,
+          blockers: number | string,
+        ) =>
+          typeof blockers === 'number'
+            ? `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers} 阻断`
+            : `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers}`,
         strategyEvidenceLinked: '策略贡献已连接证据',
         strategyEvidenceRequired: '策略贡献需要补充证据',
         strategyUnavailable: '策略贡献暂不可用',

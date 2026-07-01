@@ -273,6 +273,14 @@ export type DailyTradingPlanBlocker = {
   manual_confirmation_status?: string | null;
 };
 
+export type DailyTradingPlanBlockerSummary = {
+  category: string;
+  target: string;
+  count: number;
+  reasons: string[];
+  sample_symbols: string[];
+};
+
 export type DailyTradingPlanResponse = {
   schema_version: string;
   plan_date: string | null;
@@ -284,6 +292,7 @@ export type DailyTradingPlanResponse = {
   manual_ready_count: number;
   order_intent_count: number;
   blocked_count: number;
+  blocker_summary?: DailyTradingPlanBlockerSummary[];
   available_cash: number;
   total_equity: number;
   constraint_summary?: {

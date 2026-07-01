@@ -334,6 +334,15 @@ def test_trading_plan_keeps_large_candidate_pool_out_of_manual_order_intents() -
     assert plan["conclusion_status"] == "no_manual_action"
     assert plan["blocked_count"] == 50
     assert {item["reason"] for item in plan["blockers"]} == {"awaiting_risk_gate"}
+    assert plan["blocker_summary"] == [
+        {
+            "category": "evidence_not_ready",
+            "target": "risk",
+            "count": 50,
+            "reasons": ["awaiting_risk_gate"],
+            "sample_symbols": ["600519"],
+        }
+    ]
 
 
 def test_trading_plan_sell_intent_uses_current_position_for_remaining_quantity() -> (
@@ -403,3 +412,12 @@ def test_trading_plan_blocks_manual_intents_when_account_truth_is_blocked() -> N
     assert plan["conclusion_status"] == "account_truth_blocked"
     assert plan["primary_target"] == "account-truth"
     assert plan["blockers"][0]["reason"] == "account_truth_blocked"
+    assert plan["blocker_summary"] == [
+        {
+            "category": "account_truth",
+            "target": "account-truth",
+            "count": 1,
+            "reasons": ["account_truth_blocked"],
+            "sample_symbols": ["600519"],
+        }
+    ]

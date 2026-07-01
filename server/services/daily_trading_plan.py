@@ -110,6 +110,7 @@ def build_daily_trading_plan(
         "manual_ready_count": manual_ready_count,
         "order_intent_count": len(order_intents),
         "blocked_count": len(blockers),
+        "blocker_summary": _blocker_summary(blockers),
         "available_cash": available_cash,
         "total_equity": total_equity,
         "constraint_summary": _constraint_summary(order_intents),
@@ -689,6 +690,67 @@ def _conclusion(
     if any(item.get("target") == "market" for item in blockers):
         return "market_blocked", "market"
     return "no_manual_action", "decision"
+
+
+def _blocker_summary(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for blocker in blockers:
+        category = _blocker_category(blocker)
+        bucket = grouped.setdefault(
+            category,
+            {
+                "category": category,
+                "target": blocker.get("target") or "decision",
+                "count": 0,
+                "reasons": [],
+                "sample_symbols": [],
+            },
+        )
+        bucket["count"] += 1
+        reason = blocker.get("reason")
+        if reason and reason not in bucket["reasons"]:
+            bucket["reasons"].append(reason)
+        symbol = blocker.get("symbol")
+        if (
+            symbol
+            and symbol not in bucket["sample_symbols"]
+            and len(bucket["sample_symbols"]) < 5
+        ):
+            bucket["sample_symbols"].append(symbol)
+    return sorted(
+        grouped.values(),
+        key=lambda item: _BLOCKER_CATEGORY_ORDER.get(str(item["category"]), 99),
+    )
+
+
+_BLOCKER_CATEGORY_ORDER = {
+    "account_truth": 0,
+    "market_data": 1,
+    "portfolio": 2,
+    "risk": 3,
+    "evidence_not_ready": 4,
+    "other": 9,
+}
+
+
+def _blocker_category(blocker: dict[str, Any]) -> str:
+    target = str(blocker.get("target") or "").strip().lower()
+    reason = str(blocker.get("reason") or "").strip().lower()
+    if target == "account-truth" or reason == "account_truth_blocked":
+        return "account_truth"
+    if target == "market" or reason == "market_data_unavailable":
+        return "market_data"
+    if target == "portfolio" or reason in {
+        "insufficient_cash",
+        "cash_buffer_breached",
+        "concentration_limit_breached",
+    }:
+        return "portfolio"
+    if reason == "awaiting_risk_gate" or target == "decision":
+        return "evidence_not_ready"
+    if target == "risk":
+        return "risk"
+    return "other"
 
 
 def _side(candidate: dict[str, Any]) -> str | None:
