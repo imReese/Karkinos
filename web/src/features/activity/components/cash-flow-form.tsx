@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../app/copy';
+import { toDatetimeLocalInputValue } from '../datetime-local';
 
 export type CashFlowFormValues = {
   occurred_at: string;
@@ -22,7 +23,7 @@ export function CashFlowForm({
   const labels = copy.activity.forms.cashFlow;
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createDefaultValues = (): CashFlowFormValues => ({
-    occurred_at: new Date().toISOString().slice(0, 16),
+    occurred_at: toDatetimeLocalInputValue(),
     amount: 0,
     flow_type: 'deposit',
     note: '',
