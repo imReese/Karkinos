@@ -1181,6 +1181,88 @@ test('keeps large candidate pools separate from manual-ready work in Chinese', a
   expect(within(workbench).queryByText('50 个订单意图待人工确认')).toBeNull();
 });
 
+test('explains operations blockers when candidates are waiting for risk gate', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'blocked',
+        primary_target: 'trading',
+        health: {
+          total: 8,
+          pass: 2,
+          degraded: 2,
+          blocked: 1,
+          manual_action_required: 1,
+          skipped: 2,
+        },
+        subsystems: [
+          {
+            id: 'daily_trading_plan',
+            status: 'blocked',
+            tone: 'danger',
+            target: 'trading',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'resolve_daily_plan_blockers',
+            limitations: [],
+            detail_status: 'no_manual_action',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 50,
+          manual_ready_count: 0,
+          blocked_count: 50,
+          blocker_summary: [
+            {
+              category: 'evidence_not_ready',
+              target: 'risk',
+              count: 50,
+              reasons: ['awaiting_risk_gate'],
+              sample_symbols: ['603659', '600066', '026539'],
+            },
+          ],
+          order_intent_count: 0,
+          conclusion_status: 'no_manual_action',
+        },
+        paper_shadow: {
+          status: 'not_required',
+          run_id: null,
+          order_intent_count: 0,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_required',
+          next_manual_review_step: 'none',
+          last_run_at: null,
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  const firstGroup = await screen.findByTestId('overview-today-queue-first');
+
+  expect(within(firstGroup).getByText('风险闸门待检查')).toBeTruthy();
+  expect(
+    within(firstGroup).getByText(
+      '50 个候选等待风险闸门检查；当前 0 个可人工确认。',
+    ),
+  ).toBeTruthy();
+  expect(within(firstGroup).getByText('50 待检查')).toBeTruthy();
+  expect(within(firstGroup).getByText('查看风控原因')).toBeTruthy();
+  expect(queue.textContent).not.toContain('今日待办存在阻断');
+  expect(queue.textContent).not.toContain('处理日度交易计划阻断项');
+  expect(queue.textContent).not.toContain('1 阻断');
+});
+
 test('shows missing market pulse move fields as explicit data gaps', async () => {
   installOverviewFetchMock(
     {},
