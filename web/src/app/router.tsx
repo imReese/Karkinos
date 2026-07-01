@@ -32,6 +32,7 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
+import { DailyOperationsTower } from '../features/account/components/daily-operations-tower';
 import type { QuoteDiagnosticItem } from '../features/account/components/dashboard-quick-actions';
 import {
   useAccountStrategyContributionQuery,
@@ -476,6 +477,7 @@ export function OverviewPage() {
               />
             </div>
             <div className="min-w-0 space-y-5">
+              <DailyOperationsTower summary={overview.data.daily_operations} />
               <DashboardTodayQueue
                 overview={overview.data}
                 marketHealth={marketHealth.data}

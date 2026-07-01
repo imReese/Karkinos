@@ -153,9 +153,13 @@ export const copy = {
         operationsConclusion: 'Today status',
         operationsNoManualAction: 'No manual trading action needed today',
         operationsPendingManual: (count: number) =>
-          `${count} item${count === 1 ? '' : 's'} need manual confirmation`,
+          count === 1
+            ? '1 item needs manual confirmation'
+            : `${count} items need manual confirmation`,
         operationsRiskBlocked: (count: number) =>
-          `${count} risk block${count === 1 ? '' : 's'} need review`,
+          count === 1
+            ? '1 risk block needs review'
+            : `${count} risk blocks need review`,
         operationsAccountTruthBlocked:
           'Account truth is blocked; pause execution review',
         operationsDataUnavailable:

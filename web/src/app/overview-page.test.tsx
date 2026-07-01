@@ -75,6 +75,7 @@ const ledgerEntries = [
 ];
 
 beforeEach(() => {
+  window.localStorage.clear();
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -554,6 +555,114 @@ test('renders the daily workbench before chart and detail panels', async () => {
   ).toBe('compact');
 });
 
+test('renders daily operations tower without treating 50 candidates as manual work', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock({
+    daily_operations: {
+      candidate_pool_count: 50,
+      evidence_passed_count: 3,
+      risk_checked_count: 3,
+      risk_passed_count: 3,
+      risk_blocked_count: 0,
+      paper_shadow_review_count: 50,
+      manual_ready_count: 0,
+      pending_manual_order_count: 0,
+      execution_record_count: 0,
+      fill_record_count: 0,
+      ledger_review_count: 0,
+      execution_exception_count: 0,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      conclusion_status: 'no_manual_action',
+      primary_target: 'decision',
+      limitations: [],
+    },
+  });
+
+  renderOverviewPage({ installFetch: false });
+
+  const tower = await screen.findByTestId('daily-operations-tower');
+  expect(within(tower).getByText('今日操作塔台')).toBeTruthy();
+  expect(within(tower).getByText('今日无需手动交易')).toBeTruthy();
+  expect(within(tower).getByText('候选池')).toBeTruthy();
+  expect(within(tower).getByText('50')).toBeTruthy();
+  expect(within(tower).getByText('待人工确认')).toBeTruthy();
+  expect(within(tower).getAllByText('0').length).toBeGreaterThan(0);
+  expect(within(tower).getByText('人工确认')).toBeTruthy();
+  expect(within(tower).getByText('未启用')).toBeTruthy();
+  expect(within(tower).getByText('查看候选证据')).toBeTruthy();
+  expect(tower.textContent).not.toContain('50 项待人工确认');
+  expect(tower.textContent).not.toContain('50 个待确认');
+});
+
+test('routes daily operations tower primary action to Trading for pending manual orders', async () => {
+  installOverviewFetchMock({
+    daily_operations: {
+      candidate_pool_count: 1,
+      evidence_passed_count: 1,
+      risk_checked_count: 1,
+      risk_passed_count: 1,
+      risk_blocked_count: 0,
+      paper_shadow_review_count: 0,
+      manual_ready_count: 1,
+      pending_manual_order_count: 1,
+      execution_record_count: 1,
+      fill_record_count: 0,
+      ledger_review_count: 0,
+      execution_exception_count: 0,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      conclusion_status: 'pending_manual_confirmation',
+      primary_target: 'trading',
+      limitations: [],
+    },
+  });
+
+  renderOverviewPage({ installFetch: false });
+
+  const tower = await screen.findByTestId('daily-operations-tower');
+  expect(within(tower).getByText('1 item needs manual confirmation')).toBeTruthy();
+  expect(
+    within(tower)
+      .getByRole('link', { name: 'Enter manual confirmation' })
+      .getAttribute('href'),
+  ).toBe('/trading');
+});
+
+test('routes daily operations tower primary action to Risk for risk blockers', async () => {
+  installOverviewFetchMock({
+    daily_operations: {
+      candidate_pool_count: 2,
+      evidence_passed_count: 1,
+      risk_checked_count: 2,
+      risk_passed_count: 1,
+      risk_blocked_count: 1,
+      paper_shadow_review_count: 1,
+      manual_ready_count: 0,
+      pending_manual_order_count: 0,
+      execution_record_count: 0,
+      fill_record_count: 0,
+      ledger_review_count: 0,
+      execution_exception_count: 0,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      conclusion_status: 'risk_blocked',
+      primary_target: 'risk',
+      limitations: [],
+    },
+  });
+
+  renderOverviewPage({ installFetch: false });
+
+  const tower = await screen.findByTestId('daily-operations-tower');
+  expect(within(tower).getByText('1 risk block needs review')).toBeTruthy();
+  expect(
+    within(tower)
+      .getByRole('link', { name: 'View risk reasons' })
+      .getAttribute('href'),
+  ).toBe('/risk');
+});
+
 test('orders overview workbench items by user-facing priority', async () => {
   installOverviewFetchMock(
     {
@@ -607,17 +716,17 @@ test('orders overview workbench items by user-facing priority', async () => {
 
   const text = queue.textContent ?? '';
   expect(text.indexOf('Market data or NAV needs review.')).toBeGreaterThan(-1);
-  expect(text.indexOf('Strategy candidate action')).toBeGreaterThan(-1);
+  expect(text.indexOf('Strategy candidate signal')).toBeGreaterThan(-1);
   expect(text.indexOf('No orders awaiting confirmation')).toBeGreaterThan(-1);
   expect(text.indexOf('Market data or NAV needs review.')).toBeLessThan(
-    text.indexOf('Strategy candidate action'),
+    text.indexOf('Strategy candidate signal'),
   );
-  expect(text.indexOf('Strategy candidate action')).toBeLessThan(
+  expect(text.indexOf('Strategy candidate signal')).toBeLessThan(
     text.indexOf('No orders awaiting confirmation'),
   );
 });
 
-test('surfaces strategy candidate actions in the overview workbench', async () => {
+test('surfaces strategy candidate signals in the overview workbench', async () => {
   installOverviewFetchMock(
     {},
     {
@@ -660,9 +769,64 @@ test('surfaces strategy candidate actions in the overview workbench', async () =
   renderOverviewPage({ installFetch: false });
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
-  expect(within(workbench).getByText('Strategy candidate action')).toBeTruthy();
+  expect(within(workbench).getByText('Strategy candidate signal')).toBeTruthy();
   expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
+  expect(within(workbench).getByText('1 candidate signal')).toBeTruthy();
   expect(within(workbench).getByText('Review decision evidence')).toBeTruthy();
+});
+
+test('labels overview candidate totals as signals in Chinese', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  const candidateTemplate = {
+    id: 'candidate-1',
+    action: 'sell',
+    symbol: '603659',
+    display_name: '璞泰来',
+    name: '璞泰来',
+    strategy_id: 'dual_ma',
+    strategy_name: '双均线策略',
+    target_weight: 0,
+    price: 17,
+    asset_class: 'stock',
+    risk_gate_status: 'not_checked',
+    manual_confirmation_status: 'awaiting_risk_gate',
+    evidence: {
+      strategy: { strategy_id: 'dual_ma' },
+      risk_gate: { status: 'not_checked' },
+    },
+  };
+  installOverviewFetchMock(
+    {},
+    {
+      decision: {
+        lane: 'daily',
+        decision_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        decision: 'sell',
+        requires_manual_confirmation: false,
+        summary: {
+          candidate_count: 50,
+          ready_for_manual_confirmation_count: 0,
+        },
+        candidates: Array.from({ length: 50 }, (_, index) => ({
+          ...candidateTemplate,
+          id: `candidate-${index + 1}`,
+          symbol:
+            index === 0 ? '603659' : `600${String(index).padStart(3, '0')}`,
+        })),
+        no_action_reasons: [],
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const workbench = await screen.findByTestId('overview-daily-workbench');
+  expect(within(workbench).getByText('策略候选信号')).toBeTruthy();
+  expect(within(workbench).getByText('卖出候选 · 璞泰来')).toBeTruthy();
+  expect(within(workbench).getByText('50 个候选信号')).toBeTruthy();
+  expect(within(workbench).queryByText('50 个候选动作')).toBeNull();
 });
 
 test('shows missing market pulse move fields as explicit data gaps', async () => {
