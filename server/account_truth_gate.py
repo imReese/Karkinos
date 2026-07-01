@@ -155,16 +155,26 @@ def _latest_quotes_by_symbol(db: Any) -> dict[str, dict[str, object]]:
 def _ledger_fact_from_entry(entry: LedgerEntry) -> KarkinosLedgerFact:
     quantity = _decimal_or_zero(entry.quantity)
     price = _decimal_or_zero(entry.price)
+    gross_amount = _optional_decimal(entry.gross_amount) or quantity * price
+    fee = _ledger_fee_component(entry)
+    tax = _ledger_tax_component(entry)
+    transfer_fee = _ledger_transfer_fee_component(entry)
     return KarkinosLedgerFact(
         event_type=entry.entry_type,
         symbol=str(entry.symbol or ""),
         quantity=quantity,
         price=price,
-        gross_amount=quantity * price,
-        fee=_decimal_or_zero(entry.commission),
-        tax=Decimal("0"),
-        transfer_fee=Decimal("0"),
-        net_amount=_decimal_or_zero(entry.amount),
+        gross_amount=gross_amount,
+        fee=fee,
+        tax=tax,
+        transfer_fee=transfer_fee,
+        net_amount=_ledger_net_cash_impact(
+            entry,
+            gross_amount=gross_amount,
+            fee=fee,
+            tax=tax,
+            transfer_fee=transfer_fee,
+        ),
     )
 
 
@@ -177,3 +187,73 @@ def _decimal_or_zero(value: object | None) -> Decimal:
     if value is None:
         return Decimal("0")
     return Decimal(str(value))
+
+
+def _optional_decimal(value: object | None) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    return Decimal(str(value))
+
+
+def _ledger_fee_component(entry: LedgerEntry) -> Decimal:
+    breakdown = entry.fee_breakdown or {}
+    fee_keys = (
+        "commission",
+        "subscription_fee",
+        "redemption_fee",
+        "exchange_clearing_fee",
+        "surcharge_fee",
+        "other_fees",
+    )
+    total = sum(
+        (_breakdown_decimal(breakdown, key) or Decimal("0")) for key in fee_keys
+    )
+    if total != Decimal("0"):
+        return abs(total)
+    return abs(_decimal_or_zero(entry.commission))
+
+
+def _ledger_tax_component(entry: LedgerEntry) -> Decimal:
+    return abs(
+        _breakdown_decimal(entry.fee_breakdown or {}, "stamp_tax", "tax")
+        or Decimal("0")
+    )
+
+
+def _ledger_transfer_fee_component(entry: LedgerEntry) -> Decimal:
+    return abs(
+        _breakdown_decimal(entry.fee_breakdown or {}, "transfer_fee") or Decimal("0")
+    )
+
+
+def _breakdown_decimal(
+    breakdown: dict[str, object],
+    *keys: str,
+) -> Decimal | None:
+    for key in keys:
+        value = breakdown.get(key)
+        if value is not None and value != "":
+            return Decimal(str(value))
+    return None
+
+
+def _ledger_net_cash_impact(
+    entry: LedgerEntry,
+    *,
+    gross_amount: Decimal,
+    fee: Decimal,
+    tax: Decimal,
+    transfer_fee: Decimal,
+) -> Decimal:
+    if entry.net_cash_impact is not None:
+        return _decimal_or_zero(entry.net_cash_impact)
+
+    entry_type = entry.entry_type
+    total_cost = fee + tax + transfer_fee
+    if entry_type == "trade_buy":
+        return -(gross_amount + total_cost)
+    if entry_type == "trade_sell":
+        return gross_amount - total_cost
+    if entry_type in {"cash_withdraw", "cash_withdrawal", "withdraw", "fee"}:
+        return -abs(_decimal_or_zero(entry.amount))
+    return _decimal_or_zero(entry.amount)
