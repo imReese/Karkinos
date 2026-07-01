@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 
 import { usePreferences } from '../../../app/preferences';
 import {
@@ -16,11 +16,14 @@ import {
 } from '../../../shared/public-labels';
 import { formatLedgerEvidenceReference } from '../../../shared/ledger-format';
 import {
+  useBrokerStatementImportMutation,
+  useBrokerStatementPreviewMutation,
   useAccountTruthImportRunsQuery,
   useAccountTruthScoreQuery,
   useReconciliationReportDetailQuery,
   useReconciliationReportsQuery,
   useRecordReviewDecisionMutation,
+  type BrokerStatementPreview,
   type ReconciliationItem,
   type ReconciliationStatus,
   type ReviewStatus,
@@ -85,6 +88,25 @@ const labels = {
       'Run reconciliation against Karkinos ledger and positions',
       'Then return here to review differences',
     ],
+    importWizardKicker: 'Broker CSV',
+    importWizardTitle: 'Upload broker statement',
+    importWizardBody:
+      'Upload or paste a canonical broker statement CSV. Preview validates the file without staging evidence.',
+    sourceName: 'Source name',
+    chooseFile: 'Choose CSV file',
+    csvContent: 'CSV content',
+    previewImport: 'Preview',
+    confirmImport: 'Stage evidence and reconcile',
+    previewReady: 'Preview ready',
+    importReady: 'Evidence staged',
+    importFailed: 'Import failed',
+    noFileContent: 'Choose a CSV file or paste CSV content first.',
+    validRows: 'Valid rows',
+    invalidRows: 'Invalid rows',
+    duplicateRows: 'Duplicate rows',
+    eventPreview: 'Event preview',
+    importBoundary:
+      'This stages broker evidence only. It does not mutate the production ledger, positions, cash, or broker orders.',
     broker: 'Broker',
     karkinos: 'Karkinos',
     difference: 'Difference',
@@ -141,6 +163,25 @@ const labels = {
       '把券商证据与 Karkinos 账本和持仓做对账',
       '回到这里逐条复核差异',
     ],
+    importWizardKicker: '券商 CSV',
+    importWizardTitle: '上传券商流水',
+    importWizardBody:
+      '上传或粘贴 canonical broker statement CSV。预览只校验文件，不会暂存证据。',
+    sourceName: '来源名称',
+    chooseFile: '选择 CSV 文件',
+    csvContent: 'CSV 内容',
+    previewImport: '预览',
+    confirmImport: '暂存证据并对账',
+    previewReady: '预览完成',
+    importReady: '证据已暂存',
+    importFailed: '导入失败',
+    noFileContent: '请先选择 CSV 文件或粘贴 CSV 内容。',
+    validRows: '有效行',
+    invalidRows: '无效行',
+    duplicateRows: '重复行',
+    eventPreview: '事件预览',
+    importBoundary:
+      '这里只暂存券商证据；不会修改生产账本、持仓、现金，也不会提交券商订单。',
     broker: '券商',
     karkinos: 'Karkinos',
     difference: '差异',
@@ -416,7 +457,16 @@ export function AccountTruthReviewPage() {
           </section>
         </div>
 
-        <section className="app-card min-w-0 p-5">
+        <div className="grid min-w-0 content-start gap-5">
+          <BrokerEvidenceImportWizard
+            locale={locale}
+            onImported={(importRunId) => {
+              setSelectedImportRunId(importRunId);
+              setFilter('all');
+            }}
+          />
+
+          <section className="app-card min-w-0 p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="app-product-mark">{text.reports}</div>
@@ -550,9 +600,236 @@ export function AccountTruthReviewPage() {
               ) : null}
             </div>
           </div>
-        </section>
+          </section>
+        </div>
       </div>
     </section>
+  );
+}
+
+function BrokerEvidenceImportWizard({
+  locale,
+  onImported,
+}: {
+  locale: 'en' | 'zh';
+  onImported: (importRunId: string) => void;
+}) {
+  const text = labels[locale];
+  const [sourceName, setSourceName] = useState('local-broker-statement.csv');
+  const [content, setContent] = useState('');
+  const [fileMessage, setFileMessage] = useState<string | null>(null);
+  const previewMutation = useBrokerStatementPreviewMutation();
+  const importMutation = useBrokerStatementImportMutation();
+  const preview = previewMutation.data ?? importMutation.data?.preview ?? null;
+  const canSubmit = content.trim().length > 0 && sourceName.trim().length > 0;
+  const previewIsBlocked = preview?.validation_status === 'blocked';
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) {
+      return;
+    }
+    setFileMessage(null);
+    setSourceName(file.name || 'local-broker-statement.csv');
+    try {
+      setContent(await file.text());
+      previewMutation.reset();
+      importMutation.reset();
+    } catch {
+      setFileMessage(text.noFileContent);
+    }
+  }
+
+  function previewStatement() {
+    if (!canSubmit) {
+      setFileMessage(text.noFileContent);
+      return;
+    }
+    setFileMessage(null);
+    previewMutation.mutate({
+      content,
+      source_name: sourceName,
+    });
+  }
+
+  function importStatement() {
+    if (!canSubmit) {
+      setFileMessage(text.noFileContent);
+      return;
+    }
+    setFileMessage(null);
+    importMutation.mutate(
+      {
+        content,
+        source_name: sourceName,
+      },
+      {
+        onSuccess: (result) => {
+          onImported(result.import_run.import_run_id);
+        },
+      },
+    );
+  }
+
+  return (
+    <section
+      className="app-card min-w-0 p-5"
+      data-testid="account-truth-import-wizard"
+    >
+      <div className="app-product-mark">{text.importWizardKicker}</div>
+      <h2 className="mt-1 text-lg font-black tracking-normal text-[var(--app-text)]">
+        {text.importWizardTitle}
+      </h2>
+      <p className="app-muted mt-2 text-sm leading-6">
+        {text.importWizardBody}
+      </p>
+      <div className="mt-4 grid gap-3">
+        <label className="grid gap-1 text-xs font-bold text-[var(--app-muted)]">
+          {text.sourceName}
+          <input
+            className="w-full rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-0)] px-3 py-2 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
+            value={sourceName}
+            onChange={(event) => setSourceName(event.currentTarget.value)}
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-bold text-[var(--app-muted)]">
+          {text.chooseFile}
+          <input
+            accept=".csv,text/csv,text/plain"
+            className="w-full rounded-2xl border border-dashed border-[var(--app-border)] bg-[var(--app-surface-0)] px-3 py-2 text-sm text-[var(--app-muted)]"
+            type="file"
+            onChange={handleFileChange}
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-bold text-[var(--app-muted)]">
+          {text.csvContent}
+          <textarea
+            className="min-h-28 w-full resize-y rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-0)] px-3 py-2 font-mono text-xs text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
+            value={content}
+            onChange={(event) => {
+              setContent(event.currentTarget.value);
+              previewMutation.reset();
+              importMutation.reset();
+            }}
+          />
+        </label>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          className="app-button-secondary rounded-2xl px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canSubmit || previewMutation.isPending}
+          type="button"
+          onClick={previewStatement}
+        >
+          {text.previewImport}
+        </button>
+        <button
+          className="app-button-primary rounded-2xl px-4 py-2 text-xs font-black disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={
+            !canSubmit ||
+            previewIsBlocked ||
+            importMutation.isPending ||
+            previewMutation.isPending
+          }
+          type="button"
+          onClick={importStatement}
+        >
+          {text.confirmImport}
+        </button>
+      </div>
+      <p className="mt-3 text-xs font-semibold leading-5 text-[var(--app-muted)]">
+        {text.importBoundary}
+      </p>
+      {fileMessage ? (
+        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_12%,transparent)] px-4 py-3 text-xs font-bold text-[var(--app-warning)]">
+          {fileMessage}
+        </div>
+      ) : null}
+      {preview ? <BrokerStatementPreviewPanel preview={preview} locale={locale} /> : null}
+      {importMutation.isSuccess ? (
+        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_12%,transparent)] px-4 py-3 text-xs font-bold text-[var(--app-success)]">
+          {text.importReady}: {importMutation.data.import_run.source_name}
+        </div>
+      ) : null}
+      {previewMutation.isError || importMutation.isError ? (
+        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_12%,transparent)] px-4 py-3 text-xs font-bold text-[var(--app-danger)]">
+          {text.importFailed}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function BrokerStatementPreviewPanel({
+  preview,
+  locale,
+}: {
+  preview: BrokerStatementPreview;
+  locale: 'en' | 'zh';
+}) {
+  const text = labels[locale];
+  return (
+    <div className="mt-4 rounded-3xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-[var(--app-text)]">
+            {text.previewReady}
+          </div>
+          <div className="mt-1 text-xs font-semibold text-[var(--app-muted)]">
+            {preview.source_name}
+          </div>
+        </div>
+        <StatusBadge status={preview.validation_status} locale={locale} />
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <Metric label={text.validRows} value={String(preview.valid_row_count)} />
+        <Metric
+          label={text.invalidRows}
+          value={String(preview.invalid_row_count)}
+        />
+        <Metric
+          label={text.duplicateRows}
+          value={String(preview.duplicate_row_count)}
+        />
+      </div>
+      {preview.errors.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {preview.errors.slice(0, 3).map((error) => (
+            <div
+              key={`${error.row_number ?? 'file'}-${error.code}`}
+              className="rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_35%,transparent)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)]"
+            >
+              {error.row_number ? `Row ${error.row_number}: ` : ''}
+              {formatCode(error.code, locale, 'code')}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {preview.events_preview.length > 0 ? (
+        <div className="mt-3">
+          <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+            {text.eventPreview}
+          </div>
+          <div className="mt-2 grid gap-2">
+            {preview.events_preview.slice(0, 3).map((event) => (
+              <div
+                key={`${event.row_number}-${event.event_id}`}
+                className="grid min-w-0 gap-1 rounded-2xl bg-[var(--app-surface-0)] px-3 py-2 text-xs"
+              >
+                <div className="font-black text-[var(--app-text)]">
+                  {formatCode(event.event_type, locale, 'code')}
+                  {event.symbol ? ` · ${event.symbol}` : ''}
+                </div>
+                <div className="font-semibold text-[var(--app-muted)]">
+                  {event.currency} {event.net_amount}
+                  {event.cash_balance ? ` · cash ${event.cash_balance}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

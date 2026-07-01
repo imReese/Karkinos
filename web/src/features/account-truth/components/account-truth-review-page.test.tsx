@@ -89,6 +89,53 @@ const reportDetail = {
   ],
 };
 
+const brokerStatementCsv = [
+  'event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note',
+  'synthetic-cash-001,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0.00,0.00,0.00,0.00,8972.00,,,',
+].join('\n');
+
+const brokerStatementPreview = {
+  schema_version: 'karkinos.broker_statement.v1',
+  source_type: 'canonical_broker_statement_csv',
+  source_name: 'local-broker-statement.csv',
+  generated_at: '2026-06-18T10:00:00+08:00',
+  file_fingerprint: 'sha256-preview',
+  normalized_columns: [],
+  row_count: 1,
+  valid_row_count: 1,
+  invalid_row_count: 0,
+  duplicate_row_count: 0,
+  validation_status: 'pass',
+  limitations: [],
+  errors: [],
+  events_preview: [
+    {
+      row_number: 2,
+      event_id: 'synthetic-cash-001',
+      event_type: 'cash_snapshot',
+      occurred_at: '2026-01-15T15:10:00+08:00',
+      settled_at: '2026-01-15',
+      symbol: '',
+      instrument_name: '',
+      asset_class: '',
+      currency: 'CNY',
+      quantity: '0',
+      price: '0',
+      gross_amount: '0.00',
+      fee: '0.00',
+      tax: '0.00',
+      net_amount: '0.00',
+      cash_balance: '8972.00',
+      position_quantity: null,
+      cost_basis: null,
+      is_duplicate: false,
+    },
+  ],
+  preview_event_count: 1,
+  total_event_count: 1,
+  does_not_mutate_production_ledger: true,
+};
+
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -117,6 +164,25 @@ function installFetchMock({
             : input.toString();
       if (url.includes('/api/account-truth/score')) {
         return jsonResponse(scoreResponse);
+      }
+      if (url.includes('/api/account-truth/broker-statement/preview')) {
+        return jsonResponse(brokerStatementPreview);
+      }
+      if (url.includes('/api/account-truth/broker-statement/import')) {
+        return jsonResponse({
+          import_run: {
+            ...importRuns[0],
+            import_run_id: 'import-run-new',
+            source_name: 'local-broker-statement.csv',
+          },
+          preview: brokerStatementPreview,
+          report: {
+            ...reportSummaries[0],
+            import_run_id: 'import-run-new',
+            source_name: 'local-broker-statement.csv',
+          },
+          does_not_mutate_production_ledger: true,
+        });
       }
       if (url.includes('/api/account-truth/import-runs')) {
         return jsonResponse(importRunResponse);
@@ -279,6 +345,40 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
+});
+
+test('previews and stages broker evidence from pasted CSV', async () => {
+  const { fetchMock } = renderAccountTruthReviewPage();
+
+  const wizard = await screen.findByTestId('account-truth-import-wizard');
+  await userEvent.clear(within(wizard).getByLabelText('CSV content'));
+  await userEvent.type(
+    within(wizard).getByLabelText('CSV content'),
+    brokerStatementCsv,
+  );
+  await userEvent.click(within(wizard).getByRole('button', { name: 'Preview' }));
+
+  expect(await within(wizard).findByText('Preview ready')).toBeTruthy();
+  expect(within(wizard).getByText('Valid rows')).toBeTruthy();
+  expect(within(wizard).getByText('Review item')).toBeTruthy();
+
+  await userEvent.click(
+    within(wizard).getByRole('button', {
+      name: 'Stage evidence and reconcile',
+    }),
+  );
+
+  expect(await within(wizard).findByText(/Evidence staged/)).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/account-truth/broker-statement/preview'),
+    ),
+  ).toBe(true);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/account-truth/broker-statement/import'),
+    ),
+  ).toBe(true);
 });
 
 test('localizes manual review action buttons as user actions in Chinese', async () => {
@@ -642,7 +742,8 @@ test('explains the blocked empty state without exposing internal action codes', 
       'No broker statement, position snapshot, or cash snapshot has been staged yet.',
     ),
   ).toBeTruthy();
-  expect(await screen.findByText('Import broker evidence')).toBeTruthy();
+  expect(await screen.findByText('How to use this page')).toBeTruthy();
+  expect(screen.getAllByText('Import broker evidence').length).toBeGreaterThan(0);
   expect(
     await screen.findByText('Then return here to review differences'),
   ).toBeTruthy();

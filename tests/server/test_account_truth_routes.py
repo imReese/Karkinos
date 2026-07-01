@@ -72,6 +72,79 @@ def test_account_truth_import_runs_list_review_metadata(tmp_path, monkeypatch):
     assert isinstance(response[0]["limitations"], list)
 
 
+def test_account_truth_broker_statement_preview_is_read_only(tmp_path, monkeypatch):
+    from server.routes import account_truth as account_truth_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = account_truth_routes.create_router()
+    endpoint = _route(
+        router, "/api/account-truth/broker-statement/preview", "POST"
+    ).endpoint
+    ledger_count_before = _ledger_entry_count(db._path)
+
+    response = asyncio.run(
+        endpoint(
+            body=account_truth_routes.BrokerStatementPreviewCreate(
+                content=BROKER_STATEMENT,
+                source_name="local-statement.csv",
+            )
+        )
+    )
+
+    assert response["schema_version"] == "karkinos.broker_statement.v1"
+    assert response["source_name"] == "local-statement.csv"
+    assert response["validation_status"] == "pass"
+    assert response["row_count"] == 3
+    assert response["valid_row_count"] == 3
+    assert response["does_not_mutate_production_ledger"] is True
+    assert response["total_event_count"] == 3
+    assert response["events_preview"][0]["event_type"] == "trade_buy"
+    assert BrokerEvidenceRepository(db._path).list_import_runs(limit=10) == []
+    assert _ledger_entry_count(db._path) == ledger_count_before
+
+
+def test_account_truth_broker_statement_import_stages_evidence_only(
+    tmp_path,
+    monkeypatch,
+):
+    from server.routes import account_truth as account_truth_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    router = account_truth_routes.create_router()
+    endpoint = _route(
+        router, "/api/account-truth/broker-statement/import", "POST"
+    ).endpoint
+    ledger_count_before = _ledger_entry_count(db._path)
+
+    response = asyncio.run(
+        endpoint(
+            body=account_truth_routes.BrokerStatementPreviewCreate(
+                content=BROKER_STATEMENT,
+                source_name="local-statement.csv",
+            )
+        )
+    )
+    import_run = response["import_run"]
+
+    assert import_run["source_name"] == "local-statement.csv"
+    assert import_run["row_count"] == 3
+    assert response["does_not_mutate_production_ledger"] is True
+    assert response["report"]["import_run_id"] == import_run["import_run_id"]
+    assert response["report"]["status"] == "mismatch"
+    assert _ledger_entry_count(db._path) == ledger_count_before
+
+    repository = BrokerEvidenceRepository(db._path)
+    assert len(repository.list_events(import_run["import_run_id"])) == 3
+
+
 def test_account_truth_reconciliation_reports_list_and_detail(
     tmp_path,
     monkeypatch,
