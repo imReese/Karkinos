@@ -363,9 +363,9 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   renderDecisionCockpit();
 
   expect(await screen.findByText('Decision platform')).toBeTruthy();
-  expect(await screen.findByText('Decision command register')).toBeTruthy();
+  expect(await screen.findByText('Decision evidence register')).toBeTruthy();
   expect(
-    await screen.findByLabelText('Decision register item: Candidate actions 1'),
+    await screen.findByLabelText('Decision register item: Candidate pool 1'),
   ).toBeTruthy();
   expect(
     await screen.findByLabelText(
@@ -437,6 +437,16 @@ test('renders daily and intraday decision cockpit evidence without execution', a
       .getAttribute('href'),
   ).toBe('/portfolio/600519');
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('labels decision candidates as a candidate pool in Chinese', async () => {
+  renderDecisionCockpit({ locale: 'zh' });
+
+  expect(await screen.findByText('决策证据登记')).toBeTruthy();
+  expect(
+    await screen.findByLabelText('Decision register item: 候选池 1'),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('候选动作 1');
 });
 
 test('localizes signal journal audit events without exposing dotted event keys', async () => {
