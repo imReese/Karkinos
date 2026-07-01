@@ -26,10 +26,7 @@ def test_summary_keeps_large_candidate_pool_out_of_manual_actions() -> None:
     candidates = [
         _candidate(risk="passed", manual="awaiting_manual_confirmation")
         for _ in range(3)
-    ] + [
-        _candidate(risk="not_checked", manual="awaiting_risk_gate")
-        for _ in range(47)
-    ]
+    ] + [_candidate(risk="not_checked", manual="awaiting_risk_gate") for _ in range(47)]
 
     summary = build_daily_operations_summary(
         decision_summary={
