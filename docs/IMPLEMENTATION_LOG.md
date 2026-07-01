@@ -4,6 +4,39 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.5 Planning
+
+* 2026-07-01: Daily trading plan implementation now exposes a read-only
+  `/api/decision/trading-plan` surface and a Decision cockpit panel for
+  manual-confirmation order-intent previews. The plan separates candidate pool
+  count, manual-ready count, and blockers; estimates quantity, gross amount,
+  fees, net cash impact, remaining position, and cost-basis effect; and marks
+  buy intents with insufficient cash as portfolio blockers instead of manual
+  confirmation candidates. Broker bridge status remains disabled, the API does
+  not create orders/fills/ledger entries, and the UI states that previews do
+  not submit broker orders.
+* 2026-07-01: The Overview "Today's to-dos" queue now reads the daily trading
+  plan when summarizing the decision-review item. Large candidate pools remain
+  visible as research context, while only `manual_ready_count` is presented as
+  work that can move toward manual confirmation; cash shortfalls and other
+  blockers are prioritized ahead of ordinary watch items. This is still
+  read-only review and navigation, not broker execution.
+* 2026-07-01: Daily trading plan order intents now carry explicit pre-trade
+  constraint checks for trading unit, fee/tax preview, cash buffer,
+  concentration, T+1 sellable quantity, limit up/down state, suspension,
+  special-treatment risk, drawdown, and fund NAV latency. Blocking constraint
+  checks remove the intent from manual-ready counts and create targeted
+  portfolio, risk, or market blockers. The Decision cockpit renders these
+  constraints as localized read-only evidence and keeps broker submission
+  disabled.
+* 2026-07-01: Roadmap documentation was realigned around Daily Trading Plan &
+  Portfolio Construction as the active v1.5 milestone. The intended product
+  progression is daily evidence-linked trading plans, then scheduled
+  paper/shadow operations, then a controlled broker bridge or order-ticket
+  export. Manual confirmation remains the default boundary, broker submission
+  remains disabled, and unattended real-money automation remains deferred. This
+  is documentation planning only and does not change runtime behavior.
+
 ## v1.4 Progress
 
 * 2026-06-27: Portfolio holding strategy-attribution cards now show a concrete

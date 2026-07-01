@@ -221,6 +221,85 @@ export type DecisionResponse = {
   limitations: string[];
 };
 
+export type DailyTradingPlanOrderIntent = {
+  action_id: number | null;
+  symbol: string | null;
+  asset_class: string | null;
+  side: string;
+  target_weight: number;
+  estimated_price: number;
+  estimated_quantity: number;
+  quantity_basis: string;
+  estimated_gross_amount: number;
+  estimated_total_fee: number;
+  estimated_net_cash_impact: number;
+  available_cash_before: number;
+  available_cash_after: number;
+  cash_status: string;
+  cash_shortfall: number;
+  constraint_checks: DailyTradingPlanConstraintCheck[];
+  position_effect?: {
+    current_quantity: number;
+    current_avg_cost: number | null;
+    current_market_value: number;
+    estimated_quantity_after: number;
+    estimated_avg_cost_after: number | null;
+    cost_basis_method: string;
+  };
+  fee_breakdown: Record<string, string>;
+  risk_gate_status: string | null;
+  manual_confirmation_status: string | null;
+  submission_status: string;
+  does_not_submit_broker_order: boolean;
+  evidence_refs: string[];
+};
+
+export type DailyTradingPlanConstraintCheck = {
+  id: string;
+  status: string;
+  target: string;
+  estimated_gross_amount?: number;
+  estimated_market_value_after?: number;
+  estimated_weight_after?: number;
+  [key: string]: unknown;
+};
+
+export type DailyTradingPlanBlocker = {
+  action_id: number | null;
+  symbol: string | null;
+  reason: string;
+  target: string;
+  risk_gate_status?: string | null;
+  manual_confirmation_status?: string | null;
+};
+
+export type DailyTradingPlanResponse = {
+  schema_version: string;
+  plan_date: string | null;
+  generated_at: string | null;
+  source_decision: DecisionAction | string | null;
+  conclusion_status: string;
+  primary_target: string;
+  candidate_pool_count: number;
+  manual_ready_count: number;
+  order_intent_count: number;
+  blocked_count: number;
+  available_cash: number;
+  total_equity: number;
+  constraint_summary?: {
+    check_count: number;
+    passed_count: number;
+    blocked_count: number;
+    blocked_ids: string[];
+  };
+  portfolio_controls?: Record<string, number>;
+  default_execution_mode: string;
+  broker_bridge_status: string;
+  order_intents: DailyTradingPlanOrderIntent[];
+  blockers: DailyTradingPlanBlocker[];
+  limitations: string[];
+};
+
 export type SignalResponse = {
   id: number | null;
   timestamp: string;
@@ -324,6 +403,17 @@ export function useIntradayDecisionQuery() {
   return decisionQuery('/api/decision/intraday', ['decision', 'intraday']);
 }
 
+export function useDailyTradingPlanQuery() {
+  return useQuery({
+    queryKey: ['decision', 'trading-plan'],
+    queryFn: () =>
+      apiClient<DailyTradingPlanResponse>('/api/decision/trading-plan'),
+    staleTime: 5_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useSignalActionsQuery() {
   return useQuery({
     queryKey: ['signal-actions'],
@@ -364,6 +454,7 @@ export function useCreateManualOrderFromActionMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['signal-actions'] }),
         queryClient.invalidateQueries({ queryKey: ['signal-journal'] }),
+        queryClient.invalidateQueries({ queryKey: ['decision', 'trading-plan'] }),
         queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
       ]);
     },

@@ -71,11 +71,11 @@ subscribes by priority but EventBus handlers do not consume or stop propagation.
 - **T+1 Support**: Built-in freeze/thaw mechanism in Position, auto-advanced on settlement day
 
 For plain-language explanations of built-in strategies, see the
-[Strategy Primer](strategy/README.en.md). It covers Dual Moving Average,
-Monthly Rebalance, Bollinger Mean Reversion, and RSI reversal semantics,
-including current signal rules, parameters, failure modes, and evidence
-boundaries. It is research documentation, not investment advice or a return
-claim.
+[Strategy Primer](strategy/README.en.md). It covers trend, allocation,
+mean-reversion, volatility-targeting, and long-only pair-rotation research
+strategies, including current signal rules, parameters, failure modes, and
+evidence boundaries. It is research documentation, not investment advice or a
+return claim.
 
 ## Market Data Reliability Workflow
 
@@ -93,12 +93,30 @@ confirmation. Frozen market-data datasets can be replayed for backtests,
 strategy runtime dry-runs, paper/shadow review, and audit replay so the same
 inputs can be checked deterministically.
 
-Overview daily workbench groups review items by priority before normal status
-items. Market pulse uses a small default China-market index universe as broad
-market context. Manual refresh and the Web scheduler can refresh those index
-quotes alongside account holdings; missing index move fields are displayed as
-data gaps instead of empty values. They remain background data and do not become
-user holdings, strategy tradables, broker orders, or execution approval.
+Overview Today’s to-dos first shows today’s conclusion and execution state,
+then groups data issues, candidate actions, approvals, and normal statuses by
+review priority. Strategy candidate counts are research supply, not the number
+of trades to execute. Market pulse uses a small default China-market index
+universe as broad market context. Manual refresh and the Web scheduler can
+refresh those index quotes alongside account holdings; missing index move
+fields are displayed as data gaps instead of empty values. They remain
+background data and do not become user holdings, strategy tradables, broker
+orders, or execution approval.
+
+## Automation Maturity
+
+Karkinos is moving toward a professional automated-quant workflow, but not
+toward default unattended real-money trading. v1.5 now provides a daily
+trading plan and portfolio-construction layer that combines strategy evidence,
+portfolio state, account truth, risk gates, paper/shadow evidence, fees, taxes,
+cost basis, blockers, constraint checks, and next review steps into
+evidence-linked manual-confirmation intents. The active roadmap stage is v1.6:
+paper/shadow runbooks, scheduled operation state, exception queues, and health
+checks.
+
+Later stages focus on scheduled paper/shadow runbooks, divergence reports, and
+controlled broker-bridge or order-ticket workflows. Unattended real-money order
+submission remains deferred.
 
 Estimated, cached, stale, missing, or confirmed-NAV-missing data is data-quality
 evidence. It must not be displayed as confirmed returns and is not investment
@@ -724,7 +742,7 @@ React 19 + TypeScript + TanStack Router + TanStack Query + ECharts/Recharts + Vi
 
 | View | Path | Description |
 |------|------|-------------|
-| DashboardView | `/` | Daily asset workbench with account status, stock/fund/total today PnL, position contributors, market pulse, data confidence, strategy candidate actions, review items, equity, and return summaries |
+| DashboardView | `/` | Today’s to-dos and asset overview with today’s conclusion, execution state, account truth, risk blockers, candidate pool, manual-confirmation queue, asset status, position contributors, market pulse, equity, and return summaries |
 | PortfolioView | `/portfolio` | Position details + allocation pie chart |
 | ActivityView | `/activity` | Trades, dividends, cash flows, and manual adjustments |
 | DecisionView | `/decision` | Daily / intraday candidate actions, risk state, evidence, and manual-confirmation entry point |

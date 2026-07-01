@@ -42,7 +42,9 @@ import { StrategyContributionGateCard } from '../features/account-strategy/compo
 import { AccountTruthReviewPage } from '../features/account-truth/components/account-truth-review-page';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
 import {
+  type DailyTradingPlanResponse,
   useTodayDecisionQuery,
+  useDailyTradingPlanQuery,
   type DecisionCandidate,
   type DecisionResponse,
 } from '../features/decision/api';
@@ -365,6 +367,7 @@ export function OverviewPage() {
   const marketHealth = useMarketDataHealthQuery();
   const strategyContribution = useAccountStrategyContributionQuery();
   const todayDecision = useTodayDecisionQuery();
+  const tradingPlan = useDailyTradingPlanQuery();
   const showStrategyContributionCard =
     strategyContribution.isLoading ||
     strategyContribution.isError ||
@@ -491,6 +494,9 @@ export function OverviewPage() {
                 todayDecision={todayDecision.data}
                 todayDecisionLoading={todayDecision.isLoading}
                 todayDecisionError={todayDecision.isError}
+                tradingPlan={tradingPlan.data}
+                tradingPlanLoading={tradingPlan.isLoading}
+                tradingPlanError={tradingPlan.isError}
               />
             </div>
           </div>
@@ -735,6 +741,9 @@ function DashboardTodayQueue({
   todayDecision,
   todayDecisionLoading,
   todayDecisionError,
+  tradingPlan,
+  tradingPlanLoading,
+  tradingPlanError,
 }: {
   overview: AccountOverview;
   dailyOperations?: AccountOverview['daily_operations'];
@@ -749,6 +758,9 @@ function DashboardTodayQueue({
   todayDecision?: DecisionResponse | null;
   todayDecisionLoading: boolean;
   todayDecisionError: boolean;
+  tradingPlan?: DailyTradingPlanResponse | null;
+  tradingPlanLoading: boolean;
+  tradingPlanError: boolean;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -795,6 +807,69 @@ function DashboardTodayQueue({
   const decisionCandidateDetail = leadingCandidate
     ? `${decisionActionLabel} · ${decisionCandidateDisplayName(leadingCandidate)}`
     : labels.strategyCandidateEmptyDetail;
+  const firstOrderIntent = tradingPlan?.order_intents?.[0];
+  const cashShortfall = tradingPlan
+    ? tradingPlan.order_intents.reduce(
+        (total, intent) => total + Math.max(intent.cash_shortfall ?? 0, 0),
+        0,
+      )
+    : 0;
+  const tradingPlanTitle = tradingPlanError
+    ? labels.tradingPlanUnavailable
+    : tradingPlan?.conclusion_status === 'cash_shortfall'
+      ? labels.tradingPlanCashShortfall
+      : (tradingPlan?.manual_ready_count ?? 0) > 0
+        ? labels.tradingPlanManualReady(tradingPlan?.manual_ready_count ?? 0)
+        : (tradingPlan?.blocked_count ?? 0) > 0
+          ? labels.tradingPlanNeedsReview
+          : (tradingPlan?.candidate_pool_count ?? candidates.length) > 0
+            ? labels.strategyCandidateAction
+            : labels.strategyCandidateClear;
+  const tradingPlanDetail = tradingPlanError
+    ? labels.tradingPlanUnavailable
+    : tradingPlanLoading
+    ? labels.tradingPlanLoading
+    : tradingPlan?.conclusion_status === 'cash_shortfall'
+      ? labels.tradingPlanCashShortfallDetail(
+          formatCurrencyValue(cashShortfall),
+        )
+      : (tradingPlan?.manual_ready_count ?? 0) > 0
+        ? firstOrderIntent
+          ? labels.tradingPlanManualIntentDetail(
+              formatPublicStatus(firstOrderIntent.side, locale),
+              String(firstOrderIntent.symbol ?? '--'),
+              firstOrderIntent.estimated_quantity,
+            )
+          : labels.tradingPlanManualReadyDetail(
+              tradingPlan?.manual_ready_count ?? 0,
+            )
+        : (tradingPlan?.blocked_count ?? 0) > 0
+          ? labels.tradingPlanBlockedDetail(tradingPlan?.blocked_count ?? 0)
+          : decisionCandidateDetail;
+  const tradingPlanMeta = tradingPlanLoading
+    ? copy.states.loading
+    : tradingPlan
+      ? labels.tradingPlanMeta(
+          tradingPlan.manual_ready_count,
+          tradingPlan.candidate_pool_count,
+          tradingPlan.blocked_count,
+        )
+      : labels.candidateCount(candidates.length);
+  const tradingPlanTone: TodayQueueTone = tradingPlanError
+    ? 'danger'
+    : (tradingPlan?.manual_ready_count ?? 0) > 0 ||
+        (tradingPlan?.blocked_count ?? 0) > 0 ||
+        candidates.length > 0
+      ? 'warning'
+      : 'success';
+  const tradingPlanPriority: TodayQueuePriority =
+    tradingPlanError ||
+    tradingPlan?.conclusion_status === 'cash_shortfall' ||
+    (tradingPlan?.manual_ready_count ?? 0) > 0
+      ? 'first'
+      : (tradingPlan?.blocked_count ?? 0) > 0 || candidates.length > 0
+        ? 'watch'
+        : 'normal';
 
   const items: TodayQueueItem[] = [
     {
@@ -813,26 +888,22 @@ function DashboardTodayQueue({
     },
     {
       key: 'decision',
-      title: todayDecisionError
-        ? labels.strategyDecisionUnavailable
-        : candidates.length > 0
-          ? labels.strategyCandidateAction
-          : labels.strategyCandidateClear,
-      detail: todayDecisionLoading
-        ? labels.strategyCandidateLoading
-        : decisionCandidateDetail,
-      meta: todayDecisionLoading
-        ? copy.states.loading
-        : labels.candidateCount(candidates.length),
+      title:
+        todayDecisionError
+          ? labels.strategyDecisionUnavailable
+          : tradingPlanTitle,
+      detail:
+        todayDecisionLoading || tradingPlanLoading
+          ? labels.strategyCandidateLoading
+          : tradingPlanDetail,
+      meta:
+        todayDecisionLoading || tradingPlanLoading
+          ? copy.states.loading
+          : tradingPlanMeta,
       href: '/decision',
       actionLabel: labels.viewDecision,
-      tone: todayDecisionError
-        ? 'danger'
-        : candidates.length > 0
-          ? 'warning'
-          : 'success',
-      priority:
-        todayDecisionError || candidates.length > 0 ? 'watch' : 'normal',
+      tone: todayDecisionError ? 'danger' : tradingPlanTone,
+      priority: todayDecisionError ? 'watch' : tradingPlanPriority,
     },
     {
       key: 'orders',
