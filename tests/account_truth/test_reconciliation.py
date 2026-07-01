@@ -270,6 +270,88 @@ def test_reconciliation_report_distinguishes_trade_cash_fee_tax_transfer_and_cos
     assert "broker_remaining_cost" in cost_basis_item.detail
 
 
+def test_reconciliation_report_treats_tiny_decimal_noise_as_pass(tmp_path) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(COMPONENT_STATEMENT)
+    import_run = repository.save_preview(preview, source_name="components.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[
+            KarkinosLedgerFact(
+                event_type="trade_sell",
+                symbol="SYN001",
+                quantity=Decimal("100"),
+                price=Decimal("12.00000000000000011667"),
+                gross_amount=Decimal("1200.000000000000011667"),
+                fee=Decimal("1.80"),
+                tax=Decimal("1.20"),
+                transfer_fee=Decimal("0.60"),
+                net_amount=Decimal("1196.400000000000011667"),
+            )
+        ],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("0"),
+                cost_basis=Decimal("8.80"),
+            )
+        ],
+    )
+
+    noisy_items = [
+        item
+        for item in report.items
+        if item.category in {"trade_gross_amount", "net_cash_impact"}
+    ]
+    assert all(item.status == "pass" for item in noisy_items)
+    assert all(item.difference == "0" for item in noisy_items)
+
+
+def test_reconciliation_report_treats_sub_cent_money_differences_as_pass(
+    tmp_path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(COMPONENT_STATEMENT)
+    import_run = repository.save_preview(preview, source_name="components.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[
+            KarkinosLedgerFact(
+                event_type="trade_sell",
+                symbol="SYN001",
+                quantity=Decimal("100"),
+                price=Decimal("12.00"),
+                gross_amount=Decimal("1200.00"),
+                fee=Decimal("1.80"),
+                tax=Decimal("1.198"),
+                transfer_fee=Decimal("0.59776"),
+                net_amount=Decimal("1196.40424"),
+            )
+        ],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("0"),
+                cost_basis=Decimal("8.80"),
+            )
+        ],
+    )
+
+    money_items = [
+        item
+        for item in report.items
+        if item.category in {"net_cash_impact", "tax", "transfer_fee"}
+    ]
+    assert all(item.status == "pass" for item in money_items)
+    assert all(item.difference == "0" for item in money_items)
+
+
 def test_reconciliation_cost_basis_context_explains_methods_and_precision(
     tmp_path,
 ) -> None:

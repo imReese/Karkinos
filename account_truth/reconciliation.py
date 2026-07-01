@@ -9,6 +9,18 @@ from typing import Literal
 from account_truth.broker_evidence import StoredBrokerEvidenceEvent
 
 RECONCILIATION_SCHEMA_VERSION = "karkinos.account_truth.reconciliation.v1"
+RECONCILIATION_TOLERANCE = Decimal("0.000001")
+MONEY_RECONCILIATION_TOLERANCE = Decimal("0.005")
+MONEY_RECONCILIATION_CATEGORIES = frozenset(
+    {
+        "cash",
+        "fee",
+        "tax",
+        "transfer_fee",
+        "trade_gross_amount",
+        "net_cash_impact",
+    }
+)
 
 ReconciliationStatus = Literal["pass", "warning", "mismatch", "blocked"]
 
@@ -467,13 +479,16 @@ def _item(
     detail: str = "",
     detail_context: dict[str, str] | None = None,
 ) -> ReconciliationItem:
-    status: ReconciliationStatus = "pass" if difference == Decimal("0") else "mismatch"
+    normalized_difference = _normalized_difference(category, difference)
+    status: ReconciliationStatus = (
+        "pass" if normalized_difference == Decimal("0") else "mismatch"
+    )
     return ReconciliationItem(
         category=category,
         status=status,
         broker_value=_decimal_to_text(broker_value),
         karkinos_value=_decimal_to_text(karkinos_value),
-        difference=_decimal_to_text(difference),
+        difference=_decimal_to_text(normalized_difference),
         suggested_review_action="" if status == "pass" else suggested_review_action,
         symbol=symbol,
         detail_code=detail_code,
@@ -524,6 +539,17 @@ def _difference(
     karkinos_value: Decimal | None,
 ) -> Decimal:
     return (broker_value or Decimal("0")) - (karkinos_value or Decimal("0"))
+
+
+def _normalized_difference(category: str, value: Decimal) -> Decimal:
+    tolerance = (
+        MONEY_RECONCILIATION_TOLERANCE
+        if category in MONEY_RECONCILIATION_CATEGORIES
+        else RECONCILIATION_TOLERANCE
+    )
+    if abs(value) <= tolerance:
+        return Decimal("0")
+    return value
 
 
 def _decimal(value: str | Decimal | None) -> Decimal:
