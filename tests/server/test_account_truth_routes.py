@@ -47,6 +47,7 @@ def test_account_truth_import_runs_list_review_metadata(tmp_path, monkeypatch):
     from server.routes import account_truth as account_truth_routes
 
     db, first_run, duplicate_run = _seed_account_truth_db(tmp_path)
+    assert duplicate_run.import_run_id == first_run.import_run_id
     fake_state = SimpleNamespace(db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
@@ -64,9 +65,9 @@ def test_account_truth_import_runs_list_review_metadata(tmp_path, monkeypatch):
     assert response[0]["valid_row_count"] == 3
     assert response[0]["invalid_row_count"] == 0
     assert response[0]["row_duplicate_count"] == 0
-    assert response[0]["file_duplicate_count"] == 1
-    assert response[0]["validation_status"] == "warning"
-    assert response[0]["duplicate_of_import_run_id"] == first_run.import_run_id
+    assert response[0]["file_duplicate_count"] == 0
+    assert response[0]["validation_status"] == "pass"
+    assert response[0]["duplicate_of_import_run_id"] is None
     assert response[0]["created_at"]
     assert isinstance(response[0]["limitations"], list)
 
@@ -151,6 +152,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     from server.routes import account_truth as account_truth_routes
 
     db, first_run, duplicate_run = _seed_account_truth_db(tmp_path)
+    assert duplicate_run.import_run_id == first_run.import_run_id
     fake_state = SimpleNamespace(db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
@@ -173,7 +175,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     assert reports[0]["status"] == "mismatch"
     assert reports[0]["unresolved_count"] > 0
     assert reports[0]["row_count"] == 3
-    assert reports[0]["validation_status"] == "warning"
+    assert reports[0]["validation_status"] == "pass"
     assert reports[0]["source_name"] == "synthetic-duplicate.csv"
 
     assert detail["schema_version"] == "karkinos.account_truth.reconciliation.v1"
