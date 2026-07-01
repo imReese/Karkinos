@@ -1,19 +1,14 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Karkinos** (6348 symbols, 22490 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Karkinos** (6514 symbols, 23007 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
-> Codex compatibility: GitNexus CLI 1.5.3 does not provide a `detect_changes`
-> subcommand, and the Codex tool surface may not expose
-> `gitnexus_detect_changes()`. When that MCP tool is unavailable, use the
-> fallback checks listed below instead of attempting `npx gitnexus
-> detect_changes`.
 
 ## Always Do
 
 - **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing when the MCP tool is available** to verify your changes only affect expected symbols and execution flows. If it is unavailable in Codex, run the fallback scope checks: `git status -sb`, `git diff --stat`, `git diff --check`, relevant tests/builds, and `npx gitnexus status`; record the tool limitation in the final response.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
 - When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
 - When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
@@ -23,20 +18,20 @@ This project is indexed by GitNexus as **Karkinos** (6348 symbols, 22490 relatio
 1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
 2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
 3. `READ gitnexus://repo/Karkinos/process/{processName}` — trace the full execution flow step by step
-4. For regressions: use `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` when available; otherwise inspect `git diff --stat main...HEAD`, targeted diffs, and relevant test failures to see what your branch changed
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
 
 ## When Refactoring
 
 - **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
 - **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
-- After any refactor: run `gitnexus_detect_changes({scope: "all"})` when available. If unavailable, run the fallback scope checks and explicitly verify the changed files against the intended refactor.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
 
 ## Never Do
 
 - NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
 - NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without checking affected scope. Prefer `gitnexus_detect_changes()`; if unavailable, run the fallback scope checks and record that the MCP tool was not exposed.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
 
 ## Tools Quick Reference
 
@@ -45,7 +40,7 @@ This project is indexed by GitNexus as **Karkinos** (6348 symbols, 22490 relatio
 | `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
 | `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
 | `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
-| `detect_changes` | Pre-commit scope check; MCP-only in some environments | `gitnexus_detect_changes({scope: "staged"})` when available; otherwise use fallback scope checks |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
 | `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
 | `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
 
@@ -71,7 +66,7 @@ This project is indexed by GitNexus as **Karkinos** (6348 symbols, 22490 relatio
 Before completing any code modification task, verify:
 1. `gitnexus_impact` was run for all modified symbols
 2. No HIGH/CRITICAL risk warnings were ignored
-3. `gitnexus_detect_changes()` confirms changes match expected scope, or fallback scope checks were run because the MCP tool was unavailable
+3. `gitnexus_detect_changes()` confirms changes match expected scope
 4. All d=1 (WILL BREAK) dependents were updated
 
 ## Keeping the Index Fresh
