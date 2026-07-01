@@ -261,6 +261,155 @@ RSI should be reviewed through OOS behavior, parameter sensitivity, drawdown,
 P/L distribution beyond win rate, and whether risk gates block bad signals in
 persistent selloffs.
 
+## Time Series Momentum
+
+Internal ID: `time_series_momentum`
+
+### Core Idea
+
+Time-series momentum tests whether an instrument's own trailing return tends to
+persist. It is inspired by research such as
+[Time Series Momentum](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2089463),
+but the Karkinos implementation is long-only: positive trend targets exposure,
+weak trend exits to cash, and no leverage, futures shorting, or cross-asset
+long/short portfolio is implied.
+
+### Current Implementation
+
+- Collect close prices per instrument.
+- Wait until at least `lookback_period + 1` prices are available.
+- Compute return versus the price `lookback_period` bars ago.
+- If return is greater than `min_return`, emit `target_weight`.
+- If return is at or below `exit_return`, emit `0.0`.
+
+### Main Parameters
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `lookback_period` | Return lookback window | 126 |
+| `min_return` | Minimum return required to enter | 0.0 |
+| `exit_return` | Return threshold used to exit | 0.0 |
+| `target_weight` | Long-only target weight during positive momentum | 1.0 |
+
+### Karkinos Evidence Focus
+
+Review OOS stability across lookback windows, drawdown after trend reversals,
+turnover, after-cost performance, and whether the result depends on one
+one-way market segment.
+
+## Donchian Channel Breakout
+
+Internal ID: `donchian_breakout`
+
+### Core Idea
+
+Channel breakout is a classic trend-following rule: a close above a prior high
+channel suggests strengthening trend, while a close below a prior low channel
+suggests trend failure. It is a common Turtle/channel-breakout baseline.
+
+### Current Implementation
+
+- Use prior highs for the entry channel and prior lows for the exit channel.
+- If close is above the highest high of the prior `entry_window` bars, emit
+  `target_weight`.
+- After entry, if close is below the lowest low of the prior `exit_window`
+  bars, emit `0.0`.
+- The current bar is not included in its own channel calculation.
+
+### Main Parameters
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `entry_window` | Prior high window for breakout entry | 55 |
+| `exit_window` | Prior low window for exits | 20 |
+| `target_weight` | Long-only target weight after breakout | 1.0 |
+
+### Karkinos Evidence Focus
+
+Review whipsaws, losing streaks, turnover cost, and slippage. `exit_window`
+must be smaller than `entry_window`.
+
+## Volatility Target Trend
+
+Internal ID: `volatility_target_trend`
+
+### Core Idea
+
+This strategy confirms trend with trailing return, then scales target weight by
+recent realized volatility. It follows common trend-following and volatility
+targeting practice: hold less exposure when realized volatility is high, and
+exit when trend is weak.
+
+### Current Implementation
+
+- Compute `lookback_period` trailing return.
+- Compute annualized realized volatility from `volatility_window` recent daily
+  returns.
+- If return is above `min_momentum`, target
+  `target_annual_volatility / realized_volatility`, capped by `max_weight`.
+- If return is not above the threshold, target `0.0`.
+- Emit a new signal only when target weight changes by at least
+  `rebalance_threshold`.
+
+### Main Parameters
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `lookback_period` | Trend lookback window | 126 |
+| `volatility_window` | Realized-volatility window | 20 |
+| `target_annual_volatility` | Annualized volatility target | 0.15 |
+| `max_weight` | Maximum long-only weight | 1.0 |
+| `min_momentum` | Minimum return required to hold risk | 0.0 |
+| `rebalance_threshold` | Minimum target change before emitting a signal | 0.05 |
+
+### Karkinos Evidence Focus
+
+Review volatility-estimation lag, whether sizing actually reduces drawdown,
+rebalance frequency, and after-cost value.
+
+## Pairs Ratio Mean Reversion
+
+Internal ID: `pairs_ratio_mean_reversion`
+
+### Core Idea
+
+The pairs-trading research lineage includes
+[Pairs Trading: Performance of a Relative-Value Arbitrage Rule](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=141615).
+Classic versions are often long/short. Because Karkinos target weights are
+currently constrained to 0-1, this implementation is long-only pair rotation:
+when the A/B ratio is unusually low, rotate to A; when unusually high, rotate
+to B; when normalized, return both legs to neutral weights.
+
+### Current Implementation
+
+- Use `symbol_a` and `symbol_b`; empty values fall back to the first two run
+  symbols.
+- Once both symbols have prices for a date, record the A/B ratio.
+- Compute ratio z-score over the latest `lookback_period` observations.
+- If z-score is at or below `-entry_z`, A is relatively cheap: A targets
+  `pair_weight`, B targets `0.0`.
+- If z-score is at or above `entry_z`, B is relatively cheap: A targets `0.0`,
+  B targets `pair_weight`.
+- If z-score returns inside `exit_z`, both legs target `neutral_weight`.
+
+### Main Parameters
+
+| Parameter | Meaning | Default |
+| --- | --- | --- |
+| `symbol_a` | First pair leg | Empty |
+| `symbol_b` | Second pair leg | Empty |
+| `lookback_period` | Ratio z-score lookback window | 60 |
+| `entry_z` | Entry deviation threshold | 2.0 |
+| `exit_z` | Exit/normalization threshold | 0.5 |
+| `pair_weight` | Target weight for the cheap leg | 1.0 |
+| `neutral_weight` | Target weight per leg after normalization | 0.5 |
+
+### Karkinos Evidence Focus
+
+Review pair-selection logic, co-movement stability, residual market beta from
+long-only rotation, transaction costs, and whether suspensions, limit moves, or
+liquidity would break exits.
+
 ## Strategy Comparison
 
 | Strategy | Primary hypothesis | Signal style | Best used to test |
@@ -269,6 +418,10 @@ persistent selloffs.
 | Monthly Rebalance | Allocation needs discipline | Periodic target weights | Portfolio drift, drawdown, turnover cost |
 | Bollinger | Short-term extremes may mean-revert | Mean reversion | Overreaction, rebound behavior, downtrend risk |
 | RSI | Oversold/overbought moves may reverse | Reversal / mean reversion | Threshold stability and reversal quality |
+| Time Series Momentum | Own trend can persist | Long/cash trend following | Lookback robustness and reversal risk |
+| Donchian Channel Breakout | New highs may continue | Channel breakout trend following | Whipsaw, turnover, and stop quality |
+| Volatility Target Trend | Trend exposure should scale by risk | Risk-scaled trend following | Drawdown reduction and after-cost value |
+| Pairs Ratio Mean Reversion | Similar assets may mean-revert | Long-only relative-value rotation | Pair stability, spread reversion, and cost |
 
 ## Safety Boundary
 

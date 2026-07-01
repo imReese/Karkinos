@@ -221,7 +221,140 @@ Karkinos 当前实现如下：
 
 RSI 策略需要重点查看 OOS、参数敏感性、最大回撤、胜率之外的盈亏分布，以及风险闸门是否能挡住连续下跌中的错误信号。
 
-## 四类策略的对比
+## 时间序列动量
+
+内部 ID：`time_series_momentum`
+
+英文名：Time Series Momentum
+
+### 核心思想
+
+时间序列动量检验的是同一标的自身过去一段收益是否会延续。它参考
+[Time Series Momentum](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2089463)
+这类研究，但 Karkinos 当前实现是长仓版本：趋势为正时持有，趋势转弱时退回现金，不使用杠杆、期货做空或跨资产多空组合。
+
+### 当前实现
+
+- 收集每个标的收盘价。
+- 至少有 `lookback_period + 1` 个价格点后开始计算。
+- 计算当前价格相对 `lookback_period` 根 K 线前价格的收益。
+- 收益大于 `min_return` 时，发出 `target_weight` 的目标权重。
+- 收益小于等于 `exit_return` 时，发出目标权重 `0.0`。
+
+### 主要参数
+
+| 参数 | 含义 | 默认值 |
+| --- | --- | --- |
+| `lookback_period` | 动量收益回看窗口 | 126 |
+| `min_return` | 入场所需最小回看收益 | 0.0 |
+| `exit_return` | 退出阈值 | 0.0 |
+| `target_weight` | 趋势有效时的目标长仓权重 | 1.0 |
+
+### Karkinos 审计重点
+
+重点看不同回看窗口下的 OOS 稳定性、趋势反转后的回撤、换手率、扣费后收益，以及是否只是吃到了某一段单边行情。
+
+## Donchian 通道突破
+
+内部 ID：`donchian_breakout`
+
+英文名：Donchian Channel Breakout
+
+### 核心思想
+
+通道突破是经典趋势跟踪规则：价格突破过去一段时间高点，代表趋势可能增强；跌破过去一段时间低点，代表趋势可能失败。它是常用的 Turtle/通道突破类基线。
+
+### 当前实现
+
+- 使用历史最高价形成入场通道，使用历史最低价形成退出通道。
+- 当前收盘价高于过去 `entry_window` 根 K 线的最高价时，发出 `target_weight`。
+- 持有后，当前收盘价低于过去 `exit_window` 根 K 线的最低价时，发出 `0.0`。
+- 当前 K 线不会参与自己的通道计算，避免显式前视。
+
+### 主要参数
+
+| 参数 | 含义 | 默认值 |
+| --- | --- | --- |
+| `entry_window` | 入场前高通道窗口 | 55 |
+| `exit_window` | 退出前低通道窗口 | 20 |
+| `target_weight` | 突破后的目标长仓权重 | 1.0 |
+
+### Karkinos 审计重点
+
+重点看震荡市假突破、连续止损、换手成本和滑点。`exit_window` 必须小于 `entry_window`，否则入场/退出逻辑会变得拧巴。
+
+## 波动率目标趋势
+
+内部 ID：`volatility_target_trend`
+
+英文名：Volatility Target Trend
+
+### 核心思想
+
+该策略先用回看收益判断趋势，再用最近收益波动率缩放目标权重。它借鉴趋势跟踪和 volatility targeting 的常见实务：趋势为正但波动很高时降低仓位，趋势为负时退回现金。
+
+### 当前实现
+
+- 计算 `lookback_period` 回看收益。
+- 计算 `volatility_window` 内日收益的年化已实现波动率。
+- 回看收益大于 `min_momentum` 时，目标权重为
+  `target_annual_volatility / realized_volatility`，并受 `max_weight` 限制。
+- 回看收益不满足条件时，目标权重为 `0.0`。
+- 目标权重变化至少达到 `rebalance_threshold` 才发出新信号。
+
+### 主要参数
+
+| 参数 | 含义 | 默认值 |
+| --- | --- | --- |
+| `lookback_period` | 趋势回看窗口 | 126 |
+| `volatility_window` | 已实现波动率窗口 | 20 |
+| `target_annual_volatility` | 目标年化波动率 | 0.15 |
+| `max_weight` | 长仓最大权重 | 1.0 |
+| `min_momentum` | 持有风险暴露所需最小收益 | 0.0 |
+| `rebalance_threshold` | 发出新信号所需最小权重变化 | 0.05 |
+
+### Karkinos 审计重点
+
+重点看波动率估计在极端行情下是否滞后、降仓是否真的降低回撤、再平衡是否过于频繁，以及扣费后是否仍有价值。
+
+## 配对比值均值回归
+
+内部 ID：`pairs_ratio_mean_reversion`
+
+英文名：Pairs Ratio Mean Reversion
+
+### 核心思想
+
+配对交易常见论文原型可参考
+[Pairs Trading: Performance of a Relative-Value Arbitrage Rule](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=141615)。
+原始研究通常是多空相对价值；Karkinos 当前目标权重是 0-1，因此实现为长仓轮动版：A/B 比值显著偏低时持有 A，显著偏高时持有 B，回归后恢复双腿中性权重。
+
+### 当前实现
+
+- 使用 `symbol_a` 和 `symbol_b` 两只标的；留空时默认使用本次运行前两只标的。
+- 每个交易日两只标的都有价格后，记录 A/B 比值。
+- 使用最近 `lookback_period` 个比值计算 z-score。
+- z-score 小于等于 `-entry_z` 时，A 相对便宜，A 目标为 `pair_weight`、B 目标为 `0.0`。
+- z-score 大于等于 `entry_z` 时，B 相对便宜，A 目标为 `0.0`、B 目标为 `pair_weight`。
+- z-score 回到 `exit_z` 以内时，两腿恢复到 `neutral_weight`。
+
+### 主要参数
+
+| 参数 | 含义 | 默认值 |
+| --- | --- | --- |
+| `symbol_a` | 配对第一腿 | 空 |
+| `symbol_b` | 配对第二腿 | 空 |
+| `lookback_period` | 比值 z-score 回看窗口 | 60 |
+| `entry_z` | 入场偏离阈值 | 2.0 |
+| `exit_z` | 回归退出阈值 | 0.5 |
+| `pair_weight` | 便宜一腿的目标权重 | 1.0 |
+| `neutral_weight` | 回归后每腿的中性权重 | 0.5 |
+
+### Karkinos 审计重点
+
+重点看配对选择是否有经济含义、共同运动关系是否稳定、单边长仓轮动是否会暴露市场 beta、交易成本是否吃掉价差，以及停牌/涨跌停/流动性约束是否会破坏退出。
+
+## 内置策略的对比
 
 | 策略 | 主要假设 | 当前信号风格 | 更适合检验 |
 | --- | --- | --- | --- |
@@ -229,6 +362,10 @@ RSI 策略需要重点查看 OOS、参数敏感性、最大回撤、胜率之外
 | 月度再平衡 | 资产配置需要纪律 | 定期目标权重 | 组合漂移、配置回撤、换手成本 |
 | 布林带 | 短期偏离后回到均值 | 均值回归 | 过度反应、反弹、下跌风险 |
 | RSI | 超买/超卖后可能反转 | 反转/均值回归 | 反转阈值、参数稳定性 |
+| 时间序列动量 | 自身趋势可能延续 | 长仓趋势/现金切换 | 回看收益稳定性、趋势反转风险 |
+| Donchian 通道突破 | 突破前高可能延续 | 通道突破趋势跟随 | 假突破、换手和止损质量 |
+| 波动率目标趋势 | 趋势有效时按风险调仓 | 风险缩放趋势跟随 | 降波动、降回撤和成本后表现 |
+| 配对比值均值回归 | 相近标的价差可能回归 | 长仓相对价值轮动 | 配对稳定性、价差回归和成本 |
 
 ## 安全边界
 

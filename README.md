@@ -336,9 +336,9 @@ confirmation.
 
 For plain-language explanations of the built-in strategies, see the bilingual
 strategy primer: [中文](docs/strategy/README.zh.md) /
-[English](docs/strategy/README.en.md). It covers Dual Moving Average, Monthly
-Rebalance, Bollinger Mean Reversion, and RSI reversal semantics without making
-investment-advice or return claims.
+[English](docs/strategy/README.en.md). It covers the built-in trend,
+allocation, mean-reversion, volatility-targeting, and long-only pair-rotation
+research strategies without making investment-advice or return claims.
 
 **Account Strategy Context**
 

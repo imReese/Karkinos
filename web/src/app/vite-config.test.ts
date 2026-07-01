@@ -1,31 +1,31 @@
 import { appFeatureChunk } from './chunk-config';
 
 describe('appFeatureChunk', () => {
-  it('groups cross-linked workspace features into one non-circular chunk', () => {
+  it('splits growing workspace features by domain-sized chunks', () => {
     expect(appFeatureChunk('/repo/web/src/features/account/api.ts')).toBe(
-      'feature-workbench-core',
+      'feature-account',
     );
     expect(appFeatureChunk('/repo/web/src/features/market/api.ts')).toBe(
-      'feature-workbench-core',
+      'feature-market-portfolio',
     );
     expect(appFeatureChunk('/repo/web/src/features/portfolio/api.ts')).toBe(
-      'feature-workbench-core',
+      'feature-market-portfolio',
     );
     expect(
       appFeatureChunk('/repo/web/src/features/backtest/components/page.tsx'),
-    ).toBe('feature-workbench-core');
+    ).toBe('feature-backtest');
     expect(appFeatureChunk('/repo/web/src/features/activity/api.ts')).toBe(
-      'feature-workbench-core',
+      'feature-activity',
     );
   });
 
-  it('keeps account truth and strategy evidence inside the workspace core', () => {
+  it('keeps account truth and strategy evidence beside the account workspace', () => {
     expect(appFeatureChunk('/repo/web/src/features/account-truth/api.ts')).toBe(
-      'feature-workbench-core',
+      'feature-account',
     );
     expect(
       appFeatureChunk('/repo/web/src/features/account-strategy/api.ts'),
-    ).toBe('feature-workbench-core');
+    ).toBe('feature-account');
   });
 
   it('keeps one-way feature pages split from the workspace core', () => {

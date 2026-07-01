@@ -21,6 +21,7 @@ from account_truth.broker_connector_evidence import (
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 from server.db import AppDatabase
+from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 
 
 def test_decision_today_blocks_from_unresolved_connector_evidence(
@@ -103,7 +104,7 @@ def test_backtest_promotion_readiness_blocks_from_unresolved_connector_evidence(
                 }
             ),
         }
-        for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+        for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
     ]
     db.list_orders_sync = lambda limit=500, offset=0: [
         {
@@ -117,7 +118,7 @@ def test_backtest_promotion_readiness_blocks_from_unresolved_connector_evidence(
                 }
             ),
         }
-        for strategy_id in ("dual_ma", "monthly_rebalance", "bollinger")
+        for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
     ]
 
     monkeypatch.setattr(
@@ -133,7 +134,7 @@ def test_backtest_promotion_readiness_blocks_from_unresolved_connector_evidence(
 
     response = asyncio.run(endpoint())
 
-    assert response.required_strategy_count == 3
+    assert response.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert response.promotable_strategy_count == 0
     assert response.is_complete is False
     assert all(row.account_truth_gate_status == "blocked" for row in response.rows)

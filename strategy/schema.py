@@ -54,6 +54,10 @@ STRATEGY_DISPLAY_NAMES = {
     "monthly_rebalance": "Monthly Rebalance",
     "bollinger": "Bollinger Mean Reversion",
     "rsi": "RSI Mean Reversion",
+    "time_series_momentum": "Time Series Momentum",
+    "donchian_breakout": "Donchian Channel Breakout",
+    "volatility_target_trend": "Volatility Target Trend",
+    "pairs_ratio_mean_reversion": "Pairs Ratio Mean Reversion",
 }
 
 
@@ -126,6 +130,170 @@ STRATEGY_PARAMETER_SCHEMAS = {
             min=0.0,
             max=100.0,
             description="RSI threshold crossed downward to emit sell signals.",
+        ),
+    ],
+    "time_series_momentum": [
+        StrategyParameterSchema(
+            name="lookback_period",
+            type="int",
+            default=126,
+            min=2,
+            max=500,
+            description="Return lookback window in trading bars.",
+        ),
+        StrategyParameterSchema(
+            name="min_return",
+            type="float",
+            default=0.0,
+            min=-1.0,
+            max=10.0,
+            description="Minimum lookback return required to enter.",
+        ),
+        StrategyParameterSchema(
+            name="exit_return",
+            type="float",
+            default=0.0,
+            min=-1.0,
+            max=10.0,
+            description="Lookback return threshold at or below which to exit.",
+        ),
+        StrategyParameterSchema(
+            name="target_weight",
+            type="float",
+            default=1.0,
+            min=0.0,
+            max=1.0,
+            description="Target long-only weight when momentum is positive.",
+        ),
+    ],
+    "donchian_breakout": [
+        StrategyParameterSchema(
+            name="entry_window",
+            type="int",
+            default=55,
+            min=2,
+            max=500,
+            description="Prior high channel window used for breakout entries.",
+        ),
+        StrategyParameterSchema(
+            name="exit_window",
+            type="int",
+            default=20,
+            min=1,
+            max=500,
+            description="Prior low channel window used for exits.",
+        ),
+        StrategyParameterSchema(
+            name="target_weight",
+            type="float",
+            default=1.0,
+            min=0.0,
+            max=1.0,
+            description="Target long-only weight after an upside breakout.",
+        ),
+    ],
+    "volatility_target_trend": [
+        StrategyParameterSchema(
+            name="lookback_period",
+            type="int",
+            default=126,
+            min=2,
+            max=500,
+            description="Return lookback window used to confirm trend.",
+        ),
+        StrategyParameterSchema(
+            name="volatility_window",
+            type="int",
+            default=20,
+            min=2,
+            max=250,
+            description="Rolling return window used to estimate realized volatility.",
+        ),
+        StrategyParameterSchema(
+            name="target_annual_volatility",
+            type="float",
+            default=0.15,
+            min=0.01,
+            max=2.0,
+            description="Annualized volatility target used for position sizing.",
+        ),
+        StrategyParameterSchema(
+            name="max_weight",
+            type="float",
+            default=1.0,
+            min=0.0,
+            max=1.0,
+            description="Maximum long-only target weight.",
+        ),
+        StrategyParameterSchema(
+            name="min_momentum",
+            type="float",
+            default=0.0,
+            min=-1.0,
+            max=10.0,
+            description="Minimum lookback return required to hold risk.",
+        ),
+        StrategyParameterSchema(
+            name="rebalance_threshold",
+            type="float",
+            default=0.05,
+            min=0.0,
+            max=1.0,
+            description="Minimum target-weight change required to emit a rebalance.",
+        ),
+    ],
+    "pairs_ratio_mean_reversion": [
+        StrategyParameterSchema(
+            name="symbol_a",
+            type="str",
+            default="",
+            description="First leg symbol. Empty value uses the first run symbol.",
+        ),
+        StrategyParameterSchema(
+            name="symbol_b",
+            type="str",
+            default="",
+            description="Second leg symbol. Empty value uses the second run symbol.",
+        ),
+        StrategyParameterSchema(
+            name="lookback_period",
+            type="int",
+            default=60,
+            min=3,
+            max=500,
+            description="A/B ratio lookback window used for z-score estimation.",
+        ),
+        StrategyParameterSchema(
+            name="entry_z",
+            type="float",
+            default=2.0,
+            min=0.1,
+            max=10.0,
+            description="Absolute z-score threshold used to rotate into one leg.",
+        ),
+        StrategyParameterSchema(
+            name="exit_z",
+            type="float",
+            default=0.5,
+            min=0.0,
+            max=10.0,
+            description="Absolute z-score threshold used to return to neutral weights.",
+        ),
+        StrategyParameterSchema(
+            name="pair_weight",
+            type="float",
+            default=1.0,
+            min=0.0,
+            max=1.0,
+            description="Target weight assigned to the cheap relative-value leg.",
+        ),
+        StrategyParameterSchema(
+            name="neutral_weight",
+            type="float",
+            default=0.5,
+            min=0.0,
+            max=1.0,
+            description="Target weight for each leg when the ratio normalizes.",
         ),
     ],
 }
@@ -333,5 +501,41 @@ def _validate_cross_fields(
                     "field": "oversold",
                     "code": "cross_field_validation_failed",
                     "message": "oversold must be less than overbought.",
+                }
+            )
+    if strategy_id == "donchian_breakout":
+        entry_window = params.get("entry_window")
+        exit_window = params.get("exit_window")
+        if (
+            entry_window is not None
+            and exit_window is not None
+            and exit_window >= entry_window
+        ):
+            errors.append(
+                {
+                    "field": "exit_window",
+                    "code": "cross_field_validation_failed",
+                    "message": "exit_window must be less than entry_window.",
+                }
+            )
+    if strategy_id == "pairs_ratio_mean_reversion":
+        symbol_a = str(params.get("symbol_a") or "").strip()
+        symbol_b = str(params.get("symbol_b") or "").strip()
+        if symbol_a and symbol_b and symbol_a == symbol_b:
+            errors.append(
+                {
+                    "field": "symbol_b",
+                    "code": "cross_field_validation_failed",
+                    "message": "symbol_a and symbol_b must be different.",
+                }
+            )
+        entry_z = params.get("entry_z")
+        exit_z = params.get("exit_z")
+        if entry_z is not None and exit_z is not None and exit_z >= entry_z:
+            errors.append(
+                {
+                    "field": "exit_z",
+                    "code": "cross_field_validation_failed",
+                    "message": "exit_z must be less than entry_z.",
                 }
             )

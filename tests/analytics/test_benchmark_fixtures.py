@@ -5,18 +5,19 @@ import json
 from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 from analytics.strategy_validation_matrix import build_strategy_validation_matrix
 from strategy.registry import StrategyRegistry
+from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 
 
 def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():
     rows = build_benchmark_fixture_backtest_rows()
     matrix = build_strategy_validation_matrix(StrategyRegistry.get_info(), rows)
 
-    assert matrix.required_strategy_count == 3
-    assert matrix.ready_strategy_count == 3
+    assert matrix.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
+    assert matrix.ready_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert matrix.is_complete is True
 
     by_strategy = {json.loads(row["config_json"])["strategy"]: row for row in rows}
-    assert set(by_strategy) == {"dual_ma", "monthly_rebalance", "bollinger"}
+    assert set(by_strategy) == REQUIRED_STRATEGY_IDS
 
     for strategy_id, row in by_strategy.items():
         metrics_json = json.loads(row["metrics_json"])

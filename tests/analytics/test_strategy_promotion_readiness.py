@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 
 import strategy.builtins  # noqa: F401
-
 from analytics.strategy_promotion_readiness import (
     build_strategy_promotion_readiness,
 )
-from tests.analytics.test_strategy_validation_matrix import _backtest_row
 from strategy.registry import StrategyRegistry
+from tests.analytics.test_strategy_validation_matrix import (
+    REQUIRED_STRATEGY_IDS,
+    _backtest_row,
+)
 
 
 def _risk_decision(strategy_id: str, *, passed: bool) -> dict:
@@ -58,6 +60,24 @@ def _with_research_gate(row: dict, *, status: str) -> dict:
     return updated
 
 
+def _all_backtest_rows() -> list[dict]:
+    return [_backtest_row(strategy_id) for strategy_id in sorted(REQUIRED_STRATEGY_IDS)]
+
+
+def _all_risk_decisions(*, passed: bool = False) -> list[dict]:
+    return [
+        _risk_decision(strategy_id, passed=passed)
+        for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
+    ]
+
+
+def _all_shadow_orders(*, divergence_status: str | None = None) -> list[dict]:
+    return [
+        _shadow_order(strategy_id, divergence_status=divergence_status)
+        for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
+    ]
+
+
 def test_strategy_promotion_readiness_requires_risk_shadow_and_divergence_evidence():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
@@ -69,7 +89,7 @@ def test_strategy_promotion_readiness_requires_risk_shadow_and_divergence_eviden
     by_strategy = {row.strategy_id: row for row in readiness.rows}
     row = by_strategy["dual_ma"]
 
-    assert readiness.required_strategy_count == 3
+    assert readiness.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert readiness.promotable_strategy_count == 0
     assert readiness.is_complete is False
     assert row.has_after_cost_and_oos_evidence is True
@@ -84,28 +104,13 @@ def test_strategy_promotion_readiness_requires_risk_shadow_and_divergence_eviden
 def test_strategy_promotion_readiness_marks_strategy_promotable_only_when_all_gates_pass():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [
-            _backtest_row("dual_ma"),
-            _backtest_row("monthly_rebalance"),
-            _backtest_row("bollinger"),
-        ],
-        [
-            _risk_decision("dual_ma", passed=False),
-            _risk_decision("monthly_rebalance", passed=False),
-            _risk_decision("bollinger", passed=False),
-        ],
-        [
-            _shadow_order("dual_ma", divergence_status="within_expectations"),
-            _shadow_order(
-                "monthly_rebalance",
-                divergence_status="within_expectations",
-            ),
-            _shadow_order("bollinger", divergence_status="within_expectations"),
-        ],
+        _all_backtest_rows(),
+        _all_risk_decisions(),
+        _all_shadow_orders(divergence_status="within_expectations"),
     )
 
-    assert readiness.required_strategy_count == 3
-    assert readiness.promotable_strategy_count == 3
+    assert readiness.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
+    assert readiness.promotable_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert readiness.is_complete is True
     assert all(row.is_promotable for row in readiness.rows)
     assert all(
@@ -119,22 +124,13 @@ def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_blocks(
         StrategyRegistry.get_info(),
         [
             _with_research_gate(_backtest_row("dual_ma"), status="blocked"),
-            _backtest_row("monthly_rebalance"),
-            _backtest_row("bollinger"),
+            *[
+                _backtest_row(strategy_id)
+                for strategy_id in sorted(REQUIRED_STRATEGY_IDS - {"dual_ma"})
+            ],
         ],
-        [
-            _risk_decision("dual_ma", passed=False),
-            _risk_decision("monthly_rebalance", passed=False),
-            _risk_decision("bollinger", passed=False),
-        ],
-        [
-            _shadow_order("dual_ma", divergence_status="within_expectations"),
-            _shadow_order(
-                "monthly_rebalance",
-                divergence_status="within_expectations",
-            ),
-            _shadow_order("bollinger", divergence_status="within_expectations"),
-        ],
+        _all_risk_decisions(),
+        _all_shadow_orders(divergence_status="within_expectations"),
     )
 
     by_strategy = {row.strategy_id: row for row in readiness.rows}
@@ -143,7 +139,7 @@ def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_blocks(
     assert row.is_promotable is False
     assert row.promotion_status == "not_promotable"
     assert row.missing_requirements == ["research_evidence_gate_pass"]
-    assert readiness.promotable_strategy_count == 2
+    assert readiness.promotable_strategy_count == len(REQUIRED_STRATEGY_IDS) - 1
     assert readiness.is_complete is False
 
 
@@ -164,24 +160,9 @@ def test_strategy_promotion_readiness_blocks_when_research_evidence_gate_degrade
 def test_strategy_promotion_readiness_blocks_when_account_truth_gate_blocks():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [
-            _backtest_row("dual_ma"),
-            _backtest_row("monthly_rebalance"),
-            _backtest_row("bollinger"),
-        ],
-        [
-            _risk_decision("dual_ma", passed=False),
-            _risk_decision("monthly_rebalance", passed=False),
-            _risk_decision("bollinger", passed=False),
-        ],
-        [
-            _shadow_order("dual_ma", divergence_status="within_expectations"),
-            _shadow_order(
-                "monthly_rebalance",
-                divergence_status="within_expectations",
-            ),
-            _shadow_order("bollinger", divergence_status="within_expectations"),
-        ],
+        _all_backtest_rows(),
+        _all_risk_decisions(),
+        _all_shadow_orders(divergence_status="within_expectations"),
         account_truth_scores=[
             {
                 "gate_status": "blocked",
@@ -193,7 +174,7 @@ def test_strategy_promotion_readiness_blocks_when_account_truth_gate_blocks():
 
     by_strategy = {row.strategy_id: row for row in readiness.rows}
 
-    assert readiness.required_strategy_count == 3
+    assert readiness.required_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert readiness.promotable_strategy_count == 0
     assert readiness.is_complete is False
     assert all(row.account_truth_gate_status == "blocked" for row in readiness.rows)
@@ -223,28 +204,13 @@ def test_strategy_promotion_readiness_blocks_when_account_truth_gate_is_enabled_
 def test_strategy_promotion_readiness_allows_when_account_truth_gate_passes():
     readiness = build_strategy_promotion_readiness(
         StrategyRegistry.get_info(),
-        [
-            _backtest_row("dual_ma"),
-            _backtest_row("monthly_rebalance"),
-            _backtest_row("bollinger"),
-        ],
-        [
-            _risk_decision("dual_ma", passed=False),
-            _risk_decision("monthly_rebalance", passed=False),
-            _risk_decision("bollinger", passed=False),
-        ],
-        [
-            _shadow_order("dual_ma", divergence_status="within_expectations"),
-            _shadow_order(
-                "monthly_rebalance",
-                divergence_status="within_expectations",
-            ),
-            _shadow_order("bollinger", divergence_status="within_expectations"),
-        ],
+        _all_backtest_rows(),
+        _all_risk_decisions(),
+        _all_shadow_orders(divergence_status="within_expectations"),
         account_truth_scores=[{"gate_status": "pass", "score": 100}],
     )
 
-    assert readiness.promotable_strategy_count == 3
+    assert readiness.promotable_strategy_count == len(REQUIRED_STRATEGY_IDS)
     assert readiness.is_complete is True
     assert all(row.has_account_truth_evidence for row in readiness.rows)
     assert all(row.account_truth_gate_status == "pass" for row in readiness.rows)

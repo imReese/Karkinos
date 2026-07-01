@@ -1222,6 +1222,17 @@ function renderBacktestPage(
   return { fetchMock };
 }
 
+async function selectCatalogStrategy(value: string, label: string) {
+  await screen.findByRole('option', { name: label });
+  const strategySelect = await screen.findByRole('combobox', {
+    name: 'Available strategies',
+  });
+  fireEvent.change(strategySelect, { target: { value } });
+  await waitFor(() => {
+    expect((strategySelect as HTMLSelectElement).value).toBe(value);
+  });
+}
+
 afterEach(() => {
   window.history.pushState({}, '', '/');
   vi.unstubAllGlobals();
@@ -1269,9 +1280,9 @@ test('prefills single-instrument research context from decision handoff query', 
   expect(
     (screen.getByLabelText('Asset class') as HTMLSelectElement).value,
   ).toBe('stock');
-  expect((screen.getByLabelText('Strategy') as HTMLSelectElement).value).toBe(
-    'dual_ma',
-  );
+  expect(
+    (screen.getByLabelText('Available strategies') as HTMLSelectElement).value,
+  ).toBe('dual_ma');
   const handoff = await screen.findByTestId('backtest-handoff-context');
   expect(handoff.textContent).toContain('Decision handoff context');
   expect(handoff.textContent).toContain('600519');
@@ -1499,10 +1510,10 @@ test('selects a strategy from the visible strategy catalog', async () => {
   renderBacktestPage({ results: [] });
 
   expect(await screen.findByText('Available strategies')).toBeTruthy();
-  const selectBollinger = await screen.findByRole('button', {
-    name: 'Select Bollinger Mean Reversion',
+  const catalogStrategySelect = await screen.findByRole('combobox', {
+    name: 'Available strategies',
   });
-  fireEvent.click(selectBollinger);
+  fireEvent.change(catalogStrategySelect, { target: { value: 'bollinger' } });
 
   expect(
     await screen.findByLabelText('Bollinger lookback window'),
@@ -1519,21 +1530,21 @@ test('shows user-readable strategy source badges in the catalog', async () => {
     strategies: [...strategyCatalog, extensionStrategy],
   });
 
-  const builtInCard = (
-    await screen.findByRole('button', {
-      name: 'Select Dual Moving Average',
-    })
-  ).closest('button');
-  const extensionCard = (
-    await screen.findByRole('button', {
-      name: 'Select Custom Momentum Extension',
-    })
-  ).closest('button');
+  expect(
+    (await screen.findAllByText('Dual Moving Average')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('Built-in strategy')).length,
+  ).toBeGreaterThanOrEqual(1);
 
-  expect(builtInCard).toBeTruthy();
-  expect(extensionCard).toBeTruthy();
-  expect(within(builtInCard!).getByText('Built-in strategy')).toBeTruthy();
-  expect(within(extensionCard!).getByText('Local extension')).toBeTruthy();
+  await selectCatalogStrategy('custom_momentum', 'Custom Momentum Extension');
+
+  expect(
+    (await screen.findAllByText('Custom Momentum Extension')).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    (await screen.findAllByText('Local extension')).length,
+  ).toBeGreaterThanOrEqual(1);
   expect(document.body.textContent).not.toContain('source_type');
   expect(document.body.textContent).not.toContain('is_extension');
 });
@@ -1544,11 +1555,7 @@ test('shows a pre-run single-instrument evidence summary before submission', asy
     strategies: [...strategyCatalog, extensionStrategy],
   });
 
-  fireEvent.click(
-    await screen.findByRole('button', {
-      name: 'Select Custom Momentum Extension',
-    }),
-  );
+  await selectCatalogStrategy('custom_momentum', 'Custom Momentum Extension');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -1574,11 +1581,7 @@ test('shows a pre-run single-instrument evidence summary before submission', asy
 test('assigns the selected strategy as research-only account context', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
-  fireEvent.click(
-    await screen.findByRole('button', {
-      name: 'Select Bollinger Mean Reversion',
-    }),
-  );
+  await selectCatalogStrategy('bollinger', 'Bollinger Mean Reversion');
   fireEvent.click(
     await screen.findByRole('button', {
       name: 'Set as account research strategy',
@@ -1618,11 +1621,7 @@ test('assigns the selected strategy as current-symbol research context', async (
   );
   const { fetchMock } = renderBacktestPage({ results: [] });
 
-  fireEvent.click(
-    await screen.findByRole('button', {
-      name: 'Select Bollinger Mean Reversion',
-    }),
-  );
+  await selectCatalogStrategy('bollinger', 'Bollinger Mean Reversion');
   fireEvent.click(
     await screen.findByRole('button', {
       name: 'Set for current symbol',
@@ -1748,8 +1747,7 @@ test('switches strategy schema controls from the registry', async () => {
   expect(
     (await screen.findAllByText('Bollinger Mean Reversion')).length,
   ).toBeGreaterThanOrEqual(1);
-  const strategySelect = screen.getByLabelText('Strategy');
-  fireEvent.change(strategySelect, { target: { value: 'bollinger' } });
+  await selectCatalogStrategy('bollinger', 'Bollinger Mean Reversion');
 
   expect(
     await screen.findByLabelText('Bollinger lookback window'),
@@ -1769,8 +1767,7 @@ test('renders extension strategy metadata and submits its typed params', async (
   expect(
     (await screen.findAllByText('Custom Momentum Extension')).length,
   ).toBeGreaterThanOrEqual(1);
-  const strategySelect = screen.getByLabelText('Strategy');
-  fireEvent.change(strategySelect, { target: { value: 'custom_momentum' } });
+  await selectCatalogStrategy('custom_momentum', 'Custom Momentum Extension');
 
   expect(await screen.findByLabelText('Lookback Window')).toBeTruthy();
   expect(await screen.findByText('Strategy metadata')).toBeTruthy();

@@ -219,6 +219,25 @@ function installOverviewFetchMock(
           },
         ],
         current_drawdown: 0.0459,
+        daily_operations: {
+          candidate_pool_count: 0,
+          evidence_passed_count: 0,
+          risk_checked_count: 0,
+          risk_passed_count: 0,
+          risk_blocked_count: 0,
+          paper_shadow_review_count: 0,
+          manual_ready_count: 0,
+          pending_manual_order_count: 0,
+          execution_record_count: 0,
+          fill_record_count: 0,
+          ledger_review_count: 0,
+          execution_exception_count: 0,
+          default_execution_mode: 'manual_confirmation',
+          broker_bridge_status: 'disabled',
+          conclusion_status: 'no_manual_action',
+          primary_target: 'decision',
+          limitations: [],
+        },
         ...overviewOverrides,
       });
     }
@@ -520,7 +539,12 @@ test('renders the daily workbench before chart and detail panels', async () => {
   );
   const reviewStrip = await screen.findByTestId('overview-review-strip');
 
-  expect(within(workbench).getByText('Today to review')).toBeTruthy();
+  expect(within(workbench).getByText("Today's to-dos")).toBeTruthy();
+  expect(
+    within(workbench).getByText('No manual trading action needed today'),
+  ).toBeTruthy();
+  expect(within(workbench).getByText('Execution status')).toBeTruthy();
+  expect(within(workbench).getByText('Review queue')).toBeTruthy();
   expect(
     within(workbench).getByText('Market data and NAV are usable.'),
   ).toBeTruthy();
@@ -531,6 +555,8 @@ test('renders the daily workbench before chart and detail panels', async () => {
     within(workbench).getByText('Strategy contribution is evidence-linked'),
   ).toBeTruthy();
   expect(screen.queryByTestId('overview-operations-panel')).toBeNull();
+  expect(within(workbench).queryByText('Daily workbench')).toBeNull();
+  expect(within(workbench).queryByText('Daily operations tower')).toBeNull();
   expect(within(marketPulse).getByText('Market pulse')).toBeTruthy();
   expect(within(marketPulse).getByText('Shanghai Composite')).toBeTruthy();
   expect(within(marketPulse).getByText('Shenzhen Component')).toBeTruthy();
@@ -581,8 +607,11 @@ test('renders daily operations tower without treating 50 candidates as manual wo
 
   renderOverviewPage({ installFetch: false });
 
+  const queue = await screen.findByTestId('overview-today-queue');
   const tower = await screen.findByTestId('daily-operations-tower');
-  expect(within(tower).getByText('今日操作塔台')).toBeTruthy();
+  expect(within(queue).getByText('今日待办')).toBeTruthy();
+  expect(within(tower).getByText('执行状态')).toBeTruthy();
+  expect(within(queue).queryByText('今日操作塔台')).toBeNull();
   expect(within(tower).getByText('今日无需手动交易')).toBeTruthy();
   expect(within(tower).getByText('候选池')).toBeTruthy();
   expect(within(tower).getByText('50')).toBeTruthy();
@@ -621,7 +650,9 @@ test('routes daily operations tower primary action to Trading for pending manual
   renderOverviewPage({ installFetch: false });
 
   const tower = await screen.findByTestId('daily-operations-tower');
-  expect(within(tower).getByText('1 item needs manual confirmation')).toBeTruthy();
+  expect(
+    within(tower).getByText('1 item needs manual confirmation'),
+  ).toBeTruthy();
   expect(
     within(tower)
       .getByRole('link', { name: 'Enter manual confirmation' })
@@ -893,7 +924,8 @@ test('keeps user-readable data work items on stale homepage status', async () =>
   );
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
-  expect(within(workbench).getByText('Today to review')).toBeTruthy();
+  expect(within(workbench).getByText("Today's to-dos")).toBeTruthy();
+  expect(within(workbench).getByText('Review queue')).toBeTruthy();
   expect(
     within(workbench).getByText('Market data or NAV needs review.'),
   ).toBeTruthy();

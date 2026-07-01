@@ -851,21 +851,6 @@ export function BacktestPage() {
               </label>
 
               <div className="grid gap-3">
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.strategy}
-                  <select
-                    className="app-field rounded-2xl px-4 py-3 text-sm"
-                    value={strategy}
-                    onChange={(event) => setStrategy(event.target.value)}
-                    aria-label={labels.strategy}
-                  >
-                    {strategyCatalog.map((item) => (
-                      <option key={item.strategy_id} value={item.name}>
-                        {strategyDisplayName(item, labels.strategyNames)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 {strategies.isError ? (
                   <span className="app-muted text-xs">
                     {labels.strategyRegistryFailed}
@@ -1523,11 +1508,31 @@ function StrategyCatalogPanel({
   onSelect: (strategyName: string) => void;
 }) {
   const labels = useCopy().backtest.page;
+  const selectedStrategy =
+    strategyCatalog.find((item) => item.name === selectedStrategyName) ??
+    strategyCatalog[0];
+  const selectedStrategyDisplayName = strategyDisplayName(
+    selectedStrategy,
+    labels.strategyNames,
+  );
+  const selectedDescription = strategyDescription(
+    selectedStrategy,
+    labels.strategyDescriptions,
+  );
+  const badges = [
+    strategySourceDisplayName(selectedStrategy, labels),
+    selectedStrategy.requires_out_of_sample_validation
+      ? labels.oosRequired
+      : null,
+    selectedStrategy.requires_after_cost_report
+      ? labels.afterCostRequired
+      : null,
+  ].filter(Boolean);
 
   return (
     <section className="app-terminal-panel rounded-[28px] p-[1px]">
       <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:items-end">
           <div className="min-w-0">
             <div className="app-product-mark">
               {labels.strategyCatalogKicker}
@@ -1539,65 +1544,52 @@ function StrategyCatalogPanel({
               {labels.strategyCatalogDetail}
             </p>
           </div>
+          <label className="grid min-w-0 gap-2 text-sm font-medium">
+            <span className="app-muted">{labels.strategy}</span>
+            <select
+              aria-label={labels.strategyCatalogTitle}
+              className="app-field rounded-2xl px-4 py-3 text-sm"
+              value={selectedStrategy.name}
+              onChange={(event) => onSelect(event.target.value)}
+            >
+              {strategyCatalog.map((item) => (
+                <option key={item.strategy_id} value={item.name}>
+                  {strategyDisplayName(item, labels.strategyNames)}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-2 2xl:grid-cols-4">
-          {strategyCatalog.map((item) => {
-            const name = strategyDisplayName(item, labels.strategyNames);
-            const description = strategyDescription(
-              item,
-              labels.strategyDescriptions,
-            );
-            const selected = item.name === selectedStrategyName;
-            const badges = [
-              strategySourceDisplayName(item, labels),
-              item.requires_out_of_sample_validation
-                ? labels.oosRequired
-                : null,
-              item.requires_after_cost_report ? labels.afterCostRequired : null,
-            ].filter(Boolean);
-            return (
-              <button
-                aria-label={labels.selectStrategy(name)}
-                className={`min-w-0 rounded-3xl border px-4 py-4 text-left transition ${
-                  selected
-                    ? 'border-[var(--app-accent)] bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--app-accent)_30%,transparent)]'
-                    : 'border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))]'
-                }`}
-                key={item.strategy_id}
-                onClick={() => onSelect(item.name)}
-                type="button"
-              >
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-base font-semibold text-[var(--app-text)]">
-                      {name}
-                    </div>
-                    <div className="app-muted mt-1 line-clamp-2 text-sm leading-5">
-                      {description}
-                    </div>
-                  </div>
-                  {selected ? (
-                    <span className="shrink-0 rounded-full bg-[var(--app-accent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-base)]">
-                      {labels.selectedStrategy}
-                    </span>
-                  ) : null}
-                </div>
-                {badges.length ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {badges.map((badge) => (
-                      <span
-                        className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-muted)]"
-                        key={badge}
-                      >
-                        {badge}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </button>
-            );
-          })}
+        <div className="mt-5 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                {labels.selectedStrategy}
+              </div>
+              <h3 className="mt-1 truncate text-base font-semibold text-[var(--app-text)]">
+                {selectedStrategyDisplayName}
+              </h3>
+              <p className="app-muted mt-1.5 text-sm leading-6">
+                {selectedDescription}
+              </p>
+            </div>
+            <code className="shrink-0 break-all rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-muted)]">
+              {selectedStrategy.strategy_id}
+            </code>
+          </div>
+          {badges.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {badges.map((badge) => (
+                <span
+                  className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-muted)]"
+                  key={badge}
+                >
+                  {badge}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
