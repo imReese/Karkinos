@@ -64,6 +64,7 @@ def build_operations_today_summary(
             "candidate_pool_count": _int(trading_plan.get("candidate_pool_count")),
             "manual_ready_count": _int(trading_plan.get("manual_ready_count")),
             "blocked_count": _int(trading_plan.get("blocked_count")),
+            "blocker_summary": _list_of_dicts(trading_plan.get("blocker_summary")),
             "order_intent_count": _int(trading_plan.get("order_intent_count")),
             "conclusion_status": str(
                 trading_plan.get("conclusion_status") or "unknown"
@@ -464,3 +465,9 @@ def _list(value: Any) -> list[str]:
     if value:
         return [str(value)]
     return []
+
+
+def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]

@@ -852,6 +852,66 @@ function operationsStatusMeta(
   return `${pass}/${total} passed`;
 }
 
+function tradingPlanBlockerCategoryLabel(category: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    account_truth: { en: 'Account truth', zh: '账户事实' },
+    market_data: { en: 'Market/NAV data', zh: '行情/净值' },
+    portfolio: { en: 'Portfolio constraints', zh: '组合约束' },
+    risk: { en: 'Risk gate', zh: '风控闸门' },
+    evidence_not_ready: {
+      en: 'Evidence not ready',
+      zh: '证据未就绪',
+    },
+    other: { en: 'Other blockers', zh: '其他阻断' },
+  };
+  return labels[category]?.[locale] ?? formatPublicStatus(category, locale);
+}
+
+function tradingPlanBlockerSummaryText(
+  tradingPlan: DailyTradingPlanResponse | null | undefined,
+  locale: Locale,
+) {
+  const summary = tradingPlan?.blocker_summary ?? [];
+  if (!tradingPlan || tradingPlan.blocked_count <= 0) {
+    return null;
+  }
+  if (summary.length === 0) {
+    return locale === 'zh'
+      ? `${tradingPlan.blocked_count} 个阻断待归因`
+      : `${tradingPlan.blocked_count} blockers need classification`;
+  }
+  return summary
+    .slice(0, 3)
+    .map(
+      (item) =>
+        `${tradingPlanBlockerCategoryLabel(item.category, locale)} ${item.count}`,
+    )
+    .join(locale === 'zh' ? ' · ' : ' · ');
+}
+
+function tradingPlanBlockedDetailText(
+  tradingPlan: DailyTradingPlanResponse | null | undefined,
+  locale: Locale,
+  fallback: string,
+) {
+  const summary = tradingPlan?.blocker_summary ?? [];
+  if (!tradingPlan || tradingPlan.blocked_count <= 0 || summary.length === 0) {
+    return fallback;
+  }
+  const primary = summary[0];
+  const primaryLabel = tradingPlanBlockerCategoryLabel(primary.category, locale);
+  if (locale === 'zh') {
+    if (primary.category === 'evidence_not_ready') {
+      return `${primary.count} 个候选尚未通过风控/证据闸门；当前 ${tradingPlan.manual_ready_count} 个需要人工确认。`;
+    }
+    return `先处理 ${primaryLabel} ${primary.count} 项，再重新生成今日交易计划。`;
+  }
+  if (primary.category === 'evidence_not_ready') {
+    return `${primary.count} candidates are still waiting on risk/evidence gates; ${tradingPlan.manual_ready_count} need manual confirmation now.`;
+  }
+  return `Resolve ${primary.count} ${primaryLabel.toLowerCase()} items first, then regenerate today's trading plan.`;
+}
+
 function DashboardTodayQueue({
   overview,
   dailyOperations,
@@ -975,16 +1035,30 @@ function DashboardTodayQueue({
               tradingPlan?.manual_ready_count ?? 0,
             )
         : (tradingPlan?.blocked_count ?? 0) > 0
-          ? labels.tradingPlanBlockedDetail(tradingPlan?.blocked_count ?? 0)
+          ? tradingPlanBlockedDetailText(
+              tradingPlan,
+              locale,
+              labels.tradingPlanBlockedDetail(tradingPlan?.blocked_count ?? 0),
+            )
           : decisionCandidateDetail;
+  const tradingPlanBlockerSummary = tradingPlanBlockerSummaryText(
+    tradingPlan,
+    locale,
+  );
   const tradingPlanMeta = tradingPlanLoading
     ? copy.states.loading
     : tradingPlan
-      ? labels.tradingPlanMeta(
-          tradingPlan.manual_ready_count,
-          tradingPlan.candidate_pool_count,
-          tradingPlan.blocked_count,
-        )
+      ? tradingPlanBlockerSummary
+        ? labels.tradingPlanMeta(
+            tradingPlan.manual_ready_count,
+            tradingPlan.candidate_pool_count,
+            tradingPlanBlockerSummary,
+          )
+        : labels.tradingPlanMeta(
+            tradingPlan.manual_ready_count,
+            tradingPlan.candidate_pool_count,
+            tradingPlan.blocked_count,
+          )
       : labels.candidateCount(candidates.length);
   const tradingPlanTone: TodayQueueTone = tradingPlanError
     ? 'danger'

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
+import type { DailyTradingPlanBlockerSummary } from '../decision/api';
 
 const OPERATIONS_REFETCH_MS = 15_000;
 
@@ -53,6 +54,7 @@ export type OperationsTodayResponse = {
     candidate_pool_count: number;
     manual_ready_count: number;
     blocked_count: number;
+    blocker_summary?: DailyTradingPlanBlockerSummary[];
     order_intent_count: number;
     conclusion_status: string;
   };

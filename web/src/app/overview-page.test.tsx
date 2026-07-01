@@ -1025,6 +1025,15 @@ test('prioritizes daily trading plan cash shortfall on the overview workbench', 
         manual_ready_count: 0,
         order_intent_count: 1,
         blocked_count: 1,
+        blocker_summary: [
+          {
+            category: 'portfolio',
+            target: 'portfolio',
+            count: 1,
+            reasons: ['insufficient_cash'],
+            sample_symbols: ['600519'],
+          },
+        ],
         available_cash: 1000,
         total_equity: 50000,
         default_execution_mode: 'manual_confirmation',
@@ -1078,7 +1087,9 @@ test('prioritizes daily trading plan cash shortfall on the overview workbench', 
       'Review cash allocation before confirming. Shortfall: ¥9,005.10.',
     ),
   ).toBeTruthy();
-  expect(within(queue).getByText('0 ready · 1 pool · 1 blocked')).toBeTruthy();
+  expect(
+    within(queue).getByText('0 ready · 1 pool · Portfolio constraints 1'),
+  ).toBeTruthy();
 });
 
 test('keeps large candidate pools separate from manual-ready work in Chinese', async () => {
@@ -1134,6 +1145,15 @@ test('keeps large candidate pools separate from manual-ready work in Chinese', a
         manual_ready_count: 0,
         order_intent_count: 0,
         blocked_count: 50,
+        blocker_summary: [
+          {
+            category: 'evidence_not_ready',
+            target: 'risk',
+            count: 50,
+            reasons: ['awaiting_risk_gate'],
+            sample_symbols: ['603659', '600001', '600002'],
+          },
+        ],
         available_cash: 76000,
         total_equity: 101000,
         default_execution_mode: 'manual_confirmation',
@@ -1150,10 +1170,12 @@ test('keeps large candidate pools separate from manual-ready work in Chinese', a
   const workbench = await screen.findByTestId('overview-daily-workbench');
   expect(within(workbench).getByText('今日交易计划需要复核')).toBeTruthy();
   expect(
-    within(workbench).getByText('50 个阻断需要先清除，才能进入人工确认。'),
+    within(workbench).getByText(
+      '50 个候选尚未通过风控/证据闸门；当前 0 个需要人工确认。',
+    ),
   ).toBeTruthy();
   expect(
-    within(workbench).getByText('0 待确认 · 50 候选池 · 50 阻断'),
+    within(workbench).getByText('0 待确认 · 50 候选池 · 证据未就绪 50'),
   ).toBeTruthy();
   expect(within(workbench).queryByText('50 个候选动作')).toBeNull();
   expect(within(workbench).queryByText('50 个订单意图待人工确认')).toBeNull();

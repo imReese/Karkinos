@@ -6,6 +6,14 @@ roadmap promises.
 
 ## v1.6 Progress
 
+* 2026-07-01: Daily trading plan blockers now include a stable
+  `blocker_summary` grouped by account truth, market/NAV data, portfolio
+  constraints, risk gate, evidence-not-ready, and other blockers. Overview
+  "Today's to-dos" uses that summary instead of showing a raw blocked total,
+  so large candidate pools are presented as upstream evidence or gate work
+  rather than dozens of manual trading actions. This is display and
+  observability only; it does not bypass account truth, market data, risk, or
+  manual-confirmation gates.
 * 2026-07-01: Added the initial read-only operations runbook surface via
   `/api/operations/today`. The API aggregates the current daily decision,
   daily trading plan, operations summary, order facts, and fill facts into
