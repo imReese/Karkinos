@@ -246,6 +246,9 @@ test('renders the trading approvals workspace', async () => {
   renderTradingPage();
 
   expect(await screen.findByText('Trading approvals')).toBeTruthy();
+  expect(await screen.findByText('Operating mode')).toBeTruthy();
+  expect(await screen.findByText('Manual confirmation default')).toBeTruthy();
+  expect(await screen.findByText('Broker bridge disabled')).toBeTruthy();
   expect(await screen.findByText('Global kill switch')).toBeTruthy();
   expect(await screen.findByText('Execution audit')).toBeTruthy();
   expect(
@@ -260,6 +263,14 @@ test('renders the trading approvals workspace', async () => {
     screen.queryByText('Order facts, fills, and shadow review'),
   ).toBeNull();
   expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('shows trading operating mode safety labels in Chinese', async () => {
+  renderTradingPage({ locale: 'zh' });
+
+  expect(await screen.findByText('运行模式')).toBeTruthy();
+  expect(await screen.findByText('默认人工确认')).toBeTruthy();
+  expect(await screen.findByText('券商桥接未启用')).toBeTruthy();
 });
 
 test('localizes generated manual-order notes without exposing action ids', async () => {

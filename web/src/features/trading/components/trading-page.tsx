@@ -443,6 +443,18 @@ export function TradingPage() {
         </div>
       </header>
 
+      <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
+        <div className="app-terminal-inner flex min-w-0 flex-wrap items-center gap-2 p-4 sm:p-5">
+          <div className="app-product-mark mr-2">{labels.operatingMode}</div>
+          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-success)]">
+            {labels.manualDefault}
+          </span>
+          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)]">
+            {labels.brokerBridgeDisabled}
+          </span>
+        </div>
+      </section>
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <StatusTile label={labels.pending} value={String(counts.pending)} />
         <StatusTile label={labels.confirmed} value={String(counts.confirmed)} />
