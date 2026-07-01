@@ -197,6 +197,35 @@ export const copy = {
           'Strategy candidate signals are unavailable',
         strategyCandidateEmptyDetail:
           'No buy, sell, hold, or rebalance signals have entered the queue.',
+        tradingPlanUnavailable: 'Daily trading plan is unavailable',
+        tradingPlanLoading: 'Loading daily trading plan',
+        tradingPlanNeedsReview: 'Daily trading plan needs review',
+        tradingPlanCashShortfall: 'Cash shortfall blocks buy preview',
+        tradingPlanManualReady: (count: number) =>
+          count === 1
+            ? '1 order intent needs manual confirmation'
+            : `${count} order intents need manual confirmation`,
+        tradingPlanManualReadyDetail: (count: number) =>
+          count === 1
+            ? 'Review the evidence-linked order intent before preparing a manual order.'
+            : `Review ${count} evidence-linked order intents before preparing manual orders.`,
+        tradingPlanManualIntentDetail: (
+          side: string,
+          symbol: string,
+          quantity: number,
+        ) => `${side} · ${symbol} · ${quantity}`,
+        tradingPlanBlockedDetail: (count: number) =>
+          count === 1
+            ? '1 blocker must be cleared before manual confirmation.'
+            : `${count} blockers must be cleared before manual confirmation.`,
+        tradingPlanCashShortfallDetail: (amount: string) =>
+          `Review cash allocation before confirming. Shortfall: ${amount}.`,
+        tradingPlanMeta: (
+          manualReady: number,
+          candidates: number,
+          blockers: number,
+        ) =>
+          `${manualReady} ready · ${candidates} pool · ${blockers} blocked`,
         strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
         strategyEvidenceRequired: 'Strategy contribution needs linked evidence',
         strategyUnavailable: 'Strategy contribution is temporarily unavailable',
@@ -660,6 +689,38 @@ export const copy = {
       workflowTitle: 'Evidence-first review order',
       workflowDetail:
         'Check data and account facts first, then review strategy opportunities, simulation evidence, and manual confirmation.',
+      tradingPlanKicker: 'Daily trading plan',
+      tradingPlanTitle: 'Manual-confirmation plan',
+      tradingPlanDetail:
+        'Previews evidence-linked order intents with costs and cash impact before any manual confirmation.',
+      tradingPlanLoading: 'Loading daily trading plan.',
+      tradingPlanError: 'Daily trading plan is unavailable.',
+      tradingPlanManualConfirmationReady: 'Manual confirmation ready',
+      tradingPlanAccountTruthBlocked: 'Account truth blocked',
+      tradingPlanRiskBlocked: 'Risk blocked',
+      tradingPlanDataUnavailable: 'Market data unavailable',
+      tradingPlanCashShortfall: 'Cash shortfall',
+      tradingPlanPortfolioBlocked: 'Portfolio constraints blocked',
+      tradingPlanMarketBlocked: 'Market constraints blocked',
+      tradingPlanNoManualAction: 'No manual action required',
+      tradingPlanCounts: (
+        candidates: number,
+        orderIntents: number,
+        blockers: number,
+      ) =>
+        `${candidates} candidates · ${orderIntents} order intent previews · ${blockers} blockers`,
+      tradingPlanDefaultManual: 'Default: manual confirmation',
+      tradingPlanBrokerDisabled: 'Broker bridge disabled',
+      tradingPlanOrderIntentPreviews: 'Order intent previews',
+      tradingPlanQuantity: 'Quantity',
+      tradingPlanFee: 'Estimated fee',
+      tradingPlanNetCash: 'Net cash impact',
+      tradingPlanCashShortfallAmount: 'Cash shortfall',
+      tradingPlanConstraintChecks: 'Constraint checks',
+      tradingPlanPositionAfter: 'Position after',
+      tradingPlanCostBasis: 'Cost basis',
+      tradingPlanDoesNotSubmit: 'Does not submit broker orders',
+      tradingPlanNoOrderIntents: 'No manual-confirmation order intents.',
       candidateActions: 'Candidate pool',
       manualConfirmations: 'Manual confirmations',
       riskBlocks: 'Risk blocks',
@@ -2426,6 +2487,27 @@ export const copy = {
         strategyDecisionUnavailable: '策略候选信号暂不可用',
         strategyCandidateEmptyDetail:
           '当前没有买入、卖出、持有或再平衡信号进入队列。',
+        tradingPlanUnavailable: '今日交易计划暂不可用',
+        tradingPlanLoading: '正在加载今日交易计划',
+        tradingPlanNeedsReview: '今日交易计划需要复核',
+        tradingPlanCashShortfall: '买入预览因现金不足阻断',
+        tradingPlanManualReady: (count: number) => `${count} 个订单意图待人工确认`,
+        tradingPlanManualReadyDetail: (count: number) =>
+          `先复核 ${count} 个带证据引用的订单意图，再准备手工订单。`,
+        tradingPlanManualIntentDetail: (
+          side: string,
+          symbol: string,
+          quantity: number,
+        ) => `${side} · ${symbol} · ${quantity}`,
+        tradingPlanBlockedDetail: (count: number) =>
+          `${count} 个阻断需要先清除，才能进入人工确认。`,
+        tradingPlanCashShortfallDetail: (amount: string) =>
+          `确认前先复核现金分配。现金缺口：${amount}。`,
+        tradingPlanMeta: (
+          manualReady: number,
+          candidates: number,
+          blockers: number,
+        ) => `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers} 阻断`,
         strategyEvidenceLinked: '策略贡献已连接证据',
         strategyEvidenceRequired: '策略贡献需要补充证据',
         strategyUnavailable: '策略贡献暂不可用',
@@ -2866,6 +2948,38 @@ export const copy = {
       workflowTitle: '证据优先的复核顺序',
       workflowDetail:
         '先检查数据和账户事实，再查看策略机会、模拟证据与人工确认。',
+      tradingPlanKicker: '今日交易计划',
+      tradingPlanTitle: '人工确认计划',
+      tradingPlanDetail:
+        '在任何人工确认前，预览带证据引用的订单意图、费用和现金影响。',
+      tradingPlanLoading: '正在加载今日交易计划。',
+      tradingPlanError: '今日交易计划暂不可用。',
+      tradingPlanManualConfirmationReady: '待人工确认',
+      tradingPlanAccountTruthBlocked: '账户事实阻断',
+      tradingPlanRiskBlocked: '风控阻断',
+      tradingPlanDataUnavailable: '行情数据不可用',
+      tradingPlanCashShortfall: '现金不足',
+      tradingPlanPortfolioBlocked: '组合约束阻断',
+      tradingPlanMarketBlocked: '市场约束阻断',
+      tradingPlanNoManualAction: '今日无需手动操作',
+      tradingPlanCounts: (
+        candidates: number,
+        orderIntents: number,
+        blockers: number,
+      ) =>
+        `${candidates} 个候选 · ${orderIntents} 个订单意图预览 · ${blockers} 个阻断`,
+      tradingPlanDefaultManual: '默认：人工确认',
+      tradingPlanBrokerDisabled: '券商桥接关闭',
+      tradingPlanOrderIntentPreviews: '订单意图预览',
+      tradingPlanQuantity: '数量',
+      tradingPlanFee: '预计费用',
+      tradingPlanNetCash: '现金影响',
+      tradingPlanCashShortfallAmount: '现金缺口',
+      tradingPlanConstraintChecks: '约束检查',
+      tradingPlanPositionAfter: '计划后持仓',
+      tradingPlanCostBasis: '成本口径',
+      tradingPlanDoesNotSubmit: '不会提交券商订单',
+      tradingPlanNoOrderIntents: '暂无可人工确认的订单意图。',
       candidateActions: '候选池',
       manualConfirmations: '人工确认',
       riskBlocks: '风控阻断',

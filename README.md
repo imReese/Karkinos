@@ -100,12 +100,12 @@ public demos and development.
 - Decision and Strategy Lab promotion review surfaces show Account Truth gate
   status, score, unresolved-difference context, and evidence availability so
   account-truth issues are visible before manual review or research promotion.
-- Overview daily workbench: review total assets, stock/fund/total daily PnL,
-  top position contributors, market pulse, valuation confidence,
-  manual-confirmation queue state, strategy candidate actions, strategy
-  evidence status, equity curve, and return calendar summaries before drilling
-  into Portfolio, Market, Trading, Decision, or Backtest. Workbench items are
-  grouped by review priority instead of shown as an undifferentiated list.
+- Overview Today’s to-dos: review today’s conclusion, execution state, account
+  truth, risk blockers, strategy candidate pool, manual-confirmation queue,
+  stock/fund/total daily PnL, top position contributors, market pulse,
+  valuation confidence, equity curve, and return calendar summaries before
+  drilling into Portfolio, Market, Trading, Decision, or Backtest. Candidate
+  counts are shown as research supply, not as the number of trades to execute.
 - Market pulse uses a small default China-market index universe as background
   context. Manual quote refresh and the Web scheduler can refresh those index
   quotes alongside account holdings, and missing index move fields are shown as
@@ -172,6 +172,18 @@ Initial screens do not seed portfolio assets, trades, or fund names. Effective
 portfolio data comes from the local database or explicit private runtime
 configuration; for example, Activity batch fund candidates are derived from
 held fund positions instead of built-in defaults.
+
+**Automation Maturity**
+
+Karkinos is moving toward a professional automated-quant workflow, but the
+default product boundary remains daily plan generation plus manual
+confirmation. v1.5 now provides a daily trading plan and
+portfolio-construction layer that prepares evidence-linked order intents, cost
+estimates, blockers, constraints, and next review steps without submitting
+broker orders. The active roadmap milestone is v1.6: paper/shadow runbooks,
+scheduled operation state, exception queues, and health checks. Any controlled
+broker bridge remains a later gated stage; unattended real-money automation is
+deferred.
 
 The Web app localizes portfolio asset classes in the selected UI language
 and keeps ledger rows auditable: trade activity surfaces the instrument name

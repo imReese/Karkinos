@@ -155,6 +155,27 @@ function installOverviewFetchMock(
       no_action_reasons: ['no_pending_action_tasks'],
       limitations: [],
     },
+    tradingPlan = {
+      schema_version: 'karkinos.daily_trading_plan.v1',
+      plan_date: '2026-02-10',
+      generated_at: '2026-02-10T10:00:00+08:00',
+      source_decision: 'no_action',
+      conclusion_status: 'no_manual_action',
+      primary_target: 'decision',
+      candidate_pool_count: 0,
+      manual_ready_count: 0,
+      order_intent_count: 0,
+      blocked_count: 0,
+      available_cash: 76000,
+      total_equity: 101000,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      order_intents: [],
+      blockers: [],
+      limitations: [
+        'Order intents are manual-confirmation previews, not broker submissions.',
+      ],
+    },
     strategyContribution = {
       strategy_id: 'dual_ma',
       contribution_status: 'estimated_from_linked_fills',
@@ -178,6 +199,7 @@ function installOverviewFetchMock(
     pendingOrders?: unknown[];
     marketQuotes?: unknown[];
     decision?: Record<string, unknown>;
+    tradingPlan?: Record<string, unknown>;
     strategyContribution?: Record<string, unknown>;
   } = {},
 ) {
@@ -351,6 +373,9 @@ function installOverviewFetchMock(
     }
     if (url.includes('/api/decision/today')) {
       return jsonResponse(decision);
+    }
+    if (url.includes('/api/decision/trading-plan')) {
+      return jsonResponse(tradingPlan);
     }
     if (url.includes('/api/market/data-health')) {
       return jsonResponse({
@@ -735,6 +760,25 @@ test('orders overview workbench items by user-facing priority', async () => {
         no_action_reasons: [],
         limitations: [],
       },
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        source_decision: 'buy',
+        conclusion_status: 'no_manual_action',
+        primary_target: 'decision',
+        candidate_pool_count: 1,
+        manual_ready_count: 0,
+        order_intent_count: 0,
+        blocked_count: 0,
+        available_cash: 76000,
+        total_equity: 101000,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [],
+        blockers: [],
+        limitations: [],
+      },
     },
   );
 
@@ -794,6 +838,25 @@ test('surfaces strategy candidate signals in the overview workbench', async () =
         no_action_reasons: [],
         limitations: [],
       },
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        source_decision: 'buy',
+        conclusion_status: 'no_manual_action',
+        primary_target: 'decision',
+        candidate_pool_count: 1,
+        manual_ready_count: 0,
+        order_intent_count: 0,
+        blocked_count: 0,
+        available_cash: 76000,
+        total_equity: 101000,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [],
+        blockers: [],
+        limitations: [],
+      },
     },
   );
 
@@ -802,11 +865,82 @@ test('surfaces strategy candidate signals in the overview workbench', async () =
   const workbench = await screen.findByTestId('overview-daily-workbench');
   expect(within(workbench).getByText('Strategy candidate signal')).toBeTruthy();
   expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
-  expect(within(workbench).getByText('1 candidate signal')).toBeTruthy();
+  expect(within(workbench).getByText('0 ready · 1 pool · 0 blocked')).toBeTruthy();
   expect(within(workbench).getByText('Review decision evidence')).toBeTruthy();
 });
 
-test('labels overview candidate totals as signals in Chinese', async () => {
+test('prioritizes daily trading plan cash shortfall on the overview workbench', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        source_decision: 'buy',
+        conclusion_status: 'cash_shortfall',
+        primary_target: 'portfolio',
+        candidate_pool_count: 1,
+        manual_ready_count: 0,
+        order_intent_count: 1,
+        blocked_count: 1,
+        available_cash: 1000,
+        total_equity: 50000,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [
+          {
+            action_id: 9,
+            symbol: '600519',
+            asset_class: 'stock',
+            side: 'buy',
+            target_weight: 0.2,
+            estimated_price: 10,
+            estimated_quantity: 1000,
+            quantity_basis: 'target_weight_total_equity_lot_rounded',
+            estimated_gross_amount: 10000,
+            estimated_total_fee: 5.1,
+            estimated_net_cash_impact: -10005.1,
+            available_cash_before: 1000,
+            available_cash_after: -9005.1,
+            cash_status: 'insufficient_cash',
+            cash_shortfall: 9005.1,
+            fee_breakdown: {},
+            risk_gate_status: 'passed',
+            manual_confirmation_status: 'ready_for_manual_confirmation',
+            submission_status: 'blocked_by_cash_shortfall',
+            does_not_submit_broker_order: true,
+            evidence_refs: ['decision_action:9'],
+          },
+        ],
+        blockers: [
+          {
+            action_id: 9,
+            symbol: '600519',
+            reason: 'insufficient_cash',
+            target: 'portfolio',
+          },
+        ],
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  const firstGroup = await screen.findByTestId('overview-today-queue-first');
+
+  expect(within(firstGroup).getByText('Cash shortfall blocks buy preview')).toBeTruthy();
+  expect(
+    within(firstGroup).getByText(
+      'Review cash allocation before confirming. Shortfall: ¥9,005.10.',
+    ),
+  ).toBeTruthy();
+  expect(within(queue).getByText('0 ready · 1 pool · 1 blocked')).toBeTruthy();
+});
+
+test('keeps large candidate pools separate from manual-ready work in Chinese', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   const candidateTemplate = {
     id: 'candidate-1',
@@ -848,16 +982,40 @@ test('labels overview candidate totals as signals in Chinese', async () => {
         no_action_reasons: [],
         limitations: [],
       },
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        source_decision: 'sell',
+        conclusion_status: 'no_manual_action',
+        primary_target: 'decision',
+        candidate_pool_count: 50,
+        manual_ready_count: 0,
+        order_intent_count: 0,
+        blocked_count: 50,
+        available_cash: 76000,
+        total_equity: 101000,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [],
+        blockers: [],
+        limitations: [],
+      },
     },
   );
 
   renderOverviewPage({ installFetch: false });
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
-  expect(within(workbench).getByText('策略候选信号')).toBeTruthy();
-  expect(within(workbench).getByText('卖出候选 · 璞泰来')).toBeTruthy();
-  expect(within(workbench).getByText('50 个候选信号')).toBeTruthy();
+  expect(within(workbench).getByText('今日交易计划需要复核')).toBeTruthy();
+  expect(
+    within(workbench).getByText('50 个阻断需要先清除，才能进入人工确认。'),
+  ).toBeTruthy();
+  expect(
+    within(workbench).getByText('0 待确认 · 50 候选池 · 50 阻断'),
+  ).toBeTruthy();
   expect(within(workbench).queryByText('50 个候选动作')).toBeNull();
+  expect(within(workbench).queryByText('50 个订单意图待人工确认')).toBeNull();
 });
 
 test('shows missing market pulse move fields as explicit data gaps', async () => {

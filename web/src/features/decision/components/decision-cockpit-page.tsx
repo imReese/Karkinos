@@ -21,6 +21,7 @@ import {
 } from '../../../shared/strategy-display';
 import {
   useCreateManualOrderFromActionMutation,
+  useDailyTradingPlanQuery,
   useIntradayDecisionQuery,
   useSignalActionsQuery,
   useSignalJournalQuery,
@@ -30,6 +31,7 @@ import {
   type DecisionCandidate,
   type DecisionResponse,
   type DecisionWorkflowTask,
+  type DailyTradingPlanResponse,
   type SignalJournalEntry,
   type SignalResponse,
   type StrategyAttributionGateEvidence,
@@ -468,12 +470,229 @@ function signalHoldingAttributionHref(signal: SignalResponse) {
   )}#holding-strategy-attribution-boundary`;
 }
 
+function tradingPlanConclusionLabel(
+  status: string | null | undefined,
+  labels: DecisionCopy,
+) {
+  if (status === 'manual_confirmation_ready') {
+    return labels.tradingPlanManualConfirmationReady;
+  }
+  if (status === 'account_truth_blocked') {
+    return labels.tradingPlanAccountTruthBlocked;
+  }
+  if (status === 'risk_blocked') {
+    return labels.tradingPlanRiskBlocked;
+  }
+  if (status === 'data_unavailable') {
+    return labels.tradingPlanDataUnavailable;
+  }
+  if (status === 'portfolio_blocked') {
+    return labels.tradingPlanPortfolioBlocked;
+  }
+  if (status === 'market_blocked') {
+    return labels.tradingPlanMarketBlocked;
+  }
+  if (status === 'cash_shortfall') {
+    return labels.tradingPlanCashShortfall;
+  }
+  return labels.tradingPlanNoManualAction;
+}
+
+const TRADING_PLAN_CONSTRAINT_LABELS: Record<
+  string,
+  { en: string; zh: string }
+> = {
+  trading_unit: { en: 'Trading unit', zh: '交易单位' },
+  fee_tax_preview: { en: 'Fee and tax preview', zh: '费用税费预览' },
+  cash_buffer: { en: 'Cash buffer', zh: '现金缓冲' },
+  concentration: { en: 'Concentration', zh: '集中度' },
+  t1_available_quantity: { en: 'T+1 sellable quantity', zh: 'T+1 可卖数量' },
+  limit_up: { en: 'Limit up', zh: '涨停' },
+  limit_down: { en: 'Limit down', zh: '跌停' },
+  limit_move: { en: 'Price-limit status', zh: '涨跌停状态' },
+  suspension: { en: 'Suspension', zh: '停牌' },
+  special_treatment: { en: 'Special-treatment risk', zh: 'ST 风险' },
+  drawdown: { en: 'Drawdown', zh: '回撤' },
+  fund_nav_latency: { en: 'Fund NAV latency', zh: '基金净值延迟' },
+};
+
+function tradingPlanConstraintLabel(id: string, locale: Locale) {
+  const label = TRADING_PLAN_CONSTRAINT_LABELS[id];
+  return label?.[locale] ?? formatPublicCode(id, locale);
+}
+
+function DailyTradingPlanPanel({
+  plan,
+  loading,
+  error,
+}: {
+  plan: DailyTradingPlanResponse | undefined;
+  loading: boolean;
+  error: boolean;
+}) {
+  const copy = useCopy();
+  const labels = copy.decision;
+  const { locale } = usePreferences();
+  const firstIntent = plan?.order_intents?.[0];
+  const constraintChecks = firstIntent?.constraint_checks ?? [];
+
+  return (
+    <section
+      data-testid="decision-daily-trading-plan"
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+    >
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.tradingPlanKicker}</div>
+            <h2 className="app-card-title mt-1.5">
+              {labels.tradingPlanTitle}
+            </h2>
+          </div>
+          <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
+            {labels.tradingPlanDetail}
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="app-muted mt-4 text-sm">
+            {labels.tradingPlanLoading}
+          </div>
+        ) : error || !plan ? (
+          <div className="app-error-text mt-4 text-sm">
+            {labels.tradingPlanError}
+          </div>
+        ) : (
+          <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
+              <div className="text-sm font-semibold text-[var(--app-text)]">
+                {tradingPlanConclusionLabel(
+                  plan.conclusion_status,
+                  labels,
+                )}
+              </div>
+              <div className="app-muted mt-2 text-sm">
+                {labels.tradingPlanCounts(
+                  plan.candidate_pool_count,
+                  plan.order_intent_count,
+                  plan.blocked_count,
+                )}
+              </div>
+              <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                <span className="app-chip">
+                  {labels.tradingPlanDefaultManual}
+                </span>
+                <span className="app-chip">
+                  {labels.tradingPlanBrokerDisabled}
+                </span>
+              </div>
+            </div>
+
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
+                  {labels.tradingPlanOrderIntentPreviews}
+                </div>
+                <span className="app-chip">{plan.order_intent_count}</span>
+              </div>
+              {firstIntent ? (
+                <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
+                  <div className="min-w-0 break-words">
+                    {firstIntent.symbol} ·{' '}
+                    {formatPublicStatus(firstIntent.side, locale)}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.tradingPlanQuantity}:{' '}
+                    {firstIntent.estimated_quantity}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.targetWeight}:{' '}
+                    {formatPercent(firstIntent.target_weight)}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.price}: {formatPrice(firstIntent.estimated_price)}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.tradingPlanFee}:{' '}
+                    {formatCurrency(firstIntent.estimated_total_fee)}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {labels.tradingPlanNetCash}:{' '}
+                    {formatCurrency(firstIntent.estimated_net_cash_impact)}
+                  </div>
+                  {firstIntent.cash_shortfall > 0 ? (
+                    <div className="font-mono tabular-nums text-[var(--app-warning)]">
+                      {labels.tradingPlanCashShortfallAmount}:{' '}
+                      {formatCurrency(firstIntent.cash_shortfall)}
+                    </div>
+                  ) : null}
+                  {constraintChecks.length > 0 ? (
+                    <div className="sm:col-span-2">
+                      <div className="app-muted mb-2 text-xs font-semibold uppercase tracking-[0.16em]">
+                        {labels.tradingPlanConstraintChecks}
+                      </div>
+                      <div className="flex min-w-0 flex-wrap gap-2">
+                        {constraintChecks.map((check) => (
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                              check.status === 'blocked'
+                                ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger)]'
+                                : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success)]'
+                            }`}
+                            key={check.id}
+                          >
+                            {tradingPlanConstraintLabel(check.id, locale)} ·{' '}
+                            {formatPublicStatus(check.status, locale)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {firstIntent.position_effect ? (
+                    <>
+                      <div className="font-mono tabular-nums">
+                        {labels.tradingPlanPositionAfter}:{' '}
+                        {
+                          firstIntent.position_effect
+                            .estimated_quantity_after
+                        }
+                      </div>
+                      <div className="font-mono tabular-nums">
+                        {labels.tradingPlanCostBasis}:{' '}
+                        {firstIntent.position_effect.estimated_avg_cost_after ===
+                        null
+                          ? firstIntent.position_effect.cost_basis_method
+                          : `${formatPrice(
+                              firstIntent.position_effect
+                                .estimated_avg_cost_after,
+                            )} · ${firstIntent.position_effect.cost_basis_method}`}
+                      </div>
+                    </>
+                  ) : null}
+                  <div className="app-muted sm:col-span-2">
+                    {labels.tradingPlanDoesNotSubmit}
+                  </div>
+                </div>
+              ) : (
+                <div className="app-muted mt-3 text-sm">
+                  {labels.tradingPlanNoOrderIntents}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function DecisionCockpitPage() {
   const copy = useCopy();
   const labels = copy.decision;
   const { locale } = usePreferences();
   const today = useTodayDecisionQuery();
   const intraday = useIntradayDecisionQuery();
+  const tradingPlan = useDailyTradingPlanQuery();
   const signalActions = useSignalActionsQuery();
   const signalJournal = useSignalJournalQuery();
   const loading = today.isLoading || intraday.isLoading;
@@ -618,6 +837,12 @@ export function DecisionCockpitPage() {
           </div>
         </div>
       </section>
+
+      <DailyTradingPlanPanel
+        plan={tradingPlan.data}
+        loading={tradingPlan.isLoading}
+        error={tradingPlan.isError}
+      />
 
       <DecisionWorkflowPanel lanes={lanes} />
 

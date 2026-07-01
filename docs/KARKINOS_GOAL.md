@@ -57,18 +57,20 @@ The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
 Current active milestone:
 
-* **v1.4 — Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity**
+* **v1.6 — Operations Center & Paper/Shadow Runbook**
 * Status: active roadmap milestone.
-* Purpose: separate strategy contribution, fees, taxes, cash flows, manual
-  movement, and cost-basis evidence so account performance remains auditable.
+* Purpose: make daily plans repeatable through scheduled paper/shadow runs,
+  runbooks, health checks, exception queues, and operator review states while
+  keeping real broker execution disabled by default.
 
 Latest completed milestone:
 
-* **v1.3 — Professional Decision Workflow**
+* **v1.5 — Daily Trading Plan & Portfolio Construction**
 * Status: completed roadmap milestone.
-* Purpose: turn data, account, strategy, risk, paper/shadow, and manual-review
-  evidence into a daily workflow that can be followed without reading internal
-  modules.
+* Purpose: turn validated strategy, portfolio, risk, account-truth,
+  paper/shadow, fee, and cost-basis evidence into a daily trading plan and
+  Today’s to-dos queue that default to human confirmation and do not submit
+  broker orders.
 
 ## Documentation Map
 

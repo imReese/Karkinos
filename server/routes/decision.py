@@ -34,49 +34,20 @@ def create_router() -> APIRouter:
         from server.app import get_app_state
 
         state = get_app_state()
-        db = state.db
-        actions = _read_action_tasks(db)
-        journal_by_signal = _journal_by_signal_id(db)
-        validation_by_strategy = await _validation_by_strategy_id(db)
-        account_truth = _account_truth_gate_evidence(state)
-        strategy_attribution = _strategy_attribution_gate_evidence(
-            state,
-            db,
-            actions,
+        return await _today_decision_payload(state)
+
+    @r.get("/trading-plan")
+    async def get_daily_trading_plan() -> dict[str, Any]:
+        from server.app import get_app_state
+        from server.services.daily_trading_plan import build_daily_trading_plan
+
+        state = get_app_state()
+        decision_payload = await _today_decision_payload(state)
+        return build_daily_trading_plan(
+            decision_payload=decision_payload,
+            config=getattr(state, "config", None),
+            positions=_trading_plan_positions(state),
         )
-        candidates = [
-            _decision_candidate(
-                action,
-                journal_by_signal,
-                validation_by_strategy,
-                db,
-                account_truth,
-                strategy_attribution,
-            )
-            for action in actions
-        ]
-        no_action_reasons = [] if candidates else ["no_pending_action_tasks"]
-        return {
-            "lane": "daily",
-            "decision_date": date.today().isoformat(),
-            "generated_at": datetime.now().isoformat(),
-            "decision": _overall_decision(candidates),
-            "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
-            "summary": _decision_summary(
-                state,
-                actions=actions,
-                candidates=candidates,
-                journal_by_signal=journal_by_signal,
-                account_truth=account_truth,
-                strategy_attribution=strategy_attribution,
-            ),
-            "candidates": candidates,
-            "no_action_reasons": no_action_reasons,
-            "limitations": [
-                "Decision platform output is research and portfolio evidence, not investment advice.",
-                "Live-like execution remains manual-confirmation only by default.",
-            ],
-        }
 
     @r.get("/intraday")
     async def get_intraday_decision() -> dict[str, Any]:
@@ -144,11 +115,64 @@ def create_router() -> APIRouter:
     return r
 
 
+async def _today_decision_payload(state: Any) -> dict[str, Any]:
+    db = state.db
+    actions = _read_action_tasks(db)
+    journal_by_signal = _journal_by_signal_id(db)
+    validation_by_strategy = await _validation_by_strategy_id(db)
+    account_truth = _account_truth_gate_evidence(state)
+    strategy_attribution = _strategy_attribution_gate_evidence(
+        state,
+        db,
+        actions,
+    )
+    candidates = [
+        _decision_candidate(
+            action,
+            journal_by_signal,
+            validation_by_strategy,
+            db,
+            account_truth,
+            strategy_attribution,
+        )
+        for action in actions
+    ]
+    no_action_reasons = [] if candidates else ["no_pending_action_tasks"]
+    return {
+        "lane": "daily",
+        "decision_date": date.today().isoformat(),
+        "generated_at": datetime.now().isoformat(),
+        "decision": _overall_decision(candidates),
+        "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
+        "summary": _decision_summary(
+            state,
+            actions=actions,
+            candidates=candidates,
+            journal_by_signal=journal_by_signal,
+            account_truth=account_truth,
+            strategy_attribution=strategy_attribution,
+        ),
+        "candidates": candidates,
+        "no_action_reasons": no_action_reasons,
+        "limitations": [
+            "Decision platform output is research and portfolio evidence, not investment advice.",
+            "Live-like execution remains manual-confirmation only by default.",
+        ],
+    }
+
+
 def _read_action_tasks(db: Any) -> list[dict[str, Any]]:
     reader = getattr(db, "get_action_tasks_sync", None)
     if not callable(reader):
         return []
     return list(reader(statuses=["pending", "deferred"], limit=50, offset=0))
+
+
+def _trading_plan_positions(state: Any) -> dict[str, Any]:
+    scheduler = getattr(state, "scheduler", None)
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+    positions = getattr(portfolio, "positions", {}) if portfolio else {}
+    return dict(positions) if isinstance(positions, dict) else {}
 
 
 def _journal_by_signal_id(db: Any) -> dict[int, dict[str, Any]]:

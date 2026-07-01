@@ -19,10 +19,28 @@ user manual; current usage guidance belongs in the README files.
 | v1.1 | Completed | Paper Broker & OMS |
 | v1.2 | Completed | Broker Evidence Connector |
 | v1.3 | Completed | Professional Decision Workflow |
-| v1.4 | Active | Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity |
-| v1.5 | Planned | Risk & Portfolio Construction |
-| v1.6 | Planned | Operations Center |
+| v1.4 | Completed | Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity |
+| v1.5 | Completed | Daily Trading Plan & Portfolio Construction |
+| v1.6 | Active | Operations Center & Paper/Shadow Runbook |
 | v1.7 | Planned | Controlled Broker Execution Bridge |
+
+## Automation Maturity Track
+
+Karkinos is moving toward a professional automated-quant workflow, but not
+toward default unattended real-money trading.
+
+The intended maturity ladder is:
+
+| Level | Status | Meaning |
+| --- | --- | --- |
+| L0 Research evidence | Completed | Registered strategies, reproducible backtests, after-cost/OOS evidence, and promotion readiness exist. |
+| L1 Daily trading plan | Active | The system should generate a daily plan with candidates, blockers, costs, risks, and manual-confirmation next steps. |
+| L2 Paper/shadow operating loop | Planned | Scheduled paper/shadow runs, divergence checks, and run summaries should operate without manual data edits. |
+| L3 Controlled broker bridge | Future-gated | Broker-specific order previews may be prepared only after account truth, risk, paper/shadow, and manual review gates pass. |
+| L4 Unattended real-money automation | Deferred | Fully automatic real-money order submission remains out of scope. |
+
+The next product step is therefore not "auto-buy" or "auto-sell". It is a
+daily, risk-gated, auditable trading plan that defaults to human confirmation.
 
 ## v0.2 Completed Summary
 
@@ -750,11 +768,25 @@ submission, or automatic real-money trading.
 
 ## Target for v1.5
 
-Karkinos v1.5 — Risk & Portfolio Construction — should move from single-order
-checks toward portfolio construction and explainable rebalancing.
+Karkinos v1.5 — Daily Trading Plan & Portfolio Construction — should move from
+research evidence and isolated previews into a daily operating plan: what the
+system believes should be reviewed today, what is blocked, what can become a
+manual-confirmation order intent, and why.
 
 ### v1.5 Scope
 
+* A daily trading-plan builder that gathers market-data health, account truth,
+  portfolio state, assigned strategy evidence, candidate signals, risk gates,
+  paper/shadow evidence, fee/cost estimates, and manual-review state into one
+  auditable plan.
+* Today's to-dos as the canonical user-facing action queue for the daily plan:
+  data/account blockers first, then manual-confirmation candidates, strategy
+  evidence review, portfolio-construction suggestions, and normal status.
+* Clear separation between a large research candidate pool and the much smaller
+  set of items that need human action today.
+* Manual-confirmation order intents that include target position, quantity,
+  estimated gross amount, fee/tax breakdown, net cash impact, risk rationale,
+  blockers, and evidence references before the user records any execution.
 * Target weights, cash buffer, rebalance thresholds, and low-cost rebalance
   suggestions.
 * Account-level, asset-class, symbol, industry, concentration, liquidity, and
@@ -766,25 +798,44 @@ checks toward portfolio construction and explainable rebalancing.
 
 ### Acceptance Criteria for v1.5
 
-* [ ] Portfolio construction recommendations pass account-truth and risk gates
+* [x] A daily trading-plan API can assemble data health, account truth,
+  strategy candidates, risk preview, paper/shadow evidence, fee/cost preview,
+  and manual-review status without creating broker orders or mutating the
+  production ledger.
+* [x] Today's to-dos renders the daily plan with a top-level conclusion,
+  execution status, review queue, and evidence-linked next actions.
+* [x] Candidate-pool size is never presented as the number of trades the user
+  must execute; manual-ready and blocked counts are separate.
+* [x] Manual-confirmation order intents include target weight, quantity,
+  estimated price, gross amount, fee/tax breakdown, net cash impact, remaining
+  position/cost-basis effect, and risk/account-truth status.
+* [x] Portfolio construction recommendations pass account-truth and risk gates
   before appearing as actionable candidates.
-* [ ] Rebalance suggestions include target/actual weight, drift, expected
+* [x] Rebalance suggestions include target/actual weight, drift, expected
   cost, cash impact, and risk rationale.
-* [ ] China-market constraints are explicit in risk evidence and user-facing
+* [x] China-market constraints are explicit in risk evidence and user-facing
   explanations.
-* [ ] Backend deterministic tests cover concentration, cash buffer, T+1,
+* [x] Backend deterministic tests cover concentration, cash buffer, T+1,
   trading unit, limit, suspension, fee/tax, and drawdown constraints.
+* [x] Frontend tests cover daily-plan conclusions, blocker ordering,
+  manual-ready order intents, and the absence of broker-submission language.
 
 ## Target for v1.6
 
-Karkinos v1.6 — Operations Center — should make Karkinos observable as a local
-personal finance system.
+Karkinos v1.6 — Operations Center & Paper/Shadow Runbook — should make
+Karkinos observable as a local personal finance system and turn paper/shadow
+review into a repeatable daily operating loop.
 
 ### v1.6 Scope
 
 * Operations surfaces for market data, refresh jobs, broker evidence,
   account-truth reconciliation, strategy runs, paper/shadow runs, scheduler
   jobs, acceptance audits, and system alerts.
+* Scheduled daily strategy-plan and paper/shadow runs that can be rerun
+  deterministically, explain skipped/degraded/blocked states, and never submit
+  broker orders.
+* Paper/shadow divergence reports that compare expected strategy behavior,
+  simulated orders/fills, current account truth, and realized market context.
 * Event logs for market-data events, broker-evidence events, strategy events,
   risk events, order events, review events, and generated reports.
 * Daily run summaries that explain what ran, what failed, what needs action,
@@ -797,6 +848,10 @@ personal finance system.
   subsystems.
 * [ ] Daily run summaries distinguish successful, degraded, blocked, skipped,
   and manual-action-required states.
+* [ ] Paper/shadow run summaries include generated order intents, simulated
+  fills, fee/cost assumptions, divergence status, and next manual review step.
+* [ ] Scheduler reruns are idempotent and record run ids, input snapshots,
+  errors, retry state, and limitations.
 * [ ] Acceptance audit CLI includes market data, strategy runtime, paper OMS,
   broker evidence, decision workflow, strategy attribution, portfolio
   construction, and operations capabilities as they are completed.
@@ -806,12 +861,15 @@ personal finance system.
 ## Target for v1.7
 
 Karkinos v1.7 — Controlled Broker Execution Bridge — should only be considered
-after data, account truth, strategy runtime, paper/shadow, OMS, risk, and
-manual review are mature.
+after data, account truth, strategy runtime, paper/shadow, OMS, risk,
+operations monitoring, and manual review are mature. This milestone is a
+controlled bridge design, not a default trading bot.
 
 ### v1.7 Scope
 
 * Broker-specific order previews that remain manual by default.
+* Exportable or bridge-ready order tickets for environments where the user
+  still performs final broker-side submission manually.
 * Explicit per-order human confirmation, kill switch, connector capability
   checks, account-truth gate, strategy evidence gate, and risk gate.
 * A white-list model for any future broker submission capability.
@@ -827,6 +885,8 @@ manual review are mature.
 
 * [ ] Broker submission remains disabled by default and unavailable unless an
   explicit controlled bridge is configured.
+* [ ] A non-submitting order-ticket export path exists before any live broker
+  bridge path is considered.
 * [ ] Every live-like order preview requires account-truth, research-evidence,
   risk, paper/shadow, and manual-confirmation evidence.
 * [ ] Kill switch, connector capability checks, and per-order confirmation are
@@ -844,6 +904,7 @@ These capabilities remain intentionally out of scope until the professional
 platform foundation is mature:
 
 * Default automatic real-money trading.
+* Unattended real-money order submission.
 * Broker password storage.
 * Black-box AI strategy auto-buy or auto-sell.
 * Community strategy marketplace.

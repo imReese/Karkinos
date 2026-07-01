@@ -200,11 +200,88 @@ const intradayDecision: DecisionResponse = {
 function installDecisionFetchMock({
   todayResponse = dailyDecision,
   intradayResponse = intradayDecision,
+  tradingPlanResponse = {
+    schema_version: 'karkinos.daily_trading_plan.v1',
+    plan_date: '2026-06-12',
+    generated_at: '2026-06-12T09:31:00+08:00',
+    source_decision: 'buy',
+    conclusion_status: 'manual_confirmation_ready',
+    primary_target: 'trading',
+    candidate_pool_count: 1,
+    manual_ready_count: 1,
+    order_intent_count: 1,
+    blocked_count: 0,
+    available_cash: 100000,
+    total_equity: 40000,
+    default_execution_mode: 'manual_confirmation',
+    broker_bridge_status: 'disabled',
+    order_intents: [
+      {
+        action_id: 9,
+        symbol: '600519',
+        asset_class: 'stock',
+        side: 'buy',
+        target_weight: 0.2,
+        estimated_price: 123.45,
+        estimated_quantity: 600,
+        quantity_basis: 'target_weight_total_equity_lot_rounded',
+        estimated_gross_amount: 74070,
+        estimated_total_fee: 12.3,
+        estimated_net_cash_impact: -74082.3,
+        available_cash_before: 100000,
+        available_cash_after: 25917.7,
+        cash_status: 'sufficient',
+        cash_shortfall: 0,
+        constraint_checks: [
+          {
+            id: 'trading_unit',
+            status: 'pass',
+            target: 'market',
+          },
+          {
+            id: 'cash_buffer',
+            status: 'pass',
+            target: 'portfolio',
+          },
+          {
+            id: 'fee_tax_preview',
+            status: 'pass',
+            target: 'cost',
+          },
+        ],
+        position_effect: {
+          current_quantity: 200,
+          current_avg_cost: 100,
+          current_market_value: 24690,
+          estimated_quantity_after: 800,
+          estimated_avg_cost_after: 117.5875,
+          cost_basis_method: 'weighted_average_preview',
+        },
+        fee_breakdown: {
+          commission: '11.11',
+          stamp_tax: '0',
+          transfer_fee: '0.740700',
+          other_fees: '0',
+          total_fee: '11.85',
+        },
+        risk_gate_status: 'passed',
+        manual_confirmation_status: 'ready_for_manual_confirmation',
+        submission_status: 'manual_confirmation_required',
+        does_not_submit_broker_order: true,
+        evidence_refs: ['decision_action:9', 'strategy:dual_ma'],
+      },
+    ],
+    blockers: [],
+    limitations: [
+      'Order intents are manual-confirmation previews, not broker submissions.',
+    ],
+  },
   signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
   journalSourceRef = 'RISK-1',
 }: {
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
+  tradingPlanResponse?: unknown;
   signalActionDetail?: string;
   journalSourceRef?: string | null;
 } = {}) {
@@ -222,6 +299,9 @@ function installDecisionFetchMock({
       }
       if (url.includes('/api/decision/intraday')) {
         return jsonResponse(intradayResponse);
+      }
+      if (url.includes('/api/decision/trading-plan')) {
+        return jsonResponse(tradingPlanResponse);
       }
       if (url.includes('/api/signals/actions')) {
         return jsonResponse([
@@ -358,6 +438,105 @@ function contributionDecision(): DecisionResponse {
     },
   } as DecisionResponse;
 }
+
+test('renders read-only daily trading plan order intent preview', async () => {
+  renderDecisionCockpit({ locale: 'en' });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain('Daily trading plan');
+  expect(plan.textContent).toContain('Manual confirmation ready');
+  expect(plan.textContent).toContain('Order intent previews');
+  expect(plan.textContent).toContain('600519');
+  expect(plan.textContent).toContain('600');
+  expect(plan.textContent).toContain('Position after');
+  expect(plan.textContent).toContain('800');
+  expect(plan.textContent).toContain('Cost basis');
+  expect(plan.textContent).toContain('Constraint checks');
+  expect(plan.textContent).toContain('Trading unit');
+  expect(plan.textContent).toContain('Cash buffer');
+  expect(plan.textContent).toContain('-¥74,082.30');
+  expect(plan.textContent).toContain('Does not submit broker orders');
+});
+
+test('renders cash shortfall in daily trading plan without manual readiness', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    tradingPlanResponse: {
+      schema_version: 'karkinos.daily_trading_plan.v1',
+      plan_date: '2026-06-12',
+      generated_at: '2026-06-12T09:31:00+08:00',
+      source_decision: 'buy',
+      conclusion_status: 'cash_shortfall',
+      primary_target: 'portfolio',
+      candidate_pool_count: 1,
+      manual_ready_count: 0,
+      order_intent_count: 1,
+      blocked_count: 1,
+      available_cash: 1000,
+      total_equity: 50000,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      order_intents: [
+        {
+          action_id: 9,
+          symbol: '600519',
+          asset_class: 'stock',
+          side: 'buy',
+          target_weight: 0.2,
+          estimated_price: 10,
+          estimated_quantity: 1000,
+          quantity_basis: 'target_weight_total_equity_lot_rounded',
+          estimated_gross_amount: 10000,
+          estimated_total_fee: 5.1,
+          estimated_net_cash_impact: -10005.1,
+          available_cash_before: 1000,
+          available_cash_after: -9005.1,
+          cash_status: 'insufficient_cash',
+          cash_shortfall: 9005.1,
+          constraint_checks: [
+            {
+              id: 'cash_buffer',
+              status: 'blocked',
+              target: 'portfolio',
+              cash_buffer_shortfall: 9005.1,
+            },
+          ],
+          fee_breakdown: {
+            commission: '5.00',
+            transfer_fee: '0.100000',
+            total_fee: '5.10',
+          },
+          risk_gate_status: 'passed',
+          manual_confirmation_status: 'ready_for_manual_confirmation',
+          submission_status: 'blocked_by_cash_shortfall',
+          does_not_submit_broker_order: true,
+          evidence_refs: ['decision_action:9', 'strategy:dual_ma'],
+        },
+      ],
+      blockers: [
+        {
+          action_id: 9,
+          symbol: '600519',
+          reason: 'insufficient_cash',
+          target: 'portfolio',
+          risk_gate_status: 'passed',
+          manual_confirmation_status: 'ready_for_manual_confirmation',
+        },
+      ],
+      limitations: [
+        'Order intents are manual-confirmation previews, not broker submissions.',
+      ],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain('Cash shortfall');
+  expect(plan.textContent).toContain('1 candidates · 1 order intent previews · 1 blockers');
+  expect(plan.textContent).toContain('¥9,005.10');
+  expect(plan.textContent).toContain('Does not submit broker orders');
+});
 
 test('renders daily and intraday decision cockpit evidence without execution', async () => {
   renderDecisionCockpit();
