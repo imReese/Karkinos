@@ -751,11 +751,51 @@ function operationsTargetHref(target: string | undefined) {
   }
 }
 
+function primaryOperationsDailyPlanBlocker(
+  operations: OperationsTodayResponse | null | undefined,
+) {
+  const summary = operations?.daily_plan.blocker_summary ?? [];
+  if (!operations || operations.daily_plan.blocked_count <= 0) {
+    return null;
+  }
+  return summary[0] ?? null;
+}
+
+function isAwaitingRiskGateBlocker(
+  blocker: ReturnType<typeof primaryOperationsDailyPlanBlocker>,
+) {
+  if (!blocker) {
+    return false;
+  }
+  const reasons = blocker.reasons ?? [];
+  return (
+    blocker.target === 'risk' &&
+    (blocker.category === 'evidence_not_ready' ||
+      reasons.includes('awaiting_risk_gate') ||
+      reasons.includes('risk_gate_not_checked'))
+  );
+}
+
+function operationsQueueTarget(
+  operations: OperationsTodayResponse | null | undefined,
+  primarySubsystem: OperationsTodayResponse['subsystems'][number] | undefined,
+) {
+  const blocker = primaryOperationsDailyPlanBlocker(operations);
+  if (isAwaitingRiskGateBlocker(blocker)) {
+    return 'risk';
+  }
+  return primarySubsystem?.target ?? operations?.primary_target;
+}
+
 function operationsStatusTitle(
   operations: OperationsTodayResponse | null | undefined,
   locale: Locale,
 ) {
   const status = operations?.conclusion_status;
+  const blocker = primaryOperationsDailyPlanBlocker(operations);
+  if (isAwaitingRiskGateBlocker(blocker)) {
+    return locale === 'zh' ? '风险闸门待检查' : 'Risk gate checks pending';
+  }
   if (locale === 'zh') {
     if (!operations) return '运营状态加载中';
     if (status === 'blocked') return '今日待办存在阻断';
@@ -770,6 +810,21 @@ function operationsStatusTitle(
   }
   if (status === 'degraded') return 'Today runbook has degraded checks';
   return 'Today runbook is healthy';
+}
+
+function operationsDetailText(
+  operations: OperationsTodayResponse | null | undefined,
+  locale: Locale,
+  fallback: string,
+) {
+  const blocker = primaryOperationsDailyPlanBlocker(operations);
+  if (blocker && isAwaitingRiskGateBlocker(blocker)) {
+    if (locale === 'zh') {
+      return `${blocker.count} 个候选等待风险闸门检查；当前 ${operations?.daily_plan.manual_ready_count ?? 0} 个可人工确认。`;
+    }
+    return `${blocker.count} candidates are waiting for risk-gate checks; ${operations?.daily_plan.manual_ready_count ?? 0} are ready for manual confirmation.`;
+  }
+  return fallback;
 }
 
 function operationsNextActionLabel(value: string | undefined, locale: Locale) {
@@ -836,6 +891,12 @@ function operationsStatusMeta(
   operations: OperationsTodayResponse,
   locale: Locale,
 ) {
+  const blocker = primaryOperationsDailyPlanBlocker(operations);
+  if (blocker && isAwaitingRiskGateBlocker(blocker)) {
+    return locale === 'zh'
+      ? `${blocker.count} 待检查`
+      : `${blocker.count} pending checks`;
+  }
   const { blocked, manual_action_required, degraded, pass, total } =
     operations.health;
   if (locale === 'zh') {
@@ -850,6 +911,28 @@ function operationsStatusMeta(
   }
   if (degraded > 0) return `${degraded} degraded`;
   return `${pass}/${total} passed`;
+}
+
+function operationsActionLabel(
+  operations: OperationsTodayResponse | null | undefined,
+  primarySubsystem: OperationsTodayResponse['subsystems'][number] | undefined,
+  labels: AppCopy['overview']['dashboard'],
+  locale: Locale,
+) {
+  const target = operationsQueueTarget(operations, primarySubsystem);
+  if (target === 'risk') {
+    return labels.operationsViewRisk;
+  }
+  if (target === 'account-truth') {
+    return labels.operationsViewAccountTruth;
+  }
+  if (target === 'market') {
+    return labels.operationsViewMarket;
+  }
+  if (target === 'trading') {
+    return labels.operationsViewTrading;
+  }
+  return locale === 'zh' ? '查看运行证据' : 'View run evidence';
 }
 
 function tradingPlanBlockerCategoryLabel(category: string, locale: Locale) {
@@ -1083,6 +1166,10 @@ function DashboardTodayQueue({
     operationsToday?.subsystems.find(
       (item) => item.status === operationsToday.conclusion_status,
     );
+  const operationsPrimaryTarget = operationsQueueTarget(
+    operationsToday,
+    operationsPrimarySubsystem,
+  );
   const operationsTone: TodayQueueTone = operationsTodayError
     ? 'danger'
     : operationsToday?.conclusion_status === 'blocked'
@@ -1111,10 +1198,14 @@ function DashboardTodayQueue({
       detail: operationsTodayLoading
         ? copy.states.loading
         : operationsToday
-          ? operationsNextActionLabel(
-              operationsPrimarySubsystem?.next_action ??
-                operationsToday.paper_shadow.next_manual_review_step,
+          ? operationsDetailText(
+              operationsToday,
               locale,
+              operationsNextActionLabel(
+                operationsPrimarySubsystem?.next_action ??
+                  operationsToday.paper_shadow.next_manual_review_step,
+                locale,
+              ),
             )
           : copy.states.loading,
       meta: operationsTodayLoading
@@ -1122,9 +1213,13 @@ function DashboardTodayQueue({
         : operationsToday
           ? operationsStatusMeta(operationsToday, locale)
           : '--',
-      href: operationsTargetHref(operationsToday?.primary_target),
-      actionLabel:
-        locale === 'zh' ? '查看运行证据' : 'View run evidence',
+      href: operationsTargetHref(operationsPrimaryTarget),
+      actionLabel: operationsActionLabel(
+        operationsToday,
+        operationsPrimarySubsystem,
+        labels,
+        locale,
+      ),
       tone: operationsTone,
       priority: operationsPriority,
     },
