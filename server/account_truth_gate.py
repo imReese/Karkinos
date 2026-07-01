@@ -6,7 +6,11 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from account_truth.broker_evidence import BrokerEvidenceRepository, BrokerImportRun
+from account_truth.broker_evidence import (
+    BrokerEvidenceRepository,
+    BrokerImportRun,
+    StoredBrokerEvidenceEvent,
+)
 from account_truth.manual_review import ManualReviewRepository
 from account_truth.reconciliation import (
     KarkinosLedgerFact,
@@ -88,18 +92,28 @@ def build_reconciliation_report_for_import_run(
 
     return build_reconciliation_report(
         import_run_id=import_run.import_run_id,
-        broker_events=repository.list_events(import_run.import_run_id),
+        broker_events=broker_events_for_import_run(repository, import_run),
         **_karkinos_account_facts(state),
     )
+
+
+def broker_events_for_import_run(
+    repository: BrokerEvidenceRepository,
+    import_run: BrokerImportRun,
+) -> list[StoredBrokerEvidenceEvent]:
+    evidence_import_run_id = (
+        import_run.duplicate_of_import_run_id or import_run.import_run_id
+    )
+    return repository.list_events(evidence_import_run_id)
 
 
 def _latest_reconcilable_import_run(
     repository: BrokerEvidenceRepository,
 ) -> BrokerImportRun | None:
     for import_run in repository.list_import_runs(limit=100):
-        if import_run.duplicate_of_import_run_id:
-            continue
         if import_run.valid_row_count <= 0:
+            continue
+        if import_run.validation_status == "blocked":
             continue
         return import_run
     return None
