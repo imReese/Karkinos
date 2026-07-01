@@ -9,6 +9,7 @@ import {
   formatLedgerFeeRuleLabel,
 } from '../../../shared/ledger-format';
 import type { TradePreview } from '../api';
+import { toDatetimeLocalInputValue } from '../datetime-local';
 
 export type TradeFormValues = {
   occurred_at: string;
@@ -94,7 +95,7 @@ export function TradeForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [feeWasEdited, setFeeWasEdited] = useState(false);
   const createDefaultValues = (): TradeFormValues => ({
-    occurred_at: new Date().toISOString().slice(0, 16),
+    occurred_at: toDatetimeLocalInputValue(),
     asset_class: 'stock',
     direction: 'buy',
     quantity: null,

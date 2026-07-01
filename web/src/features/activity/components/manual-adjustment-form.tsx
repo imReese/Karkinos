@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { useCopy } from '../../../app/copy';
+import { toDatetimeLocalInputValue } from '../datetime-local';
 
 export type ManualAdjustmentFormValues = {
   occurred_at: string;
@@ -36,7 +37,7 @@ export function ManualAdjustmentForm({
   const assetOptions = assetClassOptions(copy);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createDefaultValues = (): ManualAdjustmentFormValues => ({
-    occurred_at: new Date().toISOString().slice(0, 16),
+    occurred_at: toDatetimeLocalInputValue(),
     symbol: '',
     asset_class: 'stock',
     amount: null,

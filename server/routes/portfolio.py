@@ -2855,13 +2855,18 @@ def _cash_flow_adjusted_equity_points_from_series(
         (first_point, unit_price)
     ]
 
-    for timestamp, point in parsed_points[1:]:
+    last_parsed_index = len(parsed_points) - 1
+    for point_index, (timestamp, point) in enumerate(parsed_points[1:], start=1):
         period_flow = Decimal("0")
         while (
             event_index < len(flow_events) and flow_events[event_index][0] <= timestamp
         ):
             period_flow += flow_events[event_index][1]
             event_index += 1
+        if point_index == last_parsed_index:
+            while event_index < len(flow_events):
+                period_flow += flow_events[event_index][1]
+                event_index += 1
 
         total = Decimal(str(point.total))
         pre_flow_equity = total - period_flow

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import { toDatetimeLocalInputValue } from '../datetime-local';
 
 export type FundBatchOrder = {
   symbol: string;
@@ -20,7 +21,7 @@ const EMPTY_CANDIDATES: FundBatchCandidate[] = [];
 
 function defaultValues(candidates: FundBatchCandidate[]): FundBatchFormValues {
   return {
-    occurred_at: new Date().toISOString().slice(0, 16),
+    occurred_at: toDatetimeLocalInputValue(),
     note: '',
     orders: candidates.map((fund) => ({ ...fund, amount: null })),
   };
