@@ -81,13 +81,17 @@ class BrokerEvidenceRepository:
         source_name: str = "",
     ) -> BrokerImportRun:
         created_at = datetime.now(UTC).isoformat()
-        duplicate_of = self._find_existing_import_run(preview.file_fingerprint)
-        file_duplicate_count = 1 if duplicate_of else 0
-        validation_status = (
-            "warning"
-            if duplicate_of and preview.validation_status == "pass"
-            else preview.validation_status
+        existing_import_run_id = self._find_existing_import_run(
+            preview.file_fingerprint
         )
+        if existing_import_run_id is not None:
+            return self._update_existing_import_run(
+                existing_import_run_id,
+                preview,
+                source_name=source_name,
+                updated_at=created_at,
+            )
+
         import_run = BrokerImportRun(
             import_run_id=f"import_{uuid.uuid4().hex}",
             schema_version=ACCOUNT_TRUTH_SCHEMA_VERSION,
@@ -98,10 +102,10 @@ class BrokerEvidenceRepository:
             valid_row_count=preview.valid_row_count,
             invalid_row_count=preview.invalid_row_count,
             row_duplicate_count=preview.duplicate_row_count,
-            file_duplicate_count=file_duplicate_count,
-            validation_status=validation_status,
+            file_duplicate_count=0,
+            validation_status=preview.validation_status,
             limitations=list(preview.limitations),
-            duplicate_of_import_run_id=duplicate_of,
+            duplicate_of_import_run_id=None,
             created_at=created_at,
         )
 
@@ -133,7 +137,7 @@ class BrokerEvidenceRepository:
                     import_run.created_at,
                 ),
             )
-            if not duplicate_of and preview.validation_status != "blocked":
+            if preview.validation_status != "blocked":
                 conn.executemany(
                     """
                     INSERT INTO broker_evidence_events (
@@ -157,6 +161,51 @@ class BrokerEvidenceRepository:
                 )
             conn.commit()
         return import_run
+
+    def _update_existing_import_run(
+        self,
+        import_run_id: str,
+        preview: BrokerStatementPreview,
+        *,
+        source_name: str,
+        updated_at: str,
+    ) -> BrokerImportRun:
+        with sqlite3.connect(self._path) as conn:
+            conn.execute(
+                """
+                UPDATE broker_import_runs
+                SET source_name = ?,
+                    source_type = ?,
+                    row_count = ?,
+                    valid_row_count = ?,
+                    invalid_row_count = ?,
+                    row_duplicate_count = ?,
+                    file_duplicate_count = 0,
+                    validation_status = ?,
+                    limitations_json = ?,
+                    duplicate_of_import_run_id = NULL,
+                    created_at = ?
+                WHERE import_run_id = ?
+                """,
+                (
+                    source_name,
+                    preview.source_type,
+                    preview.row_count,
+                    preview.valid_row_count,
+                    preview.invalid_row_count,
+                    preview.duplicate_row_count,
+                    preview.validation_status,
+                    json.dumps(preview.limitations, ensure_ascii=False),
+                    updated_at,
+                    import_run_id,
+                ),
+            )
+            conn.commit()
+
+        existing = self.get_import_run(import_run_id)
+        if existing is None:
+            raise RuntimeError("Broker import run disappeared during idempotent import")
+        return existing
 
     def list_events(self, import_run_id: str) -> list[StoredBrokerEvidenceEvent]:
         with sqlite3.connect(self._path) as conn:

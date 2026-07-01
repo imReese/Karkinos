@@ -87,17 +87,25 @@ def test_broker_evidence_repository_persists_optional_reconciliation_components(
     assert saved_events[1].cost_basis_method == "broker_remaining_cost"
 
 
-def test_broker_evidence_repository_detects_duplicate_files(tmp_path: Path) -> None:
+def test_broker_evidence_repository_reimports_same_file_idempotently(
+    tmp_path: Path,
+) -> None:
     repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
     preview = parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT)
 
     first_run = repository.save_preview(preview, source_name="first.csv")
-    duplicate_run = repository.save_preview(preview, source_name="second.csv")
+    second_run = repository.save_preview(preview, source_name="second.csv")
+    import_runs = repository.list_import_runs(limit=10)
 
-    assert duplicate_run.file_duplicate_count == 1
-    assert duplicate_run.duplicate_of_import_run_id == first_run.import_run_id
-    assert duplicate_run.validation_status == "warning"
-    assert repository.list_events(duplicate_run.import_run_id) == []
+    assert second_run.import_run_id == first_run.import_run_id
+    assert second_run.source_name == "second.csv"
+    assert second_run.file_duplicate_count == 0
+    assert second_run.duplicate_of_import_run_id is None
+    assert second_run.validation_status == "pass"
+    assert len(import_runs) == 1
+    assert import_runs[0].import_run_id == first_run.import_run_id
+    assert import_runs[0].source_name == "second.csv"
+    assert len(repository.list_events(second_run.import_run_id)) == 9
 
 
 def test_broker_evidence_repository_does_not_mutate_production_ledger(
