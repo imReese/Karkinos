@@ -176,6 +176,55 @@ function installOverviewFetchMock(
         'Order intents are manual-confirmation previews, not broker submissions.',
       ],
     },
+    operationsToday = {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-02-10',
+      generated_at: '2026-02-10T10:00:00+08:00',
+      conclusion_status: 'healthy',
+      primary_target: 'decision',
+      health: {
+        total: 8,
+        pass: 6,
+        degraded: 0,
+        blocked: 0,
+        manual_action_required: 0,
+        skipped: 2,
+      },
+      subsystems: [
+        {
+          id: 'paper_shadow',
+          status: 'skipped',
+          tone: 'neutral',
+          target: 'paper-shadow',
+          last_run_at: null,
+          next_action: 'none',
+          limitations: [],
+          detail_status: 'not_required',
+        },
+      ],
+      daily_plan: {
+        candidate_pool_count: 0,
+        manual_ready_count: 0,
+        blocked_count: 0,
+        order_intent_count: 0,
+        conclusion_status: 'no_manual_action',
+      },
+      paper_shadow: {
+        status: 'not_required',
+        run_id: null,
+        order_intent_count: 0,
+        simulated_order_count: 0,
+        simulated_fill_count: 0,
+        divergence_reviewed_count: 0,
+        divergence_status: 'not_required',
+        next_manual_review_step: 'none',
+        last_run_at: null,
+        orders: [],
+      },
+      limitations: [
+        'Operations summary is read-only and does not submit broker orders.',
+      ],
+    },
     strategyContribution = {
       strategy_id: 'dual_ma',
       contribution_status: 'estimated_from_linked_fills',
@@ -200,6 +249,7 @@ function installOverviewFetchMock(
     marketQuotes?: unknown[];
     decision?: Record<string, unknown>;
     tradingPlan?: Record<string, unknown>;
+    operationsToday?: Record<string, unknown>;
     strategyContribution?: Record<string, unknown>;
   } = {},
 ) {
@@ -376,6 +426,9 @@ function installOverviewFetchMock(
     }
     if (url.includes('/api/decision/trading-plan')) {
       return jsonResponse(tradingPlan);
+    }
+    if (url.includes('/api/operations/today')) {
+      return jsonResponse(operationsToday);
     }
     if (url.includes('/api/market/data-health')) {
       return jsonResponse({
@@ -568,6 +621,8 @@ test('renders the daily workbench before chart and detail panels', async () => {
   expect(
     within(workbench).getByText('No manual trading action needed today'),
   ).toBeTruthy();
+  expect(within(workbench).getByText('Today runbook is healthy')).toBeTruthy();
+  expect(within(workbench).getByText('No additional action')).toBeTruthy();
   expect(within(workbench).getByText('Execution status')).toBeTruthy();
   expect(within(workbench).getByText('Review queue')).toBeTruthy();
   expect(
@@ -604,6 +659,92 @@ test('renders the daily workbench before chart and detail panels', async () => {
       .getByTestId('strategy-contribution-gate-card')
       .getAttribute('data-variant'),
   ).toBe('compact');
+});
+
+test('surfaces paper shadow next action in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        source_decision: 'buy',
+        conclusion_status: 'manual_confirmation_ready',
+        primary_target: 'trading',
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        order_intent_count: 1,
+        blocked_count: 0,
+        available_cash: 76000,
+        total_equity: 101000,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [],
+        blockers: [],
+        limitations: [],
+      },
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'paper-shadow',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 2,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'paper_shadow',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'paper-shadow',
+            last_run_at: null,
+            next_action: 'run_paper_shadow_daily',
+            limitations: [],
+            detail_status: 'not_run',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'not_run',
+          run_id: 'shadow:2026-02-10',
+          order_intent_count: 1,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_run',
+          next_manual_review_step: 'run_paper_shadow_daily',
+          last_run_at: null,
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+  expect(
+    within(todayQueue).getByText('Today runbook needs manual review'),
+  ).toBeTruthy();
+  expect(
+    within(todayQueue).getByText(
+      'Run paper/shadow simulation before manual confirmation',
+    ),
+  ).toBeTruthy();
+  expect(within(todayQueue).getByText('2 manual review')).toBeTruthy();
 });
 
 test('renders daily operations tower without treating 50 candidates as manual work', async () => {

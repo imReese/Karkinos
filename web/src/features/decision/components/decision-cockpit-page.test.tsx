@@ -276,12 +276,67 @@ function installDecisionFetchMock({
       'Order intents are manual-confirmation previews, not broker submissions.',
     ],
   },
+  operationsTodayResponse = {
+    schema_version: 'karkinos.operations_today.v1',
+    operations_date: '2026-06-12',
+    generated_at: '2026-06-12T09:32:00+08:00',
+    conclusion_status: 'manual_action_required',
+    primary_target: 'paper-shadow',
+    health: {
+      total: 8,
+      pass: 5,
+      degraded: 0,
+      blocked: 0,
+      manual_action_required: 2,
+      skipped: 1,
+    },
+    subsystems: [
+      {
+        id: 'paper_shadow',
+        status: 'manual_action_required',
+        tone: 'warning',
+        target: 'paper-shadow',
+        last_run_at: null,
+        next_action: 'review_shadow_divergence',
+        limitations: [],
+        detail_status: 'review_required',
+      },
+    ],
+    daily_plan: {
+      candidate_pool_count: 1,
+      manual_ready_count: 1,
+      blocked_count: 0,
+      order_intent_count: 1,
+      conclusion_status: 'manual_confirmation_ready',
+    },
+    paper_shadow: {
+      status: 'review_required',
+      run_id: 'shadow:2026-06-12',
+      order_intent_count: 1,
+      simulated_order_count: 1,
+      simulated_fill_count: 1,
+      divergence_reviewed_count: 0,
+      divergence_status: 'review_required',
+      next_manual_review_step: 'review_shadow_divergence',
+      last_run_at: '2026-06-12T09:32:00+08:00',
+      orders: [
+        {
+          order_id: 'SHADOW-2026-06-12-9',
+          symbol: '600519',
+          status: 'shadow_recorded',
+          divergence_status: null,
+        },
+      ],
+    },
+    limitations: [],
+  },
   signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
   journalSourceRef = 'RISK-1',
 }: {
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
   tradingPlanResponse?: unknown;
+  operationsTodayResponse?: unknown;
   signalActionDetail?: string;
   journalSourceRef?: string | null;
 } = {}) {
@@ -302,6 +357,9 @@ function installDecisionFetchMock({
       }
       if (url.includes('/api/decision/trading-plan')) {
         return jsonResponse(tradingPlanResponse);
+      }
+      if (url.includes('/api/operations/today')) {
+        return jsonResponse(operationsTodayResponse);
       }
       if (url.includes('/api/signals/actions')) {
         return jsonResponse([
@@ -457,6 +515,12 @@ test('renders read-only daily trading plan order intent preview', async () => {
   expect(plan.textContent).toContain('Cash buffer');
   expect(plan.textContent).toContain('-¥74,082.30');
   expect(plan.textContent).toContain('Does not submit broker orders');
+  expect(plan.textContent).toContain('Paper/shadow simulation review');
+  expect(plan.textContent).toContain('Review required');
+  expect(plan.textContent).toContain('Review paper/shadow divergence evidence');
+  expect(plan.textContent).toContain('Sim orders');
+  expect(plan.textContent).toContain('Sim fills');
+  expect(plan.textContent).toContain('Divergence reviews');
 });
 
 test('renders cash shortfall in daily trading plan without manual readiness', async () => {

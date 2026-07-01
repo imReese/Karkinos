@@ -20,6 +20,10 @@ import {
   type StrategyNameMap,
 } from '../../../shared/strategy-display';
 import {
+  useOperationsTodayQuery,
+  type OperationsTodayResponse,
+} from '../../operations/api';
+import {
   useCreateManualOrderFromActionMutation,
   useDailyTradingPlanQuery,
   useIntradayDecisionQuery,
@@ -521,12 +525,48 @@ function tradingPlanConstraintLabel(id: string, locale: Locale) {
   return label?.[locale] ?? formatPublicCode(id, locale);
 }
 
+function paperShadowStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    not_required: { en: 'Not required', zh: '无需模拟' },
+    not_run: { en: 'Not run', zh: '尚未运行' },
+    review_required: { en: 'Review required', zh: '需要复核' },
+    within_expectations: { en: 'Within expectations', zh: '符合预期' },
+    diverged: { en: 'Diverged', zh: '存在偏差' },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function paperShadowNextStepLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    none: { en: 'No additional simulation review', zh: '无需额外模拟复核' },
+    run_paper_shadow_daily: {
+      en: 'Run paper/shadow simulation before manual confirmation',
+      zh: '人工确认前先运行 paper/shadow 模拟',
+    },
+    review_shadow_divergence: {
+      en: 'Review paper/shadow divergence evidence',
+      zh: '复核 paper/shadow 偏差证据',
+    },
+    review_manual_confirmation: {
+      en: 'Simulation reviewed; continue with manual confirmation',
+      zh: '模拟已复核，可继续人工确认',
+    },
+    resolve_shadow_divergence: {
+      en: 'Resolve simulation divergence before approval',
+      zh: '批准前先处理模拟偏差',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
 function DailyTradingPlanPanel({
   plan,
+  operationsToday,
   loading,
   error,
 }: {
   plan: DailyTradingPlanResponse | undefined;
+  operationsToday: OperationsTodayResponse | undefined;
   loading: boolean;
   error: boolean;
 }) {
@@ -535,6 +575,8 @@ function DailyTradingPlanPanel({
   const { locale } = usePreferences();
   const firstIntent = plan?.order_intents?.[0];
   const constraintChecks = firstIntent?.constraint_checks ?? [];
+  const fallbackShadowStatus =
+    (plan?.order_intent_count ?? 0) > 0 ? 'not_run' : 'not_required';
 
   return (
     <section
@@ -679,6 +721,65 @@ function DailyTradingPlanPanel({
                 </div>
               )}
             </div>
+
+            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 xl:col-span-2">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
+                  {locale === 'zh'
+                    ? 'Paper/shadow 模拟复核'
+                    : 'Paper/shadow simulation review'}
+                </div>
+                <span className="app-chip">
+                  {paperShadowStatusLabel(
+                    operationsToday?.paper_shadow.status ?? fallbackShadowStatus,
+                    locale,
+                  )}
+                </span>
+              </div>
+              <div className="app-muted mt-2 text-sm">
+                {paperShadowNextStepLabel(
+                  operationsToday?.paper_shadow.next_manual_review_step ??
+                    'run_paper_shadow_daily',
+                  locale,
+                )}
+              </div>
+              <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
+                <div>
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '订单意图' : 'Order intents'}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {operationsToday?.paper_shadow.order_intent_count ??
+                      plan.order_intent_count}
+                  </div>
+                </div>
+                <div>
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '模拟订单' : 'Sim orders'}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {operationsToday?.paper_shadow.simulated_order_count ?? 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '模拟成交' : 'Sim fills'}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {operationsToday?.paper_shadow.simulated_fill_count ?? 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '偏差复核' : 'Divergence reviews'}
+                  </div>
+                  <div className="font-mono tabular-nums">
+                    {operationsToday?.paper_shadow.divergence_reviewed_count ??
+                      0}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -693,6 +794,7 @@ export function DecisionCockpitPage() {
   const today = useTodayDecisionQuery();
   const intraday = useIntradayDecisionQuery();
   const tradingPlan = useDailyTradingPlanQuery();
+  const operationsToday = useOperationsTodayQuery();
   const signalActions = useSignalActionsQuery();
   const signalJournal = useSignalJournalQuery();
   const loading = today.isLoading || intraday.isLoading;
@@ -840,6 +942,7 @@ export function DecisionCockpitPage() {
 
       <DailyTradingPlanPanel
         plan={tradingPlan.data}
+        operationsToday={operationsToday.data}
         loading={tradingPlan.isLoading}
         error={tradingPlan.isError}
       />

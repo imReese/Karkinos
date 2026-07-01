@@ -4,6 +4,19 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.6 Progress
+
+* 2026-07-01: Added the initial read-only operations runbook surface via
+  `/api/operations/today`. The API aggregates the current daily decision,
+  daily trading plan, operations summary, order facts, and fill facts into
+  subsystem health, next action, limitations, daily-plan counts, and
+  paper/shadow simulation-review status. Overview "Today's to-dos" now
+  surfaces the runbook status and next manual step, while the Decision daily
+  trading plan panel shows paper/shadow order-intent, simulated-order,
+  simulated-fill, divergence-review, and next-review-step summary. This is
+  observability and review guidance only; it does not create orders/fills,
+  mutate ledger entries, submit broker orders, or bypass manual confirmation.
+
 ## v1.5 Planning
 
 * 2026-07-01: Daily trading plan implementation now exposes a read-only

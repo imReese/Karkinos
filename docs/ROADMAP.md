@@ -858,6 +858,16 @@ review into a repeatable daily operating loop.
 * [ ] Operations records do not commit runtime logs, private account data,
   screenshots, or generated reports to source control.
 
+Initial v1.6 implementation note:
+
+* `/api/operations/today` now provides a read-only daily operations runbook
+  with subsystem health, next action, limitations, daily-plan counts, and
+  paper/shadow simulation-review status. Overview embeds the runbook in
+  "Today's to-dos", and Decision embeds the paper/shadow summary in the daily
+  trading plan panel. Remaining v1.6 work is scheduler run persistence,
+  deterministic rerun records, fuller acceptance-audit coverage, and richer
+  divergence reports.
+
 ## Target for v1.7
 
 Karkinos v1.7 — Controlled Broker Execution Bridge — should only be considered

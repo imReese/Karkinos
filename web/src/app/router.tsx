@@ -50,6 +50,10 @@ import {
 } from '../features/decision/api';
 import { DecisionCockpitPage } from '../features/decision/components/decision-cockpit-page';
 import {
+  useOperationsTodayQuery,
+  type OperationsTodayResponse,
+} from '../features/operations/api';
+import {
   OverviewCards,
   OverviewCardsSkeleton,
 } from '../features/account/components/overview-cards';
@@ -368,6 +372,7 @@ export function OverviewPage() {
   const strategyContribution = useAccountStrategyContributionQuery();
   const todayDecision = useTodayDecisionQuery();
   const tradingPlan = useDailyTradingPlanQuery();
+  const operationsToday = useOperationsTodayQuery();
   const showStrategyContributionCard =
     strategyContribution.isLoading ||
     strategyContribution.isError ||
@@ -491,13 +496,16 @@ export function OverviewPage() {
                 strategyContribution={strategyContribution.data}
                 strategyContributionLoading={strategyContribution.isLoading}
                 strategyContributionError={strategyContribution.isError}
-                todayDecision={todayDecision.data}
-                todayDecisionLoading={todayDecision.isLoading}
-                todayDecisionError={todayDecision.isError}
-                tradingPlan={tradingPlan.data}
-                tradingPlanLoading={tradingPlan.isLoading}
-                tradingPlanError={tradingPlan.isError}
-              />
+                  todayDecision={todayDecision.data}
+                  todayDecisionLoading={todayDecision.isLoading}
+                  todayDecisionError={todayDecision.isError}
+                  tradingPlan={tradingPlan.data}
+                  tradingPlanLoading={tradingPlan.isLoading}
+                  tradingPlanError={tradingPlan.isError}
+                  operationsToday={operationsToday.data}
+                  operationsTodayLoading={operationsToday.isLoading}
+                  operationsTodayError={operationsToday.isError}
+                />
             </div>
           </div>
 
@@ -727,6 +735,123 @@ function decisionCandidateDisplayName(candidate: DecisionCandidate) {
   );
 }
 
+function operationsTargetHref(target: string | undefined) {
+  switch (target) {
+    case 'market':
+      return '/market';
+    case 'account-truth':
+      return '/account-truth';
+    case 'paper-shadow':
+    case 'trading':
+      return '/trading';
+    case 'risk':
+    case 'decision':
+    default:
+      return '/decision';
+  }
+}
+
+function operationsStatusTitle(
+  operations: OperationsTodayResponse | null | undefined,
+  locale: Locale,
+) {
+  const status = operations?.conclusion_status;
+  if (locale === 'zh') {
+    if (!operations) return '运营状态加载中';
+    if (status === 'blocked') return '今日待办存在阻断';
+    if (status === 'manual_action_required') return '今日待办需要人工复核';
+    if (status === 'degraded') return '今日待办存在降级项';
+    return '今日运行状态正常';
+  }
+  if (!operations) return 'Operations status loading';
+  if (status === 'blocked') return 'Today runbook has blockers';
+  if (status === 'manual_action_required') {
+    return 'Today runbook needs manual review';
+  }
+  if (status === 'degraded') return 'Today runbook has degraded checks';
+  return 'Today runbook is healthy';
+}
+
+function operationsNextActionLabel(value: string | undefined, locale: Locale) {
+  const key = value || 'none';
+  const labels: Record<string, { en: string; zh: string }> = {
+    none: { en: 'No additional action', zh: '无需额外处理' },
+    run_paper_shadow_daily: {
+      en: 'Run paper/shadow simulation before manual confirmation',
+      zh: '人工确认前先运行 paper/shadow 模拟',
+    },
+    review_shadow_divergence: {
+      en: 'Review paper/shadow divergence evidence',
+      zh: '复核 paper/shadow 偏差证据',
+    },
+    review_manual_confirmation: {
+      en: 'Review manual order confirmation',
+      zh: '复核人工下单确认',
+    },
+    resolve_shadow_divergence: {
+      en: 'Resolve paper/shadow divergence before approval',
+      zh: '批准前处理 paper/shadow 偏差',
+    },
+    resolve_daily_plan_blockers: {
+      en: 'Resolve daily trading plan blockers',
+      zh: '处理日度交易计划阻断项',
+    },
+    review_manual_order_intents: {
+      en: 'Review manual order intents',
+      zh: '复核人工订单意图',
+    },
+    repair_market_data_source: {
+      en: 'Repair market data source',
+      zh: '修复行情数据源',
+    },
+    review_market_data_freshness: {
+      en: 'Review market data freshness',
+      zh: '复核行情新鲜度',
+    },
+    resolve_account_truth_mismatch: {
+      en: 'Resolve account truth mismatch',
+      zh: '处理账户事实不一致',
+    },
+    attach_account_truth_evidence: {
+      en: 'Attach account truth evidence',
+      zh: '补充账户事实证据',
+    },
+    review_strategy_evidence: {
+      en: 'Review strategy evidence coverage',
+      zh: '复核策略证据覆盖',
+    },
+    review_risk_blocks: {
+      en: 'Review risk blocks',
+      zh: '复核风控阻断',
+    },
+    review_ledger_items: {
+      en: 'Review ledger items',
+      zh: '复核账本流水',
+    },
+  };
+  return labels[key]?.[locale] ?? formatPublicStatus(key, locale);
+}
+
+function operationsStatusMeta(
+  operations: OperationsTodayResponse,
+  locale: Locale,
+) {
+  const { blocked, manual_action_required, degraded, pass, total } =
+    operations.health;
+  if (locale === 'zh') {
+    if (blocked > 0) return `${blocked} 阻断`;
+    if (manual_action_required > 0) return `${manual_action_required} 人工复核`;
+    if (degraded > 0) return `${degraded} 降级`;
+    return `${pass}/${total} 通过`;
+  }
+  if (blocked > 0) return `${blocked} blocked`;
+  if (manual_action_required > 0) {
+    return `${manual_action_required} manual review`;
+  }
+  if (degraded > 0) return `${degraded} degraded`;
+  return `${pass}/${total} passed`;
+}
+
 function DashboardTodayQueue({
   overview,
   dailyOperations,
@@ -744,6 +869,9 @@ function DashboardTodayQueue({
   tradingPlan,
   tradingPlanLoading,
   tradingPlanError,
+  operationsToday,
+  operationsTodayLoading,
+  operationsTodayError,
 }: {
   overview: AccountOverview;
   dailyOperations?: AccountOverview['daily_operations'];
@@ -761,6 +889,9 @@ function DashboardTodayQueue({
   tradingPlan?: DailyTradingPlanResponse | null;
   tradingPlanLoading: boolean;
   tradingPlanError: boolean;
+  operationsToday?: OperationsTodayResponse | null;
+  operationsTodayLoading: boolean;
+  operationsTodayError: boolean;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -870,8 +1001,59 @@ function DashboardTodayQueue({
       : (tradingPlan?.blocked_count ?? 0) > 0 || candidates.length > 0
         ? 'watch'
         : 'normal';
+  const operationsPrimarySubsystem = operationsToday?.subsystems.find(
+    (item) =>
+      item.target === operationsToday.primary_target &&
+      item.status === operationsToday.conclusion_status,
+  ) ??
+    operationsToday?.subsystems.find(
+      (item) => item.status === operationsToday.conclusion_status,
+    );
+  const operationsTone: TodayQueueTone = operationsTodayError
+    ? 'danger'
+    : operationsToday?.conclusion_status === 'blocked'
+      ? 'danger'
+      : operationsToday?.conclusion_status === 'manual_action_required' ||
+          operationsToday?.conclusion_status === 'degraded'
+        ? 'warning'
+        : 'success';
+  const operationsPriority: TodayQueuePriority =
+    operationsTodayError ||
+    operationsToday?.conclusion_status === 'blocked' ||
+    operationsToday?.conclusion_status === 'manual_action_required'
+      ? 'first'
+      : operationsToday?.conclusion_status === 'degraded'
+        ? 'watch'
+        : 'normal';
 
   const items: TodayQueueItem[] = [
+    {
+      key: 'operations',
+      title: operationsTodayError
+        ? locale === 'zh'
+          ? '运营状态不可用'
+          : 'Operations status unavailable'
+        : operationsStatusTitle(operationsToday, locale),
+      detail: operationsTodayLoading
+        ? copy.states.loading
+        : operationsToday
+          ? operationsNextActionLabel(
+              operationsPrimarySubsystem?.next_action ??
+                operationsToday.paper_shadow.next_manual_review_step,
+              locale,
+            )
+          : copy.states.loading,
+      meta: operationsTodayLoading
+        ? copy.states.loading
+        : operationsToday
+          ? operationsStatusMeta(operationsToday, locale)
+          : '--',
+      href: operationsTargetHref(operationsToday?.primary_target),
+      actionLabel:
+        locale === 'zh' ? '查看运行证据' : 'View run evidence',
+      tone: operationsTone,
+      priority: operationsPriority,
+    },
     {
       key: 'data',
       title: dataNeedsReview ? labels.dataNeedsReview : labels.dataUsable,
