@@ -29,6 +29,7 @@ from account_truth.reconciliation import (
     ReconciliationStatus,
 )
 from server.account_truth_gate import (
+    broker_events_for_import_run,
     build_latest_account_truth_score_payload,
     build_reconciliation_report_for_import_run,
 )
@@ -93,7 +94,9 @@ def create_router() -> APIRouter:
         repository = _repository_for_state(get_app_state())
         return [
             _import_run_response(import_run)
-            for import_run in repository.list_import_runs(limit=limit)
+            for import_run in _latest_import_runs_by_fingerprint(
+                repository.list_import_runs(limit=limit)
+            )
         ]
 
     @r.get("/reconciliation-reports")
@@ -106,7 +109,9 @@ def create_router() -> APIRouter:
         state = get_app_state()
         repository = _repository_for_state(state)
         responses = []
-        for import_run in repository.list_import_runs(limit=limit):
+        for import_run in _latest_import_runs_by_fingerprint(
+            repository.list_import_runs(limit=limit)
+        ):
             report = _build_report_for_import_run(state, repository, import_run)
             if status is not None and report.status != status:
                 continue
@@ -177,6 +182,20 @@ def _manual_review_repository_for_state(state) -> ManualReviewRepository:
             status_code=503, detail="Account Truth database unavailable"
         )
     return ManualReviewRepository(Path(db_path))
+
+
+def _latest_import_runs_by_fingerprint(
+    import_runs: list[BrokerImportRun],
+) -> list[BrokerImportRun]:
+    latest: list[BrokerImportRun] = []
+    seen_fingerprints: set[str] = set()
+    for import_run in import_runs:
+        fingerprint = import_run.file_fingerprint or import_run.import_run_id
+        if fingerprint in seen_fingerprints:
+            continue
+        seen_fingerprints.add(fingerprint)
+        latest.append(import_run)
+    return latest
 
 
 def _build_report_for_import_run(
@@ -306,7 +325,7 @@ def _report_detail_response(
     repository: BrokerEvidenceRepository,
     state,
 ) -> dict[str, object]:
-    events = repository.list_events(import_run.import_run_id)
+    events = broker_events_for_import_run(repository, import_run)
     review_decisions = _manual_review_repository_for_state(state).list_decisions(
         import_run.import_run_id
     )

@@ -57,7 +57,6 @@ def test_account_truth_import_runs_list_review_metadata(tmp_path, monkeypatch):
 
     assert [run["import_run_id"] for run in response] == [
         duplicate_run.import_run_id,
-        first_run.import_run_id,
     ]
     assert response[0]["source_type"] == "canonical_broker_statement_csv"
     assert response[0]["source_name"] == "synthetic-duplicate.csv"
@@ -166,19 +165,19 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     ).endpoint
 
     reports = asyncio.run(list_endpoint(status="mismatch"))
-    detail = asyncio.run(detail_endpoint(import_run_id=first_run.import_run_id))
-    duplicate_detail = asyncio.run(
-        detail_endpoint(import_run_id=duplicate_run.import_run_id)
-    )
+    detail = asyncio.run(detail_endpoint(import_run_id=duplicate_run.import_run_id))
 
-    assert [report["import_run_id"] for report in reports] == [first_run.import_run_id]
+    assert [report["import_run_id"] for report in reports] == [
+        duplicate_run.import_run_id
+    ]
     assert reports[0]["status"] == "mismatch"
     assert reports[0]["unresolved_count"] > 0
     assert reports[0]["row_count"] == 3
-    assert reports[0]["validation_status"] == "pass"
+    assert reports[0]["validation_status"] == "warning"
+    assert reports[0]["source_name"] == "synthetic-duplicate.csv"
 
     assert detail["schema_version"] == "karkinos.account_truth.reconciliation.v1"
-    assert detail["import_run_id"] == first_run.import_run_id
+    assert detail["import_run_id"] == duplicate_run.import_run_id
     assert detail["status"] == "mismatch"
     assert detail["items"]
     position_item = next(
@@ -214,11 +213,6 @@ def test_account_truth_reconciliation_reports_list_and_detail(
             "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
         ),
     }
-
-    assert duplicate_detail["status"] == "blocked"
-    assert duplicate_detail["items"][0]["suggested_review_action"] == (
-        "import_broker_evidence"
-    )
 
 
 def test_account_truth_review_action_records_ledger_candidate_without_mutating_ledger(
@@ -281,7 +275,7 @@ def test_account_truth_score_endpoint_exposes_component_reasons(
 ):
     from server.routes import account_truth as account_truth_routes
 
-    db, first_run, _duplicate_run = _seed_account_truth_db(tmp_path)
+    db, _first_run, duplicate_run = _seed_account_truth_db(tmp_path)
     fake_state = SimpleNamespace(db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
@@ -291,7 +285,8 @@ def test_account_truth_score_endpoint_exposes_component_reasons(
     score = asyncio.run(score_endpoint())
 
     assert score["schema_version"] == "karkinos.account_truth.score.v1"
-    assert score["import_run_id"] == first_run.import_run_id
+    assert score["import_run_id"] == duplicate_run.import_run_id
+    assert score["source_name"] == "synthetic-duplicate.csv"
     assert score["status"] == "available"
     assert score["gate_status"] == "blocked"
     assert score["score"] < 100
