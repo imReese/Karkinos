@@ -707,9 +707,9 @@ def _blocker_summary(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
             },
         )
         bucket["count"] += 1
-        reason = blocker.get("reason")
-        if reason and reason not in bucket["reasons"]:
-            bucket["reasons"].append(reason)
+        for reason in _blocker_reasons(blocker):
+            if reason and reason not in bucket["reasons"]:
+                bucket["reasons"].append(reason)
         symbol = blocker.get("symbol")
         if (
             symbol
@@ -771,10 +771,34 @@ def _blocker(candidate: dict[str, Any], reason: str, target: str) -> dict[str, A
         "action_id": candidate.get("action_id"),
         "symbol": candidate.get("symbol"),
         "reason": reason,
+        "reasons": _candidate_blocking_reasons(candidate, fallback=reason),
         "target": target,
         "risk_gate_status": candidate.get("risk_gate_status"),
         "manual_confirmation_status": candidate.get("manual_confirmation_status"),
     }
+
+
+def _blocker_reasons(blocker: dict[str, Any]) -> list[str]:
+    reasons = blocker.get("reasons")
+    if isinstance(reasons, list):
+        values = [str(reason) for reason in reasons if reason]
+        if values:
+            return values
+    reason = blocker.get("reason")
+    return [str(reason)] if reason else []
+
+
+def _candidate_blocking_reasons(
+    candidate: dict[str, Any],
+    *,
+    fallback: str,
+) -> list[str]:
+    risk_reasons = candidate.get("risk_gate_reasons")
+    if fallback == "risk_gate_blocked" and isinstance(risk_reasons, list):
+        values = [str(reason) for reason in risk_reasons if reason]
+        if values:
+            return values
+    return [fallback]
 
 
 def _evidence_refs(candidate: dict[str, Any]) -> list[str]:

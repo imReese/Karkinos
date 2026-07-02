@@ -1006,7 +1006,9 @@ test('surfaces strategy candidate signals in the overview workbench', async () =
   const workbench = await screen.findByTestId('overview-daily-workbench');
   expect(within(workbench).getByText('Strategy candidate signal')).toBeTruthy();
   expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
-  expect(within(workbench).getByText('0 ready · 1 pool · 0 blocked')).toBeTruthy();
+  expect(
+    within(workbench).getByText('0 ready · 1 pool · 0 blocked'),
+  ).toBeTruthy();
   expect(within(workbench).getByText('Review decision evidence')).toBeTruthy();
 });
 
@@ -1081,7 +1083,9 @@ test('prioritizes daily trading plan cash shortfall on the overview workbench', 
   const queue = await screen.findByTestId('overview-today-queue');
   const firstGroup = await screen.findByTestId('overview-today-queue-first');
 
-  expect(within(firstGroup).getByText('Cash shortfall blocks buy preview')).toBeTruthy();
+  expect(
+    within(firstGroup).getByText('Cash shortfall blocks buy preview'),
+  ).toBeTruthy();
   expect(
     within(firstGroup).getByText(
       'Review cash allocation before confirming. Shortfall: ¥9,005.10.',
@@ -1261,6 +1265,95 @@ test('explains operations blockers when candidates are waiting for risk gate', a
   expect(queue.textContent).not.toContain('今日待办存在阻断');
   expect(queue.textContent).not.toContain('处理日度交易计划阻断项');
   expect(queue.textContent).not.toContain('1 阻断');
+});
+
+test('explains operations blockers when candidates are already blocked by risk', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'blocked',
+        primary_target: 'risk',
+        health: {
+          total: 8,
+          pass: 4,
+          degraded: 1,
+          blocked: 2,
+          manual_action_required: 0,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'risk',
+            status: 'blocked',
+            tone: 'danger',
+            target: 'risk',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'review_risk_blocks',
+            limitations: [],
+            detail_status: '2',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 3,
+          manual_ready_count: 0,
+          blocked_count: 2,
+          blocker_summary: [
+            {
+              category: 'risk_blocked',
+              target: 'risk',
+              count: 2,
+              reasons: [
+                'cash reserve would fall below min_cash_reserve',
+                'projected position weight exceeds max_position_weight',
+              ],
+              sample_symbols: ['510300', '600519'],
+            },
+          ],
+          order_intent_count: 0,
+          conclusion_status: 'risk_blocked',
+        },
+        paper_shadow: {
+          status: 'not_required',
+          run_id: null,
+          order_intent_count: 0,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_required',
+          next_manual_review_step: 'none',
+          last_run_at: null,
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  const firstGroup = await screen.findByTestId('overview-today-queue-first');
+
+  expect(within(firstGroup).getByText('风控阻断待复核')).toBeTruthy();
+  expect(
+    within(firstGroup).getByText(
+      '2 个候选被风控阻断：现金缓冲不足、单标的仓位过高；涉及 510300、600519。先复核原因，不进入人工确认。',
+    ),
+  ).toBeTruthy();
+  expect(within(firstGroup).getByText('2 风控阻断')).toBeTruthy();
+  expect(within(firstGroup).getByText('查看风控原因')).toBeTruthy();
+  expect(
+    within(firstGroup)
+      .getByRole('link', { name: /风控阻断待复核/ })
+      .getAttribute('href'),
+  ).toBe('/risk');
+  expect(queue.textContent).not.toContain('今日待办存在阻断');
+  expect(queue.textContent).not.toContain('复核风控阻断');
 });
 
 test('shows missing market pulse move fields as explicit data gaps', async () => {

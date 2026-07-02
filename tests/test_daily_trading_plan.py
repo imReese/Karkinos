@@ -66,6 +66,7 @@ def _candidate(
     price: float = 10.0,
     risk_status: str = "passed",
     manual_status: str = "ready_for_manual_confirmation",
+    risk_reasons: list[str] | None = None,
 ) -> dict:
     return {
         "action_id": action_id,
@@ -76,6 +77,7 @@ def _candidate(
         "target_weight": target_weight,
         "price": price,
         "risk_gate_status": risk_status,
+        "risk_gate_reasons": risk_reasons or [],
         "manual_confirmation_required": True,
         "manual_confirmation_status": manual_status,
         "evidence": {
@@ -85,6 +87,55 @@ def _candidate(
             "data_freshness": {"status": "live"},
         },
     }
+
+
+def test_trading_plan_blocker_summary_preserves_specific_risk_gate_reasons() -> None:
+    plan = build_daily_trading_plan(
+        decision_payload={
+            "decision_date": "2026-07-01",
+            "decision": "review_required",
+            "summary": {
+                "candidate_count": 2,
+                "ready_for_manual_confirmation_count": 0,
+                "portfolio": {"cash": 30000.0, "total_equity": 50000.0},
+                "account_truth": {"gate_status": "pass"},
+                "market_data": {"source_health": "live"},
+            },
+            "candidates": [
+                _candidate(
+                    action_id=1,
+                    symbol="510300",
+                    risk_status="blocked",
+                    manual_status="blocked_by_risk_gate",
+                    risk_reasons=["cash reserve would fall below min_cash_reserve"],
+                ),
+                _candidate(
+                    action_id=2,
+                    symbol="600519",
+                    risk_status="blocked",
+                    manual_status="blocked_by_risk_gate",
+                    risk_reasons=[
+                        "projected position weight exceeds max_position_weight"
+                    ],
+                ),
+            ],
+        },
+        config=_fee_config(),
+    )
+
+    assert plan["conclusion_status"] == "risk_blocked"
+    assert plan["blocker_summary"] == [
+        {
+            "category": "risk",
+            "target": "risk",
+            "count": 2,
+            "reasons": [
+                "cash reserve would fall below min_cash_reserve",
+                "projected position weight exceeds max_position_weight",
+            ],
+            "sample_symbols": ["510300", "600519"],
+        }
+    ]
 
 
 def _constraint_map(intent: dict) -> dict[str, dict]:
