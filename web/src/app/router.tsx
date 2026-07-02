@@ -742,10 +742,11 @@ function operationsTargetHref(target: string | undefined) {
       return '/market';
     case 'account-truth':
       return '/account-truth';
+    case 'risk':
+      return '/risk';
     case 'paper-shadow':
     case 'trading':
       return '/trading';
-    case 'risk':
     case 'decision':
     default:
       return '/decision';
@@ -777,12 +778,34 @@ function isAwaitingRiskGateBlocker(
   );
 }
 
+function isRiskBlockedBlocker(
+  blocker: ReturnType<typeof primaryOperationsDailyPlanBlocker>,
+) {
+  if (!blocker) {
+    return false;
+  }
+  const reasons = blocker.reasons ?? [];
+  return (
+    blocker.target === 'risk' &&
+    (blocker.category === 'risk_blocked' ||
+      reasons.includes('risk_gate_blocked') ||
+      reasons.some((reason) =>
+        [
+          'cash reserve would fall below min_cash_reserve',
+          'projected position weight exceeds max_position_weight',
+          'cash_buffer_breached',
+          'concentration_limit_breached',
+        ].includes(reason),
+      ))
+  );
+}
+
 function operationsQueueTarget(
   operations: OperationsTodayResponse | null | undefined,
   primarySubsystem: OperationsTodayResponse['subsystems'][number] | undefined,
 ) {
   const blocker = primaryOperationsDailyPlanBlocker(operations);
-  if (isAwaitingRiskGateBlocker(blocker)) {
+  if (isAwaitingRiskGateBlocker(blocker) || isRiskBlockedBlocker(blocker)) {
     return 'risk';
   }
   return primarySubsystem?.target ?? operations?.primary_target;
@@ -796,6 +819,9 @@ function operationsStatusTitle(
   const blocker = primaryOperationsDailyPlanBlocker(operations);
   if (isAwaitingRiskGateBlocker(blocker)) {
     return locale === 'zh' ? '风险闸门待检查' : 'Risk gate checks pending';
+  }
+  if (isRiskBlockedBlocker(blocker)) {
+    return locale === 'zh' ? '风控阻断待复核' : 'Risk blocks need review';
   }
   if (locale === 'zh') {
     if (!operations) return '运营状态加载中';
@@ -813,6 +839,60 @@ function operationsStatusTitle(
   return 'Today runbook is healthy';
 }
 
+function riskBlockReasonLabel(reason: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    'cash reserve would fall below min_cash_reserve': {
+      en: 'cash buffer would be breached',
+      zh: '现金缓冲不足',
+    },
+    cash_buffer_breached: {
+      en: 'cash buffer would be breached',
+      zh: '现金缓冲不足',
+    },
+    'projected position weight exceeds max_position_weight': {
+      en: 'single-name weight would exceed policy',
+      zh: '单标的仓位过高',
+    },
+    concentration_limit_breached: {
+      en: 'single-name weight would exceed policy',
+      zh: '单标的仓位过高',
+    },
+    risk_gate_blocked: {
+      en: 'risk gate blocked the action',
+      zh: '风控闸门阻断动作',
+    },
+  };
+  return labels[reason]?.[locale] ?? formatPublicStatus(reason, locale);
+}
+
+function riskBlockerDetailText(
+  blocker: ReturnType<typeof primaryOperationsDailyPlanBlocker>,
+  locale: Locale,
+) {
+  if (!blocker) {
+    return null;
+  }
+  const reasons = Array.from(
+    new Set(
+      (blocker.reasons ?? []).map((reason) =>
+        riskBlockReasonLabel(reason, locale),
+      ),
+    ),
+  ).slice(0, 3);
+  const symbols = (blocker.sample_symbols ?? []).slice(0, 3);
+  const reasonText = reasons.length
+    ? reasons.join(locale === 'zh' ? '、' : ', ')
+    : locale === 'zh'
+      ? '风控规则'
+      : 'risk policy';
+  if (locale === 'zh') {
+    const symbolText = symbols.length ? `；涉及 ${symbols.join('、')}` : '';
+    return `${blocker.count} 个候选被风控阻断：${reasonText}${symbolText}。先复核原因，不进入人工确认。`;
+  }
+  const symbolText = symbols.length ? ` Symbols: ${symbols.join(', ')}.` : '';
+  return `${blocker.count} candidates are blocked by risk: ${reasonText}.${symbolText} Review the reasons before manual confirmation.`;
+}
+
 function operationsDetailText(
   operations: OperationsTodayResponse | null | undefined,
   locale: Locale,
@@ -824,6 +904,9 @@ function operationsDetailText(
       return `${blocker.count} 个候选等待风险闸门检查；当前 ${operations?.daily_plan.manual_ready_count ?? 0} 个可人工确认。`;
     }
     return `${blocker.count} candidates are waiting for risk-gate checks; ${operations?.daily_plan.manual_ready_count ?? 0} are ready for manual confirmation.`;
+  }
+  if (blocker && isRiskBlockedBlocker(blocker)) {
+    return riskBlockerDetailText(blocker, locale) ?? fallback;
   }
   return fallback;
 }
@@ -897,6 +980,11 @@ function operationsStatusMeta(
     return locale === 'zh'
       ? `${blocker.count} 待检查`
       : `${blocker.count} pending checks`;
+  }
+  if (blocker && isRiskBlockedBlocker(blocker)) {
+    return locale === 'zh'
+      ? `${blocker.count} 风控阻断`
+      : `${blocker.count} risk blocked`;
   }
   const { blocked, manual_action_required, degraded, pass, total } =
     operations.health;
