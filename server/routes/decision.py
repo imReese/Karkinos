@@ -8,7 +8,7 @@ from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 _ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
 _STRATEGY_ATTRIBUTION_READY_STATUSES = {"estimated_from_linked_fills"}
@@ -47,6 +47,33 @@ def create_router() -> APIRouter:
             decision_payload=decision_payload,
             config=getattr(state, "config", None),
             positions=_trading_plan_positions(state),
+        )
+
+    @r.post("/pre-trade-risk/batch")
+    async def run_batch_pre_trade_risk() -> dict[str, Any]:
+        from server.app import get_app_state
+        from server.services.live_context import LiveContextProvider
+        from server.services.pre_trade_batch import run_pre_trade_risk_batch
+
+        state = get_app_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="database is unavailable")
+        if state.trading_controls is None:
+            raise HTTPException(
+                status_code=503,
+                detail="trading controls are unavailable",
+            )
+        scheduler = getattr(state, "scheduler", None)
+        context_provider = LiveContextProvider(
+            portfolio_getter=lambda: (
+                getattr(scheduler, "portfolio", None) if scheduler is not None else None
+            ),
+            controls=state.trading_controls,
+        )
+        return run_pre_trade_risk_batch(
+            db=state.db,
+            context_provider=context_provider,
+            config=getattr(state, "config", None),
         )
 
     @r.get("/intraday")

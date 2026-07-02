@@ -45,6 +45,7 @@ import {
   type DailyTradingPlanResponse,
   useTodayDecisionQuery,
   useDailyTradingPlanQuery,
+  useBatchPreTradeRiskMutation,
   type DecisionCandidate,
   type DecisionResponse,
 } from '../features/decision/api';
@@ -496,16 +497,16 @@ export function OverviewPage() {
                 strategyContribution={strategyContribution.data}
                 strategyContributionLoading={strategyContribution.isLoading}
                 strategyContributionError={strategyContribution.isError}
-                  todayDecision={todayDecision.data}
-                  todayDecisionLoading={todayDecision.isLoading}
-                  todayDecisionError={todayDecision.isError}
-                  tradingPlan={tradingPlan.data}
-                  tradingPlanLoading={tradingPlan.isLoading}
-                  tradingPlanError={tradingPlan.isError}
-                  operationsToday={operationsToday.data}
-                  operationsTodayLoading={operationsToday.isLoading}
-                  operationsTodayError={operationsToday.isError}
-                />
+                todayDecision={todayDecision.data}
+                todayDecisionLoading={todayDecision.isLoading}
+                todayDecisionError={todayDecision.isError}
+                tradingPlan={tradingPlan.data}
+                tradingPlanLoading={tradingPlan.isLoading}
+                tradingPlanError={tradingPlan.isError}
+                operationsToday={operationsToday.data}
+                operationsTodayLoading={operationsToday.isLoading}
+                operationsTodayError={operationsToday.isError}
+              />
             </div>
           </div>
 
@@ -982,7 +983,10 @@ function tradingPlanBlockedDetailText(
     return fallback;
   }
   const primary = summary[0];
-  const primaryLabel = tradingPlanBlockerCategoryLabel(primary.category, locale);
+  const primaryLabel = tradingPlanBlockerCategoryLabel(
+    primary.category,
+    locale,
+  );
   if (locale === 'zh') {
     if (primary.category === 'evidence_not_ready') {
       return `${primary.count} 个候选尚未通过风控/证据闸门；当前 ${tradingPlan.manual_ready_count} 个需要人工确认。`;
@@ -1102,28 +1106,30 @@ function DashboardTodayQueue({
   const tradingPlanDetail = tradingPlanError
     ? labels.tradingPlanUnavailable
     : tradingPlanLoading
-    ? labels.tradingPlanLoading
-    : tradingPlan?.conclusion_status === 'cash_shortfall'
-      ? labels.tradingPlanCashShortfallDetail(
-          formatCurrencyValue(cashShortfall),
-        )
-      : (tradingPlan?.manual_ready_count ?? 0) > 0
-        ? firstOrderIntent
-          ? labels.tradingPlanManualIntentDetail(
-              formatPublicStatus(firstOrderIntent.side, locale),
-              String(firstOrderIntent.symbol ?? '--'),
-              firstOrderIntent.estimated_quantity,
-            )
-          : labels.tradingPlanManualReadyDetail(
-              tradingPlan?.manual_ready_count ?? 0,
-            )
-        : (tradingPlan?.blocked_count ?? 0) > 0
-          ? tradingPlanBlockedDetailText(
-              tradingPlan,
-              locale,
-              labels.tradingPlanBlockedDetail(tradingPlan?.blocked_count ?? 0),
-            )
-          : decisionCandidateDetail;
+      ? labels.tradingPlanLoading
+      : tradingPlan?.conclusion_status === 'cash_shortfall'
+        ? labels.tradingPlanCashShortfallDetail(
+            formatCurrencyValue(cashShortfall),
+          )
+        : (tradingPlan?.manual_ready_count ?? 0) > 0
+          ? firstOrderIntent
+            ? labels.tradingPlanManualIntentDetail(
+                formatPublicStatus(firstOrderIntent.side, locale),
+                String(firstOrderIntent.symbol ?? '--'),
+                firstOrderIntent.estimated_quantity,
+              )
+            : labels.tradingPlanManualReadyDetail(
+                tradingPlan?.manual_ready_count ?? 0,
+              )
+          : (tradingPlan?.blocked_count ?? 0) > 0
+            ? tradingPlanBlockedDetailText(
+                tradingPlan,
+                locale,
+                labels.tradingPlanBlockedDetail(
+                  tradingPlan?.blocked_count ?? 0,
+                ),
+              )
+            : decisionCandidateDetail;
   const tradingPlanBlockerSummary = tradingPlanBlockerSummaryText(
     tradingPlan,
     locale,
@@ -1158,11 +1164,12 @@ function DashboardTodayQueue({
       : (tradingPlan?.blocked_count ?? 0) > 0 || candidates.length > 0
         ? 'watch'
         : 'normal';
-  const operationsPrimarySubsystem = operationsToday?.subsystems.find(
-    (item) =>
-      item.target === operationsToday.primary_target &&
-      item.status === operationsToday.conclusion_status,
-  ) ??
+  const operationsPrimarySubsystem =
+    operationsToday?.subsystems.find(
+      (item) =>
+        item.target === operationsToday.primary_target &&
+        item.status === operationsToday.conclusion_status,
+    ) ??
     operationsToday?.subsystems.find(
       (item) => item.status === operationsToday.conclusion_status,
     );
@@ -1239,10 +1246,9 @@ function DashboardTodayQueue({
     },
     {
       key: 'decision',
-      title:
-        todayDecisionError
-          ? labels.strategyDecisionUnavailable
-          : tradingPlanTitle,
+      title: todayDecisionError
+        ? labels.strategyDecisionUnavailable
+        : tradingPlanTitle,
       detail:
         todayDecisionLoading || tradingPlanLoading
           ? labels.strategyCandidateLoading
@@ -2119,9 +2125,13 @@ export function RiskPage() {
   const state = useAccountStateQuery();
   const risks = useRiskSummaryQuery();
   const workspace = useRiskWorkspaceQuery();
+  const todayDecision = useTodayDecisionQuery();
+  const batchPreTradeRisk = useBatchPreTradeRiskMutation();
   const [timelineFromDate, setTimelineFromDate] = useState('');
   const [timelineToDate, setTimelineToDate] = useState('');
   const [timelineEventKind, setTimelineEventKind] = useState('');
+  const [batchRiskMessage, setBatchRiskMessage] = useState<string | null>(null);
+  const [batchRiskError, setBatchRiskError] = useState<string | null>(null);
   const explainability = useExplainabilityQuery({
     from_date: timelineFromDate || undefined,
     to_date: timelineToDate || undefined,
@@ -2150,6 +2160,42 @@ export function RiskPage() {
     );
     return names;
   }, [state.data?.snapshot]);
+  const riskReviewTask = todayDecision.data?.summary.workflow_tasks?.find(
+    (task) =>
+      task.id === 'risk_review' &&
+      task.required_actions.includes('run_pre_trade_risk_gate') &&
+      task.status !== 'pass' &&
+      task.status !== 'passed',
+  );
+  const riskReviewEvidence = riskReviewTask?.evidence as
+    | {
+        total_action_count?: number;
+        risk_checked_count?: number;
+        risk_blocked_count?: number;
+      }
+    | undefined;
+  const riskCandidateCount =
+    riskReviewEvidence?.total_action_count ??
+    todayDecision.data?.summary.candidate_count ??
+    0;
+  const riskCheckedCount = riskReviewEvidence?.risk_checked_count ?? 0;
+  const runBatchRiskGate = async () => {
+    setBatchRiskMessage(null);
+    setBatchRiskError(null);
+    try {
+      const result = await batchPreTradeRisk.mutateAsync();
+      setBatchRiskMessage(
+        copy.riskPage.batchRiskGateDone(
+          result.passed_count,
+          result.blocked_count,
+        ),
+      );
+    } catch (error) {
+      setBatchRiskError(
+        `${copy.riskPage.batchRiskGateFailed} ${getErrorMessage(error)}`,
+      );
+    }
+  };
 
   return (
     <section className="space-y-5 sm:space-y-6">
@@ -2176,7 +2222,81 @@ export function RiskPage() {
         />
       ) : (
         <div className="space-y-5 sm:space-y-6">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          {riskReviewTask ? (
+            <section
+              data-testid="risk-decision-handoff"
+              className="app-panel rounded-2xl p-4 sm:p-5"
+            >
+              <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                    {copy.riskPage.decisionHandoffKicker}
+                  </div>
+                  <h2 className="mt-2 text-xl font-semibold">
+                    {copy.riskPage.decisionHandoffTitle}
+                  </h2>
+                  <p className="app-muted mt-2 max-w-3xl break-words text-sm leading-6">
+                    {copy.riskPage.decisionHandoffDetail(
+                      riskCandidateCount,
+                      riskCheckedCount,
+                    )}
+                  </p>
+                </div>
+                <span className="inline-flex min-h-9 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_12%,transparent)] px-3 py-1 text-sm font-semibold text-[var(--app-warning)]">
+                  {copy.riskPage.batchRunnerMissing}
+                </span>
+              </div>
+              <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-3">
+                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] px-3 py-2.5 text-sm font-semibold">
+                  {copy.riskPage.decisionHandoffWhat}
+                </div>
+                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] px-3 py-2.5 text-sm font-semibold">
+                  {copy.riskPage.decisionHandoffHow}
+                </div>
+                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] px-3 py-2.5 text-sm font-semibold">
+                  {copy.riskPage.decisionHandoffDoNot}
+                </div>
+              </div>
+              <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="app-muted min-w-0 break-words text-sm">
+                  {copy.riskPage.decisionHandoffNext}
+                </p>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    className="app-button-primary inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
+                    disabled={batchPreTradeRisk.isPending}
+                    onClick={() => void runBatchRiskGate()}
+                  >
+                    {batchPreTradeRisk.isPending
+                      ? copy.riskPage.runningBatchRiskGate
+                      : copy.riskPage.runBatchRiskGate}
+                  </button>
+                  <a
+                    className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold"
+                    href="/decision"
+                  >
+                    {copy.riskPage.returnToDecision}
+                  </a>
+                </div>
+              </div>
+              {batchRiskMessage ? (
+                <div className="mt-3 rounded-2xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-2 text-sm font-semibold text-[var(--app-success)]">
+                  {batchRiskMessage}
+                </div>
+              ) : null}
+              {batchRiskError ? (
+                <div className="app-error-text mt-3 text-sm">
+                  {batchRiskError}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          <div
+            className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]"
+            data-testid="risk-trading-control-grid"
+          >
             <KillSwitchPanel />
             <OrderApprovalTable />
           </div>

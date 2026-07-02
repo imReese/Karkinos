@@ -402,6 +402,106 @@ function decisionWorkflowTarget(
   }
 }
 
+type DecisionNextActionGuide = {
+  title: string;
+  detail: string;
+  status: string;
+  what: string;
+  how: string;
+  after: string;
+  note: string;
+  cta: string | null;
+  href: string | null;
+};
+
+function decisionNeedsAction(task: DecisionWorkflowTask) {
+  return task.status !== 'pass' && task.status !== 'passed';
+}
+
+function decisionActionRank(task: DecisionWorkflowTask) {
+  if (task.status === 'blocked') {
+    return 0;
+  }
+  if (task.status === 'review_required') {
+    return 1;
+  }
+  if (task.status === 'degraded') {
+    return 2;
+  }
+  return 3;
+}
+
+function decisionNextActionGuide(
+  lanes: DecisionResponse[],
+  labels: ReturnType<typeof useCopy>['decision'],
+  locale: Locale,
+): DecisionNextActionGuide | null {
+  const rankedTasks = lanes.flatMap((lane, laneIndex) =>
+    (lane.summary.workflow_tasks ?? []).map((task) => ({
+      lane,
+      laneIndex,
+      task,
+    })),
+  );
+  const actionableTasks = rankedTasks
+    .filter(({ task }) => decisionNeedsAction(task))
+    .sort((left, right) => {
+      const actionRank =
+        decisionActionRank(left.task) - decisionActionRank(right.task);
+      if (actionRank !== 0) {
+        return actionRank;
+      }
+      const priority = left.task.priority - right.task.priority;
+      return priority === 0 ? left.laneIndex - right.laneIndex : priority;
+    });
+  const primary =
+    actionableTasks.find(({ task }) => task.id !== 'manual_confirmation') ??
+    actionableTasks[0];
+
+  if (!primary) {
+    return null;
+  }
+
+  const { lane, task } = primary;
+  const taskLabel = labels.workflowTaskLabel(task.id);
+  const actionLabels = decisionGateDetailLabels({
+    requiredActions: task.required_actions,
+    blockingReasons: task.blocking_reasons,
+    labels,
+    locale,
+  });
+  const actionLabel =
+    actionLabels[0] ?? formatPublicStatus(task.status, locale);
+  const target = decisionWorkflowTarget(task.id, labels);
+  const isRiskGateNext =
+    task.id === 'risk_review' &&
+    task.required_actions.includes('run_pre_trade_risk_gate');
+  const title = isRiskGateNext
+    ? labels.nextActionRiskTitle
+    : labels.nextActionDefaultTitle(taskLabel);
+
+  return {
+    title,
+    detail: isRiskGateNext
+      ? labels.nextActionRiskDetail(
+          lane.summary.candidate_count,
+          lane.summary.ready_for_manual_confirmation_count,
+        )
+      : labels.nextActionDefaultDetail(actionLabel),
+    status: formatPublicStatus(task.status, locale),
+    what: labels.nextActionWhat(taskLabel),
+    how: labels.nextActionHow(actionLabel),
+    after: labels.nextActionAfter,
+    note:
+      lane.summary.candidate_count >
+      lane.summary.ready_for_manual_confirmation_count
+        ? labels.nextActionCandidatePoolNote
+        : labels.nextActionManualReadyNote,
+    cta: target ? labels.workflowOpenSurfaceLabel(target.label, title) : null,
+    href: target?.href ?? null,
+  };
+}
+
 function decisionCandidateBacktestHref(candidate: DecisionCandidate) {
   const params = new URLSearchParams();
   const symbol = candidate.symbol.trim();
@@ -587,9 +687,7 @@ function DailyTradingPlanPanel({
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.tradingPlanKicker}</div>
-            <h2 className="app-card-title mt-1.5">
-              {labels.tradingPlanTitle}
-            </h2>
+            <h2 className="app-card-title mt-1.5">{labels.tradingPlanTitle}</h2>
           </div>
           <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
             {labels.tradingPlanDetail}
@@ -608,10 +706,7 @@ function DailyTradingPlanPanel({
           <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
               <div className="text-sm font-semibold text-[var(--app-text)]">
-                {tradingPlanConclusionLabel(
-                  plan.conclusion_status,
-                  labels,
-                )}
+                {tradingPlanConclusionLabel(plan.conclusion_status, labels)}
               </div>
               <div className="app-muted mt-2 text-sm">
                 {labels.tradingPlanCounts(
@@ -694,15 +789,12 @@ function DailyTradingPlanPanel({
                     <>
                       <div className="font-mono tabular-nums">
                         {labels.tradingPlanPositionAfter}:{' '}
-                        {
-                          firstIntent.position_effect
-                            .estimated_quantity_after
-                        }
+                        {firstIntent.position_effect.estimated_quantity_after}
                       </div>
                       <div className="font-mono tabular-nums">
                         {labels.tradingPlanCostBasis}:{' '}
-                        {firstIntent.position_effect.estimated_avg_cost_after ===
-                        null
+                        {firstIntent.position_effect
+                          .estimated_avg_cost_after === null
                           ? firstIntent.position_effect.cost_basis_method
                           : `${formatPrice(
                               firstIntent.position_effect
@@ -731,7 +823,8 @@ function DailyTradingPlanPanel({
                 </div>
                 <span className="app-chip">
                   {paperShadowStatusLabel(
-                    operationsToday?.paper_shadow.status ?? fallbackShadowStatus,
+                    operationsToday?.paper_shadow.status ??
+                      fallbackShadowStatus,
                     locale,
                   )}
                 </span>
@@ -797,6 +890,7 @@ export function DecisionCockpitPage() {
   const operationsToday = useOperationsTodayQuery();
   const signalActions = useSignalActionsQuery();
   const signalJournal = useSignalJournalQuery();
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
   const loading = today.isLoading || intraday.isLoading;
   const error = today.error ?? intraday.error;
   const lanes = useMemo(
@@ -806,6 +900,12 @@ export function DecisionCockpitPage() {
       ),
     [intraday.data, today.data],
   );
+  const denseCandidateCount = useMemo(
+    () =>
+      lanes.reduce((total, lane) => total + lane.summary.candidate_count, 0),
+    [lanes],
+  );
+  const collapseDecisionEvidence = denseCandidateCount > 6;
   const commandRegisterRows = useMemo(() => {
     const totals = lanes.reduce(
       (accumulator, lane) => ({
@@ -914,6 +1014,8 @@ export function DecisionCockpitPage() {
     <section className="min-w-0 space-y-5 sm:space-y-6">
       <PageHeader title={labels.title} subtitle={labels.subtitle} />
 
+      <DecisionNextActionGuidePanel lanes={lanes} />
+
       <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
         <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -956,46 +1058,53 @@ export function DecisionCockpitPage() {
         error={signalActions.isError || signalJournal.isError}
       />
 
-      <div
-        data-testid="decision-summary-grid"
-        className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4"
-      >
-        {lanes.map((lane) => (
-          <LaneStatusTile key={lane.lane} lane={lane} />
-        ))}
-        {lanes.map((lane) => (
-          <AccountTruthGateTile
-            key={`${lane.lane}-account-truth`}
-            lane={lane}
-          />
-        ))}
-        {lanes.map((lane) => (
-          <StrategyAttributionGateTile
-            key={`${lane.lane}-strategy-attribution`}
-            lane={lane}
-          />
-        ))}
-        <SummaryTile
-          label={labels.marketHealth}
-          value={`${labels.marketHealth}: ${formatPublicStatus(
-            today.data?.summary.market_data?.source_health ?? '--',
-            locale,
-          )}`}
-          detail={labels.quotesDetail(
-            today.data?.summary.market_data?.live_quote_count ?? 0,
-            today.data?.summary.market_data?.stale_quote_count ?? 0,
-          )}
+      {collapseDecisionEvidence && !summaryExpanded ? (
+        <DecisionSummaryCollapsedPanel
+          candidateCount={denseCandidateCount}
+          onExpand={() => setSummaryExpanded(true)}
         />
-        <SummaryTile
-          label={labels.portfolio}
-          value={`${labels.portfolioEquity}: ${formatCurrency(
-            today.data?.summary.portfolio?.total_equity,
-          )}`}
-          detail={labels.positionCount(
-            today.data?.summary.portfolio?.position_count ?? 0,
-          )}
-        />
-      </div>
+      ) : (
+        <div
+          data-testid="decision-summary-grid"
+          className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4"
+        >
+          {lanes.map((lane) => (
+            <LaneStatusTile key={lane.lane} lane={lane} />
+          ))}
+          {lanes.map((lane) => (
+            <AccountTruthGateTile
+              key={`${lane.lane}-account-truth`}
+              lane={lane}
+            />
+          ))}
+          {lanes.map((lane) => (
+            <StrategyAttributionGateTile
+              key={`${lane.lane}-strategy-attribution`}
+              lane={lane}
+            />
+          ))}
+          <SummaryTile
+            label={labels.marketHealth}
+            value={`${labels.marketHealth}: ${formatPublicStatus(
+              today.data?.summary.market_data?.source_health ?? '--',
+              locale,
+            )}`}
+            detail={labels.quotesDetail(
+              today.data?.summary.market_data?.live_quote_count ?? 0,
+              today.data?.summary.market_data?.stale_quote_count ?? 0,
+            )}
+          />
+          <SummaryTile
+            label={labels.portfolio}
+            value={`${labels.portfolioEquity}: ${formatCurrency(
+              today.data?.summary.portfolio?.total_equity,
+            )}`}
+            detail={labels.positionCount(
+              today.data?.summary.portfolio?.position_count ?? 0,
+            )}
+          />
+        </div>
+      )}
 
       <div
         data-testid="decision-lane-grid"
@@ -1009,12 +1118,118 @@ export function DecisionCockpitPage() {
   );
 }
 
+function DecisionNextActionGuidePanel({
+  lanes,
+}: {
+  lanes: DecisionResponse[];
+}) {
+  const labels = useCopy().decision;
+  const { locale } = usePreferences();
+  const guide = useMemo(
+    () => decisionNextActionGuide(lanes, labels, locale),
+    [lanes, labels, locale],
+  );
+
+  if (!guide) {
+    return null;
+  }
+
+  return (
+    <section
+      data-testid="decision-next-action-guide"
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+    >
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+          <div className="min-w-0">
+            <div className="app-product-mark">{labels.nextActionKicker}</div>
+            <h2 className="app-card-title mt-1.5">{guide.title}</h2>
+            <p className="app-muted mt-2 max-w-3xl break-words text-sm leading-6">
+              {guide.detail}
+            </p>
+          </div>
+          <div className="inline-flex min-h-9 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_12%,transparent)] px-3 py-1 text-sm font-semibold text-[var(--app-warning)]">
+            {guide.status}
+          </div>
+        </div>
+
+        <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-3">
+          {[guide.what, guide.how, guide.after].map((item, index) => (
+            <div
+              key={`${index}-${item}`}
+              className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5 text-sm font-semibold leading-6 text-[var(--app-text)]"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 rounded-full border border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-3 py-1.5 text-sm font-semibold text-[var(--app-accent)]">
+            {guide.note}
+          </div>
+          {guide.href && guide.cta ? (
+            <a
+              className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              href={guide.href}
+            >
+              {guide.cta}
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DecisionSummaryCollapsedPanel({
+  candidateCount,
+  onExpand,
+}: {
+  candidateCount: number;
+  onExpand: () => void;
+}) {
+  const labels = useCopy().decision;
+  return (
+    <section
+      data-testid="decision-summary-collapsed"
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+    >
+      <div className="app-terminal-inner flex min-w-0 flex-col gap-3 rounded-[27px] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="min-w-0">
+          <div className="app-product-mark">
+            {labels.summaryCollapsedKicker}
+          </div>
+          <h2 className="app-card-title mt-1.5">
+            {labels.summaryCollapsedTitle(candidateCount)}
+          </h2>
+          <p className="app-muted mt-2 break-words text-sm leading-6">
+            {labels.summaryCollapsedDetail}
+          </p>
+        </div>
+        <button
+          className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+          type="button"
+          onClick={onExpand}
+        >
+          {labels.expandSummary}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
   const labels = useCopy().decision;
   const { locale } = usePreferences();
   const lanesWithTasks = lanes.filter(
     (lane) => (lane.summary.workflow_tasks ?? []).length > 0,
   );
+  const denseCandidateCount = lanesWithTasks.reduce(
+    (total, lane) => total + lane.summary.candidate_count,
+    0,
+  );
+  const [expanded, setExpanded] = useState(denseCandidateCount <= 6);
 
   if (lanesWithTasks.length === 0) {
     return null;
@@ -1036,29 +1251,49 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
           </p>
         </div>
 
-        <div className="mt-4 grid gap-4">
-          {lanesWithTasks.map((lane) => {
-            const laneLabel =
-              lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
-            const tasks = [...(lane.summary.workflow_tasks ?? [])].sort(
-              (left, right) => left.priority - right.priority,
-            );
-            return (
-              <div key={`${lane.lane}-workflow`} className="min-w-0">
-                <div className="app-product-mark mb-2">{laneLabel}</div>
-                <div className="grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {tasks.map((task) => (
-                    <DecisionWorkflowTaskCard
-                      key={`${lane.lane}-${task.id}`}
-                      task={task}
-                      locale={locale}
-                    />
-                  ))}
-                </div>
+        {!expanded ? (
+          <div className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-[var(--app-text)]">
+                {labels.workflowCollapsedTitle(denseCandidateCount)}
               </div>
-            );
-          })}
-        </div>
+              <p className="app-muted mt-1 break-words text-xs leading-5">
+                {labels.workflowCollapsedDetail}
+              </p>
+            </div>
+            <button
+              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              type="button"
+              onClick={() => setExpanded(true)}
+            >
+              {labels.expandWorkflow}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4">
+            {lanesWithTasks.map((lane) => {
+              const laneLabel =
+                lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
+              const tasks = [...(lane.summary.workflow_tasks ?? [])].sort(
+                (left, right) => left.priority - right.priority,
+              );
+              return (
+                <div key={`${lane.lane}-workflow`} className="min-w-0">
+                  <div className="app-product-mark mb-2">{laneLabel}</div>
+                  <div className="grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {tasks.map((task) => (
+                      <DecisionWorkflowTaskCard
+                        key={`${lane.lane}-${task.id}`}
+                        task={task}
+                        locale={locale}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -1105,9 +1340,9 @@ function DecisionWorkflowTaskCard({
       </div>
       <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
         {(actionLabels.length > 0 ? actionLabels : [labels.none]).map(
-          (label) => (
+          (label, index) => (
             <span
-              key={label}
+              key={`${index}-${label}`}
               className="min-w-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_28%,transparent)] px-2.5 py-1 text-xs text-[var(--app-soft)]"
             >
               {label}
@@ -1172,7 +1407,9 @@ function SignalQueuePanel({
   const { locale } = usePreferences();
   const createManualOrder = useCreateManualOrderFromActionMutation();
   const [quantities, setQuantities] = useState<Record<number, string>>({});
+  const [signalQueueExpanded, setSignalQueueExpanded] = useState(false);
   const latestJournal = journal.slice(0, 4);
+  const collapseSignalQueue = actions.length > 3 && !signalQueueExpanded;
 
   const prepareManualOrder = async (action: ActionCard) => {
     if (action.id === null) {
@@ -1206,6 +1443,27 @@ function SignalQueuePanel({
           <div className="app-muted mt-4 text-sm">{labels.loading}</div>
         ) : error ? (
           <div className="app-error-text mt-4 text-sm">{labels.error}</div>
+        ) : collapseSignalQueue ? (
+          <div
+            data-testid="signal-queue-collapsed"
+            className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-[var(--app-text)]">
+                {labels.signalQueueCollapsedTitle(actions.length)}
+              </div>
+              <p className="app-muted mt-1 break-words text-xs leading-5">
+                {labels.signalQueueCollapsedDetail}
+              </p>
+            </div>
+            <button
+              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              type="button"
+              onClick={() => setSignalQueueExpanded(true)}
+            >
+              {labels.expandSignalQueue}
+            </button>
+          </div>
         ) : (
           <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
             <div className="grid min-w-0 gap-2">
@@ -1535,8 +1793,11 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
 function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
   const { locale } = usePreferences();
+  const defaultExpanded = lane.summary.candidate_count <= 3;
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const laneLabel =
     lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
+  const hasCandidates = lane.candidates.length > 0;
   return (
     <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
       <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
@@ -1566,14 +1827,40 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
           </div>
         </div>
 
-        {lane.candidates.length > 0 ? (
+        {hasCandidates ? (
           <div className="mt-5 grid min-w-0 gap-3">
-            {lane.candidates.map((candidate) => (
-              <DecisionCandidateCard
-                key={`${lane.lane}-${candidate.action_id ?? candidate.symbol}`}
-                candidate={candidate}
-              />
-            ))}
+            <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-[var(--app-text)]">
+                  {labels.candidateEvidenceCollapsedTitle(
+                    lane.summary.candidate_count,
+                  )}
+                </div>
+                <p className="app-muted mt-1 break-words text-xs leading-5">
+                  {labels.candidateEvidenceCollapsedDetail}
+                </p>
+              </div>
+              <button
+                className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                type="button"
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded
+                  ? labels.collapseCandidateEvidence
+                  : labels.expandCandidateEvidence}
+              </button>
+            </div>
+
+            {expanded ? (
+              <div className="grid min-w-0 gap-3">
+                {lane.candidates.map((candidate) => (
+                  <DecisionCandidateCard
+                    key={`${lane.lane}-${candidate.action_id ?? candidate.symbol}`}
+                    candidate={candidate}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : (
           <NoActionReasons reasons={lane.no_action_reasons} />

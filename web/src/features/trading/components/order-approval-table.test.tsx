@@ -80,6 +80,13 @@ afterEach(() => {
 test('formats unknown approval order sides through public status labels', async () => {
   renderOrderApprovalTable();
 
+  const panel = await screen.findByTestId('order-approval-panel');
+  expect(panel.getAttribute('data-layout')).toBe('compact-approval');
+
+  const count = await screen.findByTestId('order-approval-count');
+  expect(count.textContent).toContain('1 等待审批');
+  expect(count.className).toContain('rounded-full');
+
   expect(await screen.findByText('合成样例股票A SYN001')).toBeTruthy();
   expect(await screen.findByText('待确认状态')).toBeTruthy();
   expect(screen.queryByText('broker_special_side')).toBeNull();
