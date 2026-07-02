@@ -63,30 +63,41 @@ export function OrderApprovalTable() {
   };
 
   return (
-    <section className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+    <section
+      className="app-panel min-w-0 rounded-[22px] p-3 sm:p-4"
+      data-layout="compact-approval"
+      data-testid="order-approval-panel"
+    >
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {labels.kicker}
           </div>
-          <h2 className="mt-2 text-lg font-semibold">{labels.title}</h2>
-          <p className="app-muted mt-2 text-sm">{labels.subtitle}</p>
-        </div>
-        <div className="app-panel-strong rounded-2xl px-3 py-2 text-sm font-semibold tabular-nums shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
-          {labels.pendingCount(pendingOrders.length)}
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold">{labels.title}</h2>
+            <span
+              className="inline-flex min-h-7 shrink-0 items-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_46%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_36%,transparent)] px-2.5 text-xs font-semibold tabular-nums text-[var(--app-soft)]"
+              data-testid="order-approval-count"
+            >
+              {labels.pendingCount(pendingOrders.length)}
+            </span>
+          </div>
+          <p className="app-muted mt-1.5 max-w-2xl text-sm leading-5">
+            {labels.subtitle}
+          </p>
         </div>
       </div>
 
       {orders.isLoading ? (
-        <div className="app-muted mt-5 text-sm">{labels.loading}</div>
+        <div className="app-muted mt-4 text-sm">{labels.loading}</div>
       ) : orders.isError ? (
-        <div className="app-error-text mt-5 text-sm">{labels.loadFailed}</div>
+        <div className="app-error-text mt-4 text-sm">{labels.loadFailed}</div>
       ) : pendingOrders.length === 0 ? (
-        <div className="app-panel-strong mt-5 rounded-2xl px-4 py-4 text-sm shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
+        <div className="mt-4 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] px-3 py-2.5 text-sm text-[var(--app-muted)]">
           {labels.empty}
         </div>
       ) : (
-        <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+        <div className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
           <table className="min-w-[920px] table-fixed text-left text-sm">
             <thead>
               <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] text-[11px] uppercase tracking-[0.16em]">
@@ -145,7 +156,7 @@ export function OrderApprovalTable() {
                           }))
                         }
                         placeholder={labels.rejectReasonPlaceholder}
-                        className="app-field w-full rounded-2xl px-4 py-2.5 text-sm"
+                        className="app-field h-10 w-full rounded-xl px-3 text-sm"
                         aria-label={`${labels.rejectReason}: ${displayLabel}`}
                       />
                     </td>
@@ -155,7 +166,7 @@ export function OrderApprovalTable() {
                           type="button"
                           disabled={busy}
                           onClick={() => void handleConfirm(order.order_id)}
-                          className="app-button-primary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                          className="app-button-primary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           {labels.confirm}
                         </button>
@@ -163,7 +174,7 @@ export function OrderApprovalTable() {
                           type="button"
                           disabled={busy}
                           onClick={() => void handleReject(order.order_id)}
-                          className="app-button-secondary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                          className="app-button-secondary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           {labels.reject}
                         </button>

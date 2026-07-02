@@ -39,21 +39,27 @@ export function KillSwitchPanel() {
   };
 
   return (
-    <section className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <section
+      className="app-panel min-w-0 rounded-[22px] p-3 sm:p-4"
+      data-layout="compact-control"
+      data-testid="kill-switch-panel"
+    >
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.78fr)] lg:items-center">
         <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {labels.kicker}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold">{labels.title}</h2>
             <KillSwitchBadge enabled={enabled} snapshot={snapshot} />
           </div>
-          <p className="app-muted mt-2 max-w-2xl text-sm">{labels.subtitle}</p>
+          <p className="app-muted mt-1.5 max-w-2xl text-sm leading-5">
+            {labels.subtitle}
+          </p>
         </div>
 
-        <div className="grid min-w-0 gap-3 lg:w-[360px]">
-          <label className="grid gap-2">
+        <div className="grid min-w-0 gap-2">
+          <label className="grid min-w-0 gap-1.5">
             <span className="text-sm font-medium">{labels.reason}</span>
             <input
               value={reason}
@@ -68,7 +74,7 @@ export function KillSwitchPanel() {
                   ? labels.currentReasonPlaceholder
                   : labels.reasonPlaceholder
               }
-              className="app-field rounded-2xl px-4 py-3 text-sm"
+              className="app-field h-10 min-w-0 rounded-xl px-3 text-sm"
               aria-label={labels.reason}
             />
           </label>
@@ -83,12 +89,12 @@ export function KillSwitchPanel() {
           {killSwitch.isError ? (
             <div className="app-error-text text-sm">{labels.loadFailed}</div>
           ) : null}
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <button
               type="button"
               disabled={setKillSwitch.isPending || enabled}
               onClick={() => void updateKillSwitch(true)}
-              className="app-button-danger rounded-2xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+              className="app-button-danger min-h-10 rounded-xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
             >
               {setKillSwitch.isPending && !enabled
                 ? labels.submitting
@@ -98,14 +104,14 @@ export function KillSwitchPanel() {
               type="button"
               disabled={setKillSwitch.isPending || !enabled}
               onClick={() => void updateKillSwitch(false)}
-              className="app-button-secondary rounded-2xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+              className="app-button-secondary min-h-10 rounded-xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
             >
               {setKillSwitch.isPending && enabled
                 ? labels.submitting
                 : labels.disable}
             </button>
           </div>
-          <div className="app-muted text-xs">
+          <div className="app-muted text-xs leading-5">
             {labels.updatedAt}:{' '}
             {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
           </div>

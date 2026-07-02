@@ -638,6 +638,24 @@ export const copy = {
         'Review current alerts, capital pressure, and equity attribution in one place.',
       loading: 'Loading risk control center.',
       error: 'Failed to load risk control center.',
+      decisionHandoffKicker: 'Decision handoff',
+      decisionHandoffTitle: 'Run pre-trade risk gate for candidates',
+      decisionHandoffDetail: (candidates: number, checked: number) =>
+        `${candidates} candidates are waiting for risk checks; ${checked} have been checked.`,
+      batchRunnerMissing: 'Batch risk gate is ready',
+      runBatchRiskGate: 'Run batch risk gate',
+      runningBatchRiskGate: 'Running risk gate...',
+      batchRiskGateDone: (passed: number, blocked: number) =>
+        `Batch risk gate complete: ${passed} passed, ${blocked} blocked.`,
+      batchRiskGateFailed: 'Batch risk gate failed.',
+      decisionHandoffWhat: 'What to handle: candidate risk gate',
+      decisionHandoffHow:
+        'How: wait for the batch runner or use a single-instrument preview',
+      decisionHandoffDoNot:
+        'Do not inspect every candidate or submit orders directly',
+      decisionHandoffNext:
+        'This page now marks the missing execution surface instead of asking you to hunt through risk metrics.',
+      returnToDecision: 'Return to decision platform',
       alerts: 'Active alerts',
       blockingRegister: 'Blocking register',
       blockingRegisterDetail:
@@ -691,6 +709,11 @@ export const copy = {
       workflowTitle: 'Evidence-first review order',
       workflowDetail:
         'Check data and account facts first, then review strategy opportunities, simulation evidence, and manual confirmation.',
+      workflowCollapsedTitle: (count: number) =>
+        `${count} candidates: workflow details collapsed`,
+      workflowCollapsedDetail:
+        'The next-action panel already names the first task. Expand only when auditing each gate.',
+      expandWorkflow: 'Expand workflow details',
       tradingPlanKicker: 'Daily trading plan',
       tradingPlanTitle: 'Manual-confirmation plan',
       tradingPlanDetail:
@@ -749,6 +772,19 @@ export const copy = {
       workflowOpenTrading: 'Open Trading approvals',
       workflowOpenSurfaceLabel: (surface: string, task: string) =>
         `${surface}: ${task}`,
+      nextActionKicker: 'Next action',
+      nextActionRiskTitle: 'Run pre-trade risk gate first',
+      nextActionRiskDetail: (candidates: number, manualReady: number) =>
+        `${candidates} candidates are only the candidate pool; ${manualReady} are ready for manual confirmation. Run the risk gate first, then return here for approvals or simulation review.`,
+      nextActionDefaultTitle: (task: string) => `Resolve ${task} first`,
+      nextActionDefaultDetail: (action: string) =>
+        `Complete this action before reviewing the candidate pool: ${action}.`,
+      nextActionWhat: (task: string) => `What to handle: ${task}`,
+      nextActionHow: (action: string) => `How: ${action}`,
+      nextActionAfter:
+        'Afterwards: refresh this page and review manual confirmations only if they become ready',
+      nextActionCandidatePoolNote: 'Candidate pool is not an order list',
+      nextActionManualReadyNote: 'Manual confirmations are ready for review',
       readyCount: (count: number) => `${count} ready`,
       blockedCount: (count: number) => `${count} blocked`,
       dailyLane: 'Daily lane',
@@ -757,6 +793,18 @@ export const copy = {
       generatedAt: 'Generated',
       candidateCount: (count: number) =>
         `${count} candidate${count === 1 ? '' : 's'} in pool`,
+      summaryCollapsedKicker: 'Status summary',
+      summaryCollapsedTitle: (count: number) =>
+        `${count} candidates: status details collapsed`,
+      summaryCollapsedDetail:
+        'Account, quote, portfolio, and lane detail tiles stay collapsed while the page has a large candidate pool.',
+      expandSummary: 'Expand status details',
+      candidateEvidenceCollapsedTitle: (count: number) =>
+        `${count} candidate${count === 1 ? '' : 's'} summarized`,
+      candidateEvidenceCollapsedDetail:
+        'Evidence cards stay collapsed until you need an audit drill-down.',
+      expandCandidateEvidence: 'Expand evidence',
+      collapseCandidateEvidence: 'Collapse evidence',
       marketHealth: 'Market health',
       portfolio: 'Portfolio',
       portfolioEquity: 'Portfolio equity',
@@ -802,6 +850,11 @@ export const copy = {
       signalQueueTitle: 'Signals, action tasks, and manual-order handoff',
       signalQueueDetail:
         'Review persisted signal actions and prepare manual orders only after risk gates mark an action ready for confirmation.',
+      signalQueueCollapsedTitle: (count: number) =>
+        `${count} signal actions summarized`,
+      signalQueueCollapsedDetail:
+        'Signal cards stay collapsed until the risk gate produces manual-ready items.',
+      expandSignalQueue: 'Expand signal actions',
       signalJournal: 'Signal journal',
       noSignalActions: 'No pending signal actions are available.',
       noSignalJournal: 'No signal audit journal entries are available.',
@@ -888,7 +941,7 @@ export const copy = {
         loading: 'Loading pending orders.',
         loadFailed: 'Failed to load pending orders.',
         empty: 'No orders are waiting for manual confirmation.',
-        pendingCount: (count: number) => `${count} pending`,
+        pendingCount: (count: number) => `${count} awaiting approval`,
         symbol: 'Symbol',
         side: 'Side',
         buy: 'Buy',
@@ -2493,7 +2546,8 @@ export const copy = {
         tradingPlanLoading: '正在加载今日交易计划',
         tradingPlanNeedsReview: '今日交易计划需要复核',
         tradingPlanCashShortfall: '买入预览因现金不足阻断',
-        tradingPlanManualReady: (count: number) => `${count} 个订单意图待人工确认`,
+        tradingPlanManualReady: (count: number) =>
+          `${count} 个订单意图待人工确认`,
         tradingPlanManualReadyDetail: (count: number) =>
           `先复核 ${count} 个带证据引用的订单意图，再准备手工订单。`,
         tradingPlanManualIntentDetail: (
@@ -2906,6 +2960,22 @@ export const copy = {
       subtitle: '统一查看风险提示、资金压力与净值归因。',
       loading: '正在加载风控中心。',
       error: '风控中心加载失败。',
+      decisionHandoffKicker: '决策交接',
+      decisionHandoffTitle: '候选动作需要下单前风控',
+      decisionHandoffDetail: (candidates: number, checked: number) =>
+        `${candidates} 个候选等待风控检查；当前已检查 ${checked} 个。`,
+      batchRunnerMissing: '批量风控入口已接入',
+      runBatchRiskGate: '运行批量风控',
+      runningBatchRiskGate: '正在运行风控…',
+      batchRiskGateDone: (passed: number, blocked: number) =>
+        `批量风控完成：通过 ${passed}，阻断 ${blocked}。`,
+      batchRiskGateFailed: '批量风控运行失败。',
+      decisionHandoffWhat: '要处理什么：候选动作风控闸门',
+      decisionHandoffHow: '怎么处理：等待批量运行器，或先用单标的风控预检',
+      decisionHandoffDoNot: '不要逐个翻候选，也不要直接下单。',
+      decisionHandoffNext:
+        '这里先把缺失的执行入口标出来，而不是让你在风险指标里找答案。',
+      returnToDecision: '回到决策平台',
       alerts: '当前风险提示',
       blockingRegister: '阻断登记',
       blockingRegisterDetail:
@@ -2953,6 +3023,11 @@ export const copy = {
       workflowTitle: '证据优先的复核顺序',
       workflowDetail:
         '先检查数据和账户事实，再查看策略机会、模拟证据与人工确认。',
+      workflowCollapsedTitle: (count: number) =>
+        `${count} 个候选：复核顺序明细已收起`,
+      workflowCollapsedDetail:
+        '下一步面板已经给出第一件事；只有审计每个闸门时再展开。',
+      expandWorkflow: '展开工作流明细',
       tradingPlanKicker: '今日交易计划',
       tradingPlanTitle: '人工确认计划',
       tradingPlanDetail:
@@ -3010,6 +3085,18 @@ export const copy = {
       workflowOpenTrading: '打开交易审批',
       workflowOpenSurfaceLabel: (surface: string, task: string) =>
         `${surface}：${task}`,
+      nextActionKicker: '下一步',
+      nextActionRiskTitle: '先运行下单前风控',
+      nextActionRiskDetail: (candidates: number, manualReady: number) =>
+        `${candidates} 个候选只是候选池；当前 ${manualReady} 个可人工确认。先去风控中心批量检查风险闸门，通过后才会进入人工确认或模拟复核。`,
+      nextActionDefaultTitle: (task: string) => `先处理${task}`,
+      nextActionDefaultDetail: (action: string) =>
+        `先完成这个动作，再查看候选池：${action}。`,
+      nextActionWhat: (task: string) => `要处理什么：${task}`,
+      nextActionHow: (action: string) => `怎么处理：${action}`,
+      nextActionAfter: '处理后：刷新本页，只复核已变为就绪的人工确认',
+      nextActionCandidatePoolNote: '候选池不是待下单清单',
+      nextActionManualReadyNote: '人工确认已可复核',
       readyCount: (count: number) => `${count} 个就绪`,
       blockedCount: (count: number) => `${count} 个阻断`,
       dailyLane: '日级通道',
@@ -3017,6 +3104,18 @@ export const copy = {
       decision: '决策',
       generatedAt: '生成时间',
       candidateCount: (count: number) => `${count} 个候选`,
+      summaryCollapsedKicker: '状态摘要',
+      summaryCollapsedTitle: (count: number) =>
+        `${count} 个候选：状态明细已收起`,
+      summaryCollapsedDetail:
+        '账户、行情、组合和通道明细默认收起；候选池较大时优先处理下一步。',
+      expandSummary: '展开状态明细',
+      candidateEvidenceCollapsedTitle: (count: number) =>
+        `${count} 个候选已汇总`,
+      candidateEvidenceCollapsedDetail:
+        '候选证据默认收起；只有需要审计下钻时再展开。',
+      expandCandidateEvidence: '展开证据明细',
+      collapseCandidateEvidence: '收起证据明细',
       marketHealth: '行情健康',
       portfolio: '组合',
       portfolioEquity: '组合权益',
@@ -3062,6 +3161,10 @@ export const copy = {
       signalQueueTitle: '信号、动作任务与人工订单交接',
       signalQueueDetail:
         '查看已落库的信号动作；只有风控闸门标记为可人工确认后，才允许手动准备订单。',
+      signalQueueCollapsedTitle: (count: number) => `${count} 个信号动作已汇总`,
+      signalQueueCollapsedDetail:
+        '信号卡默认收起；只有风控闸门产出可人工确认项后再展开。',
+      expandSignalQueue: '展开信号动作',
       signalJournal: '信号审计日志',
       noSignalActions: '当前没有待处理的信号动作。',
       noSignalJournal: '当前没有信号审计日志。',
@@ -3147,7 +3250,7 @@ export const copy = {
         loading: '正在加载待确认订单。',
         loadFailed: '待确认订单加载失败。',
         empty: '当前没有等待人工确认的订单。',
-        pendingCount: (count: number) => `${count} 笔待审批`,
+        pendingCount: (count: number) => `${count} 等待审批`,
         symbol: '标的',
         side: '方向',
         buy: '买入',

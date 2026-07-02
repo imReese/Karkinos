@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from './preferences';
@@ -175,12 +176,45 @@ const pendingManualOrder = {
   updated_at: '2026-01-15T11:04:56+08:00',
 };
 
+const decisionNeedsRiskGate = {
+  lane: 'daily',
+  decision_date: '2026-06-12',
+  generated_at: '2026-06-12T09:31:00+08:00',
+  decision: 'review_required',
+  requires_manual_confirmation: false,
+  summary: {
+    candidate_count: 50,
+    risk_blocked_count: 0,
+    ready_for_manual_confirmation_count: 0,
+    workflow_tasks: [
+      {
+        id: 'risk_review',
+        priority: 30,
+        status: 'review_required',
+        title: 'Risk review',
+        description: 'Candidates have not passed the pre-trade risk gate.',
+        required_actions: ['run_pre_trade_risk_gate'],
+        blocking_reasons: ['risk_gate_not_checked'],
+        evidence: {
+          total_action_count: 50,
+          risk_checked_count: 0,
+          risk_blocked_count: 0,
+        },
+      },
+    ],
+  },
+  candidates: [],
+  no_action_reasons: [],
+};
+
 function installRiskFetchMock({
   manualOrders = [],
   riskAlertsResponse = riskAlerts,
+  decisionResponse = decisionNeedsRiskGate,
 }: {
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
+  decisionResponse?: unknown;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -190,6 +224,18 @@ function installRiskFetchMock({
           ? input.url
           : input.toString();
 
+    if (url.includes('/api/decision/pre-trade-risk/batch')) {
+      return jsonResponse({
+        schema_version: 'karkinos.pre_trade_risk_batch.v1',
+        processed_count: 50,
+        passed_count: 48,
+        blocked_count: 2,
+        skipped_count: 0,
+        does_not_create_order: true,
+        default_execution_mode: 'manual_confirmation',
+        results: [],
+      });
+    }
     if (url.includes('/api/portfolio/state')) {
       return jsonResponse(accountState);
     }
@@ -201,6 +247,9 @@ function installRiskFetchMock({
     }
     if (url.includes('/api/portfolio/risk-workspace')) {
       return jsonResponse(riskWorkspace);
+    }
+    if (url.includes('/api/decision/today')) {
+      return jsonResponse(decisionResponse);
     }
     if (url.includes('/api/portfolio/explainability')) {
       return jsonResponse(explainability);
@@ -225,14 +274,16 @@ function renderRiskPage(options?: {
   locale?: 'en' | 'zh';
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
+  decisionResponse?: unknown;
 }) {
   window.localStorage.clear();
   if (options?.locale) {
     window.localStorage.setItem('karkinos.locale', options.locale);
   }
-  installRiskFetchMock({
+  const fetchMock = installRiskFetchMock({
     manualOrders: options?.manualOrders,
     riskAlertsResponse: options?.riskAlertsResponse,
+    decisionResponse: options?.decisionResponse,
   });
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -248,6 +299,7 @@ function renderRiskPage(options?: {
       </QueryClientProvider>
     </PreferencesProvider>,
   );
+  return fetchMock;
 }
 
 beforeEach(() => {
@@ -283,6 +335,35 @@ test('renders risk boundaries and blocking register without execution controls',
   renderRiskPage();
 
   expect(await screen.findByText('Risk control center')).toBeTruthy();
+  const handoff = await screen.findByTestId('risk-decision-handoff');
+  expect(handoff.textContent).toContain(
+    'Run pre-trade risk gate for candidates',
+  );
+  expect(handoff.textContent).toContain(
+    '50 candidates are waiting for risk checks; 0 have been checked.',
+  );
+  expect(
+    within(handoff).getByRole('button', { name: 'Run batch risk gate' }),
+  ).toBeTruthy();
+  expect(
+    within(handoff)
+      .getByRole('link', { name: 'Return to decision platform' })
+      .getAttribute('href'),
+  ).toBe('/decision');
+
+  const controlGrid = await screen.findByTestId('risk-trading-control-grid');
+  expect(controlGrid.className).toContain('gap-3');
+  expect(
+    within(controlGrid)
+      .getByTestId('kill-switch-panel')
+      .getAttribute('data-layout'),
+  ).toBe('compact-control');
+  expect(
+    within(controlGrid)
+      .getByTestId('order-approval-panel')
+      .getAttribute('data-layout'),
+  ).toBe('compact-approval');
+
   expect(await screen.findByText('Risk boundary register')).toBeTruthy();
   expect(await screen.findByText('Blocking register')).toBeTruthy();
 
@@ -307,6 +388,44 @@ test('renders risk boundaries and blocking register without execution controls',
     within(blockRegister).getByText('Cash buffer is close to the floor'),
   ).toBeTruthy();
   expect(screen.queryByText(/automatic execution/i)).toBeNull();
+});
+
+test('localizes decision risk handoff without asking users to inspect every risk metric', async () => {
+  renderRiskPage({ locale: 'zh' });
+
+  const handoff = await screen.findByTestId('risk-decision-handoff');
+  expect(handoff.textContent).toContain('候选动作需要下单前风控');
+  expect(handoff.textContent).toContain(
+    '50 个候选等待风控检查；当前已检查 0 个。',
+  );
+  expect(
+    within(handoff).getByRole('button', { name: '运行批量风控' }),
+  ).toBeTruthy();
+  expect(handoff.textContent).toContain('不要逐个翻候选，也不要直接下单。');
+  expect(
+    within(handoff)
+      .getByRole('link', { name: '回到决策平台' })
+      .getAttribute('href'),
+  ).toBe('/decision');
+});
+
+test('runs batch pre-trade risk gate from the risk handoff panel', async () => {
+  const user = userEvent.setup();
+  const fetchMock = renderRiskPage({ locale: 'zh' });
+
+  const handoff = await screen.findByTestId('risk-decision-handoff');
+  await user.click(
+    within(handoff).getByRole('button', { name: '运行批量风控' }),
+  );
+
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/decision/pre-trade-risk/batch'),
+    ),
+  ).toBe(true);
+  expect(
+    await screen.findByText('批量风控完成：通过 48，阻断 2。'),
+  ).toBeTruthy();
 });
 
 test('localizes risk blocking detail codes before rendering alerts', async () => {

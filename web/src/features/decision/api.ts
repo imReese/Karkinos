@@ -309,6 +309,27 @@ export type DailyTradingPlanResponse = {
   limitations: string[];
 };
 
+export type BatchPreTradeRiskResult = {
+  schema_version: 'karkinos.pre_trade_risk_batch.v1';
+  processed_count: number;
+  passed_count: number;
+  blocked_count: number;
+  skipped_count: number;
+  candidate_count: number;
+  does_not_create_order: boolean;
+  does_not_submit_broker_order: boolean;
+  does_not_write_ledger: boolean;
+  default_execution_mode: string;
+  results: Array<{
+    action_id: number | null;
+    symbol: string | null;
+    status: string;
+    passed: boolean | null;
+    decision_id: string | null;
+    reasons: string[];
+  }>;
+};
+
 export type SignalResponse = {
   id: number | null;
   timestamp: string;
@@ -423,6 +444,28 @@ export function useDailyTradingPlanQuery() {
   });
 }
 
+export function useBatchPreTradeRiskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<BatchPreTradeRiskResult>(
+        '/api/decision/pre-trade-risk/batch',
+        {},
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['decision', 'today'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['decision', 'trading-plan'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['signal-actions'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+        queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
+      ]);
+    },
+  });
+}
+
 export function useSignalActionsQuery() {
   return useQuery({
     queryKey: ['signal-actions'],
@@ -463,7 +506,9 @@ export function useCreateManualOrderFromActionMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['signal-actions'] }),
         queryClient.invalidateQueries({ queryKey: ['signal-journal'] }),
-        queryClient.invalidateQueries({ queryKey: ['decision', 'trading-plan'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['decision', 'trading-plan'],
+        }),
         queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
       ]);
     },

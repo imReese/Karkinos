@@ -331,6 +331,32 @@ function installDecisionFetchMock({
     limitations: [],
   },
   signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
+  signalActionsResponse = [
+    {
+      id: 9,
+      source_signal_id: 1,
+      symbol: '600519',
+      display_name: '贵州茅台',
+      title: 'Increase 600519',
+      detail: signalActionDetail,
+      direction: 'buy',
+      urgency: 'high',
+      target_weight: 0.2,
+      price: 123.45,
+      strategy_id: 'dual_ma',
+      timestamp: '2026-06-12T09:31:00+08:00',
+      asset_class: 'stock',
+      status: 'pending',
+      risk_decision_id: 'RISK-1',
+      risk_gate_passed: true,
+      risk_gate_status: 'passed',
+      risk_gate_severity: 'info',
+      risk_gate_reasons: [],
+      manual_confirmation_required: true,
+      manual_confirmation_status: 'ready_for_manual_confirmation',
+      manual_confirmation_reason: 'Risk gate passed.',
+    },
+  ],
   journalSourceRef = 'RISK-1',
 }: {
   todayResponse?: DecisionResponse;
@@ -338,6 +364,7 @@ function installDecisionFetchMock({
   tradingPlanResponse?: unknown;
   operationsTodayResponse?: unknown;
   signalActionDetail?: string;
+  signalActionsResponse?: unknown;
   journalSourceRef?: string | null;
 } = {}) {
   const fetchMock = vi.fn(
@@ -362,32 +389,7 @@ function installDecisionFetchMock({
         return jsonResponse(operationsTodayResponse);
       }
       if (url.includes('/api/signals/actions')) {
-        return jsonResponse([
-          {
-            id: 9,
-            source_signal_id: 1,
-            symbol: '600519',
-            display_name: '贵州茅台',
-            title: 'Increase 600519',
-            detail: signalActionDetail,
-            direction: 'buy',
-            urgency: 'high',
-            target_weight: 0.2,
-            price: 123.45,
-            strategy_id: 'dual_ma',
-            timestamp: '2026-06-12T09:31:00+08:00',
-            asset_class: 'stock',
-            status: 'pending',
-            risk_decision_id: 'RISK-1',
-            risk_gate_passed: true,
-            risk_gate_status: 'passed',
-            risk_gate_severity: 'info',
-            risk_gate_reasons: [],
-            manual_confirmation_required: true,
-            manual_confirmation_status: 'ready_for_manual_confirmation',
-            manual_confirmation_reason: 'Risk gate passed.',
-          },
-        ]);
+        return jsonResponse(signalActionsResponse);
       }
       if (url.includes('/api/signals/journal')) {
         return jsonResponse([
@@ -597,7 +599,9 @@ test('renders cash shortfall in daily trading plan without manual readiness', as
   const plan = await screen.findByTestId('decision-daily-trading-plan');
 
   expect(plan.textContent).toContain('Cash shortfall');
-  expect(plan.textContent).toContain('1 candidates · 1 order intent previews · 1 blockers');
+  expect(plan.textContent).toContain(
+    '1 candidates · 1 order intent previews · 1 blockers',
+  );
   expect(plan.textContent).toContain('¥9,005.10');
   expect(plan.textContent).toContain('Does not submit broker orders');
 });
@@ -690,6 +694,42 @@ test('labels decision candidates as a candidate pool in Chinese', async () => {
     await screen.findByLabelText('Decision register item: 候选池 1'),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain('候选动作 1');
+});
+
+test('collapses dense signal action queues until the user asks for details', async () => {
+  renderDecisionCockpit({
+    locale: 'zh',
+    signalActionsResponse: Array.from({ length: 8 }, (_, index) => ({
+      id: index + 1,
+      source_signal_id: index + 1,
+      symbol: `6005${index}`,
+      display_name: `测试标的 ${index + 1}`,
+      title: `Increase 6005${index}`,
+      detail: 'Risk gate passed; prepare a manual order only if approved.',
+      direction: 'buy',
+      urgency: 'high',
+      target_weight: 0.2,
+      price: 123.45,
+      strategy_id: 'dual_ma',
+      timestamp: '2026-06-12T09:31:00+08:00',
+      asset_class: 'stock',
+      status: 'pending',
+      risk_decision_id: `RISK-${index + 1}`,
+      risk_gate_passed: true,
+      risk_gate_status: 'passed',
+      risk_gate_severity: 'info',
+      risk_gate_reasons: [],
+      manual_confirmation_required: true,
+      manual_confirmation_status: 'ready_for_manual_confirmation',
+      manual_confirmation_reason: 'Risk gate passed.',
+    })),
+  });
+
+  const collapsed = await screen.findByTestId('signal-queue-collapsed');
+  expect(collapsed.textContent).toContain('8 个信号动作已汇总');
+  expect(screen.queryByTestId('signal-action-card-1')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '展开信号动作' }));
+  expect(await screen.findByTestId('signal-action-card-1')).toBeTruthy();
 });
 
 test('localizes signal journal audit events without exposing dotted event keys', async () => {
@@ -1366,6 +1406,119 @@ test('renders localized decision workflow tasks before candidate actions', async
   expect(
     workflow.textContent?.indexOf('账户事实') ?? Number.POSITIVE_INFINITY,
   ).toBeLessThan(workflow.textContent?.indexOf('策略证据') ?? -1);
+});
+
+test('surfaces the one next action before dense decision evidence', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    requires_manual_confirmation: false,
+    summary: {
+      ...dailyDecision.summary,
+      candidate_count: 50,
+      ready_for_manual_confirmation_count: 0,
+      risk_blocked_count: 0,
+      workflow_tasks: [
+        {
+          id: 'account_truth',
+          priority: 20,
+          status: 'degraded',
+          title: 'Account truth',
+          description: 'Account facts need better broker evidence.',
+          required_actions: [
+            'provide_cash_snapshot',
+            'provide_position_snapshot',
+          ],
+          blocking_reasons: [],
+          evidence: { gate_status: 'degraded', score: 85 },
+        },
+        {
+          id: 'risk_review',
+          priority: 30,
+          status: 'review_required',
+          title: 'Risk review',
+          description: 'Candidates have not passed the pre-trade risk gate.',
+          required_actions: ['run_pre_trade_risk_gate'],
+          blocking_reasons: ['risk_gate_not_checked'],
+          evidence: { risk_not_checked_count: 50 },
+        },
+        {
+          id: 'manual_confirmation',
+          priority: 60,
+          status: 'blocked',
+          title: 'Manual confirmation',
+          description: 'Manual confirmation waits for upstream workflow gates.',
+          required_actions: ['resolve_upstream_workflow_blockers'],
+          blocking_reasons: ['upstream_workflow_blockers'],
+          evidence: { candidate_count: 50 },
+        },
+      ],
+    },
+    candidates: dailyDecision.candidates.map((candidate) => ({
+      ...candidate,
+      risk_gate_status: 'not_checked',
+      manual_confirmation_required: false,
+      manual_confirmation_status: 'account_truth_review_required',
+      evidence: {
+        ...candidate.evidence,
+        risk_gate: {
+          ...candidate.evidence.risk_gate,
+          status: 'not_checked',
+          decision_id: null,
+          passed: null,
+          severity: 'warning',
+          reasons: ['risk_gate_not_checked'],
+        },
+        account_truth: {
+          gate_status: 'degraded',
+          score: 85,
+          has_evidence: false,
+          unresolved_mismatch_count: 0,
+          required_actions: ['provide_cash_snapshot'],
+          blocking_reasons: [],
+          limitations: [],
+        },
+      },
+    })),
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
+
+  const guide = await screen.findByTestId('decision-next-action-guide');
+  const workflow = await screen.findByTestId('decision-workflow-tasks');
+  expect(guide.textContent).toContain('下一步');
+  expect(guide.textContent).toContain('先运行下单前风控');
+  expect(workflow.textContent).toContain('50 个候选：复核顺序明细已收起');
+  expect(workflow.textContent).toContain('展开工作流明细');
+  expect(guide.textContent).toContain(
+    '50 个候选只是候选池；当前 0 个可人工确认。',
+  );
+  expect(guide.textContent).toContain('候选池不是待下单清单');
+  expect(
+    within(guide)
+      .getByRole('link', { name: '打开风控中心：先运行下单前风控' })
+      .getAttribute('href'),
+  ).toBe('/risk');
+  const collapsedSummary = await screen.findByTestId(
+    'decision-summary-collapsed',
+  );
+  expect(collapsedSummary.textContent).toContain('50 个候选：状态明细已收起');
+  expect(screen.queryByTestId('decision-summary-grid')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '展开状态明细' }));
+  expect(await screen.findByTestId('decision-summary-grid')).toBeTruthy();
+  expect(await screen.findByText('50 个候选已汇总')).toBeTruthy();
+  expect(screen.queryByTestId('decision-candidate-card-600519')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '展开证据明细' }));
+  expect(
+    await screen.findByTestId('decision-candidate-card-600519'),
+  ).toBeTruthy();
+  expect(
+    document.body.textContent?.indexOf('先运行下单前风控') ??
+      Number.POSITIVE_INFINITY,
+  ).toBeLessThan(document.body.textContent?.indexOf('候选池') ?? -1);
+  expect(guide.compareDocumentPosition(workflow)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
 });
 
 test('uses generic review labels for unknown decision workflow action codes', async () => {

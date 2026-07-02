@@ -9,7 +9,7 @@
         "account_profile_id": "primary-broker-account",
         "broker_name": "示例券商",
         "schedule_id": "local_broker_fee_schedule",
-        "display_name": "示例券商88**16账户费用规则",
+        "display_name": "示例券商账户费用规则",
         "currency": "CNY",
         "source_type": "broker_app_commission_query",
         "account_identifier_saved": false,
