@@ -1235,6 +1235,15 @@ test('previews manual execution draft without ledger or broker submission contro
   expect(screen.getByText('172025.00')).toBeTruthy();
   expect(screen.getAllByText('Net cash impact').length).toBeGreaterThan(1);
   expect(screen.getAllByText('172019.80').length).toBeGreaterThan(1);
+  expect(screen.getByText('Execution position preview')).toBeTruthy();
+  expect(screen.getByText('Quantity after execution')).toBeTruthy();
+  expect(screen.getAllByText('200').length).toBeGreaterThan(1);
+  expect(screen.getByText('Average cost after execution')).toBeTruthy();
+  expect(screen.getByText('1644')).toBeTruthy();
+  expect(screen.getAllByText('Cost basis method').length).toBeGreaterThan(1);
+  expect(
+    screen.getAllByText('weighted_average_preview').length,
+  ).toBeGreaterThan(1);
   expect(screen.getByText('Ledger draft')).toBeTruthy();
   expect(screen.getByText('Controlled bridge gate summary')).toBeTruthy();
   expect(screen.getByText('account truth')).toBeTruthy();

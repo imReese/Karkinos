@@ -1451,6 +1451,7 @@ function ManualTicketExportPanel({
   const executionPreviewResult = executionPreview;
   const preview = executionPreview?.execution_preview ?? null;
   const ledgerDraft = executionPreview?.ledger_entry_draft ?? null;
+  const executionPositionCost = executionPreview?.position_cost_preview ?? null;
   const gateSummary =
     executionPreview?.validation?.required_gate_summary ??
     executionRecord?.validation?.required_gate_summary ??
@@ -1710,6 +1711,31 @@ function ManualTicketExportPanel({
               value={preview.net_cash_impact}
             />
           </div>
+          {executionPositionCost ? (
+            <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+              <div className="app-muted text-xs">
+                {labels.manualExecutionPositionPreview}
+              </div>
+              <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <PreviewMetric
+                  label={labels.manualExecutionPositionAfter}
+                  value={executionPositionCost.estimated_quantity_after}
+                />
+                <PreviewMetric
+                  label={labels.manualExecutionAvgCostAfter}
+                  value={executionPositionCost.estimated_avg_cost_after}
+                />
+                <PreviewMetric
+                  label={labels.manualTicketCostBasisMethod}
+                  value={executionPositionCost.cost_basis_method}
+                />
+                <PreviewMetric
+                  label={labels.manualExecutionPositionPreviewSource}
+                  value={executionPositionCost.source}
+                />
+              </div>
+            </div>
+          ) : null}
           <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
             <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
               <div className="app-muted text-xs">
