@@ -1076,6 +1076,90 @@ function paperShadowNextStepLabel(value: string, locale: Locale) {
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
 }
 
+function paperShadowManualHandoffStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    ready_after_accepted_review: {
+      en: 'Ready after accepted simulation review',
+      zh: '已接受模拟复核，可人工确认',
+    },
+    ready_after_clean_simulation: {
+      en: 'Ready after clean simulation',
+      zh: '模拟无偏差，可人工确认',
+    },
+    blocked_by_unresolved_divergence: {
+      en: 'Blocked by unresolved simulation divergence',
+      zh: '模拟偏差未处理，暂不可人工确认',
+    },
+    blocked_by_failed_run: {
+      en: 'Blocked by failed simulation run',
+      zh: '模拟运行失败，暂不可人工确认',
+    },
+    blocked_by_review_requested_rerun: {
+      en: 'Blocked until simulation reruns',
+      zh: '需要重新运行模拟后再确认',
+    },
+    paper_shadow_required: {
+      en: 'Simulation required before manual confirmation',
+      zh: '人工确认前需要模拟复核',
+    },
+    waiting_for_paper_shadow_run: {
+      en: 'Waiting for simulation result',
+      zh: '等待模拟复核结果',
+    },
+    not_required: {
+      en: 'No manual handoff required',
+      zh: '无需人工确认交接',
+    },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function paperShadowManualHandoffEvidenceItems(
+  handoff: NonNullable<
+    OperationsTodayResponse['paper_shadow']['manual_handoff']
+  >,
+  locale: Locale,
+) {
+  const labels =
+    locale === 'zh'
+      ? {
+          title: '人工确认交接',
+          next: '下一步',
+          queue: '复核队列',
+          item: '项',
+          items: '项',
+          noBrokerSubmission: '不会提交券商订单',
+          noLedgerMutation: '不会修改生产账本',
+        }
+      : {
+          title: 'Manual handoff',
+          next: 'Next',
+          queue: 'Review queue',
+          item: 'item',
+          items: 'items',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const actions = (handoff.required_actions ?? [])
+    .filter((action) => action && action !== 'none')
+    .map((action) => paperShadowNextStepLabel(action, locale));
+  const queueCount = handoff.review_queue_count ?? 0;
+  return [
+    `${labels.title}: ${paperShadowManualHandoffStatusLabel(
+      handoff.status,
+      locale,
+    )}`,
+    actions.length ? `${labels.next}: ${actions.join(' · ')}` : '',
+    queueCount > 0
+      ? `${labels.queue}: ${queueCount} ${
+          queueCount === 1 ? labels.item : labels.items
+        }`
+      : '',
+    handoff.does_not_submit_broker_order ? labels.noBrokerSubmission : '',
+    handoff.does_not_mutate_production_ledger ? labels.noLedgerMutation : '',
+  ].filter(Boolean);
+}
+
 function paperShadowReviewQueueItemTitle(
   item: PaperShadowReviewQueueItem,
   locale: Locale,
@@ -3420,6 +3504,13 @@ function DailyTradingPlanPanel({
   );
   const paperShadowReviewQueue =
     operationsToday?.paper_shadow.review_queue ?? [];
+  const paperShadowManualHandoffItems = operationsToday?.paper_shadow
+    .manual_handoff
+    ? paperShadowManualHandoffEvidenceItems(
+        operationsToday.paper_shadow.manual_handoff,
+        locale,
+      )
+    : [];
 
   return (
     <section
@@ -3589,6 +3680,15 @@ function DailyTradingPlanPanel({
                   locale,
                 )}
               </div>
+              {paperShadowManualHandoffItems.length > 0 ? (
+                <div className="mt-3 grid min-w-0 gap-1 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]">
+                  {paperShadowManualHandoffItems.map((item) => (
+                    <div className="min-w-0 break-words" key={item}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {paperShadowRunError ? (
                 <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
                   {locale === 'zh'

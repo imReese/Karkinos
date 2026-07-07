@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Operations Today now exposes a structured
+  `paper_shadow.manual_handoff` gate with readiness, status, blockers, required
+  actions, review queue count, review metadata, and explicit no-broker /
+  no-ledger-mutation safety flags. Decision Cockpit renders the gate as
+  user-facing operator evidence so unresolved paper/shadow divergence blocks
+  manual confirmation until accepted review, while accepted divergence or clean
+  simulation hands off to manual confirmation review. Assumption: manual
+  handoff readiness is runbook evidence derived from persisted paper/shadow
+  status and review state; it is not execution authority by itself.
+  Validation:
+  `uv run python -m pytest tests/test_operations_today.py -k "manual_handoff or accepted_shadow_divergence_ready_for_handoff"`
+  and
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "manual handoff gate"`.
+  Risk impact: makes the paper/shadow-to-manual-confirmation gate explicit for
+  v1.6.1 Operations/Decision review without contacting brokers, storing
+  credentials, creating broker orders, mutating OMS, writing production ledger
+  facts, enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: CI repository hygiene now blocks tracked `reports/` artifacts in
   the same private-artifact guard that already rejects runtime databases,
   logs, exports, screenshots, local secrets, Codex/agent state, and generated

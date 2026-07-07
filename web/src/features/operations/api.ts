@@ -147,6 +147,20 @@ export type PaperShadowReviewQueueItem = {
   does_not_mutate_production_ledger?: boolean;
 };
 
+export type PaperShadowManualHandoff = {
+  ready: boolean;
+  status: string;
+  blockers?: string[];
+  required_actions?: string[];
+  review_queue_count?: number;
+  highest_severity?: string | null;
+  review_status?: string | null;
+  reviewed_at?: string | null;
+  reviewer?: string | null;
+  does_not_submit_broker_order?: boolean;
+  does_not_mutate_production_ledger?: boolean;
+};
+
 export type OperationsSchedulerSummary = {
   status: string;
   run_id: string | null;
@@ -215,6 +229,7 @@ export type OperationsTodayResponse = {
     last_run_at: string | null;
     limitations?: string[];
     review_queue?: PaperShadowReviewQueueItem[];
+    manual_handoff?: PaperShadowManualHandoff;
     divergence_summary?: PaperShadowDivergenceSummary;
     orders: Array<{
       order_id: string | null;
