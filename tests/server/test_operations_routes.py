@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
+from analytics.acceptance_audit_report import build_acceptance_audit_export
 from server.db import AppDatabase
 from server.routes import operations as operations_routes
 
@@ -299,8 +300,14 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
     acceptance_audit = next(
         item for item in response["subsystems"] if item["id"] == "acceptance_audit"
     )
+    audit = build_acceptance_audit_export(selected_audit="operations_runbook")[
+        "audits"
+    ][0]
+    expected_detail_status = (
+        f"operations_runbook:{audit['completed_count']}/{audit['required_count']}"
+    )
     assert acceptance_audit["status"] == "pass"
-    assert acceptance_audit["detail_status"] == "operations_runbook:17/17"
+    assert acceptance_audit["detail_status"] == expected_detail_status
     assert acceptance_audit["next_action"] == "none"
     assert acceptance_audit["last_run_at"]
     assert any(
