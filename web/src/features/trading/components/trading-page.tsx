@@ -1718,6 +1718,18 @@ function ManualTicketExportPanel({
               </div>
               <div className="mt-2 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <PreviewMetric
+                  label={labels.manualExecutionCurrentQuantity}
+                  value={executionPositionCost.current_quantity}
+                />
+                <PreviewMetric
+                  label={labels.manualExecutionCurrentAvgCost}
+                  value={executionPositionCost.current_avg_cost}
+                />
+                <PreviewMetric
+                  label={labels.manualExecutionCurrentMarketValue}
+                  value={executionPositionCost.current_market_value}
+                />
+                <PreviewMetric
                   label={labels.manualExecutionPositionAfter}
                   value={executionPositionCost.estimated_quantity_after}
                 />
