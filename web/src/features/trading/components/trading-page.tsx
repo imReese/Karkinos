@@ -1851,6 +1851,12 @@ function ManualTicketExportPanel({
                   </div>
                   <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
                     {flagText(
+                      'requires_operator_ledger_save',
+                      record.requires_operator_ledger_save,
+                    )}
+                  </div>
+                  <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                    {flagText(
                       'does_not_mutate_production_ledger',
                       record.does_not_mutate_production_ledger,
                     )}
