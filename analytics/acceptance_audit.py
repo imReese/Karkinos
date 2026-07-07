@@ -2379,6 +2379,29 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="paper_shadow_manual_handoff_gate",
+                checkbox_text=(
+                    "* [x] Operations, Decision, and Overview expose an "
+                    "explicit paper/shadow manual-confirmation handoff gate "
+                    "with readiness, blockers, review metadata, review-queue "
+                    "count, and no-broker/no-ledger-mutation safety evidence."
+                ),
+                evidence_paths=(
+                    "server/services/operations_today.py",
+                    "tests/test_operations_today.py",
+                    "web/src/app/router.tsx",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    'uv run python -m pytest tests/test_operations_today.py -k "manual_handoff or accepted_shadow_divergence"',
+                    'npm --prefix web test -- decision-cockpit-page.test.tsx -t "manual handoff gate"',
+                    'npm --prefix web test -- overview-page.test.tsx -t "accepted paper shadow review"',
+                ),
+            ),
+            AcceptanceCriterion(
                 key="frontend_paper_shadow_next_actions",
                 checkbox_text=(
                     "* [x] Decision, Overview, and Trading surfaces show "

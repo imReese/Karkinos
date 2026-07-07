@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: The `operations_runbook` acceptance audit now has an explicit
+  `paper_shadow_manual_handoff_gate` criterion tying the Operations Today
+  `paper_shadow.manual_handoff` payload and the Decision/Overview surfaces to
+  deterministic evidence and validation commands. Assumption: the handoff gate
+  is operator-facing readiness evidence for manual confirmation after
+  paper/shadow review; it is not execution authority and does not submit
+  orders. Validation:
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook`,
+  `uv run python -m pytest tests/test_acceptance_audit_cli.py -k operations_runbook`,
+  `uv run python -m pytest tests/test_operations_today.py -k "manual_handoff or accepted_shadow_divergence"`,
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "manual handoff gate"`,
+  and
+  `npm --prefix web test -- overview-page.test.tsx -t "accepted paper shadow review"`.
+  Risk impact: improves v1.6.1 acceptance traceability only; it does not
+  change runtime paper/shadow behavior, contact brokers, store credentials,
+  create broker orders, mutate OMS, write production ledger facts, enable
+  automatic trading, or bypass manual confirmation.
 - 2026-07-07: Overview Today's to-dos now renders
   `paper_shadow.manual_handoff` as user-facing manual-confirmation handoff
   evidence, including ready/blocked status, review queue count, and explicit
@@ -51,8 +68,9 @@ roadmap promises.
 - 2026-07-07: `/api/operations/today` now feeds the `operations_runbook`
   acceptance audit export into the Operations runbook, so the
   `acceptance_audit` subsystem reports real audit completion evidence such as
-  `operations_runbook:17/17`, the generated timestamp, next action, and audit
-  limitations instead of only using ledger-review count as a placeholder.
+  `operations_runbook:<completed>/<required>`, the generated timestamp, next
+  action, and audit limitations instead of only using ledger-review count as a
+  placeholder.
   Assumption: acceptance audit status is operator-facing readiness evidence
   for v1.6 runbook review, not a trading gate by itself. Validation:
   `uv run python -m pytest tests/test_operations_today.py -k acceptance_audit_subsystem`

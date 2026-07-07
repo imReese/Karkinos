@@ -397,7 +397,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
 ):
     audit = build_operations_runbook_acceptance_audit()
 
-    assert audit.required_count == 18
+    assert audit.required_count == 19
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -410,6 +410,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         "paper_shadow_run_review_outcomes",
         "paper_shadow_rich_divergence_report",
         "paper_shadow_fallback_review_queue",
+        "paper_shadow_manual_handoff_gate",
         "frontend_paper_shadow_next_actions",
         "automation_run_failure_alerts",
         "connector_health_alerts",
@@ -439,6 +440,29 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
     assert any(
         "legacy_diverged_run" in command and "missing_simulation" in command
         for command in fallback_review_queue.validation_commands
+    )
+
+    manual_handoff_gate = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "paper_shadow_manual_handoff_gate"
+    )
+    assert "server/services/operations_today.py" in manual_handoff_gate.evidence_paths
+    assert "web/src/app/overview-page.test.tsx" in manual_handoff_gate.evidence_paths
+    assert "web/src/features/decision/components/decision-cockpit-page.test.tsx" in (
+        manual_handoff_gate.evidence_paths
+    )
+    assert any(
+        "manual_handoff" in command and "accepted_shadow_divergence" in command
+        for command in manual_handoff_gate.validation_commands
+    )
+    assert any(
+        "manual handoff gate" in command
+        for command in manual_handoff_gate.validation_commands
+    )
+    assert any(
+        "accepted paper shadow review" in command
+        for command in manual_handoff_gate.validation_commands
     )
 
     source_control_hygiene = next(

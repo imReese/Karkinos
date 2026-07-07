@@ -154,7 +154,7 @@ def test_acceptance_audit_cli_operations_runbook_filter_outputs_one_audit() -> N
     assert payload["selected_audit"] == "operations_runbook"
     assert [audit["key"] for audit in payload["audits"]] == ["operations_runbook"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 18
+    assert audit["required_count"] == 19
     assert audit["completed_count"] == audit["required_count"]
     assert {criterion["key"] for criterion in audit["criteria"]} >= {
         "operations_today_runbook",
@@ -165,6 +165,7 @@ def test_acceptance_audit_cli_operations_runbook_filter_outputs_one_audit() -> N
         "paper_shadow_run_review_outcomes",
         "paper_shadow_rich_divergence_report",
         "paper_shadow_fallback_review_queue",
+        "paper_shadow_manual_handoff_gate",
         "frontend_paper_shadow_next_actions",
         "automation_run_failure_alerts",
         "connector_health_alerts",
