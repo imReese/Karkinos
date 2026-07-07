@@ -201,3 +201,62 @@ def test_local_json_readonly_connector_reads_export_without_submit(tmp_path) -> 
     assert snapshot.orders[0].order_id == "broker-order-private"
     assert snapshot.fills[0].net_amount == Decimal("-168805.10")
     assert "Local export file; no broker client contacted." in snapshot.limitations
+
+
+def test_local_json_readonly_connector_degrades_invalid_export_without_submit(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "qmt-snapshot-invalid.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
+                "source_name": "QMT local readonly export",
+                "account_id": "private-account-id",
+                "captured_at": "2026-07-03T15:01:00+08:00",
+                "health": {
+                    "status": "healthy",
+                    "checked_at": "2026-07-03T15:00:00+08:00",
+                    "message": "Local export parsed.",
+                },
+                "positions": [
+                    {
+                        "symbol": "600519",
+                        "instrument_name": "贵州茅台",
+                        "asset_class": "stock",
+                        "quantity": "not-a-number",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    connector = LocalJsonReadOnlyBrokerConnector(
+        connector_id="local-qmt-export",
+        snapshot_path=snapshot_path,
+        account_alias="local-review",
+    )
+
+    snapshot = connector.read_account_snapshot()
+
+    assert not hasattr(connector, "submit_order")
+    assert snapshot.connector_id == "local-qmt-export"
+    assert snapshot.source_name == "local readonly export"
+    assert snapshot.account_id == ""
+    assert snapshot.account_alias == "local-review"
+    assert snapshot.health.status == "incomplete"
+    assert snapshot.health.message == (
+        "Local JSON snapshot export is invalid; review the ignored local export file."
+    )
+    assert snapshot.health.limitations == [
+        "parse_error:InvalidOperation",
+        "No broker client was contacted and no broker order was submitted.",
+    ]
+    assert snapshot.cash is None
+    assert snapshot.positions == []
+    assert snapshot.orders == []
+    assert snapshot.fills == []
+    assert snapshot.limitations == [
+        "Local JSON snapshot export could not be parsed; no broker client is contacted.",
+        "Broker order submission remains disabled.",
+    ]

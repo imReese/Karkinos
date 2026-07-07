@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from account_truth.broker_connector import (
     BrokerCashFact,
@@ -17,9 +20,6 @@ from account_truth.broker_connector import (
 )
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import parse_broker_statement_csv
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from server.config import BrokerConnectorConfig
 from server.db import AppDatabase
 from server.routes.broker_gateway import create_router
@@ -420,6 +420,86 @@ def test_broker_gateway_connector_snapshot_route_reads_local_export_config(
     assert snapshot["account_alias"] == "local-review"
     assert snapshot["cash_balance"]["balance"] == "100000.00"
     assert snapshot["positions"][0]["quantity"] == "200"
+    assert snapshot["submitted_to_broker"] is False
+    assert snapshot["does_not_mutate_oms"] is True
+    assert snapshot["does_not_mutate_production_ledger"] is True
+    assert "account_id" not in snapshot
+    assert "private-account-id" not in snapshot_response.text
+    assert db.list_broker_gateway_events_sync() == []
+
+
+def test_broker_gateway_local_export_invalid_snapshot_degrades_without_leaking_account(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    snapshot_path = tmp_path / "qmt-snapshot-invalid.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
+                "source_name": "QMT local readonly export",
+                "account_id": "private-account-id",
+                "captured_at": "2026-07-03T15:01:00+08:00",
+                "health": {
+                    "status": "healthy",
+                    "checked_at": "2026-07-03T15:00:00+08:00",
+                    "message": "Local export parsed.",
+                },
+                "positions": [
+                    {
+                        "symbol": "600519",
+                        "instrument_name": "贵州茅台",
+                        "asset_class": "stock",
+                        "quantity": "not-a-number",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    db = AppDatabase(tmp_path / "broker-gateway.db")
+    db.init_sync()
+    client = _client_for_db(
+        monkeypatch,
+        db,
+        broker_connectors=[
+            BrokerConnectorConfig(
+                connector_id="local-qmt-export",
+                connector_type="local_export_readonly",
+                enabled=True,
+                client_path=str(snapshot_path),
+                account_alias="local-review",
+            )
+        ],
+    )
+
+    health_response = client.get("/api/broker-gateway/connectors/health")
+    snapshot_response = client.get(
+        "/api/broker-gateway/connectors/local-qmt-export/snapshot"
+    )
+
+    assert health_response.status_code == 200
+    health = health_response.json()["connectors"][0]
+    assert health["connector_id"] == "local-qmt-export"
+    assert health["status"] == "runtime_degraded"
+    assert health["message"] == (
+        "Local JSON snapshot export is invalid; review the ignored local export file."
+    )
+    assert health["last_error"] == (
+        "Local JSON snapshot export is invalid; review the ignored local export file."
+    )
+    assert health["capabilities"]["can_submit_orders"] is False
+    assert "private-account-id" not in health_response.text
+    assert snapshot_response.status_code == 200
+    snapshot = snapshot_response.json()["snapshot"]
+    assert snapshot["status"] == "snapshot_degraded"
+    assert snapshot["connector_health"]["status"] == "runtime_degraded"
+    assert snapshot["connector_health"]["raw_status"] == "incomplete"
+    assert snapshot["account_alias"] == "local-review"
+    assert snapshot["cash_balance"] == {}
+    assert snapshot["position_count"] == 0
+    assert snapshot["order_count"] == 0
+    assert snapshot["fill_count"] == 0
     assert snapshot["submitted_to_broker"] is False
     assert snapshot["does_not_mutate_oms"] is True
     assert snapshot["does_not_mutate_production_ledger"] is True
