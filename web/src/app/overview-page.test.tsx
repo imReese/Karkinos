@@ -1389,7 +1389,12 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
           input_fingerprint: 'abc123',
           idempotency_key: 'market_session:2026-02-10:abc123',
           input_snapshot: { order_intent_count: 1 },
-          retry_state: { attempt: 1, max_attempts: 1, retryable: true },
+          retry_state: {
+            attempt: 2,
+            max_attempts: 2,
+            retryable: true,
+            previous_attempts: 1,
+          },
           error: { type: 'RuntimeError', message: 'fixture' },
           broker_submission_enabled: false,
           does_not_submit_broker_order: true,
@@ -1408,11 +1413,15 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
   expect(
     within(todayQueue).getByText('Today runbook has blockers'),
   ).toBeTruthy();
-  expect(
-    within(todayQueue).getByText(
-      'Inspect scheduler failure evidence before manual review',
-    ),
-  ).toBeTruthy();
+  expect(todayQueue.textContent).toContain(
+    'Inspect scheduler failure evidence before manual review',
+  );
+  expect(todayQueue.textContent).toContain(
+    'Run market-session:2026-02-10:100001',
+  );
+  expect(todayQueue.textContent).toContain('Retry 2/2; previous attempts 1');
+  expect(todayQueue.textContent).toContain('RuntimeError: fixture');
+  expect(todayQueue.textContent).toContain('No broker submission');
   expect(todayQueue.textContent).not.toContain('inspect_scheduler_failure');
   expect(todayQueue.textContent).not.toContain('broker order');
 });
