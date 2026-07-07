@@ -5,8 +5,11 @@ import json
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
+from server.db import AppDatabase
 from server.routes import operations as operations_routes
 
 
@@ -481,3 +484,51 @@ def test_paper_shadow_run_review_route_records_review_without_execution_mutation
     assert response["next_manual_review_step"] == "review_manual_confirmation"
     assert fake_db.saved_manual_orders == []
     assert fake_db.ledger_writes == []
+
+
+def test_paper_shadow_run_review_route_rejects_failed_run_manual_handoff(
+    monkeypatch,
+    tmp_path,
+):
+    db = AppDatabase(tmp_path / "operations.db")
+    db.init_sync()
+    db.upsert_paper_shadow_run_sync(
+        run_id="shadow:2026-07-02:failed",
+        plan_date="2026-07-02",
+        input_fingerprint="failed",
+        status="failed",
+        order_intent_count=1,
+        simulated_order_count=1,
+        simulated_fill_count=0,
+        divergence_status="failed",
+        next_manual_review_step="inspect_failed_run",
+        limitations=["Paper/shadow simulation failed."],
+        payload={"orders": [{"order_id": "SHADOW-1", "status": "failed"}]},
+    )
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    endpoint = _endpoint(
+        "/api/operations/paper-shadow/runs/{run_id}/review",
+        method="POST",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            endpoint(
+                "shadow:2026-07-02:failed",
+                operations_routes.PaperShadowRunReviewRequest(
+                    reviewed_at="2026-07-02T10:10:00",
+                    review_status="accepted_for_manual_confirmation",
+                    review_notes="Operator tried to accept failed simulation evidence.",
+                    reviewer="local-operator",
+                ),
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "failed paper/shadow run" in str(exc_info.value.detail)
+    saved = db.get_paper_shadow_run_sync("shadow:2026-07-02:failed")
+    assert saved is not None
+    assert saved["review_status"] is None
+    assert saved["next_manual_review_step"] == "inspect_failed_run"

@@ -40,9 +40,7 @@ def test_upsert_paper_shadow_run_persists_counts_and_payload(tmp_path) -> None:
     assert saved["divergence_status"] == "review_required"
     assert saved["next_manual_review_step"] == "review_shadow_divergence"
     assert json.loads(saved["limitations_json"]) == ["One order requires quote review."]
-    assert json.loads(saved["payload_json"]) == {
-        "orders": [{"order_id": "SHADOW-1"}]
-    }
+    assert json.loads(saved["payload_json"]) == {"orders": [{"order_id": "SHADOW-1"}]}
 
 
 def test_upsert_paper_shadow_run_is_idempotent_by_run_id(tmp_path) -> None:
@@ -181,9 +179,7 @@ def test_record_paper_shadow_run_review_preserves_raw_divergence_and_audits(
         divergence_status="diverged",
         next_manual_review_step="resolve_shadow_divergence",
         limitations=["Partial fill requires review."],
-        payload={
-            "orders": [{"order_id": "SHADOW-1", "divergence_status": "diverged"}]
-        },
+        payload={"orders": [{"order_id": "SHADOW-1", "divergence_status": "diverged"}]},
     )
 
     reviewed = db.record_paper_shadow_run_review_sync(
@@ -223,6 +219,53 @@ def test_record_paper_shadow_run_review_preserves_raw_divergence_and_audits(
     assert event_payload["review_status"] == "accepted_for_manual_confirmation"
     assert event_payload["divergence_status"] == "diverged"
     assert event_payload["does_not_submit_broker_order"] is True
+
+
+def test_record_paper_shadow_run_review_rejects_failed_run_manual_handoff(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_paper_shadow_run_sync(
+        run_id="shadow:2026-07-02:failed",
+        plan_date="2026-07-02",
+        input_fingerprint="failed",
+        status="failed",
+        order_intent_count=1,
+        simulated_order_count=1,
+        simulated_fill_count=0,
+        divergence_status="failed",
+        next_manual_review_step="inspect_failed_run",
+        limitations=["Paper/shadow simulation failed."],
+        payload={"orders": [{"order_id": "SHADOW-1", "status": "failed"}]},
+    )
+
+    try:
+        db.record_paper_shadow_run_review_sync(
+            run_id="shadow:2026-07-02:failed",
+            reviewed_at="2026-07-02T10:10:00",
+            review_status="accepted_for_manual_confirmation",
+            review_notes="Operator tried to accept failed simulation evidence.",
+            reviewer="local-operator",
+        )
+    except ValueError as exc:
+        assert "failed paper/shadow run" in str(exc)
+    else:
+        raise AssertionError("failed paper/shadow run was accepted for manual handoff")
+
+    saved = db.get_paper_shadow_run_sync("shadow:2026-07-02:failed")
+    assert saved is not None
+    assert saved["status"] == "failed"
+    assert saved["review_status"] is None
+    assert saved["next_manual_review_step"] == "inspect_failed_run"
+    assert (
+        db.list_events_sync(
+            event_type="paper_shadow_run.review_recorded",
+            entity_type="paper_shadow_run",
+            entity_id="shadow:2026-07-02:failed",
+        )
+        == []
+    )
 
 
 def _paper_shadow_run_count(db: AppDatabase) -> int:

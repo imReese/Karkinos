@@ -218,7 +218,10 @@ def _paper_shadow_subsystem(shadow: dict[str, Any]) -> dict[str, Any]:
     shadow_status = str(shadow.get("status") or "not_run")
     effective_status = str(shadow.get("effective_status") or shadow_status)
     review_status = str(shadow.get("review_status") or "")
-    if review_status == "accepted_for_manual_confirmation":
+    if (
+        review_status == "accepted_for_manual_confirmation"
+        and _paper_shadow_status_can_accept_manual_handoff(shadow_status)
+    ):
         status = "pass"
     elif shadow_status == "not_required":
         status = "skipped"
@@ -423,9 +426,20 @@ def _paper_shadow_effective_status(
     status: str,
     review_status: str,
 ) -> str:
-    if review_status == "accepted_for_manual_confirmation":
+    if (
+        review_status == "accepted_for_manual_confirmation"
+        and _paper_shadow_status_can_accept_manual_handoff(status)
+    ):
         return "accepted_for_manual_confirmation"
     return status
+
+
+def _paper_shadow_status_can_accept_manual_handoff(status: str) -> bool:
+    return str(status or "").strip().lower() in {
+        "diverged",
+        "review_required",
+        "within_expectations",
+    }
 
 
 def _scheduler_summary(
@@ -547,10 +561,15 @@ def _paper_shadow_default_next_step(
     review_status: Any = None,
 ) -> str:
     review = str(review_status or "").strip().lower()
-    if review == "accepted_for_manual_confirmation":
+    if (
+        review == "accepted_for_manual_confirmation"
+        and _paper_shadow_status_can_accept_manual_handoff(status)
+    ):
         return "review_manual_confirmation"
     if review == "needs_rerun":
         return "run_paper_shadow_daily"
+    if status == "failed":
+        return "inspect_failed_run"
     text = str(value or "").strip()
     if text:
         return text
