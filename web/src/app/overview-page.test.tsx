@@ -745,6 +745,676 @@ test('surfaces paper shadow next action in today todos', async () => {
     ),
   ).toBeTruthy();
   expect(within(todayQueue).getByText('2 manual review')).toBeTruthy();
+  expect(
+    within(todayQueue)
+      .getByRole('link', { name: /Review paper\/shadow simulation/ })
+      .getAttribute('href'),
+  ).toBe('/trading');
+});
+
+test('surfaces paper shadow divergence evidence summary in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'paper-shadow',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 2,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'paper_shadow',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'paper-shadow',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'review_shadow_divergence',
+            limitations: [],
+            detail_status: 'review_required',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'review_required',
+          run_id: 'shadow:2026-02-10:review',
+          input_fingerprint: 'review',
+          order_intent_count: 1,
+          simulated_order_count: 1,
+          simulated_fill_count: 1,
+          divergence_reviewed_count: 0,
+          divergence_status: 'review_required',
+          next_manual_review_step: 'review_shadow_divergence',
+          last_run_at: '2026-02-10T10:00:00+08:00',
+          review_queue: [
+            {
+              review_id: 'shadow:2026-02-10:review:ACTION-1',
+              order_intent_ref: 'action:ACTION-1',
+              order_id: 'SHADOW-2026-02-10-1',
+              symbol: '600519',
+              status: 'partially_filled',
+              divergence_status: 'diverged',
+              severity: 'warning',
+              required_action: 'resolve_shadow_divergence',
+              reason:
+                'Paper/shadow order partially_filled; compare simulated execution with the original order intent before manual confirmation.',
+              strategy_refs: ['strategy:dual_ma'],
+              risk_refs: ['risk:risk-001'],
+              signal_refs: ['signal:signal-001'],
+              evidence_refs: [
+                'action:ACTION-1',
+                'strategy:dual_ma',
+                'risk:risk-001',
+                'signal:signal-001',
+                'paper_order:SHADOW-2026-02-10-1',
+                'paper_fill:FILL-2026-02-10-1',
+              ],
+              account_truth: {
+                gate_status: 'pass',
+                has_evidence: true,
+                blocking_reasons: [],
+              },
+              risk_gate_status: 'passed',
+              manual_confirmation_status: 'ready_for_manual_confirmation',
+              submission_status: 'manual_confirmation_required',
+              cash_status: 'sufficient',
+              constraint_status_counts: { pass: 2 },
+              cost_evidence: {
+                estimated_total_fee: '12.30',
+                simulated_fee_tax_cost: '12.45',
+                simulated_slippage_cost: '4.50',
+                fee_rule_id: 'stock_a_commission_v1',
+              },
+              market_context: {
+                price_basis: 'estimated_price',
+                expected_price: '123.45',
+                simulated_fill_prices: ['123.50'],
+              },
+              oms_status_path: [
+                'staged',
+                'submitted',
+                'accepted',
+                'partially_filled',
+              ],
+              oms_transition_refs: [
+                'oms_transition:SHADOW-2026-02-10-1:1:staged',
+                'oms_transition:SHADOW-2026-02-10-1:2:submitted',
+                'oms_transition:SHADOW-2026-02-10-1:3:accepted',
+                'oms_transition:SHADOW-2026-02-10-1:4:partially_filled',
+              ],
+              oms_transitions: [
+                {
+                  sequence: 1,
+                  from_status: null,
+                  to_status: 'staged',
+                  source: 'paper_shadow_daily',
+                  reason: '',
+                  filled_quantity: '0',
+                  does_not_submit_broker_order: true,
+                  does_not_mutate_production_ledger: true,
+                },
+                {
+                  sequence: 2,
+                  from_status: 'staged',
+                  to_status: 'submitted',
+                  source: 'paper_shadow_daily',
+                  reason: '',
+                  filled_quantity: '0',
+                  does_not_submit_broker_order: true,
+                  does_not_mutate_production_ledger: true,
+                },
+                {
+                  sequence: 3,
+                  from_status: 'submitted',
+                  to_status: 'accepted',
+                  source: 'paper_shadow_daily',
+                  reason: '',
+                  filled_quantity: '0',
+                  does_not_submit_broker_order: true,
+                  does_not_mutate_production_ledger: true,
+                },
+                {
+                  sequence: 4,
+                  from_status: 'accepted',
+                  to_status: 'partially_filled',
+                  source: 'paper_shadow_daily',
+                  reason: '',
+                  filled_quantity: '40',
+                  does_not_submit_broker_order: true,
+                  does_not_mutate_production_ledger: true,
+                },
+              ],
+              does_not_submit_broker_order: true,
+              does_not_mutate_production_ledger: true,
+            },
+          ],
+          divergence_summary: {
+            expected_strategy_behavior: {
+              expected_order_count: 1,
+              symbols: ['600519'],
+            },
+            execution_comparison: {
+              matched_order_count: 1,
+              diverged_order_refs: ['paper_shadow_order:SHADOW-2026-02-10-1'],
+              simulated_status_counts: { partially_filled: 1 },
+            },
+            realized_market_context: {
+              symbol_count: 1,
+              price_basis_counts: { latest_quote: 1 },
+            },
+            cost_summary: {
+              simulated_slippage_cost: '4.50',
+              simulated_total_execution_cost: '16.85',
+            },
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+          orders: [
+            {
+              order_id: 'SHADOW-2026-02-10-1',
+              symbol: '600519',
+              status: 'partially_filled',
+              divergence_status: 'diverged',
+            },
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook needs manual review'),
+  ).toBeTruthy();
+  expect(todayQueue.textContent).toContain(
+    'Review paper/shadow divergence evidence',
+  );
+  expect(todayQueue.textContent).toContain(
+    'Paper/shadow: 1 order intent, 1 sim order, 1 sim fill',
+  );
+  expect(todayQueue.textContent).toContain(
+    'Diverged: Simulation review order · SHADOW-2026-02-10-1',
+  );
+  expect(todayQueue.textContent).toContain(
+    'Review queue: 1 item · Resolve paper/shadow divergence before approval',
+  );
+  expect(todayQueue.textContent).toContain('Risk Passed · Manual Ready');
+  expect(todayQueue.textContent).toContain(
+    'Account truth Pass · Cash Sufficient',
+  );
+  expect(todayQueue.textContent).toContain('Constraints Pass: 2');
+  expect(todayQueue.textContent).toContain('Projected fee ¥12.30');
+  expect(todayQueue.textContent).toContain('Sim fee/tax ¥12.45');
+  expect(todayQueue.textContent).toContain('Queue slippage ¥4.50');
+  expect(todayQueue.textContent).toContain('Expected ¥123.45 · Fill ¥123.50');
+  expect(todayQueue.textContent).toContain(
+    'OMS path: Staged > Submitted > Accepted > Partially Filled',
+  );
+  expect(todayQueue.textContent).toContain(
+    'OMS transition: SHADOW-2026-02-10-1 #4 Partially Filled',
+  );
+  expect(todayQueue.textContent).toContain('Strategy · dual_ma');
+  expect(todayQueue.textContent).toContain(
+    'Simulation review order · SHADOW-2026-02-10-1',
+  );
+  expect(todayQueue.textContent).toContain('Sim slippage: ¥4.50');
+  expect(todayQueue.textContent).toContain('No broker submission');
+  expect(todayQueue.textContent).not.toContain('review_shadow_divergence');
+  expect(todayQueue.textContent).not.toContain('partially_filled');
+  expect(todayQueue.textContent).not.toContain('oms_transition:');
+  expect(todayQueue.textContent).not.toContain('Submit broker order');
+});
+
+test('surfaces accepted paper shadow review as manual confirmation handoff', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'trading',
+        health: {
+          total: 8,
+          pass: 6,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 1,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'daily_trading_plan',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'trading',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'review_manual_order_intents',
+            limitations: [],
+            detail_status: 'manual_confirmation_ready',
+          },
+          {
+            id: 'paper_shadow',
+            status: 'pass',
+            tone: 'success',
+            target: 'paper-shadow',
+            last_run_at: '2026-02-10T10:05:00+08:00',
+            next_action: 'review_manual_confirmation',
+            limitations: [],
+            detail_status: 'diverged',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'diverged',
+          run_id: 'shadow:2026-02-10:accepted',
+          input_fingerprint: 'accepted',
+          order_intent_count: 1,
+          simulated_order_count: 1,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 1,
+          divergence_status: 'diverged',
+          review_status: 'accepted_for_manual_confirmation',
+          reviewed_at: '2026-02-10T10:05:00+08:00',
+          reviewer: 'local-operator',
+          next_manual_review_step: 'review_manual_confirmation',
+          last_run_at: '2026-02-10T10:05:00+08:00',
+          orders: [
+            {
+              order_id: 'SHADOW-ACCEPTED',
+              symbol: '600519',
+              status: 'partially_filled',
+              divergence_status: 'diverged',
+            },
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook needs manual review'),
+  ).toBeTruthy();
+  expect(todayQueue.textContent).toContain('Review manual order confirmation');
+  expect(
+    within(todayQueue)
+      .getByRole('link', { name: /Enter manual confirmation/ })
+      .getAttribute('href'),
+  ).toBe('/trading');
+  expect(todayQueue.textContent).not.toContain('review_manual_confirmation');
+  expect(todayQueue.textContent).not.toContain(
+    'accepted_for_manual_confirmation',
+  );
+  expect(todayQueue.textContent).not.toContain('resolve_shadow_divergence');
+  expect(todayQueue.textContent).not.toContain('Submit broker order');
+});
+
+test('surfaces within-expectations paper shadow run as manual confirmation handoff', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'trading',
+        health: {
+          total: 8,
+          pass: 6,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 1,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'daily_trading_plan',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'trading',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'review_manual_order_intents',
+            limitations: [],
+            detail_status: 'manual_confirmation_ready',
+          },
+          {
+            id: 'paper_shadow',
+            status: 'pass',
+            tone: 'success',
+            target: 'paper-shadow',
+            last_run_at: '2026-02-10T10:05:00+08:00',
+            next_action: 'review_manual_confirmation',
+            limitations: [],
+            detail_status: 'within_expectations',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'within_expectations',
+          run_id: 'shadow:2026-02-10:within',
+          input_fingerprint: 'within',
+          order_intent_count: 1,
+          simulated_order_count: 1,
+          simulated_fill_count: 1,
+          divergence_reviewed_count: 0,
+          divergence_status: 'within_expectations',
+          next_manual_review_step: 'review_manual_confirmation',
+          last_run_at: '2026-02-10T10:05:00+08:00',
+          divergence_summary: {
+            cost_summary: {
+              simulated_slippage_cost: '0.00',
+              simulated_total_execution_cost: '12.35',
+            },
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+          orders: [
+            {
+              order_id: 'SHADOW-WITHIN',
+              symbol: '600519',
+              status: 'filled',
+              divergence_status: 'within_expectations',
+            },
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook needs manual review'),
+  ).toBeTruthy();
+  expect(todayQueue.textContent).toContain('Review manual order confirmation');
+  expect(
+    within(todayQueue)
+      .getByRole('link', { name: /Enter manual confirmation/ })
+      .getAttribute('href'),
+  ).toBe('/trading');
+  expect(todayQueue.textContent).not.toContain('within_expectations');
+  expect(todayQueue.textContent).not.toContain('review_manual_confirmation');
+  expect(todayQueue.textContent).not.toContain('Submit broker order');
+});
+
+test('surfaces failed paper shadow run recovery in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'blocked',
+        primary_target: 'paper-shadow',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 0,
+          blocked: 1,
+          manual_action_required: 1,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'paper_shadow',
+            status: 'blocked',
+            tone: 'danger',
+            target: 'paper-shadow',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'inspect_failed_run',
+            limitations: [],
+            detail_status: 'failed',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'failed',
+          run_id: 'shadow:2026-02-10:failed',
+          input_fingerprint: 'failed',
+          order_intent_count: 1,
+          simulated_order_count: 1,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 1,
+          divergence_status: 'failed',
+          next_manual_review_step: 'inspect_failed_run',
+          last_run_at: '2026-02-10T10:00:00+08:00',
+          orders: [
+            {
+              order_id: 'SHADOW-FAILED',
+              symbol: '600519',
+              status: 'failed',
+              divergence_status: 'failed',
+            },
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook has blockers'),
+  ).toBeTruthy();
+  expect(
+    within(todayQueue).getByText(
+      'Inspect failed paper/shadow run before approval',
+    ),
+  ).toBeTruthy();
+  expect(within(todayQueue).getByText('1 blocked')).toBeTruthy();
+  expect(todayQueue.textContent).not.toContain('inspect_failed_run');
+});
+
+test('surfaces running paper shadow run as a wait state in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'degraded',
+        primary_target: 'paper-shadow',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 1,
+          blocked: 0,
+          manual_action_required: 1,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'paper_shadow',
+            status: 'degraded',
+            tone: 'warning',
+            target: 'paper-shadow',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'wait_for_paper_shadow_run',
+            limitations: [],
+            detail_status: 'running',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'running',
+          run_id: 'shadow:2026-02-10:running',
+          input_fingerprint: 'running',
+          order_intent_count: 1,
+          simulated_order_count: 1,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'running',
+          next_manual_review_step: 'wait_for_paper_shadow_run',
+          last_run_at: '2026-02-10T10:00:00+08:00',
+          orders: [
+            {
+              order_id: 'SHADOW-RUNNING',
+              symbol: '600519',
+              status: 'submitted',
+              divergence_status: 'running',
+            },
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook has degraded checks'),
+  ).toBeTruthy();
+  expect(
+    within(todayQueue).getByText(
+      'Paper/shadow simulation is running; wait for completion',
+    ),
+  ).toBeTruthy();
+  expect(within(todayQueue).getByText('1 degraded')).toBeTruthy();
+  expect(todayQueue.textContent).not.toContain('wait_for_paper_shadow_run');
+});
+
+test('surfaces failed scheduler run recovery in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'blocked',
+        primary_target: 'scheduler',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 0,
+          blocked: 1,
+          manual_action_required: 1,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'scheduler',
+            status: 'blocked',
+            tone: 'danger',
+            target: 'scheduler',
+            last_run_at: '2026-02-10T10:00:01+08:00',
+            next_action: 'inspect_scheduler_failure',
+            limitations: [
+              'Paper/shadow run failed; no broker order was submitted.',
+            ],
+            detail_status: 'paper_shadow_failed',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'not_run',
+          run_id: 'shadow:2026-02-10',
+          order_intent_count: 1,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_run',
+          next_manual_review_step: 'run_paper_shadow_daily',
+          last_run_at: null,
+          orders: [],
+        },
+        scheduler: {
+          status: 'paper_shadow_failed',
+          run_id: 'market-session:2026-02-10:100001',
+          run_type: 'market_session',
+          run_date: '2026-02-10',
+          execution_mode: 'paper_shadow',
+          last_run_at: '2026-02-10T10:00:01+08:00',
+          input_fingerprint: 'abc123',
+          idempotency_key: 'market_session:2026-02-10:abc123',
+          input_snapshot: { order_intent_count: 1 },
+          retry_state: { attempt: 1, max_attempts: 1, retryable: true },
+          error: { type: 'RuntimeError', message: 'fixture' },
+          broker_submission_enabled: false,
+          does_not_submit_broker_order: true,
+          limitations: [
+            'Paper/shadow run failed; no broker order was submitted.',
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook has blockers'),
+  ).toBeTruthy();
+  expect(
+    within(todayQueue).getByText(
+      'Inspect scheduler failure evidence before manual review',
+    ),
+  ).toBeTruthy();
+  expect(todayQueue.textContent).not.toContain('inspect_scheduler_failure');
+  expect(todayQueue.textContent).not.toContain('broker order');
 });
 
 test('renders daily operations tower without treating 50 candidates as manual work', async () => {

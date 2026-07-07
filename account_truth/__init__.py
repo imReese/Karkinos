@@ -15,6 +15,7 @@ from account_truth.broker_connector import (
     BrokerOrderFact,
     BrokerPositionFact,
     FakeReadOnlyBrokerConnector,
+    LocalJsonReadOnlyBrokerConnector,
     ReadOnlyBrokerConnector,
 )
 from account_truth.broker_connector_evidence import (
@@ -82,6 +83,7 @@ __all__ = [
     "ReconciliationItem",
     "ReconciliationReport",
     "FakeReadOnlyBrokerConnector",
+    "LocalJsonReadOnlyBrokerConnector",
     "ReadOnlyBrokerConnector",
     "StoredBrokerEvidenceEvent",
     "build_account_truth_score",

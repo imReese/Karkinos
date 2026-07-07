@@ -2205,3 +2205,718 @@ def build_single_instrument_strategy_loop_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for completed Operations and paper/shadow runbook pieces."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="operations_today_runbook",
+                checkbox_text=(
+                    "* [x] `/api/operations/today` exposes subsystem health, "
+                    "last run, next action, limitations, and paper/shadow "
+                    "summary evidence without mutating trading state."
+                ),
+                evidence_paths=(
+                    "server/services/operations_today.py",
+                    "server/routes/operations.py",
+                    "tests/test_operations_today.py",
+                    "tests/server/test_operations_routes.py",
+                    "web/src/app/router.tsx",
+                    "web/src/app/overview-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_operations_today.py tests/server/test_operations_routes.py",
+                    "npm --prefix web test -- overview-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scheduler_run_persistence",
+                checkbox_text=(
+                    "* [x] Scheduler runs record ids, input snapshots, "
+                    "fingerprints, idempotency keys, errors, retry state, and "
+                    "limitations for runbook review."
+                ),
+                evidence_paths=(
+                    "server/services/market_session_automation.py",
+                    "server/services/automation_control.py",
+                    "tests/test_market_session_automation.py",
+                    "tests/test_automation_control.py",
+                    "tests/server/test_automation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_market_session_automation.py tests/test_automation_control.py tests/server/test_automation_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_run_storage",
+                checkbox_text=(
+                    "* [x] Paper/shadow runs persist run ids, plan dates, "
+                    "fingerprints, counts, evidence refs, limitations, and "
+                    "payloads for deterministic review."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/paper_shadow_run.py",
+                    "tests/test_paper_shadow_runs.py",
+                    "tests/test_paper_shadow_run_service.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_paper_shadow_runs.py tests/test_paper_shadow_run_service.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_oms_state_machine",
+                checkbox_text=(
+                    "* [x] Paper/shadow OMS records use explicit lifecycle "
+                    "states and record accepted transitions with timestamp, "
+                    "reason, source, and evidence payloads."
+                ),
+                evidence_paths=(
+                    "server/services/oms.py",
+                    "server/services/paper_shadow_run.py",
+                    "tests/test_oms_service.py",
+                    "tests/test_paper_shadow_run_service.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_oms_service.py tests/test_paper_shadow_run_service.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_simulation_outcomes",
+                checkbox_text=(
+                    "* [x] Paper/shadow simulation covers filled, partial, "
+                    "rejected, cancelled, expired, failed, fee/tax projection, "
+                    "and idempotent rerun evidence without production ledger "
+                    "mutation."
+                ),
+                evidence_paths=(
+                    "execution/paper_broker.py",
+                    "server/services/paper_shadow_run.py",
+                    "tests/execution/test_paper_broker.py",
+                    "tests/test_paper_shadow_run_service.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/execution/test_paper_broker.py tests/test_paper_shadow_run_service.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_run_review_outcomes",
+                checkbox_text=(
+                    "* [x] Paper/shadow run-level operator reviews are stored "
+                    "as audit evidence while preserving raw divergence status "
+                    "and exposing a runbook effective status, while keeping "
+                    "broker submission disabled."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/routes/operations.py",
+                    "server/services/operations_today.py",
+                    "tests/test_paper_shadow_runs.py",
+                    "tests/test_operations_today.py",
+                    "tests/server/test_operations_routes.py",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_paper_shadow_runs.py tests/test_operations_today.py tests/server/test_operations_routes.py",
+                    "npm --prefix web test -- trading-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_rich_divergence_report",
+                checkbox_text=(
+                    "* [x] Paper/shadow divergence summaries compare expected "
+                    "strategy behavior, simulated execution, current account "
+                    "truth, realized market context, cost evidence, and "
+                    "explicit non-submission safety evidence, and persisted "
+                    "runs expose structured operator review queues for "
+                    "diverged, failed, or missing simulations in Operations, "
+                    "Decision, and Overview."
+                ),
+                evidence_paths=(
+                    "server/services/paper_shadow_run.py",
+                    "server/services/operations_today.py",
+                    "tests/test_paper_shadow_run_service.py",
+                    "tests/test_operations_today.py",
+                    "tests/server/test_operations_routes.py",
+                    "web/src/app/router.tsx",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_paper_shadow_run_service.py",
+                    "uv run pytest tests/test_operations_today.py",
+                    "uv run pytest tests/server/test_operations_routes.py -k paper_shadow",
+                    "npm --prefix web test -- overview-page.test.tsx decision-cockpit-page.test.tsx trading-page.test.tsx",
+                    "npm --prefix web run build",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="frontend_paper_shadow_next_actions",
+                checkbox_text=(
+                    "* [x] Decision, Overview, and Trading surfaces show "
+                    "paper/shadow next actions and structured review-queue "
+                    "summaries for not-run, running, failed, diverged, "
+                    "accepted-review, and within-expectations states without "
+                    "exposing raw state-machine internals; accepted reviews "
+                    "display as manual-confirmation handoffs."
+                ),
+                evidence_paths=(
+                    "web/src/app/router.tsx",
+                    "web/src/app/overview-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                    "web/src/features/operations/api.ts",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- overview-page.test.tsx decision-cockpit-page.test.tsx trading-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="automation_run_failure_alerts",
+                checkbox_text=(
+                    "* [x] Failed paper/shadow automation runs generate "
+                    "acknowledgeable operations alerts with retry context, "
+                    "limitations, and explicit non-submission safety evidence."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "server/services/automation_cockpit.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="connector_health_alerts",
+                checkbox_text=(
+                    "* [x] Incomplete read-only broker connector health "
+                    "generates acknowledgeable operations alerts that preserve "
+                    "capability scope, read/query capability flags, explicit "
+                    "preview/export/dry-run/cancel/submit blockers, "
+                    "credential-storage status, and non-submission evidence."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "server/services/broker_gateway.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_connector_degradation_alerts",
+                checkbox_text=(
+                    "* [x] Runtime-degraded read-only broker connector "
+                    "snapshots are polled through the broker-gateway health "
+                    "contract, local JSON export adapters can provide runtime "
+                    "read-only snapshots, and degraded snapshots generate "
+                    "acknowledgeable operations alerts with heartbeat/error "
+                    "context, capability scope, read/query capability flags, "
+                    "explicit preview/export/dry-run/cancel/submit blockers, "
+                    "manual-review requirement, and explicit non-submission "
+                    "evidence."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_connector.py",
+                    "server/services/broker_connector_runtime.py",
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "server/routes/broker_gateway.py",
+                    "server/services/broker_gateway.py",
+                    "tests/account_truth/test_broker_connector.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/account_truth/test_broker_connector.py tests/server/test_broker_gateway_routes.py",
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="daily_plan_risk_blocker_alerts",
+                checkbox_text=(
+                    "* [x] Daily trading-plan risk blockers generate "
+                    "acknowledgeable operations alerts with blocker counts, "
+                    "risk reasons, manual-review requirement, and explicit "
+                    "non-submission evidence."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "server/services/daily_trading_plan.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "tests/test_daily_trading_plan.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py tests/test_daily_trading_plan.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="stale_market_data_alerts",
+                checkbox_text=(
+                    "* [x] Stale market-data health snapshots generate "
+                    "acknowledgeable operations alerts with source health, "
+                    "stale-symbol samples, next action, manual-review "
+                    "requirement, and explicit non-submission evidence."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "server/routes/market.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "tests/test_server_routes.py",
+                    "web/src/features/market/api.ts",
+                    "web/src/features/operations/api.ts",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "uv run pytest tests/test_server_routes.py -k market_data_health",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_truth_mismatch_alerts",
+                checkbox_text=(
+                    "* [x] Degraded or blocked Account Truth snapshots "
+                    "generate acknowledgeable operations alerts with gate "
+                    "status, mismatch counts, review actions, manual-review "
+                    "requirement, and explicit non-submission/non-ledger "
+                    "mutation evidence."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "account_truth/score.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "tests/account_truth/test_account_truth_score.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "uv run pytest tests/account_truth/test_account_truth_score.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_order_divergence_alerts",
+                checkbox_text=(
+                    "* [x] Paper/shadow diverged or review-required runs "
+                    "generate acknowledgeable operations alerts with run id, "
+                    "order/fill counts, divergence counts, next review step, "
+                    "evidence refs, and explicit non-submission/non-ledger "
+                    "mutation evidence."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "server/routes/automation.py",
+                    "server/services/paper_shadow_run.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/server/test_automation_routes.py",
+                    "tests/test_paper_shadow_run_service.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "uv run pytest tests/test_paper_shadow_run_service.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="simulation_evidence_safety_docs",
+                checkbox_text=(
+                    "* [x] README, architecture, roadmap, and implementation "
+                    "log keep the boundary explicit: paper/shadow records are "
+                    "simulation evidence and do not submit broker orders."
+                ),
+                evidence_paths=(
+                    "README.md",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                    "docs/ARCHITECTURE.md",
+                    "docs/ROADMAP.md",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    'rg -n "paper/shadow|simulation evidence|does not submit|不会提交券商订单" README.md docs',
+                    "uv run pytest tests/test_acceptance_audit.py -k operations_runbook",
+                ),
+            ),
+        )
+    )
+
+
+def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for completed non-submitting broker bridge foundations."""
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="broker_submission_disabled_default",
+                checkbox_text=(
+                    "* [x] Broker submission remains disabled by default and "
+                    "the live gateway advertises no submit, cancel, preview, "
+                    "dry-run, or export authority."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "docs/ARCHITECTURE.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_bridge_policy_whitelist",
+                checkbox_text=(
+                    "* [x] Controlled broker bridge status exposes a "
+                    "non-submitting policy skeleton with explicit connector, "
+                    "account, strategy, and symbol whitelists plus required "
+                    "gate names before any future live bridge can be enabled; "
+                    "Decision Cockpit renders it as read-only evidence."
+                ),
+                evidence_paths=(
+                    "config.example.json",
+                    "server/config.py",
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_bootstrap.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "docs/config-reference.zh.md",
+                    "docs/ARCHITECTURE.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_bootstrap.py -k controlled_bridge_policy",
+                    "uv run pytest tests/test_broker_gateway_service.py -k controlled_bridge_policy",
+                    "uv run pytest tests/server/test_broker_gateway_routes.py -k controlled_bridge_policy",
+                    'npm --prefix web test -- decision-cockpit-page.test.tsx -t "controlled bridge policy"',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_ticket_preview_export_dry_run",
+                checkbox_text=(
+                    "* [x] Manual-ticket preview, export, dry-run, and create "
+                    "paths are non-submitting, require human broker entry, and "
+                    "keep preview/export read-only while preserving the "
+                    "controlled-bridge policy snapshot for audit."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/trading/api.ts",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
+                    "npm --prefix web test -- trading-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_execution_operator_form_context",
+                checkbox_text=(
+                    "* [x] Manual-ticket export surfaces an operator form with "
+                    "user-readable field labels, account alias, fee/tax "
+                    "assumptions, net cash impact, remaining-position/cost-basis "
+                    "preview, trading-session constraints, and explicit "
+                    "non-submission safety flags."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/trading/api.ts",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py -k manual_ticket_export_is_read_only_and_copy_safe",
+                    "uv run pytest tests/server/test_broker_gateway_routes.py -k manual_ticket_export_route_is_read_only",
+                    'npm --prefix web test -- trading-page.test.tsx -t "exports confirmed manual ticket"',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_execution_preview_draft",
+                checkbox_text=(
+                    "* [x] Manual execution preview calculates an "
+                    "operator-entered fill, fee/tax/transfer-fee cost, net "
+                    "cash impact, position/cost context, and production-ledger "
+                    "draft plus a deterministic preview fingerprint after "
+                    "manual-ticket creation without writing ledger entries, "
+                    "changing OMS status, contacting a broker, or submitting "
+                    "orders."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/trading/api.ts",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                    "docs/ROADMAP.md",
+                    "docs/ROADMAP.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py -k manual_execution_preview",
+                    "uv run pytest tests/server/test_broker_gateway_routes.py -k manual_execution_preview",
+                    'npm --prefix web test -- trading-page.test.tsx -t "previews manual execution draft"',
+                ),
+            ),
+            AcceptanceCriterion(
+                key="manual_execution_evidence_record",
+                checkbox_text=(
+                    "* [x] Manual execution evidence can be recorded only "
+                    "after manual-ticket creation with a matching deterministic "
+                    "preview fingerprint, and it writes a broker-gateway audit "
+                    "event without creating fills, changing OMS status, "
+                    "writing production ledger entries, contacting a broker, "
+                    "or submitting orders."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                    "docs/ROADMAP.md",
+                    "docs/ROADMAP.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py -k manual_execution_evidence",
+                    "uv run pytest tests/server/test_broker_gateway_routes.py -k manual_execution_record",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_capability_health_contract",
+                checkbox_text=(
+                    "* [x] Gateway and connector health contracts expose "
+                    "read, query, preview, dry-run, export, cancel, and submit "
+                    "capabilities in API and Decision Cockpit without exposing "
+                    "credentials."
+                ),
+                evidence_paths=(
+                    "server/config.py",
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_evidence_and_kill_switch_gates",
+                checkbox_text=(
+                    "* [x] Live-like manual-ticket actions require account "
+                    "truth, research evidence, risk, paper/shadow, manual "
+                    "confirmation, and a clear global kill switch."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/services/trading_controls.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="staged_account_facts_and_order_query",
+                checkbox_text=(
+                    "* [x] Gateway account-facts, fill-query, runtime "
+                    "read-only connector snapshot query, and order-query "
+                    "paths read local OMS, gateway audit, staged broker "
+                    "evidence, or runtime connector evidence only without "
+                    "broker write contact, credential storage, account-id "
+                    "leakage, gateway-event creation, OMS mutation, ledger "
+                    "mutation, or order submission, and Automation/Decision "
+                    "Cockpit surface the runtime snapshot as compact "
+                    "read-only review evidence."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_evidence.py",
+                    "account_truth/broker_connector.py",
+                    "server/services/automation_cockpit.py",
+                    "server/services/broker_gateway.py",
+                    "server/routes/automation.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_automation_cockpit.py",
+                    "tests/server/test_automation_routes.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_cockpit.py tests/server/test_automation_routes.py -k runtime_connector_snapshot",
+                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py -k 'account_facts or query or connector_snapshot'",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="decision_cockpit_strategy_promotion_state",
+                checkbox_text=(
+                    "* [x] Decision Cockpit shows strategy promotion state, "
+                    "paper/shadow gate status, missing requirements, and the "
+                    "live-like disabled boundary as read-only evidence."
+                ),
+                evidence_paths=(
+                    "server/services/strategy_promotion_pipeline.py",
+                    "server/services/automation_cockpit.py",
+                    "tests/test_strategy_promotion_pipeline.py",
+                    "tests/server/test_strategy_promotion_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_strategy_promotion_pipeline.py tests/server/test_strategy_promotion_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="default_rejected_cancel_audit",
+                checkbox_text=(
+                    "* [x] Broker cancellation is rejected by default without "
+                    "broker contact, while recording an auditable gateway event "
+                    "and leaving OMS state unchanged."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/test_broker_gateway_service.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="execution_reconciliation_bridge_evidence",
+                checkbox_text=(
+                    "* [x] Execution reconciliation compares OMS orders, "
+                    "gateway events, staged broker trade evidence, and "
+                    "broker fee/tax/net-amount evidence before suggesting any "
+                    "review action, with no ledger mutation; Decision Cockpit "
+                    "surfaces the same cost evidence for operator review."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/execution_reconciliation.py",
+                    "server/routes/execution_reconciliation.py",
+                    "tests/test_execution_reconciliation_service.py",
+                    "tests/server/test_execution_reconciliation_routes.py",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_reconciliation_service.py tests/server/test_execution_reconciliation_routes.py",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="strategy_broker_boundary_static_guard",
+                checkbox_text=(
+                    "* [x] Strategy code has no broker adapter access; all "
+                    "bridge actions go through policy, risk, OMS, gateway, "
+                    "and reconciliation services, with a deterministic static "
+                    "guard covering the current strategy tree."
+                ),
+                evidence_paths=(
+                    "analytics/strategy_broker_boundary.py",
+                    "tests/test_strategy_broker_boundary.py",
+                    "strategy/runtime.py",
+                    "strategy/extensions/README.md",
+                    "docs/ARCHITECTURE.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_strategy_broker_boundary.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="decision_cockpit_read_only_bridge_panel",
+                checkbox_text=(
+                    "* [x] Decision Cockpit surfaces gateway, connector, "
+                    "gateway query capabilities, connector read capabilities, "
+                    "runtime connector snapshot summaries, staged "
+                    "account-facts, staged fill polling, local order query, "
+                    "reconciliation status, and broker cost evidence "
+                    "as read-only evidence, including strategy promotion "
+                    "state and a staged-fill reconciliation review hint, "
+                    "without submit, cancel, live-promotion, fill-apply, or "
+                    "ledger-sync controls."
+                ),
+                evidence_paths=(
+                    "server/services/automation_cockpit.py",
+                    "tests/test_automation_cockpit.py",
+                    "tests/server/test_automation_routes.py",
+                    "web/src/features/operations/api.ts",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "tests/server/test_execution_reconciliation_routes.py",
+                ),
+                validation_commands=(
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                    "uv run pytest tests/server/test_broker_gateway_routes.py tests/server/test_execution_reconciliation_routes.py",
+                ),
+            ),
+        )
+    )

@@ -20,8 +20,29 @@ import {
   type StrategyNameMap,
 } from '../../../shared/strategy-display';
 import {
+  useAutomationCockpitQuery,
+  useBrokerConnectorHealthQuery,
+  useBrokerGatewayAccountFactsQuery,
+  useBrokerGatewayFillsQuery,
+  useBrokerGatewayOrderQuery,
+  useBrokerGatewayStatusQuery,
+  useExecutionReconciliationRunDetailQuery,
+  useExecutionReconciliationRunsQuery,
   useOperationsTodayQuery,
+  useRunPaperShadowMutation,
+  type AutomationCockpitResponse,
+  type BrokerConnectorHealthResponse,
+  type ExecutionReconciliationRun,
+  type ExecutionReconciliationItem,
+  type BrokerGatewayAccountFactsResponse,
+  type BrokerGatewayCapability,
+  type BrokerGatewayFillsQueryResponse,
+  type BrokerGatewayOrderQueryResponse,
+  type BrokerGatewayStatusResponse,
   type OperationsTodayResponse,
+  type PaperShadowCostSummary,
+  type PaperShadowDivergenceSummary,
+  type PaperShadowReviewQueueItem,
 } from '../../operations/api';
 import {
   useCreateManualOrderFromActionMutation,
@@ -168,6 +189,388 @@ function numericEvidenceValue(value: unknown) {
 
 function nullableCurrency(value: unknown) {
   return formatCurrency(numericEvidenceValue(value));
+}
+
+function numericCostSummaryValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function paperShadowCostSummaryItems(
+  costSummary: PaperShadowCostSummary | undefined,
+  locale: Locale,
+) {
+  if (!costSummary) {
+    return [];
+  }
+  const labels =
+    locale === 'zh'
+      ? {
+          estimatedFee: '计划费用',
+          simulatedFeeTax: '模拟费税',
+          simulatedSlippage: '模拟滑点',
+          simulatedTotal: '模拟总成本',
+          feeRules: '费用规则',
+        }
+      : {
+          estimatedFee: 'Projected fee',
+          simulatedFeeTax: 'Sim fee/tax',
+          simulatedSlippage: 'Sim slippage',
+          simulatedTotal: 'Sim total cost',
+          feeRules: 'Fee rules',
+        };
+  const feeRuleIds = (costSummary.fee_rule_ids ?? [])
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+  return [
+    {
+      label: labels.estimatedFee,
+      value: formatCurrency(
+        numericCostSummaryValue(costSummary.estimated_total_fee),
+      ),
+    },
+    {
+      label: labels.simulatedFeeTax,
+      value: formatCurrency(
+        numericCostSummaryValue(costSummary.simulated_fee_tax_cost),
+      ),
+    },
+    {
+      label: labels.simulatedSlippage,
+      value: formatCurrency(
+        numericCostSummaryValue(costSummary.simulated_slippage_cost),
+      ),
+    },
+    {
+      label: labels.simulatedTotal,
+      value: formatCurrency(
+        numericCostSummaryValue(costSummary.simulated_total_execution_cost),
+      ),
+    },
+    feeRuleIds.length
+      ? {
+          label: labels.feeRules,
+          value: feeRuleIds.join(' / '),
+        }
+      : null,
+  ].filter((item): item is { label: string; value: string } => item !== null);
+}
+
+type PaperShadowDivergenceEvidenceBlock = {
+  title: string;
+  items: string[];
+};
+
+type BrokerTradeCostEvidence = {
+  eventCountLabel: string;
+  items: Array<{ label: string; value: string }>;
+  safetyLabels: string[];
+};
+
+type ManualExecutionEvidence = {
+  eventCountLabel: string;
+  fingerprint: string;
+  items: Array<{ label: string; value: string }>;
+  safetyLabels: string[];
+};
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function formatPaperShadowCountKey(value: string, locale: Locale) {
+  const normalized = value.trim();
+  if (!normalized) {
+    return '--';
+  }
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase(locale);
+}
+
+function formatPaperShadowCountMap(
+  values: Record<string, number> | undefined,
+  locale: Locale,
+) {
+  const items = Object.entries(values ?? {})
+    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+    .map(
+      ([key, value]) => `${formatPaperShadowCountKey(key, locale)}: ${value}`,
+    );
+  return items.join(locale === 'zh' ? '；' : '; ');
+}
+
+function formatPaperShadowStatusCountMap(
+  values: Record<string, number> | undefined,
+  locale: Locale,
+) {
+  const items = Object.entries(values ?? {})
+    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+    .map(([key, value]) => `${formatPublicStatus(key, locale)}: ${value}`);
+  return items.join(locale === 'zh' ? '；' : '; ');
+}
+
+function formatPaperShadowValueMap(
+  values: Record<string, number | string> | undefined,
+) {
+  const items = Object.entries(values ?? {})
+    .map(([key, value]) => `${key}: ${String(value).trim()}`)
+    .filter((value) => value.trim().length > 0);
+  return items.join('; ');
+}
+
+function formatPaperShadowRefs(values: string[] | undefined, locale: Locale) {
+  return (values ?? [])
+    .map((value) => formatPublicEvidenceReference(value, locale))
+    .filter((value) => value.trim().length > 0)
+    .join(locale === 'zh' ? '；' : '; ');
+}
+
+function formatPaperShadowCurrencyList(
+  values: Array<number | string> | undefined,
+) {
+  return (values ?? [])
+    .map((value) => formatCurrency(numericCostSummaryValue(value)))
+    .filter((value) => value !== '--')
+    .join(', ');
+}
+
+function paperShadowMarketContextItems(
+  summary: PaperShadowDivergenceSummary,
+  locale: Locale,
+) {
+  const labels =
+    locale === 'zh'
+      ? {
+          symbolCount: '标的数',
+          priceBasis: '价格依据',
+          expected: '预期',
+          fills: '成交',
+          slippage: '滑点',
+        }
+      : {
+          symbolCount: 'Symbols',
+          priceBasis: 'Price basis',
+          expected: 'expected',
+          fills: 'fills',
+          slippage: 'slippage',
+        };
+  const context = summary.realized_market_context;
+  const priceBasis = formatPaperShadowCountMap(
+    context?.price_basis_counts,
+    locale,
+  );
+  return [
+    typeof context?.symbol_count === 'number'
+      ? `${labels.symbolCount}: ${context.symbol_count}`
+      : '',
+    priceBasis ? `${labels.priceBasis}: ${priceBasis}` : '',
+    ...(context?.symbols ?? []).map((item) => {
+      const symbol = item.symbol?.trim() || '--';
+      const expected = formatCurrency(
+        numericCostSummaryValue(item.expected_price),
+      );
+      const fills = formatPaperShadowCurrencyList(item.simulated_fill_prices);
+      const slippage = formatCurrency(
+        numericCostSummaryValue(item.simulated_slippage_cost),
+      );
+      return [
+        symbol,
+        expected !== '--' ? `${labels.expected} ${expected}` : '',
+        fills ? `${labels.fills} ${fills}` : '',
+        slippage !== '--' ? `${labels.slippage} ${slippage}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    }),
+  ].filter(Boolean);
+}
+
+function paperShadowDivergenceEvidenceBlocks(
+  summary: PaperShadowDivergenceSummary | undefined,
+  locale: Locale,
+): PaperShadowDivergenceEvidenceBlock[] {
+  if (!summary) {
+    return [];
+  }
+  const labels =
+    locale === 'zh'
+      ? {
+          expectedTitle: '预期策略行为',
+          executionTitle: '模拟执行对比',
+          marketTitle: '实际行情上下文',
+          safetyTitle: '安全边界',
+          expectedOrders: '预期订单',
+          decision: '决策',
+          symbols: '标的',
+          sides: '方向',
+          strategies: '策略证据',
+          risk: '风控证据',
+          signals: '信号证据',
+          riskGateStatuses: '风控状态',
+          manualStatuses: '人工确认状态',
+          submissionStatuses: '提交状态',
+          matchedOrders: '匹配订单',
+          missingIntents: '缺失订单意图',
+          divergedOrders: '偏差订单',
+          failedOrders: '失败订单',
+          simStatuses: '模拟状态',
+          fillCounts: '成交笔数',
+          filledQty: '已成交数量',
+          remainingQty: '剩余数量',
+          noBrokerSubmission: '仅模拟证据；不会提交券商订单',
+          noLedgerMutation: '不会修改生产账本',
+        }
+      : {
+          expectedTitle: 'Expected strategy behavior',
+          executionTitle: 'Execution comparison',
+          marketTitle: 'Realized market context',
+          safetyTitle: 'Safety boundaries',
+          expectedOrders: 'Expected orders',
+          decision: 'Decision',
+          symbols: 'Symbols',
+          sides: 'Sides',
+          strategies: 'Strategy refs',
+          risk: 'Risk refs',
+          signals: 'Signal refs',
+          riskGateStatuses: 'Risk gate statuses',
+          manualStatuses: 'Manual confirmation statuses',
+          submissionStatuses: 'Submission statuses',
+          matchedOrders: 'Matched orders',
+          missingIntents: 'Missing intents',
+          divergedOrders: 'Diverged orders',
+          failedOrders: 'Failed orders',
+          simStatuses: 'Sim statuses',
+          fillCounts: 'Fill counts',
+          filledQty: 'Filled qty',
+          remainingQty: 'Remaining qty',
+          noBrokerSubmission: 'Simulation evidence only; no broker submission',
+          noLedgerMutation: 'Does not mutate production ledger',
+        };
+  const expected = summary.expected_strategy_behavior;
+  const execution = summary.execution_comparison;
+  const expectedSides = formatPaperShadowStatusCountMap(
+    expected?.side_counts,
+    locale,
+  );
+  const riskGateStatuses = formatPaperShadowStatusCountMap(
+    expected?.risk_gate_status_counts,
+    locale,
+  );
+  const manualStatuses = formatPaperShadowStatusCountMap(
+    expected?.manual_confirmation_status_counts,
+    locale,
+  );
+  const submissionStatuses = formatPaperShadowCountMap(
+    expected?.submission_status_counts,
+    locale,
+  );
+  const simStatuses = formatPaperShadowCountMap(
+    execution?.simulated_status_counts,
+    locale,
+  );
+  const blocks: PaperShadowDivergenceEvidenceBlock[] = [];
+  const expectedItems = [
+    typeof expected?.expected_order_count === 'number'
+      ? `${labels.expectedOrders}: ${expected.expected_order_count}`
+      : '',
+    expected?.source_decision
+      ? `${labels.decision}: ${formatPublicStatus(
+          expected.source_decision,
+          locale,
+        )}`
+      : '',
+    expected?.symbols?.length
+      ? `${labels.symbols}: ${expected.symbols.join(', ')}`
+      : '',
+    expectedSides ? `${labels.sides}: ${expectedSides}` : '',
+    formatPaperShadowRefs(expected?.strategy_refs, locale)
+      ? `${labels.strategies}: ${formatPaperShadowRefs(
+          expected?.strategy_refs,
+          locale,
+        )}`
+      : '',
+    formatPaperShadowRefs(expected?.risk_refs, locale)
+      ? `${labels.risk}: ${formatPaperShadowRefs(expected?.risk_refs, locale)}`
+      : '',
+    formatPaperShadowRefs(expected?.signal_refs, locale)
+      ? `${labels.signals}: ${formatPaperShadowRefs(
+          expected?.signal_refs,
+          locale,
+        )}`
+      : '',
+    riskGateStatuses ? `${labels.riskGateStatuses}: ${riskGateStatuses}` : '',
+    manualStatuses ? `${labels.manualStatuses}: ${manualStatuses}` : '',
+    submissionStatuses
+      ? `${labels.submissionStatuses}: ${submissionStatuses}`
+      : '',
+  ].filter(Boolean);
+  if (expectedItems.length > 0) {
+    blocks.push({ title: labels.expectedTitle, items: expectedItems });
+  }
+
+  const missingIntents = formatPaperShadowRefs(
+    execution?.missing_order_intent_refs,
+    locale,
+  );
+  const divergedOrders = formatPaperShadowRefs(
+    execution?.diverged_order_refs,
+    locale,
+  );
+  const failedOrders = formatPaperShadowRefs(
+    execution?.failed_order_refs,
+    locale,
+  );
+  const executionItems = [
+    typeof execution?.matched_order_count === 'number'
+      ? `${labels.matchedOrders}: ${execution.matched_order_count}`
+      : '',
+    missingIntents ? `${labels.missingIntents}: ${missingIntents}` : '',
+    divergedOrders ? `${labels.divergedOrders}: ${divergedOrders}` : '',
+    failedOrders ? `${labels.failedOrders}: ${failedOrders}` : '',
+    simStatuses ? `${labels.simStatuses}: ${simStatuses}` : '',
+    formatPaperShadowValueMap(execution?.fill_count_by_order)
+      ? `${labels.fillCounts}: ${formatPaperShadowValueMap(
+          execution?.fill_count_by_order,
+        )}`
+      : '',
+    formatPaperShadowValueMap(execution?.filled_quantity_by_order)
+      ? `${labels.filledQty}: ${formatPaperShadowValueMap(
+          execution?.filled_quantity_by_order,
+        )}`
+      : '',
+    formatPaperShadowValueMap(execution?.remaining_quantity_by_order)
+      ? `${labels.remainingQty}: ${formatPaperShadowValueMap(
+          execution?.remaining_quantity_by_order,
+        )}`
+      : '',
+  ].filter(Boolean);
+  if (executionItems.length > 0) {
+    blocks.push({ title: labels.executionTitle, items: executionItems });
+  }
+
+  const marketItems = paperShadowMarketContextItems(summary, locale);
+  if (marketItems.length > 0) {
+    blocks.push({ title: labels.marketTitle, items: marketItems });
+  }
+
+  const safetyItems = [
+    summary.does_not_submit_broker_order ? labels.noBrokerSubmission : '',
+    summary.does_not_mutate_production_ledger ? labels.noLedgerMutation : '',
+  ].filter(Boolean);
+  if (safetyItems.length > 0) {
+    blocks.push({ title: labels.safetyTitle, items: safetyItems });
+  }
+  return blocks;
 }
 
 function strategyContributionDetailItems(
@@ -630,8 +1033,14 @@ function paperShadowStatusLabel(status: string, locale: Locale) {
     not_required: { en: 'Not required', zh: '无需模拟' },
     not_run: { en: 'Not run', zh: '尚未运行' },
     review_required: { en: 'Review required', zh: '需要复核' },
+    running: { en: 'Running', zh: '运行中' },
     within_expectations: { en: 'Within expectations', zh: '符合预期' },
+    accepted_for_manual_confirmation: {
+      en: 'Accepted for manual confirmation',
+      zh: '已接受，可人工确认',
+    },
     diverged: { en: 'Diverged', zh: '存在偏差' },
+    failed: { en: 'Failed', zh: '运行失败' },
   };
   return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
 }
@@ -647,6 +1056,10 @@ function paperShadowNextStepLabel(value: string, locale: Locale) {
       en: 'Review paper/shadow divergence evidence',
       zh: '复核 paper/shadow 偏差证据',
     },
+    wait_for_paper_shadow_run: {
+      en: 'Paper/shadow simulation is running; wait for completion',
+      zh: 'Paper/shadow 模拟正在运行，等待完成',
+    },
     review_manual_confirmation: {
       en: 'Simulation reviewed; continue with manual confirmation',
       zh: '模拟已复核，可继续人工确认',
@@ -655,8 +1068,2239 @@ function paperShadowNextStepLabel(value: string, locale: Locale) {
       en: 'Resolve simulation divergence before approval',
       zh: '批准前先处理模拟偏差',
     },
+    inspect_failed_run: {
+      en: 'Inspect failed paper/shadow run before approval',
+      zh: '批准前先检查失败的 paper/shadow 运行',
+    },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function paperShadowReviewQueueItemTitle(
+  item: PaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const primary =
+    item.symbol?.trim() ||
+    (item.order_id
+      ? formatPublicEvidenceReference(
+          `paper_shadow_order:${item.order_id}`,
+          locale,
+        )
+      : '');
+  return [primary, paperShadowNextStepLabel(item.required_action, locale)]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function paperShadowReviewQueueSafetyText(
+  item: PaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const labels: string[] = [];
+  if (item.does_not_submit_broker_order) {
+    labels.push(locale === 'zh' ? '不会提交券商订单' : 'No broker submission');
+  }
+  if (item.does_not_mutate_production_ledger) {
+    labels.push(
+      locale === 'zh' ? '不会修改生产账本' : 'No production ledger mutation',
+    );
+  }
+  return labels.join(' · ');
+}
+
+function paperShadowReviewQueueDetailItems(
+  item: PaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const labels =
+    locale === 'zh'
+      ? {
+          risk: '风控',
+          manual: '人工确认',
+          accountTruth: '账户事实',
+          cash: '现金',
+          constraints: '约束',
+          projectedFee: '计划费用',
+          simulatedFeeTax: '模拟费税',
+          simulatedSlippage: '模拟滑点',
+          expected: '预期',
+          fill: '成交',
+          omsPath: 'OMS 路径',
+          omsTransition: 'OMS 状态变更',
+          evidence: '证据',
+        }
+      : {
+          risk: 'Risk',
+          manual: 'Manual',
+          accountTruth: 'Account truth',
+          cash: 'Cash',
+          constraints: 'Constraints',
+          projectedFee: 'Projected fee',
+          simulatedFeeTax: 'Sim fee/tax',
+          simulatedSlippage: 'Sim slippage',
+          expected: 'Expected',
+          fill: 'Fill',
+          omsPath: 'OMS path',
+          omsTransition: 'OMS transition',
+          evidence: 'Evidence',
+        };
+  const riskManual = [
+    item.risk_gate_status
+      ? `${labels.risk} ${formatPublicStatus(item.risk_gate_status, locale)}`
+      : '',
+    item.manual_confirmation_status
+      ? `${labels.manual} ${reviewQueueManualStatusLabel(
+          item.manual_confirmation_status,
+          locale,
+        )}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const accountCash = [
+    item.account_truth?.gate_status
+      ? `${labels.accountTruth} ${formatPublicStatus(
+          item.account_truth.gate_status,
+          locale,
+        )}`
+      : '',
+    item.cash_status
+      ? `${labels.cash} ${formatPublicStatus(item.cash_status, locale)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const constraints = formatPaperShadowStatusCountMap(
+    item.constraint_status_counts,
+    locale,
+  );
+  const costEvidence = [
+    reviewQueueCurrencyItem(
+      labels.projectedFee,
+      item.cost_evidence?.estimated_total_fee,
+    ),
+    reviewQueueCurrencyItem(
+      labels.simulatedFeeTax,
+      item.cost_evidence?.simulated_fee_tax_cost,
+    ),
+    reviewQueueCurrencyItem(
+      labels.simulatedSlippage,
+      item.cost_evidence?.simulated_slippage_cost,
+    ),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const marketContext = [
+    reviewQueueCurrencyItem(
+      labels.expected,
+      item.market_context?.expected_price,
+    ),
+    reviewQueueFillPriceItem(
+      labels.fill,
+      item.market_context?.simulated_fill_prices,
+    ),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const omsStatusPath = reviewQueueOmsStatusPath(item.oms_status_path, locale);
+  const omsTransition = reviewQueueLatestOmsTransition(item, locale);
+  const evidenceRefs = formatPaperShadowRefs(
+    item.evidence_refs ?? [
+      ...(item.strategy_refs ?? []),
+      ...(item.risk_refs ?? []),
+      ...(item.signal_refs ?? []),
+    ],
+    locale,
+  );
+  return [
+    riskManual,
+    accountCash,
+    constraints ? `${labels.constraints} ${constraints}` : '',
+    costEvidence,
+    marketContext,
+    omsStatusPath ? `${labels.omsPath}: ${omsStatusPath}` : '',
+    omsTransition ? `${labels.omsTransition}: ${omsTransition}` : '',
+    evidenceRefs ? `${labels.evidence}: ${evidenceRefs}` : '',
+  ].filter(Boolean);
+}
+
+function reviewQueueOmsStatusPath(
+  values: string[] | undefined,
+  locale: Locale,
+) {
+  if (!values || values.length === 0) {
+    return '';
+  }
+  return values
+    .map((value) => reviewQueueOmsStatusLabel(value, locale))
+    .filter(Boolean)
+    .join(' > ');
+}
+
+function reviewQueueLatestOmsTransition(
+  item: PaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const transition = [...(item.oms_transitions ?? [])]
+    .reverse()
+    .find((entry) => entry.to_status);
+  if (!transition?.to_status) {
+    return '';
+  }
+  const orderId = item.order_id ? `${item.order_id} ` : '';
+  const sequence =
+    transition.sequence !== null && transition.sequence !== undefined
+      ? `#${transition.sequence} `
+      : '';
+  return `${orderId}${sequence}${reviewQueueOmsStatusLabel(
+    transition.to_status,
+    locale,
+  )}`;
+}
+
+function reviewQueueOmsStatusLabel(
+  value: string | null | undefined,
+  locale: Locale,
+) {
+  const status = String(value ?? '').trim();
+  if (!status) {
+    return '';
+  }
+  const labels: Record<string, Record<Locale, string>> = {
+    staged: { en: 'Staged', zh: '已暂存' },
+    submitted: { en: 'Submitted', zh: '已提交模拟' },
+    accepted: { en: 'Accepted', zh: '已接受模拟' },
+    partially_filled: { en: 'Partially Filled', zh: '部分成交' },
+    filled: { en: 'Filled', zh: '已成交' },
+    rejected: { en: 'Rejected', zh: '已拒绝' },
+    cancelled: { en: 'Cancelled', zh: '已取消' },
+    expired: { en: 'Expired', zh: '已过期' },
+    reconciled: { en: 'Reconciled', zh: '已对账' },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function reviewQueueManualStatusLabel(value: string, locale: Locale) {
+  if (value === 'ready_for_manual_confirmation') {
+    return locale === 'zh' ? '可人工确认' : 'Ready';
+  }
+  return formatPublicStatus(value, locale);
+}
+
+function reviewQueueCurrencyItem(label: string, value: unknown) {
+  const numeric = numericCostSummaryValue(value);
+  return numeric === null ? '' : `${label} ${formatCurrency(numeric)}`;
+}
+
+function reviewQueueFillPriceItem(
+  label: string,
+  values: unknown[] | undefined,
+) {
+  const prices = (values ?? [])
+    .map((value) => numericCostSummaryValue(value))
+    .filter((value): value is number => value !== null)
+    .map((value) => formatCurrency(value));
+  return prices.length ? `${label} ${prices.join(', ')}` : '';
+}
+
+function automationModeLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    paper_shadow: { en: 'paper/shadow only', zh: '仅 paper/shadow' },
+    manual_confirmation: { en: 'manual confirmation', zh: '人工确认' },
+    disabled: { en: 'disabled', zh: '已停用' },
+    live_like: { en: 'live-like gated', zh: '类实盘门禁' },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function automationExecutionMode(cockpit: AutomationCockpitResponse) {
+  return (
+    cockpit.automation_status.mode ??
+    cockpit.automation_status.default_execution_mode ??
+    '--'
+  );
+}
+
+function strategyPromotionStageLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    research: { en: 'Research', zh: '研究' },
+    paper_shadow: { en: 'Paper/shadow', zh: '模拟/影子运行' },
+    live_like: { en: 'Live-like gated', zh: '类实盘门禁' },
+    live_like_blocked: { en: 'Live-like blocked', zh: '类实盘已阻断' },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function strategyPromotionGateStatusLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    blocked: { en: 'Blocked', zh: '已阻断' },
+    paper_shadow_ready: {
+      en: 'Paper/shadow ready',
+      zh: '模拟/影子运行就绪',
+    },
+    paper_shadow_enabled: {
+      en: 'Paper/shadow enabled',
+      zh: '模拟/影子运行已启用',
+    },
+    live_like_disabled: {
+      en: 'Live-like disabled',
+      zh: '类实盘已关闭',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function strategyPromotionMissingRequirementsLabel(
+  missingRequirements: string[] | undefined,
+  locale: Locale,
+) {
+  const items = (missingRequirements ?? [])
+    .map((item) => formatPublicStatus(item, locale))
+    .filter(Boolean);
+  if (!items.length) {
+    return locale === 'zh' ? '无缺失要求' : 'No missing requirements';
+  }
+  return items.join(locale === 'zh' ? '；' : '; ');
+}
+
+function automationRecommendedActionLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    import_broker_evidence: {
+      en: 'import broker evidence',
+      zh: '导入券商证据',
+    },
+    review_manual_confirmation: {
+      en: 'review manual confirmation',
+      zh: '复核人工确认',
+    },
+    review_broker_evidence_match: {
+      en: 'review broker evidence match',
+      zh: '复核券商证据匹配',
+    },
+    create_manual_ticket: { en: 'create manual ticket', zh: '生成手工下单票' },
+    review_gateway_status: { en: 'review gateway status', zh: '复核网关状态' },
+    import_broker_statement_or_update_order: {
+      en: 'import broker statement or update order',
+      zh: '导入券商交割单或更新订单',
+    },
+    create_manual_ticket_or_cancel: {
+      en: 'create manual ticket or cancel',
+      zh: '创建手工票据或取消订单',
+    },
+    confirm_or_cancel_order: {
+      en: 'confirm or cancel order',
+      zh: '确认或取消订单',
+    },
+    review_broker_evidence_mismatch: {
+      en: 'review broker evidence mismatch',
+      zh: '复核券商证据不匹配',
+    },
+    paper_shadow_available: {
+      en: 'run intraday paper/shadow',
+      zh: '运行盘中 paper/shadow',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function automationNextAction(
+  cockpit: AutomationCockpitResponse,
+  locale: Locale,
+) {
+  if (cockpit.automation_status.kill_switch_enabled) {
+    return locale === 'zh' ? '先处理全局熔断' : 'resolve global kill switch';
+  }
+  const brokerEvidenceItem =
+    cockpit.execution_reconciliation_open_items.find(
+      (item) => item.recommended_action === 'import_broker_evidence',
+    ) ?? cockpit.execution_reconciliation_open_items[0];
+  if (brokerEvidenceItem) {
+    return automationRecommendedActionLabel(
+      brokerEvidenceItem.recommended_action,
+      locale,
+    );
+  }
+  if (cockpit.open_alert_count > 0) {
+    return locale === 'zh' ? '复核自动化告警' : 'review automation alerts';
+  }
+  if (cockpit.automation_status.next_action) {
+    return automationRecommendedActionLabel(
+      cockpit.automation_status.next_action,
+      locale,
+    );
+  }
+  return locale === 'zh'
+    ? '运行盘中 paper/shadow'
+    : 'run intraday paper/shadow';
+}
+
+function brokerGatewayDisplayName(
+  gateway: BrokerGatewayCapability,
+  locale: Locale,
+) {
+  if (gateway.gateway_id === 'manual_ticket') {
+    return locale === 'zh' ? '人工工单' : 'Manual ticket';
+  }
+  if (gateway.gateway_id === 'live_disabled') {
+    return locale === 'zh' ? '实盘券商执行' : 'Live broker execution';
+  }
+  if (gateway.gateway_id === 'staged_broker_evidence') {
+    return locale === 'zh' ? '已暂存券商证据' : 'Staged broker evidence';
+  }
+  if (gateway.display_name) return gateway.display_name;
+  return formatPublicStatus(gateway.gateway_id, locale);
+}
+
+function brokerGatewayStatusLabel(status: string, locale: Locale) {
+  if (status === 'blocked_by_kill_switch') {
+    return locale === 'zh' ? '被熔断开关阻断' : 'Blocked by kill switch';
+  }
+  return formatPublicStatus(status, locale);
+}
+
+function controlledBridgePolicyStatusLabel(status: string, locale: Locale) {
+  if (status === 'configured_non_submitting') {
+    return locale === 'zh' ? '已配置，不提交' : 'Configured, no submission';
+  }
+  if (status === 'incomplete_whitelist') {
+    return locale === 'zh' ? '白名单不完整' : 'Incomplete whitelist';
+  }
+  return formatPublicStatus(status, locale);
+}
+
+function controlledBridgeListSummary(
+  label: 'connector' | 'account' | 'strategy' | 'symbol',
+  values: string[] | undefined,
+  locale: Locale,
+) {
+  const labelText =
+    label === 'connector'
+      ? locale === 'zh'
+        ? '连接器'
+        : 'Connector'
+      : label === 'account'
+        ? locale === 'zh'
+          ? '账户'
+          : 'Account'
+        : label === 'strategy'
+          ? locale === 'zh'
+            ? '策略'
+            : 'Strategy'
+          : locale === 'zh'
+            ? '标的'
+            : 'Symbol';
+  const displayValues = values?.length
+    ? values.join(', ')
+    : locale === 'zh'
+      ? '未配置'
+      : 'not configured';
+  return `${labelText}: ${displayValues}`;
+}
+
+function controlledBridgeTokenList(
+  values: string[] | undefined,
+  locale: Locale,
+) {
+  if (values?.length) {
+    return values
+      .map((value) => controlledBridgeTokenLabel(value, locale))
+      .join(', ');
+  }
+  return locale === 'zh' ? '无' : 'none';
+}
+
+function controlledBridgeTokenLabel(value: string, locale: Locale) {
+  const labels: Record<string, Record<Locale, string>> = {
+    account_truth: { en: 'account truth', zh: '账户事实' },
+    research_evidence: { en: 'research evidence', zh: '研究证据' },
+    risk: { en: 'risk', zh: '风控' },
+    paper_shadow: { en: 'paper/shadow', zh: '模拟/影子运行' },
+    manual_confirmation: { en: 'manual confirmation', zh: '人工确认' },
+    kill_switch_clear: { en: 'kill switch clear', zh: '熔断关闭' },
+    connector_health: { en: 'connector health', zh: '连接器健康' },
+    execution_reconciliation: {
+      en: 'execution reconciliation',
+      zh: '执行对账',
+    },
+    controlled_bridge_policy_disabled: {
+      en: 'controlled bridge policy disabled',
+      zh: '受控桥接策略未启用',
+    },
+    controlled_bridge_whitelist_empty: {
+      en: 'controlled bridge whitelist empty',
+      zh: '受控桥接白名单为空',
+    },
+    live_gateway_not_implemented: {
+      en: 'live gateway not implemented',
+      zh: '实盘网关尚未实现',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicCode(value, locale);
+}
+
+function brokerConnectorStatusLabel(status: string, locale: Locale) {
+  if (status === 'configured_readonly_unverified') {
+    return locale === 'zh'
+      ? '只读配置完成，未连接验证'
+      : 'Configured readonly unverified';
+  }
+  if (status === 'configuration_incomplete') {
+    return locale === 'zh' ? '配置不完整' : 'Configuration incomplete';
+  }
+  return formatPublicStatus(status, locale);
+}
+
+function brokerGatewayCapabilityLabel(
+  label:
+    | 'preview'
+    | 'export'
+    | 'dry_run'
+    | 'query_orders'
+    | 'query_fills'
+    | 'read_positions'
+    | 'read_cash'
+    | 'submit'
+    | 'cancel',
+  enabled: boolean | undefined,
+  locale: Locale,
+) {
+  const action =
+    label === 'preview'
+      ? locale === 'zh'
+        ? '预览'
+        : 'Preview'
+      : label === 'export'
+        ? locale === 'zh'
+          ? '导出'
+          : 'Export'
+        : label === 'dry_run'
+          ? locale === 'zh'
+            ? '干跑'
+            : 'Dry run'
+          : label === 'query_orders'
+            ? locale === 'zh'
+              ? '查询订单'
+              : 'Query orders'
+            : label === 'query_fills'
+              ? locale === 'zh'
+                ? '查询成交'
+                : 'Query fills'
+              : label === 'read_positions'
+                ? locale === 'zh'
+                  ? '读取持仓'
+                  : 'Read positions'
+                : label === 'read_cash'
+                  ? locale === 'zh'
+                    ? '读取资金'
+                    : 'Read cash'
+                  : label === 'submit'
+                    ? locale === 'zh'
+                      ? '提交'
+                      : 'Submit'
+                    : locale === 'zh'
+                      ? '撤单'
+                      : 'Cancel';
+  const state = enabled
+    ? locale === 'zh'
+      ? '可用'
+      : 'available'
+    : locale === 'zh'
+      ? '阻断'
+      : 'blocked';
+  return `${action} ${state}`;
+}
+
+function brokerConnectorCapabilityLabel(
+  label:
+    | 'read_account'
+    | 'read_cash'
+    | 'read_positions'
+    | 'read_orders'
+    | 'read_fills'
+    | 'preview_orders'
+    | 'export_tickets'
+    | 'dry_run_orders'
+    | 'submit'
+    | 'cancel',
+  enabled: boolean | undefined,
+  locale: Locale,
+) {
+  const action =
+    label === 'read_account'
+      ? locale === 'zh'
+        ? '读取账户'
+        : 'Read account'
+      : label === 'read_cash'
+        ? locale === 'zh'
+          ? '读取资金'
+          : 'Read cash'
+        : label === 'read_positions'
+          ? locale === 'zh'
+            ? '读取持仓'
+            : 'Read positions'
+          : label === 'read_orders'
+            ? locale === 'zh'
+              ? '读取订单'
+              : 'Read orders'
+            : label === 'read_fills'
+              ? locale === 'zh'
+                ? '读取成交'
+                : 'Read fills'
+              : label === 'preview_orders'
+                ? locale === 'zh'
+                  ? '预览订单'
+                  : 'Preview orders'
+                : label === 'export_tickets'
+                  ? locale === 'zh'
+                    ? '导出票据'
+                    : 'Export tickets'
+                  : label === 'dry_run_orders'
+                    ? locale === 'zh'
+                      ? 'Dry-run 订单'
+                      : 'Dry-run orders'
+                    : label === 'submit'
+                      ? locale === 'zh'
+                        ? '提交'
+                        : 'Submit'
+                      : locale === 'zh'
+                        ? '撤单'
+                        : 'Cancel';
+  const state = enabled
+    ? locale === 'zh'
+      ? '可用'
+      : 'available'
+    : locale === 'zh'
+      ? '阻断'
+      : 'blocked';
+  return `${action} ${state}`;
+}
+
+function runtimeConnectorSnapshotStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    snapshot_ready: { en: 'Snapshot ready', zh: '快照可复核' },
+    snapshot_degraded: { en: 'Snapshot degraded', zh: '快照降级' },
+    snapshot_unavailable: { en: 'Snapshot unavailable', zh: '快照不可用' },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function executionReconciliationStatusLabel(status: string, locale: Locale) {
+  if (status === 'open_items') {
+    return locale === 'zh' ? '存在未处理项' : 'Open items';
+  }
+  if (status === 'clear') {
+    return locale === 'zh' ? '已清理' : 'Clear';
+  }
+  return formatPublicStatus(status, locale);
+}
+
+function executionReconciliationItemStatusLabel(
+  status: string,
+  locale: Locale,
+) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    awaiting_manual_confirmation: {
+      en: 'Awaiting manual confirmation',
+      zh: '等待人工确认',
+    },
+    gateway_action_missing: {
+      en: 'Gateway action missing',
+      zh: '缺少网关动作',
+    },
+    broker_evidence_available: {
+      en: 'Broker evidence available',
+      zh: '券商证据可复核',
+    },
+    broker_evidence_mismatch: {
+      en: 'Broker evidence mismatch',
+      zh: '券商证据不匹配',
+    },
+    manual_execution_recorded: {
+      en: 'Manual execution recorded',
+      zh: '手工成交证据已记录',
+    },
+    awaiting_broker_evidence: {
+      en: 'Awaiting broker evidence',
+      zh: '等待券商证据',
+    },
+    cancelled: {
+      en: 'Cancelled',
+      zh: '已取消',
+    },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function omsOrderStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    awaiting_manual_confirmation: {
+      en: 'Awaiting manual confirmation',
+      zh: '等待人工确认',
+    },
+    manually_confirmed: {
+      en: 'Manually confirmed',
+      zh: '已人工确认',
+    },
+    manual_ticket_created: {
+      en: 'Manual ticket created',
+      zh: '已创建手工票据',
+    },
+    broker_submission_blocked: {
+      en: 'Broker submission blocked',
+      zh: '券商提交已阻断',
+    },
+    staged: {
+      en: 'Staged',
+      zh: '已暂存',
+    },
+    submitted: {
+      en: 'Submitted',
+      zh: '已提交',
+    },
+    accepted: {
+      en: 'Accepted',
+      zh: '已接受',
+    },
+    partially_filled: {
+      en: 'Partially filled',
+      zh: '部分成交',
+    },
+    filled: {
+      en: 'Filled',
+      zh: '已成交',
+    },
+    rejected: {
+      en: 'Rejected',
+      zh: '已拒绝',
+    },
+    cancelled: {
+      en: 'Cancelled',
+      zh: '已取消',
+    },
+    expired: {
+      en: 'Expired',
+      zh: '已过期',
+    },
+    reconciled: {
+      en: 'Reconciled',
+      zh: '已对账',
+    },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function executionReconciliationActionLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    import_broker_statement_or_update_order: {
+      en: 'Import broker statement or update order',
+      zh: '导入券商交割单或更新订单',
+    },
+    create_manual_ticket_or_cancel: {
+      en: 'Create manual ticket or cancel',
+      zh: '创建手工票据或取消订单',
+    },
+    confirm_or_cancel_order: {
+      en: 'Confirm or cancel order',
+      zh: '确认或取消订单',
+    },
+    review_broker_evidence_match: {
+      en: 'Review broker evidence match',
+      zh: '复核券商证据匹配',
+    },
+    review_broker_evidence_mismatch: {
+      en: 'Review broker evidence mismatch',
+      zh: '复核券商证据不匹配',
+    },
+    review_manual_execution_and_import_broker_statement: {
+      en: 'Review manual execution and import broker statement',
+      zh: '复核手工成交并导入券商交割单',
+    },
+    review_order_state: {
+      en: 'Review order state',
+      zh: '复核订单状态',
+    },
+  };
+  return (
+    labels[value]?.[locale] ?? automationRecommendedActionLabel(value, locale)
+  );
+}
+
+function brokerTradeCostEvidenceForItem(
+  item: ExecutionReconciliationItem | undefined,
+  locale: Locale,
+): BrokerTradeCostEvidence | null {
+  const payload = objectRecord(item?.payload);
+  const summary = objectRecord(payload?.broker_trade_cost_summary);
+  if (!summary) {
+    return null;
+  }
+
+  const labels =
+    locale === 'zh'
+      ? {
+          brokerEvent: '条券商事件',
+          brokerEventsUnavailable: '券商事件待复核',
+          grossAmount: '成交总额',
+          feeTax: '手续费 / 税费',
+          transferFee: '过户费',
+          netAmount: '净额',
+          reviewRequired: '更新账本前需复核',
+          noLedgerMutation: '不修改账本',
+        }
+      : {
+          brokerEvent: 'broker event',
+          brokerEventsUnavailable: 'Broker events need review',
+          grossAmount: 'Gross amount',
+          feeTax: 'Fee / tax',
+          transferFee: 'Transfer fee',
+          netAmount: 'Net amount',
+          reviewRequired: 'Review before ledger update',
+          noLedgerMutation: 'No ledger mutation',
+        };
+  const eventCountValue = numericCostSummaryValue(summary.event_count);
+  const eventCount =
+    eventCountValue === null ? 0 : Math.max(0, Math.trunc(eventCountValue));
+  const grossAmount = formatCurrency(
+    numericCostSummaryValue(summary.gross_amount),
+  );
+  const fee = formatCurrency(numericCostSummaryValue(summary.fee));
+  const tax = formatCurrency(numericCostSummaryValue(summary.tax));
+  const transferFee = formatCurrency(
+    numericCostSummaryValue(summary.transfer_fee),
+  );
+  const netAmount = formatCurrency(numericCostSummaryValue(summary.net_amount));
+  const items = [
+    grossAmount !== '--'
+      ? { label: labels.grossAmount, value: grossAmount }
+      : null,
+    fee !== '--' || tax !== '--'
+      ? { label: labels.feeTax, value: `${fee} / ${tax}` }
+      : null,
+    transferFee !== '--'
+      ? { label: labels.transferFee, value: transferFee }
+      : null,
+    netAmount !== '--' ? { label: labels.netAmount, value: netAmount } : null,
+  ].filter(
+    (entry): entry is { label: string; value: string } => entry !== null,
+  );
+  if (eventCount <= 0 && items.length === 0) {
+    return null;
+  }
+  return {
+    eventCountLabel:
+      eventCount > 0
+        ? countLabel(eventCount, labels.brokerEvent, 'broker events', locale)
+        : labels.brokerEventsUnavailable,
+    items,
+    safetyLabels: [
+      summary.review_required_before_ledger_update === true
+        ? labels.reviewRequired
+        : '',
+      summary.does_not_mutate_production_ledger === true
+        ? labels.noLedgerMutation
+        : '',
+    ].filter(Boolean),
+  };
+}
+
+function manualExecutionEvidenceForItem(
+  item: ExecutionReconciliationItem | undefined,
+  locale: Locale,
+): ManualExecutionEvidence | null {
+  const payload = objectRecord(item?.payload);
+  return manualExecutionEvidenceForPayload(payload, locale);
+}
+
+function manualExecutionEvidenceForPayload(
+  payload: Record<string, unknown> | null,
+  locale: Locale,
+): ManualExecutionEvidence | null {
+  const summary = objectRecord(payload?.manual_execution_evidence_summary);
+  if (!summary) {
+    return null;
+  }
+
+  const labels =
+    locale === 'zh'
+      ? {
+          gatewayEvent: '个网关事件',
+          gatewayEventsUnavailable: '网关事件待复核',
+          previewFingerprint: 'Preview fingerprint',
+          fillPrice: '成交价',
+          quantity: '数量',
+          grossAmount: '成交总额',
+          feeTax: '手续费 / 税费',
+          transferFee: '过户费',
+          netCashImpact: '净现金影响',
+          ledgerDraft: '账本草稿',
+          reviewRequired: '更新账本前需复核',
+          operatorSave: '需要人工保存账本',
+          noBrokerSubmission: '不提交券商订单',
+          noOmsMutation: '不修改 OMS',
+          noLedgerMutation: '不修改账本',
+        }
+      : {
+          gatewayEvent: 'gateway event',
+          gatewayEventsUnavailable: 'Gateway events need review',
+          previewFingerprint: 'Preview fingerprint',
+          fillPrice: 'Fill price',
+          quantity: 'Quantity',
+          grossAmount: 'Gross amount',
+          feeTax: 'Fee / tax',
+          transferFee: 'Transfer fee',
+          netCashImpact: 'Net cash impact',
+          ledgerDraft: 'Ledger draft',
+          reviewRequired: 'Review before ledger update',
+          operatorSave: 'Operator ledger save required',
+          noBrokerSubmission: 'No broker submission',
+          noOmsMutation: 'No OMS mutation',
+          noLedgerMutation: 'No ledger mutation',
+        };
+  const eventCountValue = numericCostSummaryValue(summary.event_count);
+  const eventCount =
+    eventCountValue === null ? 0 : Math.max(0, Math.trunc(eventCountValue));
+  const fillPrice = formatCurrency(numericCostSummaryValue(summary.fill_price));
+  const grossAmount = formatCurrency(
+    numericCostSummaryValue(summary.gross_amount),
+  );
+  const fee = formatCurrency(numericCostSummaryValue(summary.fee));
+  const tax = formatCurrency(numericCostSummaryValue(summary.tax));
+  const transferFee = formatCurrency(
+    numericCostSummaryValue(summary.transfer_fee),
+  );
+  const netCashImpact = formatCurrency(
+    numericCostSummaryValue(summary.net_cash_impact),
+  );
+  const ledgerDraft = formatCurrency(
+    numericCostSummaryValue(summary.ledger_entry_amount),
+  );
+  const quantity =
+    typeof summary.quantity === 'string' && summary.quantity.trim()
+      ? summary.quantity.trim()
+      : typeof summary.quantity === 'number'
+        ? String(summary.quantity)
+        : '';
+  const fingerprint =
+    typeof summary.preview_fingerprint === 'string'
+      ? summary.preview_fingerprint
+      : '';
+  const items = [
+    fillPrice !== '--' ? { label: labels.fillPrice, value: fillPrice } : null,
+    quantity ? { label: labels.quantity, value: quantity } : null,
+    grossAmount !== '--'
+      ? { label: labels.grossAmount, value: grossAmount }
+      : null,
+    fee !== '--' || tax !== '--'
+      ? { label: labels.feeTax, value: `${fee} / ${tax}` }
+      : null,
+    transferFee !== '--'
+      ? { label: labels.transferFee, value: transferFee }
+      : null,
+    netCashImpact !== '--'
+      ? { label: labels.netCashImpact, value: netCashImpact }
+      : null,
+    ledgerDraft !== '--'
+      ? { label: labels.ledgerDraft, value: ledgerDraft }
+      : null,
+  ].filter(
+    (entry): entry is { label: string; value: string } => entry !== null,
+  );
+  if (eventCount <= 0 && items.length === 0 && !fingerprint) {
+    return null;
+  }
+  return {
+    eventCountLabel:
+      eventCount > 0
+        ? countLabel(eventCount, labels.gatewayEvent, 'gateway events', locale)
+        : labels.gatewayEventsUnavailable,
+    fingerprint,
+    items: fingerprint
+      ? [
+          {
+            label: labels.previewFingerprint,
+            value: fingerprint,
+          },
+          ...items,
+        ]
+      : items,
+    safetyLabels: [
+      summary.review_required_before_ledger_update === true
+        ? labels.reviewRequired
+        : '',
+      summary.requires_operator_ledger_save === true ? labels.operatorSave : '',
+      summary.submitted_to_broker === false ? labels.noBrokerSubmission : '',
+      summary.does_not_mutate_oms === true ? labels.noOmsMutation : '',
+      summary.does_not_mutate_production_ledger === true
+        ? labels.noLedgerMutation
+        : '',
+    ].filter(Boolean),
+  };
+}
+
+function countLabel(
+  count: number,
+  singular: string,
+  plural: string,
+  locale: Locale,
+) {
+  if (locale === 'zh') {
+    return `${count} ${singular}`;
+  }
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function stagedFillSymbolSummary(
+  fills: BrokerGatewayFillsQueryResponse,
+  locale: Locale,
+) {
+  const symbols = Array.from(
+    new Set(
+      fills.fills
+        .map((fill) =>
+          typeof fill.symbol === 'string' ? fill.symbol.trim() : '',
+        )
+        .filter(Boolean),
+    ),
+  ).slice(0, 4);
+  if (symbols.length === 0) {
+    return locale === 'zh' ? '暂无样本' : 'No samples';
+  }
+  return symbols.join(locale === 'zh' ? '、' : ', ');
+}
+
+function stagedFillReconciliationReviewHint(
+  fills: BrokerGatewayFillsQueryResponse | undefined,
+  reconciliationRun: ExecutionReconciliationRun | undefined,
+  locale: Locale,
+) {
+  const fillCount = Math.max(fills?.fill_count ?? 0, fills?.fills.length ?? 0);
+  const openItemCount = reconciliationRun?.open_item_count ?? 0;
+  if (fillCount <= 0 || openItemCount <= 0) {
+    return null;
+  }
+
+  const fillLabel = countLabel(
+    fillCount,
+    locale === 'zh' ? '条暂存成交' : 'staged fill',
+    'staged fills',
+    locale,
+  );
+
+  return {
+    title:
+      locale === 'zh'
+        ? '暂存成交可用于执行对账复核'
+        : 'Staged fills ready for reconciliation review',
+    detail:
+      locale === 'zh'
+        ? `${fillLabel}可先与执行对账比对，再考虑任何账本更新。`
+        : `${fillLabel} can be compared with execution reconciliation before any ledger update.`,
+  };
+}
+
+function primaryExecutionReconciliationItemForRun(
+  run: ExecutionReconciliationRun | undefined,
+): ExecutionReconciliationItem | undefined {
+  return (
+    run?.items?.find(
+      (item) =>
+        (item.suggested_action ?? item.recommended_action ?? 'no_action') !==
+        'no_action',
+    ) ?? run?.items?.[0]
+  );
+}
+
+function AutomationCockpitPanel({
+  cockpit,
+  brokerGatewayStatus,
+  brokerConnectorHealth,
+  brokerConnectorHealthLoading,
+  brokerConnectorHealthError,
+  brokerAccountFacts,
+  brokerAccountFactsLoading,
+  brokerAccountFactsError,
+  brokerFills,
+  brokerFillsLoading,
+  brokerFillsError,
+  brokerOrderQuery,
+  brokerOrderQueryLoading,
+  brokerOrderQueryError,
+  executionReconciliationRuns,
+  executionReconciliationRunDetail,
+  executionReconciliationLoading,
+  executionReconciliationError,
+  brokerGatewayLoading,
+  brokerGatewayError,
+  loading,
+  error,
+}: {
+  cockpit: AutomationCockpitResponse | undefined;
+  brokerGatewayStatus: BrokerGatewayStatusResponse | undefined;
+  brokerConnectorHealth: BrokerConnectorHealthResponse | undefined;
+  brokerConnectorHealthLoading: boolean;
+  brokerConnectorHealthError: boolean;
+  brokerAccountFacts: BrokerGatewayAccountFactsResponse | undefined;
+  brokerAccountFactsLoading: boolean;
+  brokerAccountFactsError: boolean;
+  brokerFills: BrokerGatewayFillsQueryResponse | undefined;
+  brokerFillsLoading: boolean;
+  brokerFillsError: boolean;
+  brokerOrderQuery: BrokerGatewayOrderQueryResponse | undefined;
+  brokerOrderQueryLoading: boolean;
+  brokerOrderQueryError: boolean;
+  executionReconciliationRuns: ExecutionReconciliationRun[] | undefined;
+  executionReconciliationRunDetail: ExecutionReconciliationRun | undefined;
+  executionReconciliationLoading: boolean;
+  executionReconciliationError: boolean;
+  brokerGatewayLoading: boolean;
+  brokerGatewayError: boolean;
+  loading: boolean;
+  error: boolean;
+}) {
+  const copy = useCopy();
+  const { locale } = usePreferences();
+
+  if (loading) {
+    return null;
+  }
+  if (error || !cockpit) {
+    return null;
+  }
+
+  const openAlerts = cockpit.open_alert_count;
+  const reconciliationReviews =
+    cockpit.execution_reconciliation_open_items.length;
+  const nextAction = automationNextAction(cockpit, locale);
+  const manualDefault = cockpit.automation_status.manual_confirmation_required;
+  const brokerOff =
+    !cockpit.broker_submission_enabled &&
+    !cockpit.automation_status.broker_submission_enabled;
+  const gatewayStatusTitle =
+    brokerGatewayError && !brokerGatewayStatus
+      ? locale === 'zh'
+        ? '网关状态不可用'
+        : 'Gateway status unavailable'
+      : brokerGatewayLoading && !brokerGatewayStatus
+        ? locale === 'zh'
+          ? '网关状态加载中'
+          : 'Gateway status loading'
+        : brokerGatewayStatus?.kill_switch_enabled
+          ? locale === 'zh'
+            ? '熔断开关已开启'
+            : 'Kill switch active'
+          : locale === 'zh'
+            ? '熔断开关关闭'
+            : 'Kill switch clear';
+  const gatewayStatusDetail =
+    brokerGatewayStatus?.kill_switch_reason ??
+    brokerGatewayStatus?.gateways.find((gateway) => gateway.blocked_reason)
+      ?.blocked_reason ??
+    null;
+  const showConnectorHealth =
+    brokerConnectorHealthLoading ||
+    brokerConnectorHealthError ||
+    Boolean(brokerConnectorHealth?.connectors.length);
+  const runtimeConnectorSnapshots = cockpit.runtime_connector_snapshots ?? [];
+  const showRuntimeConnectorSnapshots = Boolean(
+    runtimeConnectorSnapshots.length,
+  );
+  const showAccountFacts =
+    brokerAccountFactsLoading ||
+    brokerAccountFactsError ||
+    (brokerAccountFacts?.broker_event_count ?? 0) > 0 ||
+    Boolean(brokerAccountFacts?.cash_balances.length) ||
+    Boolean(brokerAccountFacts?.positions.length) ||
+    Boolean(brokerAccountFacts?.fills.length);
+  const showBrokerFills =
+    brokerFillsLoading ||
+    brokerFillsError ||
+    (brokerFills?.fill_count ?? 0) > 0 ||
+    Boolean(brokerFills?.fills.length);
+  const latestExecutionReconciliationRun =
+    executionReconciliationRunDetail ?? executionReconciliationRuns?.[0];
+  const primaryExecutionReconciliationItem =
+    primaryExecutionReconciliationItemForRun(latestExecutionReconciliationRun);
+  const brokerTradeCostEvidence = brokerTradeCostEvidenceForItem(
+    primaryExecutionReconciliationItem,
+    locale,
+  );
+  const manualExecutionEvidence = manualExecutionEvidenceForItem(
+    primaryExecutionReconciliationItem,
+    locale,
+  );
+  const primaryOpenAlert = cockpit.open_alerts[0];
+  const openAlertManualExecutionEvidence = manualExecutionEvidenceForPayload(
+    objectRecord(primaryOpenAlert?.payload),
+    locale,
+  );
+  const showExecutionReconciliation =
+    executionReconciliationLoading ||
+    executionReconciliationError ||
+    Boolean(latestExecutionReconciliationRun);
+  const stagedFillReviewHint = stagedFillReconciliationReviewHint(
+    brokerFills,
+    latestExecutionReconciliationRun,
+    locale,
+  );
+  const showBrokerOrderQuery =
+    Boolean(primaryExecutionReconciliationItem?.order_id) &&
+    (brokerOrderQueryLoading ||
+      brokerOrderQueryError ||
+      Boolean(brokerOrderQuery));
+
+  return (
+    <section
+      data-testid="decision-automation-cockpit"
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+    >
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">
+              {locale === 'zh' ? '自动化控制' : 'Automation control'}
+            </div>
+            <h2 className="app-card-title mt-1.5">
+              {locale === 'zh' ? '自动化待办' : 'Automation to-do'}
+            </h2>
+          </div>
+          <div className="min-w-0 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-sm font-semibold text-[var(--app-warning)] sm:text-right">
+            {locale === 'zh' ? '下一步：' : 'Next: '}
+            {nextAction}
+          </div>
+        </div>
+
+        <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-4">
+          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+            <div className="app-muted text-xs">
+              {locale === 'zh' ? '执行模式' : 'Execution mode'}
+            </div>
+            <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+              {automationModeLabel(automationExecutionMode(cockpit), locale)}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+            <div className="app-muted text-xs">
+              {locale === 'zh' ? '确认门禁' : 'Confirmation gate'}
+            </div>
+            <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+              {manualDefault
+                ? locale === 'zh'
+                  ? '默认仍需人工确认'
+                  : 'Manual confirmation remains default'
+                : locale === 'zh'
+                  ? '人工确认未强制'
+                  : 'Manual confirmation not enforced'}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+            <div className="app-muted text-xs">
+              {locale === 'zh' ? '券商提交' : 'Broker submission'}
+            </div>
+            <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+              {brokerOff
+                ? locale === 'zh'
+                  ? '券商提交关闭'
+                  : 'Broker submission off'
+                : locale === 'zh'
+                  ? '券商提交已开启'
+                  : 'Broker submission on'}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+            <div className="app-muted text-xs">
+              {locale === 'zh' ? '待处理' : 'Queue'}
+            </div>
+            <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+              {locale === 'zh'
+                ? `${openAlerts} 个开放告警 · ${reconciliationReviews} 个对账复核`
+                : `${openAlerts} open alert${
+                    openAlerts === 1 ? '' : 's'
+                  } · ${reconciliationReviews} reconciliation review${
+                    reconciliationReviews === 1 ? '' : 's'
+                  }`}
+            </div>
+          </div>
+        </div>
+
+        {primaryOpenAlert ? (
+          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
+            <div className="text-sm font-semibold text-[var(--app-text)]">
+              {primaryOpenAlert.title}
+            </div>
+            {primaryOpenAlert.detail ? (
+              <div className="app-muted mt-1 break-words text-xs leading-5">
+                {primaryOpenAlert.detail}
+              </div>
+            ) : null}
+            {openAlertManualExecutionEvidence ? (
+              <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                    {locale === 'zh'
+                      ? '手工成交证据'
+                      : 'Manual execution evidence'}
+                  </div>
+                  <span className="app-chip">
+                    {openAlertManualExecutionEvidence.eventCountLabel}
+                  </span>
+                </div>
+                {openAlertManualExecutionEvidence.items.length ? (
+                  <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
+                    {openAlertManualExecutionEvidence.items.map((entry) => (
+                      <div
+                        className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                        key={entry.label}
+                      >
+                        <div className="app-muted text-xs">{entry.label}</div>
+                        <div className="mt-1 break-words font-semibold text-[var(--app-text)]">
+                          {entry.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {openAlertManualExecutionEvidence.safetyLabels.length ? (
+                  <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                    {openAlertManualExecutionEvidence.safetyLabels.map(
+                      (label) => (
+                        <span className="app-chip" key={label}>
+                          {label}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {cockpit.promotion_states.length ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                {locale === 'zh' ? '策略晋级状态' : 'Strategy promotion state'}
+              </div>
+              <span className="app-chip">
+                {cockpit.promotion_states.length === 1
+                  ? strategyPromotionStageLabel(
+                      cockpit.promotion_states[0].stage,
+                      locale,
+                    )
+                  : countLabel(
+                      cockpit.promotion_states.length,
+                      locale === 'zh' ? '个策略' : 'strategy',
+                      'strategies',
+                      locale,
+                    )}
+              </span>
+            </div>
+            <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
+              {cockpit.promotion_states.slice(0, 4).map((state) => (
+                <div
+                  className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                  key={state.strategy_id}
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="break-words text-sm font-semibold text-[var(--app-text)]">
+                        {state.strategy_id}
+                      </div>
+                      <div className="app-muted mt-1 break-words text-xs leading-5">
+                        {strategyPromotionMissingRequirementsLabel(
+                          state.missing_requirements,
+                          locale,
+                        )}
+                      </div>
+                    </div>
+                    <span className="app-chip">
+                      {strategyPromotionStageLabel(state.stage, locale)}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                    <span>
+                      {strategyPromotionGateStatusLabel(
+                        state.gate_status ?? state.status ?? 'unknown',
+                        locale,
+                      )}
+                    </span>
+                    <span>
+                      {state.live_like_enabled
+                        ? locale === 'zh'
+                          ? '类实盘已启用'
+                          : 'Live-like enabled'
+                        : locale === 'zh'
+                          ? '类实盘已关闭'
+                          : 'Live-like disabled'}
+                    </span>
+                    {typeof state.backtest_result_id === 'number' ? (
+                      <span>
+                        {locale === 'zh' ? '回测证据' : 'Backtest evidence'}:{' '}
+                        {state.backtest_result_id}
+                      </span>
+                    ) : null}
+                    <span>
+                      {locale === 'zh'
+                        ? '默认仍需人工确认'
+                        : 'Manual confirmation remains default'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {brokerGatewayStatus || brokerGatewayLoading || brokerGatewayError ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                {locale === 'zh' ? '券商网关状态' : 'Broker gateway status'}
+              </div>
+              <span
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                  brokerGatewayStatus?.kill_switch_enabled || brokerGatewayError
+                    ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger)]'
+                    : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success)]'
+                }`}
+              >
+                {gatewayStatusTitle}
+              </span>
+            </div>
+            {gatewayStatusDetail ? (
+              <div className="app-muted mt-2 break-words text-sm leading-6">
+                {gatewayStatusDetail}
+              </div>
+            ) : null}
+            {brokerGatewayStatus?.gateways.length ? (
+              <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
+                {brokerGatewayStatus.gateways.map((gateway) => (
+                  <div
+                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    key={gateway.gateway_id}
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
+                        {brokerGatewayDisplayName(gateway, locale)}
+                      </div>
+                      <span className="app-chip">
+                        {brokerGatewayStatusLabel(gateway.status, locale)}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'preview',
+                          gateway.can_preview_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'export',
+                          gateway.can_export_tickets,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'dry_run',
+                          gateway.can_dry_run_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'query_orders',
+                          gateway.can_query_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'query_fills',
+                          gateway.can_query_fills,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'read_positions',
+                          gateway.can_query_positions,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'read_cash',
+                          gateway.can_query_cash,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'submit',
+                          gateway.can_submit_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerGatewayCapabilityLabel(
+                          'cancel',
+                          gateway.can_cancel_orders,
+                          locale,
+                        )}
+                      </span>
+                    </div>
+                    {gateway.blocked_reason ? (
+                      <div className="app-muted mt-2 break-words text-xs leading-5">
+                        {gateway.blocked_reason}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {brokerGatewayStatus?.controlled_bridge_policy ? (
+              <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--app-text)]">
+                      {locale === 'zh'
+                        ? '受控桥接策略'
+                        : 'Controlled bridge policy'}
+                    </div>
+                    <div className="app-muted mt-1 break-words text-xs leading-5">
+                      {brokerGatewayStatus.controlled_bridge_policy.policy_id}
+                    </div>
+                  </div>
+                  <span className="app-chip">
+                    {controlledBridgePolicyStatusLabel(
+                      brokerGatewayStatus.controlled_bridge_policy.status,
+                      locale,
+                    )}
+                  </span>
+                </div>
+                <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                  <span>
+                    {controlledBridgeListSummary(
+                      'connector',
+                      brokerGatewayStatus.controlled_bridge_policy
+                        .allowed_connector_ids,
+                      locale,
+                    )}
+                  </span>
+                  <span>
+                    {controlledBridgeListSummary(
+                      'account',
+                      brokerGatewayStatus.controlled_bridge_policy
+                        .allowed_account_aliases,
+                      locale,
+                    )}
+                  </span>
+                  <span>
+                    {controlledBridgeListSummary(
+                      'strategy',
+                      brokerGatewayStatus.controlled_bridge_policy
+                        .allowed_strategy_ids,
+                      locale,
+                    )}
+                  </span>
+                  <span>
+                    {controlledBridgeListSummary(
+                      'symbol',
+                      brokerGatewayStatus.controlled_bridge_policy
+                        .allowed_symbols,
+                      locale,
+                    )}
+                  </span>
+                </div>
+                <div className="app-muted mt-2 break-words text-xs leading-5">
+                  {locale === 'zh' ? '必要门禁' : 'Required gates'}:{' '}
+                  {controlledBridgeTokenList(
+                    brokerGatewayStatus.controlled_bridge_policy.required_gates,
+                    locale,
+                  )}
+                </div>
+                {brokerGatewayStatus.controlled_bridge_policy.blockers
+                  ?.length ? (
+                  <div className="app-muted mt-1 break-words text-xs leading-5">
+                    {locale === 'zh' ? '阻断项' : 'Blockers'}:{' '}
+                    {controlledBridgeTokenList(
+                      brokerGatewayStatus.controlled_bridge_policy.blockers,
+                      locale,
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showConnectorHealth ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              {locale === 'zh'
+                ? '只读连接器健康'
+                : 'Read-only connector health'}
+            </div>
+            {brokerConnectorHealthLoading && !brokerConnectorHealth ? (
+              <div className="app-muted mt-2 text-sm">
+                {locale === 'zh'
+                  ? '连接器状态加载中'
+                  : 'Connector status loading'}
+              </div>
+            ) : brokerConnectorHealthError && !brokerConnectorHealth ? (
+              <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
+                {locale === 'zh'
+                  ? '连接器状态不可用'
+                  : 'Connector status unavailable'}
+              </div>
+            ) : brokerConnectorHealth?.connectors.length ? (
+              <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
+                {brokerConnectorHealth.connectors.map((connector) => (
+                  <div
+                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    key={connector.connector_id}
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--app-text)]">
+                          {connector.connector_id}
+                        </div>
+                        {connector.account_alias ? (
+                          <div className="app-muted mt-0.5 break-words text-xs">
+                            {connector.account_alias}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="app-chip">
+                        {brokerConnectorStatusLabel(connector.status, locale)}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'read_account',
+                          connector.capabilities?.can_read_account,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'read_cash',
+                          connector.capabilities?.can_read_cash,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'read_positions',
+                          connector.capabilities?.can_read_positions,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'read_orders',
+                          connector.capabilities?.can_read_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'read_fills',
+                          connector.capabilities?.can_read_fills,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'preview_orders',
+                          connector.capabilities?.can_preview_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'export_tickets',
+                          connector.capabilities?.can_export_tickets,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'dry_run_orders',
+                          connector.capabilities?.can_dry_run_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'submit',
+                          connector.capabilities?.can_submit_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'cancel',
+                          connector.capabilities?.can_cancel_orders,
+                          locale,
+                        )}
+                      </span>
+                    </div>
+                    {connector.message ? (
+                      <div className="app-muted mt-2 break-words text-xs leading-5">
+                        {connector.message}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showRuntimeConnectorSnapshots ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              {locale === 'zh'
+                ? '运行态连接器快照'
+                : 'Runtime connector snapshot'}
+            </div>
+            <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
+              {runtimeConnectorSnapshots.slice(0, 4).map((snapshot) => {
+                const cashBalance = snapshot.cash_balance;
+                const cashLabel =
+                  cashBalance?.currency || cashBalance?.balance != null
+                    ? `${locale === 'zh' ? '资金' : 'Cash'} ${
+                        cashBalance?.currency ?? ''
+                      } ${cashBalance?.balance ?? ''}`.trim()
+                    : locale === 'zh'
+                      ? '资金未返回'
+                      : 'Cash unavailable';
+                return (
+                  <div
+                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    key={snapshot.connector_id}
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="break-words text-sm font-semibold text-[var(--app-text)]">
+                          {snapshot.connector_id}
+                        </div>
+                        {snapshot.account_alias ? (
+                          <div className="app-muted mt-0.5 break-words text-xs">
+                            {snapshot.account_alias}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="app-chip">
+                        {runtimeConnectorSnapshotStatusLabel(
+                          snapshot.status,
+                          locale,
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                      <span>{cashLabel}</span>
+                      <span>
+                        {countLabel(
+                          snapshot.position_count ??
+                            snapshot.positions?.length ??
+                            0,
+                          locale === 'zh' ? '个持仓' : 'position',
+                          'positions',
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {countLabel(
+                          snapshot.order_count ?? snapshot.orders?.length ?? 0,
+                          locale === 'zh' ? '个订单' : 'order',
+                          'orders',
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {countLabel(
+                          snapshot.fill_count ?? snapshot.fills?.length ?? 0,
+                          locale === 'zh' ? '笔成交' : 'fill',
+                          'fills',
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'submit',
+                          snapshot.capabilities?.can_submit_orders,
+                          locale,
+                        )}
+                      </span>
+                      <span>
+                        {brokerConnectorCapabilityLabel(
+                          'cancel',
+                          snapshot.capabilities?.can_cancel_orders,
+                          locale,
+                        )}
+                      </span>
+                    </div>
+                    <div className="app-muted mt-2 break-words text-xs leading-5">
+                      {snapshot.submitted_to_broker
+                        ? locale === 'zh'
+                          ? '需要复核：快照声明已提交券商'
+                          : 'Review required: snapshot claims broker submission'
+                        : locale === 'zh'
+                          ? '不会提交券商订单'
+                          : 'No broker submission'}
+                      {' · '}
+                      {snapshot.does_not_mutate_production_ledger
+                        ? locale === 'zh'
+                          ? '不写生产账本'
+                          : 'No ledger mutation'
+                        : locale === 'zh'
+                          ? '需要账本变更复核'
+                          : 'Ledger mutation requires review'}
+                    </div>
+                    {snapshot.connector_health?.message ? (
+                      <div className="app-muted mt-1 break-words text-xs leading-5">
+                        {snapshot.connector_health.message}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {showAccountFacts ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                {locale === 'zh' ? '暂存账户事实' : 'Staged account facts'}
+              </div>
+              <span className="app-chip">
+                {brokerAccountFacts
+                  ? countLabel(
+                      brokerAccountFacts.broker_event_count,
+                      locale === 'zh'
+                        ? '条券商证据事件'
+                        : 'broker evidence event',
+                      'broker evidence events',
+                      locale,
+                    )
+                  : brokerAccountFactsLoading
+                    ? copy.states.loading
+                    : locale === 'zh'
+                      ? '不可用'
+                      : 'Unavailable'}
+              </span>
+            </div>
+            {brokerAccountFactsError && !brokerAccountFacts ? (
+              <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
+                {locale === 'zh'
+                  ? '暂存账户事实不可用'
+                  : 'Staged account facts unavailable'}
+              </div>
+            ) : brokerAccountFacts ? (
+              <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-3">
+                <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '资金' : 'Cash'}
+                  </div>
+                  <div className="mt-1 font-semibold text-[var(--app-text)]">
+                    {countLabel(
+                      brokerAccountFacts.cash_balances.length,
+                      locale === 'zh' ? '条资金' : 'cash',
+                      'cash',
+                      locale,
+                    )}
+                  </div>
+                </div>
+                <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '持仓' : 'Positions'}
+                  </div>
+                  <div className="mt-1 font-semibold text-[var(--app-text)]">
+                    {countLabel(
+                      brokerAccountFacts.positions.length,
+                      locale === 'zh' ? '条持仓' : 'position',
+                      'positions',
+                      locale,
+                    )}
+                  </div>
+                </div>
+                <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                  <div className="app-muted text-xs">
+                    {locale === 'zh' ? '成交' : 'Fills'}
+                  </div>
+                  <div className="mt-1 font-semibold text-[var(--app-text)]">
+                    {countLabel(
+                      brokerAccountFacts.fills.length,
+                      locale === 'zh' ? '条成交' : 'fill',
+                      'fills',
+                      locale,
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showBrokerFills ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                {locale === 'zh' ? '暂存成交轮询' : 'Staged fill polling'}
+              </div>
+              <span className="app-chip">
+                {brokerFills
+                  ? countLabel(
+                      brokerFills.fill_count,
+                      locale === 'zh' ? '条暂存成交' : 'staged fill',
+                      'staged fills',
+                      locale,
+                    )
+                  : brokerFillsLoading
+                    ? copy.states.loading
+                    : locale === 'zh'
+                      ? '不可用'
+                      : 'Unavailable'}
+              </span>
+            </div>
+            {brokerFillsError && !brokerFills ? (
+              <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
+                {locale === 'zh'
+                  ? '暂存成交查询不可用'
+                  : 'Staged fill query unavailable'}
+              </div>
+            ) : brokerFills ? (
+              <>
+                <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-3">
+                  <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                    <div className="app-muted text-xs">
+                      {locale === 'zh' ? '券商证据事件' : 'Broker evidence'}
+                    </div>
+                    <div className="mt-1 font-semibold text-[var(--app-text)]">
+                      {countLabel(
+                        brokerFills.broker_event_count,
+                        locale === 'zh'
+                          ? '条券商证据事件'
+                          : 'broker evidence event',
+                        'broker evidence events',
+                        locale,
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                    <div className="app-muted text-xs">
+                      {locale === 'zh' ? '样本标的' : 'Sample symbols'}
+                    </div>
+                    <div className="mt-1 break-words font-semibold text-[var(--app-text)]">
+                      {stagedFillSymbolSummary(brokerFills, locale)}
+                    </div>
+                  </div>
+                  <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                    <div className="app-muted text-xs">
+                      {locale === 'zh' ? '安全边界' : 'Safety boundary'}
+                    </div>
+                    <div className="mt-1 font-semibold text-[var(--app-text)]">
+                      {brokerFills.submitted_to_broker ||
+                      brokerFills.can_submit_orders
+                        ? locale === 'zh'
+                          ? '需要人工复核'
+                          : 'Needs review'
+                        : locale === 'zh'
+                          ? '不提交券商订单'
+                          : 'No broker submission'}
+                    </div>
+                  </div>
+                </div>
+                {stagedFillReviewHint ? (
+                  <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
+                    <div className="text-sm font-semibold text-[var(--app-text)]">
+                      {stagedFillReviewHint.title}
+                    </div>
+                    <div className="app-muted mt-1 break-words text-xs leading-5">
+                      {stagedFillReviewHint.detail}
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showExecutionReconciliation ? (
+          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                {locale === 'zh' ? '执行对账' : 'Execution reconciliation'}
+              </div>
+              <span className="app-chip">
+                {latestExecutionReconciliationRun
+                  ? executionReconciliationStatusLabel(
+                      latestExecutionReconciliationRun.status,
+                      locale,
+                    )
+                  : executionReconciliationLoading
+                    ? copy.states.loading
+                    : locale === 'zh'
+                      ? '不可用'
+                      : 'Unavailable'}
+              </span>
+            </div>
+            {executionReconciliationError &&
+            !latestExecutionReconciliationRun ? (
+              <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
+                {locale === 'zh'
+                  ? '执行对账不可用'
+                  : 'Execution reconciliation unavailable'}
+              </div>
+            ) : latestExecutionReconciliationRun ? (
+              <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--app-text)]">
+                      {latestExecutionReconciliationRun.run_id}
+                    </div>
+                    <div className="app-muted mt-1 text-xs">
+                      {locale === 'zh'
+                        ? `${latestExecutionReconciliationRun.open_item_count} 个未处理 / 共 ${latestExecutionReconciliationRun.item_count} 个`
+                        : `${latestExecutionReconciliationRun.open_item_count} open of ${latestExecutionReconciliationRun.item_count}`}
+                    </div>
+                  </div>
+                  {latestExecutionReconciliationRun.run_date ? (
+                    <span className="app-chip">
+                      {latestExecutionReconciliationRun.run_date}
+                    </span>
+                  ) : null}
+                </div>
+                {primaryExecutionReconciliationItem ? (
+                  <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--app-text)]">
+                          {primaryExecutionReconciliationItem.order_id ?? '--'}
+                        </div>
+                        <div className="app-muted mt-1 text-xs">
+                          {executionReconciliationItemStatusLabel(
+                            primaryExecutionReconciliationItem.item_status ??
+                              primaryExecutionReconciliationItem.status ??
+                              'unknown',
+                            locale,
+                          )}
+                        </div>
+                      </div>
+                      <span className="app-chip">
+                        {executionReconciliationActionLabel(
+                          primaryExecutionReconciliationItem.suggested_action ??
+                            primaryExecutionReconciliationItem.recommended_action ??
+                            'review_order_state',
+                          locale,
+                        )}
+                      </span>
+                    </div>
+                    {primaryExecutionReconciliationItem.detail ? (
+                      <div className="app-muted mt-2 break-words text-sm leading-6">
+                        {primaryExecutionReconciliationItem.detail}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {brokerTradeCostEvidence ? (
+                  <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                        {locale === 'zh'
+                          ? '券商成本证据'
+                          : 'Broker cost evidence'}
+                      </div>
+                      <span className="app-chip">
+                        {brokerTradeCostEvidence.eventCountLabel}
+                      </span>
+                    </div>
+                    {brokerTradeCostEvidence.items.length ? (
+                      <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
+                        {brokerTradeCostEvidence.items.map((entry) => (
+                          <div
+                            className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                            key={entry.label}
+                          >
+                            <div className="app-muted text-xs">
+                              {entry.label}
+                            </div>
+                            <div className="mt-1 break-words font-semibold text-[var(--app-text)]">
+                              {entry.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {brokerTradeCostEvidence.safetyLabels.length ? (
+                      <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                        {brokerTradeCostEvidence.safetyLabels.map((label) => (
+                          <span className="app-chip" key={label}>
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {manualExecutionEvidence ? (
+                  <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                        {locale === 'zh'
+                          ? '手工成交证据'
+                          : 'Manual execution evidence'}
+                      </div>
+                      <span className="app-chip">
+                        {manualExecutionEvidence.eventCountLabel}
+                      </span>
+                    </div>
+                    {manualExecutionEvidence.items.length ? (
+                      <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
+                        {manualExecutionEvidence.items.map((entry) => (
+                          <div
+                            className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                            key={entry.label}
+                          >
+                            <div className="app-muted text-xs">
+                              {entry.label}
+                            </div>
+                            <div className="mt-1 break-words font-semibold text-[var(--app-text)]">
+                              {entry.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {manualExecutionEvidence.safetyLabels.length ? (
+                      <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                        {manualExecutionEvidence.safetyLabels.map((label) => (
+                          <span className="app-chip" key={label}>
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {showBrokerOrderQuery ? (
+                  <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                        {locale === 'zh'
+                          ? '只读订单查询'
+                          : 'Read-only order query'}
+                      </div>
+                      <span className="app-chip">
+                        {brokerOrderQuery
+                          ? brokerOrderQuery.status === 'query_ready'
+                            ? locale === 'zh'
+                              ? '查询就绪'
+                              : 'Query ready'
+                            : formatPublicStatus(
+                                brokerOrderQuery.status,
+                                locale,
+                              )
+                          : brokerOrderQueryLoading
+                            ? copy.states.loading
+                            : locale === 'zh'
+                              ? '不可用'
+                              : 'Unavailable'}
+                      </span>
+                    </div>
+                    {brokerOrderQueryError && !brokerOrderQuery ? (
+                      <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
+                        {locale === 'zh'
+                          ? '只读订单查询不可用'
+                          : 'Read-only order query unavailable'}
+                      </div>
+                    ) : brokerOrderQuery ? (
+                      <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
+                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                          <div className="app-muted text-xs">
+                            {locale === 'zh' ? 'OMS 订单' : 'OMS order'}
+                          </div>
+                          <div className="mt-1 break-words font-semibold text-[var(--app-text)]">
+                            {String(
+                              brokerOrderQuery.oms_order?.order_id ??
+                                primaryExecutionReconciliationItem?.order_id ??
+                                '--',
+                            )}
+                          </div>
+                          <div className="app-muted mt-1 break-words text-xs leading-5">
+                            {omsOrderStatusLabel(
+                              String(
+                                brokerOrderQuery.oms_order?.status ?? 'unknown',
+                              ),
+                              locale,
+                            )}
+                          </div>
+                        </div>
+                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                          <div className="app-muted text-xs">
+                            {locale === 'zh' ? '网关审计' : 'Gateway audit'}
+                          </div>
+                          <div className="mt-1 font-semibold text-[var(--app-text)]">
+                            {countLabel(
+                              brokerOrderQuery.gateway_event_count,
+                              locale === 'zh' ? '条网关事件' : 'gateway event',
+                              'gateway events',
+                              locale,
+                            )}
+                          </div>
+                        </div>
+                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                          <div className="app-muted text-xs">
+                            {locale === 'zh'
+                              ? '暂存成交'
+                              : 'Staged broker fills'}
+                          </div>
+                          <div className="mt-1 font-semibold text-[var(--app-text)]">
+                            {countLabel(
+                              brokerOrderQuery.staged_broker_fill_count,
+                              locale === 'zh'
+                                ? '条暂存成交'
+                                : 'staged broker fill',
+                              'staged broker fills',
+                              locale,
+                            )}
+                          </div>
+                        </div>
+                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                          <div className="app-muted text-xs">
+                            {locale === 'zh' ? '安全边界' : 'Safety boundary'}
+                          </div>
+                          <div className="mt-1 font-semibold text-[var(--app-text)]">
+                            {brokerOrderQuery.submitted_to_broker ||
+                            brokerOrderQuery.can_submit_orders
+                              ? locale === 'zh'
+                                ? '需要人工复核'
+                                : 'Needs review'
+                              : locale === 'zh'
+                                ? '不提交券商订单'
+                                : 'No broker submission'}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
 function DailyTradingPlanPanel({
@@ -664,11 +3308,17 @@ function DailyTradingPlanPanel({
   operationsToday,
   loading,
   error,
+  onRunPaperShadow,
+  paperShadowRunPending,
+  paperShadowRunError,
 }: {
   plan: DailyTradingPlanResponse | undefined;
   operationsToday: OperationsTodayResponse | undefined;
   loading: boolean;
   error: boolean;
+  onRunPaperShadow: () => void;
+  paperShadowRunPending: boolean;
+  paperShadowRunError: boolean;
 }) {
   const copy = useCopy();
   const labels = copy.decision;
@@ -677,6 +3327,30 @@ function DailyTradingPlanPanel({
   const constraintChecks = firstIntent?.constraint_checks ?? [];
   const fallbackShadowStatus =
     (plan?.order_intent_count ?? 0) > 0 ? 'not_run' : 'not_required';
+  const currentShadowStatus =
+    operationsToday?.paper_shadow.effective_status ??
+    operationsToday?.paper_shadow.status ??
+    fallbackShadowStatus;
+  const canRunPaperShadow = (plan?.order_intent_count ?? 0) > 0;
+  const runPaperShadowLabel =
+    currentShadowStatus === 'within_expectations' ||
+    currentShadowStatus === 'accepted_for_manual_confirmation'
+      ? locale === 'zh'
+        ? '重新运行模拟复核'
+        : 'Rerun paper/shadow simulation'
+      : locale === 'zh'
+        ? '运行模拟复核'
+        : 'Run paper/shadow simulation';
+  const paperShadowCostItems = paperShadowCostSummaryItems(
+    operationsToday?.paper_shadow.divergence_summary?.cost_summary,
+    locale,
+  );
+  const paperShadowDivergenceBlocks = paperShadowDivergenceEvidenceBlocks(
+    operationsToday?.paper_shadow.divergence_summary,
+    locale,
+  );
+  const paperShadowReviewQueue =
+    operationsToday?.paper_shadow.review_queue ?? [];
 
   return (
     <section
@@ -821,13 +3495,23 @@ function DailyTradingPlanPanel({
                     ? 'Paper/shadow 模拟复核'
                     : 'Paper/shadow simulation review'}
                 </div>
-                <span className="app-chip">
-                  {paperShadowStatusLabel(
-                    operationsToday?.paper_shadow.status ??
-                      fallbackShadowStatus,
-                    locale,
-                  )}
-                </span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="app-chip">
+                    {paperShadowStatusLabel(currentShadowStatus, locale)}
+                  </span>
+                  <button
+                    type="button"
+                    className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-3 py-1.5 text-center text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canRunPaperShadow || paperShadowRunPending}
+                    onClick={onRunPaperShadow}
+                  >
+                    {paperShadowRunPending
+                      ? locale === 'zh'
+                        ? '运行中'
+                        : 'Running'
+                      : runPaperShadowLabel}
+                  </button>
+                </div>
               </div>
               <div className="app-muted mt-2 text-sm">
                 {paperShadowNextStepLabel(
@@ -836,6 +3520,13 @@ function DailyTradingPlanPanel({
                   locale,
                 )}
               </div>
+              {paperShadowRunError ? (
+                <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
+                  {locale === 'zh'
+                    ? '模拟复核运行失败，请查看后端日志。'
+                    : 'Simulation run failed; check backend logs.'}
+                </div>
+              ) : null}
               <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
                 <div>
                   <div className="app-muted text-xs">
@@ -872,6 +3563,91 @@ function DailyTradingPlanPanel({
                   </div>
                 </div>
               </div>
+              {paperShadowReviewQueue.length > 0 ? (
+                <div className="mt-3 min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2 text-sm">
+                  <div className="text-xs font-semibold uppercase text-[var(--app-muted)]">
+                    {locale === 'zh' ? '复核队列' : 'Review queue'}
+                  </div>
+                  <div className="mt-2 grid min-w-0 gap-2">
+                    {paperShadowReviewQueue.slice(0, 3).map((item) => {
+                      const safetyText = paperShadowReviewQueueSafetyText(
+                        item,
+                        locale,
+                      );
+                      const detailItems = paperShadowReviewQueueDetailItems(
+                        item,
+                        locale,
+                      );
+                      return (
+                        <div
+                          className="min-w-0"
+                          key={item.review_id || item.order_id || item.symbol}
+                        >
+                          <div className="min-w-0 break-words font-semibold text-[var(--app-text)]">
+                            {paperShadowReviewQueueItemTitle(item, locale)}
+                          </div>
+                          {safetyText ? (
+                            <div className="app-muted mt-1 min-w-0 break-words text-xs">
+                              {safetyText}
+                            </div>
+                          ) : null}
+                          {detailItems.length > 0 ? (
+                            <div className="mt-1 grid min-w-0 gap-1 text-xs text-[var(--app-text)]">
+                              {detailItems.map((detail) => (
+                                <div
+                                  className="min-w-0 break-words"
+                                  key={detail}
+                                >
+                                  {detail}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              {paperShadowCostItems.length > 0 ? (
+                <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                  {paperShadowCostItems.map((item) => (
+                    <div
+                      className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2"
+                      key={item.label}
+                    >
+                      <div className="app-muted text-xs">{item.label}</div>
+                      <div className="min-w-0 break-words font-mono tabular-nums text-[var(--app-text)]">
+                        {item.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {paperShadowDivergenceBlocks.length > 0 ? (
+                <div className="mt-3 grid min-w-0 gap-2 text-sm lg:grid-cols-2">
+                  {paperShadowDivergenceBlocks.map((block) => (
+                    <div
+                      className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2"
+                      key={block.title}
+                    >
+                      <div className="text-xs font-semibold uppercase text-[var(--app-muted)]">
+                        {block.title}
+                      </div>
+                      <div className="mt-2 grid min-w-0 gap-1">
+                        {block.items.map((item) => (
+                          <div
+                            className="min-w-0 break-words text-[var(--app-text)]"
+                            key={item}
+                          >
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         )}
@@ -888,6 +3664,27 @@ export function DecisionCockpitPage() {
   const intraday = useIntradayDecisionQuery();
   const tradingPlan = useDailyTradingPlanQuery();
   const operationsToday = useOperationsTodayQuery();
+  const automationCockpit = useAutomationCockpitQuery();
+  const brokerGatewayStatus = useBrokerGatewayStatusQuery();
+  const brokerConnectorHealth = useBrokerConnectorHealthQuery();
+  const brokerAccountFacts = useBrokerGatewayAccountFactsQuery();
+  const brokerFills = useBrokerGatewayFillsQuery();
+  const executionReconciliationRuns = useExecutionReconciliationRunsQuery();
+  const latestExecutionReconciliationRunId =
+    executionReconciliationRuns.data?.[0]?.run_id;
+  const executionReconciliationRunDetail =
+    useExecutionReconciliationRunDetailQuery(
+      latestExecutionReconciliationRunId,
+    );
+  const latestExecutionReconciliationRun =
+    executionReconciliationRunDetail.data ??
+    executionReconciliationRuns.data?.[0];
+  const primaryExecutionReconciliationItem =
+    primaryExecutionReconciliationItemForRun(latestExecutionReconciliationRun);
+  const brokerOrderQuery = useBrokerGatewayOrderQuery(
+    primaryExecutionReconciliationItem?.order_id,
+  );
+  const runPaperShadow = useRunPaperShadowMutation();
   const signalActions = useSignalActionsQuery();
   const signalJournal = useSignalJournalQuery();
   const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -1047,6 +3844,37 @@ export function DecisionCockpitPage() {
         operationsToday={operationsToday.data}
         loading={tradingPlan.isLoading}
         error={tradingPlan.isError}
+        onRunPaperShadow={() => runPaperShadow.mutate()}
+        paperShadowRunPending={runPaperShadow.isPending}
+        paperShadowRunError={runPaperShadow.isError}
+      />
+
+      <AutomationCockpitPanel
+        cockpit={automationCockpit.data}
+        brokerGatewayStatus={brokerGatewayStatus.data}
+        brokerConnectorHealth={brokerConnectorHealth.data}
+        brokerConnectorHealthLoading={brokerConnectorHealth.isLoading}
+        brokerConnectorHealthError={brokerConnectorHealth.isError}
+        brokerAccountFacts={brokerAccountFacts.data}
+        brokerAccountFactsLoading={brokerAccountFacts.isLoading}
+        brokerAccountFactsError={brokerAccountFacts.isError}
+        brokerFills={brokerFills.data}
+        brokerFillsLoading={brokerFills.isLoading}
+        brokerFillsError={brokerFills.isError}
+        brokerOrderQuery={brokerOrderQuery.data}
+        brokerOrderQueryLoading={brokerOrderQuery.isLoading}
+        brokerOrderQueryError={brokerOrderQuery.isError}
+        executionReconciliationRuns={executionReconciliationRuns.data}
+        executionReconciliationRunDetail={executionReconciliationRunDetail.data}
+        executionReconciliationLoading={executionReconciliationRuns.isLoading}
+        executionReconciliationError={
+          executionReconciliationRuns.isError ||
+          executionReconciliationRunDetail.isError
+        }
+        brokerGatewayLoading={brokerGatewayStatus.isLoading}
+        brokerGatewayError={brokerGatewayStatus.isError}
+        loading={automationCockpit.isLoading}
+        error={automationCockpit.isError}
       />
 
       <DecisionWorkflowPanel lanes={lanes} />

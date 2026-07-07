@@ -302,7 +302,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.backtest import create_router as backtest_router
     from server.routes.account_strategy import create_router as account_strategy_router
     from server.routes.account_truth import create_router as account_truth_router
+    from server.routes.automation import create_router as automation_router
+    from server.routes.broker_gateway import create_router as broker_gateway_router
     from server.routes.decision import create_router as decision_router
+    from server.routes.execution_reconciliation import (
+        create_router as execution_reconciliation_router,
+    )
     from server.routes.ledger import create_router as ledger_router
     from server.routes.market import create_router as market_router
     from server.routes.operations import create_router as operations_router
@@ -310,17 +315,24 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.settings import create_router as settings_router
     from server.routes.signals import create_router as signals_router
     from server.routes.trading import create_router as trading_router
+    from server.routes.strategy_promotion import (
+        create_router as strategy_promotion_router,
+    )
     from server.ws.handlers import router as ws_router
 
     app.include_router(market_router())
     app.include_router(acceptance_audit_router())
     app.include_router(account_strategy_router())
     app.include_router(account_truth_router())
+    app.include_router(automation_router())
+    app.include_router(broker_gateway_router())
+    app.include_router(execution_reconciliation_router())
     app.include_router(ledger_router())
     app.include_router(operations_router())
     app.include_router(portfolio_router())
     app.include_router(signals_router())
     app.include_router(decision_router())
+    app.include_router(strategy_promotion_router())
     app.include_router(backtest_router())
     app.include_router(settings_router())
     app.include_router(trading_router())

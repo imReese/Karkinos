@@ -21,6 +21,7 @@ from server.config import (
     BacktestConfig,
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
+    ControlledBridgePolicyConfig,
     ServerConfig,
 )
 
@@ -274,6 +275,76 @@ def test_server_config_rejects_non_boolean_broker_connector_enabled(tmp_path):
         ServerConfig.from_json(config_path)
 
 
+def test_server_config_loads_controlled_bridge_policy_whitelist(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "controlled_bridge_policy": {
+                    "policy_id": "local-controlled-bridge-review",
+                    "enabled": True,
+                    "allowed_connector_ids": ["local-qmt-readonly"],
+                    "allowed_account_aliases": ["local-review"],
+                    "allowed_strategy_ids": ["dual_ma"],
+                    "allowed_symbols": ["600519"],
+                    "per_order_confirmation_required": True,
+                    "automation_allowed": False,
+                }
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.controlled_bridge_policy == ControlledBridgePolicyConfig(
+        policy_id="local-controlled-bridge-review",
+        enabled=True,
+        allowed_connector_ids=("local-qmt-readonly",),
+        allowed_account_aliases=("local-review",),
+        allowed_strategy_ids=("dual_ma",),
+        allowed_symbols=("600519",),
+        per_order_confirmation_required=True,
+        automation_allowed=False,
+    )
+
+
+def test_server_config_rejects_controlled_bridge_policy_automation_enabled(
+    tmp_path,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "controlled_bridge_policy": {
+                    "enabled": True,
+                    "automation_allowed": True,
+                }
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="controlled bridge policy"):
+        ServerConfig.from_json(config_path)
+
+
+def test_server_config_rejects_controlled_bridge_policy_secret_fields(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "controlled_bridge_policy": {
+                    "enabled": True,
+                    "allowed_connector_ids": ["local-qmt-readonly"],
+                    "broker_token": "do-not-store",
+                }
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="controlled bridge policy"):
+        ServerConfig.from_json(config_path)
+
+
 def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(
@@ -521,9 +592,27 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
             "enabled": False,
             "client_path": "",
             "account_alias": "",
-        }
+        },
+        {
+            "connector_id": "local-export-readonly",
+            "connector_type": "local_export_readonly",
+            "enabled": False,
+            "client_path": "data/private/broker-snapshot.example.json",
+            "account_alias": "local-review",
+        },
     ]
+    assert example["controlled_bridge_policy"] == {
+        "policy_id": "default-controlled-bridge-disabled",
+        "enabled": False,
+        "allowed_connector_ids": [],
+        "allowed_account_aliases": [],
+        "allowed_strategy_ids": [],
+        "allowed_symbols": [],
+        "per_order_confirmation_required": True,
+        "automation_allowed": False,
+    }
     assert not _contains_sensitive_key(example["broker_connectors"])
+    assert not _contains_sensitive_key(example["controlled_bridge_policy"])
     assert not _contains_sensitive_key(example["broker_fee_schedule"])
 
 

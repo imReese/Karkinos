@@ -23,6 +23,8 @@ def build_operations_today_summary(
     daily_operations: DailyOperationsSummary,
     order_facts: Iterable[dict[str, Any]],
     fill_facts: Iterable[dict[str, Any]],
+    paper_shadow_run: dict[str, Any] | None = None,
+    automation_runs: Iterable[dict[str, Any]] | None = None,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a UI-facing operations summary without mutating trading state."""
@@ -33,11 +35,23 @@ def build_operations_today_summary(
         or decision_payload.get("decision_date")
         or datetime.now().date().isoformat()
     )
-    shadow = _paper_shadow_summary(
+    shadow = (
+        _paper_shadow_run_summary(
+            paper_shadow_run,
+            fallback_order_intent_count=_int(trading_plan.get("order_intent_count")),
+        )
+        if paper_shadow_run is not None
+        else _paper_shadow_summary(
+            plan_date=plan_date,
+            trading_plan=trading_plan,
+            order_facts=orders,
+            fill_facts=fills,
+        )
+    )
+    scheduler = _scheduler_summary(
+        automation_runs=automation_runs,
         plan_date=plan_date,
-        trading_plan=trading_plan,
-        order_facts=orders,
-        fill_facts=fills,
+        fallback_detail_status=daily_operations.conclusion_status,
     )
     subsystems = [
         _market_subsystem(decision_payload),
@@ -46,7 +60,7 @@ def build_operations_today_summary(
         _risk_subsystem(trading_plan, daily_operations),
         _daily_plan_subsystem(trading_plan),
         _paper_shadow_subsystem(shadow),
-        _scheduler_subsystem(daily_operations, plan_date),
+        _scheduler_subsystem(scheduler),
         _acceptance_audit_subsystem(daily_operations),
     ]
     health = _health_summary(subsystems)
@@ -71,6 +85,7 @@ def build_operations_today_summary(
             ),
         },
         "paper_shadow": shadow,
+        "scheduler": scheduler,
         "limitations": [
             "Operations summary is read-only and does not submit broker orders.",
             "Broker integration remains disabled; live-like workflows require manual confirmation.",
@@ -201,13 +216,17 @@ def _daily_plan_subsystem(trading_plan: dict[str, Any]) -> dict[str, Any]:
 
 def _paper_shadow_subsystem(shadow: dict[str, Any]) -> dict[str, Any]:
     shadow_status = str(shadow.get("status") or "not_run")
-    if shadow_status == "not_required":
+    effective_status = str(shadow.get("effective_status") or shadow_status)
+    review_status = str(shadow.get("review_status") or "")
+    if review_status == "accepted_for_manual_confirmation":
+        status = "pass"
+    elif shadow_status == "not_required":
         status = "skipped"
     elif shadow_status == "within_expectations":
         status = "pass"
     elif shadow_status in {"not_run", "review_required"}:
         status = "manual_action_required"
-    elif shadow_status == "diverged":
+    elif shadow_status in {"diverged", "failed"}:
         status = "blocked"
     else:
         status = "degraded"
@@ -217,26 +236,43 @@ def _paper_shadow_subsystem(shadow: dict[str, Any]) -> dict[str, Any]:
         target="paper-shadow",
         last_run_at=shadow.get("last_run_at"),
         next_action=shadow.get("next_manual_review_step") or "none",
-        limitations=[
-            "Paper/shadow results are simulated review evidence, not broker execution."
-        ],
-        detail_status=shadow_status,
+        limitations=_dedupe(
+            [
+                "Paper/shadow results are simulated review evidence, not broker execution."
+            ]
+            + _list(shadow.get("limitations"))
+        ),
+        detail_status=effective_status,
     )
 
 
-def _scheduler_subsystem(
-    daily_operations: DailyOperationsSummary,
-    plan_date: str,
-) -> dict[str, Any]:
+def _scheduler_subsystem(summary: dict[str, Any]) -> dict[str, Any]:
+    status, next_action = _scheduler_operation_state(str(summary.get("status") or ""))
     return _subsystem(
         "scheduler",
-        "pass",
+        status,
         target="scheduler",
-        last_run_at=plan_date,
-        next_action="none",
-        limitations=["Daily scheduler state is summarized from current local records."],
-        detail_status=daily_operations.conclusion_status,
+        last_run_at=summary.get("last_run_at"),
+        next_action=next_action,
+        limitations=_dedupe(
+            _list(summary.get("limitations"))
+            + _scheduler_retry_limitations(summary.get("retry_state"))
+        ),
+        detail_status=str(summary.get("status") or "not_recorded"),
     )
+
+
+def _scheduler_retry_limitations(retry_state: Any) -> list[str]:
+    retry = _dict(retry_state)
+    if not retry or not bool(retry.get("retryable")):
+        return []
+    attempt = _int(retry.get("attempt"))
+    if attempt <= 1:
+        return []
+    max_attempts = max(_int(retry.get("max_attempts")), attempt)
+    previous_attempts = _int(retry.get("previous_attempts"))
+    suffix = f"; previous attempts: {previous_attempts}." if previous_attempts else "."
+    return [f"Scheduler retry attempt {attempt} of {max_attempts}{suffix}"]
 
 
 def _acceptance_audit_subsystem(
@@ -306,6 +342,7 @@ def _paper_shadow_summary(
         next_step = "resolve_shadow_divergence"
     return {
         "status": status,
+        "effective_status": status,
         "run_id": run_id if orders or order_intent_count > 0 else None,
         "order_intent_count": order_intent_count,
         "simulated_order_count": len(orders),
@@ -323,7 +360,168 @@ def _paper_shadow_summary(
             }
             for order in orders[:5]
         ],
+        "review_queue": [],
     }
+
+
+def _paper_shadow_run_summary(
+    run: dict[str, Any],
+    *,
+    fallback_order_intent_count: int,
+) -> dict[str, Any]:
+    payload = _payload(run)
+    review = _dict(payload.get("review"))
+    orders = _list_of_dicts(payload.get("orders"))
+    fills = _list_of_dicts(payload.get("fills"))
+    status = str(run.get("status") or "not_run")
+    divergence_status = str(run.get("divergence_status") or status)
+    review_status = str(
+        run.get("review_status") or review.get("review_status") or ""
+    ).strip()
+    effective_status = _paper_shadow_effective_status(
+        status=status,
+        review_status=review_status,
+    )
+    reviewed_count = len(
+        [order for order in orders if str(order.get("divergence_status") or "").strip()]
+    )
+    return {
+        "status": status,
+        "effective_status": effective_status,
+        "run_id": run.get("run_id"),
+        "input_fingerprint": run.get("input_fingerprint"),
+        "evidence_refs": _list(payload.get("evidence_refs")),
+        "order_intent_count": _int(
+            run.get("order_intent_count"),
+            fallback_order_intent_count,
+        ),
+        "simulated_order_count": _int(
+            run.get("simulated_order_count"),
+            len(orders),
+        ),
+        "simulated_fill_count": _int(run.get("simulated_fill_count"), len(fills)),
+        "divergence_reviewed_count": reviewed_count,
+        "divergence_status": divergence_status,
+        "review_status": review_status,
+        "reviewed_at": run.get("reviewed_at") or review.get("reviewed_at"),
+        "reviewer": run.get("reviewer") or review.get("reviewer"),
+        "next_manual_review_step": _paper_shadow_default_next_step(
+            status=status,
+            value=run.get("next_manual_review_step"),
+            review_status=review_status,
+        ),
+        "last_run_at": run.get("updated_at") or run.get("created_at"),
+        "limitations": _json_list(run.get("limitations_json")),
+        "orders": orders[:5],
+        "review_queue": _list_of_dicts(payload.get("review_queue")),
+        "divergence_summary": _dict(payload.get("divergence_summary")),
+    }
+
+
+def _paper_shadow_effective_status(
+    *,
+    status: str,
+    review_status: str,
+) -> str:
+    if review_status == "accepted_for_manual_confirmation":
+        return "accepted_for_manual_confirmation"
+    return status
+
+
+def _scheduler_summary(
+    *,
+    automation_runs: Iterable[dict[str, Any]] | None,
+    plan_date: str,
+    fallback_detail_status: str,
+) -> dict[str, Any]:
+    latest_run = _latest_automation_run(
+        automation_runs=automation_runs,
+        plan_date=plan_date,
+    )
+    if latest_run is None:
+        return {
+            "status": str(fallback_detail_status or "not_recorded"),
+            "run_id": None,
+            "run_type": "scheduler",
+            "run_date": plan_date,
+            "execution_mode": "paper_shadow",
+            "last_run_at": plan_date,
+            "input_fingerprint": None,
+            "idempotency_key": None,
+            "input_snapshot": {},
+            "retry_state": {},
+            "error": {},
+            "broker_submission_enabled": False,
+            "does_not_submit_broker_order": True,
+            "limitations": [
+                "Daily scheduler state is summarized from current local records."
+            ],
+        }
+
+    payload = _payload(latest_run)
+    return {
+        "status": str(latest_run.get("status") or "unknown"),
+        "run_id": latest_run.get("run_id"),
+        "run_type": latest_run.get("run_type"),
+        "run_date": latest_run.get("run_date") or plan_date,
+        "execution_mode": latest_run.get("execution_mode") or "paper_shadow",
+        "last_run_at": latest_run.get("finished_at")
+        or latest_run.get("updated_at")
+        or latest_run.get("started_at")
+        or latest_run.get("created_at"),
+        "input_fingerprint": payload.get("input_fingerprint"),
+        "idempotency_key": payload.get("idempotency_key"),
+        "input_snapshot": _dict(payload.get("input_snapshot")),
+        "retry_state": _dict(payload.get("retry_state")),
+        "error": _dict(payload.get("error")),
+        "broker_submission_enabled": bool(payload.get("broker_submission_enabled")),
+        "does_not_submit_broker_order": payload.get("does_not_submit_broker_order")
+        is not False,
+        "limitations": _list(payload.get("limitations")),
+    }
+
+
+def _latest_automation_run(
+    *,
+    automation_runs: Iterable[dict[str, Any]] | None,
+    plan_date: str,
+) -> dict[str, Any] | None:
+    if automation_runs is None:
+        return None
+    rows = [
+        row
+        for row in automation_runs
+        if isinstance(row, dict)
+        and str(row.get("run_type") or "") == "market_session"
+        and (not plan_date or str(row.get("run_date") or "") == plan_date)
+    ]
+    if not rows:
+        return None
+    return max(
+        rows,
+        key=lambda row: str(
+            row.get("finished_at")
+            or row.get("updated_at")
+            or row.get("started_at")
+            or row.get("created_at")
+            or ""
+        ),
+    )
+
+
+def _scheduler_operation_state(run_status: str) -> tuple[str, str]:
+    status = run_status.strip().lower()
+    if status.endswith("_failed") or status in {"failed", "error"}:
+        return "blocked", "inspect_scheduler_failure"
+    if status == "blocked_by_kill_switch":
+        return "blocked", "resolve_kill_switch"
+    if status in {"skipped_non_trading_session", "skipped"}:
+        return "skipped", "none"
+    if status in {"paper_shadow_completed", "completed", "success", "pass"}:
+        return "pass", "none"
+    if status in {"pending_manual_confirmation", "not_recorded", ""}:
+        return "pass", "none"
+    return "degraded", "review_scheduler_run"
 
 
 def _is_daily_shadow_order(
@@ -340,6 +538,33 @@ def _is_daily_shadow_order(
     if payload.get("run_id") == run_id:
         return True
     return str(order.get("order_id") or "").startswith(f"SHADOW-{plan_date}-")
+
+
+def _paper_shadow_default_next_step(
+    *,
+    status: str,
+    value: Any,
+    review_status: Any = None,
+) -> str:
+    review = str(review_status or "").strip().lower()
+    if review == "accepted_for_manual_confirmation":
+        return "review_manual_confirmation"
+    if review == "needs_rerun":
+        return "run_paper_shadow_daily"
+    text = str(value or "").strip()
+    if text:
+        return text
+    if status == "running":
+        return "wait_for_paper_shadow_run"
+    if status == "within_expectations":
+        return "review_manual_confirmation"
+    if status == "failed":
+        return "inspect_failed_run"
+    if status == "diverged":
+        return "resolve_shadow_divergence"
+    if status in {"not_required", "not_run"}:
+        return "none" if status == "not_required" else "run_paper_shadow_daily"
+    return "review_shadow_divergence"
 
 
 def _payload_status(order: dict[str, Any], key: str) -> str | None:
@@ -398,7 +623,29 @@ def _health_summary(subsystems: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _conclusion(subsystems: list[dict[str, Any]]) -> tuple[str, str]:
-    for status in ("blocked", "manual_action_required", "degraded"):
+    blocked = next(
+        (item for item in subsystems if item.get("status") == "blocked"),
+        None,
+    )
+    if blocked is not None:
+        return "blocked", str(blocked.get("target") or blocked.get("id") or "decision")
+
+    waiting_shadow = next(
+        (
+            item
+            for item in subsystems
+            if item.get("id") == "paper_shadow"
+            and item.get("status") == "degraded"
+            and item.get("next_action") == "wait_for_paper_shadow_run"
+        ),
+        None,
+    )
+    if waiting_shadow is not None:
+        return "degraded", str(
+            waiting_shadow.get("target") or waiting_shadow.get("id") or "decision"
+        )
+
+    for status in ("manual_action_required", "degraded"):
         match = None
         if status == "manual_action_required":
             match = next(
@@ -467,7 +714,33 @@ def _list(value: Any) -> list[str]:
     return []
 
 
+def _dedupe(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _json_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return _list(value)
+        return _list(parsed)
+    return _list(value)
+
+
 def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}

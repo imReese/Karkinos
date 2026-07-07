@@ -319,6 +319,55 @@ function installDecisionFetchMock({
       divergence_status: 'review_required',
       next_manual_review_step: 'review_shadow_divergence',
       last_run_at: '2026-06-12T09:32:00+08:00',
+      divergence_summary: {
+        expected_strategy_behavior: {
+          source_decision: 'buy',
+          expected_order_count: 1,
+          symbols: ['600519'],
+          side_counts: { buy: 1 },
+          strategy_refs: ['strategy_signal:dual_ma'],
+          risk_refs: ['risk_decision:risk-001'],
+          signal_refs: ['signal:signal-001'],
+          risk_gate_status_counts: { passed: 1 },
+          manual_confirmation_status_counts: {
+            ready_for_manual_confirmation: 1,
+          },
+          submission_status_counts: { manual_pending: 1 },
+        },
+        execution_comparison: {
+          matched_order_count: 1,
+          missing_order_intent_refs: [],
+          diverged_order_refs: ['paper_shadow_order:SHADOW-2026-06-12-9'],
+          failed_order_refs: [],
+          simulated_status_counts: { partially_filled: 1 },
+          fill_count_by_order: { 'SHADOW-2026-06-12-9': 1 },
+          filled_quantity_by_order: { 'SHADOW-2026-06-12-9': '40' },
+          remaining_quantity_by_order: { 'SHADOW-2026-06-12-9': '60' },
+        },
+        realized_market_context: {
+          symbol_count: 1,
+          price_basis_counts: { latest_quote: 1 },
+          symbols: [
+            {
+              symbol: '600519',
+              expected_price: '10.00',
+              price_basis: 'latest_quote',
+              simulated_fill_prices: ['10.05'],
+              simulated_slippage_cost: '2.00',
+            },
+          ],
+        },
+        cost_summary: {
+          estimated_total_fee: '12.3',
+          simulated_fee_tax_cost: '12.35',
+          simulated_slippage_cost: '4.50',
+          simulated_total_execution_cost: '16.85',
+          fee_rule_ids: ['stock_a_commission_v1'],
+          fill_count_with_cost_evidence: 1,
+        },
+        does_not_submit_broker_order: true,
+        does_not_mutate_production_ledger: true,
+      },
       orders: [
         {
           order_id: 'SHADOW-2026-06-12-9',
@@ -330,6 +379,185 @@ function installDecisionFetchMock({
     },
     limitations: [],
   },
+  automationCockpitResponse = {
+    schema_version: 'karkinos.automation_cockpit.v1',
+    broker_submission_enabled: false,
+    automation_status: {
+      schema_version: 'karkinos.automation_status.v1',
+      default_execution_mode: 'paper_shadow',
+      broker_submission_enabled: false,
+      manual_confirmation_required: true,
+      kill_switch_enabled: false,
+      policies: {
+        default: {
+          policy_id: 'default',
+          mode: 'paper_shadow',
+          broker_submission_enabled: false,
+          manual_confirmation_required: true,
+          max_single_order_amount: 50000,
+          max_daily_traded_amount: 100000,
+          deny_buy_symbols: [],
+          deny_sell_symbols: [],
+        },
+      },
+      latest_runs: [],
+      limitations: ['Live broker submission is disabled by default.'],
+    },
+    gateways: [
+      {
+        gateway_id: 'manual_ticket',
+        status: 'available',
+        mode: 'manual_confirmation',
+        capabilities: ['create_manual_ticket'],
+        limitations: ['Creates a manual ticket only.'],
+      },
+      {
+        gateway_id: 'live_disabled',
+        status: 'disabled',
+        mode: 'live',
+        capabilities: [],
+        limitations: ['Live submission is disabled.'],
+      },
+    ],
+    open_alert_count: 1,
+    open_alerts: [
+      {
+        id: 7,
+        alert_type: 'execution_reconciliation_gap',
+        severity: 'warning',
+        status: 'open',
+        title: 'Execution reconciliation needs review',
+        detail: '2 OMS items need broker evidence.',
+        created_at: '2026-06-12T09:33:00+08:00',
+      },
+    ],
+    recent_runs: [
+      {
+        run_id: 'market-session:2026-06-12:0931',
+        run_type: 'market_session',
+        mode: 'paper_shadow',
+        status: 'blocked',
+        started_at: '2026-06-12T09:31:00+08:00',
+        finished_at: '2026-06-12T09:31:01+08:00',
+        reason: 'outside_market_session',
+      },
+    ],
+    promotion_states: [
+      {
+        strategy_id: 'dual_ma',
+        stage: 'paper_shadow',
+        status: 'active',
+        updated_at: '2026-06-12T09:30:00+08:00',
+      },
+    ],
+    execution_reconciliation_open_items: [
+      {
+        item_id: 1,
+        order_id: 'OMS-1',
+        status: 'awaiting_manual_confirmation',
+        recommended_action: 'review_manual_confirmation',
+      },
+      {
+        item_id: 2,
+        order_id: 'OMS-2',
+        status: 'awaiting_broker_evidence',
+        recommended_action: 'import_broker_evidence',
+      },
+    ],
+    limitations: [
+      'Cockpit summary is read-only and does not submit broker orders.',
+    ],
+  },
+  brokerGatewayStatusResponse = {
+    schema_version: 'karkinos.broker_gateway_status.v1',
+    broker_submission_enabled: false,
+    kill_switch_enabled: false,
+    kill_switch_reason: '',
+    gateways: [
+      {
+        gateway_id: 'manual_ticket',
+        display_name: 'Manual ticket',
+        status: 'available',
+        can_preview_orders: true,
+        can_export_tickets: true,
+        can_dry_run_orders: true,
+        can_submit_orders: false,
+        can_cancel_orders: false,
+        can_query_orders: true,
+        can_query_fills: true,
+        can_query_positions: false,
+        can_query_cash: false,
+        blockers: [],
+        limitations: ['Manual ticket only; no broker order is submitted.'],
+      },
+      {
+        gateway_id: 'live_disabled',
+        display_name: 'Live broker execution',
+        status: 'disabled',
+        can_preview_orders: false,
+        can_export_tickets: false,
+        can_dry_run_orders: false,
+        can_submit_orders: false,
+        can_cancel_orders: false,
+        can_query_orders: false,
+        can_query_fills: false,
+        can_query_positions: false,
+        can_query_cash: false,
+        blockers: ['live_broker_disabled'],
+        blocked_reason: 'Live broker submission is disabled by default.',
+        limitations: ['Live broker submission remains disabled.'],
+      },
+    ],
+  },
+  brokerConnectorHealthResponse = {
+    schema_version: 'karkinos.broker_connector_health_list.v1',
+    broker_submission_enabled: false,
+    connectors: [],
+  },
+  brokerAccountFactsResponse = {
+    schema_version: 'karkinos.broker_gateway_status.v1',
+    gateway_id: 'staged_broker_evidence',
+    status: 'empty',
+    query_scope: 'staged_broker_evidence',
+    submitted_to_broker: false,
+    can_submit_orders: false,
+    source_import_run_ids: [],
+    broker_event_count: 0,
+    cash_balances: [],
+    positions: [],
+    fills: [],
+    limitations: ['This query reads staged broker evidence only.'],
+  },
+  brokerFillsQueryResponse = {
+    schema_version: 'karkinos.broker_gateway.v1',
+    gateway_id: 'staged_broker_evidence',
+    status: 'empty',
+    query_scope: 'staged_broker_fills',
+    submitted_to_broker: false,
+    can_submit_orders: false,
+    symbol: null,
+    source_import_run_ids: [],
+    broker_event_count: 0,
+    fill_count: 0,
+    fills: [],
+    limitations: ['This query reads staged broker fill evidence only.'],
+  },
+  brokerOrderQueryResponse = {
+    schema_version: 'karkinos.broker_gateway.v1',
+    gateway_id: 'manual_ticket',
+    status: 'empty',
+    query_scope: 'local_audit_and_staged_broker_evidence',
+    submitted_to_broker: false,
+    can_submit_orders: false,
+    oms_order: null,
+    gateway_event_count: 0,
+    gateway_events: [],
+    staged_broker_fill_count: 0,
+    staged_broker_fills: [],
+    limitations: ['This query reads local Karkinos facts only.'],
+  },
+  executionReconciliationRunsResponse = [],
+  executionReconciliationRunDetailResponse = undefined,
   signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
   signalActionsResponse = [
     {
@@ -363,6 +591,14 @@ function installDecisionFetchMock({
   intradayResponse?: DecisionResponse;
   tradingPlanResponse?: unknown;
   operationsTodayResponse?: unknown;
+  automationCockpitResponse?: unknown;
+  brokerGatewayStatusResponse?: unknown;
+  brokerConnectorHealthResponse?: unknown;
+  brokerAccountFactsResponse?: unknown;
+  brokerFillsQueryResponse?: unknown;
+  brokerOrderQueryResponse?: unknown;
+  executionReconciliationRunsResponse?: unknown;
+  executionReconciliationRunDetailResponse?: unknown;
   signalActionDetail?: string;
   signalActionsResponse?: unknown;
   journalSourceRef?: string | null;
@@ -387,6 +623,43 @@ function installDecisionFetchMock({
       }
       if (url.includes('/api/operations/today')) {
         return jsonResponse(operationsTodayResponse);
+      }
+      if (url.includes('/api/automation/cockpit')) {
+        return jsonResponse(automationCockpitResponse);
+      }
+      if (url.includes('/api/broker-gateway/status')) {
+        return jsonResponse(brokerGatewayStatusResponse);
+      }
+      if (url.includes('/api/broker-gateway/connectors/health')) {
+        return jsonResponse(brokerConnectorHealthResponse);
+      }
+      if (url.includes('/api/broker-gateway/account-facts')) {
+        return jsonResponse(brokerAccountFactsResponse);
+      }
+      if (url.includes('/api/broker-gateway/fills/query')) {
+        return jsonResponse(brokerFillsQueryResponse);
+      }
+      if (url.includes('/api/broker-gateway/orders/')) {
+        return jsonResponse(brokerOrderQueryResponse);
+      }
+      if (url.includes('/api/execution-reconciliation/runs/')) {
+        const executionReconciliationRunDetail =
+          executionReconciliationRunDetailResponse ??
+          (Array.isArray(executionReconciliationRunsResponse)
+            ? executionReconciliationRunsResponse[0]
+            : executionReconciliationRunsResponse);
+        return jsonResponse(executionReconciliationRunDetail ?? null);
+      }
+      if (url.includes('/api/execution-reconciliation/runs')) {
+        return jsonResponse(executionReconciliationRunsResponse);
+      }
+      if (url.includes('/api/operations/paper-shadow/run')) {
+        return jsonResponse({
+          run_id: 'shadow:2026-06-12:abc123',
+          status: 'within_expectations',
+          does_not_submit_broker_order: true,
+          does_not_mutate_production_ledger: true,
+        });
       }
       if (url.includes('/api/signals/actions')) {
         return jsonResponse(signalActionsResponse);
@@ -523,6 +796,36 @@ test('renders read-only daily trading plan order intent preview', async () => {
   expect(plan.textContent).toContain('Sim orders');
   expect(plan.textContent).toContain('Sim fills');
   expect(plan.textContent).toContain('Divergence reviews');
+  expect(plan.textContent).toContain('Sim fee/tax');
+  expect(plan.textContent).toContain('¥12.35');
+  expect(plan.textContent).toContain('Sim slippage');
+  expect(plan.textContent).toContain('¥4.50');
+  expect(plan.textContent).toContain('Sim total cost');
+  expect(plan.textContent).toContain('¥16.85');
+  expect(plan.textContent).toContain('stock_a_commission_v1');
+  expect(plan.textContent).toContain('Expected strategy behavior');
+  expect(plan.textContent).toContain('Expected orders: 1');
+  expect(plan.textContent).toContain('Decision: Buy');
+  expect(plan.textContent).toContain('Symbols: 600519');
+  expect(plan.textContent).toContain('Sides: Buy: 1');
+  expect(plan.textContent).toContain('Strategy signal · dual_ma');
+  expect(plan.textContent).toContain('Execution comparison');
+  expect(plan.textContent).toContain('Matched orders: 1');
+  expect(plan.textContent).toContain(
+    'Diverged orders: Simulation review order · SHADOW-2026-06-12-9',
+  );
+  expect(plan.textContent).toContain('Sim statuses: partially filled: 1');
+  expect(plan.textContent).toContain('Filled qty: SHADOW-2026-06-12-9: 40');
+  expect(plan.textContent).toContain('Remaining qty: SHADOW-2026-06-12-9: 60');
+  expect(plan.textContent).toContain('Realized market context');
+  expect(plan.textContent).toContain('Price basis: latest quote: 1');
+  expect(plan.textContent).toContain(
+    '600519 · expected ¥10.00 · fills ¥10.05 · slippage ¥2.00',
+  );
+  expect(plan.textContent).toContain(
+    'Simulation evidence only; no broker submission',
+  );
+  expect(plan.textContent).toContain('Does not mutate production ledger');
 });
 
 test('renders cash shortfall in daily trading plan without manual readiness', async () => {
@@ -799,6 +1102,1394 @@ test('prepares manual orders with public notes instead of internal action ids', 
   expect(body.note).toBe('Prepared from Decision action queue.');
   expect(body.note).not.toContain('signal action');
   expect(body.note).not.toContain('9');
+});
+
+test('runs paper shadow simulation from the daily trading plan panel', async () => {
+  const { fetchMock } = renderDecisionCockpit();
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  fireEvent.click(
+    within(plan).getByRole('button', { name: 'Run paper/shadow simulation' }),
+  );
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/operations/paper-shadow/run',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+});
+
+test('renders failed paper shadow runs with a public recovery action', async () => {
+  renderDecisionCockpit({
+    operationsTodayResponse: {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-06-12',
+      generated_at: '2026-06-12T09:32:00+08:00',
+      conclusion_status: 'blocked',
+      primary_target: 'paper-shadow',
+      health: {
+        total: 8,
+        pass: 5,
+        degraded: 0,
+        blocked: 1,
+        manual_action_required: 1,
+        skipped: 1,
+      },
+      subsystems: [],
+      daily_plan: {
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        blocked_count: 0,
+        order_intent_count: 1,
+        conclusion_status: 'manual_confirmation_ready',
+      },
+      paper_shadow: {
+        status: 'failed',
+        run_id: 'shadow:2026-06-12:failed',
+        input_fingerprint: 'failed',
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 0,
+        divergence_reviewed_count: 1,
+        divergence_status: 'failed',
+        next_manual_review_step: 'inspect_failed_run',
+        last_run_at: '2026-06-12T09:32:00+08:00',
+        limitations: ['Paper/shadow simulation failed: fixture error'],
+        orders: [
+          {
+            order_id: 'SHADOW-FAILED',
+            symbol: '600519',
+            status: 'failed',
+            divergence_status: 'failed',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain('Failed');
+  expect(plan.textContent).toContain(
+    'Inspect failed paper/shadow run before approval',
+  );
+  expect(plan.textContent).not.toContain('inspect_failed_run');
+});
+
+test('renders paper shadow review queue as public operator review items', async () => {
+  renderDecisionCockpit({
+    operationsTodayResponse: {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-06-12',
+      generated_at: '2026-06-12T09:32:00+08:00',
+      conclusion_status: 'manual_action_required',
+      primary_target: 'paper-shadow',
+      health: {
+        total: 8,
+        pass: 5,
+        degraded: 0,
+        blocked: 0,
+        manual_action_required: 2,
+        skipped: 1,
+      },
+      subsystems: [
+        {
+          id: 'paper_shadow',
+          status: 'manual_action_required',
+          tone: 'warning',
+          target: 'paper-shadow',
+          last_run_at: '2026-06-12T09:32:00+08:00',
+          next_action: 'resolve_shadow_divergence',
+          limitations: [],
+          detail_status: 'diverged',
+        },
+      ],
+      daily_plan: {
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        blocked_count: 0,
+        order_intent_count: 1,
+        conclusion_status: 'manual_confirmation_ready',
+      },
+      paper_shadow: {
+        status: 'diverged',
+        run_id: 'shadow:2026-06-12:partial',
+        input_fingerprint: 'partial',
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 1,
+        divergence_reviewed_count: 0,
+        divergence_status: 'diverged',
+        next_manual_review_step: 'resolve_shadow_divergence',
+        last_run_at: '2026-06-12T09:32:00+08:00',
+        review_queue: [
+          {
+            review_id: 'shadow:2026-06-12:partial:ACTION-1',
+            order_intent_ref: 'action:ACTION-1',
+            order_id: 'SHADOW-PARTIAL',
+            symbol: '600519',
+            status: 'partially_filled',
+            divergence_status: 'diverged',
+            severity: 'warning',
+            required_action: 'resolve_shadow_divergence',
+            reason:
+              'Paper/shadow order partially_filled; compare simulated execution with the original order intent before manual confirmation.',
+            strategy_refs: ['strategy:dual_ma'],
+            risk_refs: ['risk:risk-001'],
+            signal_refs: ['signal:signal-001'],
+            evidence_refs: [
+              'action:ACTION-1',
+              'strategy:dual_ma',
+              'risk:risk-001',
+              'signal:signal-001',
+              'paper_order:SHADOW-PARTIAL',
+              'paper_fill:SHADOW-PARTIAL-FILL-1',
+            ],
+            account_truth: {
+              gate_status: 'pass',
+              has_evidence: true,
+              blocking_reasons: [],
+            },
+            risk_gate_status: 'passed',
+            manual_confirmation_status: 'ready_for_manual_confirmation',
+            submission_status: 'manual_confirmation_required',
+            cash_status: 'sufficient',
+            constraint_status_counts: { pass: 2 },
+            cost_evidence: {
+              estimated_gross_amount: '74070',
+              estimated_total_fee: '12.30',
+              simulated_fee_tax_cost: '12.45',
+              simulated_slippage_cost: '30.00',
+              fee_rule_id: 'stock_a_commission_v1',
+            },
+            market_context: {
+              price_basis: 'estimated_price',
+              expected_price: '123.45',
+              simulated_fill_prices: ['123.50'],
+            },
+            oms_status_path: [
+              'staged',
+              'submitted',
+              'accepted',
+              'partially_filled',
+            ],
+            oms_transition_refs: [
+              'oms_transition:SHADOW-PARTIAL:1:staged',
+              'oms_transition:SHADOW-PARTIAL:2:submitted',
+              'oms_transition:SHADOW-PARTIAL:3:accepted',
+              'oms_transition:SHADOW-PARTIAL:4:partially_filled',
+            ],
+            oms_transitions: [
+              {
+                sequence: 1,
+                from_status: null,
+                to_status: 'staged',
+                source: 'paper_shadow_daily',
+                reason: '',
+                filled_quantity: '0',
+                does_not_submit_broker_order: true,
+                does_not_mutate_production_ledger: true,
+              },
+              {
+                sequence: 2,
+                from_status: 'staged',
+                to_status: 'submitted',
+                source: 'paper_shadow_daily',
+                reason: '',
+                filled_quantity: '0',
+                does_not_submit_broker_order: true,
+                does_not_mutate_production_ledger: true,
+              },
+              {
+                sequence: 3,
+                from_status: 'submitted',
+                to_status: 'accepted',
+                source: 'paper_shadow_daily',
+                reason: '',
+                filled_quantity: '0',
+                does_not_submit_broker_order: true,
+                does_not_mutate_production_ledger: true,
+              },
+              {
+                sequence: 4,
+                from_status: 'accepted',
+                to_status: 'partially_filled',
+                source: 'paper_shadow_daily',
+                reason: '',
+                filled_quantity: '40',
+                does_not_submit_broker_order: true,
+                does_not_mutate_production_ledger: true,
+              },
+            ],
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        ],
+        orders: [
+          {
+            order_id: 'SHADOW-PARTIAL',
+            symbol: '600519',
+            status: 'partially_filled',
+            divergence_status: 'diverged',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain('Review queue');
+  expect(plan.textContent).toContain(
+    '600519 · Resolve simulation divergence before approval',
+  );
+  expect(plan.textContent).toContain('Risk Passed · Manual Ready');
+  expect(plan.textContent).toContain('Account truth Pass · Cash Sufficient');
+  expect(plan.textContent).toContain('Constraints Pass: 2');
+  expect(plan.textContent).toContain('Projected fee ¥12.30');
+  expect(plan.textContent).toContain('Sim fee/tax ¥12.45');
+  expect(plan.textContent).toContain('Sim slippage ¥30.00');
+  expect(plan.textContent).toContain('Expected ¥123.45 · Fill ¥123.50');
+  expect(plan.textContent).toContain(
+    'OMS path: Staged > Submitted > Accepted > Partially Filled',
+  );
+  expect(plan.textContent).toContain(
+    'OMS transition: SHADOW-PARTIAL #4 Partially Filled',
+  );
+  expect(plan.textContent).toContain('Strategy · dual_ma');
+  expect(plan.textContent).toContain('Risk check · risk-001');
+  expect(plan.textContent).toContain('Signal evidence · signal-001');
+  expect(plan.textContent).toContain(
+    'Simulation review order · SHADOW-PARTIAL',
+  );
+  expect(plan.textContent).toContain(
+    'Simulation review fill · SHADOW-PARTIAL-FILL-1',
+  );
+  expect(plan.textContent).toContain('No broker submission');
+  expect(plan.textContent).toContain('No production ledger mutation');
+  expect(plan.textContent).not.toContain('resolve_shadow_divergence');
+  expect(plan.textContent).not.toContain('partially_filled');
+  expect(plan.textContent).not.toContain('oms_transition:');
+  expect(plan.textContent).not.toContain('Submit broker order');
+});
+
+test('renders running paper shadow runs as a wait state', async () => {
+  renderDecisionCockpit({
+    operationsTodayResponse: {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-06-12',
+      generated_at: '2026-06-12T09:32:00+08:00',
+      conclusion_status: 'degraded',
+      primary_target: 'paper-shadow',
+      health: {
+        total: 8,
+        pass: 5,
+        degraded: 1,
+        blocked: 0,
+        manual_action_required: 1,
+        skipped: 1,
+      },
+      subsystems: [
+        {
+          id: 'paper_shadow',
+          status: 'degraded',
+          tone: 'warning',
+          target: 'paper-shadow',
+          last_run_at: '2026-06-12T09:32:00+08:00',
+          next_action: 'wait_for_paper_shadow_run',
+          limitations: [],
+          detail_status: 'running',
+        },
+      ],
+      daily_plan: {
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        blocked_count: 0,
+        order_intent_count: 1,
+        conclusion_status: 'manual_confirmation_ready',
+      },
+      paper_shadow: {
+        status: 'running',
+        run_id: 'shadow:2026-06-12:running',
+        input_fingerprint: 'running',
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 0,
+        divergence_reviewed_count: 0,
+        divergence_status: 'running',
+        next_manual_review_step: 'wait_for_paper_shadow_run',
+        last_run_at: '2026-06-12T09:32:00+08:00',
+        orders: [
+          {
+            order_id: 'SHADOW-RUNNING',
+            symbol: '600519',
+            status: 'submitted',
+            divergence_status: 'running',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain('Running');
+  expect(plan.textContent).toContain(
+    'Paper/shadow simulation is running; wait for completion',
+  );
+  expect(plan.textContent).not.toContain('wait_for_paper_shadow_run');
+  expect(plan.textContent).not.toContain(
+    'Review paper/shadow divergence evidence',
+  );
+});
+
+test('renders accepted paper shadow divergence review as manual confirmation handoff', async () => {
+  renderDecisionCockpit({
+    operationsTodayResponse: {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-06-12',
+      generated_at: '2026-06-12T09:32:00+08:00',
+      conclusion_status: 'manual_action_required',
+      primary_target: 'trading',
+      health: {
+        total: 8,
+        pass: 6,
+        degraded: 0,
+        blocked: 0,
+        manual_action_required: 1,
+        skipped: 1,
+      },
+      subsystems: [
+        {
+          id: 'paper_shadow',
+          status: 'pass',
+          tone: 'success',
+          target: 'paper-shadow',
+          last_run_at: '2026-06-12T10:10:00+08:00',
+          next_action: 'review_manual_confirmation',
+          limitations: [],
+          detail_status: 'accepted_for_manual_confirmation',
+        },
+      ],
+      daily_plan: {
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        blocked_count: 0,
+        order_intent_count: 1,
+        conclusion_status: 'manual_confirmation_ready',
+      },
+      paper_shadow: {
+        status: 'diverged',
+        effective_status: 'accepted_for_manual_confirmation',
+        run_id: 'shadow:2026-06-12:accepted',
+        input_fingerprint: 'accepted',
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 0,
+        divergence_reviewed_count: 1,
+        divergence_status: 'diverged',
+        review_status: 'accepted_for_manual_confirmation',
+        reviewed_at: '2026-06-12T10:10:00+08:00',
+        reviewer: 'local-operator',
+        next_manual_review_step: 'review_manual_confirmation',
+        orders: [
+          {
+            order_id: 'SHADOW-ACCEPTED',
+            symbol: '600519',
+            status: 'partially_filled',
+            divergence_status: 'diverged',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain('Accepted for manual confirmation');
+  expect(plan.textContent).toContain(
+    'Simulation reviewed; continue with manual confirmation',
+  );
+  expect(plan.textContent).not.toContain('resolve_shadow_divergence');
+  expect(plan.textContent).not.toContain('Submit broker order');
+});
+
+test('summarizes controlled automation cockpit status in the decision page', async () => {
+  renderDecisionCockpit();
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Automation to-do');
+  expect(automation.textContent).toContain(
+    'Manual confirmation remains default',
+  );
+  expect(automation.textContent).toContain('Broker submission off');
+  expect(automation.textContent).toContain('1 open alert');
+  expect(automation.textContent).toContain('2 reconciliation reviews');
+  expect(automation.textContent).toContain('Next: import broker evidence');
+  expect(automation.textContent).toContain('paper/shadow only');
+  expect(automation.textContent).not.toContain('execution_reconciliation_gap');
+});
+
+test('surfaces broker gateway status without execution controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    brokerGatewayStatusResponse: {
+      schema_version: 'karkinos.broker_gateway_status.v1',
+      broker_submission_enabled: false,
+      kill_switch_enabled: true,
+      kill_switch_reason: 'Operator pause for reconciliation review.',
+      gateways: [
+        {
+          gateway_id: 'manual_ticket',
+          display_name: 'Manual ticket',
+          status: 'blocked_by_kill_switch',
+          can_preview_orders: false,
+          can_export_tickets: false,
+          can_dry_run_orders: false,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          blockers: ['kill_switch'],
+          blocked_reason: 'Kill switch is active.',
+          limitations: ['Manual ticket creation is blocked by kill switch.'],
+        },
+        {
+          gateway_id: 'live_disabled',
+          display_name: 'Live broker execution',
+          status: 'disabled',
+          can_preview_orders: false,
+          can_export_tickets: false,
+          can_dry_run_orders: false,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          blockers: ['live_broker_disabled'],
+          blocked_reason: 'Live broker submission is disabled by default.',
+          limitations: ['Live broker submission remains disabled.'],
+        },
+      ],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Broker gateway status');
+  expect(automation.textContent).toContain('Kill switch active');
+  expect(automation.textContent).toContain(
+    'Operator pause for reconciliation review.',
+  );
+  expect(automation.textContent).toContain('Manual ticket');
+  expect(automation.textContent).toContain('Blocked by kill switch');
+  expect(automation.textContent).toContain('Preview blocked');
+  expect(automation.textContent).toContain('Export blocked');
+  expect(automation.textContent).toContain('Dry run blocked');
+  expect(automation.textContent).toContain('Live broker execution');
+  expect(automation.textContent).toContain('Disabled');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces manual ticket export capability as read-only gateway status', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    brokerGatewayStatusResponse: {
+      schema_version: 'karkinos.broker_gateway_status.v1',
+      broker_submission_enabled: false,
+      kill_switch_enabled: false,
+      gateways: [
+        {
+          gateway_id: 'manual_ticket',
+          display_name: 'Manual ticket',
+          status: 'available',
+          can_preview_orders: true,
+          can_export_tickets: true,
+          can_dry_run_orders: true,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          can_query_orders: true,
+          can_query_fills: true,
+          can_query_positions: false,
+          can_query_cash: false,
+          blockers: [],
+          limitations: ['Creates manual tickets only.'],
+        },
+        {
+          gateway_id: 'live_disabled',
+          display_name: 'Live broker execution',
+          status: 'disabled',
+          can_preview_orders: false,
+          can_export_tickets: false,
+          can_dry_run_orders: false,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          can_query_orders: false,
+          can_query_fills: false,
+          can_query_positions: false,
+          can_query_cash: false,
+          blockers: ['live_broker_disabled'],
+          limitations: ['Live broker submission remains disabled.'],
+        },
+      ],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Manual ticket');
+  expect(automation.textContent).toContain('Export available');
+  expect(automation.textContent).toContain('Query orders available');
+  expect(automation.textContent).toContain('Query fills available');
+  expect(automation.textContent).toContain('Read positions blocked');
+  expect(automation.textContent).toContain('Read cash blocked');
+  expect(automation.textContent).toContain('Submit blocked');
+  expect(automation.textContent).toContain('Live broker execution');
+  expect(automation.textContent).toContain('Export blocked');
+  expect(automation.textContent).toContain('Query orders blocked');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces controlled bridge policy whitelist as non-submitting evidence', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    brokerGatewayStatusResponse: {
+      schema_version: 'karkinos.broker_gateway_status.v1',
+      broker_submission_enabled: false,
+      kill_switch_enabled: false,
+      controlled_bridge_policy: {
+        schema_version: 'karkinos.controlled_broker_bridge_policy.v1',
+        policy_id: 'local-controlled-bridge-review',
+        status: 'configured_non_submitting',
+        enabled: true,
+        broker_submission_enabled: false,
+        live_submission_available: false,
+        automation_allowed: false,
+        per_order_confirmation_required: true,
+        allowed_connector_ids: ['local-qmt-readonly'],
+        allowed_account_aliases: ['local-review'],
+        allowed_strategy_ids: ['dual_ma'],
+        allowed_symbols: ['600519'],
+        required_gates: [
+          'account_truth',
+          'research_evidence',
+          'risk',
+          'paper_shadow',
+          'manual_confirmation',
+          'kill_switch_clear',
+          'connector_health',
+          'execution_reconciliation',
+        ],
+        blockers: ['live_gateway_not_implemented'],
+      },
+      gateways: [
+        {
+          gateway_id: 'manual_ticket',
+          display_name: 'Manual ticket',
+          status: 'available',
+          can_preview_orders: true,
+          can_export_tickets: true,
+          can_dry_run_orders: true,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          blockers: [],
+          limitations: ['Creates manual tickets only.'],
+        },
+        {
+          gateway_id: 'live_disabled',
+          display_name: 'Live broker execution',
+          status: 'disabled',
+          can_preview_orders: false,
+          can_export_tickets: false,
+          can_dry_run_orders: false,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          can_query_orders: false,
+          can_query_fills: false,
+          can_query_positions: false,
+          can_query_cash: false,
+          controlled_bridge_policy_status: 'configured_non_submitting',
+          blockers: ['live_broker_disabled'],
+          limitations: ['Live broker submission remains disabled.'],
+        },
+      ],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Controlled bridge policy');
+  expect(automation.textContent).toContain('Configured, no submission');
+  expect(automation.textContent).toContain('local-controlled-bridge-review');
+  expect(automation.textContent).toContain('Connector: local-qmt-readonly');
+  expect(automation.textContent).toContain('Account: local-review');
+  expect(automation.textContent).toContain('Strategy: dual_ma');
+  expect(automation.textContent).toContain('Symbol: 600519');
+  expect(automation.textContent).toContain('Required gates');
+  expect(automation.textContent).toContain('account truth');
+  expect(automation.textContent).toContain('execution reconciliation');
+  expect(automation.textContent).toContain('live gateway not implemented');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces read-only connector health and staged account facts without credentials or live actions', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    brokerConnectorHealthResponse: {
+      schema_version: 'karkinos.broker_connector_health_list.v1',
+      broker_submission_enabled: false,
+      connectors: [
+        {
+          schema_version: 'karkinos.broker_connector_health.v1',
+          connector_id: 'local-qmt-readonly',
+          connector_type: 'qmt_readonly',
+          enabled: true,
+          status: 'configured_readonly_unverified',
+          message:
+            'Read-only connector is configured; live client health is not checked.',
+          account_alias: 'local-review',
+          capability_scope: 'local_readonly_connector_contract',
+          capabilities: {
+            can_read_health: true,
+            can_read_account: true,
+            can_read_cash: true,
+            can_read_positions: true,
+            can_read_orders: true,
+            can_read_fills: true,
+            can_preview_orders: false,
+            can_export_tickets: false,
+            can_dry_run_orders: false,
+            can_submit_orders: false,
+            can_cancel_orders: false,
+          },
+          requires_credentials: false,
+          stores_credentials: false,
+          submitted_to_broker: false,
+          limitations: [
+            'Connector health is a local configuration contract only.',
+          ],
+        },
+      ],
+    },
+    brokerAccountFactsResponse: {
+      schema_version: 'karkinos.broker_gateway_status.v1',
+      gateway_id: 'staged_broker_evidence',
+      status: 'available',
+      query_scope: 'staged_broker_evidence',
+      submitted_to_broker: false,
+      can_submit_orders: false,
+      source_import_run_ids: ['import-run-1'],
+      broker_event_count: 3,
+      cash_balances: [{ currency: 'CNY', cash_balance: '100000.00' }],
+      positions: [{ symbol: '600519', quantity: '100' }],
+      fills: [{ event_id: 'broker-buy-600519', symbol: '600519' }],
+      limitations: ['This query reads staged broker evidence only.'],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Read-only connector health');
+  expect(automation.textContent).toContain('local-qmt-readonly');
+  expect(automation.textContent).toContain('Configured readonly unverified');
+  expect(automation.textContent).toContain('Read account available');
+  expect(automation.textContent).toContain('Read cash available');
+  expect(automation.textContent).toContain('Read positions available');
+  expect(automation.textContent).toContain('Read orders available');
+  expect(automation.textContent).toContain('Read fills available');
+  expect(automation.textContent).toContain('Preview orders blocked');
+  expect(automation.textContent).toContain('Export tickets blocked');
+  expect(automation.textContent).toContain('Dry-run orders blocked');
+  expect(automation.textContent).toContain('Submit blocked');
+  expect(automation.textContent).toContain('Cancel blocked');
+  expect(automation.textContent).toContain('Staged account facts');
+  expect(automation.textContent).toContain('3 broker evidence events');
+  expect(automation.textContent).toContain('1 cash');
+  expect(automation.textContent).toContain('1 position');
+  expect(automation.textContent).toContain('1 fill');
+  expect(automation.textContent).not.toContain('client_path');
+  expect(automation.textContent).not.toContain('/Applications/QMT');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces runtime connector snapshot evidence without account ids or live actions', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v1',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+      },
+      gateways: [],
+      open_alert_count: 0,
+      open_alerts: [],
+      recent_runs: [],
+      promotion_states: [],
+      execution_reconciliation_open_items: [],
+      runtime_connector_snapshots: [
+        {
+          schema_version: 'karkinos.broker_gateway.v1',
+          gateway_id: 'read_only_connector',
+          status: 'snapshot_ready',
+          query_scope: 'runtime_readonly_connector_snapshot',
+          connector_id: 'fake-qmt-runtime',
+          account_alias: 'local-review',
+          captured_at: '2026-07-02T09:31:00+08:00',
+          connector_health: {
+            status: 'runtime_healthy',
+            raw_status: 'healthy',
+            message: 'Read-only connector heartbeat is healthy.',
+            checked_at: '2026-07-02T09:30:00+08:00',
+          },
+          cash_balance: {
+            currency: 'CNY',
+            balance: '100000.00',
+            available: '88000.00',
+          },
+          position_count: 1,
+          positions: [{ symbol: '600519', quantity: '200' }],
+          order_count: 1,
+          orders: [{ order_id: 'broker-order-private', symbol: '600519' }],
+          fill_count: 1,
+          fills: [{ fill_id: 'fill-001', symbol: '600519' }],
+          capabilities: {
+            can_read_account: true,
+            can_read_cash: true,
+            can_read_positions: true,
+            can_read_orders: true,
+            can_read_fills: true,
+            can_submit_orders: false,
+            can_cancel_orders: false,
+          },
+          submitted_to_broker: false,
+          does_not_mutate_oms: true,
+          does_not_mutate_production_ledger: true,
+          limitations: [
+            'Read-only connector snapshot query is runtime evidence only.',
+          ],
+        },
+      ],
+      limitations: [],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Runtime connector snapshot');
+  expect(automation.textContent).toContain('fake-qmt-runtime');
+  expect(automation.textContent).toContain('Snapshot ready');
+  expect(automation.textContent).toContain('Cash CNY 100000.00');
+  expect(automation.textContent).toContain('1 position');
+  expect(automation.textContent).toContain('1 order');
+  expect(automation.textContent).toContain('1 fill');
+  expect(automation.textContent).toContain('No broker submission');
+  expect(automation.textContent).not.toContain('private-account-id');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+  expect(automation.textContent).not.toContain('Sync ledger');
+});
+
+test('surfaces strategy promotion state as paper shadow only without live promotion controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v1',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        mode: 'paper_shadow',
+        default_execution_mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+        next_action: 'paper_shadow_available',
+        limitations: ['Live submission remains disabled.'],
+      },
+      gateways: [],
+      open_alert_count: 0,
+      open_alerts: [],
+      recent_runs: [],
+      promotion_states: [
+        {
+          strategy_id: 'dual_ma',
+          stage: 'paper_shadow',
+          gate_status: 'paper_shadow_enabled',
+          live_like_enabled: false,
+          missing_requirements: [],
+          backtest_result_id: 7,
+          status: 'active',
+          updated_at: '2026-06-12T09:30:00+08:00',
+        },
+      ],
+      execution_reconciliation_open_items: [],
+      limitations: [
+        'Cockpit summary is read-only and does not submit broker orders.',
+      ],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Strategy promotion state');
+  expect(automation.textContent).toContain('dual_ma');
+  expect(automation.textContent).toContain('Paper/shadow');
+  expect(automation.textContent).toContain('Paper/shadow enabled');
+  expect(automation.textContent).toContain('Live-like disabled');
+  expect(automation.textContent).toContain('No missing requirements');
+  expect(automation.textContent).not.toContain('Promote live');
+  expect(automation.textContent).not.toContain('Enable live trading');
+  expect(automation.textContent).not.toContain('Submit broker order');
+});
+
+test('surfaces staged fill polling evidence without live broker actions', async () => {
+  const fetchMock = renderDecisionCockpit({
+    locale: 'en',
+    brokerFillsQueryResponse: {
+      schema_version: 'karkinos.broker_gateway.v1',
+      gateway_id: 'staged_broker_evidence',
+      status: 'available',
+      query_scope: 'staged_broker_fills',
+      submitted_to_broker: false,
+      can_submit_orders: false,
+      symbol: null,
+      source_import_run_ids: ['import-run-1'],
+      broker_event_count: 4,
+      fill_count: 2,
+      fills: [
+        {
+          event_id: 'broker-buy-600519',
+          symbol: '600519',
+          side: 'buy',
+        },
+        {
+          event_id: 'broker-sell-000001',
+          symbol: '000001',
+          side: 'sell',
+        },
+      ],
+      limitations: ['This query reads staged broker fill evidence only.'],
+    },
+  }).fetchMock;
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/broker-gateway/fills/query',
+      expect.anything(),
+    );
+  });
+  expect(automation.textContent).toContain('Staged fill polling');
+  expect(automation.textContent).toContain('2 staged fills');
+  expect(automation.textContent).toContain('4 broker evidence events');
+  expect(automation.textContent).toContain('600519');
+  expect(automation.textContent).toContain('000001');
+  expect(automation.textContent).toContain('No broker submission');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('links staged fill evidence to execution reconciliation review without ledger controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    brokerFillsQueryResponse: {
+      schema_version: 'karkinos.broker_gateway.v1',
+      gateway_id: 'staged_broker_evidence',
+      status: 'available',
+      query_scope: 'staged_broker_fills',
+      submitted_to_broker: false,
+      can_submit_orders: false,
+      symbol: null,
+      source_import_run_ids: ['import-run-1'],
+      broker_event_count: 4,
+      fill_count: 2,
+      fills: [
+        {
+          event_id: 'broker-buy-600519',
+          symbol: '600519',
+          side: 'buy',
+        },
+        {
+          event_id: 'broker-sell-000001',
+          symbol: '000001',
+          side: 'sell',
+        },
+      ],
+      limitations: ['This query reads staged broker fill evidence only.'],
+    },
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 3,
+        open_item_count: 2,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-1',
+            item_status: 'awaiting_broker_evidence',
+            suggested_action: 'import_broker_statement_or_update_order',
+            gateway_event_count: 1,
+            broker_event_count: 0,
+            detail:
+              'Manual broker ticket exists; broker evidence is still required.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain(
+    'Staged fills ready for reconciliation review',
+  );
+  expect(automation.textContent).toContain(
+    '2 staged fills can be compared with execution reconciliation before any ledger update.',
+  );
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('ledger-sync');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces read-only broker order query evidence for reconciliation items', async () => {
+  const { fetchMock } = renderDecisionCockpit({
+    locale: 'en',
+    brokerOrderQueryResponse: {
+      schema_version: 'karkinos.broker_gateway.v1',
+      gateway_id: 'manual_ticket',
+      status: 'query_ready',
+      query_scope: 'local_audit_and_staged_broker_evidence',
+      submitted_to_broker: false,
+      can_submit_orders: false,
+      oms_order: {
+        order_id: 'OMS-1',
+        symbol: '600519',
+        status: 'manual_ticket_created',
+        payload: {
+          execution_mode: 'manual_confirmation',
+          does_not_submit_broker_order: true,
+        },
+      },
+      gateway_event_count: 2,
+      gateway_events: [{ event_type: 'manual_ticket_created' }],
+      staged_broker_fill_count: 1,
+      staged_broker_fills: [
+        {
+          event_id: 'broker-buy-600519',
+          symbol: '600519',
+          quantity: '100',
+        },
+      ],
+      limitations: [
+        'This query reads local Karkinos facts and staged broker evidence only.',
+      ],
+    },
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 3,
+        open_item_count: 2,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-1',
+            item_status: 'awaiting_broker_evidence',
+            suggested_action: 'import_broker_statement_or_update_order',
+            gateway_event_count: 1,
+            broker_event_count: 0,
+            detail:
+              'Manual broker ticket exists; broker evidence is still required.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/broker-gateway/orders/OMS-1/query',
+      expect.anything(),
+    );
+  });
+  expect(automation.textContent).toContain('Read-only order query');
+  expect(automation.textContent).toContain('OMS-1');
+  expect(automation.textContent).toContain('Manual ticket created');
+  expect(automation.textContent).toContain('2 gateway events');
+  expect(automation.textContent).toContain('1 staged broker fill');
+  expect(automation.textContent).toContain('No broker submission');
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces broker trade cost evidence before ledger updates without controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 1,
+        open_item_count: 1,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-COST-1',
+            item_status: 'broker_evidence_available',
+            suggested_action: 'review_broker_evidence_match',
+            gateway_event_count: 1,
+            broker_event_count: 1,
+            detail:
+              'Broker evidence matches the manual ticket and needs review.',
+            payload: {
+              broker_trade_cost_summary: {
+                source: 'staged_broker_evidence',
+                event_count: 1,
+                event_ids: ['broker-buy-600519'],
+                currency: 'CNY',
+                gross_amount: '168800.00',
+                fee: '5.00',
+                tax: '0',
+                transfer_fee: '0',
+                net_amount: '-168805.00',
+                review_required_before_ledger_update: true,
+                does_not_mutate_production_ledger: true,
+              },
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Broker cost evidence');
+  expect(automation.textContent).toContain('1 broker event');
+  expect(automation.textContent).toContain('Gross amount');
+  expect(automation.textContent).toContain('¥168,800.00');
+  expect(automation.textContent).toContain('Fee / tax');
+  expect(automation.textContent).toContain('¥5.00 / ¥0.00');
+  expect(automation.textContent).toContain('Transfer fee');
+  expect(automation.textContent).toContain('Net amount');
+  expect(automation.textContent).toContain('-¥168,805.00');
+  expect(automation.textContent).toContain('Review before ledger update');
+  expect(automation.textContent).toContain('No ledger mutation');
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('ledger-sync');
+  expect(automation.textContent).not.toContain('Apply fill');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces manual execution evidence before ledger updates without controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 1,
+        open_item_count: 1,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-MANUAL-1',
+            item_status: 'manual_execution_recorded',
+            suggested_action:
+              'review_manual_execution_and_import_broker_statement',
+            gateway_event_count: 2,
+            broker_event_count: 0,
+            detail:
+              'Manual execution evidence is recorded; import broker statement or explicitly review before any ledger update.',
+            payload: {
+              manual_execution_evidence_summary: {
+                source: 'broker_gateway_event',
+                event_count: 1,
+                event_ids: [42],
+                preview_fingerprint:
+                  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                fill_price: '1688.00',
+                quantity: '100',
+                gross_amount: '168800.00',
+                fee: '5.00',
+                tax: '0.00',
+                transfer_fee: '0.00',
+                net_cash_impact: '-168805.00',
+                ledger_entry_amount: '-168805.00',
+                review_required_before_ledger_update: true,
+                requires_operator_ledger_save: true,
+                submitted_to_broker: false,
+                does_not_mutate_oms: true,
+                does_not_mutate_production_ledger: true,
+              },
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Manual execution evidence');
+  expect(automation.textContent).toContain('1 gateway event');
+  expect(automation.textContent).toContain('Manual execution recorded');
+  expect(automation.textContent).toContain(
+    'Review manual execution and import broker statement',
+  );
+  expect(automation.textContent).toContain('Preview fingerprint');
+  expect(automation.textContent).toContain(
+    'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  );
+  expect(automation.textContent).toContain('Fill price');
+  expect(automation.textContent).toContain('¥1,688.00');
+  expect(automation.textContent).toContain('Quantity');
+  expect(automation.textContent).toContain('100');
+  expect(automation.textContent).toContain('Gross amount');
+  expect(automation.textContent).toContain('¥168,800.00');
+  expect(automation.textContent).toContain('Fee / tax');
+  expect(automation.textContent).toContain('¥5.00 / ¥0.00');
+  expect(automation.textContent).toContain('Net cash impact');
+  expect(automation.textContent).toContain('-¥168,805.00');
+  expect(automation.textContent).toContain('Ledger draft');
+  expect(automation.textContent).toContain('Review before ledger update');
+  expect(automation.textContent).toContain('Operator ledger save required');
+  expect(automation.textContent).toContain('No broker submission');
+  expect(automation.textContent).toContain('No OMS mutation');
+  expect(automation.textContent).toContain('No ledger mutation');
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('ledger-sync');
+  expect(automation.textContent).not.toContain('Apply fill');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces manual execution alert evidence in automation cockpit without controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v1',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        default_execution_mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+        latest_runs: [],
+        limitations: ['Live broker submission is disabled by default.'],
+      },
+      gateways: [],
+      open_alert_count: 1,
+      open_alerts: [
+        {
+          id: 9,
+          alert_type: 'execution_reconciliation',
+          severity: 'warning',
+          status: 'open',
+          title: 'Manual execution evidence requires reconciliation review',
+          detail:
+            'Manual execution evidence is recorded; import broker statement or explicitly review before any ledger update. no broker order was submitted; OMS and production ledger remain unchanged.',
+          created_at: '2026-07-06T09:45:00+08:00',
+          payload: {
+            item_status: 'manual_execution_recorded',
+            suggested_action:
+              'review_manual_execution_and_import_broker_statement',
+            requires_manual_review: true,
+            does_not_submit_broker_order: true,
+            does_not_mutate_oms: true,
+            does_not_mutate_production_ledger: true,
+            manual_execution_evidence_summary: {
+              source: 'broker_gateway_event',
+              event_count: 1,
+              event_ids: [42],
+              preview_fingerprint:
+                'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+              fill_price: '1688.00',
+              quantity: '100',
+              gross_amount: '168800.00',
+              fee: '5.00',
+              tax: '0.00',
+              transfer_fee: '0.00',
+              net_cash_impact: '-168805.00',
+              ledger_entry_amount: '-168805.00',
+              review_required_before_ledger_update: true,
+              requires_operator_ledger_save: true,
+              submitted_to_broker: false,
+              does_not_mutate_oms: true,
+              does_not_mutate_production_ledger: true,
+            },
+          },
+        },
+      ],
+      recent_runs: [],
+      promotion_states: [],
+      execution_reconciliation_open_items: [],
+      limitations: ['Cockpit summary is read-only.'],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain(
+    'Manual execution evidence requires reconciliation review',
+  );
+  expect(automation.textContent).toContain(
+    'Manual execution evidence is recorded',
+  );
+  expect(automation.textContent).toContain('Preview fingerprint');
+  expect(automation.textContent).toContain(
+    'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  );
+  expect(automation.textContent).toContain('Gross amount');
+  expect(automation.textContent).toContain('¥168,800.00');
+  expect(automation.textContent).toContain('Net cash impact');
+  expect(automation.textContent).toContain('-¥168,805.00');
+  expect(automation.textContent).toContain('Review before ledger update');
+  expect(automation.textContent).toContain('No broker submission');
+  expect(automation.textContent).toContain('No OMS mutation');
+  expect(automation.textContent).toContain('No ledger mutation');
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('ledger-sync');
+  expect(automation.textContent).not.toContain('Apply fill');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
+test('surfaces latest execution reconciliation run without ledger mutation controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 3,
+        open_item_count: 2,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-1',
+            item_status: 'awaiting_broker_evidence',
+            suggested_action: 'import_broker_statement_or_update_order',
+            gateway_event_count: 1,
+            broker_event_count: 0,
+            detail:
+              'Manual broker ticket exists; broker evidence is still required.',
+          },
+        ],
+      },
+    ],
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Execution reconciliation');
+  expect(automation.textContent).toContain('Open items');
+  expect(automation.textContent).toContain('2 open of 3');
+  expect(automation.textContent).toContain('OMS-1');
+  expect(automation.textContent).toContain('Awaiting broker evidence');
+  expect(automation.textContent).toContain(
+    'Import broker statement or update order',
+  );
+  expect(automation.textContent).toContain(
+    'Manual broker ticket exists; broker evidence is still required.',
+  );
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('Apply fill');
+  expect(automation.textContent).not.toContain('Submit broker order');
+});
+
+test('loads execution reconciliation item detail when the recent run list is summary-only', async () => {
+  const { fetchMock } = renderDecisionCockpit({
+    locale: 'en',
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 3,
+        open_item_count: 2,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+      },
+    ],
+    executionReconciliationRunDetailResponse: {
+      run_id: 'execution-reconciliation:2026-07-06',
+      run_date: '2026-07-06',
+      status: 'open_items',
+      item_count: 3,
+      open_item_count: 2,
+      created_at: '2026-07-06T09:45:00+08:00',
+      payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+      items: [
+        {
+          item_id: 1,
+          order_id: 'OMS-DETAIL-1',
+          item_status: 'gateway_action_missing',
+          suggested_action: 'create_manual_ticket_or_cancel',
+          gateway_event_count: 0,
+          broker_event_count: 0,
+          detail: 'OMS order is confirmed but no gateway action is recorded.',
+        },
+      ],
+    },
+  });
+
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes(
+          '/api/execution-reconciliation/runs/execution-reconciliation%3A2026-07-06',
+        ),
+      ),
+    ).toBe(true),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByTestId('decision-automation-cockpit').textContent,
+    ).toContain('OMS-DETAIL-1'),
+  );
+  const automation = screen.getByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('OMS-DETAIL-1');
+  expect(automation.textContent).toContain('Gateway action missing');
+  expect(automation.textContent).toContain('Create manual ticket or cancel');
+  expect(automation.textContent).toContain(
+    'OMS order is confirmed but no gateway action is recorded.',
+  );
+  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(automation.textContent).not.toContain('Apply fill');
 });
 
 test('links signal action queue cards back to single-instrument evidence surfaces', async () => {

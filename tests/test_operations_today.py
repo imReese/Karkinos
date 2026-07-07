@@ -137,3 +137,335 @@ def test_operations_today_marks_shadow_review_within_expectations() -> None:
     assert summary["paper_shadow"]["next_manual_review_step"] == (
         "review_manual_confirmation"
     )
+
+
+def test_operations_today_prefers_persisted_paper_shadow_run() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:abc123",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "abc123",
+            "status": "within_expectations",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 1,
+            "divergence_status": "within_expectations",
+            "next_manual_review_step": "review_manual_confirmation",
+            "limitations_json": "[]",
+            "payload_json": '{"orders": [{"order_id": "SHADOW-1"}]}',
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    assert summary["paper_shadow"]["run_id"] == "shadow:2026-07-01:abc123"
+    assert summary["paper_shadow"]["status"] == "within_expectations"
+    assert summary["paper_shadow"]["input_fingerprint"] == "abc123"
+    assert summary["paper_shadow"]["simulated_order_count"] == 1
+    assert summary["paper_shadow"]["simulated_fill_count"] == 1
+    assert summary["paper_shadow"]["last_run_at"] == "2026-07-01T09:36:00+08:00"
+
+
+def test_operations_today_marks_failed_paper_shadow_run_as_blocked() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:failed",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "failed",
+            "status": "failed",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 0,
+            "divergence_status": "failed",
+            "next_manual_review_step": "inspect_failed_run",
+            "limitations_json": ('["Paper/shadow simulation failed: fixture error"]'),
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"status": "failed", "divergence_status": "failed"}]}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "paper_shadow"
+    )
+
+    assert summary["paper_shadow"]["status"] == "failed"
+    assert summary["paper_shadow"]["limitations"] == [
+        "Paper/shadow simulation failed: fixture error"
+    ]
+    assert summary["paper_shadow"]["next_manual_review_step"] == "inspect_failed_run"
+    assert summary["conclusion_status"] == "blocked"
+    assert summary["primary_target"] == "paper-shadow"
+    assert summary["health"]["blocked"] >= 1
+    assert subsystem["status"] == "blocked"
+    assert subsystem["next_action"] == "inspect_failed_run"
+    assert "Paper/shadow simulation failed: fixture error" in subsystem["limitations"]
+
+
+def test_operations_today_surfaces_paper_shadow_review_queue() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:partial",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "partial",
+            "status": "diverged",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 1,
+            "divergence_status": "diverged",
+            "next_manual_review_step": "resolve_shadow_divergence",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged"}], '
+                '"review_queue": [{"review_id": "shadow:2026-07-01:partial:ACTION-1", '
+                '"order_intent_ref": "action:ACTION-1", '
+                '"order_id": "SHADOW-1", "symbol": "600519", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged", '
+                '"severity": "warning", '
+                '"required_action": "resolve_shadow_divergence", '
+                '"reason": "Paper/shadow order partially_filled; compare simulated execution with the original order intent before manual confirmation.", '
+                '"does_not_submit_broker_order": true, '
+                '"does_not_mutate_production_ledger": true}]}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    assert summary["paper_shadow"]["review_queue"] == [
+        {
+            "review_id": "shadow:2026-07-01:partial:ACTION-1",
+            "order_intent_ref": "action:ACTION-1",
+            "order_id": "SHADOW-1",
+            "symbol": "600519",
+            "status": "partially_filled",
+            "divergence_status": "diverged",
+            "severity": "warning",
+            "required_action": "resolve_shadow_divergence",
+            "reason": "Paper/shadow order partially_filled; compare simulated execution with the original order intent before manual confirmation.",
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+        }
+    ]
+
+
+def test_operations_today_marks_running_paper_shadow_run_as_waiting() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:running",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "running",
+            "status": "running",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 0,
+            "divergence_status": "running",
+            "next_manual_review_step": "",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"status": "submitted", "divergence_status": "running"}]}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "paper_shadow"
+    )
+
+    assert summary["paper_shadow"]["status"] == "running"
+    assert summary["paper_shadow"]["next_manual_review_step"] == (
+        "wait_for_paper_shadow_run"
+    )
+    assert summary["conclusion_status"] == "degraded"
+    assert summary["primary_target"] == "paper-shadow"
+    assert subsystem["status"] == "degraded"
+    assert subsystem["next_action"] == "wait_for_paper_shadow_run"
+    assert subsystem["detail_status"] == "running"
+
+
+def test_operations_today_treats_accepted_paper_shadow_review_as_gate_passed() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:diverged",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "diverged",
+            "status": "diverged",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 0,
+            "divergence_status": "diverged",
+            "next_manual_review_step": "resolve_shadow_divergence",
+            "review_status": "accepted_for_manual_confirmation",
+            "reviewed_at": "2026-07-01T10:10:00+08:00",
+            "reviewer": "local-operator",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged"}], '
+                '"review": {"review_status": '
+                '"accepted_for_manual_confirmation"}}'
+            ),
+            "updated_at": "2026-07-01T10:10:00+08:00",
+        },
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "paper_shadow"
+    )
+
+    assert summary["paper_shadow"]["status"] == "diverged"
+    assert summary["paper_shadow"]["effective_status"] == (
+        "accepted_for_manual_confirmation"
+    )
+    assert summary["paper_shadow"]["divergence_status"] == "diverged"
+    assert summary["paper_shadow"]["review_status"] == (
+        "accepted_for_manual_confirmation"
+    )
+    assert summary["paper_shadow"]["next_manual_review_step"] == (
+        "review_manual_confirmation"
+    )
+    assert subsystem["status"] == "pass"
+    assert subsystem["next_action"] == "review_manual_confirmation"
+    assert subsystem["detail_status"] == "accepted_for_manual_confirmation"
+    assert summary["conclusion_status"] == "manual_action_required"
+    assert summary["primary_target"] == "trading"
+
+
+def test_operations_today_surfaces_failed_scheduler_run() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        automation_runs=[
+            {
+                "run_id": "market-session:2026-07-01:100000",
+                "run_type": "market_session",
+                "run_date": "2026-07-01",
+                "status": "paper_shadow_failed",
+                "execution_mode": "paper_shadow",
+                "started_at": "2026-07-01T10:00:00+08:00",
+                "finished_at": "2026-07-01T10:00:01+08:00",
+                "payload_json": (
+                    '{"input_fingerprint": "abc123", '
+                    '"idempotency_key": "market_session:2026-07-01:abc123", '
+                    '"input_snapshot": {"order_intent_count": 1}, '
+                    '"retry_state": {"attempt": 1, "max_attempts": 1, '
+                    '"retryable": true}, '
+                    '"error": {"type": "RuntimeError", "message": "fixture"}, '
+                    '"does_not_submit_broker_order": true, '
+                    '"limitations": ["Paper/shadow run failed; no broker order was submitted."]}'
+                ),
+            }
+        ],
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "scheduler"
+    )
+
+    assert summary["scheduler"] == {
+        "status": "paper_shadow_failed",
+        "run_id": "market-session:2026-07-01:100000",
+        "run_type": "market_session",
+        "run_date": "2026-07-01",
+        "execution_mode": "paper_shadow",
+        "last_run_at": "2026-07-01T10:00:01+08:00",
+        "input_fingerprint": "abc123",
+        "idempotency_key": "market_session:2026-07-01:abc123",
+        "input_snapshot": {"order_intent_count": 1},
+        "retry_state": {"attempt": 1, "max_attempts": 1, "retryable": True},
+        "error": {"type": "RuntimeError", "message": "fixture"},
+        "broker_submission_enabled": False,
+        "does_not_submit_broker_order": True,
+        "limitations": ["Paper/shadow run failed; no broker order was submitted."],
+    }
+    assert subsystem["status"] == "blocked"
+    assert subsystem["target"] == "scheduler"
+    assert subsystem["last_run_at"] == "2026-07-01T10:00:01+08:00"
+    assert subsystem["next_action"] == "inspect_scheduler_failure"
+    assert subsystem["detail_status"] == "paper_shadow_failed"
+    assert subsystem["limitations"] == [
+        "Paper/shadow run failed; no broker order was submitted."
+    ]
+    assert summary["conclusion_status"] == "blocked"
+    assert summary["primary_target"] == "scheduler"
+
+
+def test_operations_today_surfaces_scheduler_retry_attempt_in_runbook() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        automation_runs=[
+            {
+                "run_id": "market_session:2026-07-01:abc123",
+                "run_type": "market_session",
+                "run_date": "2026-07-01",
+                "status": "paper_shadow_failed",
+                "execution_mode": "paper_shadow",
+                "started_at": "2026-07-01T10:00:00+08:00",
+                "finished_at": "2026-07-01T10:05:01+08:00",
+                "payload_json": (
+                    '{"input_fingerprint": "abc123", '
+                    '"idempotency_key": "market_session:2026-07-01:abc123", '
+                    '"retry_state": {"attempt": 2, "max_attempts": 2, '
+                    '"retryable": true, "previous_attempts": 1}, '
+                    '"error": {"type": "RuntimeError", "message": "fixture"}, '
+                    '"does_not_submit_broker_order": true, '
+                    '"limitations": ["Paper/shadow run failed; no broker order was submitted."]}'
+                ),
+            }
+        ],
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "scheduler"
+    )
+
+    assert summary["scheduler"]["retry_state"] == {
+        "attempt": 2,
+        "max_attempts": 2,
+        "retryable": True,
+        "previous_attempts": 1,
+    }
+    assert subsystem["limitations"] == [
+        "Paper/shadow run failed; no broker order was submitted.",
+        "Scheduler retry attempt 2 of 2; previous attempts: 1.",
+    ]
+    assert subsystem["next_action"] == "inspect_scheduler_failure"
+    assert subsystem["detail_status"] == "paper_shadow_failed"

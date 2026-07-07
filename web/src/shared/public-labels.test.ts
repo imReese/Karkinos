@@ -203,6 +203,27 @@ test('formats internal evidence references as public audit labels', () => {
   expect(formatPublicEvidenceReference(datasetSnapshot, 'zh')).toBe(
     '数据快照 · preview-dataset',
   );
+  expect(formatPublicEvidenceReference('strategy:dual_ma', 'en')).toBe(
+    'Strategy · dual_ma',
+  );
+  expect(formatPublicEvidenceReference('strategy:dual_ma', 'zh')).toBe(
+    '策略 · dual_ma',
+  );
+  expect(formatPublicEvidenceReference('paper_order:SHADOW-1', 'en')).toBe(
+    'Simulation review order · SHADOW-1',
+  );
+  expect(formatPublicEvidenceReference('paper_fill:FILL-1', 'zh')).toBe(
+    '模拟复核成交 · FILL-1',
+  );
+  expect(
+    formatPublicEvidenceReference(
+      'oms_transition:SHADOW-1:4:partially_filled',
+      'en',
+    ),
+  ).toBe('OMS transition · SHADOW-1 #4 Partially Filled');
+  expect(
+    formatPublicEvidenceReference('oms_transition:SHADOW-1:4:filled', 'zh'),
+  ).toBe('OMS 状态变更 · SHADOW-1 #4 已成交');
 
   const formattedOrder = formatPublicEvidenceReference(paperShadowOrder, 'zh');
   expect(formattedOrder).not.toContain('paper_shadow_order');

@@ -150,6 +150,184 @@ export type ShadowRunResponse = {
   skipped: unknown[];
 };
 
+export type ManualTicketOperatorForm = {
+  schema_version: string;
+  account_alias: string;
+  field_labels?: Record<string, string>;
+  fields?: Array<{
+    key: string;
+    label: string;
+    value: string | number | boolean | null;
+  }>;
+  fee_tax_assumptions?: {
+    source?: string | null;
+    estimated_total_fee?: number | string | null;
+    estimated_net_cash_impact?: number | string | null;
+    fee_rule_id?: string | null;
+    fee_rule_version?: string | null;
+    fee_components?: Record<string, string | number | null | undefined>;
+    notes?: string[];
+  };
+  cash_impact_preview?: {
+    source?: string | null;
+    estimated_gross_amount?: number | string | null;
+    estimated_total_fee?: number | string | null;
+    estimated_net_cash_impact?: number | string | null;
+    available_cash_before?: number | string | null;
+    available_cash_after?: number | string | null;
+    cash_status?: string | null;
+    cash_shortfall?: number | string | null;
+  };
+  position_cost_preview?: {
+    source?: string | null;
+    current_quantity?: number | string | null;
+    current_avg_cost?: number | string | null;
+    current_market_value?: number | string | null;
+    estimated_quantity_after?: number | string | null;
+    estimated_avg_cost_after?: number | string | null;
+    cost_basis_method?: string | null;
+  };
+  trading_session_constraints?: {
+    market?: string | null;
+    timezone?: string | null;
+    allowed_session?: string | null;
+    asset_class?: string | null;
+    notes?: string[];
+  };
+  safety?: Record<string, string | number | boolean | null | undefined>;
+};
+
+export type ManualTicketExportResponse = {
+  schema_version: string;
+  gateway_id: 'manual_ticket' | string;
+  status: string;
+  dry_run: boolean;
+  submitted_to_broker: boolean;
+  order_id: string;
+  ticket: {
+    symbol: string;
+    side: string;
+    asset_class?: string | null;
+    quantity: number;
+    order_type: string;
+    limit_price?: number | null;
+    copy_text: string;
+    operator_form?: ManualTicketOperatorForm;
+  };
+  export: {
+    schema_version: string;
+    format: string;
+    mime_type: string;
+    file_name: string;
+    copy_text: string;
+    content?: {
+      operator_form?: ManualTicketOperatorForm;
+      [key: string]: unknown;
+    };
+    content_json: string;
+  };
+  limitations?: string[];
+};
+
+export type ManualExecutionPreviewRequest = {
+  fill_price: string;
+  quantity: string;
+  fee?: string;
+  tax?: string;
+  transfer_fee?: string;
+};
+
+export type ControlledBridgeGateSummary = {
+  schema_version?: string;
+  status?: string;
+  required_gates?: string[];
+  gates?: Record<
+    string,
+    {
+      status?: string | null;
+      evidence_ref?: string | null;
+      source?: string | null;
+    }
+  >;
+  broker_submission_enabled?: boolean;
+  submitted_to_broker?: boolean;
+  does_not_authorize_execution?: boolean;
+};
+
+export type ManualExecutionValidation = {
+  manual_confirmation_status?: string;
+  gateway_evidence_status?: string;
+  gateway_evidence?: Record<string, unknown>;
+  controlled_bridge_policy?: Record<string, unknown>;
+  broker_submission_enabled?: boolean;
+  requires_human_broker_entry?: boolean;
+  required_gate_summary?: ControlledBridgeGateSummary;
+};
+
+export type ManualExecutionPreviewResponse = {
+  schema_version: string;
+  gateway_id: 'manual_ticket' | string;
+  status: string;
+  dry_run: boolean;
+  submitted_to_broker: boolean;
+  does_not_mutate_production_ledger: boolean;
+  order_id: string;
+  actor?: string | null;
+  preview_fingerprint?: string | null;
+  fingerprint_scope?: string | null;
+  execution_preview: {
+    source?: string | null;
+    symbol: string;
+    side: string;
+    asset_class?: string | null;
+    quantity: string;
+    fill_price: string;
+    gross_amount: string;
+    fee: string;
+    tax: string;
+    transfer_fee: string;
+    total_cost: string;
+    net_cash_impact: string;
+    currency?: string | null;
+    notes?: string[];
+  };
+  ledger_entry_draft: {
+    schema_version: string;
+    entry_type: string;
+    symbol: string;
+    side: string;
+    asset_class?: string | null;
+    quantity: string;
+    price: string;
+    gross_amount: string;
+    fee: string;
+    tax: string;
+    transfer_fee: string;
+    amount: string;
+    source_order_id: string;
+    source: string;
+    requires_operator_save: boolean;
+    does_not_mutate_production_ledger: boolean;
+  };
+  position_cost_preview?: ManualTicketOperatorForm['position_cost_preview'];
+  validation?: ManualExecutionValidation;
+  safety?: Record<string, string | number | boolean | null | undefined>;
+  limitations?: string[];
+};
+
+export type ManualExecutionRecordRequest = ManualExecutionPreviewRequest & {
+  preview_fingerprint: string;
+  operator_note?: string;
+};
+
+export type ManualExecutionRecordResponse = ManualExecutionPreviewResponse & {
+  status: 'manual_execution_recorded' | string;
+  event_id: number | string;
+  does_not_mutate_oms: boolean;
+  requires_operator_ledger_save?: boolean;
+  operator_note?: string | null;
+};
+
 export function useKillSwitchQuery() {
   return useQuery({
     queryKey: ['trading-kill-switch'],
@@ -263,5 +441,82 @@ export function useDailyShadowRunMutation() {
         queryClient.invalidateQueries({ queryKey: ['trading-manual-orders'] }),
       ]);
     },
+  });
+}
+
+export function useManualTicketExportMutation() {
+  return useMutation({
+    mutationFn: ({ orderId }: { orderId: string }) =>
+      requestJson<ManualTicketExportResponse>(
+        `/api/broker-gateway/orders/${encodeURIComponent(
+          orderId,
+        )}/manual-ticket/export`,
+        {
+          method: 'POST',
+          body: { actor: 'web' },
+        },
+      ),
+  });
+}
+
+export function useManualExecutionPreviewMutation() {
+  return useMutation({
+    mutationFn: ({
+      orderId,
+      fill_price,
+      quantity,
+      fee,
+      tax,
+      transfer_fee,
+    }: { orderId: string } & ManualExecutionPreviewRequest) =>
+      requestJson<ManualExecutionPreviewResponse>(
+        `/api/broker-gateway/orders/${encodeURIComponent(
+          orderId,
+        )}/manual-execution/preview`,
+        {
+          method: 'POST',
+          body: {
+            actor: 'web',
+            fill_price,
+            quantity,
+            fee,
+            tax,
+            transfer_fee,
+          },
+        },
+      ),
+  });
+}
+
+export function useManualExecutionRecordMutation() {
+  return useMutation({
+    mutationFn: ({
+      orderId,
+      fill_price,
+      quantity,
+      fee,
+      tax,
+      transfer_fee,
+      preview_fingerprint,
+      operator_note,
+    }: { orderId: string } & ManualExecutionRecordRequest) =>
+      requestJson<ManualExecutionRecordResponse>(
+        `/api/broker-gateway/orders/${encodeURIComponent(
+          orderId,
+        )}/manual-execution`,
+        {
+          method: 'POST',
+          body: {
+            actor: 'web',
+            fill_price,
+            quantity,
+            fee,
+            tax,
+            transfer_fee,
+            preview_fingerprint,
+            operator_note,
+          },
+        },
+      ),
   });
 }

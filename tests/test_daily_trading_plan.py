@@ -175,6 +175,9 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert plan["candidate_pool_count"] == 1
     assert plan["manual_ready_count"] == 1
     assert plan["order_intent_count"] == 1
+    assert plan["account_truth"]["gate_status"] == "pass"
+    assert plan["account_truth"]["has_evidence"] is True
+    assert plan["account_truth"]["blocking_reasons"] == []
 
     intent = plan["order_intents"][0]
     assert intent["action_id"] == 1

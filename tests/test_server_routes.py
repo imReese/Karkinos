@@ -106,6 +106,19 @@ def test_app_registers_acceptance_audit_route():
     )
 
 
+def test_app_registers_execution_reconciliation_route():
+    from server.app import create_app
+
+    app = create_app({"live_auto_start": False})
+
+    assert any(
+        isinstance(route, APIRoute)
+        and route.path == "/api/execution-reconciliation/runs"
+        and "POST" in route.methods
+        for route in app.routes
+    )
+
+
 def test_asset_metadata_resolver_accepts_supported_config_shapes():
     from server.services.asset_metadata import (
         build_asset_metadata_status,

@@ -1,5 +1,7 @@
 # Karkinos Roadmap
 
+[中文路线图](ROADMAP.zh.md) | [Architecture](ARCHITECTURE.md) | [Goal](KARKINOS_GOAL.md)
+
 This file owns versioned roadmap planning and acceptance criteria. It is not a
 user manual; current usage guidance belongs in the README files.
 
@@ -22,25 +24,119 @@ user manual; current usage guidance belongs in the README files.
 | v1.4 | Completed | Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity |
 | v1.5 | Completed | Daily Trading Plan & Portfolio Construction |
 | v1.6 | Active | Operations Center & Paper/Shadow Runbook |
-| v1.7 | Planned | Controlled Broker Execution Bridge |
+| v1.7 | Active | Controlled Broker Execution Bridge |
+| v1.8 | Planned | Small-Capital Controlled Auto Pilot |
 
 ## Automation Maturity Track
 
-Karkinos is moving toward a professional automated-quant workflow, but not
-toward default unattended real-money trading.
+Karkinos is moving toward a professional automated-quant workflow whose purpose
+is to improve after-cost trading outcomes. The edge should come from better
+data, better validation, better risk control, better execution discipline, and
+better review. Broker submission is an execution capability, not the source of
+edge, so it must mature after the decision, simulation, and reconciliation
+layers are reliable.
+
+For the full architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 The intended maturity ladder is:
 
 | Level | Status | Meaning |
 | --- | --- | --- |
 | L0 Research evidence | Completed | Registered strategies, reproducible backtests, after-cost/OOS evidence, and promotion readiness exist. |
-| L1 Daily trading plan | Active | The system should generate a daily plan with candidates, blockers, costs, risks, and manual-confirmation next steps. |
-| L2 Paper/shadow operating loop | Planned | Scheduled paper/shadow runs, divergence checks, and run summaries should operate without manual data edits. |
-| L3 Controlled broker bridge | Future-gated | Broker-specific order previews may be prepared only after account truth, risk, paper/shadow, and manual review gates pass. |
-| L4 Unattended real-money automation | Deferred | Fully automatic real-money order submission remains out of scope. |
+| L1 Daily trading plan | Completed | The system generates a daily plan with candidates, blockers, costs, risks, and manual-confirmation next steps. |
+| L2 Paper/shadow operating loop | Active | Scheduled paper/shadow runs, divergence checks, and run summaries should operate without manual data edits. |
+| L3 Manual execution assist | Active | OMS, manual tickets, broker evidence import, and execution reconciliation now support safe operator-driven execution paths. |
+| L4 Controlled broker bridge | Planned | Broker-specific order previews or submissions may be prepared only after account truth, risk, paper/shadow, and manual review gates pass. |
+| L5 Small-capital auto pilot | Planned | A tightly capped, explicitly enabled pilot may automate limited orders only after L0-L4 prove reliable. |
+| L6 Unattended real-money automation | Deferred | Fully automatic real-money order submission remains out of scope until every upstream layer is mature and explicitly accepted. |
 
 The next product step is therefore not "auto-buy" or "auto-sell". It is a
-daily, risk-gated, auditable trading plan that defaults to human confirmation.
+repeatable paper/shadow execution loop with an auditable OMS state machine,
+then a controlled non-submitting order-ticket bridge. Real broker submission is
+preserved as a future roadmap capability, but it stays behind explicit account,
+strategy, symbol, order, risk, account-truth, paper/shadow, kill-switch, and
+operator-authority gates.
+
+## Automation Gap Matrix
+
+This matrix records what remains between the current product and a safe
+automated-quant platform. It is intentionally stricter than "can generate a
+signal" because live-like automation is only credible when execution, risk,
+account truth, paper/shadow, monitoring, and audit all agree.
+
+| Capability | Current state | Required before live-like automation | Roadmap owner |
+| --- | --- | --- | --- |
+| Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
+| Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, and Today's to-dos exist. | Candidate actions must flow automatically into paper/shadow runs, and Today's to-dos must explain every blocked/manual-ready state without raw reason codes. | v1.5-v1.6 |
+| Paper/shadow execution | Paper/shadow evidence exists in isolated preview and summary paths. | A daily paper/shadow execution engine must persist run ids, deterministic inputs, simulated order/fill state, fees/taxes, divergence status, retry/idempotency state, and review outcomes. | v1.6.1 |
+| OMS state machine | Paper order evidence and OMS concepts exist, but the daily operations loop still lacks a first-class persisted run state for order-intent lifecycle review. | Order intents need staged/submitted/accepted/partially-filled/filled/rejected/cancelled/expired/reconciled states, deterministic client order ids, idempotent reruns, and immutable audit references. | v1.6.1 |
+| Broker execution gateway | Manual-ticket gateway status, preview, and creation exist behind evidence gates; connector health, runtime read-only connector snapshot query, staged account/fill query, local order query, and default-rejected cancel contracts exist; broker submission remains disabled. | Replace deterministic connector fixtures with real local read-only adapters and keep bridge actions behind explicit query/dry-run/export-only boundaries before any real connector can be enabled. | v1.7 |
+| Order ticket export | Copy-safe manual ticket preview and recorded manual-ticket events exist after manual confirmation and required evidence; exports include operator-form context for field labels, account alias, fee/tax assumptions, net cash impact, remaining-position/cost-basis preview, regular-session constraints, and non-submission safety flags. | Add export/import ergonomics and operator review surfaces before any live broker bridge. | v1.7 |
+| Account truth and broker reconciliation | CSV import preview, staged broker evidence, reconciliation reports, manual review states, Account Truth Score, and execution reconciliation API exist. | Automation gates must require fresh account-truth pass/degraded policy, reconcile fills/orders back into local facts, and block stale or unresolved differences. | v0.6-v0.7, v1.7 |
+| Risk controls | Mandatory pre-trade risk gate, batch risk checks, cash buffer, concentration, T+1, data-quality, and kill-switch concepts exist. | Live-like execution must enforce global, strategy, account, and per-symbol controls with policy snapshots, escalation notes, and irreversible audit logs. | v1.5-v1.7 |
+| Scheduler and runbook | Operations summary exists, but persistent scheduler run records and deterministic rerun state remain incomplete. | Persist scheduled strategy, risk, paper/shadow, reconciliation, and report runs with input snapshots, result hashes, errors, retries, and operator actions. | v1.6 |
+| Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
+| Strategy promotion pipeline | Promotion readiness consumes evidence; strategy assignment and attribution exist. | Add explicit lifecycle states from research-only to paper, shadow, manual-confirmation, controlled bridge pilot, paused, and retired, with promotion/demotion audit. | v1.6-v1.7 |
+| Small-capital controlled auto pilot | Not supported. | Add capped account/strategy/symbol budgets, per-order or policy-bounded approvals, drawdown stops, automatic pause, and mandatory reconciliation before the next run. | v1.8 |
+| Real-money unattended automation | Not supported. | Deferred until every upstream capability is mature, small-capital pilot evidence is reviewed, and the product owner explicitly accepts the operational and regulatory risk. | Deferred |
+
+## Controlled Automation Architecture
+
+The controlled-automation track is the bridge between the current
+paper/shadow foundation and any future broker-connected workflow. It is not a
+single "turn on auto trading" feature. It is a layered operating architecture
+with separate authority boundaries:
+
+```text
+strategy promotion
+-> automation orchestrator
+-> risk and permission gate
+-> OMS core
+-> broker gateway abstraction
+-> execution reconciliation
+-> monitoring, alerts, and audit
+```
+
+The default product mode remains manual confirmation. Broker submission must
+stay disabled unless a future controlled bridge is explicitly configured,
+audited, and gated.
+
+Recommended implementation phases:
+
+| Phase | Target | Default broker behavior |
+| --- | --- | --- |
+| A | Controlled automation skeleton: policies, run records, automation status, and Today's to-dos integration. | No broker gateway. |
+| B | OMS foundation: canonical order lifecycle, transitions, idempotency, and paper/shadow/manual-ticket modes. | No broker submission. |
+| C | Broker gateway abstraction: dry-run adapter, manual-ticket export, capability checks, and connector health. | Dry-run or export only. |
+| D | Execution reconciliation: compare OMS/order/fill facts with broker evidence and Account Truth. | No automatic ledger mutation. |
+| E | Strategy promotion pipeline: research, paper, shadow, manual-confirmation, bridge-pilot, paused, retired. | Promotion does not authorize execution by itself. |
+| F | Future controlled live bridge: explicit account enablement, kill switch, connector capability check, and per-order confirmation. | Disabled by default. |
+| G | Small-capital auto pilot: capped strategy/account budgets, hard stops, reconciliation-before-next-run, and automatic pause on divergence. | Explicit opt-in only. |
+
+Key new contracts should include:
+
+* `automation_policies` for global/account/strategy/symbol/execution-mode
+  controls.
+* `automation_runs` for scheduled or operator-triggered run records.
+* `oms_orders` and `oms_transitions` for the production order lifecycle.
+* `broker_gateway_configs` and `broker_gateway_health` for connector
+  capability state.
+* `execution_reconciliation_runs` and `execution_reconciliation_items` for
+  order/fill/cash/position agreement.
+* `strategy_promotion_states` for strategy lifecycle gates.
+* `auto_pilot_policies` for any future capped small-capital automation
+  experiment.
+
+The first user-visible ladder should be:
+
+```text
+Today's plan is ready
+-> risk has passed or blocked
+-> paper/shadow simulation has run
+-> divergence is clear or needs review
+-> manual confirmation can continue, or execution remains blocked
+-> reconciliation confirms or flags account differences
+```
 
 ## v0.2 Completed Summary
 
@@ -864,9 +960,91 @@ Initial v1.6 implementation note:
   with subsystem health, next action, limitations, daily-plan counts, and
   paper/shadow simulation-review status. Overview embeds the runbook in
   "Today's to-dos", and Decision embeds the paper/shadow summary in the daily
-  trading plan panel. Remaining v1.6 work is scheduler run persistence,
-  deterministic rerun records, fuller acceptance-audit coverage, and richer
-  divergence reports.
+  trading plan panel. Automation alerts now cover failed paper/shadow
+  automation runs and incomplete read-only broker connector health as
+  acknowledgeable runbook evidence, risk-blocked daily plans can be scanned
+  into manual-review alerts, stale market-data health snapshots can be scanned
+  into manual-review alerts with stale-symbol evidence, and degraded or
+  blocked Account Truth snapshots can be scanned into manual-review alerts,
+  and diverged or review-required paper/shadow runs can be scanned into
+  manual-review alerts with divergence-count evidence. Runtime-degraded
+  read-only connector health snapshots can also be polled through the broker
+  gateway health contract and scanned into manual-review alerts with
+  heartbeat/error context, capability scope, read/query capability flags,
+  explicit preview/export/dry-run/cancel/submit blockers, and explicit
+  non-submission evidence. Paper/shadow divergence summaries now include a
+  richer comparison of expected strategy behavior, simulated execution,
+  account-truth state, realized market context, cost evidence, and
+  non-submission safety flags, and the Decision daily trading plan panel
+  renders those report sections as read-only review evidence while Overview
+  Today's to-dos surfaces a compact divergence-review summary and Trading
+  execution audit shows the latest paper/shadow run evidence. Accepted
+  divergence reviews preserve raw divergence status for audit while exposing a
+  runbook effective status for manual-confirmation handoff. Read-only connector
+  polling now has a local JSON export adapter in addition to deterministic
+  fixtures. Market-session automation now uses a trading-plan fingerprint
+  idempotency key as the persisted run id, so repeated scheduler invocations
+  for the same plan/date update one audit run while changed inputs create a
+  new run. Remaining v1.6 work is continued operator-facing divergence review
+  and runbook hardening.
+
+### v1.6.1 Implementation Goal — Paper/Shadow Execution Engine & OMS Run Records
+
+This is the active development goal after the daily trading-plan and risk-block
+clarity work. It should turn manual-ready order intents into a repeatable
+paper/shadow execution run without creating production ledger entries, broker
+orders, or live fills.
+
+#### v1.6.1 Scope
+
+* Persist a `paper_shadow_run` record for each daily run with run id, plan date,
+  input decision/trading-plan references, created timestamp, status, counts,
+  limitations, and deterministic fingerprint.
+* Convert daily trading-plan order intents into paper/shadow order records with
+  deterministic client order ids, strategy/action/risk references, side,
+  quantity, price basis, gross amount, fee/tax estimate, and execution mode.
+* Add an OMS state machine for paper/shadow records:
+  `staged`, `submitted`, `accepted`, `partially_filled`, `filled`,
+  `rejected`, `cancelled`, `expired`, and `reconciled`.
+* Simulate paper fills deterministically from current quote evidence, with
+  support for full fill, partial fill, reject, cancel, and expired outcomes in
+  fixtures.
+* Keep paper/shadow orders and fills as simulation evidence only. They must not
+  mutate production `ledger_entries`, cash, positions, broker evidence, or
+  manual orders.
+* Produce a divergence summary and structured review queue comparing order
+  intents, simulated fills, current account facts, and broker/account truth
+  state.
+* Surface the latest paper/shadow run in `/api/operations/today`, Decision, and
+  Today's to-dos with next actions for not-run, running, failed, diverged,
+  within-expectations, and review-required states.
+* Make reruns idempotent for the same plan fingerprint while allowing an
+  explicit new run when inputs change.
+
+#### v1.6.1 Acceptance Criteria
+
+* [ ] Backend storage exists for paper/shadow runs, simulated orders, simulated
+  fills, status transitions, evidence refs, and run limitations.
+* [ ] A service can create or reuse a paper/shadow run from the current daily
+  trading plan and returns deterministic counts and evidence refs.
+* [ ] OMS transitions reject invalid state moves and record every accepted move
+  with timestamp, reason, and source.
+* [ ] Paper/shadow fill simulation covers full fill, partial fill, rejection,
+  cancellation, expiration, fee/tax projection, and idempotent rerun behavior.
+* [ ] `/api/operations/today` includes latest paper/shadow run id, status,
+  order/fill counts, divergence status, structured review queue, and next
+  manual review step.
+* [ ] Decision and Overview surfaces show paper/shadow next actions and
+  structured review queue summaries without exposing raw state-machine
+  internals or implying broker submission.
+* [ ] Backend deterministic tests cover storage, idempotency, state transitions,
+  fill simulation, divergence summary, review queue, and no production-ledger
+  mutation.
+* [ ] Frontend tests cover not-run, review-required, diverged,
+  within-expectations, failed paper/shadow states, and structured review queue
+  presentation.
+* [ ] README/docs keep the safety boundary explicit: paper/shadow records are
+  simulation evidence and do not submit broker orders.
 
 ## Target for v1.7
 
@@ -875,21 +1053,75 @@ after data, account truth, strategy runtime, paper/shadow, OMS, risk,
 operations monitoring, and manual review are mature. This milestone is a
 controlled bridge design, not a default trading bot.
 
+The purpose is to reduce execution friction after Karkinos has already proved
+the decision and simulated the execution path. The milestone should make broker
+handoff safer and more auditable; it should not make strategy code capable of
+calling a broker directly. A deterministic strategy broker-boundary scanner now
+checks the current strategy tree for forbidden broker/gateway adapter imports
+and direct broker-style calls, so future connector work has a regression guard
+for this authority boundary.
+
 ### v1.7 Scope
 
 * Broker-specific order previews that remain manual by default.
 * Exportable or bridge-ready order tickets for environments where the user
   still performs final broker-side submission manually.
+* A broker gateway contract with explicit capabilities for health checks,
+  order preview, dry-run validation, query-only account/order/fill state, and
+  disabled-by-default submission. Current backend capability includes
+  connector health, runtime read-only connector snapshot query, manual-ticket
+  preview/dry-run/create, local order query, staged broker-evidence
+  account-facts query, staged fill query, and default-rejected broker
+  cancellation without broker write contact; manual-ticket
+  actions are blocked when the global kill switch is enabled, and gateway
+  status exposes that blocker in both the API and the Decision Cockpit's
+  read-only automation panel.
+  Connector health, gateway query/read capability labels, staged account-facts
+  summaries, staged fill-polling summaries, and read-only local order-query
+  evidence are also visible in that panel, including a read-only staged-fill
+  reconciliation review hint when execution reconciliation has open items,
+  without broker contact, credentials, submit controls, cancel controls, or
+  ledger-sync controls. Automation Cockpit and Decision Cockpit also surface
+  runtime read-only connector snapshot summaries for cash, positions, orders,
+  and fills under the same non-submitting contract, without exposing account
+  ids or adding submit/cancel/ledger-sync controls. Read-only connector health
+  now also exposes an
+  explicit capability scope plus preview/export/dry-run/cancel/submit blockers
+  so future controlled-bridge review can distinguish query authority from
+  execution authority.
+  The same panel also surfaces strategy promotion state as read-only lifecycle
+  evidence: stage, paper/shadow gate status, missing requirements, optional
+  backtest evidence id, and an explicit live-like disabled boundary. Promotion
+  visibility does not authorize execution by itself.
 * Explicit per-order human confirmation, kill switch, connector capability
   checks, account-truth gate, strategy evidence gate, and risk gate.
 * A white-list model for any future broker submission capability.
 * Full audit trail from signal to evidence bundle, risk decision,
   account-truth state, manual confirmation, order preview, and broker or
   manual execution record.
+* Execution reconciliation that compares OMS orders, gateway events, broker
+  evidence, cash, positions, fills, fees, taxes, and local ledger expectations
+  before recommending any ledger update. Recent reconciliation run status and
+  the first open item are visible in the Decision Cockpit as read-only review
+  evidence, with no ledger-sync or broker-action controls. Matching staged
+  broker trade evidence now carries a read-only fee/tax/net-amount summary in
+  reconciliation payloads, and Decision Cockpit renders the gross amount,
+  fee/tax, transfer fee, net amount, and review-required safety flags so
+  operator review can happen before ledger updates.
 * Manual trade entry surfaces use explicit labels and calculated previews for
   trade time, instrument, side, quantity, fill price, gross amount, fee/tax
   breakdown, net cash impact, remaining position, and broker-cost-basis impact;
-  users should not need to infer what an unlabeled number means.
+  users should not need to infer what an unlabeled number means. The broker
+  gateway now has a non-mutating manual execution preview that calculates an
+  operator-entered fill, fee/tax/transfer fee, net cash impact, position/cost
+  preview, ledger-entry draft, and deterministic preview fingerprint after
+  manual-ticket creation, while still requiring a later explicit operator save
+  before any production ledger record.
+  Trading approvals exposes this preview after manual-ticket export without
+  save-ledger, apply-fill, or broker-submit controls.
+  The gateway can also record a matching-fingerprint manual execution evidence
+  event for audit continuity without creating fills, changing OMS status, or
+  writing production ledger entries.
 
 ### Acceptance Criteria for v1.7
 
@@ -897,10 +1129,21 @@ controlled bridge design, not a default trading bot.
   explicit controlled bridge is configured.
 * [ ] A non-submitting order-ticket export path exists before any live broker
   bridge path is considered.
+* [ ] Gateway capabilities and health are visible in API/UI and include
+  whether the connector can read account facts, query orders/fills, cancel,
+  preview, dry-run, or submit.
 * [ ] Every live-like order preview requires account-truth, research-evidence,
   risk, paper/shadow, and manual-confirmation evidence.
 * [ ] Kill switch, connector capability checks, and per-order confirmation are
   enforced before any live-like bridge action.
+* [ ] Strategy code has no broker adapter access; all bridge actions go through
+  policy, risk, OMS, gateway, and reconciliation services. A static guard now
+  covers the current strategy tree; future private strategies outside the repo
+  should use the same contract before any controlled bridge pilot.
+* [ ] Strategy promotion state is visible as read-only paper/shadow lifecycle
+  evidence, and it does not expose live-promotion controls.
+* [ ] Broker callbacks or imported fills are staged as evidence and reconciled
+  before any production ledger mutation is suggested.
 * [ ] Manual execution forms show user-readable field labels, fee/tax
   components, net cash impact, and remaining-position/cost-basis preview before
   saving a manual execution record.
@@ -908,13 +1151,59 @@ controlled bridge design, not a default trading bot.
   guaranteed-profit language, or strategy-direct broker submission is
   introduced.
 
+## Target for v1.8
+
+Karkinos v1.8 — Small-Capital Controlled Auto Pilot — is the first milestone
+where limited real-money automation may be considered. It is not unattended
+full-account trading. It is an explicitly enabled pilot for strategies that
+have already passed research, after-cost/OOS validation, paper/shadow review,
+manual execution evidence, broker bridge dry-runs, and reconciliation.
+
+The goal is to test whether automation improves execution discipline and
+after-cost outcomes under strict loss, size, and operational limits.
+
+### v1.8 Scope
+
+* Per-account, per-strategy, per-symbol, and per-day pilot budgets.
+* Maximum order value, maximum position change, maximum turnover, maximum daily
+  loss, maximum drawdown, and maximum consecutive-error limits.
+* Policy-bound automation modes such as `manual_each_order`,
+  `auto_within_cap`, `pause_on_divergence`, and `reconcile_before_next_run`.
+* Automatic pause on kill switch, stale market data, account-truth degradation,
+  paper/shadow divergence, gateway health degradation, rejected/cancelled order
+  spikes, reconciliation gaps, or unexpected ledger/cash/position changes.
+* Operator review screens for enabling, pausing, resuming, and retiring pilot
+  strategies.
+* Pilot performance review comparing backtest expectation, paper/shadow
+  expectation, manual execution, bridge execution, and realized after-cost
+  outcome.
+
+### Acceptance Criteria for v1.8
+
+* [ ] Auto pilot is impossible unless the account, strategy, connector, and
+  execution mode are explicitly enabled in local policy.
+* [ ] Every pilot strategy has promotion evidence from research to paper/shadow
+  to manual-confirmation to controlled bridge pilot.
+* [ ] Hard caps block orders that exceed pilot budget, cash, concentration,
+  turnover, drawdown, liquidity, T+1, limit, suspension, or ST constraints.
+* [ ] The system automatically pauses pilot mode on data, broker, risk,
+  account-truth, reconciliation, or kill-switch failures.
+* [ ] Reconciliation must be clear or manually accepted before the next pilot
+  run can place another order.
+* [ ] UI shows pilot capital at risk, remaining budget, last order, last
+  reconciliation result, current blockers, and the exact pause/resume reason.
+* [ ] Tests cover policy gating, budget caps, auto-pause, reconciliation-before-
+  next-run, idempotency, and no strategy-direct broker access.
+* [ ] Documentation states that v1.8 is a capped experiment, not a profit
+  guarantee or default unattended trading mode.
+
 ## Deferred Capabilities
 
 These capabilities remain intentionally out of scope until the professional
 platform foundation is mature:
 
 * Default automatic real-money trading.
-* Unattended real-money order submission.
+* Unattended full-account real-money order submission.
 * Broker password storage.
 * Black-box AI strategy auto-buy or auto-sell.
 * Community strategy marketplace.

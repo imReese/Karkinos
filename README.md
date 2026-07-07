@@ -14,9 +14,11 @@ truth, risk control, signals, reconciliation, and review.
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
-Strategic goal, roadmap, and implementation history live in
+Strategic goal, architecture, roadmap, and implementation history live in
 [docs/KARKINOS_GOAL.md](docs/KARKINOS_GOAL.md),
-[docs/ROADMAP.md](docs/ROADMAP.md), and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+[docs/ROADMAP.md](docs/ROADMAP.md)
+([中文路线图](docs/ROADMAP.zh.md)), and
 [docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md).
 
 ---
@@ -36,6 +38,9 @@ public demos and development.
 **Highlights**
 
 - Event-driven architecture with deterministic backtesting
+- Controlled automation architecture: research evidence, daily plan, risk
+  gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
+  broker bridge remain separate authority layers
 - Strategy registry exposes typed parameter schemas, and backtest requests can
   use validated generic `params` while preserving legacy moving-average fields
 - Backtest parameter sweeps run bounded typed grids, persist each tested
@@ -118,10 +123,16 @@ public demos and development.
 **Architecture**
 
 ```
-DataHandler → EventBus → Strategy → Portfolio → RiskManager(-10) → Execution(0)
-                        ↑                                              |
-                        └──────────── FillEvent ──────────────────────┘
+DataHandler → EventBus → Strategy → Portfolio → OrderIntent → Risk Gate → Order/Gateway
+                        ↑                                                     |
+                        └──────────────── FillEvent ──────────────────────────┘
 ```
+
+The full architecture is documented in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Karkinos is designed to improve
+after-cost trading outcomes through evidence, risk control, simulation,
+reconciliation, and review. Broker submission is a future controlled-bridge
+capability, disabled by default, not the default source of trading edge.
 
 **Quick Start**
 
@@ -175,15 +186,27 @@ held fund positions instead of built-in defaults.
 
 **Automation Maturity**
 
-Karkinos is moving toward a professional automated-quant workflow, but the
+Karkinos is moving toward a professional automated-quant workflow whose goal is
+better after-cost trading outcomes, not faster unchecked order submission. The
 default product boundary remains daily plan generation plus manual
-confirmation. v1.5 now provides a daily trading plan and
-portfolio-construction layer that prepares evidence-linked order intents, cost
-estimates, blockers, constraints, and next review steps without submitting
-broker orders. The active roadmap milestone is v1.6: paper/shadow runbooks,
-scheduled operation state, exception queues, and health checks. Any controlled
-broker bridge remains a later gated stage; unattended real-money automation is
-deferred.
+confirmation. v1.5 provides a daily trading plan and portfolio-construction
+layer that prepares evidence-linked order intents, cost estimates, blockers,
+constraints, and next review steps without submitting broker orders. The active
+roadmap milestone is v1.6: paper/shadow runbooks, scheduled operation state,
+exception queues, and health checks. Later stages add manual execution assist,
+a controlled broker bridge, and only then a capped small-capital auto pilot.
+Unattended full-account real-money automation remains deferred.
+
+The v1.6 paper/shadow run path is:
+daily trading plan -> pre-trade risk -> local paper/shadow run -> divergence
+review -> manual confirmation. `POST /api/operations/paper-shadow/run` creates
+or reuses an idempotent run record, deterministic simulated order/fill facts,
+and a latest-run summary for Operations and Decision. These artifacts are
+simulation evidence only: they do not create manual orders, mutate production
+ledger entries, change cash or positions, store broker credentials, or submit
+broker orders. If an operator accepts a diverged paper/shadow review, Operations
+keeps the raw divergence evidence while exposing a runbook handoff status for
+manual confirmation.
 
 The Web app localizes portfolio asset classes in the selected UI language
 and keeps ledger rows auditable: trade activity surfaces the instrument name

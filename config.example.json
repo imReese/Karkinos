@@ -79,8 +79,25 @@
             "enabled": false,
             "client_path": "",
             "account_alias": ""
+        },
+        {
+            "connector_id": "local-export-readonly",
+            "connector_type": "local_export_readonly",
+            "enabled": false,
+            "client_path": "data/private/broker-snapshot.example.json",
+            "account_alias": "local-review"
         }
     ],
+    "controlled_bridge_policy": {
+        "policy_id": "default-controlled-bridge-disabled",
+        "enabled": false,
+        "allowed_connector_ids": [],
+        "allowed_account_aliases": [],
+        "allowed_strategy_ids": [],
+        "allowed_symbols": [],
+        "per_order_confirmation_required": true,
+        "automation_allowed": false
+    },
     "notification": {
         "type": "console"
     },

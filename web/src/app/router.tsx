@@ -159,6 +159,7 @@ import {
 import { formatAssetClassLabel } from '../shared/asset-class';
 import {
   formatPublicCode,
+  formatPublicEvidenceReference,
   formatPublicNote,
   formatPublicStatus,
 } from '../shared/public-labels';
@@ -893,6 +894,338 @@ function riskBlockerDetailText(
   return `${blocker.count} candidates are blocked by risk: ${reasonText}.${symbolText} Review the reasons before manual confirmation.`;
 }
 
+function numericPaperShadowValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function overviewCountLabel(count: number, singular: string, locale: Locale) {
+  if (locale === 'zh') {
+    return `${count} ${singular}`;
+  }
+  return `${count} ${singular}${count === 1 ? '' : 's'}`;
+}
+
+function paperShadowOverviewEvidenceSummary(
+  operations: OperationsTodayResponse | null | undefined,
+  locale: Locale,
+) {
+  const paperShadow = operations?.paper_shadow;
+  if (!paperShadow) {
+    return null;
+  }
+  const nextStep = paperShadow.next_manual_review_step;
+  const shouldSummarize =
+    nextStep === 'review_shadow_divergence' ||
+    nextStep === 'resolve_shadow_divergence' ||
+    paperShadow.status === 'review_required' ||
+    paperShadow.status === 'diverged' ||
+    paperShadow.divergence_status === 'review_required' ||
+    paperShadow.divergence_status === 'diverged';
+  if (!shouldSummarize) {
+    return null;
+  }
+  const summary = paperShadow.divergence_summary;
+  const labels =
+    locale === 'zh'
+      ? {
+          prefix: 'Paper/shadow',
+          orderIntent: '订单意图',
+          simOrder: '模拟订单',
+          simFill: '模拟成交',
+          diverged: '偏差',
+          slippage: '模拟滑点',
+          noBrokerSubmission: '不会提交券商订单',
+        }
+      : {
+          prefix: 'Paper/shadow',
+          orderIntent: 'order intent',
+          simOrder: 'sim order',
+          simFill: 'sim fill',
+          diverged: 'Diverged',
+          slippage: 'Sim slippage',
+          noBrokerSubmission: 'No broker submission',
+        };
+  const countText = [
+    overviewCountLabel(
+      paperShadow.order_intent_count,
+      labels.orderIntent,
+      locale,
+    ),
+    overviewCountLabel(
+      paperShadow.simulated_order_count,
+      labels.simOrder,
+      locale,
+    ),
+    overviewCountLabel(
+      paperShadow.simulated_fill_count,
+      labels.simFill,
+      locale,
+    ),
+  ].join(locale === 'zh' ? '，' : ', ');
+  const divergedRefs = (
+    summary?.execution_comparison?.diverged_order_refs ?? []
+  )
+    .slice(0, 2)
+    .map((ref) => formatPublicEvidenceReference(ref, locale))
+    .filter(Boolean);
+  const slippage = numericPaperShadowValue(
+    summary?.cost_summary?.simulated_slippage_cost,
+  );
+  return [
+    `${labels.prefix}: ${countText}`,
+    divergedRefs.length
+      ? `${labels.diverged}: ${divergedRefs.join(locale === 'zh' ? '；' : '; ')}`
+      : '',
+    paperShadowReviewQueueSummary(paperShadow, locale),
+    slippage !== null
+      ? `${labels.slippage}: ${formatCurrencyValue(slippage)}`
+      : '',
+    summary?.does_not_submit_broker_order ? labels.noBrokerSubmission : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function paperShadowReviewQueueSummary(
+  paperShadow: OperationsTodayResponse['paper_shadow'],
+  locale: Locale,
+) {
+  const queue = paperShadow.review_queue ?? [];
+  if (queue.length === 0) {
+    return null;
+  }
+  const firstAction = queue[0]?.required_action
+    ? operationsNextActionLabel(queue[0].required_action, locale)
+    : '';
+  const firstDetail = paperShadowReviewQueueItemSummary(queue[0], locale);
+  if (locale === 'zh') {
+    return [`复核队列：${queue.length} 项`, firstAction, firstDetail]
+      .filter(Boolean)
+      .join(' · ');
+  }
+  return [
+    `Review queue: ${queue.length} item${queue.length === 1 ? '' : 's'}`,
+    firstAction,
+    firstDetail,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+type OverviewPaperShadowReviewQueueItem = NonNullable<
+  OperationsTodayResponse['paper_shadow']['review_queue']
+>[number];
+
+function paperShadowReviewQueueItemSummary(
+  item: OverviewPaperShadowReviewQueueItem | undefined,
+  locale: Locale,
+) {
+  if (!item) {
+    return '';
+  }
+  const labels =
+    locale === 'zh'
+      ? {
+          risk: '风控',
+          manual: '人工确认',
+          manualReady: '可确认',
+          accountTruth: '账户事实',
+          cash: '现金',
+          constraints: '约束',
+          projectedFee: '计划费用',
+          simulatedFeeTax: '模拟费税',
+          queueSlippage: '队列滑点',
+          expected: '预期',
+          fill: '成交',
+          omsPath: 'OMS 路径',
+          omsTransition: 'OMS 状态变更',
+          evidence: '证据',
+        }
+      : {
+          risk: 'Risk',
+          manual: 'Manual',
+          manualReady: 'Ready',
+          accountTruth: 'Account truth',
+          cash: 'Cash',
+          constraints: 'Constraints',
+          projectedFee: 'Projected fee',
+          simulatedFeeTax: 'Sim fee/tax',
+          queueSlippage: 'Queue slippage',
+          expected: 'Expected',
+          fill: 'Fill',
+          omsPath: 'OMS path',
+          omsTransition: 'OMS transition',
+          evidence: 'Evidence',
+        };
+  const riskManual = [
+    item.risk_gate_status
+      ? `${labels.risk} ${formatPublicStatus(item.risk_gate_status, locale)}`
+      : '',
+    item.manual_confirmation_status
+      ? `${labels.manual} ${
+          item.manual_confirmation_status === 'ready_for_manual_confirmation'
+            ? labels.manualReady
+            : formatPublicStatus(item.manual_confirmation_status, locale)
+        }`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const accountCash = [
+    item.account_truth?.gate_status
+      ? `${labels.accountTruth} ${formatPublicStatus(
+          item.account_truth.gate_status,
+          locale,
+        )}`
+      : '',
+    item.cash_status
+      ? `${labels.cash} ${formatPublicStatus(item.cash_status, locale)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const constraints = paperShadowStatusCountSummary(
+    item.constraint_status_counts,
+    locale,
+  );
+  const costs = [
+    paperShadowCurrencySummary(
+      labels.projectedFee,
+      item.cost_evidence?.estimated_total_fee,
+    ),
+    paperShadowCurrencySummary(
+      labels.simulatedFeeTax,
+      item.cost_evidence?.simulated_fee_tax_cost,
+    ),
+    paperShadowCurrencySummary(
+      labels.queueSlippage,
+      item.cost_evidence?.simulated_slippage_cost,
+    ),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const marketContext = [
+    paperShadowCurrencySummary(
+      labels.expected,
+      item.market_context?.expected_price,
+    ),
+    paperShadowFillPriceSummary(
+      labels.fill,
+      item.market_context?.simulated_fill_prices,
+    ),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const omsStatusPath = paperShadowOmsStatusPath(item.oms_status_path, locale);
+  const omsTransition = paperShadowLatestOmsTransition(item, locale);
+  const evidence = (item.evidence_refs ?? [])
+    .slice(0, 6)
+    .map((ref) => formatPublicEvidenceReference(ref, locale))
+    .filter(Boolean)
+    .join(locale === 'zh' ? '；' : '; ');
+  return [
+    riskManual,
+    accountCash,
+    constraints ? `${labels.constraints} ${constraints}` : '',
+    costs,
+    marketContext,
+    omsStatusPath ? `${labels.omsPath}: ${omsStatusPath}` : '',
+    omsTransition ? `${labels.omsTransition}: ${omsTransition}` : '',
+    evidence ? `${labels.evidence}: ${evidence}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function paperShadowOmsStatusPath(
+  values: string[] | undefined,
+  locale: Locale,
+) {
+  if (!values || values.length === 0) {
+    return '';
+  }
+  return values
+    .map((value) => paperShadowOmsStatusLabel(value, locale))
+    .filter(Boolean)
+    .join(' > ');
+}
+
+function paperShadowLatestOmsTransition(
+  item: OverviewPaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const transition = [...(item.oms_transitions ?? [])]
+    .reverse()
+    .find((entry) => entry.to_status);
+  if (!transition?.to_status) {
+    return '';
+  }
+  const orderId = item.order_id ? `${item.order_id} ` : '';
+  const sequence =
+    transition.sequence !== null && transition.sequence !== undefined
+      ? `#${transition.sequence} `
+      : '';
+  return `${orderId}${sequence}${paperShadowOmsStatusLabel(
+    transition.to_status,
+    locale,
+  )}`;
+}
+
+function paperShadowOmsStatusLabel(
+  value: string | null | undefined,
+  locale: Locale,
+) {
+  const status = String(value ?? '').trim();
+  if (!status) {
+    return '';
+  }
+  const labels: Record<string, Record<Locale, string>> = {
+    staged: { en: 'Staged', zh: '已暂存' },
+    submitted: { en: 'Submitted', zh: '已提交模拟' },
+    accepted: { en: 'Accepted', zh: '已接受模拟' },
+    partially_filled: { en: 'Partially Filled', zh: '部分成交' },
+    filled: { en: 'Filled', zh: '已成交' },
+    rejected: { en: 'Rejected', zh: '已拒绝' },
+    cancelled: { en: 'Cancelled', zh: '已取消' },
+    expired: { en: 'Expired', zh: '已过期' },
+    reconciled: { en: 'Reconciled', zh: '已对账' },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function paperShadowStatusCountSummary(
+  values: Record<string, number> | undefined,
+  locale: Locale,
+) {
+  return Object.entries(values ?? {})
+    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+    .map(([key, value]) => `${formatPublicStatus(key, locale)}: ${value}`)
+    .join(locale === 'zh' ? '；' : '; ');
+}
+
+function paperShadowCurrencySummary(label: string, value: unknown) {
+  const numeric = numericPaperShadowValue(value);
+  return numeric === null ? '' : `${label} ${formatCurrencyValue(numeric)}`;
+}
+
+function paperShadowFillPriceSummary(
+  label: string,
+  values: unknown[] | undefined,
+) {
+  const prices = (values ?? [])
+    .map((value) => numericPaperShadowValue(value))
+    .filter((value): value is number => value !== null)
+    .map((value) => formatCurrencyValue(value));
+  return prices.length ? `${label} ${prices.join(', ')}` : '';
+}
+
 function operationsDetailText(
   operations: OperationsTodayResponse | null | undefined,
   locale: Locale,
@@ -908,7 +1241,29 @@ function operationsDetailText(
   if (blocker && isRiskBlockedBlocker(blocker)) {
     return riskBlockerDetailText(blocker, locale) ?? fallback;
   }
-  return fallback;
+  const paperShadowSummary = paperShadowOverviewEvidenceSummary(
+    operations,
+    locale,
+  );
+  return paperShadowSummary ? `${fallback} · ${paperShadowSummary}` : fallback;
+}
+
+function operationsPrimaryNextAction(
+  operations: OperationsTodayResponse | null | undefined,
+  primarySubsystem: OperationsTodayResponse['subsystems'][number] | undefined,
+) {
+  if (
+    operations?.paper_shadow.review_status ===
+      'accepted_for_manual_confirmation' ||
+    operations?.paper_shadow.status === 'within_expectations' ||
+    operations?.paper_shadow.divergence_status === 'within_expectations'
+  ) {
+    return operations.paper_shadow.next_manual_review_step;
+  }
+  return (
+    primarySubsystem?.next_action ??
+    operations?.paper_shadow.next_manual_review_step
+  );
 }
 
 function operationsNextActionLabel(value: string | undefined, locale: Locale) {
@@ -923,6 +1278,10 @@ function operationsNextActionLabel(value: string | undefined, locale: Locale) {
       en: 'Review paper/shadow divergence evidence',
       zh: '复核 paper/shadow 偏差证据',
     },
+    wait_for_paper_shadow_run: {
+      en: 'Paper/shadow simulation is running; wait for completion',
+      zh: 'Paper/shadow 模拟正在运行，等待完成',
+    },
     review_manual_confirmation: {
       en: 'Review manual order confirmation',
       zh: '复核人工下单确认',
@@ -930,6 +1289,22 @@ function operationsNextActionLabel(value: string | undefined, locale: Locale) {
     resolve_shadow_divergence: {
       en: 'Resolve paper/shadow divergence before approval',
       zh: '批准前处理 paper/shadow 偏差',
+    },
+    inspect_failed_run: {
+      en: 'Inspect failed paper/shadow run before approval',
+      zh: '批准前检查失败的 paper/shadow 运行',
+    },
+    inspect_scheduler_failure: {
+      en: 'Inspect scheduler failure evidence before manual review',
+      zh: '人工复核前检查调度失败证据',
+    },
+    resolve_kill_switch: {
+      en: 'Resolve kill switch state before continuing',
+      zh: '继续前处理 kill switch 状态',
+    },
+    review_scheduler_run: {
+      en: 'Review scheduler run evidence',
+      zh: '复核调度运行证据',
     },
     resolve_daily_plan_blockers: {
       en: 'Resolve daily trading plan blockers',
@@ -990,11 +1365,17 @@ function operationsStatusMeta(
     operations.health;
   if (locale === 'zh') {
     if (blocked > 0) return `${blocked} 阻断`;
+    if (operations.conclusion_status === 'degraded' && degraded > 0) {
+      return `${degraded} 降级`;
+    }
     if (manual_action_required > 0) return `${manual_action_required} 人工复核`;
     if (degraded > 0) return `${degraded} 降级`;
     return `${pass}/${total} 通过`;
   }
   if (blocked > 0) return `${blocked} blocked`;
+  if (operations.conclusion_status === 'degraded' && degraded > 0) {
+    return `${degraded} degraded`;
+  }
   if (manual_action_required > 0) {
     return `${manual_action_required} manual review`;
   }
@@ -1020,6 +1401,9 @@ function operationsActionLabel(
   }
   if (target === 'trading') {
     return labels.operationsViewTrading;
+  }
+  if (target === 'paper-shadow') {
+    return labels.operationsViewPaperShadow;
   }
   return locale === 'zh' ? '查看运行证据' : 'View run evidence';
 }
@@ -1297,8 +1681,10 @@ function DashboardTodayQueue({
               operationsToday,
               locale,
               operationsNextActionLabel(
-                operationsPrimarySubsystem?.next_action ??
-                  operationsToday.paper_shadow.next_manual_review_step,
+                operationsPrimaryNextAction(
+                  operationsToday,
+                  operationsPrimarySubsystem,
+                ),
                 locale,
               ),
             )

@@ -115,9 +115,7 @@ def test_acceptance_audit_cli_broker_fee_cost_basis_filter_outputs_one_audit() -
     assert audit["required_count"] == 16
     assert audit["completed_count"] == audit["required_count"]
     assert audit["criteria"]
-    assert {
-        criterion["key"] for criterion in audit["criteria"]
-    } >= {
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
         "web_strategy_contribution_user_readable_surface",
         "shared_public_ledger_formatter_surface_contract",
         "public_ledger_surfaces_hide_internal_values",
@@ -147,6 +145,70 @@ def test_acceptance_audit_cli_single_instrument_strategy_loop_filter_outputs_one
     assert audit["criteria"]
 
 
+def test_acceptance_audit_cli_operations_runbook_filter_outputs_one_audit() -> None:
+    result = _run_cli("--audit", "operations_runbook")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "operations_runbook"
+    assert [audit["key"] for audit in payload["audits"]] == ["operations_runbook"]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 16
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "operations_today_runbook",
+        "scheduler_run_persistence",
+        "paper_shadow_run_storage",
+        "paper_shadow_oms_state_machine",
+        "paper_shadow_simulation_outcomes",
+        "paper_shadow_run_review_outcomes",
+        "paper_shadow_rich_divergence_report",
+        "frontend_paper_shadow_next_actions",
+        "automation_run_failure_alerts",
+        "connector_health_alerts",
+        "daily_plan_risk_blocker_alerts",
+        "stale_market_data_alerts",
+        "account_truth_mismatch_alerts",
+        "paper_shadow_order_divergence_alerts",
+        "runtime_connector_degradation_alerts",
+        "simulation_evidence_safety_docs",
+    }
+
+
+def test_acceptance_audit_cli_controlled_broker_bridge_foundation_filter_outputs_one_audit() -> (
+    None
+):
+    result = _run_cli("--audit", "controlled_broker_bridge_foundation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "controlled_broker_bridge_foundation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_broker_bridge_foundation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 14
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "broker_submission_disabled_default",
+        "controlled_bridge_policy_whitelist",
+        "manual_ticket_preview_export_dry_run",
+        "manual_execution_operator_form_context",
+        "manual_execution_preview_draft",
+        "manual_execution_evidence_record",
+        "gateway_capability_health_contract",
+        "gateway_evidence_and_kill_switch_gates",
+        "staged_account_facts_and_order_query",
+        "decision_cockpit_strategy_promotion_state",
+        "default_rejected_cancel_audit",
+        "execution_reconciliation_bridge_evidence",
+        "decision_cockpit_read_only_bridge_panel",
+        "strategy_broker_boundary_static_guard",
+    }
+
+
 def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     result = _run_cli("--audit", "all")
 
@@ -163,6 +225,8 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "market_data_reliability",
         "broker_fee_cost_basis",
         "single_instrument_strategy_loop",
+        "operations_runbook",
+        "controlled_broker_bridge_foundation",
     ]
     assert all(audit["is_complete"] for audit in payload["audits"])
 

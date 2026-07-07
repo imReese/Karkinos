@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import { usePreferences, type Locale } from '../../../app/preferences';
@@ -9,6 +9,7 @@ import {
   formatTimestamp,
 } from '../../../shared/format';
 import {
+  formatPublicEvidenceReference,
   formatPublicOperationalNote,
   formatPublicStatus,
 } from '../../../shared/public-labels';
@@ -25,13 +26,28 @@ import {
 } from '../../../shared/ledger-format';
 import { KillSwitchPanel } from './kill-switch-panel';
 import {
+  useOperationsTodayQuery,
+  useReviewPaperShadowRunMutation,
+  type OperationsTodayResponse,
+  type PaperShadowRunReviewResponse,
+} from '../../operations/api';
+import {
   useConfirmManualOrderMutation,
   useDailyShadowRunMutation,
   useFillFactsQuery,
+  useManualExecutionRecordMutation,
+  useManualExecutionPreviewMutation,
+  useManualTicketExportMutation,
   useManualOrdersQuery,
   useOrderFactsQuery,
   useRejectManualOrderMutation,
   type FillFact,
+  type ControlledBridgeGateSummary,
+  type ManualExecutionRecordResponse,
+  type ManualExecutionPreviewRequest,
+  type ManualExecutionPreviewResponse,
+  type ManualTicketOperatorForm,
+  type ManualTicketExportResponse,
   type ManualOrder,
   type ManualOrderStatus,
   type OrderFact,
@@ -40,6 +56,10 @@ import { usePositionsQuery } from '../../portfolio/api';
 
 type SideFilter = 'all' | 'buy' | 'sell';
 type InstrumentNameLookup = Map<string, string>;
+type PaperShadowRunSummary = OperationsTodayResponse['paper_shadow'];
+type PaperShadowReviewQueueItem = NonNullable<
+  PaperShadowRunSummary['review_queue']
+>[number];
 
 const STATUS_OPTIONS: ManualOrderStatus[] = [
   'all',
@@ -78,6 +98,315 @@ function getLatestOrderTimestamp(orders: ManualOrder[]) {
     .sort((left, right) => right - left)[0];
 
   return latest ? new Date(latest).toISOString() : null;
+}
+
+function paperShadowRunNeedsReview(run: PaperShadowRunSummary | null) {
+  if (!run?.run_id) {
+    return false;
+  }
+  if (run.review_status === 'accepted_for_manual_confirmation') {
+    return false;
+  }
+  return (
+    ['diverged', 'review_required'].includes(run.status) ||
+    ['resolve_shadow_divergence', 'review_shadow_divergence'].includes(
+      run.next_manual_review_step,
+    )
+  );
+}
+
+function paperShadowAcceptedReviewEvidenceItems(
+  review: PaperShadowRunReviewResponse | null,
+  run: PaperShadowRunSummary | null,
+  locale: Locale,
+) {
+  const labels =
+    locale === 'zh'
+      ? {
+          reviewedBy: '复核人',
+          reviewedAt: '复核时间',
+          reviewSafety: '复核安全边界',
+          noBrokerSubmission: '不提交券商订单',
+          noLedgerMutation: '不修改生产账本',
+        }
+      : {
+          reviewedBy: 'Reviewed by',
+          reviewedAt: 'Reviewed at',
+          reviewSafety: 'Review safety',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const reviewer = review?.reviewer ?? run?.reviewer;
+  const reviewedAt = review?.reviewed_at ?? run?.reviewed_at;
+  const safetyItems = [
+    (review?.does_not_submit_broker_order ??
+    run?.divergence_summary?.does_not_submit_broker_order)
+      ? labels.noBrokerSubmission
+      : '',
+    (review?.does_not_mutate_production_ledger ??
+    run?.divergence_summary?.does_not_mutate_production_ledger)
+      ? labels.noLedgerMutation
+      : '',
+  ].filter(Boolean);
+
+  return [
+    reviewer ? `${labels.reviewedBy}: ${reviewer}` : '',
+    reviewedAt ? `${labels.reviewedAt}: ${formatTimestamp(reviewedAt)}` : '',
+    safetyItems.length
+      ? `${labels.reviewSafety}: ${safetyItems.join(' · ')}`
+      : '',
+  ].filter(Boolean);
+}
+
+function paperShadowNextStepLabel(
+  value: string | null | undefined,
+  locale: Locale,
+) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    none: { en: 'No additional action', zh: '无需额外处理' },
+    review_shadow_divergence: {
+      en: 'Review paper/shadow divergence evidence',
+      zh: '复核 paper/shadow 偏差证据',
+    },
+    resolve_shadow_divergence: {
+      en: 'Resolve paper/shadow divergence before approval',
+      zh: '批准前处理 paper/shadow 偏差',
+    },
+    review_manual_confirmation: {
+      en: 'Review manual order confirmation',
+      zh: '复核人工下单确认',
+    },
+    run_paper_shadow_daily: {
+      en: 'Run paper/shadow simulation before manual confirmation',
+      zh: '人工确认前先运行 paper/shadow 模拟',
+    },
+    wait_for_paper_shadow_run: {
+      en: 'Paper/shadow simulation is running; wait for completion',
+      zh: 'Paper/shadow 模拟正在运行，等待完成',
+    },
+    inspect_failed_run: {
+      en: 'Inspect failed paper/shadow run before approval',
+      zh: '批准前检查失败的 paper/shadow 运行',
+    },
+  };
+  const key = value || 'none';
+  return labels[key]?.[locale] ?? formatPublicStatus(key, locale);
+}
+
+function numericPaperShadowValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function latestPaperShadowRunEvidenceItems(
+  run: PaperShadowRunSummary,
+  locale: Locale,
+) {
+  const labels =
+    locale === 'zh'
+      ? {
+          run: 'Run',
+          status: '状态',
+          orderIntents: '订单意图',
+          simOrders: '模拟订单',
+          simFills: '模拟成交',
+          next: '下一步',
+          evidenceRefs: '证据引用',
+          divergedOrders: '偏差订单',
+          slippage: '模拟滑点',
+          noBrokerSubmission: '不提交券商订单',
+          noLedgerMutation: '不修改生产账本',
+        }
+      : {
+          run: 'Run',
+          status: 'Status',
+          orderIntents: 'Order intents',
+          simOrders: 'Sim orders',
+          simFills: 'Sim fills',
+          next: 'Next',
+          evidenceRefs: 'Evidence refs',
+          divergedOrders: 'Diverged orders',
+          slippage: 'Sim slippage',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const summary = run.divergence_summary;
+  const divergedRefs = (
+    summary?.execution_comparison?.diverged_order_refs ?? []
+  )
+    .slice(0, 2)
+    .map((ref) => formatPublicEvidenceReference(ref, locale))
+    .filter(Boolean);
+  const evidenceRefs = selectPaperShadowRunEvidenceRefs(run.evidence_refs ?? [])
+    .map((ref) => formatPublicEvidenceReference(ref, locale))
+    .filter(Boolean);
+  const reviewQueueItems = latestPaperShadowReviewQueueEvidenceItems(
+    run,
+    locale,
+  );
+  const slippage = numericPaperShadowValue(
+    summary?.cost_summary?.simulated_slippage_cost,
+  );
+  return [
+    `${labels.run}: ${run.run_id ?? '--'}`,
+    `${labels.status}: ${formatPublicStatus(run.status, locale)}`,
+    `${labels.orderIntents}: ${run.order_intent_count}`,
+    `${labels.simOrders}: ${run.simulated_order_count}`,
+    `${labels.simFills}: ${run.simulated_fill_count}`,
+    `${labels.next}: ${paperShadowNextStepLabel(
+      run.next_manual_review_step,
+      locale,
+    )}`,
+    divergedRefs.length
+      ? `${labels.divergedOrders}: ${divergedRefs.join(
+          locale === 'zh' ? '；' : '; ',
+        )}`
+      : '',
+    evidenceRefs.length
+      ? `${labels.evidenceRefs}: ${evidenceRefs.join(
+          locale === 'zh' ? '；' : '; ',
+        )}`
+      : '',
+    ...reviewQueueItems,
+    slippage !== null ? `${labels.slippage}: ${formatCurrency(slippage)}` : '',
+    summary?.does_not_submit_broker_order ? labels.noBrokerSubmission : '',
+    summary?.does_not_mutate_production_ledger ? labels.noLedgerMutation : '',
+  ].filter(Boolean);
+}
+
+function latestPaperShadowReviewQueueEvidenceItems(
+  run: PaperShadowRunSummary,
+  locale: Locale,
+) {
+  const item = run.review_queue?.[0];
+  if (!item) {
+    return [];
+  }
+
+  const labels =
+    locale === 'zh'
+      ? {
+          reviewQueue: '复核队列',
+          reason: '原因',
+          omsPath: 'OMS 路径',
+          latestTransition: '最新状态变更',
+          reviewSafety: '复核安全边界',
+          noBrokerSubmission: '不提交券商订单',
+          noLedgerMutation: '不修改生产账本',
+        }
+      : {
+          reviewQueue: 'Review queue',
+          reason: 'Reason',
+          omsPath: 'OMS path',
+          latestTransition: 'Latest transition',
+          reviewSafety: 'Review safety',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const target = item.symbol ?? item.order_id ?? item.review_id;
+  const statusPath = paperShadowOmsStatusPath(item.oms_status_path, locale);
+  const latestTransition = latestOmsTransitionEvidenceRef(
+    item.oms_transition_refs ?? [],
+  );
+  const safetyItems = [
+    item.does_not_submit_broker_order ? labels.noBrokerSubmission : '',
+    item.does_not_mutate_production_ledger ? labels.noLedgerMutation : '',
+  ].filter(Boolean);
+
+  return [
+    `${labels.reviewQueue}: ${target} · ${paperShadowNextStepLabel(
+      item.required_action,
+      locale,
+    )}`,
+    item.reason ? `${labels.reason}: ${item.reason}` : '',
+    statusPath ? `${labels.omsPath}: ${statusPath}` : '',
+    latestTransition
+      ? `${labels.latestTransition}: ${formatPublicEvidenceReference(
+          latestTransition,
+          locale,
+        )}`
+      : '',
+    safetyItems.length
+      ? `${labels.reviewSafety}: ${safetyItems.join(
+          locale === 'zh' ? ' · ' : ' · ',
+        )}`
+      : '',
+  ].filter(Boolean);
+}
+
+function paperShadowOmsStatusPath(
+  values: PaperShadowReviewQueueItem['oms_status_path'],
+  locale: Locale,
+) {
+  if (!values?.length) {
+    return null;
+  }
+  return values
+    .map((value) => paperShadowOmsStatusLabel(value, locale))
+    .join(locale === 'zh' ? ' → ' : ' → ');
+}
+
+function paperShadowOmsStatusLabel(value: string, locale: Locale) {
+  const labels: Record<string, Record<Locale, string>> = {
+    accepted: { en: 'Accepted', zh: '已接受模拟' },
+    cancelled: { en: 'Cancelled', zh: '已取消' },
+    canceled: { en: 'Cancelled', zh: '已取消' },
+    expired: { en: 'Expired', zh: '已过期' },
+    filled: { en: 'Filled', zh: '已成交' },
+    partially_filled: { en: 'Partially Filled', zh: '部分成交' },
+    reconciled: { en: 'Reconciled', zh: '已对账' },
+    rejected: { en: 'Rejected', zh: '已拒绝' },
+    staged: { en: 'Staged', zh: '已暂存' },
+    submitted: { en: 'Submitted', zh: '已提交模拟' },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function selectPaperShadowRunEvidenceRefs(refs: string[]) {
+  const selected: string[] = [];
+  const seen = new Set<string>();
+  const add = (ref: string | undefined) => {
+    if (ref && !seen.has(ref) && selected.length < 3) {
+      selected.push(ref);
+      seen.add(ref);
+    }
+  };
+
+  add(
+    refs.find((ref) => /^(?:paper_shadow_order|paper_order|order):/.test(ref)),
+  );
+  add(refs.find((ref) => /^(?:paper_shadow_fill|paper_fill|fill):/.test(ref)));
+  add(latestOmsTransitionEvidenceRef(refs));
+
+  for (const ref of refs) {
+    add(ref);
+  }
+
+  return selected;
+}
+
+function latestOmsTransitionEvidenceRef(refs: string[]) {
+  return refs
+    .filter((ref) => ref.startsWith('oms_transition:'))
+    .reduce<string | undefined>((latest, ref) => {
+      if (!latest) {
+        return ref;
+      }
+      return omsTransitionSequence(ref) >= omsTransitionSequence(latest)
+        ? ref
+        : latest;
+    }, undefined);
+}
+
+function omsTransitionSequence(ref: string) {
+  const sequence = Number(ref.split(':')[2]);
+  return Number.isFinite(sequence) ? sequence : -1;
 }
 
 function parsePayload(value: string): Record<string, string | null> | null {
@@ -337,15 +666,21 @@ export function TradingPage() {
   const [confirmingRejectId, setConfirmingRejectId] = useState<string | null>(
     null,
   );
+  const [exportingOrderId, setExportingOrderId] = useState<string | null>(null);
 
   const orders = useManualOrdersQuery(status);
   const allOrders = useManualOrdersQuery('all');
   const orderFacts = useOrderFactsQuery();
   const fillFacts = useFillFactsQuery();
   const positions = usePositionsQuery();
+  const operationsToday = useOperationsTodayQuery();
   const shadowRun = useDailyShadowRunMutation();
+  const reviewShadowRun = useReviewPaperShadowRunMutation();
   const confirmOrder = useConfirmManualOrderMutation();
   const rejectOrder = useRejectManualOrderMutation();
+  const manualTicketExport = useManualTicketExportMutation();
+  const manualExecutionPreview = useManualExecutionPreviewMutation();
+  const manualExecutionRecord = useManualExecutionRecordMutation();
   const allOrderRows = allOrders.data ?? [];
   const rows = useMemo(() => {
     const normalizedSymbol = symbolFilter.trim().toLowerCase();
@@ -381,6 +716,14 @@ export function TradingPage() {
     [allOrderRows],
   );
   const latestTimestamp = getLatestOrderTimestamp(allOrderRows);
+  const manualExecutionPreviewResult =
+    manualTicketExport.data?.order_id === manualExecutionPreview.data?.order_id
+      ? (manualExecutionPreview.data ?? null)
+      : null;
+  const manualExecutionRecordResult =
+    manualTicketExport.data?.order_id === manualExecutionRecord.data?.order_id
+      ? (manualExecutionRecord.data ?? null)
+      : null;
   const instrumentNames = useMemo(
     () =>
       new Map(
@@ -392,6 +735,7 @@ export function TradingPage() {
     [positions.data],
   );
   const busy = confirmOrder.isPending || rejectOrder.isPending;
+  const paperShadowRun = operationsToday.data?.paper_shadow ?? null;
 
   const handleConfirm = async (orderId: string) => {
     setRowError('');
@@ -426,6 +770,71 @@ export function TradingPage() {
       });
     } catch (error) {
       // Mutation error state renders the inline alert.
+    }
+  };
+
+  const handleExportTicket = async (orderId: string) => {
+    setRowError('');
+    setConfirmingRejectId(null);
+    setExportingOrderId(orderId);
+    try {
+      await manualTicketExport.mutateAsync({ orderId });
+    } catch {
+      // Mutation error state renders the inline alert.
+    } finally {
+      setExportingOrderId(null);
+    }
+  };
+
+  const handlePreviewManualExecution = async (
+    orderId: string,
+    values: ManualExecutionPreviewRequest,
+  ) => {
+    setRowError('');
+    setConfirmingRejectId(null);
+    try {
+      await manualExecutionPreview.mutateAsync({ orderId, ...values });
+    } catch {
+      // Mutation error state renders inside the manual ticket panel.
+    }
+  };
+
+  const handleRecordManualExecution = async (
+    orderId: string,
+    preview: ManualExecutionPreviewResponse,
+  ) => {
+    const fingerprint = preview.preview_fingerprint;
+    if (!fingerprint) {
+      return;
+    }
+    const execution = preview.execution_preview;
+    setRowError('');
+    setConfirmingRejectId(null);
+    try {
+      await manualExecutionRecord.mutateAsync({
+        orderId,
+        fill_price: execution.fill_price,
+        quantity: execution.quantity,
+        fee: execution.fee,
+        tax: execution.tax,
+        transfer_fee: execution.transfer_fee,
+        preview_fingerprint: fingerprint,
+      });
+    } catch {
+      // Mutation error state renders inside the manual ticket panel.
+    }
+  };
+
+  const handleAcceptSimulationReview = async () => {
+    if (!paperShadowRun?.run_id) {
+      return;
+    }
+    setRowError('');
+    setConfirmingRejectId(null);
+    try {
+      await reviewShadowRun.mutateAsync({ runId: paperShadowRun.run_id });
+    } catch {
+      // Mutation error state renders inside the execution audit panel.
     }
   };
 
@@ -476,7 +885,14 @@ export function TradingPage() {
         instrumentNames={instrumentNames}
         shadowRunPending={shadowRun.isPending}
         shadowRunResult={shadowRun.data ?? null}
+        paperShadowRun={paperShadowRun}
+        reviewPending={reviewShadowRun.isPending}
+        reviewResult={reviewShadowRun.data ?? null}
+        reviewError={
+          reviewShadowRun.isError ? getErrorMessage(reviewShadowRun.error) : ''
+        }
         onRunShadowReview={() => void shadowRun.mutate()}
+        onAcceptSimulationReview={() => void handleAcceptSimulationReview()}
       />
 
       <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
@@ -548,10 +964,32 @@ export function TradingPage() {
             confirmingRejectId={confirmingRejectId}
             onConfirm={handleConfirm}
             onReject={handleReject}
+            onExportTicket={handleExportTicket}
+            exportingOrderId={exportingOrderId}
             onRejectReasonChange={(orderId, value) =>
               setRejectReasons((current) => ({ ...current, [orderId]: value }))
             }
             instrumentNames={instrumentNames}
+          />
+
+          <ManualTicketExportPanel
+            result={manualTicketExport.data ?? null}
+            executionPreview={manualExecutionPreviewResult}
+            executionRecord={manualExecutionRecordResult}
+            previewPending={manualExecutionPreview.isPending}
+            previewError={
+              manualExecutionPreview.isError
+                ? getErrorMessage(manualExecutionPreview.error)
+                : ''
+            }
+            recordPending={manualExecutionRecord.isPending}
+            recordError={
+              manualExecutionRecord.isError
+                ? getErrorMessage(manualExecutionRecord.error)
+                : ''
+            }
+            onPreviewExecution={handlePreviewManualExecution}
+            onRecordExecution={handleRecordManualExecution}
           />
 
           {rowError ? (
@@ -567,6 +1005,11 @@ export function TradingPage() {
           {rejectOrder.isError ? (
             <div className="app-error-text mt-3 text-sm" role="alert">
               {getErrorMessage(rejectOrder.error)}
+            </div>
+          ) : null}
+          {manualTicketExport.isError ? (
+            <div className="app-error-text mt-3 text-sm" role="alert">
+              {getErrorMessage(manualTicketExport.error)}
             </div>
           ) : null}
         </div>
@@ -608,7 +1051,12 @@ function ExecutionAuditPanel({
   instrumentNames,
   shadowRunPending,
   shadowRunResult,
+  paperShadowRun,
+  reviewPending,
+  reviewResult,
+  reviewError,
   onRunShadowReview,
+  onAcceptSimulationReview,
 }: {
   orders: OrderFact[];
   fills: FillFact[];
@@ -617,7 +1065,12 @@ function ExecutionAuditPanel({
   instrumentNames: InstrumentNameLookup;
   shadowRunPending: boolean;
   shadowRunResult: { processed_count: number; reused_count: number } | null;
+  paperShadowRun: PaperShadowRunSummary | null;
+  reviewPending: boolean;
+  reviewResult: PaperShadowRunReviewResponse | null;
+  reviewError: string;
   onRunShadowReview: () => void;
+  onAcceptSimulationReview: () => void;
 }) {
   const copy = useCopy();
   const labels = copy.trading.page;
@@ -625,6 +1078,21 @@ function ExecutionAuditPanel({
   const { locale } = usePreferences();
   const latestOrders = orders.slice(0, 4);
   const latestFills = fills.slice(0, 4);
+  const needsSimulationReview = paperShadowRunNeedsReview(paperShadowRun);
+  const reviewAccepted =
+    reviewResult?.review_status === 'accepted_for_manual_confirmation' ||
+    paperShadowRun?.review_status === 'accepted_for_manual_confirmation';
+  const canRecordSimulationReview = needsSimulationReview && !reviewAccepted;
+  const latestPaperShadowEvidenceItems = paperShadowRun?.run_id
+    ? latestPaperShadowRunEvidenceItems(paperShadowRun, locale)
+    : [];
+  const acceptedReviewEvidenceItems = reviewAccepted
+    ? paperShadowAcceptedReviewEvidenceItems(
+        reviewResult,
+        paperShadowRun,
+        locale,
+      )
+    : [];
 
   return (
     <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
@@ -657,6 +1125,70 @@ function ExecutionAuditPanel({
               shadowRunResult.processed_count,
               shadowRunResult.reused_count,
             )}
+          </div>
+        ) : null}
+
+        {latestPaperShadowEvidenceItems.length > 0 ? (
+          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm">
+            <div className="font-semibold text-[var(--app-text)]">
+              {locale === 'zh'
+                ? '最新 paper/shadow 运行'
+                : 'Latest paper/shadow run'}
+            </div>
+            <div className="mt-2 grid min-w-0 gap-1 sm:grid-cols-2">
+              {latestPaperShadowEvidenceItems.map((item) => (
+                <div
+                  className="min-w-0 break-words text-[var(--app-soft)]"
+                  key={item}
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {needsSimulationReview || reviewAccepted ? (
+          <div className="mt-3 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="font-semibold text-[var(--app-text)]">
+                {reviewAccepted
+                  ? labels.simulationReviewAccepted
+                  : labels.simulationReviewNeedsAttention}
+              </div>
+              {reviewAccepted ? null : (
+                <div className="app-muted mt-1 break-words">
+                  {labels.simulationReviewNeedsAttentionDetail}
+                </div>
+              )}
+              {acceptedReviewEvidenceItems.length > 0 ? (
+                <div className="mt-2 grid min-w-0 gap-1 text-[var(--app-soft)]">
+                  {acceptedReviewEvidenceItems.map((item) => (
+                    <div className="min-w-0 break-words" key={item}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            {canRecordSimulationReview ? (
+              <button
+                type="button"
+                className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={reviewPending}
+                onClick={onAcceptSimulationReview}
+              >
+                {reviewPending
+                  ? labels.recordingSimulationReview
+                  : labels.recordSimulationReview}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {reviewError ? (
+          <div className="app-error-text mt-3 text-sm" role="alert">
+            {labels.simulationReviewFailed} {reviewError}
           </div>
         ) : null}
 
@@ -748,6 +1280,538 @@ function AuditFactList({
   );
 }
 
+function manualTicketFormFromResult(
+  result: ManualTicketExportResponse,
+): ManualTicketOperatorForm | null {
+  return (
+    result.ticket.operator_form ??
+    result.export.content?.operator_form ??
+    manualTicketFormFromContentJson(result.export.content_json)
+  );
+}
+
+function manualTicketFormFromContentJson(
+  contentJson: string,
+): ManualTicketOperatorForm | null {
+  const parsed = parseJsonObject(contentJson);
+  const form = parsed?.operator_form;
+  return isRecord(form) ? (form as ManualTicketOperatorForm) : null;
+}
+
+function formValueText(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined || value === '') {
+    return '--';
+  }
+  return String(value);
+}
+
+function formInputValue(
+  value: string | number | boolean | null | undefined,
+  fallback = '',
+) {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  return String(value);
+}
+
+function feeComponentInputValue(
+  feeComponents: Record<string, string | number | null | undefined>,
+  key: string,
+  fallback = '0.00',
+) {
+  return formInputValue(feeComponents[key], fallback);
+}
+
+function formDataText(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function flagText(key: string, value: boolean | null | undefined) {
+  return `${key}=${value === true ? 'true' : 'false'}`;
+}
+
+function gateLabel(key: string) {
+  return key.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function manualExecutionGateRows(
+  summary: ControlledBridgeGateSummary | null | undefined,
+) {
+  const gates = summary?.gates ?? {};
+  const keys = summary?.required_gates?.length
+    ? summary.required_gates
+    : Object.keys(gates);
+  return keys
+    .map((key) => {
+      const gate = gates[key];
+      return {
+        key,
+        label: gateLabel(key),
+        status: gate?.status ?? '',
+        evidenceRef: gate?.evidence_ref ?? '',
+      };
+    })
+    .filter(
+      (item) =>
+        item.label || item.status || item.evidenceRef || item.key.trim(),
+    );
+}
+
+function PreviewMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | boolean | null | undefined;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+      <div className="app-muted text-xs">{label}</div>
+      <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+        {formValueText(value)}
+      </div>
+    </div>
+  );
+}
+
+function ManualTicketExportPanel({
+  result,
+  executionPreview,
+  executionRecord,
+  previewPending,
+  previewError,
+  recordPending,
+  recordError,
+  onPreviewExecution,
+  onRecordExecution,
+}: {
+  result: ManualTicketExportResponse | null;
+  executionPreview: ManualExecutionPreviewResponse | null;
+  executionRecord: ManualExecutionRecordResponse | null;
+  previewPending: boolean;
+  previewError: string;
+  recordPending: boolean;
+  recordError: string;
+  onPreviewExecution: (
+    orderId: string,
+    values: ManualExecutionPreviewRequest,
+  ) => Promise<void>;
+  onRecordExecution: (
+    orderId: string,
+    preview: ManualExecutionPreviewResponse,
+  ) => Promise<void>;
+}) {
+  const labels = useCopy().trading.page;
+  if (!result) {
+    return null;
+  }
+  const operatorForm = manualTicketFormFromResult(result);
+  const feeTax = operatorForm?.fee_tax_assumptions ?? null;
+  const session = operatorForm?.trading_session_constraints ?? null;
+  const cashImpact = operatorForm?.cash_impact_preview ?? null;
+  const positionCost = operatorForm?.position_cost_preview ?? null;
+  const feeComponents = feeTax?.fee_components ?? {};
+  const visibleFields =
+    operatorForm?.fields?.filter((field) => field.key !== 'account_alias') ??
+    [];
+  const feeDefault = feeComponentInputValue(
+    feeComponents,
+    'commission',
+    formInputValue(feeTax?.estimated_total_fee, '0.00'),
+  );
+  const taxDefault = feeComponentInputValue(feeComponents, 'stamp_tax', '0.00');
+  const transferFeeDefault = feeComponentInputValue(
+    feeComponents,
+    'transfer_fee',
+    '0.00',
+  );
+  const executionPreviewResult = executionPreview;
+  const preview = executionPreview?.execution_preview ?? null;
+  const ledgerDraft = executionPreview?.ledger_entry_draft ?? null;
+  const gateSummary =
+    executionPreview?.validation?.required_gate_summary ??
+    executionRecord?.validation?.required_gate_summary ??
+    null;
+  const gateRows = manualExecutionGateRows(gateSummary);
+  const record = executionRecord;
+  const handlePreviewSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    void onPreviewExecution(result.order_id, {
+      fill_price: formDataText(formData, 'fill_price'),
+      quantity: formDataText(formData, 'quantity'),
+      fee: formDataText(formData, 'fee'),
+      tax: formDataText(formData, 'tax'),
+      transfer_fee: formDataText(formData, 'transfer_fee'),
+    });
+  };
+  const handleRecordExecution = () => {
+    if (!executionPreviewResult?.preview_fingerprint) {
+      return;
+    }
+    void onRecordExecution(result.order_id, executionPreviewResult);
+  };
+
+  return (
+    <div className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">
+            {labels.manualTicketExportTitle}
+          </div>
+          <div className="app-muted mt-1 text-sm">
+            {labels.manualTicketExportDetail}
+          </div>
+        </div>
+        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-success)]">
+          {labels.manualTicketExportSafety}
+        </span>
+      </div>
+      {operatorForm ? (
+        <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">
+          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="app-muted text-xs">
+              {labels.manualTicketAccountAlias}
+            </div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+              {formValueText(operatorForm.account_alias)}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="app-muted text-xs">
+              {labels.manualTicketEstimatedTotalFee}
+            </div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+              {formValueText(feeTax?.estimated_total_fee)}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="app-muted text-xs">
+              {labels.manualTicketTradingSession}
+            </div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+              {formValueText(session?.allowed_session)}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {operatorForm ? (
+        <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">
+          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="app-muted text-xs">
+              {labels.manualTicketNetCashImpact}
+            </div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+              {formValueText(cashImpact?.estimated_net_cash_impact)}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="app-muted text-xs">
+              {labels.manualTicketPositionAfter}
+            </div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+              {formValueText(positionCost?.estimated_quantity_after)}
+            </div>
+          </div>
+          <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+            <div className="app-muted text-xs">
+              {labels.manualTicketCostBasisMethod}
+            </div>
+            <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+              {formValueText(positionCost?.cost_basis_method)}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {visibleFields.length ? (
+        <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleFields.map((field) => (
+            <div
+              key={field.key}
+              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_16%,transparent)] px-3 py-2"
+            >
+              <div className="app-muted text-xs">{field.label}</div>
+              <div className="mt-1 break-words text-sm text-[var(--app-text)]">
+                {formValueText(field.value)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="app-muted text-xs">
+            {labels.manualTicketExportCopyText}
+          </div>
+          <div className="mt-1 break-words font-mono text-sm tabular-nums text-[var(--app-text)]">
+            {result.export.copy_text || result.ticket.copy_text}
+          </div>
+        </div>
+        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="app-muted text-xs">
+            {labels.manualTicketExportPayload}
+          </div>
+          <pre className="mt-1 max-h-36 min-w-0 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-[var(--app-text)]">
+            {result.export.content_json}
+          </pre>
+        </div>
+      </div>
+      <form
+        key={result.order_id}
+        className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-3"
+        onSubmit={handlePreviewSubmit}
+      >
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">
+              {labels.manualExecutionPreviewTitle}
+            </div>
+            <div className="app-muted mt-1 text-sm">
+              {labels.manualExecutionPreviewDetail}
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={previewPending}
+            className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {previewPending
+              ? labels.previewingManualExecution
+              : labels.previewManualExecution}
+          </button>
+        </div>
+        <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
+            {labels.manualExecutionFillPrice}
+            <input
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              name="fill_price"
+              inputMode="decimal"
+              defaultValue={formInputValue(result.ticket.limit_price)}
+              required
+            />
+          </label>
+          <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
+            {labels.manualExecutionQuantity}
+            <input
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              name="quantity"
+              inputMode="decimal"
+              defaultValue={formInputValue(result.ticket.quantity)}
+              required
+            />
+          </label>
+          <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
+            {labels.manualExecutionFee}
+            <input
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              name="fee"
+              inputMode="decimal"
+              defaultValue={feeDefault}
+            />
+          </label>
+          <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
+            {labels.manualExecutionTax}
+            <input
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              name="tax"
+              inputMode="decimal"
+              defaultValue={taxDefault}
+            />
+          </label>
+          <label className="grid min-w-0 gap-2 text-xs font-medium text-[var(--app-soft)]">
+            {labels.manualExecutionTransferFee}
+            <input
+              className="app-field min-w-0 rounded-xl px-3 py-2 text-sm"
+              name="transfer_fee"
+              inputMode="decimal"
+              defaultValue={transferFeeDefault}
+            />
+          </label>
+        </div>
+      </form>
+      {previewError ? (
+        <div className="app-error-text mt-3 text-sm" role="alert">
+          {previewError}
+        </div>
+      ) : null}
+      {preview && ledgerDraft && executionPreviewResult ? (
+        <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)] p-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <PreviewMetric
+              label={labels.manualExecutionGrossAmount}
+              value={preview.gross_amount}
+            />
+            <PreviewMetric
+              label={labels.manualExecutionFeeTax}
+              value={`${preview.fee} / ${preview.tax}`}
+            />
+            <PreviewMetric
+              label={labels.manualExecutionTransferFee}
+              value={preview.transfer_fee}
+            />
+            <PreviewMetric
+              label={labels.manualExecutionNetCashImpact}
+              value={preview.net_cash_impact}
+            />
+          </div>
+          <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
+            <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+              <div className="app-muted text-xs">
+                {labels.manualExecutionLedgerDraft}
+              </div>
+              <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+                {ledgerDraft.amount}
+              </div>
+              <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                {flagText(
+                  'requires_operator_save',
+                  ledgerDraft.requires_operator_save,
+                )}
+              </div>
+              <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                {flagText(
+                  'does_not_mutate_production_ledger',
+                  ledgerDraft.does_not_mutate_production_ledger,
+                )}
+              </div>
+            </div>
+            {executionPreviewResult.preview_fingerprint ? (
+              <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+                <div className="app-muted text-xs">
+                  {labels.manualExecutionPreviewFingerprint}
+                </div>
+                <div className="mt-1 break-all font-mono text-xs text-[var(--app-text)]">
+                  {executionPreviewResult.preview_fingerprint}
+                </div>
+                {executionPreviewResult.fingerprint_scope ? (
+                  <>
+                    <div className="app-muted mt-2 text-xs">
+                      {labels.manualExecutionFingerprintScope}
+                    </div>
+                    <div className="mt-1 break-words text-xs text-[var(--app-soft)]">
+                      {executionPreviewResult.fingerprint_scope}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+              <div className="app-muted text-xs">
+                {labels.manualExecutionSafety}
+              </div>
+              <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                {flagText(
+                  'submitted_to_broker',
+                  executionPreviewResult.submitted_to_broker,
+                )}
+              </div>
+              <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                {flagText(
+                  'does_not_mutate_production_ledger',
+                  executionPreviewResult.does_not_mutate_production_ledger,
+                )}
+              </div>
+            </div>
+          </div>
+          {gateRows.length ? (
+            <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+              <div className="app-muted text-xs">
+                {labels.manualExecutionGateSummary}
+              </div>
+              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {gateRows.map((gate) => (
+                  <div className="min-w-0" key={gate.key}>
+                    <div className="break-words text-sm font-semibold text-[var(--app-text)]">
+                      {gate.label}
+                    </div>
+                    {gate.status ? (
+                      <div className="mt-0.5 break-words font-mono text-xs text-[var(--app-soft)]">
+                        {gate.status}
+                      </div>
+                    ) : null}
+                    {gate.evidenceRef ? (
+                      <div className="mt-0.5 break-words font-mono text-xs text-[var(--app-soft)]">
+                        {gate.evidenceRef}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 break-words font-mono text-xs text-[var(--app-soft)]">
+                {flagText(
+                  'does_not_authorize_execution',
+                  gateSummary?.does_not_authorize_execution,
+                )}
+              </div>
+            </div>
+          ) : null}
+          {executionPreviewResult.preview_fingerprint ? (
+            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={recordPending}
+                className="app-button-secondary rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={handleRecordExecution}
+              >
+                {recordPending
+                  ? labels.recordingManualExecution
+                  : labels.recordManualExecution}
+              </button>
+            </div>
+          ) : null}
+          {recordError ? (
+            <div className="app-error-text mt-3 text-sm" role="alert">
+              {recordError}
+            </div>
+          ) : null}
+          {record ? (
+            <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-3 py-2">
+              <div className="font-semibold text-[var(--app-success)]">
+                {labels.manualExecutionRecordTitle}
+              </div>
+              <div className="app-muted mt-1 text-sm">
+                {labels.manualExecutionRecordDetail}
+              </div>
+              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
+                <PreviewMetric
+                  label={labels.manualExecutionGatewayEvent}
+                  value={String(record.event_id)}
+                />
+                <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+                  <div className="app-muted text-xs">
+                    {labels.manualExecutionRecordSafety}
+                  </div>
+                  <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                    {flagText(
+                      'submitted_to_broker',
+                      record.submitted_to_broker,
+                    )}
+                  </div>
+                  <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                    {flagText(
+                      'does_not_mutate_oms',
+                      record.does_not_mutate_oms,
+                    )}
+                  </div>
+                  <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
+                    {flagText(
+                      'does_not_mutate_production_ledger',
+                      record.does_not_mutate_production_ledger,
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StatusTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="app-panel-strong rounded-2xl px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
@@ -768,6 +1832,8 @@ function OrderQueue({
   confirmingRejectId,
   onConfirm,
   onReject,
+  onExportTicket,
+  exportingOrderId,
   onRejectReasonChange,
   instrumentNames,
 }: {
@@ -779,6 +1845,8 @@ function OrderQueue({
   confirmingRejectId: string | null;
   onConfirm: (orderId: string) => Promise<void>;
   onReject: (orderId: string) => Promise<void>;
+  onExportTicket: (orderId: string) => Promise<void>;
+  exportingOrderId: string | null;
   onRejectReasonChange: (orderId: string, value: string) => void;
   instrumentNames: InstrumentNameLookup;
 }) {
@@ -829,6 +1897,8 @@ function OrderQueue({
               confirmingReject={confirmingRejectId === order.order_id}
               onConfirm={() => onConfirm(order.order_id)}
               onReject={() => onReject(order.order_id)}
+              onExportTicket={() => onExportTicket(order.order_id)}
+              exportingTicket={exportingOrderId === order.order_id}
               onRejectReasonChange={(value) =>
                 onRejectReasonChange(order.order_id, value)
               }
@@ -848,6 +1918,8 @@ function OrderRow({
   confirmingReject,
   onConfirm,
   onReject,
+  onExportTicket,
+  exportingTicket,
   onRejectReasonChange,
   instrumentNames,
 }: {
@@ -857,6 +1929,8 @@ function OrderRow({
   confirmingReject: boolean;
   onConfirm: () => Promise<void>;
   onReject: () => Promise<void>;
+  onExportTicket: () => Promise<void>;
+  exportingTicket: boolean;
   onRejectReasonChange: (value: string) => void;
   instrumentNames: InstrumentNameLookup;
 }) {
@@ -940,6 +2014,16 @@ function OrderRow({
               {confirmingReject ? pageLabels.rejectConfirm : labels.reject}
             </button>
           </div>
+        ) : order.status === 'confirmed' ? (
+          <button
+            type="button"
+            disabled={exportingTicket}
+            onClick={() => void onExportTicket()}
+            className="app-button-secondary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label={`${labels.exportTicket}: ${displayLabel}`}
+          >
+            {exportingTicket ? labels.exportingTicket : labels.exportTicket}
+          </button>
         ) : (
           <div className="app-muted text-xs">{pageLabels.statusCheck}</div>
         )}

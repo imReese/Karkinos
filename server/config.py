@@ -18,6 +18,18 @@ _BROKER_CONNECTOR_ALLOWED_FIELDS = frozenset(
         "account_alias",
     }
 )
+_CONTROLLED_BRIDGE_POLICY_ALLOWED_FIELDS = frozenset(
+    {
+        "policy_id",
+        "enabled",
+        "allowed_connector_ids",
+        "allowed_account_aliases",
+        "allowed_strategy_ids",
+        "allowed_symbols",
+        "per_order_confirmation_required",
+        "automation_allowed",
+    }
+)
 _BROKER_CONNECTOR_SENSITIVE_KEY_PARTS = (
     "password",
     "secret",
@@ -81,6 +93,20 @@ class BrokerConnectorConfig:
     enabled: bool = False
     client_path: str = ""
     account_alias: str = ""
+
+
+@dataclass(frozen=True)
+class ControlledBridgePolicyConfig:
+    """Local future bridge whitelist config that never enables submission."""
+
+    policy_id: str = "default-controlled-bridge-disabled"
+    enabled: bool = False
+    allowed_connector_ids: tuple[str, ...] = ()
+    allowed_account_aliases: tuple[str, ...] = ()
+    allowed_strategy_ids: tuple[str, ...] = ()
+    allowed_symbols: tuple[str, ...] = ()
+    per_order_confirmation_required: bool = True
+    automation_allowed: bool = False
 
 
 @dataclass(frozen=True)
@@ -164,6 +190,12 @@ class BacktestConfig:
             data["broker_connectors"] = _parse_broker_connector_configs(
                 data["broker_connectors"]
             )
+        if "controlled_bridge_policy" in data:
+            data["controlled_bridge_policy"] = (
+                _parse_controlled_bridge_policy_config(
+                    data["controlled_bridge_policy"]
+                )
+            )
         has_broker_fee_schedule = "broker_fee_schedule" in data
         if has_broker_fee_schedule:
             data["broker_fee_schedule"] = _parse_broker_fee_schedule_config(
@@ -202,6 +234,9 @@ class ServerConfig(BacktestConfig):
             "http://localhost:5173",
             "http://127.0.0.1:5173",
         ]
+    )
+    controlled_bridge_policy: ControlledBridgePolicyConfig = field(
+        default_factory=ControlledBridgePolicyConfig
     )
 
 
@@ -262,6 +297,78 @@ def _contains_sensitive_connector_key(value: object) -> bool:
     if isinstance(value, list):
         return any(_contains_sensitive_connector_key(item) for item in value)
     return False
+
+
+def _tuple_of_strings(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list | tuple):
+        raise ValueError("controlled bridge policy whitelist fields must be lists")
+    return tuple(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
+
+
+def _parse_controlled_bridge_policy_config(
+    value: object,
+) -> ControlledBridgePolicyConfig:
+    if value is None:
+        return ControlledBridgePolicyConfig()
+    if not isinstance(value, dict):
+        raise ValueError("controlled bridge policy config must be an object")
+    if _contains_sensitive_connector_key(value):
+        raise ValueError(
+            "controlled bridge policy config must not contain password, secret, "
+            "token, or credential fields"
+        )
+    unknown_fields = sorted(set(value) - _CONTROLLED_BRIDGE_POLICY_ALLOWED_FIELDS)
+    if unknown_fields:
+        raise ValueError(
+            "controlled bridge policy config contains unsupported fields: "
+            + ", ".join(unknown_fields)
+        )
+
+    enabled = value.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("controlled bridge policy enabled must be boolean")
+    per_order_confirmation_required = value.get(
+        "per_order_confirmation_required",
+        True,
+    )
+    if not isinstance(per_order_confirmation_required, bool):
+        raise ValueError(
+            "controlled bridge policy per_order_confirmation_required must be boolean"
+        )
+    if not per_order_confirmation_required:
+        raise ValueError(
+            "controlled bridge policy must require per-order confirmation"
+        )
+    automation_allowed = value.get("automation_allowed", False)
+    if not isinstance(automation_allowed, bool):
+        raise ValueError("controlled bridge policy automation_allowed must be boolean")
+    if automation_allowed:
+        raise ValueError(
+            "controlled bridge policy cannot enable automation in v1.7"
+        )
+
+    return ControlledBridgePolicyConfig(
+        policy_id=str(
+            value.get(
+                "policy_id",
+                ControlledBridgePolicyConfig().policy_id,
+            )
+        ).strip()
+        or ControlledBridgePolicyConfig().policy_id,
+        enabled=enabled,
+        allowed_connector_ids=_tuple_of_strings(
+            value.get("allowed_connector_ids", ())
+        ),
+        allowed_account_aliases=_tuple_of_strings(
+            value.get("allowed_account_aliases", ())
+        ),
+        allowed_strategy_ids=_tuple_of_strings(value.get("allowed_strategy_ids", ())),
+        allowed_symbols=_tuple_of_strings(value.get("allowed_symbols", ())),
+        per_order_confirmation_required=per_order_confirmation_required,
+        automation_allowed=False,
+    )
 
 
 def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:

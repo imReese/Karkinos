@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 from account_truth.broker_connector import (
@@ -11,6 +12,7 @@ from account_truth.broker_connector import (
     BrokerOrderFact,
     BrokerPositionFact,
     FakeReadOnlyBrokerConnector,
+    LocalJsonReadOnlyBrokerConnector,
 )
 
 
@@ -117,3 +119,85 @@ def test_fake_broker_connector_exposes_diagnostic_health_states() -> None:
         assert result.health.limitations == [f"{status} fixture limitation"]
         assert connector.capabilities.can_submit_orders is False
         assert not hasattr(connector, "submit_order")
+
+
+def test_local_json_readonly_connector_reads_export_without_submit(tmp_path) -> None:
+    snapshot_path = tmp_path / "qmt-snapshot.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
+                "source_name": "QMT local readonly export",
+                "account_id": "private-account-id",
+                "captured_at": "2026-07-03T15:01:00+08:00",
+                "health": {
+                    "status": "healthy",
+                    "checked_at": "2026-07-03T15:00:00+08:00",
+                    "message": "Local export parsed.",
+                },
+                "cash": {
+                    "currency": "CNY",
+                    "balance": "100000.00",
+                    "available": "88000.00",
+                },
+                "positions": [
+                    {
+                        "symbol": "600519",
+                        "instrument_name": "贵州茅台",
+                        "asset_class": "stock",
+                        "quantity": "200",
+                        "available_quantity": "100",
+                        "cost_basis": "1600.00",
+                        "market_price": "1688.00",
+                    }
+                ],
+                "orders": [
+                    {
+                        "order_id": "broker-order-private",
+                        "symbol": "600519",
+                        "side": "buy",
+                        "status": "filled",
+                        "quantity": "100",
+                        "price": "1688.00",
+                        "submitted_at": "2026-07-03T09:31:10+08:00",
+                    }
+                ],
+                "fills": [
+                    {
+                        "fill_id": "fill-001",
+                        "order_id": "broker-order-private",
+                        "symbol": "600519",
+                        "side": "buy",
+                        "quantity": "100",
+                        "price": "1688.00",
+                        "fee": "5.10",
+                        "tax": "0",
+                        "net_amount": "-168805.10",
+                        "filled_at": "2026-07-03T09:31:20+08:00",
+                    }
+                ],
+                "limitations": ["Local export file; no broker client contacted."],
+            }
+        ),
+        encoding="utf-8",
+    )
+    connector = LocalJsonReadOnlyBrokerConnector(
+        connector_id="local-qmt-export",
+        snapshot_path=snapshot_path,
+        account_alias="local-review",
+    )
+
+    snapshot = connector.read_account_snapshot()
+
+    assert connector.capabilities == BrokerConnectorCapabilities()
+    assert not hasattr(connector, "submit_order")
+    assert snapshot.connector_id == "local-qmt-export"
+    assert snapshot.source_name == "QMT local readonly export"
+    assert snapshot.account_id == "private-account-id"
+    assert snapshot.account_alias == "local-review"
+    assert snapshot.health.status == "healthy"
+    assert snapshot.cash.balance == Decimal("100000.00")
+    assert snapshot.positions[0].symbol == "600519"
+    assert snapshot.orders[0].order_id == "broker-order-private"
+    assert snapshot.fills[0].net_amount == Decimal("-168805.10")
+    assert "Local export file; no broker client contacted." in snapshot.limitations

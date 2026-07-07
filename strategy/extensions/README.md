@@ -16,6 +16,14 @@ capabilities. Strategy Lab output remains research evidence until existing
 risk gates, paper/shadow review, signal journaling, and manual confirmation
 boundaries are satisfied.
 
+Private strategy scripts must not import broker gateway or broker connector
+modules, and must not call broker-style submission or cancellation methods
+directly. Bridge actions belong behind policy, risk, OMS, gateway, and
+reconciliation services. Run `uv run pytest tests/test_strategy_broker_boundary.py`
+after adding or reviewing strategy code to check the local strategy tree and
+sanitized templates. Pass explicit paths to the scanner for private strategies
+stored outside this repo.
+
 When a private strategy script is stored directly in this extension directory,
 the manifest can use the local module name in `class_path`, for example
 `my_strategy:MyStrategy`. Karkinos validates the manifest during

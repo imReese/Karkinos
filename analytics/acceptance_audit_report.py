@@ -12,7 +12,9 @@ from analytics.acceptance_audit import (
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
     build_broker_fee_cost_basis_acceptance_audit,
+    build_controlled_broker_bridge_foundation_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
+    build_operations_runbook_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
@@ -54,6 +56,14 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "single_instrument_strategy_loop": (
         "Single-Instrument Strategy Loop acceptance audit",
         build_single_instrument_strategy_loop_acceptance_audit,
+    ),
+    "operations_runbook": (
+        "Operations Runbook & Paper/Shadow acceptance audit",
+        build_operations_runbook_acceptance_audit,
+    ),
+    "controlled_broker_bridge_foundation": (
+        "Controlled Broker Bridge Foundation acceptance audit",
+        build_controlled_broker_bridge_foundation_acceptance_audit,
     ),
 }
 

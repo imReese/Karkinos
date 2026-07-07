@@ -7,7 +7,9 @@ from analytics.acceptance_audit import (
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
     build_broker_fee_cost_basis_acceptance_audit,
+    build_controlled_broker_bridge_foundation_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
+    build_operations_runbook_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
@@ -365,8 +367,7 @@ def test_single_instrument_strategy_loop_user_readable_surface_audit_covers_web_
         in user_readable.evidence_paths
     )
     assert any(
-        "copy public-labels holding-detail-page decision-cockpit-page"
-        in command
+        "copy public-labels holding-detail-page decision-cockpit-page" in command
         for command in user_readable.validation_commands
     )
 
@@ -389,3 +390,71 @@ def test_single_instrument_strategy_loop_goal_checkboxes_match_audit() -> None:
         if line.startswith("* [x]")
     ]
     assert audit.required_count == len(completed_checkboxes)
+
+
+def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabilities() -> (
+    None
+):
+    audit = build_operations_runbook_acceptance_audit()
+
+    assert audit.required_count == 16
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert "not investment advice" in audit.limitations[0]
+    assert {criterion.key for criterion in audit.criteria} >= {
+        "operations_today_runbook",
+        "scheduler_run_persistence",
+        "paper_shadow_run_storage",
+        "paper_shadow_oms_state_machine",
+        "paper_shadow_simulation_outcomes",
+        "paper_shadow_run_review_outcomes",
+        "paper_shadow_rich_divergence_report",
+        "frontend_paper_shadow_next_actions",
+        "automation_run_failure_alerts",
+        "connector_health_alerts",
+        "daily_plan_risk_blocker_alerts",
+        "stale_market_data_alerts",
+        "account_truth_mismatch_alerts",
+        "paper_shadow_order_divergence_alerts",
+        "runtime_connector_degradation_alerts",
+        "simulation_evidence_safety_docs",
+    }
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> None:
+    audit = build_controlled_broker_bridge_foundation_acceptance_audit()
+
+    assert audit.required_count == 14
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert "not investment advice" in audit.limitations[0]
+    assert {criterion.key for criterion in audit.criteria} >= {
+        "broker_submission_disabled_default",
+        "controlled_bridge_policy_whitelist",
+        "manual_ticket_preview_export_dry_run",
+        "manual_execution_operator_form_context",
+        "manual_execution_preview_draft",
+        "manual_execution_evidence_record",
+        "gateway_capability_health_contract",
+        "gateway_evidence_and_kill_switch_gates",
+        "staged_account_facts_and_order_query",
+        "decision_cockpit_strategy_promotion_state",
+        "default_rejected_cancel_audit",
+        "execution_reconciliation_bridge_evidence",
+        "decision_cockpit_read_only_bridge_panel",
+        "strategy_broker_boundary_static_guard",
+    }
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
