@@ -175,6 +175,18 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Trading manual-execution preview now renders the
+  `position_cost_preview` from the gateway response before an operator can
+  record manual execution evidence, including execution-after quantity,
+  average cost, cost-basis method, and preview source. Assumption: this
+  position/cost-basis block is read-only review evidence for an
+  operator-entered manual fill; it does not save a ledger entry, apply a fill,
+  submit to a broker, or authorize execution. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "previews manual execution draft"`.
+  Risk impact: improves v1.7 manual execution review clarity before evidence
+  recording without contacting brokers, storing credentials, submitting or
+  cancelling broker orders, mutating OMS, writing production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Trading manual-execution evidence records now render the
   record-level `requires_operator_ledger_save=true` safety flag next to the
   existing no-broker-submission, no-OMS-mutation, and no-production-ledger
