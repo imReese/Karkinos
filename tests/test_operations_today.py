@@ -267,6 +267,59 @@ def test_operations_today_surfaces_paper_shadow_review_queue() -> None:
     ]
 
 
+def test_operations_today_synthesizes_review_queue_for_legacy_diverged_run() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:legacy",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "legacy",
+            "status": "diverged",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 1,
+            "divergence_status": "diverged",
+            "next_manual_review_step": "resolve_shadow_divergence",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"symbol": "600519", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged", '
+                '"filled_quantity": "40", '
+                '"remaining_quantity": "60", '
+                '"order_intent": {"action_ref": "action:ACTION-1"}}]}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    assert summary["paper_shadow"]["review_queue"] == [
+        {
+            "review_id": "shadow:2026-07-01:legacy:ACTION-1",
+            "order_intent_ref": "action:ACTION-1",
+            "order_id": "SHADOW-1",
+            "symbol": "600519",
+            "status": "partially_filled",
+            "divergence_status": "diverged",
+            "severity": "warning",
+            "required_action": "resolve_shadow_divergence",
+            "reason": (
+                "Paper/shadow order partially_filled requires divergence review "
+                "before manual confirmation."
+            ),
+            "filled_quantity": "40",
+            "remaining_quantity": "60",
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+        }
+    ]
+
+
 def test_operations_today_marks_running_paper_shadow_run_as_waiting() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),

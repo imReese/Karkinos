@@ -6,6 +6,21 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Operations Today now synthesizes a minimal read-only
+  paper/shadow review queue for legacy or partial persisted runs that have
+  diverged/failed order evidence but no stored `review_queue` payload. The
+  fallback queue preserves run id, order intent ref, order id, symbol, status,
+  divergence status, required action, filled/remaining quantity, and explicit
+  no-broker-submission / no-production-ledger-mutation safety flags.
+  Assumption: Operations should not hide review work just because an older
+  persisted run predates the richer review-queue schema; fallback items are
+  runbook evidence only and do not rerun paper/shadow, contact brokers, mutate
+  OMS, or sync ledger entries. Validation:
+  `uv run python -m pytest tests/test_operations_today.py -k legacy_diverged_run`.
+  Risk impact: improves v1.6.1 operator-facing divergence review continuity
+  for Operations/Overview/Decision consumers without storing credentials,
+  creating broker orders, mutating OMS, writing production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Operations Today scheduler summaries now carry explicit recovery
   evidence for failed market-session / paper-shadow automation runs:
   `suggested_action`, `requires_manual_review`, `retry_recommended`, and
