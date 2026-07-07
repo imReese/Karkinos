@@ -6,6 +6,19 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Operations Today scheduler summaries now carry explicit recovery
+  evidence for failed market-session / paper-shadow automation runs:
+  `suggested_action`, `requires_manual_review`, `retry_recommended`, and
+  `does_not_mutate_production_ledger` join the existing run id, retry state,
+  error, limitation, and no-broker-submission fields. Assumption: the
+  operations API should be the source of truth for operator recovery cues, but
+  these fields are read-only runbook evidence and do not start retries,
+  contact brokers, mutate OMS, or sync ledger entries. Validation:
+  `uv run python -m pytest tests/test_operations_today.py tests/server/test_operations_routes.py`.
+  Risk impact: improves v1.6 scheduler/paper-shadow failure recovery
+  auditability across Operations/Overview/Decision consumers without storing
+  credentials, creating broker orders, mutating OMS, writing production ledger
+  facts, enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Overview Today's to-dos now expands failed scheduler / market
   session recovery text with the recorded automation run id, retry attempt,
   prior retry count, error summary, and explicit no-broker-submission safety

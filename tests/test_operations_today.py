@@ -455,8 +455,12 @@ def test_operations_today_surfaces_failed_scheduler_run() -> None:
         "input_snapshot": {"order_intent_count": 1},
         "retry_state": {"attempt": 1, "max_attempts": 1, "retryable": True},
         "error": {"type": "RuntimeError", "message": "fixture"},
+        "suggested_action": "inspect_failed_paper_shadow_run",
+        "requires_manual_review": True,
+        "retry_recommended": True,
         "broker_submission_enabled": False,
         "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
         "limitations": ["Paper/shadow run failed; no broker order was submitted."],
     }
     assert subsystem["status"] == "blocked"

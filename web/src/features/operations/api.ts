@@ -159,8 +159,12 @@ export type OperationsSchedulerSummary = {
   input_snapshot?: Record<string, unknown>;
   retry_state?: Record<string, unknown>;
   error?: Record<string, unknown>;
+  suggested_action?: string;
+  requires_manual_review?: boolean;
+  retry_recommended?: boolean;
   broker_submission_enabled: boolean;
   does_not_submit_broker_order: boolean;
+  does_not_mutate_production_ledger?: boolean;
   limitations?: string[];
 };
 
