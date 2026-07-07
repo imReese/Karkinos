@@ -1317,6 +1317,7 @@ test('records manual execution evidence without saving ledger or submitting brok
     screen.getAllByText('submitted_to_broker=false').length,
   ).toBeGreaterThan(1);
   expect(screen.getByText('does_not_mutate_oms=true')).toBeTruthy();
+  expect(screen.getByText('requires_operator_ledger_save=true')).toBeTruthy();
   expect(
     screen.getAllByText('does_not_mutate_production_ledger=true').length,
   ).toBeGreaterThan(0);

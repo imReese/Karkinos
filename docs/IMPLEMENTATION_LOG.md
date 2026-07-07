@@ -175,6 +175,17 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Trading manual-execution evidence records now render the
+  record-level `requires_operator_ledger_save=true` safety flag next to the
+  existing no-broker-submission, no-OMS-mutation, and no-production-ledger
+  mutation flags. Assumption: a recorded manual execution is audit continuity
+  after the operator typed a broker ticket, but any ledger update still requires
+  a separate operator save/reconciliation decision. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "records manual execution evidence"`.
+  Risk impact: improves v1.7 Trading review clarity for manual execution
+  evidence without contacting brokers, storing credentials, submitting or
+  cancelling broker orders, mutating OMS, writing production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Trading manual-ticket export review now surfaces the generated
   export file name, MIME type, export schema, export format, and gateway
   limitations beside the broker copy text and JSON payload. Assumption:
