@@ -397,7 +397,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
 ):
     audit = build_operations_runbook_acceptance_audit()
 
-    assert audit.required_count == 17
+    assert audit.required_count == 18
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -418,6 +418,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         "account_truth_mismatch_alerts",
         "paper_shadow_order_divergence_alerts",
         "runtime_connector_degradation_alerts",
+        "operations_source_control_hygiene",
         "simulation_evidence_safety_docs",
     }
 
@@ -438,6 +439,18 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
     assert any(
         "legacy_diverged_run" in command and "missing_simulation" in command
         for command in fallback_review_queue.validation_commands
+    )
+
+    source_control_hygiene = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "operations_source_control_hygiene"
+    )
+    assert ".github/workflows/ci.yml" in source_control_hygiene.evidence_paths
+    assert "tests/test_ci_workflow.py" in source_control_hygiene.evidence_paths
+    assert any(
+        "repository_hygiene" in command
+        for command in source_control_hygiene.validation_commands
     )
 
 

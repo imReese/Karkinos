@@ -2577,6 +2577,25 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="operations_source_control_hygiene",
+                checkbox_text=(
+                    "* [x] CI repository hygiene blocks tracked runtime "
+                    "databases, logs, exports, screenshots, generated "
+                    "reports, local secrets, and agent/plugin state from "
+                    "source control."
+                ),
+                evidence_paths=(
+                    ".github/workflows/ci.yml",
+                    ".gitignore",
+                    "tests/test_ci_workflow.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_ci_workflow.py -k repository_hygiene",
+                    "git ls-files reports data/store logs exports screenshots",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="simulation_evidence_safety_docs",
                 checkbox_text=(
                     "* [x] README, architecture, roadmap, and implementation "

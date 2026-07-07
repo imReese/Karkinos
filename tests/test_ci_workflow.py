@@ -32,3 +32,15 @@ def test_ci_uses_node24_compatible_github_actions() -> None:
     assert "actions/checkout@v4" not in workflow
     assert "actions/setup-python@v5" not in workflow
     assert "actions/setup-node@v4" not in workflow
+
+
+def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text()
+
+    assert "Check tracked private artifacts" in workflow
+    assert "data/store/" in workflow
+    assert "logs/" in workflow
+    assert "exports/" in workflow
+    assert "screenshots/" in workflow
+    assert "reports/" in workflow
+    assert ".*\\.(db|sqlite|duckdb)" in workflow
