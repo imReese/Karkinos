@@ -349,6 +349,18 @@ export type AutomationCockpitResponse = {
     created_at?: string;
     updated_at: string;
     payload?: Record<string, unknown>;
+    lifecycle?: {
+      schema_version?: string;
+      stage?: string;
+      supported_stages?: string[];
+      audit_only?: boolean;
+      does_not_authorize_execution?: boolean;
+      broker_submission_enabled?: boolean;
+      manual_confirmation_required_for_live_like?: boolean;
+      disabled_stages?: string[];
+      terminal?: boolean;
+      allowed_operator_actions?: string[];
+    };
   }>;
   execution_reconciliation_open_items: Array<{
     item_id: number;

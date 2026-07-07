@@ -193,6 +193,25 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Strategy promotion lifecycle now supports audit-only operator
+  pause and retire transitions, exposes lifecycle metadata to Automation
+  Cockpit / Decision Cockpit, and rejects `controlled_bridge_pilot` lifecycle
+  requests by default while recording a rejection event. Decision Cockpit
+  renders paused/retired lifecycle state, audit-only evidence,
+  does-not-authorize-execution, controlled-bridge-pilot disabled, and
+  live-like disabled labels without live promotion controls. Assumption:
+  pause/retire lifecycle transitions are operator audit evidence for strategy
+  governance, not execution authority or broker bridge enablement. Validation:
+  `uv run python -m pytest tests/test_strategy_promotion_pipeline.py -k "lifecycle or controlled_bridge"`,
+  `uv run python -m pytest tests/server/test_strategy_promotion_routes.py -k "lifecycle or pause"`,
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "strategy promotion lifecycle audit"`,
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k controlled_broker_bridge_foundation`.
+  Risk impact: improves v1.7 lifecycle visibility and auditability without
+  contacting brokers, storing credentials, submitting or cancelling broker
+  orders, mutating OMS, writing production ledger facts, enabling automatic
+  trading, authorizing controlled bridge pilot, or bypassing manual
+  confirmation.
 - 2026-07-07: Operations Today now exposes a read-only
   `execution_reconciliation` summary from open reconciliation items, including
   manual-execution review count, first open item, preview fingerprint evidence,

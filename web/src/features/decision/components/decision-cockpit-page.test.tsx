@@ -2041,6 +2041,64 @@ test('surfaces strategy promotion state as paper shadow only without live promot
   expect(automation.textContent).not.toContain('Submit broker order');
 });
 
+test('surfaces strategy promotion lifecycle audit boundary without bridge controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v1',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        mode: 'paper_shadow',
+        default_execution_mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+        next_action: 'paper_shadow_available',
+        limitations: ['Live submission remains disabled.'],
+      },
+      gateways: [],
+      open_alert_count: 0,
+      open_alerts: [],
+      recent_runs: [],
+      promotion_states: [
+        {
+          strategy_id: 'dual_ma',
+          stage: 'paused',
+          gate_status: 'paused',
+          live_like_enabled: false,
+          missing_requirements: [],
+          backtest_result_id: 7,
+          updated_at: '2026-07-07T10:30:00+08:00',
+          lifecycle: {
+            audit_only: true,
+            does_not_authorize_execution: true,
+            disabled_stages: ['controlled_bridge_pilot', 'live_like'],
+            allowed_operator_actions: ['review_readiness', 'retire'],
+            terminal: false,
+          },
+        },
+      ],
+      execution_reconciliation_open_items: [],
+      limitations: [
+        'Cockpit summary is read-only and does not submit broker orders.',
+      ],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain('Strategy promotion state');
+  expect(automation.textContent).toContain('Paused');
+  expect(automation.textContent).toContain('Lifecycle audit only');
+  expect(automation.textContent).toContain('Does not authorize execution');
+  expect(automation.textContent).toContain('Controlled bridge pilot disabled');
+  expect(automation.textContent).toContain('Live-like disabled');
+  expect(automation.textContent).not.toContain('Enable bridge pilot');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+});
+
 test('surfaces staged fill polling evidence without live broker actions', async () => {
   const fetchMock = renderDecisionCockpit({
     locale: 'en',

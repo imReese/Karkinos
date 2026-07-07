@@ -606,7 +606,19 @@ update.
 The panel also shows strategy promotion state from the Automation Cockpit as
 read-only lifecycle evidence: strategy id, stage, paper/shadow gate status,
 missing requirements, optional backtest evidence id, and a live-like disabled
-boundary. It does not expose live-promotion controls.
+boundary. When a strategy is manually paused or retired, the panel shows the
+audit-only lifecycle boundary, does-not-authorize-execution flag, and disabled
+controlled-bridge-pilot marker. It does not expose live-promotion,
+controlled-bridge-pilot, broker-submit, broker-cancel, or ledger-sync controls.
+The strategy lifecycle audit API only records status and events:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/strategy-promotion/states` | Read strategy promotion / lifecycle states |
+| POST | `/api/strategy-promotion/{strategy_id}/promote` | Record paper/shadow promotion when readiness evidence passes; live-like remains rejected by default |
+| POST | `/api/strategy-promotion/{strategy_id}/lifecycle` | Record manual pause or retirement lifecycle state; controlled bridge pilot remains rejected by default |
+| GET | `/api/strategy-promotion/{strategy_id}/events` | Read strategy promotion and lifecycle audit events |
+
 Manual-ticket dry-run records accepted or rejected validation events for audit,
 including kill-switch rejections, but does not change OMS status or submit
 broker orders. After a manual ticket is created, manual-execution preview can

@@ -2876,21 +2876,26 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                 key="decision_cockpit_strategy_promotion_state",
                 checkbox_text=(
                     "* [x] Decision Cockpit shows strategy promotion state, "
-                    "paper/shadow gate status, missing requirements, and the "
-                    "live-like disabled boundary as read-only evidence."
+                    "paper/shadow gate status, missing requirements, audit-only "
+                    "pause/retire lifecycle evidence, controlled-bridge-pilot "
+                    "rejection, and the live-like disabled boundary as read-only "
+                    "evidence."
                 ),
                 evidence_paths=(
                     "server/services/strategy_promotion_pipeline.py",
+                    "server/routes/strategy_promotion.py",
                     "server/services/automation_cockpit.py",
                     "tests/test_strategy_promotion_pipeline.py",
                     "tests/server/test_strategy_promotion_routes.py",
                     "web/src/features/operations/api.ts",
                     "web/src/features/decision/components/decision-cockpit-page.tsx",
                     "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "docs/README.zh.md",
+                    "docs/README.en.md",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_strategy_promotion_pipeline.py tests/server/test_strategy_promotion_routes.py",
-                    "npm --prefix web test -- decision-cockpit-page.test.tsx",
+                    "uv run pytest tests/test_strategy_promotion_pipeline.py tests/server/test_strategy_promotion_routes.py -k 'lifecycle or controlled_bridge or promotes_ready_strategy'",
+                    "npm --prefix web test -- decision-cockpit-page.test.tsx -t 'strategy promotion'",
                 ),
             ),
             AcceptanceCriterion(
