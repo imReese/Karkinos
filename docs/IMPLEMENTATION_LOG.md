@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Local JSON read-only broker connector exports now degrade invalid
+  local snapshot files into an `incomplete` runtime snapshot instead of
+  propagating JSON, file, or decimal parsing exceptions through broker gateway
+  routes. Invalid snapshots omit private account ids and account facts, keep
+  connector health as `runtime_degraded` / `snapshot_degraded`, and preserve
+  explicit no-broker-contact / no-submission limitations for Operations and
+  alert review. Assumption: the JSON file is a user-managed ignored local
+  export and malformed numeric fields should be treated as data-quality
+  evidence, not a broker runtime action. Validation:
+  `uv run python -m pytest tests/account_truth/test_broker_connector.py tests/server/test_broker_gateway_routes.py -k "invalid_export or invalid_snapshot_degrades"`
+  and
+  `uv run python -m pytest tests/account_truth/test_broker_connector.py tests/server/test_broker_gateway_routes.py tests/test_broker_gateway_service.py tests/test_automation_alerts.py -k "local_json or local_export or runtime_readonly_connector or connector_health"`.
+  Risk impact: improves v1.7 local read-only adapter resilience without
+  contacting brokers, storing credentials, exposing private account ids,
+  creating fills, mutating OMS, saving production ledger entries, submitting or
+  cancelling broker orders, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-07: Execution reconciliation now preserves the broker-gateway
   `validation.required_gate_summary` from `manual_execution_recorded` gateway
   events inside `manual_execution_evidence_summary`, and automation alerts

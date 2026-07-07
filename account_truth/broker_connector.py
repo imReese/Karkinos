@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -158,34 +158,48 @@ class LocalJsonReadOnlyBrokerConnector:
         return BrokerConnectorCapabilities()
 
     def read_account_snapshot(self) -> BrokerConnectorSnapshot:
-        data = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
-        captured_at = str(data.get("captured_at") or "")
-        health_data = _dict(data.get("health"))
-        health = BrokerConnectorHealth(
-            status=_health_status(health_data.get("status")),
-            checked_at=str(health_data.get("checked_at") or captured_at),
-            message=str(health_data.get("message") or ""),
-            limitations=_string_list(health_data.get("limitations")),
-        )
-        limitations = [
-            "Local JSON snapshot export; no broker client is contacted.",
-            *_string_list(data.get("limitations")),
-        ]
-        return BrokerConnectorSnapshot(
-            connector_id=self.connector_id or str(data.get("connector_id") or ""),
-            source_name=str(data.get("source_name") or "local readonly export"),
-            account_id=str(data.get("account_id") or ""),
-            account_alias=self.account_alias or str(data.get("account_alias") or ""),
-            captured_at=captured_at,
-            health=health,
-            cash=_cash_fact(data.get("cash")),
-            positions=[
-                _position_fact(item) for item in _dict_list(data.get("positions"))
-            ],
-            orders=[_order_fact(item) for item in _dict_list(data.get("orders"))],
-            fills=[_fill_fact(item) for item in _dict_list(data.get("fills"))],
-            limitations=limitations,
-        )
+        try:
+            data = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+            captured_at = str(data.get("captured_at") or "")
+            health_data = _dict(data.get("health"))
+            health = BrokerConnectorHealth(
+                status=_health_status(health_data.get("status")),
+                checked_at=str(health_data.get("checked_at") or captured_at),
+                message=str(health_data.get("message") or ""),
+                limitations=_string_list(health_data.get("limitations")),
+            )
+            limitations = [
+                "Local JSON snapshot export; no broker client is contacted.",
+                *_string_list(data.get("limitations")),
+            ]
+            return BrokerConnectorSnapshot(
+                connector_id=self.connector_id or str(data.get("connector_id") or ""),
+                source_name=str(data.get("source_name") or "local readonly export"),
+                account_id=str(data.get("account_id") or ""),
+                account_alias=self.account_alias
+                or str(data.get("account_alias") or ""),
+                captured_at=captured_at,
+                health=health,
+                cash=_cash_fact(data.get("cash")),
+                positions=[
+                    _position_fact(item) for item in _dict_list(data.get("positions"))
+                ],
+                orders=[_order_fact(item) for item in _dict_list(data.get("orders"))],
+                fills=[_fill_fact(item) for item in _dict_list(data.get("fills"))],
+                limitations=limitations,
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            InvalidOperation,
+            TypeError,
+            ValueError,
+        ) as exc:
+            return _invalid_local_json_snapshot(
+                connector_id=self.connector_id,
+                account_alias=self.account_alias,
+                reason_code=type(exc).__name__,
+            )
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -202,6 +216,36 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _invalid_local_json_snapshot(
+    *,
+    connector_id: str,
+    account_alias: str,
+    reason_code: str,
+) -> BrokerConnectorSnapshot:
+    return BrokerConnectorSnapshot(
+        connector_id=connector_id,
+        source_name="local readonly export",
+        account_id="",
+        account_alias=account_alias,
+        captured_at="",
+        health=BrokerConnectorHealth(
+            status="incomplete",
+            checked_at="",
+            message=(
+                "Local JSON snapshot export is invalid; review the ignored local export file."
+            ),
+            limitations=[
+                f"parse_error:{reason_code}",
+                "No broker client was contacted and no broker order was submitted.",
+            ],
+        ),
+        limitations=[
+            "Local JSON snapshot export could not be parsed; no broker client is contacted.",
+            "Broker order submission remains disabled.",
+        ],
+    )
 
 
 def _decimal(value: Any, default: str = "0") -> Decimal:
