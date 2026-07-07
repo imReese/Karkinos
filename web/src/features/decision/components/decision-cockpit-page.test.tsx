@@ -1376,6 +1376,96 @@ test('renders paper shadow review queue as public operator review items', async 
   expect(plan.textContent).not.toContain('Submit broker order');
 });
 
+test('renders paper shadow manual handoff gate as public operator evidence', async () => {
+  renderDecisionCockpit({
+    operationsTodayResponse: {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-06-12',
+      generated_at: '2026-06-12T09:32:00+08:00',
+      conclusion_status: 'manual_action_required',
+      primary_target: 'paper-shadow',
+      health: {
+        total: 8,
+        pass: 5,
+        degraded: 0,
+        blocked: 0,
+        manual_action_required: 2,
+        skipped: 1,
+      },
+      subsystems: [
+        {
+          id: 'paper_shadow',
+          status: 'manual_action_required',
+          tone: 'warning',
+          target: 'paper-shadow',
+          last_run_at: '2026-06-12T09:32:00+08:00',
+          next_action: 'resolve_shadow_divergence',
+          limitations: [],
+          detail_status: 'diverged',
+        },
+      ],
+      daily_plan: {
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        blocked_count: 0,
+        order_intent_count: 1,
+        conclusion_status: 'manual_confirmation_ready',
+      },
+      paper_shadow: {
+        status: 'diverged',
+        run_id: 'shadow:2026-06-12:partial',
+        input_fingerprint: 'partial',
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 1,
+        divergence_reviewed_count: 0,
+        divergence_status: 'diverged',
+        next_manual_review_step: 'resolve_shadow_divergence',
+        last_run_at: '2026-06-12T09:32:00+08:00',
+        manual_handoff: {
+          ready: false,
+          status: 'blocked_by_unresolved_divergence',
+          blockers: ['unresolved_paper_shadow_divergence'],
+          required_actions: ['resolve_shadow_divergence'],
+          review_queue_count: 1,
+          highest_severity: 'warning',
+          review_status: null,
+          reviewed_at: null,
+          reviewer: null,
+          does_not_submit_broker_order: true,
+          does_not_mutate_production_ledger: true,
+        },
+        review_queue: [],
+        orders: [
+          {
+            order_id: 'SHADOW-PARTIAL',
+            symbol: '600519',
+            status: 'partially_filled',
+            divergence_status: 'diverged',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain(
+    'Manual handoff: Blocked by unresolved simulation divergence',
+  );
+  expect(plan.textContent).toContain(
+    'Next: Resolve simulation divergence before approval',
+  );
+  expect(plan.textContent).toContain('Review queue: 1 item');
+  expect(plan.textContent).toContain('No broker submission');
+  expect(plan.textContent).toContain('No production ledger mutation');
+  expect(plan.textContent).not.toContain('blocked_by_unresolved_divergence');
+  expect(plan.textContent).not.toContain('unresolved_paper_shadow_divergence');
+  expect(plan.textContent).not.toContain('resolve_shadow_divergence');
+  expect(plan.textContent).not.toContain('Submit broker order');
+});
+
 test('renders running paper shadow runs as a wait state', async () => {
   renderDecisionCockpit({
     operationsTodayResponse: {

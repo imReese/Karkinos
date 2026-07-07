@@ -434,6 +434,15 @@ def _paper_shadow_summary(
             for order in orders[:5]
         ],
         "review_queue": [],
+        "manual_handoff": _paper_shadow_manual_handoff(
+            status=status,
+            effective_status=status,
+            review_status=None,
+            reviewed_at=None,
+            reviewer=None,
+            next_manual_review_step=next_step,
+            review_queue=[],
+        ),
     }
 
 
@@ -459,6 +468,17 @@ def _paper_shadow_run_summary(
     reviewed_count = len(
         [order for order in orders if str(order.get("divergence_status") or "").strip()]
     )
+    review_queue = review_queue or _fallback_paper_shadow_review_queue(
+        run_id=run.get("run_id"),
+        status=status,
+        orders=orders,
+        divergence_summary=_dict(payload.get("divergence_summary")),
+    )
+    next_manual_review_step = _paper_shadow_default_next_step(
+        status=status,
+        value=run.get("next_manual_review_step"),
+        review_status=review_status,
+    )
     return {
         "status": status,
         "effective_status": effective_status,
@@ -479,23 +499,116 @@ def _paper_shadow_run_summary(
         "review_status": review_status,
         "reviewed_at": run.get("reviewed_at") or review.get("reviewed_at"),
         "reviewer": run.get("reviewer") or review.get("reviewer"),
-        "next_manual_review_step": _paper_shadow_default_next_step(
-            status=status,
-            value=run.get("next_manual_review_step"),
-            review_status=review_status,
-        ),
+        "next_manual_review_step": next_manual_review_step,
         "last_run_at": run.get("updated_at") or run.get("created_at"),
         "limitations": _json_list(run.get("limitations_json")),
         "orders": orders[:5],
-        "review_queue": review_queue
-        or _fallback_paper_shadow_review_queue(
-            run_id=run.get("run_id"),
-            status=status,
-            orders=orders,
-            divergence_summary=_dict(payload.get("divergence_summary")),
-        ),
+        "review_queue": review_queue,
         "divergence_summary": _dict(payload.get("divergence_summary")),
+        "manual_handoff": _paper_shadow_manual_handoff(
+            status=status,
+            effective_status=effective_status,
+            review_status=review_status or None,
+            reviewed_at=run.get("reviewed_at") or review.get("reviewed_at"),
+            reviewer=run.get("reviewer") or review.get("reviewer"),
+            next_manual_review_step=next_manual_review_step,
+            review_queue=review_queue,
+        ),
     }
+
+
+def _paper_shadow_manual_handoff(
+    *,
+    status: str,
+    effective_status: str,
+    review_status: str | None,
+    reviewed_at: Any,
+    reviewer: Any,
+    next_manual_review_step: str,
+    review_queue: list[dict[str, Any]],
+) -> dict[str, Any]:
+    run_status = str(status or "").strip().lower()
+    effective = str(effective_status or run_status).strip().lower()
+    review = str(review_status or "").strip() or None
+    required_actions = _paper_shadow_handoff_required_actions(
+        next_manual_review_step=next_manual_review_step,
+        review_queue=review_queue,
+    )
+    ready = False
+    handoff_status = "blocked_by_paper_shadow_review"
+    blockers: list[str] = []
+
+    if effective == "accepted_for_manual_confirmation":
+        ready = True
+        handoff_status = "ready_after_accepted_review"
+        required_actions = ["review_manual_confirmation"]
+    elif run_status == "within_expectations":
+        ready = True
+        handoff_status = "ready_after_clean_simulation"
+        required_actions = ["review_manual_confirmation"]
+    elif run_status == "not_required":
+        handoff_status = "not_required"
+        required_actions = ["none"]
+    elif run_status == "not_run":
+        handoff_status = "paper_shadow_required"
+        blockers = ["paper_shadow_run_not_run"]
+    elif run_status == "running":
+        handoff_status = "waiting_for_paper_shadow_run"
+        blockers = ["paper_shadow_run_running"]
+    elif run_status == "failed":
+        handoff_status = "blocked_by_failed_run"
+        blockers = ["failed_paper_shadow_run"]
+    elif review == "needs_rerun":
+        handoff_status = "blocked_by_review_requested_rerun"
+        blockers = ["paper_shadow_review_requested_rerun"]
+    elif run_status in {"diverged", "review_required"}:
+        handoff_status = "blocked_by_unresolved_divergence"
+        blockers = ["unresolved_paper_shadow_divergence"]
+
+    return {
+        "ready": ready,
+        "status": handoff_status,
+        "blockers": blockers,
+        "required_actions": required_actions,
+        "review_queue_count": len(review_queue),
+        "highest_severity": _paper_shadow_highest_review_severity(review_queue),
+        "review_status": review,
+        "reviewed_at": reviewed_at,
+        "reviewer": reviewer,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+
+
+def _paper_shadow_handoff_required_actions(
+    *,
+    next_manual_review_step: str,
+    review_queue: list[dict[str, Any]],
+) -> list[str]:
+    actions = [
+        str(item.get("required_action") or "").strip()
+        for item in review_queue
+        if str(item.get("required_action") or "").strip()
+    ]
+    next_step = str(next_manual_review_step or "").strip()
+    if next_step:
+        actions.append(next_step)
+    return _dedupe(actions) or ["none"]
+
+
+def _paper_shadow_highest_review_severity(
+    review_queue: list[dict[str, Any]],
+) -> str | None:
+    rank = {"danger": 3, "warning": 2, "info": 1}
+    highest: str | None = None
+    highest_rank = 0
+    for item in review_queue:
+        severity = str(item.get("severity") or "").strip().lower()
+        severity_rank = rank.get(severity, 0)
+        if severity_rank > highest_rank:
+            highest = severity
+            highest_rank = severity_rank
+    return highest
 
 
 def _fallback_paper_shadow_review_queue(

@@ -305,6 +305,110 @@ def test_operations_today_surfaces_paper_shadow_review_queue() -> None:
     ]
 
 
+def test_operations_today_blocks_manual_handoff_until_shadow_review_is_accepted() -> (
+    None
+):
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:partial",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "partial",
+            "status": "diverged",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 1,
+            "divergence_status": "diverged",
+            "next_manual_review_step": "resolve_shadow_divergence",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"symbol": "600519", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged"}], '
+                '"review_queue": [{"review_id": "shadow:2026-07-01:partial:ACTION-1", '
+                '"order_intent_ref": "action:ACTION-1", '
+                '"order_id": "SHADOW-1", '
+                '"symbol": "600519", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged", '
+                '"severity": "warning", '
+                '"required_action": "resolve_shadow_divergence", '
+                '"reason": "Review before handoff.", '
+                '"does_not_submit_broker_order": true, '
+                '"does_not_mutate_production_ledger": true}]}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    assert summary["paper_shadow"]["manual_handoff"] == {
+        "ready": False,
+        "status": "blocked_by_unresolved_divergence",
+        "blockers": ["unresolved_paper_shadow_divergence"],
+        "required_actions": ["resolve_shadow_divergence"],
+        "review_queue_count": 1,
+        "highest_severity": "warning",
+        "review_status": None,
+        "reviewed_at": None,
+        "reviewer": None,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+
+
+def test_operations_today_marks_accepted_shadow_divergence_ready_for_handoff() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:diverged",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "diverged",
+            "status": "diverged",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 0,
+            "divergence_status": "diverged",
+            "next_manual_review_step": "resolve_shadow_divergence",
+            "review_status": "accepted_for_manual_confirmation",
+            "reviewed_at": "2026-07-01T10:10:00+08:00",
+            "reviewer": "local-operator",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"symbol": "600519", '
+                '"status": "partially_filled", '
+                '"divergence_status": "diverged"}], '
+                '"review": {"review_status": '
+                '"accepted_for_manual_confirmation"}}'
+            ),
+            "updated_at": "2026-07-01T10:10:00+08:00",
+        },
+    )
+
+    assert summary["paper_shadow"]["manual_handoff"] == {
+        "ready": True,
+        "status": "ready_after_accepted_review",
+        "blockers": [],
+        "required_actions": ["review_manual_confirmation"],
+        "review_queue_count": 1,
+        "highest_severity": "warning",
+        "review_status": "accepted_for_manual_confirmation",
+        "reviewed_at": "2026-07-01T10:10:00+08:00",
+        "reviewer": "local-operator",
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+
+
 def test_operations_today_synthesizes_review_queue_for_legacy_diverged_run() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
