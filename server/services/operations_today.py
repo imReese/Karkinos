@@ -473,12 +473,17 @@ def _scheduler_summary(
         }
 
     payload = _payload(latest_run)
+    status = str(latest_run.get("status") or "unknown")
+    run_type = latest_run.get("run_type")
+    execution_mode = latest_run.get("execution_mode") or "paper_shadow"
+    retry_state = _dict(payload.get("retry_state"))
+    is_failure = _scheduler_run_failed(status)
     return {
-        "status": str(latest_run.get("status") or "unknown"),
+        "status": status,
         "run_id": latest_run.get("run_id"),
-        "run_type": latest_run.get("run_type"),
+        "run_type": run_type,
         "run_date": latest_run.get("run_date") or plan_date,
-        "execution_mode": latest_run.get("execution_mode") or "paper_shadow",
+        "execution_mode": execution_mode,
         "last_run_at": latest_run.get("finished_at")
         or latest_run.get("updated_at")
         or latest_run.get("started_at")
@@ -486,10 +491,21 @@ def _scheduler_summary(
         "input_fingerprint": payload.get("input_fingerprint"),
         "idempotency_key": payload.get("idempotency_key"),
         "input_snapshot": _dict(payload.get("input_snapshot")),
-        "retry_state": _dict(payload.get("retry_state")),
+        "retry_state": retry_state,
         "error": _dict(payload.get("error")),
+        "suggested_action": _scheduler_suggested_action(
+            status=status,
+            run_type=run_type,
+            execution_mode=execution_mode,
+        ),
+        "requires_manual_review": is_failure,
+        "retry_recommended": is_failure and bool(retry_state.get("retryable")),
         "broker_submission_enabled": bool(payload.get("broker_submission_enabled")),
         "does_not_submit_broker_order": payload.get("does_not_submit_broker_order")
+        is not False,
+        "does_not_mutate_production_ledger": payload.get(
+            "does_not_mutate_production_ledger"
+        )
         is not False,
         "limitations": _list(payload.get("limitations")),
     }
@@ -536,6 +552,35 @@ def _scheduler_operation_state(run_status: str) -> tuple[str, str]:
     if status in {"pending_manual_confirmation", "not_recorded", ""}:
         return "pass", "none"
     return "degraded", "review_scheduler_run"
+
+
+def _scheduler_run_failed(status: str) -> bool:
+    value = str(status or "").strip().lower()
+    return value.endswith("_failed") or value in {"failed", "error"}
+
+
+def _scheduler_suggested_action(
+    *,
+    status: str,
+    run_type: Any,
+    execution_mode: Any,
+) -> str:
+    value = str(status or "").strip().lower()
+    if value == "blocked_by_kill_switch":
+        return "resolve_kill_switch"
+    if value == "paper_shadow_failed" and str(execution_mode or "") == "paper_shadow":
+        return "inspect_failed_paper_shadow_run"
+    if _scheduler_run_failed(value) and str(run_type or "") == "market_session":
+        return "inspect_scheduler_failure"
+    if _scheduler_run_failed(value):
+        return "inspect_failed_automation_run"
+    if value in {"skipped_non_trading_session", "skipped"}:
+        return "none"
+    if value in {"paper_shadow_completed", "completed", "success", "pass"}:
+        return "none"
+    if value in {"pending_manual_confirmation", "not_recorded", ""}:
+        return "none"
+    return "review_scheduler_run"
 
 
 def _is_daily_shadow_order(
