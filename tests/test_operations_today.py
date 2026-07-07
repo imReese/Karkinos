@@ -77,6 +77,44 @@ def test_operations_today_requires_shadow_run_for_order_intents() -> None:
     assert summary["health"]["manual_action_required"] == 2
 
 
+def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-07-01T09:32:00+08:00",
+        acceptance_audit_export={
+            "generated_at": "2026-07-01T09:30:00Z",
+            "selected_audit": "operations_runbook",
+            "overall_is_complete": True,
+            "audits": [
+                {
+                    "key": "operations_runbook",
+                    "required_count": 17,
+                    "completed_count": 17,
+                    "is_complete": True,
+                    "limitations": [
+                        "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
+                    ],
+                }
+            ],
+        },
+    )
+
+    audit = next(
+        item for item in summary["subsystems"] if item["id"] == "acceptance_audit"
+    )
+    assert audit["status"] == "pass"
+    assert audit["last_run_at"] == "2026-07-01T09:30:00Z"
+    assert audit["next_action"] == "none"
+    assert audit["detail_status"] == "operations_runbook:17/17"
+    assert audit["limitations"] == [
+        "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
+    ]
+
+
 def test_operations_today_requires_shadow_divergence_review() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),

@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from analytics.acceptance_audit_report import build_acceptance_audit_export
 from server.routes.decision import _today_decision_payload, _trading_plan_positions
 from server.services.daily_operations import build_daily_operations_summary
 from server.services.daily_trading_plan import build_daily_trading_plan
@@ -90,6 +91,9 @@ def create_router() -> APIRouter:
             fill_facts=fill_facts,
             paper_shadow_run=paper_shadow_run,
             automation_runs=automation_runs,
+            acceptance_audit_export=build_acceptance_audit_export(
+                selected_audit="operations_runbook",
+            ),
         )
 
     @router.post("/paper-shadow/run")

@@ -25,6 +25,7 @@ def build_operations_today_summary(
     fill_facts: Iterable[dict[str, Any]],
     paper_shadow_run: dict[str, Any] | None = None,
     automation_runs: Iterable[dict[str, Any]] | None = None,
+    acceptance_audit_export: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a UI-facing operations summary without mutating trading state."""
@@ -61,7 +62,10 @@ def build_operations_today_summary(
         _daily_plan_subsystem(trading_plan),
         _paper_shadow_subsystem(shadow),
         _scheduler_subsystem(scheduler),
-        _acceptance_audit_subsystem(daily_operations),
+        _acceptance_audit_subsystem(
+            daily_operations,
+            acceptance_audit_export=acceptance_audit_export,
+        ),
     ]
     health = _health_summary(subsystems)
     conclusion_status, primary_target = _conclusion(subsystems)
@@ -280,7 +284,12 @@ def _scheduler_retry_limitations(retry_state: Any) -> list[str]:
 
 def _acceptance_audit_subsystem(
     daily_operations: DailyOperationsSummary,
+    *,
+    acceptance_audit_export: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if acceptance_audit_export is not None:
+        return _acceptance_audit_export_subsystem(acceptance_audit_export)
+
     if daily_operations.ledger_review_count > 0:
         status = "manual_action_required"
         next_action = "review_ledger_items"
@@ -296,6 +305,67 @@ def _acceptance_audit_subsystem(
         limitations=[],
         detail_status=str(daily_operations.ledger_review_count),
     )
+
+
+def _acceptance_audit_export_subsystem(
+    acceptance_audit_export: dict[str, Any],
+) -> dict[str, Any]:
+    audits = _list_of_dicts(acceptance_audit_export.get("audits"))
+    required_count = sum(_int(audit.get("required_count")) for audit in audits)
+    completed_count = sum(_int(audit.get("completed_count")) for audit in audits)
+    complete_audit_count = sum(1 for audit in audits if bool(audit.get("is_complete")))
+    is_complete = (
+        bool(acceptance_audit_export.get("overall_is_complete"))
+        and required_count > 0
+        and completed_count == required_count
+    )
+    if is_complete:
+        status = "pass"
+        next_action = "none"
+    elif audits:
+        status = "manual_action_required"
+        next_action = "review_acceptance_audit_gaps"
+    else:
+        status = "degraded"
+        next_action = "export_acceptance_audit"
+
+    return _subsystem(
+        "acceptance_audit",
+        status,
+        target="audit",
+        last_run_at=acceptance_audit_export.get("generated_at"),
+        next_action=next_action,
+        limitations=_dedupe(
+            limitation
+            for audit in audits
+            for limitation in _list(audit.get("limitations"))
+        ),
+        detail_status=_acceptance_audit_detail_status(
+            audits=audits,
+            complete_audit_count=complete_audit_count,
+            required_count=required_count,
+            completed_count=completed_count,
+        ),
+    )
+
+
+def _acceptance_audit_detail_status(
+    *,
+    audits: list[dict[str, Any]],
+    complete_audit_count: int,
+    required_count: int,
+    completed_count: int,
+) -> str:
+    if len(audits) == 1:
+        audit = audits[0]
+        key = str(audit.get("key") or "acceptance_audit")
+        return f"{key}:{completed_count}/{required_count}"
+    if audits:
+        return (
+            f"{complete_audit_count}/{len(audits)} audits; "
+            f"{completed_count}/{required_count} criteria"
+        )
+    return "0/0 criteria"
 
 
 def _paper_shadow_summary(
