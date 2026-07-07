@@ -2358,6 +2358,27 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="paper_shadow_fallback_review_queue",
+                checkbox_text=(
+                    "* [x] Operations Today preserves operator review work "
+                    "for legacy or partial paper/shadow runs by synthesizing "
+                    "read-only review-queue evidence for diverged, failed, or "
+                    "missing simulations without broker submission or "
+                    "production-ledger mutation."
+                ),
+                evidence_paths=(
+                    "server/services/operations_today.py",
+                    "tests/test_operations_today.py",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    'uv run python -m pytest tests/test_operations_today.py -k "legacy_diverged_run or missing_simulation"',
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="frontend_paper_shadow_next_actions",
                 checkbox_text=(
                     "* [x] Decision, Overview, and Trading surfaces show "

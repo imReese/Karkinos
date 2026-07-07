@@ -6,6 +6,21 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: The `operations_runbook` acceptance audit now has an explicit
+  `paper_shadow_fallback_review_queue` criterion tying the recent Operations
+  Today legacy/partial-run fallback review queues to deterministic evidence and
+  validation commands. Assumption: fallback review queues are a first-class
+  v1.6.1 operator runbook capability because they prevent stale persisted
+  paper/shadow payloads from hiding diverged, failed, or missing-simulation
+  review work. Validation:
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook`,
+  `uv run python -m pytest tests/test_acceptance_audit_cli.py -k operations_runbook`,
+  and
+  `uv run python -m pytest tests/test_operations_today.py -k "legacy_diverged_run or missing_simulation"`.
+  Risk impact: improves acceptance traceability only; it does not change
+  runtime paper/shadow behavior, contact brokers, create broker orders, mutate
+  OMS, write production ledger facts, enable automatic trading, or bypass
+  manual confirmation.
 - 2026-07-07: Operations Today fallback paper/shadow review queues now also
   cover persisted `review_required` runs whose divergence summary reports
   missing simulated order-intent refs but whose payload lacks stored orders or

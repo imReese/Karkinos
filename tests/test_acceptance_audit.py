@@ -397,7 +397,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
 ):
     audit = build_operations_runbook_acceptance_audit()
 
-    assert audit.required_count == 16
+    assert audit.required_count == 17
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -409,6 +409,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         "paper_shadow_simulation_outcomes",
         "paper_shadow_run_review_outcomes",
         "paper_shadow_rich_divergence_report",
+        "paper_shadow_fallback_review_queue",
         "frontend_paper_shadow_next_actions",
         "automation_run_failure_alerts",
         "connector_health_alerts",
@@ -426,6 +427,18 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         assert criterion.validation_commands, criterion.key
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
+
+    fallback_review_queue = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "paper_shadow_fallback_review_queue"
+    )
+    assert "server/services/operations_today.py" in fallback_review_queue.evidence_paths
+    assert "tests/test_operations_today.py" in fallback_review_queue.evidence_paths
+    assert any(
+        "legacy_diverged_run" in command and "missing_simulation" in command
+        for command in fallback_review_queue.validation_commands
+    )
 
 
 def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> None:
