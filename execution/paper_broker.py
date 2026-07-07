@@ -12,6 +12,8 @@ from core.types import AssetClass, OrderSide, OrderType, Symbol
 from execution.commission import CommissionCalculator, FeeBreakdown, StockACommission
 
 PAPER_BROKER_SCHEMA_VERSION = "karkinos.paper_broker.v1"
+PAPER_OMS_DEFAULT_SOURCE = "paper_oms"
+PAPER_OMS_DEFAULT_TIMESTAMP = datetime(1970, 1, 1)
 
 
 class PaperOrderStatus(Enum):
@@ -55,6 +57,8 @@ class PaperOmsTransition:
     sequence: int
     from_status: PaperOrderStatus | None
     to_status: PaperOrderStatus
+    timestamp: datetime = PAPER_OMS_DEFAULT_TIMESTAMP
+    source: str = PAPER_OMS_DEFAULT_SOURCE
     filled_quantity: Decimal = Decimal("0")
     reason: str = ""
 
@@ -66,6 +70,8 @@ class PaperOmsTransition:
                 self.from_status.value if self.from_status is not None else None
             ),
             "to_status": self.to_status.value,
+            "timestamp": self.timestamp.isoformat(),
+            "source": self.source,
             "filled_quantity": str(self.filled_quantity),
             "reason": self.reason,
         }
@@ -114,8 +120,16 @@ class PaperOmsStateMachine:
         PaperOrderStatus.RECONCILED: frozenset(),
     }
 
-    def __init__(self, *, order_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        order_id: str,
+        timestamp: datetime | None = None,
+        source: str = PAPER_OMS_DEFAULT_SOURCE,
+    ) -> None:
         self.order_id = order_id
+        self.timestamp = timestamp or PAPER_OMS_DEFAULT_TIMESTAMP
+        self.source = source
         self.filled_quantity = Decimal("0")
         self._transitions: list[PaperOmsTransition] = [
             PaperOmsTransition(
@@ -123,6 +137,8 @@ class PaperOmsStateMachine:
                 sequence=1,
                 from_status=None,
                 to_status=PaperOrderStatus.STAGED,
+                timestamp=self.timestamp,
+                source=self.source,
             )
         ]
 
@@ -207,6 +223,8 @@ class PaperOmsStateMachine:
             sequence=len(self._transitions) + 1,
             from_status=self.current_status,
             to_status=to_status,
+            timestamp=self.timestamp,
+            source=self.source,
             filled_quantity=self.filled_quantity,
             reason=reason,
         )
@@ -390,9 +408,11 @@ class PaperBroker:
         db=None,
         provider_name: str = "simulated",
         commission_calc: CommissionCalculator | None = None,
+        source: str | None = None,
     ) -> None:
         self.db = db
         self.provider_name = provider_name
+        self.source = source or self.SOURCE
         self.commission_calc = commission_calc or StockACommission()
 
     def submit_order(
@@ -414,7 +434,11 @@ class PaperBroker:
         if effective_price is None:
             raise ValueError("Paper fill price is required when order price is absent.")
 
-        oms = PaperOmsStateMachine(order_id=request.order_id)
+        oms = PaperOmsStateMachine(
+            order_id=request.order_id,
+            timestamp=request.timestamp,
+            source=self.source,
+        )
         oms.mark_submitted()
         oms.mark_accepted()
         if quantity == request.quantity:
@@ -436,6 +460,7 @@ class PaperBroker:
             status_history=oms.status_history,
             oms_transitions=oms.transitions,
             context=request.context,
+            source=self.source,
         )
         fee_breakdown = self.commission_calc.breakdown(
             request.side,
@@ -461,6 +486,7 @@ class PaperBroker:
             reference_price=request.price,
             fee_breakdown=fee_breakdown,
             provider_name=self.provider_name,
+            source=self.source,
         )
 
         self._record_order(order)
@@ -474,7 +500,11 @@ class PaperBroker:
         reason: str = "",
     ) -> PaperBrokerResult:
         """Persist paper-only cancellation evidence without creating fills."""
-        oms = PaperOmsStateMachine(order_id=request.order_id)
+        oms = PaperOmsStateMachine(
+            order_id=request.order_id,
+            timestamp=request.timestamp,
+            source=self.source,
+        )
         oms.mark_submitted()
         oms.mark_cancelled(reason=reason)
         order = self._build_terminal_order(request, oms)
@@ -488,7 +518,11 @@ class PaperBroker:
         reason: str = "",
     ) -> PaperBrokerResult:
         """Persist paper-only rejection evidence without creating fills."""
-        oms = PaperOmsStateMachine(order_id=request.order_id)
+        oms = PaperOmsStateMachine(
+            order_id=request.order_id,
+            timestamp=request.timestamp,
+            source=self.source,
+        )
         oms.mark_submitted()
         oms.mark_accepted()
         oms.mark_rejected(reason=reason)
@@ -516,6 +550,7 @@ class PaperBroker:
             status_history=oms.status_history,
             oms_transitions=oms.transitions,
             context=request.context,
+            source=self.source,
         )
 
     def _record_order(self, order: PaperOrderEvidence) -> None:

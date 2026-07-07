@@ -291,7 +291,9 @@ export function useBrokerStatementImportMutation() {
     onSuccess: async (result) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['account-truth-score'] }),
-        queryClient.invalidateQueries({ queryKey: ['account-truth-import-runs'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['account-truth-import-runs'],
+        }),
         queryClient.invalidateQueries({ queryKey: ['account-truth-reports'] }),
         queryClient.invalidateQueries({
           queryKey: [

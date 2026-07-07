@@ -356,7 +356,9 @@ test('previews and stages broker evidence from pasted CSV', async () => {
     within(wizard).getByLabelText('CSV content'),
     brokerStatementCsv,
   );
-  await userEvent.click(within(wizard).getByRole('button', { name: 'Preview' }));
+  await userEvent.click(
+    within(wizard).getByRole('button', { name: 'Preview' }),
+  );
 
   expect(await within(wizard).findByText('Preview ready')).toBeTruthy();
   expect(within(wizard).getByText('Valid rows')).toBeTruthy();
@@ -743,7 +745,9 @@ test('explains the blocked empty state without exposing internal action codes', 
     ),
   ).toBeTruthy();
   expect(await screen.findByText('How to use this page')).toBeTruthy();
-  expect(screen.getAllByText('Import broker evidence').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Import broker evidence').length).toBeGreaterThan(
+    0,
+  );
   expect(
     await screen.findByText('Then return here to review differences'),
   ).toBeTruthy();

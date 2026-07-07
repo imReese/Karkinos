@@ -379,6 +379,8 @@ const EVIDENCE_REFERENCE_TYPE_LABELS: Record<Locale, LabelMap> = {
     dataset_snapshot: 'Dataset snapshot',
     fill: 'Fill evidence',
     order: 'Order evidence',
+    paper_fill: 'Simulation review fill',
+    paper_order: 'Simulation review order',
     paper_shadow_fill: 'Simulation review fill',
     paper_shadow_order: 'Simulation review order',
     review: 'Manual review',
@@ -387,6 +389,7 @@ const EVIDENCE_REFERENCE_TYPE_LABELS: Record<Locale, LabelMap> = {
     risk_gate: 'Risk gate',
     signal: 'Signal evidence',
     signal_preview: 'Signal preview',
+    strategy: 'Strategy',
     strategy_signal: 'Strategy signal',
   },
   zh: {
@@ -394,6 +397,8 @@ const EVIDENCE_REFERENCE_TYPE_LABELS: Record<Locale, LabelMap> = {
     dataset_snapshot: '数据快照',
     fill: '成交证据',
     order: '订单证据',
+    paper_fill: '模拟复核成交',
+    paper_order: '模拟复核订单',
     paper_shadow_fill: '模拟复核成交',
     paper_shadow_order: '模拟复核订单',
     review: '人工复核',
@@ -402,6 +407,7 @@ const EVIDENCE_REFERENCE_TYPE_LABELS: Record<Locale, LabelMap> = {
     risk_gate: '风控闸门',
     signal: '信号证据',
     signal_preview: '信号预览',
+    strategy: '策略',
     strategy_signal: '策略信号',
   },
 };
@@ -763,6 +769,14 @@ export function formatPublicEvidenceReference(
       .join(' · ');
   }
 
+  const omsTransitionReference = parseOmsTransitionEvidenceReference(
+    key,
+    locale,
+  );
+  if (omsTransitionReference) {
+    return omsTransitionReference;
+  }
+
   const publicReference = parsePublicEvidenceReference(key, locale);
   if (publicReference) {
     return publicReference;
@@ -782,6 +796,65 @@ function parsePublicEvidenceReference(reference: string, locale: Locale) {
   }
   const auditRef = publicEvidenceAuditRef(parts);
   return auditRef ? `${label} · ${auditRef}` : label;
+}
+
+function parseOmsTransitionEvidenceReference(
+  reference: string,
+  locale: Locale,
+) {
+  const [rawType, orderId, sequence, status] = reference.split(':');
+  if (rawType !== 'oms_transition' || !orderId || !sequence || !status) {
+    return null;
+  }
+
+  const label = locale === 'zh' ? 'OMS 状态变更' : 'OMS transition';
+  return `${label} · ${orderId} #${sequence} ${formatOmsTransitionStatus(
+    status,
+    locale,
+  )}`;
+}
+
+function formatOmsTransitionStatus(value: string, locale: Locale) {
+  const labels: Record<string, Record<Locale, string>> = {
+    accepted: {
+      en: 'Accepted',
+      zh: '已接受模拟',
+    },
+    cancelled: {
+      en: 'Cancelled',
+      zh: '已取消',
+    },
+    expired: {
+      en: 'Expired',
+      zh: '已过期',
+    },
+    filled: {
+      en: 'Filled',
+      zh: '已成交',
+    },
+    partially_filled: {
+      en: 'Partially Filled',
+      zh: '部分成交',
+    },
+    reconciled: {
+      en: 'Reconciled',
+      zh: '已对账',
+    },
+    rejected: {
+      en: 'Rejected',
+      zh: '已拒绝',
+    },
+    staged: {
+      en: 'Staged',
+      zh: '已暂存',
+    },
+    submitted: {
+      en: 'Submitted',
+      zh: '已提交模拟',
+    },
+  };
+
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
 }
 
 function publicEvidenceAuditRef(parts: string[]) {

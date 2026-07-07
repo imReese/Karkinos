@@ -19,7 +19,9 @@ auditable. The daily product question is:
 ## Product Boundaries
 
 Karkinos is a personal finance app for research, portfolio evidence, and
-risk-control workflows. It is not broker automation and not investment advice.
+risk-control workflows. It is not default broker automation and not investment
+advice. Future broker-connected workflows must be controlled, explicitly
+enabled, gated, audited, and disabled by default.
 
 The product boundary is:
 
@@ -28,8 +30,10 @@ The product boundary is:
 * Signals and strategy outputs remain research evidence until they pass data,
   cost, OOS, risk, account-truth, paper/shadow, and manual-review gates.
 * Live-like workflows must default to manual confirmation.
-* No broker login, broker password storage, broker order submission, default
-  real-money automation, or guaranteed-profit language belongs in the product.
+* Broker submission is a future controlled-bridge capability, not the default
+  product mode and not something strategy code may call directly.
+* No broker login, broker password storage, default real-money automation, or
+  guaranteed-profit language belongs in the product.
 * Secrets, broker credentials, real account exports, runtime databases, logs,
   screenshots, and private financial data must stay out of source control.
 
@@ -46,7 +50,10 @@ research idea
 → paper/shadow signal
 → dashboard/action queue
 → signal journal
-→ manual confirmation where applicable
+→ paper/shadow execution review
+→ manual confirmation by default
+→ manual ticket or future controlled broker bridge
+→ execution/account reconciliation
 → post-decision review
 → strategy improvement
 ```
@@ -76,6 +83,10 @@ Latest completed milestone:
 
 * [ROADMAP.md](ROADMAP.md): versioned milestones, status summary, acceptance
   criteria, and future candidate milestones.
+* [ROADMAP.zh.md](ROADMAP.zh.md): Chinese roadmap summary, automation maturity
+  ladder, and documentation cleanup guidance.
+* [ARCHITECTURE.md](ARCHITECTURE.md): layered architecture, authority
+  boundaries, automation maturity, and controlled broker-bridge requirements.
 * [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md): historical implementation
   progress moved out of the strategic goal page.
 * [BENCHMARKS.md](BENCHMARKS.md): external project notes and architectural
@@ -97,7 +108,8 @@ Latest completed milestone:
 Karkinos does not promise profit and should never be treated as the sole basis
 for investment decisions.
 
-All dashboards, backtests, scores, reconciliation reports, signals, and action
-queues are evidence for human review. They can improve discipline by making
-data, costs, account facts, risk gates, and decision history explicit, but they
-do not authorize broker orders by themselves.
+All dashboards, backtests, scores, reconciliation reports, signals, action
+queues, paper/shadow runs, and gateway previews are evidence for human review.
+They can improve discipline by making data, costs, account facts, risk gates,
+execution assumptions, and decision history explicit, but they do not authorize
+broker orders by themselves.

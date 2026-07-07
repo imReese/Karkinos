@@ -467,139 +467,144 @@ export function AccountTruthReviewPage() {
           />
 
           <section className="app-card min-w-0 p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="app-product-mark">{text.reports}</div>
-              <h2 className="mt-1 text-xl font-black tracking-normal text-[var(--app-text)]">
-                {text.reports}
-              </h2>
-            </div>
-            <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
-              {filters.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${
-                    filter === option.value
-                      ? 'border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-base)]'
-                      : 'border-[var(--app-border)] text-[var(--app-muted)]'
-                  }`}
-                  onClick={() => setFilter(option.value)}
-                >
-                  {option[locale]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.3fr)]">
-            <div className="grid content-start gap-3">
-              {(reports.data ?? []).length > 0 ? (
-                reports.data?.map((report) => (
-                  <button
-                    key={report.import_run_id}
-                    type="button"
-                    className={`rounded-2xl border p-4 text-left transition ${
-                      selectedReport?.import_run_id === report.import_run_id
-                        ? 'border-[var(--app-accent-secondary)] bg-[var(--app-accent-ghost)]'
-                        : 'border-[var(--app-border)] bg-[var(--app-surface-0)]'
-                    }`}
-                    onClick={() => setSelectedImportRunId(report.import_run_id)}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <StatusBadge status={report.status} locale={locale} />
-                      <span className="text-xs font-semibold text-[var(--app-muted)]">
-                        {report.unresolved_count} {text.unresolved}
-                      </span>
-                    </div>
-                    <div className="mt-3 truncate text-sm font-black text-[var(--app-text)]">
-                      {report.source_name}
-                    </div>
-                    <div className="mt-2 text-xs text-[var(--app-muted)]">
-                      {text.cashDifference}{' '}
-                      {formatReconciliationValue(
-                        'cash',
-                        report.cash_difference,
-                        locale,
-                      )}{' '}
-                      · {text.feeDifference}{' '}
-                      {formatReconciliationValue(
-                        'fee',
-                        report.fee_difference,
-                        locale,
-                      )}{' '}
-                      · {text.taxDifference}{' '}
-                      {formatReconciliationValue(
-                        'tax',
-                        report.tax_difference,
-                        locale,
-                      )}
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <p className="app-muted text-sm">{text.noReports}</p>
-              )}
-            </div>
-
-            <div className="min-w-0 rounded-3xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_62%,transparent)] p-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="app-product-mark">{text.detail}</div>
-                  <h3 className="mt-1 text-lg font-black text-[var(--app-text)]">
-                    {selectedReport?.source_name ?? text.detail}
-                  </h3>
-                </div>
-                {selectedReport ? (
-                  <StatusBadge status={selectedReport.status} locale={locale} />
-                ) : null}
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="app-product-mark">{text.reports}</div>
+                <h2 className="mt-1 text-xl font-black tracking-normal text-[var(--app-text)]">
+                  {text.reports}
+                </h2>
               </div>
+              <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+                {filters.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${
+                      filter === option.value
+                        ? 'border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-base)]'
+                        : 'border-[var(--app-border)] text-[var(--app-muted)]'
+                    }`}
+                    onClick={() => setFilter(option.value)}
+                  >
+                    {option[locale]}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-              <div className="grid gap-3">
-                {(detail.data?.items ?? []).length > 0 ? (
-                  detail.data?.items.map((item) => (
-                    <ReviewItemCard
-                      key={item.item_key}
-                      item={item}
-                      importRunId={detail.data.import_run_id}
-                      locale={locale}
-                      onReview={(reviewStatus) => {
-                        setSavedReviewStatus(null);
-                        reviewMutation.mutate(
-                          {
-                            importRunId: detail.data.import_run_id,
-                            itemKey: item.item_key,
-                            category: item.category,
-                            symbol: item.symbol,
-                            review_status: reviewStatus,
-                          },
-                          {
-                            onSuccess: (decision) => {
-                              setSavedReviewStatus(decision.review_status);
-                            },
-                          },
-                        );
-                      }}
-                    />
+            <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.3fr)]">
+              <div className="grid content-start gap-3">
+                {(reports.data ?? []).length > 0 ? (
+                  reports.data?.map((report) => (
+                    <button
+                      key={report.import_run_id}
+                      type="button"
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        selectedReport?.import_run_id === report.import_run_id
+                          ? 'border-[var(--app-accent-secondary)] bg-[var(--app-accent-ghost)]'
+                          : 'border-[var(--app-border)] bg-[var(--app-surface-0)]'
+                      }`}
+                      onClick={() =>
+                        setSelectedImportRunId(report.import_run_id)
+                      }
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <StatusBadge status={report.status} locale={locale} />
+                        <span className="text-xs font-semibold text-[var(--app-muted)]">
+                          {report.unresolved_count} {text.unresolved}
+                        </span>
+                      </div>
+                      <div className="mt-3 truncate text-sm font-black text-[var(--app-text)]">
+                        {report.source_name}
+                      </div>
+                      <div className="mt-2 text-xs text-[var(--app-muted)]">
+                        {text.cashDifference}{' '}
+                        {formatReconciliationValue(
+                          'cash',
+                          report.cash_difference,
+                          locale,
+                        )}{' '}
+                        · {text.feeDifference}{' '}
+                        {formatReconciliationValue(
+                          'fee',
+                          report.fee_difference,
+                          locale,
+                        )}{' '}
+                        · {text.taxDifference}{' '}
+                        {formatReconciliationValue(
+                          'tax',
+                          report.tax_difference,
+                          locale,
+                        )}
+                      </div>
+                    </button>
                   ))
                 ) : (
-                  <p className="app-muted text-sm">{text.noItems}</p>
+                  <p className="app-muted text-sm">{text.noReports}</p>
                 )}
               </div>
 
-              {savedReviewStatus ? (
-                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_12%,transparent)] px-4 py-3 text-sm font-bold text-[var(--app-success)]">
-                  {text.reviewSaved}:{' '}
-                  {formatPublicStatus(savedReviewStatus, locale)}
+              <div className="min-w-0 rounded-3xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_62%,transparent)] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="app-product-mark">{text.detail}</div>
+                    <h3 className="mt-1 text-lg font-black text-[var(--app-text)]">
+                      {selectedReport?.source_name ?? text.detail}
+                    </h3>
+                  </div>
+                  {selectedReport ? (
+                    <StatusBadge
+                      status={selectedReport.status}
+                      locale={locale}
+                    />
+                  ) : null}
                 </div>
-              ) : null}
-              {reviewMutation.isError ? (
-                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_12%,transparent)] px-4 py-3 text-sm font-bold text-[var(--app-danger)]">
-                  {text.reviewFailed}
+
+                <div className="grid gap-3">
+                  {(detail.data?.items ?? []).length > 0 ? (
+                    detail.data?.items.map((item) => (
+                      <ReviewItemCard
+                        key={item.item_key}
+                        item={item}
+                        importRunId={detail.data.import_run_id}
+                        locale={locale}
+                        onReview={(reviewStatus) => {
+                          setSavedReviewStatus(null);
+                          reviewMutation.mutate(
+                            {
+                              importRunId: detail.data.import_run_id,
+                              itemKey: item.item_key,
+                              category: item.category,
+                              symbol: item.symbol,
+                              review_status: reviewStatus,
+                            },
+                            {
+                              onSuccess: (decision) => {
+                                setSavedReviewStatus(decision.review_status);
+                              },
+                            },
+                          );
+                        }}
+                      />
+                    ))
+                  ) : (
+                    <p className="app-muted text-sm">{text.noItems}</p>
+                  )}
                 </div>
-              ) : null}
+
+                {savedReviewStatus ? (
+                  <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_12%,transparent)] px-4 py-3 text-sm font-bold text-[var(--app-success)]">
+                    {text.reviewSaved}:{' '}
+                    {formatPublicStatus(savedReviewStatus, locale)}
+                  </div>
+                ) : null}
+                {reviewMutation.isError ? (
+                  <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_12%,transparent)] px-4 py-3 text-sm font-bold text-[var(--app-danger)]">
+                    {text.reviewFailed}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
           </section>
         </div>
       </div>
@@ -745,7 +750,9 @@ function BrokerEvidenceImportWizard({
           {fileMessage}
         </div>
       ) : null}
-      {preview ? <BrokerStatementPreviewPanel preview={preview} locale={locale} /> : null}
+      {preview ? (
+        <BrokerStatementPreviewPanel preview={preview} locale={locale} />
+      ) : null}
       {importMutation.isSuccess ? (
         <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_12%,transparent)] px-4 py-3 text-xs font-bold text-[var(--app-success)]">
           {text.importReady}: {importMutation.data.import_run.source_name}
@@ -782,7 +789,10 @@ function BrokerStatementPreviewPanel({
         <StatusBadge status={preview.validation_status} locale={locale} />
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <Metric label={text.validRows} value={String(preview.valid_row_count)} />
+        <Metric
+          label={text.validRows}
+          value={String(preview.valid_row_count)}
+        />
         <Metric
           label={text.invalidRows}
           value={String(preview.invalid_row_count)}

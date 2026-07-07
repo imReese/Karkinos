@@ -160,8 +160,10 @@ skills-lock.json
 docs/*
 !docs/README.en.md
 !docs/README.zh.md
+!docs/ARCHITECTURE.md
 !docs/KARKINOS_GOAL.md
 !docs/ROADMAP.md
+!docs/ROADMAP.zh.md
 !docs/IMPLEMENTATION_LOG.md
 !docs/BENCHMARKS.md
 !docs/account-truth-import.zh.md

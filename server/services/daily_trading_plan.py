@@ -113,6 +113,7 @@ def build_daily_trading_plan(
         "blocker_summary": _blocker_summary(blockers),
         "available_cash": available_cash,
         "total_equity": total_equity,
+        "account_truth": _account_truth_snapshot(account_truth, account_truth_status),
         "constraint_summary": _constraint_summary(order_intents),
         "portfolio_controls": controls,
         "default_execution_mode": "manual_confirmation",
@@ -721,6 +722,38 @@ def _blocker_summary(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
         grouped.values(),
         key=lambda item: _BLOCKER_CATEGORY_ORDER.get(str(item["category"]), 99),
     )
+
+
+def _account_truth_snapshot(
+    account_truth: dict[str, Any],
+    gate_status: str,
+) -> dict[str, Any]:
+    has_evidence_value = account_truth.get("has_evidence")
+    snapshot = {
+        "gate_status": gate_status,
+        "has_evidence": (
+            bool(account_truth)
+            if has_evidence_value is None
+            else bool(has_evidence_value)
+        ),
+        "blocking_reasons": [
+            str(reason) for reason in account_truth.get("blocking_reasons") or []
+        ],
+    }
+    for key in (
+        "status",
+        "source_type",
+        "score",
+        "cash_status",
+        "position_status",
+        "data_freshness_status",
+        "unresolved_mismatch_count",
+        "required_actions",
+        "limitations",
+    ):
+        if key in account_truth:
+            snapshot[key] = account_truth[key]
+    return snapshot
 
 
 _BLOCKER_CATEGORY_ORDER = {

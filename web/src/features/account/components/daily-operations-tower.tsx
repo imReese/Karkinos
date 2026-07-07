@@ -60,10 +60,7 @@ function primaryTarget(
   return { href: '/decision', label: labels.operationsViewCandidates };
 }
 
-function metricRows(
-  summary: DailyOperationsSummary,
-  labels: DashboardLabels,
-) {
+function metricRows(summary: DailyOperationsSummary, labels: DashboardLabels) {
   return [
     [labels.operationsCandidatePool, summary.candidate_pool_count],
     [labels.operationsEvidencePassed, summary.evidence_passed_count],

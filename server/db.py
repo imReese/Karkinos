@@ -144,6 +144,16 @@ class AppDatabase:
             _ensure_column(conn, "ledger_entries", "fee_rule_id", "TEXT")
             _ensure_column(conn, "ledger_entries", "fee_rule_version", "TEXT")
             _ensure_column(conn, "ledger_entries", "cost_basis_method", "TEXT")
+            _ensure_column(
+                conn,
+                "execution_reconciliation_items",
+                "broker_event_count",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            _ensure_column(conn, "paper_shadow_runs", "review_status", "TEXT")
+            _ensure_column(conn, "paper_shadow_runs", "reviewed_at", "TEXT")
+            _ensure_column(conn, "paper_shadow_runs", "review_notes", "TEXT")
+            _ensure_column(conn, "paper_shadow_runs", "reviewer", "TEXT")
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
@@ -1144,6 +1154,1116 @@ class AppDatabase:
             if row is None:
                 return None
             return json.loads(row["value_json"])
+
+    # ---------- Automation Control ----------
+
+    def get_automation_policy_sync(self, policy_id: str) -> dict[str, Any] | None:
+        """Read one persisted automation policy by ID."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT *
+                FROM automation_policies
+                WHERE policy_id = ?
+                LIMIT 1
+                """,
+                (policy_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            payload = json.loads(row["payload_json"])
+            return {
+                **payload,
+                "policy_id": row["policy_id"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+            }
+
+    def upsert_automation_policy_sync(
+        self,
+        *,
+        policy_id: str,
+        payload: dict[str, Any],
+        updated_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist an automation policy snapshot."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT created_at
+                FROM automation_policies
+                WHERE policy_id = ?
+                LIMIT 1
+                """,
+                (policy_id,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT INTO automation_policies (
+                    policy_id, payload_json, created_at, updated_at, updated_by
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(policy_id) DO UPDATE SET
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at,
+                    updated_by = excluded.updated_by
+                """,
+                (policy_id, payload_json, created_at, now, updated_by),
+            )
+            conn.commit()
+        saved = self.get_automation_policy_sync(policy_id)
+        if saved is None:
+            raise RuntimeError("automation policy was not saved")
+        return saved
+
+    def upsert_automation_run_sync(self, run: dict[str, Any]) -> dict[str, Any]:
+        """Persist or update an automation run audit record."""
+        now = datetime.now().isoformat()
+        payload = dict(run.get("payload") or {})
+        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        run_id = str(run["run_id"])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT created_at
+                FROM automation_runs
+                WHERE run_id = ?
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT INTO automation_runs (
+                    run_id, run_type, run_date, status, execution_mode,
+                    started_at, finished_at, source_ref, payload_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    run_type = excluded.run_type,
+                    run_date = excluded.run_date,
+                    status = excluded.status,
+                    execution_mode = excluded.execution_mode,
+                    started_at = excluded.started_at,
+                    finished_at = excluded.finished_at,
+                    source_ref = excluded.source_ref,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    run_id,
+                    str(run["run_type"]),
+                    str(run["run_date"]),
+                    str(run["status"]),
+                    str(run["execution_mode"]),
+                    str(run.get("started_at") or now),
+                    run.get("finished_at"),
+                    run.get("source_ref"),
+                    payload_json,
+                    created_at,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM automation_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def get_automation_run_sync(self, run_id: str) -> dict[str, Any] | None:
+        """Read one automation run audit record."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM automation_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_automation_runs_sync(
+        self,
+        *,
+        run_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List recent automation run audit records."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if run_type is not None:
+            conditions.append("run_type = ?")
+            params.append(run_type)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([int(limit), int(offset)])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM automation_runs
+                {where_clause}
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- OMS Orders ----------
+
+    def get_oms_order_sync(self, order_id: str) -> dict[str, Any] | None:
+        """Read one OMS order by its stable order ID."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM oms_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_oms_order_by_intent_key_sync(
+        self, intent_key: str
+    ) -> dict[str, Any] | None:
+        """Read one OMS order by its idempotency key."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM oms_orders WHERE intent_key = ?",
+                (intent_key,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def upsert_oms_order_sync(self, order: dict[str, Any]) -> dict[str, Any]:
+        """Persist or update an OMS order fact."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(
+            order.get("payload") or {},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT created_at
+                FROM oms_orders
+                WHERE order_id = ?
+                LIMIT 1
+                """,
+                (order["order_id"],),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT INTO oms_orders (
+                    order_id, intent_key, symbol, side, asset_class, quantity,
+                    order_type, limit_price, status, broker_submission_enabled,
+                    source, source_ref, payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(order_id) DO UPDATE SET
+                    intent_key = excluded.intent_key,
+                    symbol = excluded.symbol,
+                    side = excluded.side,
+                    asset_class = excluded.asset_class,
+                    quantity = excluded.quantity,
+                    order_type = excluded.order_type,
+                    limit_price = excluded.limit_price,
+                    status = excluded.status,
+                    broker_submission_enabled = excluded.broker_submission_enabled,
+                    source = excluded.source,
+                    source_ref = excluded.source_ref,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    order["order_id"],
+                    order["intent_key"],
+                    order["symbol"],
+                    order["side"],
+                    order["asset_class"],
+                    float(order["quantity"]),
+                    order["order_type"],
+                    order.get("limit_price"),
+                    order["status"],
+                    1 if order.get("broker_submission_enabled") else 0,
+                    order["source"],
+                    order.get("source_ref"),
+                    payload_json,
+                    created_at,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM oms_orders WHERE order_id = ?",
+                (order["order_id"],),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def update_oms_order_status_sync(
+        self,
+        *,
+        order_id: str,
+        status: str,
+    ) -> dict[str, Any]:
+        """Update one OMS order status."""
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                UPDATE oms_orders
+                SET status = ?, updated_at = ?
+                WHERE order_id = ?
+                """,
+                (status, now, order_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM oms_orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+            conn.commit()
+            if row is None:
+                raise KeyError(f"OMS order not found: {order_id}")
+            return dict(row)
+
+    def record_oms_transition_sync(
+        self,
+        *,
+        order_id: str,
+        from_status: str,
+        to_status: str,
+        reason: str,
+        actor: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Record one OMS state transition."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                """
+                INSERT INTO oms_transitions (
+                    order_id, from_status, to_status, reason, actor,
+                    payload_json, transitioned_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor,
+                    payload_json,
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM oms_transitions WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def list_oms_transitions_sync(self, order_id: str) -> list[dict[str, Any]]:
+        """List OMS transitions for one order in chronological order."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM oms_transitions
+                WHERE order_id = ?
+                ORDER BY id ASC
+                """,
+                (order_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Broker Gateway Events ----------
+
+    def record_broker_gateway_event_sync(
+        self,
+        *,
+        gateway_id: str,
+        event_type: str,
+        order_id: str | None = None,
+        status: str = "recorded",
+        actor: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one broker gateway audit event."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                """
+                INSERT INTO broker_gateway_events (
+                    gateway_id, event_type, order_id, status, actor,
+                    payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    gateway_id,
+                    event_type,
+                    order_id,
+                    status,
+                    actor,
+                    payload_json,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM broker_gateway_events WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def list_broker_gateway_events_sync(
+        self,
+        *,
+        order_id: str | None = None,
+        gateway_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List broker gateway audit events."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if order_id is not None:
+            conditions.append("order_id = ?")
+            params.append(order_id)
+        if gateway_id is not None:
+            conditions.append("gateway_id = ?")
+            params.append(gateway_id)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([int(limit), int(offset)])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM broker_gateway_events
+                {where_clause}
+                ORDER BY id ASC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Execution Reconciliation ----------
+
+    def list_oms_orders_sync(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List OMS orders for execution reconciliation."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([int(limit), int(offset)])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM oms_orders
+                {where_clause}
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def upsert_execution_reconciliation_run_sync(
+        self,
+        *,
+        run_id: str,
+        run_date: str,
+        status: str,
+        item_count: int,
+        open_item_count: int,
+        payload: dict[str, Any] | None = None,
+        items: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one execution reconciliation run and replace its items."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT created_at
+                FROM execution_reconciliation_runs
+                WHERE run_id = ?
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT INTO execution_reconciliation_runs (
+                    run_id, run_date, status, item_count, open_item_count,
+                    payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    run_date = excluded.run_date,
+                    status = excluded.status,
+                    item_count = excluded.item_count,
+                    open_item_count = excluded.open_item_count,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    run_id,
+                    run_date,
+                    status,
+                    int(item_count),
+                    int(open_item_count),
+                    payload_json,
+                    created_at,
+                    now,
+                ),
+            )
+            conn.execute(
+                "DELETE FROM execution_reconciliation_items WHERE run_id = ?",
+                (run_id,),
+            )
+            for item in items or []:
+                conn.execute(
+                    """
+                    INSERT INTO execution_reconciliation_items (
+                        run_id, order_id, item_status, suggested_action,
+                        gateway_event_count, broker_event_count, detail,
+                        payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        item["order_id"],
+                        item["item_status"],
+                        item["suggested_action"],
+                        int(item.get("gateway_event_count") or 0),
+                        int(item.get("broker_event_count") or 0),
+                        item.get("detail") or "",
+                        json.dumps(
+                            item.get("payload") or {},
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        now,
+                    ),
+                )
+            row = conn.execute(
+                "SELECT * FROM execution_reconciliation_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def list_execution_reconciliation_runs_sync(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List recent execution reconciliation runs."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM execution_reconciliation_runs
+                ORDER BY run_date DESC, updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (int(limit), int(offset)),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_execution_reconciliation_run_sync(
+        self,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one execution reconciliation run."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT *
+                FROM execution_reconciliation_runs
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_execution_reconciliation_items_sync(
+        self,
+        run_id: str,
+    ) -> list[dict[str, Any]]:
+        """List item rows for one execution reconciliation run."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM execution_reconciliation_items
+                WHERE run_id = ?
+                ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Strategy Promotion Pipeline ----------
+
+    def upsert_strategy_promotion_state_sync(
+        self,
+        *,
+        strategy_id: str,
+        stage: str,
+        gate_status: str,
+        live_like_enabled: bool,
+        missing_requirements: list[str] | None = None,
+        backtest_result_id: int | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one strategy promotion state."""
+        now = datetime.now().isoformat()
+        missing_json = json.dumps(
+            missing_requirements or [],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT created_at
+                FROM strategy_promotion_states
+                WHERE strategy_id = ?
+                LIMIT 1
+                """,
+                (strategy_id,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT INTO strategy_promotion_states (
+                    strategy_id, stage, gate_status, live_like_enabled,
+                    missing_requirements_json, backtest_result_id, payload_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(strategy_id) DO UPDATE SET
+                    stage = excluded.stage,
+                    gate_status = excluded.gate_status,
+                    live_like_enabled = excluded.live_like_enabled,
+                    missing_requirements_json = excluded.missing_requirements_json,
+                    backtest_result_id = excluded.backtest_result_id,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    strategy_id,
+                    stage,
+                    gate_status,
+                    1 if live_like_enabled else 0,
+                    missing_json,
+                    backtest_result_id,
+                    payload_json,
+                    created_at,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT *
+                FROM strategy_promotion_states
+                WHERE strategy_id = ?
+                """,
+                (strategy_id,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def get_strategy_promotion_state_sync(
+        self,
+        strategy_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one strategy promotion state."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT *
+                FROM strategy_promotion_states
+                WHERE strategy_id = ?
+                """,
+                (strategy_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_strategy_promotion_states_sync(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List strategy promotion states."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM strategy_promotion_states
+                ORDER BY updated_at DESC, strategy_id ASC
+                LIMIT ? OFFSET ?
+                """,
+                (int(limit), int(offset)),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def record_strategy_promotion_event_sync(
+        self,
+        *,
+        strategy_id: str,
+        event_type: str,
+        from_stage: str | None = None,
+        to_stage: str | None = None,
+        actor: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one strategy promotion audit event."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                """
+                INSERT INTO strategy_promotion_events (
+                    strategy_id, event_type, from_stage, to_stage, actor,
+                    payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    strategy_id,
+                    event_type,
+                    from_stage,
+                    to_stage,
+                    actor,
+                    payload_json,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM strategy_promotion_events WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def list_strategy_promotion_events_sync(
+        self,
+        strategy_id: str,
+    ) -> list[dict[str, Any]]:
+        """List strategy promotion audit events for one strategy."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM strategy_promotion_events
+                WHERE strategy_id = ?
+                ORDER BY id ASC
+                """,
+                (strategy_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Automation Alerts ----------
+
+    def upsert_automation_alert_sync(
+        self,
+        *,
+        alert_key: str,
+        severity: str,
+        category: str,
+        title: str,
+        detail: str,
+        source: str,
+        source_ref: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist an idempotent automation alert by alert key."""
+        now = datetime.now().isoformat()
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT created_at, status, acknowledged_at, acknowledged_by
+                FROM automation_alerts
+                WHERE alert_key = ?
+                LIMIT 1
+                """,
+                (alert_key,),
+            ).fetchone()
+            created_at = str(existing["created_at"]) if existing else now
+            status = str(existing["status"]) if existing else "open"
+            acknowledged_at = existing["acknowledged_at"] if existing else None
+            acknowledged_by = existing["acknowledged_by"] if existing else None
+            conn.execute(
+                """
+                INSERT INTO automation_alerts (
+                    alert_key, severity, category, title, detail, status,
+                    source, source_ref, payload_json, acknowledged_at,
+                    acknowledged_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(alert_key) DO UPDATE SET
+                    severity = excluded.severity,
+                    category = excluded.category,
+                    title = excluded.title,
+                    detail = excluded.detail,
+                    source = excluded.source,
+                    source_ref = excluded.source_ref,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    alert_key,
+                    severity,
+                    category,
+                    title,
+                    detail,
+                    status,
+                    source,
+                    source_ref,
+                    payload_json,
+                    acknowledged_at,
+                    acknowledged_by,
+                    created_at,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM automation_alerts WHERE alert_key = ?",
+                (alert_key,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def list_automation_alerts_sync(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List persisted automation alerts."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([int(limit), int(offset)])
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT *
+                FROM automation_alerts
+                {where_clause}
+                ORDER BY
+                    CASE severity
+                        WHEN 'critical' THEN 0
+                        WHEN 'warning' THEN 1
+                        ELSE 2
+                    END,
+                    updated_at DESC,
+                    id DESC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def acknowledge_automation_alert_sync(
+        self,
+        *,
+        alert_id: int,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Mark one automation alert acknowledged."""
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                UPDATE automation_alerts
+                SET status = 'acknowledged',
+                    acknowledged_at = ?,
+                    acknowledged_by = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, actor, now, int(alert_id)),
+            )
+            row = conn.execute(
+                "SELECT * FROM automation_alerts WHERE id = ?",
+                (int(alert_id),),
+            ).fetchone()
+            conn.commit()
+            if row is None:
+                raise KeyError(f"automation alert not found: {alert_id}")
+            return dict(row)
+
+    def list_execution_reconciliation_open_items_sync(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List execution reconciliation items that still require action."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM execution_reconciliation_items
+                WHERE suggested_action != 'no_action'
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (int(limit), int(offset)),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Paper/Shadow Runs ----------
+
+    def upsert_paper_shadow_run_sync(
+        self,
+        *,
+        run_id: str,
+        plan_date: str,
+        input_fingerprint: str,
+        status: str,
+        order_intent_count: int,
+        simulated_order_count: int,
+        simulated_fill_count: int,
+        divergence_status: str,
+        next_manual_review_step: str,
+        limitations: list[str] | None = None,
+        payload: dict[str, Any] | str | None = None,
+    ) -> dict[str, Any]:
+        """Persist or update one idempotent daily paper/shadow run record."""
+        now = datetime.now().isoformat()
+        limitations_json = json.dumps(
+            limitations or [],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        payload_json = _serialize_metadata_json(payload) or "{}"
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT *
+                FROM paper_shadow_runs
+                WHERE run_id = ?
+                   OR (plan_date = ? AND input_fingerprint = ?)
+                ORDER BY
+                    CASE WHEN run_id = ? THEN 0 ELSE 1 END,
+                    id ASC
+                LIMIT 1
+                """,
+                (run_id, plan_date, input_fingerprint, run_id),
+            ).fetchone()
+            effective_run_id = str(existing["run_id"]) if existing else run_id
+            created_at = str(existing["created_at"]) if existing else now
+            conn.execute(
+                """
+                INSERT INTO paper_shadow_runs (
+                    run_id, plan_date, input_fingerprint, status,
+                    order_intent_count, simulated_order_count,
+                    simulated_fill_count, divergence_status,
+                    next_manual_review_step, limitations_json, payload_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    plan_date = excluded.plan_date,
+                    input_fingerprint = excluded.input_fingerprint,
+                    status = excluded.status,
+                    order_intent_count = excluded.order_intent_count,
+                    simulated_order_count = excluded.simulated_order_count,
+                    simulated_fill_count = excluded.simulated_fill_count,
+                    divergence_status = excluded.divergence_status,
+                    next_manual_review_step = excluded.next_manual_review_step,
+                    limitations_json = excluded.limitations_json,
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    effective_run_id,
+                    plan_date,
+                    input_fingerprint,
+                    status,
+                    int(order_intent_count),
+                    int(simulated_order_count),
+                    int(simulated_fill_count),
+                    divergence_status,
+                    next_manual_review_step,
+                    limitations_json,
+                    payload_json,
+                    created_at,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM paper_shadow_runs WHERE run_id = ?",
+                (effective_run_id,),
+            ).fetchone()
+            conn.commit()
+            return dict(row)
+
+    def get_paper_shadow_run_sync(self, run_id: str) -> dict[str, Any] | None:
+        """Read one persisted paper/shadow run by ID."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM paper_shadow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def latest_paper_shadow_run_sync(
+        self,
+        *,
+        plan_date: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Read the latest paper/shadow run, optionally scoped to a plan date."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if plan_date is not None:
+            conditions.append("plan_date = ?")
+            params.append(plan_date)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                f"""
+                SELECT *
+                FROM paper_shadow_runs
+                {where_clause}
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                tuple(params),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def record_paper_shadow_run_review_sync(
+        self,
+        *,
+        run_id: str,
+        reviewed_at: str,
+        review_status: str,
+        review_notes: str,
+        reviewer: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Attach an operator review outcome to a paper/shadow run."""
+        next_step = _paper_shadow_run_review_next_step(review_status)
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM paper_shadow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+
+            payload = _json_dict(row["payload_json"])
+            review_payload = {
+                "review_status": review_status,
+                "reviewed_at": reviewed_at,
+                "review_notes": review_notes,
+                "reviewer": reviewer,
+                "does_not_submit_broker_order": True,
+                "does_not_mutate_production_ledger": True,
+            }
+            payload["review"] = review_payload
+            conn.execute(
+                """
+                UPDATE paper_shadow_runs
+                SET review_status = ?,
+                    reviewed_at = ?,
+                    review_notes = ?,
+                    reviewer = ?,
+                    next_manual_review_step = ?,
+                    payload_json = ?,
+                    updated_at = ?
+                WHERE run_id = ?
+                """,
+                (
+                    review_status,
+                    reviewed_at,
+                    review_notes,
+                    reviewer,
+                    next_step,
+                    _serialize_metadata_json(payload),
+                    now,
+                    run_id,
+                ),
+            )
+            updated = conn.execute(
+                "SELECT * FROM paper_shadow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if updated is not None:
+                _insert_event_sync(
+                    conn,
+                    event_type="paper_shadow_run.review_recorded",
+                    timestamp=reviewed_at,
+                    entity_type="paper_shadow_run",
+                    entity_id=run_id,
+                    source="paper_shadow_reviews",
+                    source_ref=run_id,
+                    payload={
+                        "run_id": run_id,
+                        "plan_date": updated["plan_date"],
+                        "input_fingerprint": updated["input_fingerprint"],
+                        "status": updated["status"],
+                        "divergence_status": updated["divergence_status"],
+                        "next_manual_review_step": next_step,
+                        **review_payload,
+                    },
+                )
+            conn.commit()
+            return dict(updated) if updated is not None else None
 
     # ---------- Orders ----------
 
@@ -3261,6 +4381,201 @@ CREATE TABLE IF NOT EXISTS runtime_controls (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS automation_policies (
+    policy_id TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+    run_id TEXT PRIMARY KEY,
+    run_type TEXT NOT NULL,
+    run_date TEXT NOT NULL,
+    status TEXT NOT NULL,
+    execution_mode TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    source_ref TEXT,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_runs_type_date
+ON automation_runs(run_type, run_date DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_status
+ON automation_runs(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS oms_orders (
+    order_id TEXT PRIMARY KEY,
+    intent_key TEXT NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    asset_class TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    order_type TEXT NOT NULL,
+    limit_price REAL,
+    status TEXT NOT NULL,
+    broker_submission_enabled INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL,
+    source_ref TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_oms_orders_status
+ON oms_orders(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_oms_orders_symbol
+ON oms_orders(symbol, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS oms_transitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL,
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    actor TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    transitioned_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_oms_transitions_order
+ON oms_transitions(order_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS broker_gateway_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    gateway_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    order_id TEXT,
+    status TEXT NOT NULL,
+    actor TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_broker_gateway_events_order
+ON broker_gateway_events(order_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_broker_gateway_events_gateway
+ON broker_gateway_events(gateway_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS execution_reconciliation_runs (
+    run_id TEXT PRIMARY KEY,
+    run_date TEXT NOT NULL,
+    status TEXT NOT NULL,
+    item_count INTEGER NOT NULL DEFAULT 0,
+    open_item_count INTEGER NOT NULL DEFAULT 0,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_reconciliation_runs_date
+ON execution_reconciliation_runs(run_date DESC, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS execution_reconciliation_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    item_status TEXT NOT NULL,
+    suggested_action TEXT NOT NULL,
+    gateway_event_count INTEGER NOT NULL DEFAULT 0,
+    broker_event_count INTEGER NOT NULL DEFAULT 0,
+    detail TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(run_id) REFERENCES execution_reconciliation_runs(run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_reconciliation_items_run
+ON execution_reconciliation_items(run_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_execution_reconciliation_items_order
+ON execution_reconciliation_items(order_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS strategy_promotion_states (
+    strategy_id TEXT PRIMARY KEY,
+    stage TEXT NOT NULL,
+    gate_status TEXT NOT NULL,
+    live_like_enabled INTEGER NOT NULL DEFAULT 0,
+    missing_requirements_json TEXT NOT NULL DEFAULT '[]',
+    backtest_result_id INTEGER,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_strategy_promotion_states_stage
+ON strategy_promotion_states(stage, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS strategy_promotion_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    from_stage TEXT,
+    to_stage TEXT,
+    actor TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_strategy_promotion_events_strategy
+ON strategy_promotion_events(strategy_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS automation_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_key TEXT NOT NULL UNIQUE,
+    severity TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    source TEXT NOT NULL,
+    source_ref TEXT,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    acknowledged_at TEXT,
+    acknowledged_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_alerts_status
+ON automation_alerts(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_alerts_category
+ON automation_alerts(category, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS paper_shadow_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE,
+    plan_date TEXT NOT NULL,
+    input_fingerprint TEXT NOT NULL,
+    status TEXT NOT NULL,
+    order_intent_count INTEGER NOT NULL DEFAULT 0,
+    simulated_order_count INTEGER NOT NULL DEFAULT 0,
+    simulated_fill_count INTEGER NOT NULL DEFAULT 0,
+    divergence_status TEXT NOT NULL,
+    next_manual_review_step TEXT NOT NULL,
+    review_status TEXT,
+    reviewed_at TEXT,
+    review_notes TEXT,
+    reviewer TEXT,
+    limitations_json TEXT NOT NULL DEFAULT '[]',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(plan_date, input_fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_shadow_runs_plan_date
+ON paper_shadow_runs(plan_date, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_paper_shadow_runs_input
+ON paper_shadow_runs(plan_date, input_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_paper_shadow_runs_created
+ON paper_shadow_runs(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id TEXT NOT NULL UNIQUE,
@@ -3693,6 +5008,15 @@ def _json_list(value) -> list[Any]:
     except (TypeError, json.JSONDecodeError):
         return []
     return parsed if isinstance(parsed, list) else []
+
+
+def _paper_shadow_run_review_next_step(review_status: str) -> str:
+    status = str(review_status or "").strip().lower()
+    if status == "accepted_for_manual_confirmation":
+        return "review_manual_confirmation"
+    if status == "needs_rerun":
+        return "run_paper_shadow_daily"
+    return "resolve_shadow_divergence"
 
 
 def _serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:

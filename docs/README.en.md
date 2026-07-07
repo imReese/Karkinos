@@ -1,6 +1,6 @@
 # Karkinos: A China-market personal quant research and trading platform
 
-[中文](README.zh.md) | [Back to Summary](../README.md) | [Goal and Roadmap](KARKINOS_GOAL.md)
+[中文](README.zh.md) | [Back to Summary](../README.md) | [Goal](KARKINOS_GOAL.md) | [Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md)
 
 ---
 
@@ -62,6 +62,9 @@ Backtests use deterministic OrderIntent approval wiring. Live mode uses
 `PreTradeRiskManager` before `ManualConfirmGateway`; the legacy `RiskManager`
 subscribes by priority but EventBus handlers do not consume or stop propagation.
 
+For the full controlled automation and broker-bridge architecture, see
+[Karkinos Architecture](ARCHITECTURE.md).
+
 **Core Principles:**
 
 - **Event-Driven**: All components communicate through EventBus, ensuring deterministic backtesting
@@ -105,18 +108,31 @@ orders, or execution approval.
 
 ## Automation Maturity
 
-Karkinos is moving toward a professional automated-quant workflow, but not
-toward default unattended real-money trading. v1.5 now provides a daily
-trading plan and portfolio-construction layer that combines strategy evidence,
-portfolio state, account truth, risk gates, paper/shadow evidence, fees, taxes,
-cost basis, blockers, constraint checks, and next review steps into
-evidence-linked manual-confirmation intents. The active roadmap stage is v1.6:
-paper/shadow runbooks, scheduled operation state, exception queues, and health
-checks.
+Karkinos is moving toward a professional automated-quant workflow whose goal is
+better after-cost trading outcomes, not faster unchecked order submission. v1.5
+now provides a daily trading plan and portfolio-construction layer that combines
+strategy evidence, portfolio state, account truth, risk gates, paper/shadow
+evidence, fees, taxes, cost basis, blockers, constraint checks, and next review
+steps into evidence-linked manual-confirmation intents. The active roadmap
+stage is v1.6: paper/shadow runbooks, scheduled operation state, exception
+queues, and health checks.
+When an operator accepts a diverged paper/shadow review, Operations preserves
+the raw divergence evidence and exposes a runbook effective status for manual
+confirmation handoff; this is not execution authorization or broker
+submission.
 
-Later stages focus on scheduled paper/shadow runbooks, divergence reports, and
-controlled broker-bridge or order-ticket workflows. Unattended real-money order
-submission remains deferred.
+The automation ladder is: research evidence -> daily trading plan ->
+paper/shadow operating loop -> manual execution assist -> controlled broker
+bridge -> small-capital auto pilot. Unattended full-account real-money order
+submission remains deferred until every upstream layer is mature and explicitly
+accepted.
+
+Operations alerts can surface incomplete or runtime-degraded read-only broker
+connector health, including runtime snapshots polled through the broker-gateway
+health contract, capability scope, and explicit preview, export, dry-run,
+cancel, and submit blockers. Those alerts are operator review evidence only:
+they do not submit orders, cancel orders, store credentials, or grant execution
+authority.
 
 Estimated, cached, stale, missing, or confirmed-NAV-missing data is data-quality
 evidence. It must not be displayed as confirmed returns and is not investment
@@ -342,7 +358,8 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
 | `broker_fee_schedule` | object | local defaults | Local broker fee rule parameters: stock/ETF commission rates, minimum commission, stamp tax, default transfer fee, optional Shanghai/Shenzhen transfer-fee rates, bond/convertible-bond exchange fees, other fee rate, rule id, and known limitations. Account identifiers, screenshots, statements, broker passwords, tokens, secrets, or credentials are rejected. |
-| `broker_connectors` | array | `[]` | Local read-only broker connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. |
+| `broker_connectors` | array | `[]` | Local read-only broker connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. `local_export_readonly` treats `client_path` as an ignored local JSON snapshot path and only parses cash, position, order, and fill evidence. |
+| `controlled_bridge_policy` | object | disabled | Future controlled-bridge whitelist preview. It may list connector ids, account aliases, strategy ids, and symbols for review, but automation and broker submission remain rejected in v1.7; passwords, tokens, secrets, or credentials are rejected. |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 
 Capital, holdings, watchlists, asset names, historical prices, and latest quotes are not runtime config: capital and trades come from the ledger, user-tracked assets come from `watchlist_assets`, asset identity comes from `instrument_metadata`, latest quotes come from `latest_quotes`, and historical bars come from `market_bars` / the local data cache.
@@ -526,11 +543,124 @@ Before writing, the daily shadow run also checks `latest_quotes` for the action
 symbol. Missing quotes, non-`live` quote status, or non-positive prices are
 reported in `data_quality.issues` and skipped with a `data_quality:*` reason
 without creating a shadow order.
+The persisted daily paper/shadow run also carries a structured
+`review_queue`. Diverged, failed, or missing simulations include the affected
+run/order references, severity, required operator action, reason, optional
+filled/remaining quantity, and explicit no-broker-submission/no-ledger-mutation
+flags. `/api/operations/today` surfaces that queue as runbook evidence; it is
+not a broker order, live fill, or ledger update. Overview shows a compact
+review-queue summary in Today's to-dos, and Decision shows the operator review
+items as public action labels with the same non-submission safety boundary.
 
 `POST /api/trading/order-facts/{order_id}/shadow-divergence-review` records an
 operator review such as `within_expectations` on an existing `paper_shadow`
 order fact. It does not change order status, submit to a broker, or create a
 fill.
+
+#### Broker Gateway — /api/broker-gateway
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/broker-gateway/status` | List safe gateway capabilities, including non-submitting manual-ticket and disabled live gateways |
+| GET | `/api/broker-gateway/connectors/health` | List read-only broker connector configuration health and non-submitting capabilities |
+| GET | `/api/broker-gateway/connectors/{connector_id}/snapshot` | Query one runtime read-only connector snapshot for cash, positions, orders, and fills without account-id leakage, gateway events, OMS mutation, ledger mutation, or broker submission |
+| GET | `/api/broker-gateway/account-facts` | Query cash, position, and fill facts from staged broker evidence without broker contact |
+| GET | `/api/broker-gateway/fills/query` | Query staged broker fill evidence, optionally filtered by symbol, without broker contact or OMS mutation |
+| GET | `/api/broker-gateway/orders/{order_id}/query` | Query local OMS status, gateway audit events, and staged broker fill evidence for one order |
+| POST | `/api/broker-gateway/orders/{order_id}/broker-cancel` | Reject broker-side cancellation by default and record an audit event without changing OMS status |
+| POST | `/api/broker-gateway/orders/{order_id}/manual-ticket/preview` | Preview a copyable manual broker ticket after manual confirmation and required account/research/risk/paper-shadow evidence |
+| POST | `/api/broker-gateway/orders/{order_id}/manual-ticket/export` | Generate a read-only JSON manual-ticket export payload without recording events or changing OMS status |
+| POST | `/api/broker-gateway/orders/{order_id}/manual-ticket/dry-run` | Record an accepted or rejected manual-ticket dry-run validation event without changing OMS status |
+| POST | `/api/broker-gateway/orders/{order_id}/manual-ticket` | Record a manual broker ticket event without broker API submission |
+| POST | `/api/broker-gateway/orders/{order_id}/manual-execution/preview` | Preview an operator-entered manual fill and ledger draft after manual-ticket creation without writing ledger entries |
+| POST | `/api/broker-gateway/orders/{order_id}/manual-execution` | Record reviewed manual execution evidence with a matching preview fingerprint without creating fills, changing OMS, or writing ledger entries |
+
+Manual-ticket preview and creation require account-truth, research-evidence,
+risk, paper/shadow, manual-confirmation evidence, and a clear kill switch. All
+manual-ticket paths keep `submitted_to_broker=false`; preview and export are
+read-only, and ticket creation records an audit event only. Gateway status includes the
+current kill-switch state; when it is enabled, the manual-ticket gateway reports
+`blocked_by_kill_switch` and disables preview/dry-run capabilities in the
+status payload. The Decision Cockpit automation panel also shows this
+read-only gateway status so operators can see kill-switch and gateway blockers
+without receiving broker submit or cancel controls. Connector health is a
+local read-only capability contract: it exposes configured connector ids,
+aliases, health status, capability scope, read/query flags, and explicit
+preview/export/dry-run/cancel/submit blockers without contacting broker
+clients, storing credentials, or enabling submission. Runtime read-only
+connector snapshot query can expose cash, positions, orders, and fills as
+operator-review evidence, but it hides account ids and still disables preview,
+export, dry-run, cancel, submit, gateway-event creation, OMS mutation, and
+ledger mutation. Automation Cockpit and Decision Cockpit show a compact runtime
+snapshot summary with connector id, alias, snapshot status, cash, and
+position/order/fill counts under the same non-submitting contract.
+The same Decision Cockpit panel summarizes read-only connector health, gateway
+query/read/preview/export/dry-run capability labels, staged account facts,
+staged fill polling, and local order-query evidence so operators can see
+configured read capability, OMS
+state, gateway audit counts, and evidence counts without leaking local client
+paths or receiving broker submit or cancel controls. When staged fills and open
+execution reconciliation items both exist, it also shows a read-only
+reconciliation review hint so the evidence can be compared before any ledger
+update.
+The panel also shows strategy promotion state from the Automation Cockpit as
+read-only lifecycle evidence: strategy id, stage, paper/shadow gate status,
+missing requirements, optional backtest evidence id, and a live-like disabled
+boundary. It does not expose live-promotion controls.
+Manual-ticket dry-run records accepted or rejected validation events for audit,
+including kill-switch rejections, but does not change OMS status or submit
+broker orders. After a manual ticket is created, manual-execution preview can
+calculate an operator-entered fill's gross amount, fee/tax/transfer-fee cost,
+net cash impact, position/cost preview, and production-ledger draft. The
+preview keeps `dry_run=true`, requires an explicit later operator save, and
+does not create gateway events, change OMS status, write ledger entries, or
+contact a broker. The response also includes a deterministic
+`preview_fingerprint` so later review can reference the exact economics draft
+and policy snapshot that was inspected. Trading approvals exposes the same
+read-only preview after manual-ticket export and does not render save-ledger,
+apply-fill, or broker submit controls. The manual-execution record endpoint
+requires the matching `preview_fingerprint` and stores a gateway audit event
+only; it does not create fills, change OMS status, write ledger entries, or
+contact a broker. Account-facts query
+summarizes cash balances, positions, and fills from staged broker evidence
+only; it is not a live broker account snapshot. Runtime connector snapshot
+query reads an explicitly provided read-only connector object and returns
+current cash, positions, orders, and fills as evidence without storing
+credentials, leaking account ids, creating gateway events, mutating OMS, or
+writing ledger entries. Automation Cockpit passes that query-only evidence to
+Decision Cockpit as a compact review summary without adding submit, cancel,
+fill-apply, or ledger-sync controls. Fill query reads staged broker
+trade evidence only and can filter by symbol; it does not contact broker
+clients, create gateway events, mutate OMS status, or update ledger facts.
+Order query reads local OMS facts, gateway audit events, and staged broker
+evidence only; Decision Cockpit can show the queried OMS status and evidence
+counts for the first open reconciliation item, but it does not contact broker
+clients, create events, or mutate OMS/ledger state. Broker-cancel requests are
+rejected by default and recorded
+as `live_cancel_rejected` audit events; they do not cancel at the broker or
+change local OMS status.
+
+#### Execution Reconciliation — /api/execution-reconciliation
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/execution-reconciliation/runs` | Run OMS/gateway/broker-evidence reconciliation for a date |
+| GET | `/api/execution-reconciliation/runs` | List recent execution reconciliation runs |
+| GET | `/api/execution-reconciliation/runs/{run_id}` | Read one reconciliation run with item-level suggested actions |
+
+Execution reconciliation compares OMS order states, broker gateway events, and
+staged broker trade evidence. It identifies missing manual-ticket actions,
+missing broker evidence, broker quantity mismatches, or broker evidence awaiting
+review, and matching evidence carries a read-only broker cost summary with
+gross amount, fees, taxes, transfer fees, and net amount. It does not mutate
+the production ledger or submit/cancel broker orders.
+Decision Cockpit summarizes the latest run status and first open item as
+read-only review evidence only. When staged broker cost evidence is attached,
+the same panel shows gross amount, fee/tax, transfer fee, net amount, and
+review-before-ledger-update flags for operator review. When staged fill
+evidence is available, the panel points the operator toward reconciliation
+review before any ledger update; it does not provide ledger-sync, fill-apply,
+or broker-action controls.
 
 #### Backtest — /api/backtest
 

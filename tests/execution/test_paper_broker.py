@@ -104,6 +104,8 @@ def test_paper_broker_persists_simulation_evidence_without_mutating_ledger(
         "sequence": 4,
         "from_status": "accepted",
         "to_status": "filled",
+        "timestamp": "2026-06-22T10:01:05",
+        "source": "paper_broker",
         "filled_quantity": "200",
         "reason": "",
     }
@@ -296,7 +298,11 @@ def test_paper_broker_records_fee_tax_modeling_and_slippage_evidence(
 
 
 def test_paper_oms_state_machine_covers_all_review_states() -> None:
-    oms = PaperOmsStateMachine(order_id="PAPER-OMS-1")
+    oms = PaperOmsStateMachine(
+        order_id="PAPER-OMS-1",
+        timestamp=datetime(2026, 6, 22, 10, 10, 0),
+        source="paper_shadow_daily",
+    )
 
     oms.mark_submitted()
     oms.mark_accepted()
@@ -314,6 +320,14 @@ def test_paper_oms_state_machine_covers_all_review_states() -> None:
         "filled",
         "reconciled",
     ]
+    assert all(
+        transition.to_payload()["timestamp"] == "2026-06-22T10:10:00"
+        for transition in oms.transitions
+    )
+    assert all(
+        transition.to_payload()["source"] == "paper_shadow_daily"
+        for transition in oms.transitions
+    )
 
     rejection = PaperOmsStateMachine(order_id="PAPER-OMS-REJECT")
     rejection.mark_submitted()

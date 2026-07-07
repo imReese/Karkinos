@@ -15,6 +15,7 @@ JSON 标准不支持注释，因此不要在 `config.json` 里写 `//` 或 `/* .
 | `tushare_token` | string | 建议用引导脚本 | TuShare token。推荐用 `uv run python scripts/configure_data_source.py` 写入，避免命令行和日志泄露。 |
 | `broker_fee_schedule` | object | 可改 | 本机券商费用规则。只放费用建模参数和脱敏账户别名，不放完整账户号。 |
 | `broker_connectors` | array | 谨慎 | 只读券商事实 connector 配置。不得保存密码、token、secret 或 credential。 |
+| `controlled_bridge_policy` | object | 谨慎 | 未来受控券商桥接白名单预览。只用于复核 connector、账户别名、策略和标的范围；v1.7 不允许打开 automation 或券商提交。 |
 | `notification` | object | 可改 | 通知配置，例如 `{"type": "console"}`。 |
 | `live_poll_interval` | number | 可改 | 行情/调度轮询间隔，单位秒。 |
 | `cors_allowed_origins` | array | 部署时可改 | 允许访问 API 的前端 origin。 |
@@ -75,10 +76,34 @@ JSON 标准不支持注释，因此不要在 `config.json` 里写 `//` 或 `/* .
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `connector_id` | string | connector 本地 ID，例如 `local-qmt-readonly`。 |
-| `connector_type` | string | connector 类型，例如 `qmt_readonly`。 |
+| `connector_type` | string | connector 类型，例如 `qmt_readonly`、`ptrade_readonly`，或从本地导出快照读取的 `local_export_readonly`。 |
 | `enabled` | boolean | 是否启用。默认建议 `false`。 |
-| `client_path` | string | 本机券商客户端路径。不得包含密码或 token。 |
+| `client_path` | string | 本机券商客户端路径；当 `connector_type=local_export_readonly` 时，这是被 `.gitignore` 排除的本地 JSON snapshot 路径。不得包含密码或 token。 |
 | `account_alias` | string | 脱敏账户别名，例如 `中信证券88**16`。不要写完整资金账号。 |
+
+`local_export_readonly` 只解析本地 JSON 快照文件里的资金、持仓、订单和成交证据，并通过
+Broker Gateway 的只读 snapshot contract 返回。它不会启动券商客户端、不会保存凭证、不会提交
+或撤销券商订单，也不会写 OMS 或生产账本。
+
+## controlled_bridge_policy
+
+`controlled_bridge_policy` 是 v1.7 的受控桥接白名单预览配置。它只让
+gateway status 暴露本地复核范围，不会开启券商提交、券商撤单或自动实盘。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `policy_id` | string | 本地策略 ID，默认 `default-controlled-bridge-disabled`。 |
+| `enabled` | boolean | 是否把白名单显示为本地 review policy。即使为 `true`，v1.7 仍不会提交券商订单。 |
+| `allowed_connector_ids` | string[] | 允许进入未来复核范围的只读 connector id。 |
+| `allowed_account_aliases` | string[] | 脱敏账户别名。不要写完整资金账号。 |
+| `allowed_strategy_ids` | string[] | 允许进入未来复核范围的策略 id。 |
+| `allowed_symbols` | string[] | 允许进入未来复核范围的标的代码。 |
+| `per_order_confirmation_required` | boolean | 必须为 `true`；配置为 `false` 会被拒绝。 |
+| `automation_allowed` | boolean | 必须为 `false`；配置为 `true` 会被拒绝。 |
+
+该配置会拒绝 password、token、secret、credential 等字段，也不会保存 broker
+登录凭证。真实券商成交或账户事实仍应通过 broker evidence / reconciliation
+进入本地审计流程。
 
 ## 不应写入 config.json 的内容
 
