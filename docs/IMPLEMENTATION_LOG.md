@@ -175,6 +175,18 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Trading manual-execution preview now shows the current
+  position/cost-basis baseline alongside the post-execution projection,
+  including current quantity, current average cost, and current market value
+  when the gateway preview provides them. Assumption: the baseline helps the
+  operator compare before/after manual fill effects before recording evidence,
+  but it remains read-only preview data and does not save a ledger entry, apply
+  a fill, submit to a broker, or authorize execution. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "previews manual execution draft"`.
+  Risk impact: improves v1.7 manual execution review clarity before evidence
+  recording without contacting brokers, storing credentials, submitting or
+  cancelling broker orders, mutating OMS, writing production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Trading manual-execution preview now renders the
   `position_cost_preview` from the gateway response before an operator can
   record manual execution evidence, including execution-after quantity,

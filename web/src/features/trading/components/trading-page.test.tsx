@@ -405,6 +405,7 @@ function installTradingFetchMock({
             source: 'daily_trading_plan_position_effect',
             current_quantity: 100,
             current_avg_cost: 1600,
+            current_market_value: 168800,
             estimated_quantity_after: 200,
             estimated_avg_cost_after: 1644,
             cost_basis_method: 'weighted_average_preview',
@@ -548,6 +549,7 @@ function installTradingFetchMock({
             source: 'daily_trading_plan_position_effect',
             current_quantity: 100,
             current_avg_cost: 1600,
+            current_market_value: 168800,
             estimated_quantity_after: 200,
             estimated_avg_cost_after: 1644,
             cost_basis_method: 'weighted_average_preview',
@@ -1236,6 +1238,11 @@ test('previews manual execution draft without ledger or broker submission contro
   expect(screen.getAllByText('Net cash impact').length).toBeGreaterThan(1);
   expect(screen.getAllByText('172019.80').length).toBeGreaterThan(1);
   expect(screen.getByText('Execution position preview')).toBeTruthy();
+  expect(screen.getByText('Current quantity')).toBeTruthy();
+  expect(screen.getByText('Current average cost')).toBeTruthy();
+  expect(screen.getByText('1600')).toBeTruthy();
+  expect(screen.getByText('Current market value')).toBeTruthy();
+  expect(screen.getByText('168800')).toBeTruthy();
   expect(screen.getByText('Quantity after execution')).toBeTruthy();
   expect(screen.getAllByText('200').length).toBeGreaterThan(1);
   expect(screen.getByText('Average cost after execution')).toBeTruthy();
