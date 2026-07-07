@@ -201,6 +201,8 @@ class AutomationAlertService:
                         "schema_version": AUTOMATION_ALERT_SCHEMA_VERSION,
                         "run_status": status,
                         "run_type": run.get("run_type"),
+                        "suggested_action": "resolve_kill_switch",
+                        "requires_manual_review": True,
                     },
                 )
                 alerts.append(self._normalize_alert(alert))
@@ -208,6 +210,7 @@ class AutomationAlertService:
             if status in _FAILED_AUTOMATION_RUN_STATUSES:
                 payload = _json_object(run.get("payload_json"))
                 limitations = _json_list(payload.get("limitations"))
+                retry_state = _json_object(payload.get("retry_state"))
                 paper_shadow_mode = (
                     str(run.get("execution_mode") or "") == "paper_shadow"
                 )
@@ -231,6 +234,13 @@ class AutomationAlertService:
                         "run_type": run.get("run_type"),
                         "execution_mode": run.get("execution_mode"),
                         "retry_state": payload.get("retry_state"),
+                        "suggested_action": _automation_run_suggested_action(
+                            status=status,
+                            run_type=run.get("run_type"),
+                            execution_mode=run.get("execution_mode"),
+                        ),
+                        "requires_manual_review": True,
+                        "retry_recommended": bool(retry_state.get("retryable")),
                         "limitations": limitations,
                         "does_not_submit_broker_order": bool(
                             payload.get(
@@ -592,6 +602,25 @@ class AutomationAlertService:
             "schema_version": AUTOMATION_ALERT_SCHEMA_VERSION,
             "payload": _json_object(payload),
         }
+
+
+def _automation_run_suggested_action(
+    *,
+    status: Any,
+    run_type: Any,
+    execution_mode: Any,
+) -> str:
+    normalized_run_type = str(run_type or "").strip().lower()
+    normalized_status = str(status or "").strip().lower()
+    normalized_execution_mode = str(execution_mode or "").strip().lower()
+    if normalized_run_type == "market_session":
+        return "inspect_scheduler_failure"
+    if (
+        normalized_execution_mode == "paper_shadow"
+        or "paper_shadow" in normalized_status
+    ):
+        return "inspect_failed_paper_shadow_run"
+    return "inspect_failed_automation_run"
 
 
 def _json_object(value: Any) -> dict[str, Any]:

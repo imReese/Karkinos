@@ -228,6 +228,9 @@ def test_alert_scan_records_failed_paper_shadow_automation_run(tmp_path) -> None
         "max_attempts": 2,
         "retryable": True,
     }
+    assert alert["payload"]["requires_manual_review"] is True
+    assert alert["payload"]["suggested_action"] == "inspect_failed_paper_shadow_run"
+    assert alert["payload"]["retry_recommended"] is True
     assert alert["payload"]["does_not_submit_broker_order"] is True
     assert alert["payload"]["does_not_mutate_production_ledger"] is True
 
