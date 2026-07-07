@@ -175,6 +175,19 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Trading manual-execution preview and recorded manual-execution
+  evidence now render gateway `limitations` directly in the approval panel,
+  including the no-broker-submit, no-gateway-event/fill, no-OMS-mutation, and
+  no-ledger-write boundaries returned by the backend. Assumption: limitations
+  are operator review text and audit context, not controls; execution authority
+  still comes only from the existing manual-confirmation, risk, paper/shadow,
+  account-truth, kill-switch, and reconciliation gates. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "manual execution"`.
+  Risk impact: improves v1.7 controlled-bridge transparency before and after
+  manual execution evidence recording without contacting brokers, storing
+  credentials, submitting or cancelling broker orders, mutating OMS, writing
+  production ledger facts, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-07: Trading manual-execution preview now shows the current
   position/cost-basis baseline alongside the post-execution projection,
   including current quantity, current average cost, and current market value

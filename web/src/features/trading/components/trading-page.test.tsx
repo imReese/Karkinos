@@ -1274,6 +1274,15 @@ test('previews manual execution draft without ledger or broker submission contro
   expect(
     screen.getAllByText('does_not_mutate_production_ledger=true').length,
   ).toBeGreaterThan(0);
+  expect(screen.getByText('Manual execution limitations')).toBeTruthy();
+  expect(
+    screen.getByText('This previews a manual execution record only.'),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      'It does not submit to a broker, create gateway events, change OMS status, or write ledger entries.',
+    ),
+  ).toBeTruthy();
   expect(screen.queryByText(/Save ledger/i)).toBeNull();
   expect(screen.queryByText(/Submit to broker/i)).toBeNull();
   expect(screen.queryByText(/Apply fill/i)).toBeNull();
@@ -1337,6 +1346,15 @@ test('records manual execution evidence without saving ledger or submitting brok
   expect(
     screen.getAllByText('does_not_mutate_production_ledger=true').length,
   ).toBeGreaterThan(0);
+  expect(screen.getAllByText('Manual execution limitations').length).toBe(2);
+  expect(
+    screen.getByText('This records manual execution evidence for audit only.'),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      'It does not submit to a broker, create fills, change OMS status, or write ledger entries.',
+    ),
+  ).toBeTruthy();
   expect(screen.queryByText(/Save ledger/i)).toBeNull();
   expect(screen.queryByText(/Submit to broker/i)).toBeNull();
   expect(screen.queryByText(/Apply fill/i)).toBeNull();

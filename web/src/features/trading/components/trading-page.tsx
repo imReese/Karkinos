@@ -1839,6 +1839,20 @@ function ManualTicketExportPanel({
               </div>
             </div>
           ) : null}
+          {executionPreviewResult.limitations?.length ? (
+            <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+              <div className="app-muted text-xs">
+                {labels.manualExecutionLimitations}
+              </div>
+              <ul className="mt-2 grid gap-1 text-sm text-[var(--app-soft)]">
+                {executionPreviewResult.limitations.map((limitation) => (
+                  <li className="break-words" key={limitation}>
+                    {limitation}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {executionPreviewResult.preview_fingerprint ? (
             <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
               <button
@@ -1901,6 +1915,20 @@ function ManualTicketExportPanel({
                   </div>
                 </div>
               </div>
+              {record.limitations?.length ? (
+                <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+                  <div className="app-muted text-xs">
+                    {labels.manualExecutionLimitations}
+                  </div>
+                  <ul className="mt-2 grid gap-1 text-sm text-[var(--app-soft)]">
+                    {record.limitations.map((limitation) => (
+                      <li className="break-words" key={limitation}>
+                        {limitation}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
