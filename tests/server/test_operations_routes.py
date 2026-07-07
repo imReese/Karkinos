@@ -296,6 +296,17 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
     assert response["paper_shadow"]["next_manual_review_step"] == (
         "run_paper_shadow_daily"
     )
+    acceptance_audit = next(
+        item for item in response["subsystems"] if item["id"] == "acceptance_audit"
+    )
+    assert acceptance_audit["status"] == "pass"
+    assert acceptance_audit["detail_status"] == "operations_runbook:17/17"
+    assert acceptance_audit["next_action"] == "none"
+    assert acceptance_audit["last_run_at"]
+    assert any(
+        "manual confirmation remains" in limitation
+        for limitation in acceptance_audit["limitations"]
+    )
     assert response["limitations"][0].startswith("Operations summary is read-only")
     assert fake_db.saved_manual_orders == []
     assert fake_db.recorded_orders == []

@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: `/api/operations/today` now feeds the `operations_runbook`
+  acceptance audit export into the Operations runbook, so the
+  `acceptance_audit` subsystem reports real audit completion evidence such as
+  `operations_runbook:17/17`, the generated timestamp, next action, and audit
+  limitations instead of only using ledger-review count as a placeholder.
+  Assumption: acceptance audit status is operator-facing readiness evidence
+  for v1.6 runbook review, not a trading gate by itself. Validation:
+  `uv run python -m pytest tests/test_operations_today.py -k acceptance_audit_subsystem`
+  and
+  `uv run python -m pytest tests/server/test_operations_routes.py -k today_operations_route_returns_read_only_runbook`.
+  Risk impact: improves Operations Center audit observability without changing
+  paper/shadow execution, contacting brokers, creating broker orders, mutating
+  OMS, writing production ledger facts, enabling automatic trading, or
+  bypassing manual confirmation.
 - 2026-07-07: The `operations_runbook` acceptance audit now has an explicit
   `paper_shadow_fallback_review_queue` criterion tying the recent Operations
   Today legacy/partial-run fallback review queues to deterministic evidence and
