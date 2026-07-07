@@ -1241,11 +1241,95 @@ function operationsDetailText(
   if (blocker && isRiskBlockedBlocker(blocker)) {
     return riskBlockerDetailText(blocker, locale) ?? fallback;
   }
+  const schedulerSummary = operationsSchedulerEvidenceSummary(
+    operations,
+    locale,
+  );
+  if (schedulerSummary) {
+    return `${fallback} · ${schedulerSummary}`;
+  }
   const paperShadowSummary = paperShadowOverviewEvidenceSummary(
     operations,
     locale,
   );
   return paperShadowSummary ? `${fallback} · ${paperShadowSummary}` : fallback;
+}
+
+function operationsSchedulerEvidenceSummary(
+  operations: OperationsTodayResponse | null | undefined,
+  locale: Locale,
+) {
+  const scheduler = operations?.scheduler;
+  if (!scheduler) {
+    return '';
+  }
+  const status = String(scheduler.status ?? '')
+    .trim()
+    .toLowerCase();
+  const isFailure =
+    status.endsWith('_failed') || status === 'failed' || status === 'error';
+  if (!isFailure && operations?.primary_target !== 'scheduler') {
+    return '';
+  }
+
+  const parts = [
+    scheduler.run_id
+      ? locale === 'zh'
+        ? `运行 ${scheduler.run_id}`
+        : `Run ${scheduler.run_id}`
+      : '',
+    schedulerRetrySummary(scheduler.retry_state, locale),
+    schedulerErrorSummary(scheduler.error),
+    scheduler.does_not_submit_broker_order
+      ? locale === 'zh'
+        ? '不会提交券商订单'
+        : 'No broker submission'
+      : '',
+  ].filter(Boolean);
+  return parts.join(locale === 'zh' ? ' · ' : ' · ');
+}
+
+function schedulerRetrySummary(
+  retryState: Record<string, unknown> | undefined,
+  locale: Locale,
+) {
+  if (!retryState) {
+    return '';
+  }
+  const attempt = numericRetryValue(retryState.attempt);
+  if (attempt <= 0) {
+    return '';
+  }
+  const maxAttempts = Math.max(
+    numericRetryValue(retryState.max_attempts),
+    attempt,
+  );
+  const previousAttempts = numericRetryValue(retryState.previous_attempts);
+  if (locale === 'zh') {
+    return previousAttempts > 0
+      ? `重试 ${attempt}/${maxAttempts}；此前 ${previousAttempts} 次`
+      : `重试 ${attempt}/${maxAttempts}`;
+  }
+  return previousAttempts > 0
+    ? `Retry ${attempt}/${maxAttempts}; previous attempts ${previousAttempts}`
+    : `Retry ${attempt}/${maxAttempts}`;
+}
+
+function schedulerErrorSummary(error: Record<string, unknown> | undefined) {
+  if (!error) {
+    return '';
+  }
+  const type = String(error.type ?? '').trim();
+  const message = String(error.message ?? '').trim();
+  if (type && message) {
+    return `${type}: ${message}`;
+  }
+  return type || message;
+}
+
+function numericRetryValue(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? Math.trunc(numberValue) : 0;
 }
 
 function operationsPrimaryNextAction(

@@ -6,6 +6,18 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Overview Today's to-dos now expands failed scheduler / market
+  session recovery text with the recorded automation run id, retry attempt,
+  prior retry count, error summary, and explicit no-broker-submission safety
+  boundary. Assumption: scheduler failure evidence should be visible in the
+  operator's first daily queue, but it remains a read-only runbook cue and does
+  not add retry, broker-submit, cancel, OMS mutation, or ledger-sync controls.
+  Validation:
+  `npm --prefix web test -- overview-page.test.tsx -t "failed scheduler run recovery"`.
+  Risk impact: improves v1.6 scheduler/paper-shadow recovery visibility in
+  Overview without contacting brokers, storing credentials, creating broker
+  orders, mutating OMS, writing production ledger facts, enabling automatic
+  trading, or bypassing manual confirmation.
 - 2026-07-07: Decision Automation Cockpit now renders failed automation-run
   recovery evidence from open alert payloads: the primary `suggested_action`
   can drive the panel's next action, and alert chips show manual-review
