@@ -193,6 +193,24 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Operations Today now exposes a read-only
+  `execution_reconciliation` summary from open reconciliation items, including
+  manual-execution review count, first open item, preview fingerprint evidence,
+  next review step, and no-broker/no-OMS/no-ledger-mutation safety flags.
+  Overview Today's to-dos renders the same manual execution reconciliation
+  cue so an operator can import broker statements or explicitly review before
+  any ledger update. Assumption: open reconciliation items are runbook evidence
+  and do not authorize broker submission, cancellation, OMS mutation, or
+  production ledger writes. Validation:
+  `uv run python -m pytest tests/test_operations_today.py -k manual_execution_reconciliation_review`,
+  `uv run python -m pytest tests/server/test_operations_routes.py -k execution_reconciliation_open_items`,
+  `npm --prefix web test -- overview-page.test.tsx -t "manual execution reconciliation review"`,
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k controlled_broker_bridge_foundation`.
+  Risk impact: improves v1.7 reconciliation/runbook visibility without
+  contacting brokers, storing credentials, submitting or cancelling broker
+  orders, mutating OMS, writing production ledger facts, enabling automatic
+  trading, or bypassing manual confirmation.
 - 2026-07-07: Trading manual-execution preview now renders the gateway
   `safety` flags for `broker_submission_enabled=false`,
   `requires_human_broker_entry=true`, `requires_operator_save=true`,

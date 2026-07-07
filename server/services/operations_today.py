@@ -25,6 +25,7 @@ def build_operations_today_summary(
     fill_facts: Iterable[dict[str, Any]],
     paper_shadow_run: dict[str, Any] | None = None,
     automation_runs: Iterable[dict[str, Any]] | None = None,
+    execution_reconciliation_open_items: Iterable[dict[str, Any]] | None = None,
     acceptance_audit_export: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
@@ -54,6 +55,9 @@ def build_operations_today_summary(
         plan_date=plan_date,
         fallback_detail_status=daily_operations.conclusion_status,
     )
+    execution_reconciliation = _execution_reconciliation_summary(
+        execution_reconciliation_open_items
+    )
     subsystems = [
         _market_subsystem(decision_payload),
         _account_truth_subsystem(decision_payload),
@@ -62,6 +66,7 @@ def build_operations_today_summary(
         _daily_plan_subsystem(trading_plan),
         _paper_shadow_subsystem(shadow),
         _scheduler_subsystem(scheduler),
+        _execution_reconciliation_subsystem(execution_reconciliation),
         _acceptance_audit_subsystem(
             daily_operations,
             acceptance_audit_export=acceptance_audit_export,
@@ -90,6 +95,7 @@ def build_operations_today_summary(
         },
         "paper_shadow": shadow,
         "scheduler": scheduler,
+        "execution_reconciliation": execution_reconciliation,
         "limitations": [
             "Operations summary is read-only and does not submit broker orders.",
             "Broker integration remains disabled; live-like workflows require manual confirmation.",
@@ -267,6 +273,71 @@ def _scheduler_subsystem(summary: dict[str, Any]) -> dict[str, Any]:
         ),
         detail_status=str(summary.get("status") or "not_recorded"),
     )
+
+
+def _execution_reconciliation_subsystem(summary: dict[str, Any]) -> dict[str, Any]:
+    return _subsystem(
+        "execution_reconciliation",
+        str(summary.get("status") or "pass"),
+        target="decision",
+        last_run_at=summary.get("last_open_item_at"),
+        next_action=summary.get("next_review_step") or "none",
+        limitations=_list(summary.get("limitations")),
+        detail_status=str(summary.get("detail_status") or "0 open items"),
+    )
+
+
+def _execution_reconciliation_summary(
+    open_items: Iterable[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    rows = _list_of_dicts(open_items)
+    manual_execution_items = [
+        row for row in rows if _manual_execution_evidence_summary(row)
+    ]
+    first = rows[0] if rows else None
+    next_step = (
+        str(first.get("suggested_action") or "review_execution_reconciliation")
+        if first
+        else "none"
+    )
+    first_item = _execution_reconciliation_open_item(first) if first else None
+    manual_count = len(manual_execution_items)
+    return {
+        "status": "manual_action_required" if rows else "pass",
+        "open_item_count": len(rows),
+        "manual_execution_review_count": manual_count,
+        "next_review_step": next_step,
+        "last_open_item_at": _latest_timestamp(rows),
+        "detail_status": (
+            f"manual_execution_recorded:{manual_count}"
+            if manual_count
+            else f"{len(rows)} open items"
+        ),
+        "first_open_item": first_item,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "limitations": [
+            "Execution reconciliation review is read-only and does not submit broker orders.",
+            "Manual execution evidence must be reconciled before any production ledger update is suggested.",
+        ],
+    }
+
+
+def _execution_reconciliation_open_item(
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "order_id": item.get("order_id"),
+        "item_status": str(item.get("item_status") or "unknown"),
+        "suggested_action": str(item.get("suggested_action") or "review_item"),
+        "detail": str(item.get("detail") or ""),
+        "manual_execution_evidence_summary": _manual_execution_evidence_summary(item),
+    }
+
+
+def _manual_execution_evidence_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return _dict(_payload(item).get("manual_execution_evidence_summary"))
 
 
 def _scheduler_retry_limitations(retry_state: Any) -> list[str]:

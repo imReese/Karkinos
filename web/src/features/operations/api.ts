@@ -182,6 +182,32 @@ export type OperationsSchedulerSummary = {
   limitations?: string[];
 };
 
+export type OperationsExecutionReconciliationSummary = {
+  status: string;
+  open_item_count: number;
+  manual_execution_review_count: number;
+  next_review_step: string;
+  last_open_item_at?: string | null;
+  detail_status?: string;
+  first_open_item?: {
+    order_id?: string | null;
+    item_status?: string | null;
+    suggested_action?: string | null;
+    detail?: string | null;
+    manual_execution_evidence_summary?: {
+      preview_fingerprint?: string | null;
+      submitted_to_broker?: boolean | null;
+      does_not_mutate_oms?: boolean | null;
+      does_not_mutate_production_ledger?: boolean | null;
+      [key: string]: unknown;
+    };
+  } | null;
+  does_not_submit_broker_order?: boolean;
+  does_not_mutate_oms?: boolean;
+  does_not_mutate_production_ledger?: boolean;
+  limitations?: string[];
+};
+
 export type OperationsTodayResponse = {
   schema_version: 'karkinos.operations_today.v1';
   operations_date: string;
@@ -239,6 +265,7 @@ export type OperationsTodayResponse = {
     }>;
   };
   scheduler?: OperationsSchedulerSummary;
+  execution_reconciliation?: OperationsExecutionReconciliationSummary;
   limitations: string[];
 };
 
