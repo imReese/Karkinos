@@ -175,6 +175,20 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Trading manual-execution preview now renders the gateway
+  `safety` flags for `broker_submission_enabled=false`,
+  `requires_human_broker_entry=true`, `requires_operator_save=true`,
+  `does_not_mutate_oms=true`, and
+  `does_not_mutate_production_ledger=true` in the preview safety card before
+  any manual execution evidence can be recorded. Assumption: these flags are
+  operator-facing review evidence returned by the controlled bridge preview;
+  they do not add save-ledger, apply-fill, submit, cancel, or broker connector
+  controls. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "previews manual execution draft"`.
+  Risk impact: improves v1.7 manual-execution handoff transparency without
+  contacting brokers, storing credentials, submitting or cancelling broker
+  orders, mutating OMS, writing production ledger facts, enabling automatic
+  trading, or bypassing manual confirmation.
 - 2026-07-07: Trading manual-execution preview and recorded manual-execution
   evidence now render gateway `limitations` directly in the approval panel,
   including the no-broker-submit, no-gateway-event/fill, no-OMS-mutation, and
