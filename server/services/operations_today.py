@@ -385,6 +385,7 @@ def _paper_shadow_run_summary(
         status=status,
         review_status=review_status,
     )
+    review_queue = _list_of_dicts(payload.get("review_queue"))
     reviewed_count = len(
         [order for order in orders if str(order.get("divergence_status") or "").strip()]
     )
@@ -416,9 +417,118 @@ def _paper_shadow_run_summary(
         "last_run_at": run.get("updated_at") or run.get("created_at"),
         "limitations": _json_list(run.get("limitations_json")),
         "orders": orders[:5],
-        "review_queue": _list_of_dicts(payload.get("review_queue")),
+        "review_queue": review_queue
+        or _fallback_paper_shadow_review_queue(
+            run_id=run.get("run_id"),
+            status=status,
+            orders=orders,
+        ),
         "divergence_summary": _dict(payload.get("divergence_summary")),
     }
+
+
+def _fallback_paper_shadow_review_queue(
+    *,
+    run_id: Any,
+    status: str,
+    orders: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    run_status = str(status or "").strip().lower()
+    if run_status in {"not_run", "not_required", "within_expectations"}:
+        return []
+    queue: list[dict[str, Any]] = []
+    for order in orders:
+        item = _fallback_paper_shadow_review_item(
+            run_id=run_id,
+            run_status=run_status,
+            order=order,
+        )
+        if item:
+            queue.append(item)
+    return queue
+
+
+def _fallback_paper_shadow_review_item(
+    *,
+    run_id: Any,
+    run_status: str,
+    order: dict[str, Any],
+) -> dict[str, Any] | None:
+    order_status = str(order.get("status") or "").strip().lower()
+    divergence_status = str(order.get("divergence_status") or "").strip().lower()
+    if order_status == "filled" and divergence_status == "within_expectations":
+        return None
+
+    intent_ref = str(
+        _dict(order.get("order_intent")).get("action_ref")
+        or order.get("order_intent_ref")
+        or ""
+    ).strip()
+    order_id = str(order.get("order_id") or "").strip()
+    required_action, severity, reason = _fallback_paper_shadow_review_action(
+        run_status=run_status,
+        order_status=order_status,
+        divergence_status=divergence_status,
+        intent_ref=intent_ref,
+        order_id=order_id,
+    )
+    item = {
+        "review_id": f"{run_id}:{_fallback_review_suffix(intent_ref or order_id)}",
+        "order_intent_ref": intent_ref,
+        "order_id": order_id or None,
+        "symbol": order.get("symbol"),
+        "status": order_status or "review_required",
+        "divergence_status": divergence_status or "review_required",
+        "severity": severity,
+        "required_action": required_action,
+        "reason": reason,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+    for key in ("filled_quantity", "remaining_quantity"):
+        if order.get(key) is not None:
+            item[key] = order.get(key)
+    return item
+
+
+def _fallback_paper_shadow_review_action(
+    *,
+    run_status: str,
+    order_status: str,
+    divergence_status: str,
+    intent_ref: str,
+    order_id: str,
+) -> tuple[str, str, str]:
+    if (
+        run_status == "failed"
+        or order_status == "failed"
+        or divergence_status == "failed"
+    ):
+        ref = intent_ref or order_id or "paper/shadow order"
+        return (
+            "inspect_failed_run",
+            "danger",
+            f"Paper/shadow simulation failed for {ref}; inspect the failed run before manual confirmation.",
+        )
+    if run_status == "diverged" or divergence_status == "diverged":
+        status = order_status or "unknown"
+        return (
+            "resolve_shadow_divergence",
+            "warning",
+            f"Paper/shadow order {status} requires divergence review before manual confirmation.",
+        )
+    return (
+        "review_shadow_divergence",
+        "warning",
+        "Paper/shadow order requires review before manual confirmation.",
+    )
+
+
+def _fallback_review_suffix(value: str) -> str:
+    text = str(value or "").strip()
+    if ":" in text:
+        return text.split(":", 1)[1]
+    return text or "unknown"
 
 
 def _paper_shadow_effective_status(
