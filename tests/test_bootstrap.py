@@ -594,11 +594,18 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
             "account_alias": "",
         },
         {
-            "connector_id": "local-export-readonly",
-            "connector_type": "local_export_readonly",
+            "connector_id": "local-qmt-export-readonly",
+            "connector_type": "qmt_readonly_export",
             "enabled": False,
-            "client_path": "data/private/broker-snapshot.example.json",
-            "account_alias": "local-review",
+            "client_path": "data/private/qmt-broker-snapshot.example.json",
+            "account_alias": "qmt-local-review",
+        },
+        {
+            "connector_id": "local-ptrade-export-readonly",
+            "connector_type": "ptrade_readonly_export",
+            "enabled": False,
+            "client_path": "data/private/ptrade-broker-snapshot.example.json",
+            "account_alias": "ptrade-local-review",
         },
     ]
     assert example["controlled_bridge_policy"] == {

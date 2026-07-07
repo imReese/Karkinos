@@ -508,6 +508,76 @@ def test_broker_gateway_local_export_invalid_snapshot_degrades_without_leaking_a
     assert db.list_broker_gateway_events_sync() == []
 
 
+def test_broker_gateway_qmt_export_unsupported_schema_degrades_query_only(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    snapshot_path = tmp_path / "qmt-snapshot-wrong-schema.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "other.app.account_snapshot.v1",
+                "source_name": "QMT local readonly export",
+                "account_id": "private-account-id",
+                "captured_at": "2026-07-03T15:01:00+08:00",
+                "health": {
+                    "status": "healthy",
+                    "checked_at": "2026-07-03T15:00:00+08:00",
+                    "message": "Wrong local export parsed.",
+                },
+                "cash": {
+                    "currency": "CNY",
+                    "balance": "100000.00",
+                    "available": "88000.00",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    db = AppDatabase(tmp_path / "broker-gateway.db")
+    db.init_sync()
+    client = _client_for_db(
+        monkeypatch,
+        db,
+        broker_connectors=[
+            BrokerConnectorConfig(
+                connector_id="local-qmt-export",
+                connector_type="qmt_readonly_export",
+                enabled=True,
+                client_path=str(snapshot_path),
+                account_alias="local-review",
+            )
+        ],
+    )
+
+    health_response = client.get("/api/broker-gateway/connectors/health")
+    snapshot_response = client.get(
+        "/api/broker-gateway/connectors/local-qmt-export/snapshot"
+    )
+
+    assert health_response.status_code == 200
+    health = health_response.json()["connectors"][0]
+    assert health["status"] == "runtime_degraded"
+    assert health["capabilities"]["can_submit_orders"] is False
+    assert "private-account-id" not in health_response.text
+    assert snapshot_response.status_code == 200
+    snapshot = snapshot_response.json()["snapshot"]
+    assert snapshot["status"] == "snapshot_degraded"
+    assert snapshot["connector_health"]["raw_status"] == "incomplete"
+    assert snapshot["cash_balance"] == {}
+    assert snapshot["position_count"] == 0
+    assert snapshot["submitted_to_broker"] is False
+    assert snapshot["does_not_mutate_oms"] is True
+    assert snapshot["does_not_mutate_production_ledger"] is True
+    assert any(
+        item == "parse_error:UnsupportedLocalJsonSnapshotSchema"
+        for item in snapshot["limitations"]
+    )
+    assert "account_id" not in snapshot
+    assert "private-account-id" not in snapshot_response.text
+    assert db.list_broker_gateway_events_sync() == []
+
+
 def test_manual_ticket_route_returns_copyable_ticket(tmp_path, monkeypatch) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
