@@ -4,6 +4,24 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.6.1 Progress
+
+- 2026-07-07: Paper/shadow run reviews now reject
+  `accepted_for_manual_confirmation` when the raw run status is `failed`; failed
+  simulations must remain blocked with `inspect_failed_run` until the operator
+  inspects or reruns the paper/shadow workflow. Operations Today also
+  defensively treats any stale `failed` + accepted review data as failed, so a
+  corrupted or legacy row cannot become a manual-confirmation handoff. The
+  review API returns HTTP 400 for this invalid transition and does not mutate
+  the run review fields. Assumption: accepting divergence is only valid for
+  simulated outcomes that produced reviewable evidence; failed simulations are
+  missing or invalid evidence and require inspection/rerun. Validation:
+  `uv run python -m pytest tests/test_paper_shadow_runs.py tests/test_operations_today.py tests/server/test_operations_routes.py -k "failed_run_manual_handoff or failed_shadow_run_blocked"`.
+  Risk impact: strengthens the v1.6.1 paper/shadow gate before manual
+  confirmation without creating broker orders, fills, OMS live transitions,
+  production ledger entries, automatic trading, or bypassing risk/account-truth
+  review.
+
 ## v1.7 Progress
 
 - 2026-07-07: Local JSON read-only broker connector exports now require the

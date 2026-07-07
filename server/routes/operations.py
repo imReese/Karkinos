@@ -13,6 +13,7 @@ from server.services.daily_trading_plan import build_daily_trading_plan
 from server.services.operations_today import build_operations_today_summary
 from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
+
 class PaperShadowRunReviewRequest(BaseModel):
     reviewed_at: str
     review_status: str = Field(..., min_length=1)
@@ -124,13 +125,16 @@ def create_router() -> APIRouter:
                 status_code=501,
                 detail="paper shadow run reviews are not supported by this database",
             )
-        reviewed = writer(
-            run_id=run_id,
-            reviewed_at=payload.reviewed_at,
-            review_status=review_status,
-            review_notes=payload.review_notes,
-            reviewer=payload.reviewer,
-        )
+        try:
+            reviewed = writer(
+                run_id=run_id,
+                reviewed_at=payload.reviewed_at,
+                review_status=review_status,
+                review_notes=payload.review_notes,
+                reviewer=payload.reviewer,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if reviewed is None:
             raise HTTPException(status_code=404, detail="paper shadow run not found")
         return reviewed

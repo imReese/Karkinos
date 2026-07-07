@@ -362,6 +362,53 @@ def test_operations_today_treats_accepted_paper_shadow_review_as_gate_passed() -
     assert summary["primary_target"] == "trading"
 
 
+def test_operations_today_keeps_failed_shadow_run_blocked_even_if_review_says_accepted() -> (
+    None
+):
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:failed",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "failed",
+            "status": "failed",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 0,
+            "divergence_status": "failed",
+            "next_manual_review_step": "review_manual_confirmation",
+            "review_status": "accepted_for_manual_confirmation",
+            "reviewed_at": "2026-07-01T10:10:00+08:00",
+            "reviewer": "local-operator",
+            "limitations_json": '["Paper/shadow simulation failed."]',
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"status": "failed", "divergence_status": "failed"}], '
+                '"review": {"review_status": '
+                '"accepted_for_manual_confirmation"}}'
+            ),
+            "updated_at": "2026-07-01T10:10:00+08:00",
+        },
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "paper_shadow"
+    )
+
+    assert summary["paper_shadow"]["status"] == "failed"
+    assert summary["paper_shadow"]["effective_status"] == "failed"
+    assert summary["paper_shadow"]["next_manual_review_step"] == "inspect_failed_run"
+    assert subsystem["status"] == "blocked"
+    assert subsystem["next_action"] == "inspect_failed_run"
+    assert subsystem["detail_status"] == "failed"
+    assert summary["conclusion_status"] == "blocked"
+    assert summary["primary_target"] == "paper-shadow"
+
+
 def test_operations_today_surfaces_failed_scheduler_run() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),

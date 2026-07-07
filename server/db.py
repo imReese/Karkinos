@@ -2205,6 +2205,10 @@ class AppDatabase:
             ).fetchone()
             if row is None:
                 return None
+            _validate_paper_shadow_run_review_transition(
+                run_status=str(row["status"] or ""),
+                review_status=review_status,
+            )
 
             payload = _json_dict(row["payload_json"])
             review_payload = {
@@ -5017,6 +5021,23 @@ def _paper_shadow_run_review_next_step(review_status: str) -> str:
     if status == "needs_rerun":
         return "run_paper_shadow_daily"
     return "resolve_shadow_divergence"
+
+
+def _validate_paper_shadow_run_review_transition(
+    *,
+    run_status: str,
+    review_status: str,
+) -> None:
+    normalized_run_status = str(run_status or "").strip().lower()
+    normalized_review_status = str(review_status or "").strip().lower()
+    if (
+        normalized_run_status == "failed"
+        and normalized_review_status == "accepted_for_manual_confirmation"
+    ):
+        raise ValueError(
+            "failed paper/shadow run cannot be accepted for manual confirmation; "
+            "inspect the failed run or rerun paper/shadow first"
+        )
 
 
 def _serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:
