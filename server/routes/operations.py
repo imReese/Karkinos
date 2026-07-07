@@ -59,6 +59,12 @@ def create_router() -> APIRouter:
             limit=20,
             offset=0,
         )
+        execution_reconciliation_open_items = _call_list(
+            state.db,
+            "list_execution_reconciliation_open_items_sync",
+            limit=20,
+            offset=0,
+        )
         ledger_review_count = len(
             _call_list(
                 state.db,
@@ -91,6 +97,7 @@ def create_router() -> APIRouter:
             fill_facts=fill_facts,
             paper_shadow_run=paper_shadow_run,
             automation_runs=automation_runs,
+            execution_reconciliation_open_items=execution_reconciliation_open_items,
             acceptance_audit_export=build_acceptance_audit_export(
                 selected_audit="operations_runbook",
             ),

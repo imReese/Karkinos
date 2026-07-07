@@ -31,6 +31,7 @@ class FakeOperationsDb:
         self.recorded_orders: list[dict] = []
         self.ledger_writes: list[dict] = []
         self.automation_runs: list[dict] = []
+        self.execution_reconciliation_open_items: list[dict] = []
 
     def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
         return [
@@ -103,6 +104,9 @@ class FakeOperationsDb:
         if run_type is not None:
             rows = [row for row in rows if row.get("run_type") == run_type]
         return rows[offset : offset + limit]
+
+    def list_execution_reconciliation_open_items_sync(self, limit=20, offset=0):
+        return self.execution_reconciliation_open_items[offset : offset + limit]
 
     def get_ledger_entries_sync(self, limit=50, offset=0):
         return []
@@ -315,6 +319,95 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
         for limitation in acceptance_audit["limitations"]
     )
     assert response["limitations"][0].startswith("Operations summary is read-only")
+    assert fake_db.saved_manual_orders == []
+    assert fake_db.recorded_orders == []
+    assert fake_db.ledger_writes == []
+
+
+def test_today_operations_route_surfaces_execution_reconciliation_open_items(
+    monkeypatch,
+):
+    fake_db = FakeOperationsDb()
+    fake_db.execution_reconciliation_open_items.append(
+        {
+            "order_id": "MANUAL-001",
+            "item_status": "manual_execution_recorded",
+            "suggested_action": "review_manual_execution_and_import_broker_statement",
+            "detail": (
+                "Manual execution evidence is recorded; import broker statement "
+                "before ledger update."
+            ),
+            "created_at": "2026-07-01T10:10:00+08:00",
+            "payload_json": json.dumps(
+                {
+                    "manual_execution_evidence_summary": {
+                        "preview_fingerprint": "preview:abc123",
+                        "submitted_to_broker": False,
+                        "does_not_mutate_oms": True,
+                        "does_not_mutate_production_ledger": True,
+                    }
+                }
+            ),
+        }
+    )
+    fake_state = SimpleNamespace(
+        db=fake_db,
+        config=SimpleNamespace(
+            assets=[],
+            broker_fee_schedule=SimpleNamespace(
+                stock_a_commission_rate=0.00015,
+                stock_a_min_commission=5.0,
+                fund_etf_commission_rate=0.00012,
+                fund_etf_min_commission=3.0,
+                stamp_tax_rate=0.0005,
+                transfer_fee_rate=0.00001,
+                other_fee_rate=0,
+                limitations=("broker_regulatory_fees_assumed_absorbed",),
+            ),
+        ),
+        scheduler=SimpleNamespace(
+            watchlist=[],
+            latest_quotes={},
+            portfolio=SimpleNamespace(
+                cash=30000.0,
+                positions={
+                    "600519": SimpleNamespace(
+                        quantity=200.0,
+                        avg_cost=8.0,
+                        market_value=2000.0,
+                    )
+                },
+                total_equity=lambda: 50000.0,
+            ),
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    endpoint = _endpoint("/api/operations/today")
+    response = asyncio.run(endpoint())
+
+    reconciliation = response["execution_reconciliation"]
+    assert reconciliation["open_item_count"] == 1
+    assert reconciliation["manual_execution_review_count"] == 1
+    assert reconciliation["first_open_item"]["order_id"] == "MANUAL-001"
+    assert (
+        reconciliation["first_open_item"]["manual_execution_evidence_summary"][
+            "preview_fingerprint"
+        ]
+        == "preview:abc123"
+    )
+    assert reconciliation["does_not_submit_broker_order"] is True
+    assert reconciliation["does_not_mutate_oms"] is True
+    assert reconciliation["does_not_mutate_production_ledger"] is True
+    subsystem = next(
+        item
+        for item in response["subsystems"]
+        if item["id"] == "execution_reconciliation"
+    )
+    assert subsystem["status"] == "manual_action_required"
+    assert subsystem["next_action"] == (
+        "review_manual_execution_and_import_broker_statement"
+    )
     assert fake_db.saved_manual_orders == []
     assert fake_db.recorded_orders == []
     assert fake_db.ledger_writes == []

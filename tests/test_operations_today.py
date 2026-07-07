@@ -80,7 +80,11 @@ def test_operations_today_requires_shadow_run_for_order_intents() -> None:
 def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
-        trading_plan=_plan(order_intent_count=0),
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
         daily_operations=_operations(manual_ready_count=0),
         order_facts=[],
         fill_facts=[],
@@ -113,6 +117,81 @@ def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None
     assert audit["limitations"] == [
         "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
     ]
+
+
+def test_operations_today_surfaces_manual_execution_reconciliation_review() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        execution_reconciliation_open_items=[
+            {
+                "order_id": "MANUAL-001",
+                "item_status": "manual_execution_recorded",
+                "suggested_action": (
+                    "review_manual_execution_and_import_broker_statement"
+                ),
+                "detail": (
+                    "Manual execution evidence is recorded; import broker "
+                    "statement before ledger update."
+                ),
+                "created_at": "2026-07-01T10:10:00+08:00",
+                "payload_json": {
+                    "manual_execution_evidence_summary": {
+                        "preview_fingerprint": "preview:abc123",
+                        "submitted_to_broker": False,
+                        "does_not_mutate_oms": True,
+                        "does_not_mutate_production_ledger": True,
+                    }
+                },
+            }
+        ],
+        generated_at="2026-07-01T10:12:00+08:00",
+    )
+
+    reconciliation = summary["execution_reconciliation"]
+    assert summary["conclusion_status"] == "manual_action_required"
+    assert summary["primary_target"] == "decision"
+    assert reconciliation["status"] == "manual_action_required"
+    assert reconciliation["open_item_count"] == 1
+    assert reconciliation["manual_execution_review_count"] == 1
+    assert reconciliation["next_review_step"] == (
+        "review_manual_execution_and_import_broker_statement"
+    )
+    assert reconciliation["first_open_item"] == {
+        "order_id": "MANUAL-001",
+        "item_status": "manual_execution_recorded",
+        "suggested_action": "review_manual_execution_and_import_broker_statement",
+        "detail": (
+            "Manual execution evidence is recorded; import broker statement "
+            "before ledger update."
+        ),
+        "manual_execution_evidence_summary": {
+            "preview_fingerprint": "preview:abc123",
+            "submitted_to_broker": False,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+        },
+    }
+    assert reconciliation["does_not_submit_broker_order"] is True
+    assert reconciliation["does_not_mutate_oms"] is True
+    assert reconciliation["does_not_mutate_production_ledger"] is True
+    subsystem = next(
+        item
+        for item in summary["subsystems"]
+        if item["id"] == "execution_reconciliation"
+    )
+    assert subsystem["status"] == "manual_action_required"
+    assert subsystem["next_action"] == (
+        "review_manual_execution_and_import_broker_statement"
+    )
+    assert subsystem["detail_status"] == "manual_execution_recorded:1"
 
 
 def test_operations_today_requires_shadow_divergence_review() -> None:

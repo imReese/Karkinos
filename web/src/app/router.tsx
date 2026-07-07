@@ -1332,11 +1332,79 @@ function operationsDetailText(
   if (schedulerSummary) {
     return `${fallback} · ${schedulerSummary}`;
   }
+  const reconciliationSummary = executionReconciliationOverviewSummary(
+    operations,
+    locale,
+  );
+  if (reconciliationSummary) {
+    return `${fallback} · ${reconciliationSummary}`;
+  }
   const paperShadowSummary = paperShadowOverviewEvidenceSummary(
     operations,
     locale,
   );
   return paperShadowSummary ? `${fallback} · ${paperShadowSummary}` : fallback;
+}
+
+function executionReconciliationOverviewSummary(
+  operations: OperationsTodayResponse | null | undefined,
+  locale: Locale,
+) {
+  const reconciliation = operations?.execution_reconciliation;
+  if (!reconciliation || reconciliation.open_item_count <= 0) {
+    return '';
+  }
+  const first = reconciliation.first_open_item;
+  const manualSummary = first?.manual_execution_evidence_summary;
+  const labels =
+    locale === 'zh'
+      ? {
+          reviewCount: '对账复核',
+          item: '项',
+          items: '项',
+          manualExecution: '手工成交',
+          preview: '预览',
+          noBrokerSubmission: '不会提交券商订单',
+          noOmsMutation: '不会修改 OMS',
+          noLedgerMutation: '不会修改生产账本',
+        }
+      : {
+          reviewCount: 'Reconciliation review',
+          item: 'item',
+          items: 'items',
+          manualExecution: 'Manual execution',
+          preview: 'Preview',
+          noBrokerSubmission: 'No broker submission',
+          noOmsMutation: 'No OMS mutation',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const countLabel =
+    reconciliation.open_item_count === 1 ? labels.item : labels.items;
+  return [
+    `${labels.reviewCount}: ${reconciliation.open_item_count} ${countLabel}`,
+    operationsNextActionLabel(
+      reconciliation.next_review_step || first?.suggested_action || 'none',
+      locale,
+    ),
+    first?.order_id ? `${labels.manualExecution}: ${first.order_id}` : '',
+    manualSummary?.preview_fingerprint
+      ? `${labels.preview} ${manualSummary.preview_fingerprint}`
+      : '',
+    reconciliation.does_not_submit_broker_order ||
+    manualSummary?.submitted_to_broker === false
+      ? labels.noBrokerSubmission
+      : '',
+    reconciliation.does_not_mutate_oms ||
+    manualSummary?.does_not_mutate_oms === true
+      ? labels.noOmsMutation
+      : '',
+    reconciliation.does_not_mutate_production_ledger ||
+    manualSummary?.does_not_mutate_production_ledger === true
+      ? labels.noLedgerMutation
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function operationsSchedulerEvidenceSummary(
@@ -1509,6 +1577,14 @@ function operationsNextActionLabel(value: string | undefined, locale: Locale) {
     review_ledger_items: {
       en: 'Review ledger items',
       zh: '复核账本流水',
+    },
+    review_execution_reconciliation: {
+      en: 'Review execution reconciliation',
+      zh: '复核执行对账',
+    },
+    review_manual_execution_and_import_broker_statement: {
+      en: 'Review manual execution and import broker statement',
+      zh: '复核手工成交并导入券商流水',
     },
   };
   return labels[key]?.[locale] ?? formatPublicStatus(key, locale);

@@ -508,3 +508,24 @@ def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> 
         assert criterion.validation_commands, criterion.key
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
+
+    reconciliation_evidence = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "execution_reconciliation_bridge_evidence"
+    )
+    assert "server/services/operations_today.py" in (
+        reconciliation_evidence.evidence_paths
+    )
+    assert "tests/test_operations_today.py" in reconciliation_evidence.evidence_paths
+    assert "web/src/app/overview-page.test.tsx" in (
+        reconciliation_evidence.evidence_paths
+    )
+    assert any(
+        "manual_execution_reconciliation_review" in command
+        for command in reconciliation_evidence.validation_commands
+    )
+    assert any(
+        "manual execution reconciliation review" in command
+        for command in reconciliation_evidence.validation_commands
+    )

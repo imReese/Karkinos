@@ -1446,6 +1446,109 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
   expect(todayQueue.textContent).not.toContain('broker order');
 });
 
+test('surfaces manual execution reconciliation review in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'decision',
+        health: {
+          total: 9,
+          pass: 6,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 1,
+          skipped: 2,
+        },
+        subsystems: [
+          {
+            id: 'execution_reconciliation',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'decision',
+            last_run_at: '2026-02-10T10:10:00+08:00',
+            next_action: 'review_manual_execution_and_import_broker_statement',
+            limitations: ['Manual execution evidence is review evidence only.'],
+            detail_status: 'manual_execution_recorded:1',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 0,
+          manual_ready_count: 0,
+          blocked_count: 0,
+          order_intent_count: 0,
+          conclusion_status: 'no_manual_action',
+        },
+        paper_shadow: {
+          status: 'not_required',
+          run_id: null,
+          order_intent_count: 0,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_required',
+          next_manual_review_step: 'none',
+          last_run_at: null,
+          orders: [],
+        },
+        execution_reconciliation: {
+          status: 'manual_action_required',
+          open_item_count: 1,
+          manual_execution_review_count: 1,
+          next_review_step:
+            'review_manual_execution_and_import_broker_statement',
+          first_open_item: {
+            order_id: 'MANUAL-001',
+            item_status: 'manual_execution_recorded',
+            suggested_action:
+              'review_manual_execution_and_import_broker_statement',
+            detail:
+              'Manual execution evidence is recorded; import broker statement before ledger update.',
+            manual_execution_evidence_summary: {
+              preview_fingerprint: 'preview:abc123',
+              submitted_to_broker: false,
+              does_not_mutate_oms: true,
+              does_not_mutate_production_ledger: true,
+            },
+          },
+          does_not_submit_broker_order: true,
+          does_not_mutate_oms: true,
+          does_not_mutate_production_ledger: true,
+          limitations: [
+            'Manual execution evidence requires broker statement import before ledger updates.',
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(
+    within(todayQueue).getByText('Today runbook needs manual review'),
+  ).toBeTruthy();
+  expect(todayQueue.textContent).toContain(
+    'Review manual execution and import broker statement',
+  );
+  expect(todayQueue.textContent).toContain('Manual execution: MANUAL-001');
+  expect(todayQueue.textContent).toContain('Preview preview:abc123');
+  expect(todayQueue.textContent).toContain('No broker submission');
+  expect(todayQueue.textContent).toContain('No OMS mutation');
+  expect(todayQueue.textContent).toContain('No production ledger mutation');
+  expect(todayQueue.textContent).not.toContain(
+    'review_manual_execution_and_import_broker_statement',
+  );
+  expect(todayQueue.textContent).not.toContain('Submit broker order');
+  expect(todayQueue.textContent).not.toContain('Cancel broker order');
+  expect(todayQueue.textContent).not.toContain('Ledger sync');
+});
+
 test('renders daily operations tower without treating 50 candidates as manual work', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock({
