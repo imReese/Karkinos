@@ -6,6 +6,19 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Failed paper/shadow automation-run alerts now expose explicit
+  operator recovery evidence: `requires_manual_review=true`, a
+  `suggested_action` such as `inspect_failed_paper_shadow_run`, and
+  `retry_recommended` derived from the persisted retry state. Existing alert
+  keys, statuses, retry payloads, limitations, and no-submission safety flags
+  remain unchanged. Assumption: a failed automation run should tell the
+  operator what to inspect next, but this field is runbook evidence only and
+  does not schedule retries or grant execution authority. Validation:
+  `uv run python -m pytest tests/test_automation_alerts.py -k failed_paper_shadow_automation_run`.
+  Risk impact: improves v1.6 scheduler/paper-shadow failure recovery
+  visibility without contacting brokers, storing credentials, creating broker
+  orders, mutating OMS, writing production ledger facts, enabling automatic
+  trading, or bypassing manual confirmation.
 - 2026-07-07: Paper/shadow run reviews now reject
   `accepted_for_manual_confirmation` when the raw run status is `failed`; failed
   simulations must remain blocked with `inspect_failed_run` until the operator
