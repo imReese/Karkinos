@@ -76,14 +76,18 @@ JSON 标准不支持注释，因此不要在 `config.json` 里写 `//` 或 `/* .
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `connector_id` | string | connector 本地 ID，例如 `local-qmt-readonly`。 |
-| `connector_type` | string | connector 类型，例如 `qmt_readonly`、`ptrade_readonly`，或从本地导出快照读取的 `local_export_readonly`。 |
+| `connector_type` | string | connector 类型，例如 `qmt_readonly`、`ptrade_readonly`，或从本地导出快照读取的 `local_export_readonly`、`qmt_readonly_export`、`ptrade_readonly_export`。 |
 | `enabled` | boolean | 是否启用。默认建议 `false`。 |
-| `client_path` | string | 本机券商客户端路径；当 `connector_type=local_export_readonly` 时，这是被 `.gitignore` 排除的本地 JSON snapshot 路径。不得包含密码或 token。 |
+| `client_path` | string | 本机券商客户端路径；当 `connector_type` 为 `local_export_readonly`、`qmt_readonly_export` 或 `ptrade_readonly_export` 时，这是被 `.gitignore` 排除的本地 JSON snapshot 路径。不得包含密码或 token。 |
 | `account_alias` | string | 脱敏账户别名，例如 `中信证券88**16`。不要写完整资金账号。 |
 
-`local_export_readonly` 只解析本地 JSON 快照文件里的资金、持仓、订单和成交证据，并通过
-Broker Gateway 的只读 snapshot contract 返回。它不会启动券商客户端、不会保存凭证、不会提交
-或撤销券商订单，也不会写 OMS 或生产账本。
+`local_export_readonly`、`qmt_readonly_export` 和 `ptrade_readonly_export`
+都只解析本地 JSON 快照文件里的资金、持仓、订单和成交证据，并通过 Broker Gateway
+的只读 snapshot contract 返回。JSON 文件必须声明
+`schema_version="karkinos.readonly_broker_snapshot_export.v1"`；缺失或不支持的
+schema 会被标记为 runtime degraded，而不会读取账户号、资金、持仓、订单或成交事实。
+这些 connector 不会启动券商客户端、不会保存凭证、不会提交或撤销券商订单，也不会写 OMS
+或生产账本。
 
 ## controlled_bridge_policy
 

@@ -422,7 +422,7 @@ uv run python scripts/configure_data_source.py
 | `notification` | object | `{"type":"console"}` | 通知配置 |
 | `live_poll_interval` | int | `60` | 实时轮询间隔（秒） |
 | `broker_fee_schedule` | object | local defaults | 本地券商费用规则参数，包括股票/ETF 佣金率、最低佣金、印花税、默认过户费、可选沪深过户费率、债券/可转债交易所费用、其他费用率、规则 id 和已知限制；不得保存账户号、截图、交割单、券商密码、token、secret 或 credential |
-| `broker_connectors` | array | `[]` | 只读券商事实 connector 的本地配置，只允许 `connector_id`、`connector_type`、`enabled`、`client_path`、`account_alias`；不得保存券商密码、token、secret 或 credential。`local_export_readonly` 会把 `client_path` 作为被忽略的本地 JSON snapshot 路径，只解析资金、持仓、订单和成交证据 |
+| `broker_connectors` | array | `[]` | 只读券商事实 connector 的本地配置，只允许 `connector_id`、`connector_type`、`enabled`、`client_path`、`account_alias`；不得保存券商密码、token、secret 或 credential。`local_export_readonly`、`qmt_readonly_export` 和 `ptrade_readonly_export` 会把 `client_path` 作为被忽略的本地 JSON snapshot 路径，只解析 `schema_version="karkinos.readonly_broker_snapshot_export.v1"` 的资金、持仓、订单和成交证据；schema 缺失或不支持时只返回 degraded health |
 | `controlled_bridge_policy` | object | disabled | 未来受控券商桥接的白名单预览配置，可列出 connector id、账户别名、策略 id 和标的用于复核；v1.7 仍拒绝 automation 和券商提交；不得保存密码、token、secret 或 credential |
 | `cors_allowed_origins` | array | 本地 Vite 地址 | 允许访问 API 的前端 origin |
 

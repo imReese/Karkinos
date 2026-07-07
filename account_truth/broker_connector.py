@@ -15,6 +15,11 @@ BrokerConnectorHealthStatus = Literal[
     "permission_limited",
     "incomplete",
 ]
+LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION = "karkinos.readonly_broker_snapshot_export.v1"
+
+
+class UnsupportedLocalJsonSnapshotSchema(ValueError):
+    """Raised when a local read-only snapshot is not the supported schema."""
 
 
 @dataclass(frozen=True)
@@ -160,6 +165,7 @@ class LocalJsonReadOnlyBrokerConnector:
     def read_account_snapshot(self) -> BrokerConnectorSnapshot:
         try:
             data = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+            _validate_local_json_snapshot_schema(data)
             captured_at = str(data.get("captured_at") or "")
             health_data = _dict(data.get("health"))
             health = BrokerConnectorHealth(
@@ -192,6 +198,7 @@ class LocalJsonReadOnlyBrokerConnector:
             OSError,
             json.JSONDecodeError,
             InvalidOperation,
+            UnsupportedLocalJsonSnapshotSchema,
             TypeError,
             ValueError,
         ) as exc:
@@ -216,6 +223,13 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _validate_local_json_snapshot_schema(data: Any) -> None:
+    if not isinstance(data, dict):
+        raise UnsupportedLocalJsonSnapshotSchema
+    if str(data.get("schema_version") or "") != LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION:
+        raise UnsupportedLocalJsonSnapshotSchema
 
 
 def _invalid_local_json_snapshot(

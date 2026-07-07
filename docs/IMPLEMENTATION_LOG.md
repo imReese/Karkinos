@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Local JSON read-only broker connector exports now require the
+  explicit `karkinos.readonly_broker_snapshot_export.v1` schema before any
+  account id, cash, position, order, or fill field is accepted. Unsupported or
+  missing schemas degrade into an `incomplete` runtime snapshot, and the
+  `qmt_readonly_export` / `ptrade_readonly_export` example config entries now
+  document the same ignored local JSON snapshot contract. Assumption: QMT and
+  PTrade local exports enter Karkinos through a user-managed sanitized snapshot
+  file, not direct broker client control; wrong files are data-quality
+  evidence, not account truth. Validation:
+  `uv run python -m pytest tests/account_truth/test_broker_connector.py tests/server/test_broker_gateway_routes.py -k "unsupported_schema"`
+  and
+  `uv run python -m pytest tests/test_bootstrap.py -k example_broker_connector_config_contains_no_credentials`.
+  Risk impact: improves v1.7 local read-only adapter integrity without
+  contacting brokers, storing credentials, exposing private account ids,
+  creating fills, mutating OMS, saving production ledger entries, submitting or
+  cancelling broker orders, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-07: Local JSON read-only broker connector exports now degrade invalid
   local snapshot files into an `incomplete` runtime snapshot instead of
   propagating JSON, file, or decimal parsing exceptions through broker gateway

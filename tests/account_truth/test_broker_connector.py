@@ -260,3 +260,51 @@ def test_local_json_readonly_connector_degrades_invalid_export_without_submit(
         "Local JSON snapshot export could not be parsed; no broker client is contacted.",
         "Broker order submission remains disabled.",
     ]
+
+
+def test_local_json_readonly_connector_degrades_unsupported_schema_without_submit(
+    tmp_path,
+) -> None:
+    snapshot_path = tmp_path / "qmt-snapshot-wrong-schema.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "other.app.account_snapshot.v1",
+                "source_name": "QMT local readonly export",
+                "account_id": "private-account-id",
+                "captured_at": "2026-07-03T15:01:00+08:00",
+                "health": {
+                    "status": "healthy",
+                    "checked_at": "2026-07-03T15:00:00+08:00",
+                    "message": "Wrong local export parsed.",
+                },
+                "cash": {
+                    "currency": "CNY",
+                    "balance": "100000.00",
+                    "available": "88000.00",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    connector = LocalJsonReadOnlyBrokerConnector(
+        connector_id="local-qmt-export",
+        snapshot_path=snapshot_path,
+        account_alias="local-review",
+    )
+
+    snapshot = connector.read_account_snapshot()
+
+    assert not hasattr(connector, "submit_order")
+    assert snapshot.connector_id == "local-qmt-export"
+    assert snapshot.account_id == ""
+    assert snapshot.account_alias == "local-review"
+    assert snapshot.health.status == "incomplete"
+    assert snapshot.health.limitations == [
+        "parse_error:UnsupportedLocalJsonSnapshotSchema",
+        "No broker client was contacted and no broker order was submitted.",
+    ]
+    assert snapshot.cash is None
+    assert snapshot.positions == []
+    assert snapshot.orders == []
+    assert snapshot.fills == []
