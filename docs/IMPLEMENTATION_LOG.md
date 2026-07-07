@@ -175,6 +175,17 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-07: Trading manual-ticket export review now surfaces the generated
+  export file name, MIME type, export schema, export format, and gateway
+  limitations beside the broker copy text and JSON payload. Assumption:
+  operator-facing export metadata reduces manual-entry ambiguity, but it is
+  still review evidence only and does not create a local download, broker
+  order, fill, OMS transition, or production ledger entry. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "exports confirmed manual ticket"`.
+  Risk impact: improves v1.7 manual-ticket export ergonomics and auditability
+  without contacting brokers, storing credentials, submitting or cancelling
+  broker orders, mutating OMS, writing production ledger facts, enabling
+  automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Local JSON read-only broker connector exports now require the
   explicit `karkinos.readonly_broker_snapshot_export.v1` schema before any
   account id, cash, position, order, or fill field is accepted. Unsupported or
