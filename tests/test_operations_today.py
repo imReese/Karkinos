@@ -92,8 +92,8 @@ def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None
             "audits": [
                 {
                     "key": "operations_runbook",
-                    "required_count": 17,
-                    "completed_count": 17,
+                    "required_count": 19,
+                    "completed_count": 19,
                     "is_complete": True,
                     "limitations": [
                         "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
@@ -109,7 +109,7 @@ def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None
     assert audit["status"] == "pass"
     assert audit["last_run_at"] == "2026-07-01T09:30:00Z"
     assert audit["next_action"] == "none"
-    assert audit["detail_status"] == "operations_runbook:17/17"
+    assert audit["detail_status"] == "operations_runbook:19/19"
     assert audit["limitations"] == [
         "Completion does not enable automatic real-money trading; manual confirmation remains the live-like default."
     ]
