@@ -6,6 +6,19 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Decision Automation Cockpit now renders failed automation-run
+  recovery evidence from open alert payloads: the primary `suggested_action`
+  can drive the panel's next action, and alert chips show manual-review
+  requirement, retry recommendation, no-broker-submission, and
+  `does_not_mutate_production_ledger` safety flags. Assumption: the cockpit
+  should surface the operator recovery action already recorded by the backend
+  alert, but it must remain a read-only runbook cue with no retry,
+  broker-submit, cancel, or ledger-sync control. Validation:
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "failed paper shadow automation recovery action"`.
+  Risk impact: improves v1.6.1 paper/shadow failure recovery visibility in the
+  operator UI without contacting brokers, storing credentials, creating broker
+  orders, mutating OMS, writing production ledger facts, enabling automatic
+  trading, or bypassing manual confirmation.
 - 2026-07-07: Failed paper/shadow automation-run alerts now expose explicit
   operator recovery evidence: `requires_manual_review=true`, a
   `suggested_action` such as `inspect_failed_paper_shadow_run`, and
