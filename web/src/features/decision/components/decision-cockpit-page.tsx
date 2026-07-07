@@ -1410,6 +1410,14 @@ function strategyPromotionStageLabel(value: string, locale: Locale) {
   const labels: Record<string, { en: string; zh: string }> = {
     research: { en: 'Research', zh: '研究' },
     paper_shadow: { en: 'Paper/shadow', zh: '模拟/影子运行' },
+    shadow: { en: 'Shadow', zh: '影子运行' },
+    manual_confirmation: { en: 'Manual confirmation', zh: '人工确认' },
+    controlled_bridge_pilot: {
+      en: 'Controlled bridge pilot',
+      zh: '受控桥接试点',
+    },
+    paused: { en: 'Paused', zh: '已暂停' },
+    retired: { en: 'Retired', zh: '已退役' },
     live_like: { en: 'Live-like gated', zh: '类实盘门禁' },
     live_like_blocked: { en: 'Live-like blocked', zh: '类实盘已阻断' },
   };
@@ -1431,8 +1439,53 @@ function strategyPromotionGateStatusLabel(value: string, locale: Locale) {
       en: 'Live-like disabled',
       zh: '类实盘已关闭',
     },
+    paused: { en: 'Paused', zh: '已暂停' },
+    retired: { en: 'Retired', zh: '已退役' },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function strategyPromotionLifecycleLabels(
+  lifecycle:
+    | NonNullable<
+        AutomationCockpitResponse['promotion_states'][number]['lifecycle']
+      >
+    | undefined,
+  locale: Locale,
+) {
+  if (!lifecycle) {
+    return [];
+  }
+  const labels: string[] = [];
+  if (lifecycle.audit_only) {
+    labels.push(locale === 'zh' ? '生命周期仅审计' : 'Lifecycle audit only');
+  }
+  if (lifecycle.does_not_authorize_execution) {
+    labels.push(
+      locale === 'zh' ? '不授权执行' : 'Does not authorize execution',
+    );
+  }
+  if (lifecycle.terminal) {
+    labels.push(locale === 'zh' ? '终止状态' : 'Terminal state');
+  }
+  for (const disabledStage of lifecycle.disabled_stages ?? []) {
+    if (disabledStage === 'controlled_bridge_pilot') {
+      labels.push(
+        locale === 'zh'
+          ? '受控桥接试点已关闭'
+          : 'Controlled bridge pilot disabled',
+      );
+    } else if (disabledStage === 'live_like') {
+      labels.push(locale === 'zh' ? '类实盘已关闭' : 'Live-like disabled');
+    } else {
+      labels.push(
+        `${strategyPromotionStageLabel(disabledStage, locale)} ${
+          locale === 'zh' ? '已关闭' : 'disabled'
+        }`,
+      );
+    }
+  }
+  return labels;
 }
 
 function strategyPromotionMissingRequirementsLabel(
@@ -2550,57 +2603,72 @@ function AutomationCockpitPanel({
               </span>
             </div>
             <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
-              {cockpit.promotion_states.slice(0, 4).map((state) => (
-                <div
-                  className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
-                  key={state.strategy_id}
-                >
-                  <div className="flex min-w-0 items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="break-words text-sm font-semibold text-[var(--app-text)]">
-                        {state.strategy_id}
+              {cockpit.promotion_states.slice(0, 4).map((state) => {
+                const lifecycleLabels = strategyPromotionLifecycleLabels(
+                  state.lifecycle,
+                  locale,
+                );
+                return (
+                  <div
+                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    key={state.strategy_id}
+                  >
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="break-words text-sm font-semibold text-[var(--app-text)]">
+                          {state.strategy_id}
+                        </div>
+                        <div className="app-muted mt-1 break-words text-xs leading-5">
+                          {strategyPromotionMissingRequirementsLabel(
+                            state.missing_requirements,
+                            locale,
+                          )}
+                        </div>
                       </div>
-                      <div className="app-muted mt-1 break-words text-xs leading-5">
-                        {strategyPromotionMissingRequirementsLabel(
-                          state.missing_requirements,
+                      <span className="app-chip">
+                        {strategyPromotionStageLabel(state.stage, locale)}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                      <span>
+                        {strategyPromotionGateStatusLabel(
+                          state.gate_status ?? state.status ?? 'unknown',
                           locale,
                         )}
-                      </div>
-                    </div>
-                    <span className="app-chip">
-                      {strategyPromotionStageLabel(state.stage, locale)}
-                    </span>
-                  </div>
-                  <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
-                    <span>
-                      {strategyPromotionGateStatusLabel(
-                        state.gate_status ?? state.status ?? 'unknown',
-                        locale,
-                      )}
-                    </span>
-                    <span>
-                      {state.live_like_enabled
-                        ? locale === 'zh'
-                          ? '类实盘已启用'
-                          : 'Live-like enabled'
-                        : locale === 'zh'
-                          ? '类实盘已关闭'
-                          : 'Live-like disabled'}
-                    </span>
-                    {typeof state.backtest_result_id === 'number' ? (
-                      <span>
-                        {locale === 'zh' ? '回测证据' : 'Backtest evidence'}:{' '}
-                        {state.backtest_result_id}
                       </span>
+                      <span>
+                        {state.live_like_enabled
+                          ? locale === 'zh'
+                            ? '类实盘已启用'
+                            : 'Live-like enabled'
+                          : locale === 'zh'
+                            ? '类实盘已关闭'
+                            : 'Live-like disabled'}
+                      </span>
+                      {typeof state.backtest_result_id === 'number' ? (
+                        <span>
+                          {locale === 'zh' ? '回测证据' : 'Backtest evidence'}:{' '}
+                          {state.backtest_result_id}
+                        </span>
+                      ) : null}
+                      <span>
+                        {locale === 'zh'
+                          ? '默认仍需人工确认'
+                          : 'Manual confirmation remains default'}
+                      </span>
+                    </div>
+                    {lifecycleLabels.length ? (
+                      <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                        {lifecycleLabels.map((label) => (
+                          <span className="app-chip" key={label}>
+                            {label}
+                          </span>
+                        ))}
+                      </div>
                     ) : null}
-                    <span>
-                      {locale === 'zh'
-                        ? '默认仍需人工确认'
-                        : 'Manual confirmation remains default'}
-                    </span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : null}

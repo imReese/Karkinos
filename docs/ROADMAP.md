@@ -1140,7 +1140,7 @@ for this authority boundary.
   policy, risk, OMS, gateway, and reconciliation services. A static guard now
   covers the current strategy tree; future private strategies outside the repo
   should use the same contract before any controlled bridge pilot.
-* [ ] Strategy promotion state is visible as read-only paper/shadow lifecycle
+* [x] Strategy promotion state is visible as read-only paper/shadow lifecycle
   evidence, and it does not expose live-promotion controls.
 * [ ] Broker callbacks or imported fills are staged as evidence and reconciled
   before any production ledger mutation is suggested.

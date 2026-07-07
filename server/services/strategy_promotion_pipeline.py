@@ -7,6 +7,21 @@ from typing import Any
 
 STRATEGY_PROMOTION_SCHEMA_VERSION = "karkinos.strategy_promotion_pipeline.v1"
 
+STRATEGY_PROMOTION_LIFECYCLE_STAGES = (
+    "research",
+    "paper_shadow",
+    "shadow",
+    "manual_confirmation",
+    "controlled_bridge_pilot",
+    "paused",
+    "retired",
+)
+
+_AUDIT_ONLY_LIFECYCLE_TRANSITIONS = {
+    "paused": "lifecycle_paused",
+    "retired": "lifecycle_retired",
+}
+
 
 class StrategyPromotionPipeline:
     """Persist strategy promotion stage decisions with safety gates."""
@@ -94,6 +109,69 @@ class StrategyPromotionPipeline:
         )
         return self._normalize_state(state)
 
+    def request_lifecycle_transition(
+        self,
+        strategy_id: str,
+        *,
+        target_stage: str,
+        reason: str,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        target_stage = str(target_stage)
+        strategy_id = str(strategy_id).strip()
+        if not strategy_id:
+            raise ValueError("strategy_id is required")
+        reason = str(reason or "").strip()
+        if not reason:
+            raise ValueError("lifecycle transition reason is required")
+        if target_stage == "controlled_bridge_pilot":
+            self._record_rejected_controlled_bridge_pilot(
+                strategy_id,
+                reason=reason,
+                actor=actor,
+            )
+            raise ValueError("controlled bridge pilot is disabled by default")
+        if target_stage not in _AUDIT_ONLY_LIFECYCLE_TRANSITIONS:
+            raise ValueError(f"unsupported lifecycle target: {target_stage}")
+
+        current = self._db.get_strategy_promotion_state_sync(strategy_id)
+        from_stage = str(current["stage"]) if current else "research"
+        missing_requirements = (
+            _json_list(current.get("missing_requirements_json")) if current else []
+        )
+        backtest_result_id = (
+            _int_or_none(current.get("backtest_result_id")) if current else None
+        )
+        payload = {
+            "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
+            "reason": reason,
+            "from_stage": from_stage,
+            "to_stage": target_stage,
+            "manual_confirmation_required": True,
+            "live_like_enabled": False,
+            "broker_submission_enabled": False,
+            "does_not_submit_broker_orders": True,
+            "does_not_mutate_production_ledger": True,
+        }
+        state = self._db.upsert_strategy_promotion_state_sync(
+            strategy_id=strategy_id,
+            stage=target_stage,
+            gate_status=target_stage,
+            live_like_enabled=False,
+            missing_requirements=missing_requirements,
+            backtest_result_id=backtest_result_id,
+            payload=payload,
+        )
+        self._db.record_strategy_promotion_event_sync(
+            strategy_id=strategy_id,
+            event_type=_AUDIT_ONLY_LIFECYCLE_TRANSITIONS[target_stage],
+            from_stage=from_stage,
+            to_stage=target_stage,
+            actor=actor,
+            payload=payload,
+        )
+        return self._normalize_state(state)
+
     def list_states(self) -> list[dict[str, Any]]:
         return [
             self._normalize_state(row)
@@ -121,6 +199,29 @@ class StrategyPromotionPipeline:
             },
         )
 
+    def _record_rejected_controlled_bridge_pilot(
+        self,
+        strategy_id: str,
+        *,
+        reason: str,
+        actor: str | None,
+    ) -> None:
+        self._db.record_strategy_promotion_event_sync(
+            strategy_id=strategy_id,
+            event_type="controlled_bridge_pilot_rejected",
+            from_stage=None,
+            to_stage="controlled_bridge_pilot_blocked",
+            actor=actor,
+            payload={
+                "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
+                "reason": reason,
+                "controlled_bridge_pilot_enabled": False,
+                "live_like_enabled": False,
+                "broker_submission_enabled": False,
+                "does_not_submit_broker_orders": True,
+            },
+        )
+
     def _normalize_state(self, row: dict[str, Any]) -> dict[str, Any]:
         missing = _json_list(row.get("missing_requirements_json"))
         payload = _json_object(row.get("payload_json"))
@@ -130,6 +231,7 @@ class StrategyPromotionPipeline:
             "live_like_enabled": bool(row.get("live_like_enabled")),
             "missing_requirements": missing,
             "payload": payload,
+            "lifecycle": _lifecycle_metadata(str(row.get("stage") or "research")),
         }
 
 
@@ -147,6 +249,29 @@ def _missing_requirements(readiness: dict[str, Any]) -> list[str]:
 
 def _is_promotable(readiness: dict[str, Any]) -> bool:
     return bool(readiness.get("is_promotable")) and not _missing_requirements(readiness)
+
+
+def _lifecycle_metadata(stage: str) -> dict[str, Any]:
+    return {
+        "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
+        "stage": stage,
+        "supported_stages": list(STRATEGY_PROMOTION_LIFECYCLE_STAGES),
+        "audit_only": True,
+        "does_not_authorize_execution": True,
+        "broker_submission_enabled": False,
+        "manual_confirmation_required_for_live_like": True,
+        "disabled_stages": ["controlled_bridge_pilot", "live_like"],
+        "terminal": stage == "retired",
+        "allowed_operator_actions": _allowed_lifecycle_actions(stage),
+    }
+
+
+def _allowed_lifecycle_actions(stage: str) -> list[str]:
+    if stage == "retired":
+        return ["review_history"]
+    if stage == "paused":
+        return ["review_readiness", "retire"]
+    return ["review_readiness", "pause", "retire"]
 
 
 def _int_or_none(value: Any) -> int | None:

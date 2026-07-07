@@ -645,7 +645,17 @@ gateway 事件创建、OMS 变更和生产账本写入。Automation Cockpit 和 
 提醒先比对证据，再考虑任何账本更新。
 该面板也会只读展示 Automation Cockpit 中的策略晋级状态：策略 id、生命周期阶段、
 paper/shadow 门禁状态、缺失要求、可选回测证据 id，以及 live-like disabled 边界。
-它不会提供 live 晋级控件。
+当策略被人工暂停或退役时，面板会显示生命周期仅审计、不授权执行、受控桥接试点关闭
+等标记。它不会提供 live 晋级、受控桥接试点、券商提交、撤单或账本同步控件。
+策略生命周期审计接口只记录状态与事件：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/strategy-promotion/states` | 读取策略晋级 / 生命周期状态 |
+| POST | `/api/strategy-promotion/{strategy_id}/promote` | 在 readiness 证据满足时记录进入 paper/shadow；live-like 仍默认拒绝 |
+| POST | `/api/strategy-promotion/{strategy_id}/lifecycle` | 记录人工暂停或退役生命周期状态；controlled bridge pilot 默认拒绝 |
+| GET | `/api/strategy-promotion/{strategy_id}/events` | 读取策略晋级与生命周期审计事件 |
+
 手工票据 dry-run 会记录 accepted 或 rejected 验证事件用于审计，包括 kill-switch
 拒绝，但不会改变 OMS 状态，也不会提交券商订单。手工票据创建后，manual-execution
 preview 可以按操作者录入的成交价格、数量、手续费、税费和过户费计算成交总额、总成本、

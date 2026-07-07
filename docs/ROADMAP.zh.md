@@ -126,7 +126,8 @@ v1.7 是受控券商执行桥接，不是默认交易机器人。
   方便运行手册复核连接器降级时仍能看到执行权限边界。
 * 同一个 Decision Cockpit 面板会只读展示策略晋级状态，包括 lifecycle stage、
   paper/shadow 门禁状态、缺失要求、可选回测证据 id，以及明确的 live-like disabled
-  边界；策略晋级状态只说明生命周期和证据准备度，不会单独授权执行。
+  边界；人工暂停或退役会作为 audit-only 生命周期证据展示，controlled bridge pilot
+  仍默认拒绝并记录审计事件。策略晋级状态只说明生命周期和证据准备度，不会单独授权执行。
 * 每个 live-like 动作都必须经过账户事实、研究证据、风控、paper/shadow 和人工
   确认。
 * 券商回报或导入成交先进入 broker evidence，再通过执行对账检查，不能直接改
