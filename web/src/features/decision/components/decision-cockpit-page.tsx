@@ -1392,6 +1392,18 @@ function automationRecommendedActionLabel(value: string, locale: Locale) {
       en: 'confirm or cancel order',
       zh: '确认或取消订单',
     },
+    inspect_failed_paper_shadow_run: {
+      en: 'inspect failed paper/shadow run',
+      zh: '检查失败的 paper/shadow 运行',
+    },
+    inspect_scheduler_failure: {
+      en: 'inspect scheduler failure',
+      zh: '检查调度失败',
+    },
+    inspect_failed_automation_run: {
+      en: 'inspect failed automation run',
+      zh: '检查失败的自动化运行',
+    },
     review_broker_evidence_mismatch: {
       en: 'review broker evidence mismatch',
       zh: '复核券商证据不匹配',
@@ -1421,6 +1433,12 @@ function automationNextAction(
       locale,
     );
   }
+  const primaryAlertAction = automationOpenAlertSuggestedAction(
+    cockpit.open_alerts[0],
+  );
+  if (primaryAlertAction) {
+    return automationRecommendedActionLabel(primaryAlertAction, locale);
+  }
   if (cockpit.open_alert_count > 0) {
     return locale === 'zh' ? '复核自动化告警' : 'review automation alerts';
   }
@@ -1433,6 +1451,43 @@ function automationNextAction(
   return locale === 'zh'
     ? '运行盘中 paper/shadow'
     : 'run intraday paper/shadow';
+}
+
+function automationOpenAlertSuggestedAction(
+  alert: AutomationCockpitResponse['open_alerts'][number] | undefined,
+) {
+  const payload = objectRecord(alert?.payload);
+  const suggestedAction = payload?.suggested_action;
+  return typeof suggestedAction === 'string' && suggestedAction.trim()
+    ? suggestedAction.trim()
+    : '';
+}
+
+function automationOpenAlertReviewLabels(
+  payload: Record<string, unknown> | null,
+  locale: Locale,
+) {
+  const labels: string[] = [];
+  const suggestedAction =
+    typeof payload?.suggested_action === 'string'
+      ? payload.suggested_action.trim()
+      : '';
+  if (suggestedAction) {
+    labels.push(automationRecommendedActionLabel(suggestedAction, locale));
+  }
+  if (payload?.requires_manual_review === true) {
+    labels.push(locale === 'zh' ? '需要人工复核' : 'Manual review required');
+  }
+  if (payload?.retry_recommended === true) {
+    labels.push(locale === 'zh' ? '建议重试' : 'Retry recommended');
+  }
+  if (payload?.does_not_submit_broker_order === true) {
+    labels.push(locale === 'zh' ? '不会提交券商订单' : 'No broker submission');
+  }
+  if (payload?.does_not_mutate_production_ledger === true) {
+    labels.push(locale === 'zh' ? '不会改写账本' : 'No ledger mutation');
+  }
+  return labels;
 }
 
 function brokerGatewayDisplayName(
@@ -2230,8 +2285,13 @@ function AutomationCockpitPanel({
     locale,
   );
   const primaryOpenAlert = cockpit.open_alerts[0];
+  const primaryOpenAlertPayload = objectRecord(primaryOpenAlert?.payload);
   const openAlertManualExecutionEvidence = manualExecutionEvidenceForPayload(
-    objectRecord(primaryOpenAlert?.payload),
+    primaryOpenAlertPayload,
+    locale,
+  );
+  const openAlertReviewLabels = automationOpenAlertReviewLabels(
+    primaryOpenAlertPayload,
     locale,
   );
   const showExecutionReconciliation =
@@ -2331,6 +2391,15 @@ function AutomationCockpitPanel({
             {primaryOpenAlert.detail ? (
               <div className="app-muted mt-1 break-words text-xs leading-5">
                 {primaryOpenAlert.detail}
+              </div>
+            ) : null}
+            {openAlertReviewLabels.length ? (
+              <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                {openAlertReviewLabels.map((label) => (
+                  <span className="app-chip" key={label}>
+                    {label}
+                  </span>
+                ))}
               </div>
             ) : null}
             {openAlertManualExecutionEvidence ? (

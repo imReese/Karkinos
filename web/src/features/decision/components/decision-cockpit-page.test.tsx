@@ -2384,6 +2384,76 @@ test('surfaces manual execution alert evidence in automation cockpit without con
   expect(automation.textContent).not.toContain('Cancel broker order');
 });
 
+test('surfaces failed paper shadow automation recovery action without execution controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v1',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        default_execution_mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+        latest_runs: [],
+        limitations: ['Live broker submission is disabled by default.'],
+      },
+      gateways: [],
+      open_alert_count: 1,
+      open_alerts: [
+        {
+          id: 11,
+          alert_type: 'automation_run',
+          severity: 'warning',
+          status: 'open',
+          title: 'Paper/shadow automation run failed',
+          detail:
+            'Automation run market_session:2026-07-02:abc ended with paper_shadow_failed. Paper/shadow run failed; no broker order was submitted.',
+          created_at: '2026-07-02T10:05:00+08:00',
+          payload: {
+            run_status: 'paper_shadow_failed',
+            run_type: 'market_session',
+            execution_mode: 'paper_shadow',
+            retry_state: {
+              attempt: 2,
+              max_attempts: 2,
+              retryable: true,
+              previous_attempts: 1,
+            },
+            suggested_action: 'inspect_failed_paper_shadow_run',
+            requires_manual_review: true,
+            retry_recommended: true,
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        },
+      ],
+      recent_runs: [],
+      promotion_states: [],
+      execution_reconciliation_open_items: [],
+      limitations: ['Cockpit summary is read-only.'],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+
+  expect(automation.textContent).toContain(
+    'Next: inspect failed paper/shadow run',
+  );
+  expect(automation.textContent).toContain(
+    'Paper/shadow automation run failed',
+  );
+  expect(automation.textContent).toContain('inspect failed paper/shadow run');
+  expect(automation.textContent).toContain('Manual review required');
+  expect(automation.textContent).toContain('Retry recommended');
+  expect(automation.textContent).toContain('No broker submission');
+  expect(automation.textContent).toContain('No ledger mutation');
+  expect(automation.textContent).not.toContain('Submit broker order');
+  expect(automation.textContent).not.toContain('Cancel broker order');
+  expect(automation.textContent).not.toContain('Sync ledger');
+});
+
 test('surfaces latest execution reconciliation run without ledger mutation controls', async () => {
   renderDecisionCockpit({
     locale: 'en',
