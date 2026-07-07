@@ -320,6 +320,52 @@ def test_operations_today_synthesizes_review_queue_for_legacy_diverged_run() -> 
     ]
 
 
+def test_operations_today_synthesizes_review_queue_for_missing_simulation() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:missing",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "missing",
+            "status": "review_required",
+            "order_intent_count": 1,
+            "simulated_order_count": 0,
+            "simulated_fill_count": 0,
+            "divergence_status": "review_required",
+            "next_manual_review_step": "review_shadow_divergence",
+            "limitations_json": '["order_intent[1] missing estimated_price"]',
+            "payload_json": (
+                '{"divergence_summary": {"execution_comparison": '
+                '{"missing_order_intent_refs": ["action:ACTION-1"]}}}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    assert summary["paper_shadow"]["review_queue"] == [
+        {
+            "review_id": "shadow:2026-07-01:missing:ACTION-1",
+            "order_intent_ref": "action:ACTION-1",
+            "order_id": None,
+            "symbol": None,
+            "status": "missing_simulation",
+            "divergence_status": "review_required",
+            "severity": "warning",
+            "required_action": "review_shadow_divergence",
+            "reason": (
+                "Paper/shadow simulation is missing for action:ACTION-1; "
+                "review the order intent before manual confirmation."
+            ),
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+        }
+    ]
+
+
 def test_operations_today_marks_running_paper_shadow_run_as_waiting() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),

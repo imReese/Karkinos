@@ -422,6 +422,7 @@ def _paper_shadow_run_summary(
             run_id=run.get("run_id"),
             status=status,
             orders=orders,
+            divergence_summary=_dict(payload.get("divergence_summary")),
         ),
         "divergence_summary": _dict(payload.get("divergence_summary")),
     }
@@ -432,6 +433,7 @@ def _fallback_paper_shadow_review_queue(
     run_id: Any,
     status: str,
     orders: list[dict[str, Any]],
+    divergence_summary: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     run_status = str(status or "").strip().lower()
     if run_status in {"not_run", "not_required", "within_expectations"}:
@@ -445,6 +447,12 @@ def _fallback_paper_shadow_review_queue(
         )
         if item:
             queue.append(item)
+    queue.extend(
+        _fallback_missing_simulation_review_items(
+            run_id=run_id,
+            divergence_summary=divergence_summary,
+        )
+    )
     return queue
 
 
@@ -529,6 +537,34 @@ def _fallback_review_suffix(value: str) -> str:
     if ":" in text:
         return text.split(":", 1)[1]
     return text or "unknown"
+
+
+def _fallback_missing_simulation_review_items(
+    *,
+    run_id: Any,
+    divergence_summary: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    execution = _dict(_dict(divergence_summary).get("execution_comparison"))
+    missing_refs = _list(execution.get("missing_order_intent_refs"))
+    return [
+        {
+            "review_id": f"{run_id}:{_fallback_review_suffix(intent_ref)}",
+            "order_intent_ref": intent_ref,
+            "order_id": None,
+            "symbol": None,
+            "status": "missing_simulation",
+            "divergence_status": "review_required",
+            "severity": "warning",
+            "required_action": "review_shadow_divergence",
+            "reason": (
+                f"Paper/shadow simulation is missing for {intent_ref}; "
+                "review the order intent before manual confirmation."
+            ),
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+        }
+        for intent_ref in missing_refs
+    ]
 
 
 def _paper_shadow_effective_status(

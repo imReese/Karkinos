@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Operations Today fallback paper/shadow review queues now also
+  cover persisted `review_required` runs whose divergence summary reports
+  missing simulated order-intent refs but whose payload lacks stored orders or
+  `review_queue` items. The synthesized item preserves run id, order-intent
+  ref, `missing_simulation` status, review action, and no-broker-submission /
+  no-production-ledger-mutation safety flags. Assumption: a missing simulation
+  is still actionable operator review work and should not disappear from
+  Operations/Overview/Decision simply because an older persisted payload had
+  only divergence-summary evidence. Validation:
+  `uv run python -m pytest tests/test_operations_today.py -k missing_simulation`.
+  Risk impact: improves v1.6.1 paper/shadow runbook continuity for
+  review-required runs without rerunning simulations, contacting brokers,
+  creating broker orders, mutating OMS, writing production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Operations Today now synthesizes a minimal read-only
   paper/shadow review queue for legacy or partial persisted runs that have
   diverged/failed order evidence but no stored `review_queue` payload. The
