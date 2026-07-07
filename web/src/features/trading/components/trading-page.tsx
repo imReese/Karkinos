@@ -1458,6 +1458,44 @@ function ManualTicketExportPanel({
     null;
   const gateRows = manualExecutionGateRows(gateSummary);
   const record = executionRecord;
+  const previewSafetyValue = (key: string) => {
+    const value = executionPreviewResult?.safety?.[key];
+    return typeof value === 'boolean' ? value : undefined;
+  };
+  const previewSafetyRows = executionPreviewResult
+    ? [
+        {
+          key: 'broker_submission_enabled',
+          value: previewSafetyValue('broker_submission_enabled'),
+        },
+        {
+          key: 'submitted_to_broker',
+          value:
+            previewSafetyValue('submitted_to_broker') ??
+            executionPreviewResult.submitted_to_broker,
+        },
+        {
+          key: 'requires_human_broker_entry',
+          value: previewSafetyValue('requires_human_broker_entry'),
+        },
+        {
+          key: 'requires_operator_save',
+          value:
+            previewSafetyValue('requires_operator_save') ??
+            ledgerDraft?.requires_operator_save,
+        },
+        {
+          key: 'does_not_mutate_oms',
+          value: previewSafetyValue('does_not_mutate_oms'),
+        },
+        {
+          key: 'does_not_mutate_production_ledger',
+          value:
+            previewSafetyValue('does_not_mutate_production_ledger') ??
+            executionPreviewResult.does_not_mutate_production_ledger,
+        },
+      ].filter((row) => typeof row.value === 'boolean')
+    : [];
   const handlePreviewSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -1793,18 +1831,14 @@ function ManualTicketExportPanel({
               <div className="app-muted text-xs">
                 {labels.manualExecutionSafety}
               </div>
-              <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
-                {flagText(
-                  'submitted_to_broker',
-                  executionPreviewResult.submitted_to_broker,
-                )}
-              </div>
-              <div className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]">
-                {flagText(
-                  'does_not_mutate_production_ledger',
-                  executionPreviewResult.does_not_mutate_production_ledger,
-                )}
-              </div>
+              {previewSafetyRows.map((row) => (
+                <div
+                  className="mt-1 break-words font-mono text-xs text-[var(--app-soft)]"
+                  key={row.key}
+                >
+                  {flagText(row.key, row.value)}
+                </div>
+              ))}
             </div>
           </div>
           {gateRows.length ? (

@@ -1270,7 +1270,12 @@ test('previews manual execution draft without ledger or broker submission contro
       'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     ),
   ).toBeTruthy();
-  expect(screen.getByText('requires_operator_save=true')).toBeTruthy();
+  expect(
+    screen.getAllByText('requires_operator_save=true').length,
+  ).toBeGreaterThan(1);
+  expect(screen.getByText('broker_submission_enabled=false')).toBeTruthy();
+  expect(screen.getByText('requires_human_broker_entry=true')).toBeTruthy();
+  expect(screen.getByText('does_not_mutate_oms=true')).toBeTruthy();
   expect(
     screen.getAllByText('does_not_mutate_production_ledger=true').length,
   ).toBeGreaterThan(0);
@@ -1341,7 +1346,9 @@ test('records manual execution evidence without saving ledger or submitting brok
   expect(
     screen.getAllByText('submitted_to_broker=false').length,
   ).toBeGreaterThan(1);
-  expect(screen.getByText('does_not_mutate_oms=true')).toBeTruthy();
+  expect(
+    screen.getAllByText('does_not_mutate_oms=true').length,
+  ).toBeGreaterThan(1);
   expect(screen.getByText('requires_operator_ledger_save=true')).toBeTruthy();
   expect(
     screen.getAllByText('does_not_mutate_production_ledger=true').length,
