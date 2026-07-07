@@ -6,6 +6,17 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: Overview Today's to-dos now renders
+  `paper_shadow.manual_handoff` as user-facing manual-confirmation handoff
+  evidence, including ready/blocked status, review queue count, and explicit
+  no-broker / no-ledger-mutation safety flags. Assumption: Overview handoff
+  text is runbook evidence for the operator's daily queue and is not execution
+  authority by itself. Validation:
+  `npm --prefix web test -- overview-page.test.tsx -t "accepted paper shadow review"`.
+  Risk impact: improves v1.6.1 Overview visibility for the
+  paper/shadow-to-manual-confirmation gate without contacting brokers, storing
+  credentials, creating broker orders, mutating OMS, writing production ledger
+  facts, enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-07: Operations Today now exposes a structured
   `paper_shadow.manual_handoff` gate with readiness, status, blockers, required
   actions, review queue count, review metadata, and explicit no-broker /
