@@ -922,6 +922,7 @@ function paperShadowOverviewEvidenceSummary(
   }
   const nextStep = paperShadow.next_manual_review_step;
   const shouldSummarize =
+    Boolean(paperShadow.manual_handoff) ||
     nextStep === 'review_shadow_divergence' ||
     nextStep === 'resolve_shadow_divergence' ||
     paperShadow.status === 'review_required' ||
@@ -983,6 +984,7 @@ function paperShadowOverviewEvidenceSummary(
     divergedRefs.length
       ? `${labels.diverged}: ${divergedRefs.join(locale === 'zh' ? '；' : '; ')}`
       : '',
+    paperShadowManualHandoffSummary(paperShadow, locale),
     paperShadowReviewQueueSummary(paperShadow, locale),
     slippage !== null
       ? `${labels.slippage}: ${formatCurrencyValue(slippage)}`
@@ -991,6 +993,88 @@ function paperShadowOverviewEvidenceSummary(
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+function paperShadowManualHandoffSummary(
+  paperShadow: OperationsTodayResponse['paper_shadow'],
+  locale: Locale,
+) {
+  const handoff = paperShadow.manual_handoff;
+  if (!handoff) {
+    return null;
+  }
+  const labels =
+    locale === 'zh'
+      ? {
+          prefix: '人工确认交接',
+          queue: '复核队列',
+          item: '项',
+          items: '项',
+          noBrokerSubmission: '不会提交券商订单',
+          noLedgerMutation: '不会修改生产账本',
+        }
+      : {
+          prefix: 'Manual handoff',
+          queue: 'Review queue',
+          item: 'item',
+          items: 'items',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const queueCount = handoff.review_queue_count ?? 0;
+  return [
+    `${labels.prefix}: ${paperShadowManualHandoffStatusLabel(
+      handoff.status,
+      locale,
+    )}`,
+    queueCount > 0
+      ? `${labels.queue}: ${queueCount} ${
+          queueCount === 1 ? labels.item : labels.items
+        }`
+      : '',
+    handoff.does_not_submit_broker_order ? labels.noBrokerSubmission : '',
+    handoff.does_not_mutate_production_ledger ? labels.noLedgerMutation : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function paperShadowManualHandoffStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    ready_after_accepted_review: {
+      en: 'Ready after accepted simulation review',
+      zh: '已接受模拟复核，可人工确认',
+    },
+    ready_after_clean_simulation: {
+      en: 'Ready after clean simulation',
+      zh: '模拟无偏差，可人工确认',
+    },
+    blocked_by_unresolved_divergence: {
+      en: 'Blocked by unresolved simulation divergence',
+      zh: '模拟偏差未处理，暂不可人工确认',
+    },
+    blocked_by_failed_run: {
+      en: 'Blocked by failed simulation run',
+      zh: '模拟运行失败，暂不可人工确认',
+    },
+    blocked_by_review_requested_rerun: {
+      en: 'Blocked until simulation reruns',
+      zh: '需要重新运行模拟后再确认',
+    },
+    paper_shadow_required: {
+      en: 'Simulation required before manual confirmation',
+      zh: '人工确认前需要模拟复核',
+    },
+    waiting_for_paper_shadow_run: {
+      en: 'Waiting for simulation result',
+      zh: '等待模拟复核结果',
+    },
+    not_required: {
+      en: 'No manual handoff required',
+      zh: '无需人工确认交接',
+    },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
 }
 
 function paperShadowReviewQueueSummary(

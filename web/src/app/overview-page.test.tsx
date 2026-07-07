@@ -1043,6 +1043,19 @@ test('surfaces accepted paper shadow review as manual confirmation handoff', asy
           reviewer: 'local-operator',
           next_manual_review_step: 'review_manual_confirmation',
           last_run_at: '2026-02-10T10:05:00+08:00',
+          manual_handoff: {
+            ready: true,
+            status: 'ready_after_accepted_review',
+            blockers: [],
+            required_actions: ['review_manual_confirmation'],
+            review_queue_count: 1,
+            highest_severity: 'warning',
+            review_status: 'accepted_for_manual_confirmation',
+            reviewed_at: '2026-02-10T10:05:00+08:00',
+            reviewer: 'local-operator',
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
           orders: [
             {
               order_id: 'SHADOW-ACCEPTED',
@@ -1069,10 +1082,17 @@ test('surfaces accepted paper shadow review as manual confirmation handoff', asy
       .getByRole('link', { name: /Enter manual confirmation/ })
       .getAttribute('href'),
   ).toBe('/trading');
+  expect(todayQueue.textContent).toContain(
+    'Manual handoff: Ready after accepted simulation review',
+  );
+  expect(todayQueue.textContent).toContain('Review queue: 1 item');
+  expect(todayQueue.textContent).toContain('No broker submission');
+  expect(todayQueue.textContent).toContain('No production ledger mutation');
   expect(todayQueue.textContent).not.toContain('review_manual_confirmation');
   expect(todayQueue.textContent).not.toContain(
     'accepted_for_manual_confirmation',
   );
+  expect(todayQueue.textContent).not.toContain('ready_after_accepted_review');
   expect(todayQueue.textContent).not.toContain('resolve_shadow_divergence');
   expect(todayQueue.textContent).not.toContain('Submit broker order');
 });
