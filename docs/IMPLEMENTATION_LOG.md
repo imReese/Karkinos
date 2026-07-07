@@ -6,6 +6,20 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-07: CI repository hygiene now blocks tracked `reports/` artifacts in
+  the same private-artifact guard that already rejects runtime databases,
+  logs, exports, screenshots, local secrets, Codex/agent state, and generated
+  skill locks. Assumption: generated reports are local run evidence and should
+  remain outside source control even when useful for operator review.
+  Validation:
+  `uv run python -m pytest tests/test_ci_workflow.py -k repository_hygiene`,
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook`,
+  and
+  `uv run python -m pytest tests/test_acceptance_audit_cli.py -k operations_runbook`.
+  Risk impact: strengthens the v1.6 Operations source-control boundary only;
+  it does not change runtime paper/shadow behavior, contact brokers, create
+  broker orders, mutate OMS, write production ledger facts, enable automatic
+  trading, or bypass manual confirmation.
 - 2026-07-07: `/api/operations/today` now feeds the `operations_runbook`
   acceptance audit export into the Operations runbook, so the
   `acceptance_audit` subsystem reports real audit completion evidence such as

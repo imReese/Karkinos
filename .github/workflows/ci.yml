@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          forbidden_pattern='(^|/)(\.env$|\.env\.local$|\.env\.production$|.*\.(db|sqlite|duckdb)$|data/store/|logs/|exports/|screenshots/|\.agents/|skills-lock\.json$)'
+          forbidden_pattern='(^|/)(\.env$|\.env\.local$|\.env\.production$|.*\.(db|sqlite|duckdb)$|data/store/|logs/|exports/|screenshots/|reports/|\.agents/|skills-lock\.json$)'
           tracked_forbidden="$(git ls-files | grep -E "${forbidden_pattern}" || true)"
 
           if [[ -n "${tracked_forbidden}" ]]; then
