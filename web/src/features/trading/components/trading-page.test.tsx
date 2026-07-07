@@ -1178,6 +1178,18 @@ test('exports confirmed manual ticket without broker submission controls', async
   expect(screen.getByText('weighted_average_preview')).toBeTruthy();
   expect(screen.getByText('Trading session')).toBeTruthy();
   expect(screen.getByText('regular_exchange_session_only')).toBeTruthy();
+  expect(screen.getByText('Export file')).toBeTruthy();
+  expect(
+    screen.getByText('karkinos-manual-ticket-ORD-CONFIRMED.json'),
+  ).toBeTruthy();
+  expect(screen.getByText('MIME type')).toBeTruthy();
+  expect(screen.getByText('application/json')).toBeTruthy();
+  expect(screen.getByText('Export schema')).toBeTruthy();
+  expect(screen.getByText('karkinos.manual_ticket_export.v1')).toBeTruthy();
+  expect(screen.getByText('Export limitations')).toBeTruthy();
+  expect(
+    screen.getByText('This prepares a copyable manual-ticket export only.'),
+  ).toBeTruthy();
   expect(screen.getByText('Broker copy text')).toBeTruthy();
   expect(screen.getByText('submitted_to_broker=false')).toBeTruthy();
   expect(screen.getByText(/requires_human_broker_entry/)).toBeTruthy();

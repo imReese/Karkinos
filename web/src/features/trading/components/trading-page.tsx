@@ -1359,6 +1359,25 @@ function manualExecutionGateRows(
     );
 }
 
+function manualTicketExportReviewLabels(locale: Locale) {
+  if (locale === 'zh') {
+    return {
+      fileName: '导出文件',
+      mimeType: 'MIME 类型',
+      schema: '导出 Schema',
+      format: '导出格式',
+      limitations: '导出限制',
+    };
+  }
+  return {
+    fileName: 'Export file',
+    mimeType: 'MIME type',
+    schema: 'Export schema',
+    format: 'Export format',
+    limitations: 'Export limitations',
+  };
+}
+
 function PreviewMetric({
   label,
   value,
@@ -1404,9 +1423,11 @@ function ManualTicketExportPanel({
   ) => Promise<void>;
 }) {
   const labels = useCopy().trading.page;
+  const { locale } = usePreferences();
   if (!result) {
     return null;
   }
+  const exportReviewLabels = manualTicketExportReviewLabels(locale);
   const operatorForm = manualTicketFormFromResult(result);
   const feeTax = operatorForm?.fee_tax_assumptions ?? null;
   const session = operatorForm?.trading_session_constraints ?? null;
@@ -1469,6 +1490,38 @@ function ManualTicketExportPanel({
           {labels.manualTicketExportSafety}
         </span>
       </div>
+      <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <PreviewMetric
+          label={exportReviewLabels.fileName}
+          value={result.export.file_name}
+        />
+        <PreviewMetric
+          label={exportReviewLabels.mimeType}
+          value={result.export.mime_type}
+        />
+        <PreviewMetric
+          label={exportReviewLabels.schema}
+          value={result.export.schema_version}
+        />
+        <PreviewMetric
+          label={exportReviewLabels.format}
+          value={result.export.format}
+        />
+      </div>
+      {result.limitations?.length ? (
+        <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+          <div className="app-muted text-xs">
+            {exportReviewLabels.limitations}
+          </div>
+          <ul className="mt-2 grid gap-1 text-sm text-[var(--app-soft)]">
+            {result.limitations.map((limitation) => (
+              <li className="break-words" key={limitation}>
+                {limitation}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {operatorForm ? (
         <div className="mt-3 grid min-w-0 gap-3 lg:grid-cols-3">
           <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
