@@ -1537,6 +1537,8 @@ function operationsSchedulerEvidenceSummary(
         ? `运行 ${scheduler.run_id}`
         : `Run ${scheduler.run_id}`
       : '',
+    schedulerInputSnapshotSummary(scheduler, locale),
+    schedulerRerunKeySummary(scheduler.idempotency_key, locale),
     schedulerRetrySummary(scheduler.retry_state, locale),
     schedulerErrorSummary(scheduler.error),
     scheduler.does_not_submit_broker_order
@@ -1546,6 +1548,60 @@ function operationsSchedulerEvidenceSummary(
       : '',
   ].filter(Boolean);
   return parts.join(locale === 'zh' ? ' · ' : ' · ');
+}
+
+function schedulerInputSnapshotSummary(
+  scheduler: NonNullable<OperationsTodayResponse['scheduler']>,
+  locale: Locale,
+) {
+  const snapshot = scheduler.input_snapshot;
+  if (!snapshot) {
+    return '';
+  }
+  const orderIntentCount = numericPaperShadowValue(snapshot.order_intent_count);
+  const sourceDecision = stringPaperShadowSnapshotValue(
+    snapshot.source_decision,
+  );
+  const fingerprint =
+    stringPaperShadowSnapshotValue(snapshot.input_fingerprint) ??
+    stringPaperShadowSnapshotValue(scheduler.input_fingerprint);
+  const labels =
+    locale === 'zh'
+      ? {
+          input: '输入快照',
+          orderIntent: '订单意图',
+          source: '源决策',
+          fingerprint: '指纹',
+        }
+      : {
+          input: 'Input snapshot',
+          orderIntent: 'order intent',
+          source: 'Source',
+          fingerprint: 'Fingerprint',
+        };
+  const parts = [
+    orderIntentCount === null
+      ? ''
+      : `${orderIntentCount} ${labels.orderIntent}${
+          locale === 'en' && orderIntentCount !== 1 ? 's' : ''
+        }`,
+    sourceDecision
+      ? `${labels.source} ${formatPublicStatus(sourceDecision, locale)}`
+      : '',
+    fingerprint ? `${labels.fingerprint} ${fingerprint.slice(0, 12)}` : '',
+  ].filter(Boolean);
+  return parts.length ? `${labels.input}: ${parts.join(' · ')}` : '';
+}
+
+function schedulerRerunKeySummary(
+  idempotencyKey: string | null | undefined,
+  locale: Locale,
+) {
+  const key = stringPaperShadowSnapshotValue(idempotencyKey);
+  if (!key) {
+    return '';
+  }
+  return locale === 'zh' ? `重跑键: ${key}` : `Rerun key: ${key}`;
 }
 
 function schedulerRetrySummary(
