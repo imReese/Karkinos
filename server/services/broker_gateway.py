@@ -414,6 +414,19 @@ class BrokerGatewayService:
             reason="manual broker ticket created",
             actor=actor,
         )
+        required_gate_summary = self._required_gate_summary(
+            updated,
+            gateway_evidence=evidence,
+        )
+        validation = {
+            "manual_confirmation_status": "pass",
+            "gateway_evidence_status": "pass",
+            "gateway_evidence": evidence,
+            "controlled_bridge_policy": policy_snapshot,
+            "broker_submission_enabled": bool(updated["broker_submission_enabled"]),
+            "requires_human_broker_entry": True,
+            "required_gate_summary": required_gate_summary,
+        }
         event = self._db.record_broker_gateway_event_sync(
             gateway_id="manual_ticket",
             event_type="manual_ticket_created",
@@ -425,6 +438,7 @@ class BrokerGatewayService:
                 "ticket": ticket,
                 "gateway_evidence": evidence,
                 "controlled_bridge_policy": policy_snapshot,
+                "required_gate_summary": required_gate_summary,
                 "submitted_to_broker": False,
             },
         )
@@ -434,6 +448,7 @@ class BrokerGatewayService:
             "status": "manual_ticket_created",
             "submitted_to_broker": False,
             "controlled_bridge_policy": policy_snapshot,
+            "validation": validation,
             "oms_order": updated,
             "ticket": ticket,
             "event_id": event["id"],

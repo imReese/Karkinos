@@ -2732,6 +2732,7 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
+                    "uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_gateway_creates_ticket_without_broker_submission tests/server/test_broker_gateway_routes.py::test_manual_ticket_route_returns_copyable_ticket -q",
                     "uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms tests/test_broker_gateway_service.py::test_manual_ticket_export_is_read_only_and_copy_safe tests/test_broker_gateway_service.py::test_manual_ticket_dry_run_records_accepted_event_without_oms_mutation -q",
                     "uv run python -m pytest tests/server/test_broker_gateway_routes.py::test_manual_ticket_preview_route_is_read_only -q",
                     'npm --prefix web test -- trading-page.test.tsx -t "exports confirmed manual ticket"',
