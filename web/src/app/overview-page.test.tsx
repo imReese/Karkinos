@@ -793,6 +793,15 @@ test('surfaces paper shadow divergence evidence summary in today todos', async (
           status: 'review_required',
           run_id: 'shadow:2026-02-10:review',
           input_fingerprint: 'review',
+          input_snapshot: {
+            schema_version: 'karkinos.paper_shadow_run.input_snapshot.v1',
+            plan_date: '2026-02-10',
+            input_fingerprint: 'review',
+            source_decision: 'buy',
+            order_intent_count: 1,
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
           order_intent_count: 1,
           simulated_order_count: 1,
           simulated_fill_count: 1,
@@ -950,6 +959,12 @@ test('surfaces paper shadow divergence evidence summary in today todos', async (
     'Paper/shadow: 1 order intent, 1 sim order, 1 sim fill',
   );
   expect(todayQueue.textContent).toContain(
+    'Input snapshot: 1 order intent · Source Buy · Fingerprint review',
+  );
+  expect(todayQueue.textContent).toContain(
+    'Snapshot safety: No broker submission · No production ledger mutation',
+  );
+  expect(todayQueue.textContent).toContain(
     'Diverged: Simulation review order · SHADOW-2026-02-10-1',
   );
   expect(todayQueue.textContent).toContain(
@@ -976,6 +991,9 @@ test('surfaces paper shadow divergence evidence summary in today todos', async (
   );
   expect(todayQueue.textContent).toContain('Sim slippage: ¥4.50');
   expect(todayQueue.textContent).toContain('No broker submission');
+  expect(todayQueue.textContent).not.toContain(
+    'karkinos.paper_shadow_run.input_snapshot.v1',
+  );
   expect(todayQueue.textContent).not.toContain('review_shadow_divergence');
   expect(todayQueue.textContent).not.toContain('partially_filled');
   expect(todayQueue.textContent).not.toContain('oms_transition:');

@@ -981,6 +981,7 @@ function paperShadowOverviewEvidenceSummary(
   );
   return [
     `${labels.prefix}: ${countText}`,
+    ...paperShadowInputSnapshotSummary(paperShadow, locale),
     divergedRefs.length
       ? `${labels.diverged}: ${divergedRefs.join(locale === 'zh' ? '；' : '; ')}`
       : '',
@@ -993,6 +994,69 @@ function paperShadowOverviewEvidenceSummary(
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+function paperShadowInputSnapshotSummary(
+  paperShadow: OperationsTodayResponse['paper_shadow'],
+  locale: Locale,
+) {
+  const snapshot = paperShadow.input_snapshot;
+  const orderIntentCount = numericPaperShadowValue(
+    snapshot?.order_intent_count,
+  );
+  const sourceDecision = stringPaperShadowSnapshotValue(
+    snapshot?.source_decision,
+  );
+  const fingerprint =
+    stringPaperShadowSnapshotValue(snapshot?.input_fingerprint) ??
+    stringPaperShadowSnapshotValue(paperShadow.input_fingerprint);
+  const labels =
+    locale === 'zh'
+      ? {
+          input: '输入快照',
+          orderIntent: '订单意图',
+          source: '源决策',
+          fingerprint: '指纹',
+          safety: '快照安全边界',
+          noBrokerSubmission: '不会提交券商订单',
+          noLedgerMutation: '不会修改生产账本',
+        }
+      : {
+          input: 'Input snapshot',
+          orderIntent: 'order intent',
+          source: 'Source',
+          fingerprint: 'Fingerprint',
+          safety: 'Snapshot safety',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const inputParts = [
+    orderIntentCount === null
+      ? ''
+      : `${orderIntentCount} ${labels.orderIntent}${
+          locale === 'en' && orderIntentCount !== 1 ? 's' : ''
+        }`,
+    sourceDecision
+      ? `${labels.source} ${formatPublicStatus(sourceDecision, locale)}`
+      : '',
+    fingerprint ? `${labels.fingerprint} ${fingerprint.slice(0, 12)}` : '',
+  ].filter(Boolean);
+  const safetyParts = [
+    snapshot?.does_not_submit_broker_order === true
+      ? labels.noBrokerSubmission
+      : '',
+    snapshot?.does_not_mutate_production_ledger === true
+      ? labels.noLedgerMutation
+      : '',
+  ].filter(Boolean);
+  return [
+    inputParts.length ? `${labels.input}: ${inputParts.join(' · ')}` : '',
+    safetyParts.length ? `${labels.safety}: ${safetyParts.join(' · ')}` : '',
+  ].filter(Boolean);
+}
+
+function stringPaperShadowSnapshotValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function paperShadowManualHandoffSummary(

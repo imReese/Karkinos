@@ -1217,6 +1217,15 @@ test('renders paper shadow review queue as public operator review items', async 
         status: 'diverged',
         run_id: 'shadow:2026-06-12:partial',
         input_fingerprint: 'partial',
+        input_snapshot: {
+          schema_version: 'karkinos.paper_shadow_run.input_snapshot.v1',
+          plan_date: '2026-06-12',
+          input_fingerprint: 'partial',
+          source_decision: 'buy',
+          order_intent_count: 1,
+          does_not_submit_broker_order: true,
+          does_not_mutate_production_ledger: true,
+        },
         order_intent_count: 1,
         simulated_order_count: 1,
         simulated_fill_count: 1,
@@ -1370,9 +1379,18 @@ test('renders paper shadow review queue as public operator review items', async 
   );
   expect(plan.textContent).toContain('No broker submission');
   expect(plan.textContent).toContain('No production ledger mutation');
+  expect(plan.textContent).toContain(
+    'Input snapshot: 1 order intent · Source Buy · Fingerprint partial',
+  );
+  expect(plan.textContent).toContain(
+    'Snapshot safety: No broker submission · No production ledger mutation',
+  );
   expect(plan.textContent).not.toContain('resolve_shadow_divergence');
   expect(plan.textContent).not.toContain('partially_filled');
   expect(plan.textContent).not.toContain('oms_transition:');
+  expect(plan.textContent).not.toContain(
+    'karkinos.paper_shadow_run.input_snapshot.v1',
+  );
   expect(plan.textContent).not.toContain('Submit broker order');
 });
 
