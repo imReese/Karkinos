@@ -1210,6 +1210,7 @@ function paperShadowReviewQueueDetailItems(
           simulatedSlippage: '模拟滑点',
           expected: '预期',
           fill: '成交',
+          terminalOutcome: '终态结果',
           omsPath: 'OMS 路径',
           omsTransition: 'OMS 状态变更',
           evidence: '证据',
@@ -1225,6 +1226,7 @@ function paperShadowReviewQueueDetailItems(
           simulatedSlippage: 'Sim slippage',
           expected: 'Expected',
           fill: 'Fill',
+          terminalOutcome: 'Terminal outcome',
           omsPath: 'OMS path',
           omsTransition: 'OMS transition',
           evidence: 'Evidence',
@@ -1288,6 +1290,7 @@ function paperShadowReviewQueueDetailItems(
     .filter(Boolean)
     .join(' · ');
   const omsStatusPath = reviewQueueOmsStatusPath(item.oms_status_path, locale);
+  const terminalOutcome = reviewQueueTerminalOutcomeSummary(item, locale);
   const omsTransition = reviewQueueLatestOmsTransition(item, locale);
   const evidenceRefs = formatPaperShadowRefs(
     item.evidence_refs ?? [
@@ -1303,10 +1306,50 @@ function paperShadowReviewQueueDetailItems(
     constraints ? `${labels.constraints} ${constraints}` : '',
     costEvidence,
     marketContext,
+    terminalOutcome ? `${labels.terminalOutcome}: ${terminalOutcome}` : '',
     omsStatusPath ? `${labels.omsPath}: ${omsStatusPath}` : '',
     omsTransition ? `${labels.omsTransition}: ${omsTransition}` : '',
     evidenceRefs ? `${labels.evidence}: ${evidenceRefs}` : '',
   ].filter(Boolean);
+}
+
+function reviewQueueTerminalOutcomeSummary(
+  item: PaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const status = reviewQueueOmsStatusLabel(
+    item.terminal_status ?? undefined,
+    locale,
+  );
+  const reason = reviewQueueTerminalReasonLabel(
+    item.terminal_reason ?? undefined,
+    locale,
+  );
+  const transition = item.terminal_oms_transition_ref
+    ? formatPublicEvidenceReference(item.terminal_oms_transition_ref, locale)
+    : '';
+  return [status, reason, transition].filter(Boolean).join(' · ');
+}
+
+function reviewQueueTerminalReasonLabel(
+  reason: string | undefined,
+  locale: Locale,
+) {
+  const normalized = String(reason ?? '').trim();
+  if (!normalized) {
+    return '';
+  }
+  const labels: Record<string, Record<Locale, string>> = {
+    operator_cancelled: {
+      en: 'Operator cancelled simulation before fill',
+      zh: '操作员在模拟成交前取消',
+    },
+    paper_session_closed: {
+      en: 'Paper session closed before fill',
+      zh: '模拟交易时段结束，未成交前过期',
+    },
+  };
+  return labels[normalized]?.[locale] ?? formatPublicStatus(normalized, locale);
 }
 
 function reviewQueueOmsStatusPath(

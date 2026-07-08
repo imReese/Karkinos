@@ -131,6 +131,9 @@ export type PaperShadowReviewQueueItem = {
     expected_price?: string | number | null;
     simulated_fill_prices?: Array<string | number>;
   };
+  terminal_status?: string | null;
+  terminal_reason?: string | null;
+  terminal_oms_transition_ref?: string | null;
   oms_status_path?: string[];
   oms_transition_refs?: string[];
   oms_transitions?: Array<{

@@ -1128,6 +1128,7 @@ function paperShadowReviewQueueItemSummary(
           queueSlippage: '队列滑点',
           expected: '预期',
           fill: '成交',
+          terminalOutcome: '终态结果',
           omsPath: 'OMS 路径',
           omsTransition: 'OMS 状态变更',
           evidence: '证据',
@@ -1144,6 +1145,7 @@ function paperShadowReviewQueueItemSummary(
           queueSlippage: 'Queue slippage',
           expected: 'Expected',
           fill: 'Fill',
+          terminalOutcome: 'Terminal outcome',
           omsPath: 'OMS path',
           omsTransition: 'OMS transition',
           evidence: 'Evidence',
@@ -1208,6 +1210,7 @@ function paperShadowReviewQueueItemSummary(
     .filter(Boolean)
     .join(' · ');
   const omsStatusPath = paperShadowOmsStatusPath(item.oms_status_path, locale);
+  const terminalOutcome = paperShadowTerminalOutcomeSummary(item, locale);
   const omsTransition = paperShadowLatestOmsTransition(item, locale);
   const evidence = (item.evidence_refs ?? [])
     .slice(0, 6)
@@ -1220,12 +1223,52 @@ function paperShadowReviewQueueItemSummary(
     constraints ? `${labels.constraints} ${constraints}` : '',
     costs,
     marketContext,
+    terminalOutcome ? `${labels.terminalOutcome}: ${terminalOutcome}` : '',
     omsStatusPath ? `${labels.omsPath}: ${omsStatusPath}` : '',
     omsTransition ? `${labels.omsTransition}: ${omsTransition}` : '',
     evidence ? `${labels.evidence}: ${evidence}` : '',
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+function paperShadowTerminalOutcomeSummary(
+  item: OverviewPaperShadowReviewQueueItem,
+  locale: Locale,
+) {
+  const status = paperShadowOmsStatusLabel(
+    item.terminal_status ?? undefined,
+    locale,
+  );
+  const reason = paperShadowTerminalReasonLabel(
+    item.terminal_reason ?? undefined,
+    locale,
+  );
+  const transition = item.terminal_oms_transition_ref
+    ? formatPublicEvidenceReference(item.terminal_oms_transition_ref, locale)
+    : '';
+  return [status, reason, transition].filter(Boolean).join(' · ');
+}
+
+function paperShadowTerminalReasonLabel(
+  reason: string | undefined,
+  locale: Locale,
+) {
+  const normalized = String(reason ?? '').trim();
+  if (!normalized) {
+    return '';
+  }
+  const labels: Record<string, Record<Locale, string>> = {
+    operator_cancelled: {
+      en: 'Operator cancelled simulation before fill',
+      zh: '操作员在模拟成交前取消',
+    },
+    paper_session_closed: {
+      en: 'Paper session closed before fill',
+      zh: '模拟交易时段结束，未成交前过期',
+    },
+  };
+  return labels[normalized]?.[locale] ?? formatPublicStatus(normalized, locale);
 }
 
 function paperShadowOmsStatusPath(

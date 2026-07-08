@@ -1376,6 +1376,114 @@ test('renders paper shadow review queue as public operator review items', async 
   expect(plan.textContent).not.toContain('Submit broker order');
 });
 
+test('renders terminal paper shadow review reasons without raw reason codes', async () => {
+  renderDecisionCockpit({
+    operationsTodayResponse: {
+      schema_version: 'karkinos.operations_today.v1',
+      operations_date: '2026-06-12',
+      generated_at: '2026-06-12T09:32:00+08:00',
+      conclusion_status: 'manual_action_required',
+      primary_target: 'paper-shadow',
+      health: {
+        total: 8,
+        pass: 5,
+        degraded: 0,
+        blocked: 0,
+        manual_action_required: 2,
+        skipped: 1,
+      },
+      subsystems: [
+        {
+          id: 'paper_shadow',
+          status: 'manual_action_required',
+          tone: 'warning',
+          target: 'paper-shadow',
+          last_run_at: '2026-06-12T09:32:00+08:00',
+          next_action: 'resolve_shadow_divergence',
+          limitations: [],
+          detail_status: 'review_required',
+        },
+      ],
+      daily_plan: {
+        candidate_pool_count: 1,
+        manual_ready_count: 1,
+        blocked_count: 0,
+        order_intent_count: 1,
+        conclusion_status: 'manual_confirmation_ready',
+      },
+      paper_shadow: {
+        status: 'review_required',
+        run_id: 'shadow:2026-06-12:cancelled',
+        input_fingerprint: 'cancelled',
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 0,
+        divergence_reviewed_count: 0,
+        divergence_status: 'review_required',
+        next_manual_review_step: 'resolve_shadow_divergence',
+        last_run_at: '2026-06-12T09:32:00+08:00',
+        review_queue: [
+          {
+            review_id: 'shadow:2026-06-12:cancelled:ACTION-1',
+            order_intent_ref: 'action:ACTION-1',
+            order_id: 'SHADOW-CANCELLED',
+            symbol: '600519',
+            status: 'cancelled',
+            divergence_status: 'review_required',
+            severity: 'warning',
+            required_action: 'resolve_shadow_divergence',
+            reason:
+              'Paper/shadow order cancelled; review terminal simulation reason before manual confirmation.',
+            terminal_status: 'cancelled',
+            terminal_reason: 'operator_cancelled',
+            terminal_oms_transition_ref:
+              'oms_transition:SHADOW-CANCELLED:4:cancelled',
+            oms_status_path: ['staged', 'submitted', 'accepted', 'cancelled'],
+            oms_transition_refs: [
+              'oms_transition:SHADOW-CANCELLED:1:staged',
+              'oms_transition:SHADOW-CANCELLED:2:submitted',
+              'oms_transition:SHADOW-CANCELLED:3:accepted',
+              'oms_transition:SHADOW-CANCELLED:4:cancelled',
+            ],
+            oms_transitions: [
+              {
+                sequence: 4,
+                from_status: 'accepted',
+                to_status: 'cancelled',
+                source: 'paper_shadow_daily',
+                reason: 'operator_cancelled',
+                filled_quantity: '0',
+                does_not_submit_broker_order: true,
+                does_not_mutate_production_ledger: true,
+              },
+            ],
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        ],
+        orders: [
+          {
+            order_id: 'SHADOW-CANCELLED',
+            symbol: '600519',
+            status: 'cancelled',
+            divergence_status: 'review_required',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+
+  expect(plan.textContent).toContain(
+    'Terminal outcome: Cancelled · Operator cancelled simulation before fill · OMS transition · SHADOW-CANCELLED #4 Cancelled',
+  );
+  expect(plan.textContent).not.toContain('operator_cancelled');
+  expect(plan.textContent).not.toContain('terminal_reason');
+  expect(plan.textContent).not.toContain('Submit broker order');
+});
+
 test('renders paper shadow manual handoff gate as public operator evidence', async () => {
   renderDecisionCockpit({
     operationsTodayResponse: {

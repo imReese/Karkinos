@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Decision and Overview paper/shadow review queues now render
+  terminal simulation outcomes as public operator evidence. Cancelled and
+  expired paper/shadow items show a localized terminal outcome summary with
+  status, terminal reason, and formatted OMS transition evidence while hiding
+  raw reason codes such as `operator_cancelled` and `paper_session_closed`.
+  The operations-runbook acceptance audit now records this frontend terminal
+  reason contract. Assumption: terminal outcome text is review evidence for
+  simulated paper/shadow orders only; it is not a broker cancellation,
+  live-order expiry, execution authorization, or manual-confirmation approval
+  by itself. Validation:
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "terminal paper shadow review reasons"`,
+  `npm --prefix web test -- overview-page.test.tsx -t "terminal paper shadow review reasons"`,
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook`.
+  Risk impact: improves v1.6.1 operator-facing Decision/Overview review
+  evidence for terminal paper/shadow outcomes without contacting brokers,
+  storing credentials, submitting or cancelling broker orders, mutating OMS
+  state, creating live fills, writing production ledger facts, enabling
+  automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Paper/shadow review queue items for cancelled and expired
   simulated outcomes now expose `terminal_status`, `terminal_reason`, and
   `terminal_oms_transition_ref` directly, so Operations/Decision/Overview
