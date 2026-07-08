@@ -2426,6 +2426,7 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "npm --prefix web test -- overview-page.test.tsx decision-cockpit-page.test.tsx trading-page.test.tsx",
                     'npm --prefix web test -- decision-cockpit-page.test.tsx -t "terminal paper shadow review reasons"',
                     'npm --prefix web test -- overview-page.test.tsx -t "terminal paper shadow review reasons"',
+                    'npm --prefix web test -- trading-page.test.tsx -t "terminal paper shadow review reasons"',
                 ),
             ),
             AcceptanceCriterion(

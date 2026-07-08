@@ -904,6 +904,84 @@ test('surfaces latest paper shadow run evidence in execution audit', async () =>
   expect(document.body.textContent).not.toContain('Submit broker order');
 });
 
+test('surfaces terminal paper shadow review reasons in execution audit', async () => {
+  renderTradingPage({
+    operationsToday: {
+      ...defaultOperationsToday,
+      conclusion_status: 'manual_action_required',
+      primary_target: 'paper-shadow',
+      health: {
+        total: 8,
+        pass: 5,
+        degraded: 0,
+        blocked: 0,
+        manual_action_required: 1,
+        skipped: 1,
+      },
+      paper_shadow: {
+        status: 'review_required',
+        run_id: 'shadow:2026-05-16:expired',
+        input_fingerprint: 'expired',
+        evidence_refs: ['oms_transition:SHADOW-EXPIRED:4:expired'],
+        order_intent_count: 1,
+        simulated_order_count: 1,
+        simulated_fill_count: 0,
+        divergence_reviewed_count: 0,
+        divergence_status: 'review_required',
+        review_status: null,
+        next_manual_review_step: 'resolve_shadow_divergence',
+        last_run_at: '2026-05-16T10:10:00+08:00',
+        review_queue: [
+          {
+            review_id: 'shadow:2026-05-16:expired:SHADOW-EXPIRED',
+            order_id: 'SHADOW-EXPIRED',
+            symbol: '600519',
+            status: 'expired',
+            divergence_status: 'review_required',
+            severity: 'warning',
+            required_action: 'resolve_shadow_divergence',
+            reason:
+              'Paper/shadow order expired; review terminal simulation reason before approval.',
+            terminal_status: 'expired',
+            terminal_reason: 'paper_session_closed',
+            terminal_oms_transition_ref:
+              'oms_transition:SHADOW-EXPIRED:4:expired',
+            oms_status_path: ['staged', 'submitted', 'accepted', 'expired'],
+            oms_transition_refs: [
+              'oms_transition:SHADOW-EXPIRED:1:staged',
+              'oms_transition:SHADOW-EXPIRED:2:submitted',
+              'oms_transition:SHADOW-EXPIRED:3:accepted',
+              'oms_transition:SHADOW-EXPIRED:4:expired',
+            ],
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        ],
+        limitations: [],
+        orders: [
+          {
+            order_id: 'SHADOW-EXPIRED',
+            symbol: '600519',
+            status: 'expired',
+            divergence_status: 'review_required',
+          },
+        ],
+      },
+      limitations: [],
+    },
+  });
+
+  expect(await screen.findByText('Latest paper/shadow run')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Terminal outcome: Expired · Paper session closed before fill · OMS transition · SHADOW-EXPIRED #4 Expired',
+    ),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toContain('paper_session_closed');
+  expect(document.body.textContent).not.toContain('terminal_reason');
+  expect(document.body.textContent).not.toContain('Submit broker order');
+});
+
 test('records accepted simulation review for the latest diverged run', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderTradingPage({
