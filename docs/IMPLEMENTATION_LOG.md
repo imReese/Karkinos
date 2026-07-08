@@ -45,6 +45,19 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Operations Today fallback review queues for legacy or partial
+  paper/shadow run payloads now preserve OMS status paths, transition refs,
+  normalized transition evidence, terminal reasons, and order-level evidence
+  refs when the persisted order payload already contains `oms_transitions` but
+  lacks a full `review_queue`. Assumption: this is read-only runbook recovery
+  evidence for local paper/shadow records; it does not replay OMS transitions,
+  contact brokers, create fills, or authorize manual confirmation by itself.
+  Validation:
+  `uv run python -m pytest tests/test_operations_today.py::test_operations_today_synthesizes_oms_evidence_for_legacy_review_queue -q`.
+  Risk impact: improves operator review continuity for older paper/shadow run
+  records without changing simulation behavior, mutating OMS/order state,
+  submitting broker orders, creating live fills, writing production ledger
+  facts, enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Failed paper/shadow simulation runs now preserve the OMS
   `staged -> submitted -> rejected` transition path in the returned run
   payload, persisted run payload, and failed order fact payload. Failed

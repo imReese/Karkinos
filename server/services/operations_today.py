@@ -748,10 +748,93 @@ def _fallback_paper_shadow_review_item(
         "does_not_submit_broker_order": True,
         "does_not_mutate_production_ledger": True,
     }
+    transition_evidence = _fallback_paper_shadow_oms_evidence(
+        order=order,
+        order_id=order_id,
+    )
+    if transition_evidence:
+        item.update(transition_evidence)
+        item["evidence_refs"] = _dedupe(
+            [intent_ref]
+            + ([f"paper_order:{order_id}"] if order_id else [])
+            + _list(transition_evidence.get("oms_transition_refs"))
+        )
     for key in ("filled_quantity", "remaining_quantity"):
         if order.get(key) is not None:
             item[key] = order.get(key)
     return item
+
+
+def _fallback_paper_shadow_oms_evidence(
+    *,
+    order: dict[str, Any],
+    order_id: str,
+) -> dict[str, Any]:
+    transitions = [
+        _fallback_paper_shadow_oms_transition(item)
+        for item in _list_of_dicts(order.get("oms_transitions"))
+    ]
+    transitions = [item for item in transitions if item.get("to_status")]
+    if not transitions:
+        return {}
+
+    transition_refs = [
+        f"oms_transition:{order_id}:{item['sequence']}:{item['to_status']}"
+        for item in transitions
+        if order_id and item.get("sequence") is not None and item.get("to_status")
+    ]
+    evidence: dict[str, Any] = {
+        "oms_status_path": [str(item["to_status"]) for item in transitions],
+        "oms_transition_refs": transition_refs,
+        "oms_transitions": transitions,
+    }
+    terminal = _fallback_terminal_oms_transition(
+        transitions=transitions,
+        status=str(order.get("status") or ""),
+    )
+    if terminal:
+        terminal_status = str(terminal.get("to_status") or "")
+        evidence["terminal_status"] = terminal_status
+        evidence["terminal_reason"] = str(terminal.get("reason") or "")
+        if order_id and terminal.get("sequence") is not None and terminal_status:
+            evidence["terminal_oms_transition_ref"] = (
+                f"oms_transition:{order_id}:{terminal['sequence']}:{terminal_status}"
+            )
+    return evidence
+
+
+def _fallback_paper_shadow_oms_transition(
+    transition: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "sequence": transition.get("sequence"),
+        "from_status": transition.get("from_status"),
+        "to_status": transition.get("to_status"),
+        "source": transition.get("source"),
+        "reason": transition.get("reason") or "",
+        "filled_quantity": transition.get("filled_quantity"),
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+
+
+def _fallback_terminal_oms_transition(
+    *,
+    transitions: list[dict[str, Any]],
+    status: str,
+) -> dict[str, Any] | None:
+    terminal_statuses = {"rejected", "cancelled", "expired", "failed"}
+    expected_status = str(status or "").strip().lower()
+    if expected_status not in terminal_statuses:
+        return None
+    return next(
+        (
+            item
+            for item in reversed(transitions)
+            if str(item.get("to_status") or "").strip().lower() == expected_status
+        ),
+        None,
+    )
 
 
 def _fallback_paper_shadow_review_action(
