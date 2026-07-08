@@ -1725,6 +1725,18 @@ function automationOpenAlertReviewLabels(
   if (suggestedAction) {
     labels.push(automationRecommendedActionLabel(suggestedAction, locale));
   }
+  const snapshotLabel = automationOpenAlertInputSnapshotLabel(payload, locale);
+  if (snapshotLabel) {
+    labels.push(snapshotLabel);
+  }
+  const rerunKeyLabel = automationOpenAlertRerunKeyLabel(payload, locale);
+  if (rerunKeyLabel) {
+    labels.push(rerunKeyLabel);
+  }
+  const retryLabel = automationOpenAlertRetryLabel(payload, locale);
+  if (retryLabel) {
+    labels.push(retryLabel);
+  }
   if (payload?.requires_manual_review === true) {
     labels.push(locale === 'zh' ? '需要人工复核' : 'Manual review required');
   }
@@ -1738,6 +1750,83 @@ function automationOpenAlertReviewLabels(
     labels.push(locale === 'zh' ? '不会改写账本' : 'No ledger mutation');
   }
   return labels;
+}
+
+function automationOpenAlertInputSnapshotLabel(
+  payload: Record<string, unknown> | null,
+  locale: Locale,
+) {
+  const snapshot = objectRecord(payload?.input_snapshot);
+  if (!snapshot) {
+    return '';
+  }
+  const orderIntentCount = numericSnapshotValue(snapshot.order_intent_count);
+  const sourceDecision = stringSnapshotValue(snapshot.source_decision);
+  const fingerprint =
+    stringSnapshotValue(snapshot.input_fingerprint) ??
+    stringSnapshotValue(payload?.input_fingerprint);
+  const labels =
+    locale === 'zh'
+      ? {
+          input: '输入快照',
+          orderIntent: '订单意图',
+          source: '源决策',
+          fingerprint: '指纹',
+        }
+      : {
+          input: 'Input snapshot',
+          orderIntent: 'order intent',
+          source: 'Source',
+          fingerprint: 'Fingerprint',
+        };
+  const parts = [
+    orderIntentCount === null
+      ? ''
+      : `${orderIntentCount} ${labels.orderIntent}${
+          locale === 'en' && orderIntentCount !== 1 ? 's' : ''
+        }`,
+    sourceDecision
+      ? `${labels.source} ${formatPublicStatus(sourceDecision, locale)}`
+      : '',
+    fingerprint ? `${labels.fingerprint} ${fingerprint.slice(0, 12)}` : '',
+  ].filter(Boolean);
+  return parts.length ? `${labels.input}: ${parts.join(' · ')}` : '';
+}
+
+function automationOpenAlertRerunKeyLabel(
+  payload: Record<string, unknown> | null,
+  locale: Locale,
+) {
+  const key = stringSnapshotValue(payload?.idempotency_key);
+  if (!key) {
+    return '';
+  }
+  return locale === 'zh' ? `重跑键: ${key}` : `Rerun key: ${key}`;
+}
+
+function automationOpenAlertRetryLabel(
+  payload: Record<string, unknown> | null,
+  locale: Locale,
+) {
+  const retryState = objectRecord(payload?.retry_state);
+  const attempt = numericSnapshotValue(retryState?.attempt);
+  if (attempt === null || attempt <= 0) {
+    return '';
+  }
+  const maxAttempts = Math.max(
+    numericSnapshotValue(retryState?.max_attempts) ?? attempt,
+    attempt,
+  );
+  const previousAttempts =
+    numericSnapshotValue(retryState?.previous_attempts) ?? 0;
+  if (locale === 'zh') {
+    return previousAttempts > 0
+      ? `重试 ${attempt}/${maxAttempts}；此前 ${previousAttempts} 次`
+      : `重试 ${attempt}/${maxAttempts}`;
+  }
+  return previousAttempts > 0
+    ? `Retry ${attempt}/${maxAttempts}; previous attempts ${previousAttempts}`
+    : `Retry ${attempt}/${maxAttempts}`;
 }
 
 function brokerGatewayDisplayName(

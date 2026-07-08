@@ -193,6 +193,16 @@ def test_alert_scan_records_failed_paper_shadow_automation_run(tmp_path) -> None
                 "schema_version": "karkinos.automation_run.v1",
                 "paper_shadow_run_id": "shadow:2026-07-02:abc",
                 "paper_shadow_status": "failed",
+                "input_fingerprint": "abc123def456",
+                "idempotency_key": "market_session:2026-07-02:abc123def456",
+                "input_snapshot": {
+                    "schema_version": "karkinos.daily_trading_plan.v1",
+                    "plan_date": "2026-07-02",
+                    "generated_at": "2026-07-02T09:35:00+08:00",
+                    "order_intent_count": 1,
+                    "source_decision": "buy",
+                    "input_fingerprint": "abc123def456",
+                },
                 "retry_state": {
                     "attempt": 1,
                     "max_attempts": 2,
@@ -223,6 +233,18 @@ def test_alert_scan_records_failed_paper_shadow_automation_run(tmp_path) -> None
     assert "no broker order was submitted" in alert["detail"]
     assert alert["payload"]["run_status"] == "paper_shadow_failed"
     assert alert["payload"]["execution_mode"] == "paper_shadow"
+    assert alert["payload"]["input_fingerprint"] == "abc123def456"
+    assert alert["payload"]["idempotency_key"] == (
+        "market_session:2026-07-02:abc123def456"
+    )
+    assert alert["payload"]["input_snapshot"] == {
+        "schema_version": "karkinos.daily_trading_plan.v1",
+        "plan_date": "2026-07-02",
+        "generated_at": "2026-07-02T09:35:00+08:00",
+        "order_intent_count": 1,
+        "source_decision": "buy",
+        "input_fingerprint": "abc123def456",
+    }
     assert alert["payload"]["retry_state"] == {
         "attempt": 1,
         "max_attempts": 2,

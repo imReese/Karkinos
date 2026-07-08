@@ -2689,6 +2689,14 @@ test('surfaces failed paper shadow automation recovery action without execution 
             run_status: 'paper_shadow_failed',
             run_type: 'market_session',
             execution_mode: 'paper_shadow',
+            input_fingerprint: 'abc123def456',
+            idempotency_key: 'market_session:2026-07-02:abc123def456',
+            input_snapshot: {
+              schema_version: 'karkinos.daily_trading_plan.v1',
+              order_intent_count: 1,
+              source_decision: 'buy',
+              input_fingerprint: 'abc123def456',
+            },
             retry_state: {
               attempt: 2,
               max_attempts: 2,
@@ -2719,10 +2727,19 @@ test('surfaces failed paper shadow automation recovery action without execution 
     'Paper/shadow automation run failed',
   );
   expect(automation.textContent).toContain('inspect failed paper/shadow run');
+  expect(automation.textContent).toContain(
+    'Input snapshot: 1 order intent · Source Buy · Fingerprint abc123def456',
+  );
+  expect(automation.textContent).toContain(
+    'Rerun key: market_session:2026-07-02:abc123def456',
+  );
+  expect(automation.textContent).toContain('Retry 2/2; previous attempts 1');
   expect(automation.textContent).toContain('Manual review required');
   expect(automation.textContent).toContain('Retry recommended');
   expect(automation.textContent).toContain('No broker submission');
   expect(automation.textContent).toContain('No ledger mutation');
+  expect(automation.textContent).not.toContain('input_snapshot');
+  expect(automation.textContent).not.toContain('idempotency_key');
   expect(automation.textContent).not.toContain('Submit broker order');
   expect(automation.textContent).not.toContain('Cancel broker order');
   expect(automation.textContent).not.toContain('Sync ledger');

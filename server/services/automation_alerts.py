@@ -233,6 +233,9 @@ class AutomationAlertService:
                         "run_status": status,
                         "run_type": run.get("run_type"),
                         "execution_mode": run.get("execution_mode"),
+                        "input_fingerprint": payload.get("input_fingerprint"),
+                        "idempotency_key": payload.get("idempotency_key"),
+                        "input_snapshot": _json_object(payload.get("input_snapshot")),
                         "retry_state": payload.get("retry_state"),
                         "suggested_action": _automation_run_suggested_action(
                             status=status,
