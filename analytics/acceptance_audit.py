@@ -2368,8 +2368,9 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 checkbox_text=(
                     "* [x] Operations Today preserves operator review work "
                     "for legacy or partial paper/shadow runs by synthesizing "
-                    "read-only review-queue evidence for diverged, failed, or "
-                    "missing simulations without broker submission or "
+                    "read-only review-queue evidence, OMS status paths, and "
+                    "transition refs for diverged, failed, or missing "
+                    "simulations without broker submission or "
                     "production-ledger mutation."
                 ),
                 evidence_paths=(
@@ -2380,7 +2381,7 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "docs/IMPLEMENTATION_LOG.md",
                 ),
                 validation_commands=(
-                    'uv run python -m pytest tests/test_operations_today.py -k "legacy_diverged_run or missing_simulation"',
+                    'uv run python -m pytest tests/test_operations_today.py -k "legacy_diverged_run or legacy_review_queue or missing_simulation"',
                     "uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook",
                 ),
             ),

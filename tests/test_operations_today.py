@@ -558,6 +558,81 @@ def test_operations_today_synthesizes_review_queue_for_legacy_diverged_run() -> 
     ]
 
 
+def test_operations_today_synthesizes_oms_evidence_for_legacy_review_queue() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[],
+        fill_facts=[],
+        paper_shadow_run={
+            "run_id": "shadow:2026-07-01:legacy-oms",
+            "plan_date": "2026-07-01",
+            "input_fingerprint": "legacy-oms",
+            "status": "diverged",
+            "order_intent_count": 1,
+            "simulated_order_count": 1,
+            "simulated_fill_count": 0,
+            "divergence_status": "diverged",
+            "next_manual_review_step": "resolve_shadow_divergence",
+            "limitations_json": "[]",
+            "payload_json": (
+                '{"orders": [{"order_id": "SHADOW-1", '
+                '"symbol": "600519", '
+                '"status": "cancelled", '
+                '"divergence_status": "diverged", '
+                '"filled_quantity": "0", '
+                '"remaining_quantity": "100", '
+                '"order_intent": {"action_ref": "action:ACTION-1"}, '
+                '"oms_transitions": ['
+                '{"sequence": 1, "from_status": null, '
+                '"to_status": "staged", "source": "paper_shadow_daily", '
+                '"reason": "", "filled_quantity": "0"}, '
+                '{"sequence": 2, "from_status": "staged", '
+                '"to_status": "submitted", "source": "paper_shadow_daily", '
+                '"reason": "", "filled_quantity": "0"}, '
+                '{"sequence": 3, "from_status": "submitted", '
+                '"to_status": "cancelled", "source": "paper_shadow_daily", '
+                '"reason": "operator_cancelled", "filled_quantity": "0"}]}]}'
+            ),
+            "updated_at": "2026-07-01T09:36:00+08:00",
+        },
+    )
+
+    item = summary["paper_shadow"]["review_queue"][0]
+
+    assert item["evidence_refs"] == [
+        "action:ACTION-1",
+        "paper_order:SHADOW-1",
+        "oms_transition:SHADOW-1:1:staged",
+        "oms_transition:SHADOW-1:2:submitted",
+        "oms_transition:SHADOW-1:3:cancelled",
+    ]
+    assert item["oms_status_path"] == ["staged", "submitted", "cancelled"]
+    assert item["oms_transition_refs"] == [
+        "oms_transition:SHADOW-1:1:staged",
+        "oms_transition:SHADOW-1:2:submitted",
+        "oms_transition:SHADOW-1:3:cancelled",
+    ]
+    assert item["terminal_status"] == "cancelled"
+    assert item["terminal_reason"] == "operator_cancelled"
+    assert item["terminal_oms_transition_ref"] == (
+        "oms_transition:SHADOW-1:3:cancelled"
+    )
+    assert item["oms_transitions"][-1] == {
+        "sequence": 3,
+        "from_status": "submitted",
+        "to_status": "cancelled",
+        "source": "paper_shadow_daily",
+        "reason": "operator_cancelled",
+        "filled_quantity": "0",
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+    assert item["does_not_submit_broker_order"] is True
+    assert item["does_not_mutate_production_ledger"] is True
+
+
 def test_operations_today_synthesizes_review_queue_for_missing_simulation() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
