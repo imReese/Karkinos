@@ -632,6 +632,17 @@ def test_manual_ticket_preview_route_is_read_only(tmp_path, monkeypatch) -> None
     assert payload["status"] == "preview_ready"
     assert payload["dry_run"] is True
     assert payload["submitted_to_broker"] is False
+    gate_summary = payload["validation"]["required_gate_summary"]
+    assert gate_summary["status"] == "pass"
+    assert gate_summary["submitted_to_broker"] is False
+    assert gate_summary["does_not_authorize_execution"] is True
+    assert gate_summary["gates"]["account_truth"]["evidence_ref"] == "account-truth:1"
+    assert gate_summary["gates"]["research_evidence"]["evidence_ref"] == "research:1"
+    assert gate_summary["gates"]["risk"]["evidence_ref"] == "risk:risk-001"
+    assert gate_summary["gates"]["paper_shadow"]["evidence_ref"] == (
+        "paper_shadow:run-001"
+    )
+    assert gate_summary["gates"]["manual_confirmation"]["status"] == "pass"
     assert payload["ticket"]["copy_text"].startswith("BUY 600519 100")
     assert db.get_oms_order_sync(order["order_id"])["status"] == "manually_confirmed"
     assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []

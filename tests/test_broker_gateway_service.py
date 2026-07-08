@@ -475,6 +475,34 @@ def test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms(
     assert result["dry_run"] is True
     assert result["submitted_to_broker"] is False
     assert result["validation"]["manual_confirmation_status"] == "pass"
+    gate_summary = result["validation"]["required_gate_summary"]
+    assert (
+        gate_summary["schema_version"] == "karkinos.controlled_bridge_gate_summary.v1"
+    )
+    assert gate_summary["status"] == "pass"
+    assert gate_summary["required_gates"] == [
+        "account_truth",
+        "research_evidence",
+        "risk",
+        "paper_shadow",
+        "manual_confirmation",
+        "kill_switch_clear",
+        "connector_health",
+        "execution_reconciliation",
+    ]
+    assert gate_summary["gates"]["account_truth"]["evidence_ref"] == ("account-truth:1")
+    assert gate_summary["gates"]["research_evidence"]["evidence_ref"] == ("research:1")
+    assert gate_summary["gates"]["risk"]["evidence_ref"] == "risk:risk-001"
+    assert gate_summary["gates"]["paper_shadow"]["evidence_ref"] == (
+        "paper_shadow:run-001"
+    )
+    assert gate_summary["gates"]["manual_confirmation"] == {
+        "status": "pass",
+        "evidence_ref": f"oms_order:{order['order_id']}:manually_confirmed",
+        "source": "oms_status",
+    }
+    assert gate_summary["submitted_to_broker"] is False
+    assert gate_summary["does_not_authorize_execution"] is True
     assert result["validation"]["controlled_bridge_policy"]["policy_id"] == (
         "local-controlled-bridge-review"
     )
@@ -500,6 +528,17 @@ def test_manual_ticket_export_is_read_only_and_copy_safe(tmp_path) -> None:
     assert result["status"] == "export_ready"
     assert result["dry_run"] is True
     assert result["submitted_to_broker"] is False
+    assert result["validation"]["required_gate_summary"]["status"] == "pass"
+    assert (
+        result["validation"]["required_gate_summary"]["gates"]["manual_confirmation"][
+            "status"
+        ]
+        == "pass"
+    )
+    assert (
+        result["validation"]["required_gate_summary"]["does_not_authorize_execution"]
+        is True
+    )
     assert result["ticket"]["copy_text"] == "BUY 600519 100 LIMIT 1688"
     assert result["validation"]["controlled_bridge_policy"]["status"] == (
         "configured_non_submitting"
@@ -660,6 +699,13 @@ def test_manual_ticket_dry_run_records_accepted_event_without_oms_mutation(
     assert payload["dry_run"] is True
     assert payload["submitted_to_broker"] is False
     assert payload["validation_result"] == "accepted"
+    assert payload["required_gate_summary"]["status"] == "pass"
+    assert payload["required_gate_summary"]["gates"]["paper_shadow"] == {
+        "status": "pass",
+        "evidence_ref": "paper_shadow:run-001",
+        "source": "oms_gateway_evidence",
+    }
+    assert payload["required_gate_summary"]["does_not_authorize_execution"] is True
     assert payload["controlled_bridge_policy"]["policy_id"] == (
         "local-controlled-bridge-review"
     )

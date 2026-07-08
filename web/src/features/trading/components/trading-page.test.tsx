@@ -344,6 +344,72 @@ function installTradingFetchMock({
             content_json:
               '{"operator_form":{"account_alias":"local-review"},"submitted_to_broker":false,"requires_human_broker_entry":true}',
           },
+          validation: {
+            manual_confirmation_status: 'pass',
+            gateway_evidence_status: 'pass',
+            broker_submission_enabled: false,
+            requires_human_broker_entry: true,
+            required_gate_summary: {
+              schema_version: 'karkinos.controlled_bridge_gate_summary.v1',
+              status: 'pass',
+              required_gates: [
+                'account_truth',
+                'research_evidence',
+                'risk',
+                'paper_shadow',
+                'manual_confirmation',
+                'kill_switch_clear',
+                'connector_health',
+                'execution_reconciliation',
+              ],
+              gates: {
+                account_truth: {
+                  status: 'pass',
+                  evidence_ref: 'account-truth:1',
+                  source: 'oms_gateway_evidence',
+                },
+                research_evidence: {
+                  status: 'pass',
+                  evidence_ref: 'research:1',
+                  source: 'oms_gateway_evidence',
+                },
+                risk: {
+                  status: 'pass',
+                  evidence_ref: 'risk:risk-001',
+                  source: 'oms_gateway_evidence',
+                },
+                paper_shadow: {
+                  status: 'pass',
+                  evidence_ref: 'paper_shadow:run-001',
+                  source: 'oms_gateway_evidence',
+                },
+                manual_confirmation: {
+                  status: 'pass',
+                  evidence_ref: 'oms_order:ORD-CONFIRMED:manually_confirmed',
+                  source: 'oms_status',
+                },
+                kill_switch_clear: {
+                  status: 'pass',
+                  evidence_ref: 'trading_controls:kill_switch_clear',
+                  source: 'trading_controls_snapshot',
+                },
+                connector_health: {
+                  status: 'not_applicable_manual_ticket',
+                  evidence_ref: 'manual_ticket:local_operator_entry',
+                  source: 'manual_ticket_gateway',
+                },
+                execution_reconciliation: {
+                  status: 'pending_after_manual_execution',
+                  evidence_ref:
+                    'execution_reconciliation:pending:ORD-CONFIRMED',
+                  source: 'execution_reconciliation_runbook',
+                },
+              },
+              broker_submission_enabled: false,
+              submitted_to_broker: false,
+              does_not_authorize_execution: true,
+            },
+          },
           limitations: [
             'This prepares a copyable manual-ticket export only.',
             'It does not submit to a broker, record an event, or change OMS status.',
@@ -1277,6 +1343,18 @@ test('exports confirmed manual ticket without broker submission controls', async
   expect(screen.getByText('200')).toBeTruthy();
   expect(screen.getByText('Cost basis method')).toBeTruthy();
   expect(screen.getByText('weighted_average_preview')).toBeTruthy();
+  expect(screen.getByText('Controlled bridge gate summary')).toBeTruthy();
+  expect(screen.getByText('account truth')).toBeTruthy();
+  expect(screen.getByText('research evidence')).toBeTruthy();
+  expect(screen.getByText('paper shadow')).toBeTruthy();
+  expect(screen.getByText('manual confirmation')).toBeTruthy();
+  expect(screen.getByText('account-truth:1')).toBeTruthy();
+  expect(screen.getByText('research:1')).toBeTruthy();
+  expect(screen.getByText('paper_shadow:run-001')).toBeTruthy();
+  expect(
+    screen.getByText('oms_order:ORD-CONFIRMED:manually_confirmed'),
+  ).toBeTruthy();
+  expect(screen.getByText('does_not_authorize_execution=true')).toBeTruthy();
   expect(screen.getByText('Trading session')).toBeTruthy();
   expect(screen.getByText('regular_exchange_session_only')).toBeTruthy();
   expect(screen.getByText('Export file')).toBeTruthy();
@@ -1351,18 +1429,24 @@ test('previews manual execution draft without ledger or broker submission contro
     screen.getAllByText('weighted_average_preview').length,
   ).toBeGreaterThan(1);
   expect(screen.getByText('Ledger draft')).toBeTruthy();
-  expect(screen.getByText('Controlled bridge gate summary')).toBeTruthy();
-  expect(screen.getByText('account truth')).toBeTruthy();
-  expect(screen.getByText('research evidence')).toBeTruthy();
-  expect(screen.getByText('paper shadow')).toBeTruthy();
-  expect(screen.getByText('manual confirmation')).toBeTruthy();
-  expect(screen.getByText('kill switch clear')).toBeTruthy();
-  expect(screen.getByText('connector health')).toBeTruthy();
-  expect(screen.getByText('execution reconciliation')).toBeTruthy();
-  expect(screen.getByText('account-truth:1')).toBeTruthy();
-  expect(screen.getByText('risk:risk-001')).toBeTruthy();
-  expect(screen.getByText('paper_shadow:run-001')).toBeTruthy();
-  expect(screen.getByText('does_not_authorize_execution=true')).toBeTruthy();
+  expect(
+    screen.getAllByText('Controlled bridge gate summary').length,
+  ).toBeGreaterThan(1);
+  expect(screen.getAllByText('account truth').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('research evidence').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('paper shadow').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('manual confirmation').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('kill switch clear').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('connector health').length).toBeGreaterThan(1);
+  expect(
+    screen.getAllByText('execution reconciliation').length,
+  ).toBeGreaterThan(1);
+  expect(screen.getAllByText('account-truth:1').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('risk:risk-001').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('paper_shadow:run-001').length).toBeGreaterThan(1);
+  expect(
+    screen.getAllByText('does_not_authorize_execution=true').length,
+  ).toBeGreaterThan(1);
   expect(screen.getByText('Preview fingerprint')).toBeTruthy();
   expect(
     screen.getByText(
@@ -1438,10 +1522,13 @@ test('records manual execution evidence without saving ledger or submitting brok
   ).toBeTruthy();
   expect(screen.getByText('Gateway event')).toBeTruthy();
   expect(screen.getByText('42')).toBeTruthy();
-  expect(screen.getByText('Controlled bridge gate summary')).toBeTruthy();
   expect(
-    screen.getByText('execution_reconciliation:pending:ORD-CONFIRMED'),
-  ).toBeTruthy();
+    screen.getAllByText('Controlled bridge gate summary').length,
+  ).toBeGreaterThan(1);
+  expect(
+    screen.getAllByText('execution_reconciliation:pending:ORD-CONFIRMED')
+      .length,
+  ).toBeGreaterThan(1);
   expect(
     screen.getAllByText('submitted_to_broker=false').length,
   ).toBeGreaterThan(1);

@@ -1563,6 +1563,8 @@ function ManualTicketExportPanel({
   const preview = executionPreview?.execution_preview ?? null;
   const ledgerDraft = executionPreview?.ledger_entry_draft ?? null;
   const executionPositionCost = executionPreview?.position_cost_preview ?? null;
+  const ticketGateSummary = result.validation?.required_gate_summary ?? null;
+  const ticketGateRows = manualExecutionGateRows(ticketGateSummary);
   const gateSummary =
     executionPreview?.validation?.required_gate_summary ??
     executionRecord?.validation?.required_gate_summary ??
@@ -1761,6 +1763,13 @@ function ManualTicketExportPanel({
           </pre>
         </div>
       </div>
+      {ticketGateRows.length ? (
+        <ControlledBridgeGateSummaryBlock
+          gateRows={ticketGateRows}
+          gateSummary={ticketGateSummary}
+          title={labels.manualExecutionGateSummary}
+        />
+      ) : null}
       <form
         key={result.order_id}
         className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-3"
@@ -1953,36 +1962,11 @@ function ManualTicketExportPanel({
             </div>
           </div>
           {gateRows.length ? (
-            <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
-              <div className="app-muted text-xs">
-                {labels.manualExecutionGateSummary}
-              </div>
-              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {gateRows.map((gate) => (
-                  <div className="min-w-0" key={gate.key}>
-                    <div className="break-words text-sm font-semibold text-[var(--app-text)]">
-                      {gate.label}
-                    </div>
-                    {gate.status ? (
-                      <div className="mt-0.5 break-words font-mono text-xs text-[var(--app-soft)]">
-                        {gate.status}
-                      </div>
-                    ) : null}
-                    {gate.evidenceRef ? (
-                      <div className="mt-0.5 break-words font-mono text-xs text-[var(--app-soft)]">
-                        {gate.evidenceRef}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 break-words font-mono text-xs text-[var(--app-soft)]">
-                {flagText(
-                  'does_not_authorize_execution',
-                  gateSummary?.does_not_authorize_execution,
-                )}
-              </div>
-            </div>
+            <ControlledBridgeGateSummaryBlock
+              gateRows={gateRows}
+              gateSummary={gateSummary}
+              title={labels.manualExecutionGateSummary}
+            />
           ) : null}
           {executionPreviewResult.limitations?.length ? (
             <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
@@ -2078,6 +2062,47 @@ function ManualTicketExportPanel({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ControlledBridgeGateSummaryBlock({
+  gateRows,
+  gateSummary,
+  title,
+}: {
+  gateRows: ReturnType<typeof manualExecutionGateRows>;
+  gateSummary: ControlledBridgeGateSummary | null | undefined;
+  title: string;
+}) {
+  return (
+    <div className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] px-3 py-2">
+      <div className="app-muted text-xs">{title}</div>
+      <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {gateRows.map((gate) => (
+          <div className="min-w-0" key={gate.key}>
+            <div className="break-words text-sm font-semibold text-[var(--app-text)]">
+              {gate.label}
+            </div>
+            {gate.status ? (
+              <div className="mt-0.5 break-words font-mono text-xs text-[var(--app-soft)]">
+                {gate.status}
+              </div>
+            ) : null}
+            {gate.evidenceRef ? (
+              <div className="mt-0.5 break-words font-mono text-xs text-[var(--app-soft)]">
+                {gate.evidenceRef}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 break-words font-mono text-xs text-[var(--app-soft)]">
+        {flagText(
+          'does_not_authorize_execution',
+          gateSummary?.does_not_authorize_execution,
+        )}
+      </div>
     </div>
   );
 }
