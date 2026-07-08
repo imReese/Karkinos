@@ -226,6 +226,7 @@ export type ManualTicketExportResponse = {
     };
     content_json: string;
   };
+  validation?: ManualExecutionValidation;
   limitations?: string[];
 };
 

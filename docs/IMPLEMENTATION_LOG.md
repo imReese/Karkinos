@@ -4,6 +4,30 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.7 Progress
+
+- 2026-07-08: Manual-ticket preview, export, and dry-run responses now include
+  a controlled-bridge gate summary before any operator copies a broker ticket.
+  The summary records account-truth, research-evidence, risk, paper/shadow,
+  manual-confirmation, kill-switch, connector-health, and execution-
+  reconciliation gates, their evidence refs, and the explicit
+  `does_not_authorize_execution` safety boundary. Trading approvals renders
+  the same gate summary immediately after manual-ticket export, before the
+  later manual-execution preview, so the operator can review live-like
+  prerequisites before broker-side manual entry. Assumption: manual-ticket
+  gate summaries are read-only audit evidence for human broker entry; they do
+  not authorize live broker submission, auto-pilot execution, or production
+  ledger writes. Validation:
+  `uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms tests/test_broker_gateway_service.py::test_manual_ticket_export_is_read_only_and_copy_safe tests/test_broker_gateway_service.py::test_manual_ticket_dry_run_records_accepted_event_without_oms_mutation -q`,
+  `uv run python -m pytest tests/server/test_broker_gateway_routes.py::test_manual_ticket_preview_route_is_read_only -q`,
+  and
+  `npm --prefix web test -- trading-page.test.tsx -t "exports confirmed manual ticket"`.
+  Risk impact: advances the v1.7 controlled bridge evidence gate without
+  enabling broker submission, adding broker credentials, contacting brokers,
+  changing OMS status during preview/export/dry-run, creating live fills,
+  writing production ledger facts, enabling automatic trading, or bypassing
+  manual confirmation.
+
 ## v1.6.1 Progress
 
 - 2026-07-08: Failed paper/shadow automation alerts now preserve scheduler

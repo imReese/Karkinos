@@ -292,6 +292,10 @@ class BrokerGatewayService:
         self._require_kill_switch_clear()
         ticket = self._manual_ticket(order)
         policy_snapshot = self._controlled_bridge_policy_snapshot()
+        required_gate_summary = self._required_gate_summary(
+            order,
+            gateway_evidence=evidence,
+        )
         return {
             "schema_version": BROKER_GATEWAY_SCHEMA_VERSION,
             "gateway_id": "manual_ticket",
@@ -315,6 +319,7 @@ class BrokerGatewayService:
                 "controlled_bridge_policy": policy_snapshot,
                 "broker_submission_enabled": bool(order["broker_submission_enabled"]),
                 "requires_human_broker_entry": True,
+                "required_gate_summary": required_gate_summary,
             },
             "limitations": [
                 "This prepares a copyable manual-ticket export only.",
@@ -352,6 +357,10 @@ class BrokerGatewayService:
             raise
 
         ticket = self._manual_ticket(order)
+        required_gate_summary = self._required_gate_summary(
+            order,
+            gateway_evidence=evidence,
+        )
         result = {
             "schema_version": BROKER_GATEWAY_SCHEMA_VERSION,
             "gateway_id": "manual_ticket",
@@ -368,6 +377,7 @@ class BrokerGatewayService:
                 "controlled_bridge_policy": policy_snapshot,
                 "broker_submission_enabled": bool(order["broker_submission_enabled"]),
                 "requires_human_broker_entry": True,
+                "required_gate_summary": required_gate_summary,
             },
             "limitations": [
                 "This records a dry-run validation event only.",
@@ -383,6 +393,7 @@ class BrokerGatewayService:
                 "ticket": ticket,
                 "gateway_evidence": evidence,
                 "controlled_bridge_policy": policy_snapshot,
+                "required_gate_summary": required_gate_summary,
             },
         )
         return {**result, "event_id": event["id"]}
@@ -840,6 +851,10 @@ class BrokerGatewayService:
                 "controlled_bridge_policy": self._controlled_bridge_policy_snapshot(),
                 "broker_submission_enabled": bool(order["broker_submission_enabled"]),
                 "requires_human_broker_entry": True,
+                "required_gate_summary": self._required_gate_summary(
+                    order,
+                    gateway_evidence=gateway_evidence,
+                ),
             },
             "limitations": [
                 "This is a manual broker ticket preview, not broker API submission.",
@@ -893,7 +908,9 @@ class BrokerGatewayService:
                 }
         gates["manual_confirmation"] = {
             "status": "pass",
-            "evidence_ref": f"oms_order:{order['order_id']}:manual_ticket_created",
+            "evidence_ref": (
+                f"oms_order:{order['order_id']}:{order.get('status') or 'unknown'}"
+            ),
             "source": "oms_status",
         }
         gates["kill_switch_clear"] = {
