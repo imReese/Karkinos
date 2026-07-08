@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Decision and Overview now render paper/shadow
+  `input_snapshot` as public operator evidence. The surfaces show the
+  normalized order-intent count, source decision, fingerprint prefix, and
+  no-broker/no-production-ledger-mutation snapshot safety flags while hiding
+  the raw snapshot schema key. The operations-runbook acceptance audit now
+  records this frontend input-snapshot contract alongside paper/shadow next
+  actions and review-queue evidence. Assumption: the input snapshot is a
+  deterministic rerun/review aid for simulated paper/shadow runs only; it is
+  not broker truth, execution approval, or a production ledger input.
+  Validation:
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "paper shadow review queue"`,
+  `npm --prefix web test -- overview-page.test.tsx -t "divergence evidence summary"`,
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook -q`.
+  Risk impact: improves v1.6.1 operator-facing reproducibility evidence
+  without adding broker-submit controls, contacting brokers, storing
+  credentials, mutating OMS/order state, creating live fills, writing
+  production ledger facts, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-08: Paper/shadow run payloads now include a deterministic
   `input_snapshot` with run fingerprint, input refs, normalized order-intent
   summaries, account-truth state, account constraint summary, outcome

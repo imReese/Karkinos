@@ -482,8 +482,13 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         if criterion.key == "frontend_paper_shadow_next_actions"
     )
     assert "terminal reason" in frontend_next_actions.checkbox_text
+    assert "input snapshot" in frontend_next_actions.checkbox_text
     assert any(
         "terminal paper shadow review reasons" in command
+        for command in frontend_next_actions.validation_commands
+    )
+    assert any(
+        "paper shadow review queue" in command
         for command in frontend_next_actions.validation_commands
     )
     assert any(

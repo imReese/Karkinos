@@ -1160,6 +1160,76 @@ function paperShadowManualHandoffEvidenceItems(
   ].filter(Boolean);
 }
 
+function paperShadowInputSnapshotEvidenceItems(
+  snapshot: Record<string, unknown> | undefined,
+  fallbackFingerprint: string | null | undefined,
+  locale: Locale,
+) {
+  const orderIntentCount = numericSnapshotValue(snapshot?.order_intent_count);
+  const sourceDecision = stringSnapshotValue(snapshot?.source_decision);
+  const fingerprint =
+    stringSnapshotValue(snapshot?.input_fingerprint) ??
+    stringSnapshotValue(fallbackFingerprint);
+  const labels =
+    locale === 'zh'
+      ? {
+          input: '输入快照',
+          orderIntent: '订单意图',
+          source: '源决策',
+          fingerprint: '指纹',
+          safety: '快照安全边界',
+          noBrokerSubmission: '不会提交券商订单',
+          noLedgerMutation: '不会修改生产账本',
+        }
+      : {
+          input: 'Input snapshot',
+          orderIntent: 'order intent',
+          source: 'Source',
+          fingerprint: 'Fingerprint',
+          safety: 'Snapshot safety',
+          noBrokerSubmission: 'No broker submission',
+          noLedgerMutation: 'No production ledger mutation',
+        };
+  const inputParts = [
+    orderIntentCount === null
+      ? ''
+      : `${orderIntentCount} ${labels.orderIntent}${
+          locale === 'en' && orderIntentCount !== 1 ? 's' : ''
+        }`,
+    sourceDecision
+      ? `${labels.source} ${formatPublicStatus(sourceDecision, locale)}`
+      : '',
+    fingerprint ? `${labels.fingerprint} ${fingerprint.slice(0, 12)}` : '',
+  ].filter(Boolean);
+  const safetyParts = [
+    snapshot?.does_not_submit_broker_order === true
+      ? labels.noBrokerSubmission
+      : '',
+    snapshot?.does_not_mutate_production_ledger === true
+      ? labels.noLedgerMutation
+      : '',
+  ].filter(Boolean);
+  return [
+    inputParts.length ? `${labels.input}: ${inputParts.join(' · ')}` : '',
+    safetyParts.length ? `${labels.safety}: ${safetyParts.join(' · ')}` : '',
+  ].filter(Boolean);
+}
+
+function numericSnapshotValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function stringSnapshotValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function paperShadowReviewQueueItemTitle(
   item: PaperShadowReviewQueueItem,
   locale: Locale,
@@ -3622,6 +3692,11 @@ function DailyTradingPlanPanel({
         locale,
       )
     : [];
+  const paperShadowInputSnapshotItems = paperShadowInputSnapshotEvidenceItems(
+    operationsToday?.paper_shadow.input_snapshot,
+    operationsToday?.paper_shadow.input_fingerprint,
+    locale,
+  );
 
   return (
     <section
@@ -3791,6 +3866,15 @@ function DailyTradingPlanPanel({
                   locale,
                 )}
               </div>
+              {paperShadowInputSnapshotItems.length > 0 ? (
+                <div className="mt-3 grid min-w-0 gap-1 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]">
+                  {paperShadowInputSnapshotItems.map((item) => (
+                    <div className="min-w-0 break-words" key={item}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {paperShadowManualHandoffItems.length > 0 ? (
                 <div className="mt-3 grid min-w-0 gap-1 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]">
                   {paperShadowManualHandoffItems.map((item) => (
