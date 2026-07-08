@@ -677,12 +677,53 @@ def test_paper_shadow_run_records_failed_run_when_simulation_errors(tmp_path) ->
     assert run["simulated_fill_count"] == 0
     assert run["orders"][0]["status"] == "failed"
     assert run["orders"][0]["divergence_status"] == "failed"
+    failed_order_id = run["orders"][0]["order_id"]
+    assert run["orders"][0]["oms_transitions"] == [
+        {
+            "sequence": 1,
+            "from_status": "created",
+            "to_status": "staged",
+            "source": "paper_shadow_daily",
+            "reason": "created from paper/shadow order intent",
+            "filled_quantity": "0",
+        },
+        {
+            "sequence": 2,
+            "from_status": "staged",
+            "to_status": "submitted",
+            "source": "paper_shadow_daily",
+            "reason": "paper shadow simulation started",
+            "filled_quantity": "0",
+        },
+        {
+            "sequence": 3,
+            "from_status": "submitted",
+            "to_status": "rejected",
+            "source": "paper_shadow_daily",
+            "reason": (
+                "paper shadow simulation failed: ValueError: "
+                "Paper fill quantity cannot exceed order quantity."
+            ),
+            "filled_quantity": "0",
+        },
+    ]
+    assert f"oms_transition:{failed_order_id}:3:rejected" in run["evidence_refs"]
     assert run["review_queue"][0]["required_action"] == "inspect_failed_run"
     assert run["review_queue"][0]["severity"] == "danger"
     assert run["review_queue"][0]["reason"] == (
         "Paper/shadow simulation failed for action:ACTION-1: "
         "ValueError: Paper fill quantity cannot exceed order quantity."
     )
+    assert run["review_queue"][0]["oms_status_path"] == [
+        "staged",
+        "submitted",
+        "rejected",
+    ]
+    assert run["review_queue"][0]["oms_transition_refs"] == [
+        f"oms_transition:{failed_order_id}:1:staged",
+        f"oms_transition:{failed_order_id}:2:submitted",
+        f"oms_transition:{failed_order_id}:3:rejected",
+    ]
     assert run["review_queue"][0]["does_not_submit_broker_order"] is True
     assert run["review_queue"][0]["does_not_mutate_production_ledger"] is True
     assert any(
@@ -691,6 +732,13 @@ def test_paper_shadow_run_records_failed_run_when_simulation_errors(tmp_path) ->
     )
     assert saved is not None
     assert saved["status"] == "failed"
+    saved_payload = json.loads(saved["payload_json"])
+    assert saved_payload["orders"][0]["oms_transitions"] == (
+        run["orders"][0]["oms_transitions"]
+    )
+    assert (
+        f"oms_transition:{failed_order_id}:3:rejected" in saved_payload["evidence_refs"]
+    )
     assert orders[0]["execution_mode"] == "paper_shadow"
     assert orders[0]["status"] == "failed"
     assert order_payload["error_type"] == "ValueError"

@@ -45,6 +45,21 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Failed paper/shadow simulation runs now preserve the OMS
+  `staged -> submitted -> rejected` transition path in the returned and
+  persisted run payload. Failed review-queue items expose the same
+  `oms_transition_refs` and status path, and run-level `evidence_refs` include
+  the rejected transition ref so Operations/Decision/Trading can review the
+  failed simulation using the same OMS evidence as successful, partial,
+  cancelled, and expired outcomes. Assumption: these transition refs are local
+  paper/shadow audit evidence for diagnosing a failed simulation before manual
+  confirmation; they are not broker responses, live fills, or ledger inputs.
+  Validation:
+  `uv run python -m pytest tests/test_paper_shadow_run_service.py::test_paper_shadow_run_records_failed_run_when_simulation_errors -q`.
+  Risk impact: improves v1.6.1 failed-run audit continuity without changing
+  paper/shadow execution semantics, contacting brokers, storing credentials,
+  submitting orders, creating live fills, mutating production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Failed paper/shadow automation alerts now preserve scheduler
   rerun evidence from the automation run payload and render it in the Decision
   Automation Cockpit as public operator text. The alert payload carries
