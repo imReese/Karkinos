@@ -101,7 +101,7 @@ def run_paper_shadow_from_trading_plan(
                 f"{type(exc).__name__}: {exc}"
             )
             limitations.append(limitation)
-            _record_shadow_failed_order(
+            oms_transitions = _record_shadow_failed_order(
                 db,
                 request,
                 run_id=run_id,
@@ -124,6 +124,7 @@ def run_paper_shadow_from_trading_plan(
                     "order_intent": _order_intent_snapshot(intent, intent_ref),
                     "error_type": type(exc).__name__,
                     "error": str(exc),
+                    "oms_transitions": oms_transitions,
                 }
             )
             continue
@@ -461,7 +462,7 @@ def _record_shadow_failed_order(
     intent_ref: str,
     intent: dict[str, Any],
     error: Exception,
-) -> None:
+) -> list[dict[str, Any]]:
     payload = {
         "schema_version": PAPER_SHADOW_RUN_SCHEMA_VERSION,
         "order_id": request.order_id,
@@ -503,7 +504,7 @@ def _record_shadow_failed_order(
         source_ref=run_id,
         payload=payload,
     )
-    _record_shadow_failed_oms_order(
+    return _record_shadow_failed_oms_order(
         db,
         request,
         run_id=run_id,
@@ -570,9 +571,9 @@ def _record_shadow_failed_oms_order(
     intent_ref: str,
     intent: dict[str, Any],
     error: Exception,
-) -> None:
+) -> list[dict[str, Any]]:
     if not _db_supports_oms(db):
-        return
+        return []
     service = OmsService(db=db)
     oms_order = service.create_paper_shadow_order(
         intent_key=_paper_shadow_oms_intent_key(
@@ -596,7 +597,9 @@ def _record_shadow_failed_oms_order(
         source=PAPER_SHADOW_SOURCE,
     )
     if str(oms_order["status"]) != "staged":
-        return
+        return _oms_transition_rows_to_payloads(
+            service.list_transitions(request.order_id)
+        )
     service.transition_order(
         request.order_id,
         to_status="submitted",
@@ -625,6 +628,38 @@ def _record_shadow_failed_oms_order(
             "error": str(error),
         },
     )
+    return _oms_transition_rows_to_payloads(service.list_transitions(request.order_id))
+
+
+def _oms_transition_rows_to_payloads(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for sequence, row in enumerate(rows, start=1):
+        payload = _json_dict(row.get("payload_json"))
+        payloads.append(
+            {
+                "sequence": sequence,
+                "from_status": row.get("from_status"),
+                "to_status": row.get("to_status"),
+                "source": payload.get("source") or PAPER_SHADOW_SOURCE,
+                "reason": row.get("reason") or "",
+                "filled_quantity": str(payload.get("filled_quantity") or "0"),
+            }
+        )
+    return payloads
+
+
+def _json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _replay_shadow_oms_transitions(
