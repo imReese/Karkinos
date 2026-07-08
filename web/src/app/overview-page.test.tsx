@@ -982,6 +982,118 @@ test('surfaces paper shadow divergence evidence summary in today todos', async (
   expect(todayQueue.textContent).not.toContain('Submit broker order');
 });
 
+test('surfaces terminal paper shadow review reasons in today todos', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'paper-shadow',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 2,
+          skipped: 1,
+        },
+        subsystems: [
+          {
+            id: 'paper_shadow',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'paper-shadow',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'resolve_shadow_divergence',
+            limitations: [],
+            detail_status: 'review_required',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 1,
+          manual_ready_count: 1,
+          blocked_count: 0,
+          order_intent_count: 1,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'review_required',
+          run_id: 'shadow:2026-02-10:expired',
+          input_fingerprint: 'expired',
+          order_intent_count: 1,
+          simulated_order_count: 1,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'review_required',
+          next_manual_review_step: 'resolve_shadow_divergence',
+          last_run_at: '2026-02-10T10:00:00+08:00',
+          review_queue: [
+            {
+              review_id: 'shadow:2026-02-10:expired:ACTION-1',
+              order_intent_ref: 'action:ACTION-1',
+              order_id: 'SHADOW-EXPIRED',
+              symbol: '600519',
+              status: 'expired',
+              divergence_status: 'review_required',
+              severity: 'warning',
+              required_action: 'resolve_shadow_divergence',
+              reason:
+                'Paper/shadow order expired; review terminal simulation reason before manual confirmation.',
+              terminal_status: 'expired',
+              terminal_reason: 'paper_session_closed',
+              terminal_oms_transition_ref:
+                'oms_transition:SHADOW-EXPIRED:4:expired',
+              oms_status_path: ['staged', 'submitted', 'accepted', 'expired'],
+              oms_transition_refs: [
+                'oms_transition:SHADOW-EXPIRED:1:staged',
+                'oms_transition:SHADOW-EXPIRED:2:submitted',
+                'oms_transition:SHADOW-EXPIRED:3:accepted',
+                'oms_transition:SHADOW-EXPIRED:4:expired',
+              ],
+              oms_transitions: [
+                {
+                  sequence: 4,
+                  from_status: 'accepted',
+                  to_status: 'expired',
+                  source: 'paper_shadow_daily',
+                  reason: 'paper_session_closed',
+                  filled_quantity: '0',
+                  does_not_submit_broker_order: true,
+                  does_not_mutate_production_ledger: true,
+                },
+              ],
+              does_not_submit_broker_order: true,
+              does_not_mutate_production_ledger: true,
+            },
+          ],
+          orders: [
+            {
+              order_id: 'SHADOW-EXPIRED',
+              symbol: '600519',
+              status: 'expired',
+              divergence_status: 'review_required',
+            },
+          ],
+        },
+        limitations: [],
+      },
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+
+  expect(todayQueue.textContent).toContain(
+    'Terminal outcome: Expired · Paper session closed before fill · OMS transition · SHADOW-EXPIRED #4 Expired',
+  );
+  expect(todayQueue.textContent).not.toContain('paper_session_closed');
+  expect(todayQueue.textContent).not.toContain('terminal_reason');
+  expect(todayQueue.textContent).not.toContain('Submit broker order');
+});
+
 test('surfaces accepted paper shadow review as manual confirmation handoff', async () => {
   installOverviewFetchMock(
     {},

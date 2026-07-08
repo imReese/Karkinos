@@ -476,6 +476,17 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         for command in manual_handoff_gate.validation_commands
     )
 
+    frontend_next_actions = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "frontend_paper_shadow_next_actions"
+    )
+    assert "terminal reason" in frontend_next_actions.checkbox_text
+    assert any(
+        "terminal paper shadow review reasons" in command
+        for command in frontend_next_actions.validation_commands
+    )
+
     source_control_hygiene = next(
         criterion
         for criterion in audit.criteria
