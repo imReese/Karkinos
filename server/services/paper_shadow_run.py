@@ -161,6 +161,8 @@ def run_paper_shadow_from_trading_plan(
                 run_id=run_id,
                 plan_date=plan_date,
                 input_fingerprint=fingerprint,
+                intent_ref=intent_ref,
+                intent=intent,
             )
             fill_payload = result.fill.to_payload()
             fill_summaries.append(
@@ -447,6 +449,8 @@ def _record_shadow_fill(
     run_id: str,
     plan_date: str,
     input_fingerprint: str,
+    intent_ref: str,
+    intent: dict[str, Any],
 ) -> None:
     metadata = fill.to_payload()
     metadata.update(
@@ -454,6 +458,12 @@ def _record_shadow_fill(
             "run_id": run_id,
             "plan_date": plan_date,
             "input_fingerprint": input_fingerprint,
+            "order_intent_ref": intent_ref,
+            "evidence_refs": _dedupe_refs(
+                [intent_ref]
+                + [str(item) for item in intent.get("evidence_refs") or []]
+                + [f"paper_order:{fill.order_id}", f"paper_fill:{fill.fill_id}"]
+            ),
             "execution_mode": PAPER_SHADOW_EXECUTION_MODE,
             "source": PAPER_SHADOW_SOURCE,
             "does_not_submit_broker_order": True,
