@@ -381,6 +381,15 @@ def _record_shadow_order(
             "divergence_status": divergence_status,
             "execution_mode": PAPER_SHADOW_EXECUTION_MODE,
             "source": PAPER_SHADOW_SOURCE,
+            "evidence_refs": _dedupe_refs(
+                [intent_ref]
+                + [str(item) for item in intent.get("evidence_refs") or []]
+                + [f"paper_order:{order.order_id}"]
+                + _order_payload_oms_transition_refs(
+                    order_id=order.order_id,
+                    transitions=payload.get("oms_transitions"),
+                )
+            ),
             "does_not_submit_broker_order": True,
             "does_not_mutate_production_ledger": True,
         }
@@ -410,6 +419,25 @@ def _record_shadow_order(
         intent_ref=intent_ref,
         intent=intent,
     )
+
+
+def _order_payload_oms_transition_refs(
+    *,
+    order_id: str,
+    transitions: Any,
+) -> list[str]:
+    if not isinstance(transitions, list):
+        return []
+    refs: list[str] = []
+    for transition in transitions:
+        if not isinstance(transition, dict):
+            continue
+        sequence = transition.get("sequence")
+        to_status = str(transition.get("to_status") or "").strip()
+        if sequence is None or not to_status:
+            continue
+        refs.append(f"oms_transition:{order_id}:{sequence}:{to_status}")
+    return refs
 
 
 def _record_shadow_fill(
