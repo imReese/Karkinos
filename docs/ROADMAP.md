@@ -986,7 +986,10 @@ Initial v1.6 implementation note:
   idempotency key as the persisted run id, so repeated scheduler invocations
   for the same plan/date update one audit run while changed inputs create a
   new run. Remaining v1.6 work is continued operator-facing divergence review
-  and runbook hardening.
+  and runbook hardening. Paper/shadow run payloads now also persist a
+  deterministic `input_snapshot` with normalized order-intent inputs,
+  account-truth state, constraint summary, outcome overrides, fingerprint, and
+  no-broker/no-ledger-mutation safety flags for operator rerun review.
 
 ### v1.6.1 Implementation Goal — Paper/Shadow Execution Engine & OMS Run Records
 

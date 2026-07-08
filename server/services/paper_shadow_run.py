@@ -22,6 +22,9 @@ from execution.paper_broker import (
 from server.services.oms import OmsService
 
 PAPER_SHADOW_RUN_SCHEMA_VERSION = "karkinos.paper_shadow_run.v1"
+PAPER_SHADOW_INPUT_SNAPSHOT_SCHEMA_VERSION = (
+    "karkinos.paper_shadow_run.input_snapshot.v1"
+)
 PAPER_SHADOW_EXECUTION_MODE = "paper_shadow"
 PAPER_SHADOW_SOURCE = "paper_shadow_daily"
 
@@ -52,6 +55,14 @@ def run_paper_shadow_from_trading_plan(
         trading_plan=trading_plan,
         plan_date=plan_date,
         input_fingerprint=fingerprint,
+    )
+    input_snapshot = _input_snapshot(
+        trading_plan=trading_plan,
+        plan_date=plan_date,
+        input_fingerprint=fingerprint,
+        input_refs=input_refs,
+        order_intents=order_intents,
+        outcome_overrides=normalized_outcome_overrides,
     )
     timestamp = _timestamp(generated_at or trading_plan.get("generated_at"))
     broker = PaperBroker(
@@ -198,6 +209,7 @@ def run_paper_shadow_from_trading_plan(
         "plan_date": plan_date,
         "input_fingerprint": fingerprint,
         "input_refs": input_refs,
+        "input_snapshot": input_snapshot,
         "generated_at": timestamp.isoformat(),
         "outcome_overrides": normalized_outcome_overrides,
         "evidence_refs": evidence_refs,
@@ -225,6 +237,7 @@ def run_paper_shadow_from_trading_plan(
         **saved,
         "input_fingerprint": fingerprint,
         "input_refs": input_refs,
+        "input_snapshot": input_snapshot,
         "status": status,
         "order_intent_count": len(order_intents),
         "simulated_order_count": len(order_summaries),
@@ -1377,6 +1390,35 @@ def _input_refs(
             if trading_plan.get("schema_version") is not None
             else None
         ),
+    }
+
+
+def _input_snapshot(
+    *,
+    trading_plan: dict[str, Any],
+    plan_date: str,
+    input_fingerprint: str,
+    input_refs: dict[str, Any],
+    order_intents: list[dict[str, Any]],
+    outcome_overrides: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": PAPER_SHADOW_INPUT_SNAPSHOT_SCHEMA_VERSION,
+        "plan_date": plan_date,
+        "input_fingerprint": input_fingerprint,
+        "input_refs": input_refs,
+        "source_decision": trading_plan.get("source_decision"),
+        "trading_plan_schema_version": trading_plan.get("schema_version"),
+        "order_intent_count": len(order_intents),
+        "order_intents": [
+            _order_intent_snapshot(intent, _order_intent_ref(intent, index))
+            for index, intent in enumerate(order_intents, start=1)
+        ],
+        "current_account_facts": _current_account_facts(trading_plan, order_intents),
+        "broker_account_truth_state": _broker_account_truth_state(trading_plan),
+        "outcome_overrides": outcome_overrides,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
     }
 
 

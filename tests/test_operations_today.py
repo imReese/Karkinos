@@ -274,7 +274,16 @@ def test_operations_today_prefers_persisted_paper_shadow_run() -> None:
             "divergence_status": "within_expectations",
             "next_manual_review_step": "review_manual_confirmation",
             "limitations_json": "[]",
-            "payload_json": '{"orders": [{"order_id": "SHADOW-1"}]}',
+            "payload_json": (
+                '{"input_snapshot": {"schema_version": '
+                '"karkinos.paper_shadow_run.input_snapshot.v1", '
+                '"plan_date": "2026-07-01", '
+                '"input_fingerprint": "abc123", '
+                '"order_intent_count": 1, '
+                '"does_not_submit_broker_order": true, '
+                '"does_not_mutate_production_ledger": true}, '
+                '"orders": [{"order_id": "SHADOW-1"}]}'
+            ),
             "updated_at": "2026-07-01T09:36:00+08:00",
         },
     )
@@ -282,6 +291,14 @@ def test_operations_today_prefers_persisted_paper_shadow_run() -> None:
     assert summary["paper_shadow"]["run_id"] == "shadow:2026-07-01:abc123"
     assert summary["paper_shadow"]["status"] == "within_expectations"
     assert summary["paper_shadow"]["input_fingerprint"] == "abc123"
+    assert summary["paper_shadow"]["input_snapshot"] == {
+        "schema_version": "karkinos.paper_shadow_run.input_snapshot.v1",
+        "plan_date": "2026-07-01",
+        "input_fingerprint": "abc123",
+        "order_intent_count": 1,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
     assert summary["paper_shadow"]["simulated_order_count"] == 1
     assert summary["paper_shadow"]["simulated_fill_count"] == 1
     assert summary["paper_shadow"]["last_run_at"] == "2026-07-01T09:36:00+08:00"

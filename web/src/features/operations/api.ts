@@ -245,6 +245,7 @@ export type OperationsTodayResponse = {
     effective_status?: string;
     run_id: string | null;
     input_fingerprint?: string | null;
+    input_snapshot?: Record<string, unknown>;
     evidence_refs?: string[];
     order_intent_count: number;
     simulated_order_count: number;
@@ -276,6 +277,7 @@ export type PaperShadowRunResponse = {
   run_id: string;
   status: string;
   input_fingerprint?: string;
+  input_snapshot?: Record<string, unknown>;
   order_intent_count: number;
   simulated_order_count: number;
   simulated_fill_count: number;
