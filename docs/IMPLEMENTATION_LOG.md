@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Trading execution audit now renders terminal paper/shadow review
+  reasons alongside the latest run evidence, matching the Decision and
+  Overview terminal outcome summaries. Expired or cancelled simulated
+  outcomes show localized terminal status, terminal reason, formatted OMS
+  transition evidence, and the existing no-broker / no-ledger-mutation safety
+  boundary without exposing raw reason codes. The operations-runbook
+  acceptance audit now records the Trading targeted test for this frontend
+  contract. Assumption: Trading terminal outcome evidence is an operator
+  review cue for simulated paper/shadow runs only; it is not a live broker
+  response, broker cancellation/expiry action, execution authorization, or
+  manual-confirmation approval. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "terminal paper shadow review reasons"`
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook`.
+  Risk impact: closes the v1.6.1 terminal-review evidence loop across
+  Operations/Decision/Overview/Trading surfaces without contacting brokers,
+  storing credentials, submitting or cancelling broker orders, mutating OMS
+  state, creating live fills, writing production ledger facts, enabling
+  automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Decision and Overview paper/shadow review queues now render
   terminal simulation outcomes as public operator evidence. Cancelled and
   expired paper/shadow items show a localized terminal outcome summary with
