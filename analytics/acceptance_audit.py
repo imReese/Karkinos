@@ -2292,8 +2292,8 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "* [x] Paper/shadow simulation covers filled, partial, "
                     "rejected, cancelled, expired, failed, fee/tax projection, "
                     "idempotent rerun evidence, failed-run OMS transition "
-                    "refs, and terminal reason review evidence without "
-                    "production ledger mutation."
+                    "refs in both run and order payloads, and terminal reason "
+                    "review evidence without production ledger mutation."
                 ),
                 evidence_paths=(
                     "execution/paper_broker.py",

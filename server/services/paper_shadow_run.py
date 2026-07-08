@@ -463,6 +463,23 @@ def _record_shadow_failed_order(
     intent: dict[str, Any],
     error: Exception,
 ) -> list[dict[str, Any]]:
+    oms_transitions = _record_shadow_failed_oms_order(
+        db,
+        request,
+        run_id=run_id,
+        input_fingerprint=input_fingerprint,
+        intent_ref=intent_ref,
+        intent=intent,
+        error=error,
+    )
+    oms_transition_refs = [
+        (
+            f"oms_transition:{request.order_id}:"
+            f"{transition['sequence']}:{transition['to_status']}"
+        )
+        for transition in oms_transitions
+        if transition.get("sequence") is not None and transition.get("to_status")
+    ]
     payload = {
         "schema_version": PAPER_SHADOW_RUN_SCHEMA_VERSION,
         "order_id": request.order_id,
@@ -484,6 +501,13 @@ def _record_shadow_failed_order(
         "error_type": type(error).__name__,
         "error": str(error),
         "context": request.context.to_payload(),
+        "evidence_refs": _dedupe_refs(
+            [intent_ref]
+            + [str(item) for item in intent.get("evidence_refs") or []]
+            + [f"paper_order:{request.order_id}"]
+            + oms_transition_refs
+        ),
+        "oms_transitions": oms_transitions,
         "does_not_submit_broker_order": True,
         "does_not_mutate_production_ledger": True,
     }
@@ -504,15 +528,7 @@ def _record_shadow_failed_order(
         source_ref=run_id,
         payload=payload,
     )
-    return _record_shadow_failed_oms_order(
-        db,
-        request,
-        run_id=run_id,
-        input_fingerprint=input_fingerprint,
-        intent_ref=intent_ref,
-        intent=intent,
-        error=error,
-    )
+    return oms_transitions
 
 
 def _record_shadow_oms_order(

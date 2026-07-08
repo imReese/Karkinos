@@ -742,6 +742,10 @@ def test_paper_shadow_run_records_failed_run_when_simulation_errors(tmp_path) ->
     assert orders[0]["execution_mode"] == "paper_shadow"
     assert orders[0]["status"] == "failed"
     assert order_payload["error_type"] == "ValueError"
+    assert order_payload["oms_transitions"] == run["orders"][0]["oms_transitions"]
+    assert (
+        f"oms_transition:{failed_order_id}:3:rejected" in order_payload["evidence_refs"]
+    )
     assert order_payload["does_not_submit_broker_order"] is True
     assert order_payload["does_not_mutate_production_ledger"] is True
     assert db.list_fills_sync() == []
