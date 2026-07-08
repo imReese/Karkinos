@@ -45,6 +45,18 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Filled and non-failed paper/shadow order fact payloads now carry
+  order-level `evidence_refs` that include the source action, strategy/risk/
+  signal refs, `paper_order` ref, and OMS transition refs. This makes normal
+  simulated order facts auditable with the same local evidence chain already
+  preserved for failed runs and run-level payloads. Assumption: these refs are
+  local simulation audit evidence for operator review; they are not broker
+  responses, live fills, or ledger mutation inputs. Validation:
+  `uv run python -m pytest tests/test_paper_shadow_run_service.py::test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutation -q`.
+  Risk impact: improves v1.6.1 simulated-order audit continuity without
+  changing fill simulation, contacting brokers, storing credentials,
+  submitting orders, creating live fills, mutating production ledger facts,
+  enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Operations Today fallback review queues for legacy or partial
   paper/shadow run payloads now preserve OMS status paths, transition refs,
   normalized transition evidence, terminal reasons, and order-level evidence

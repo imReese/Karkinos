@@ -2291,8 +2291,8 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 checkbox_text=(
                     "* [x] Paper/shadow simulation covers filled, partial, "
                     "rejected, cancelled, expired, failed, fee/tax projection, "
-                    "idempotent rerun evidence, failed-run OMS transition "
-                    "refs in both run and order payloads, and terminal reason "
+                    "idempotent rerun evidence, OMS transition refs in both "
+                    "run and simulated order payloads, and terminal reason "
                     "review evidence without production ledger mutation."
                 ),
                 evidence_paths=(
@@ -2304,6 +2304,7 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 validation_commands=(
                     "uv run pytest tests/execution/test_paper_broker.py tests/test_paper_shadow_run_service.py",
                     "uv run python -m pytest tests/test_paper_shadow_run_service.py -k cancelled_and_expired",
+                    "uv run python -m pytest tests/test_paper_shadow_run_service.py::test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutation -q",
                     "uv run python -m pytest tests/test_paper_shadow_run_service.py::test_paper_shadow_run_records_failed_run_when_simulation_errors -q",
                 ),
             ),

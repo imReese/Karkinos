@@ -235,6 +235,17 @@ def test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutati
     assert order_payload["context"]["signal_id"] == "signal:signal-001"
     assert order_payload["order_intent"] == expected_order_intent_summary
     assert order_payload["divergence_status"] == "within_expectations"
+    assert order_payload["evidence_refs"] == [
+        "action:ACTION-1",
+        "strategy:dual_ma",
+        "risk:risk-001",
+        "signal:signal-001",
+        f"paper_order:{orders[0]['order_id']}",
+        f"oms_transition:{orders[0]['order_id']}:1:staged",
+        f"oms_transition:{orders[0]['order_id']}:2:submitted",
+        f"oms_transition:{orders[0]['order_id']}:3:accepted",
+        f"oms_transition:{orders[0]['order_id']}:4:filled",
+    ]
     assert order_payload["oms_transitions"][-1]["timestamp"] == ("2026-07-02T09:35:00")
     assert order_payload["oms_transitions"][-1]["source"] == "paper_shadow_daily"
     assert order_payload["does_not_submit_broker_order"] is True
