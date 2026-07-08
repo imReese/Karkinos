@@ -6,6 +6,22 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-08: Execution reconciliation staged-broker trade cost summaries now
+  explicitly carry a ledger-review contract:
+  `requires_reconciliation_before_ledger_update=true`,
+  `ledger_update_status=review_required`,
+  `suggested_ledger_action=review_staged_broker_evidence`, and
+  `does_not_recommend_automatic_ledger_update=true`. Matching and mismatched
+  staged broker trade evidence therefore remain review inputs before any
+  ledger action is suggested. Assumption: imported broker trade evidence is
+  staged reconciliation evidence only; it is not a live fill command, broker
+  response, or production ledger mutation by itself. Validation:
+  `uv run python -m pytest tests/test_execution_reconciliation_service.py::test_reconciliation_marks_manual_ticket_with_matching_broker_evidence_available tests/test_execution_reconciliation_service.py::test_reconciliation_flags_broker_evidence_quantity_mismatch -q`.
+  Risk impact: improves v1.7 reconciliation-before-ledger-update auditability
+  without contacting brokers, storing credentials, changing OMS status,
+  submitting or cancelling broker orders, creating live fills, writing
+  production ledger facts, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-08: Manual-ticket creation now returns the same
   `validation.required_gate_summary` as the preview/export/dry-run contract and
   writes that gate summary into the `manual_ticket_created` broker-gateway
