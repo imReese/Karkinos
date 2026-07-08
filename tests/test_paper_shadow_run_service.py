@@ -255,6 +255,18 @@ def test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutati
     assert fills[0]["execution_mode"] == "paper_shadow"
     assert fills[0]["source"] == "paper_shadow_daily"
     assert fills[0]["order_id"] == orders[0]["order_id"]
+    fill_metadata = json.loads(fills[0]["metadata_json"])
+    assert fill_metadata["order_intent_ref"] == "action:ACTION-1"
+    assert fill_metadata["evidence_refs"] == [
+        "action:ACTION-1",
+        "strategy:dual_ma",
+        "risk:risk-001",
+        "signal:signal-001",
+        f"paper_order:{orders[0]['order_id']}",
+        f"paper_fill:{fills[0]['fill_id']}",
+    ]
+    assert fill_metadata["does_not_submit_broker_order"] is True
+    assert fill_metadata["does_not_mutate_production_ledger"] is True
     assert _ledger_entry_count(db) == ledger_count_before
 
 
