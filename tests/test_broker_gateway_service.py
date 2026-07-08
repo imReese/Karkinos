@@ -447,6 +447,15 @@ def test_manual_ticket_gateway_creates_ticket_without_broker_submission(
     assert result["ticket"]["side"] == "buy"
     assert result["ticket"]["quantity"] == 100
     assert result["ticket"]["limit_price"] == 1688.0
+    gate_summary = result["validation"]["required_gate_summary"]
+    assert gate_summary["status"] == "pass"
+    assert gate_summary["gates"]["manual_confirmation"] == {
+        "status": "pass",
+        "evidence_ref": f"oms_order:{order['order_id']}:manual_ticket_created",
+        "source": "oms_status",
+    }
+    assert gate_summary["gates"]["account_truth"]["evidence_ref"] == ("account-truth:1")
+    assert gate_summary["does_not_authorize_execution"] is True
     updated = db.get_oms_order_sync(order["order_id"])
     assert updated["status"] == "manual_ticket_created"
     events = db.list_broker_gateway_events_sync(order_id=order["order_id"])
@@ -457,6 +466,8 @@ def test_manual_ticket_gateway_creates_ticket_without_broker_submission(
         "local-controlled-bridge-review"
     )
     assert payload["controlled_bridge_policy"]["live_submission_available"] is False
+    assert payload["required_gate_summary"] == gate_summary
+    assert payload["required_gate_summary"]["submitted_to_broker"] is False
 
 
 def test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms(

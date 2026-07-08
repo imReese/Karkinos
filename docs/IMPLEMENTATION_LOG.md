@@ -6,6 +6,21 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-08: Manual-ticket creation now returns the same
+  `validation.required_gate_summary` as the preview/export/dry-run contract and
+  writes that gate summary into the `manual_ticket_created` broker-gateway
+  audit event after the OMS status changes to `manual_ticket_created`. The
+  summary preserves account-truth, research-evidence, risk, paper/shadow,
+  manual-confirmation, kill-switch, connector-health, and execution-
+  reconciliation evidence while keeping `submitted_to_broker=false` and
+  `does_not_authorize_execution=true`. Assumption: this is creation-time audit
+  continuity for human-entered broker tickets, not live broker authority.
+  Validation:
+  `uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_gateway_creates_ticket_without_broker_submission tests/server/test_broker_gateway_routes.py::test_manual_ticket_route_returns_copyable_ticket -q`.
+  Risk impact: improves v1.7 manual-ticket auditability without contacting
+  brokers, storing credentials, creating fills, writing production ledger
+  facts, submitting or cancelling broker orders, enabling automatic trading, or
+  bypassing manual confirmation.
 - 2026-07-08: Manual-ticket preview, export, and dry-run responses now include
   a controlled-bridge gate summary before any operator copies a broker ticket.
   The summary records account-truth, research-evidence, risk, paper/shadow,

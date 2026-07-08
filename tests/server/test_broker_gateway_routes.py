@@ -604,6 +604,15 @@ def test_manual_ticket_route_returns_copyable_ticket(tmp_path, monkeypatch) -> N
     assert payload["submitted_to_broker"] is False
     assert payload["ticket"]["symbol"] == "600519"
     assert payload["ticket"]["copy_text"].startswith("BUY 600519 100")
+    gate_summary = payload["validation"]["required_gate_summary"]
+    assert gate_summary["status"] == "pass"
+    assert gate_summary["gates"]["manual_confirmation"] == {
+        "status": "pass",
+        "evidence_ref": f"oms_order:{order['order_id']}:manual_ticket_created",
+        "source": "oms_status",
+    }
+    assert gate_summary["gates"]["account_truth"]["evidence_ref"] == ("account-truth:1")
+    assert gate_summary["does_not_authorize_execution"] is True
 
 
 def test_manual_ticket_preview_route_is_read_only(tmp_path, monkeypatch) -> None:
