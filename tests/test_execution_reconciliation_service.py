@@ -250,6 +250,10 @@ def test_reconciliation_marks_manual_ticket_with_matching_broker_evidence_availa
         "transfer_fee": "0",
         "net_amount": "-168805.00",
         "review_required_before_ledger_update": True,
+        "requires_reconciliation_before_ledger_update": True,
+        "ledger_update_status": "review_required",
+        "suggested_ledger_action": "review_staged_broker_evidence",
+        "does_not_recommend_automatic_ledger_update": True,
         "does_not_mutate_production_ledger": True,
     }
 
@@ -274,6 +278,25 @@ def test_reconciliation_flags_broker_evidence_quantity_mismatch(tmp_path) -> Non
     assert item["gateway_event_count"] == 1
     assert item["broker_event_count"] == 1
     assert "quantity mismatch" in item["detail"]
+    payload = json.loads(item["payload_json"])
+    assert (
+        payload["broker_trade_cost_summary"][
+            "requires_reconciliation_before_ledger_update"
+        ]
+        is True
+    )
+    assert payload["broker_trade_cost_summary"]["ledger_update_status"] == (
+        "review_required"
+    )
+    assert payload["broker_trade_cost_summary"]["suggested_ledger_action"] == (
+        "review_staged_broker_evidence"
+    )
+    assert (
+        payload["broker_trade_cost_summary"][
+            "does_not_recommend_automatic_ledger_update"
+        ]
+        is True
+    )
 
 
 def _import_matching_broker_trade(db_path: Path) -> None:

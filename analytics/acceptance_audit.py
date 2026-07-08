@@ -2947,8 +2947,11 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                     "* [x] Execution reconciliation compares OMS orders, "
                     "gateway events, staged broker trade evidence, and "
                     "broker fee/tax/net-amount evidence before suggesting any "
-                    "review action, with no ledger mutation; Decision Cockpit "
-                    "surfaces the same cost evidence for operator review."
+                    "review action. Staged broker cost summaries explicitly "
+                    "require reconciliation before ledger updates, avoid "
+                    "automatic ledger-update recommendations, and mutate no "
+                    "ledger facts; Decision Cockpit surfaces the same cost "
+                    "evidence for operator review."
                 ),
                 evidence_paths=(
                     "server/db.py",

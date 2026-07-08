@@ -217,6 +217,10 @@ def _broker_trade_cost_summary(events: list[Any]) -> dict[str, Any]:
         "transfer_fee": str(_sum_event_decimal(events, "transfer_fee")),
         "net_amount": str(_sum_event_decimal(events, "net_amount")),
         "review_required_before_ledger_update": True,
+        "requires_reconciliation_before_ledger_update": True,
+        "ledger_update_status": "review_required",
+        "suggested_ledger_action": "review_staged_broker_evidence",
+        "does_not_recommend_automatic_ledger_update": True,
         "does_not_mutate_production_ledger": True,
     }
 
