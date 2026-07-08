@@ -856,6 +856,7 @@ def _review_queue(
                 fills=order_fills,
             )
         )
+        item.update(_terminal_order_review_evidence(order))
         for key in ("filled_quantity", "remaining_quantity"):
             if order.get(key) is not None:
                 item[key] = order.get(key)
@@ -926,6 +927,36 @@ def _review_evidence(
         "market_context": _review_market_context(intent, fills),
         **_review_oms_transition_evidence(order),
     }
+
+
+def _terminal_order_review_evidence(order: dict[str, Any]) -> dict[str, Any]:
+    status = str(order.get("status") or "").strip()
+    if status not in {"rejected", "cancelled", "expired"}:
+        return {}
+    transitions = [
+        item for item in order.get("oms_transitions") or [] if isinstance(item, dict)
+    ]
+    terminal = next(
+        (
+            item
+            for item in reversed(transitions)
+            if str(item.get("to_status") or "").strip() == status
+        ),
+        None,
+    )
+    if terminal is None:
+        return {"terminal_status": status}
+    order_id = str(order.get("order_id") or "").strip()
+    sequence = terminal.get("sequence")
+    evidence = {
+        "terminal_status": status,
+        "terminal_reason": str(terminal.get("reason") or ""),
+    }
+    if order_id and sequence is not None:
+        evidence["terminal_oms_transition_ref"] = (
+            f"oms_transition:{order_id}:{sequence}:{status}"
+        )
+    return evidence
 
 
 def _review_oms_transition_evidence(order: dict[str, Any]) -> dict[str, Any]:
