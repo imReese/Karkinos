@@ -785,6 +785,14 @@ test('surfaces latest paper shadow run evidence in execution audit', async () =>
         status: 'diverged',
         run_id: 'shadow:2026-05-16:diverged',
         input_fingerprint: 'diverged',
+        input_snapshot: {
+          schema_version: 'karkinos.paper_shadow_run.input_snapshot.v1',
+          order_intent_count: 1,
+          source_decision: 'buy',
+          input_fingerprint: 'diverged',
+          does_not_submit_broker_order: true,
+          does_not_mutate_production_ledger: true,
+        },
         evidence_refs: [
           'paper_shadow_order:SHADOW-1',
           'paper_shadow_fill:FILL-1',
@@ -859,6 +867,16 @@ test('surfaces latest paper shadow run evidence in execution audit', async () =>
   expect(screen.getByText('Sim orders: 1')).toBeTruthy();
   expect(screen.getByText('Sim fills: 0')).toBeTruthy();
   expect(
+    screen.getByText(
+      'Input snapshot: 1 order intent · Source Buy · Fingerprint diverged',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Snapshot safety: No broker submission · No production ledger mutation',
+    ),
+  ).toBeTruthy();
+  expect(
     screen.getByText('Next: Resolve paper/shadow divergence before approval'),
   ).toBeTruthy();
   expect(
@@ -900,6 +918,9 @@ test('surfaces latest paper shadow run evidence in execution audit', async () =>
   expect(document.body.textContent).not.toContain('resolve_shadow_divergence');
   expect(document.body.textContent).not.toContain('partially_filled');
   expect(document.body.textContent).not.toContain('oms_transition:');
+  expect(document.body.textContent).not.toContain(
+    'karkinos.paper_shadow_run.input_snapshot.v1',
+  );
   expect(document.body.textContent).not.toContain('#2 Submitted');
   expect(document.body.textContent).not.toContain('Submit broker order');
 });

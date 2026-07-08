@@ -496,6 +496,11 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         and "terminal paper shadow review reasons" in command
         for command in frontend_next_actions.validation_commands
     )
+    assert any(
+        "trading-page.test.tsx" in command
+        and "surfaces latest paper shadow run evidence" in command
+        for command in frontend_next_actions.validation_commands
+    )
 
     source_control_hygiene = next(
         criterion
