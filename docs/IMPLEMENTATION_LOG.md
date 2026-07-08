@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Trading execution audit now renders the latest paper/shadow
+  `input_snapshot` as public operator evidence alongside run status, review
+  queue, terminal outcome, evidence refs, and no-broker/no-ledger-mutation
+  safety flags. The Trading surface shows the normalized order-intent count,
+  source decision, fingerprint prefix, and snapshot safety boundary while
+  hiding the raw snapshot schema key. The operations-runbook acceptance audit
+  now includes the Trading input-snapshot test command as evidence for the
+  frontend paper/shadow next-action contract. Assumption: the Trading input
+  snapshot is deterministic rerun/review evidence for simulated paper/shadow
+  runs only; it is not broker truth, execution approval, or a production
+  ledger input. Validation:
+  `npm --prefix web test -- trading-page.test.tsx -t "surfaces latest paper shadow run evidence"`
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook -q`.
+  Risk impact: completes the Decision/Overview/Trading operator-facing input
+  snapshot loop without adding broker-submit controls, contacting brokers,
+  storing credentials, mutating OMS/order state, creating live fills, writing
+  production ledger facts, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-08: Decision and Overview now render paper/shadow
   `input_snapshot` as public operator evidence. The surfaces show the
   normalized order-intent count, source decision, fingerprint prefix, and
