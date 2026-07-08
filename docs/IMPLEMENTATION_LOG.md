@@ -6,6 +6,21 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Paper/shadow review queue items for cancelled and expired
+  simulated outcomes now expose `terminal_status`, `terminal_reason`, and
+  `terminal_oms_transition_ref` directly, so Operations/Decision/Overview
+  consumers can show why a terminal paper/shadow outcome needs review without
+  parsing raw OMS transitions. Assumption: terminal reason evidence is
+  operator-facing simulation review context only; it is not a cancellation
+  request, broker response, or execution authorization. Validation:
+  `uv run python -m pytest tests/test_paper_shadow_run_service.py -k cancelled_and_expired`
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook`.
+  Risk impact: improves v1.6.1 structured review evidence for cancel/expire
+  simulations without contacting brokers, storing credentials, submitting or
+  cancelling broker orders, changing OMS transition rules, creating live
+  fills, writing production ledger facts, enabling automatic trading, or
+  bypassing manual confirmation.
 - 2026-07-07: The `operations_runbook` acceptance audit now has an explicit
   `paper_shadow_manual_handoff_gate` criterion tying the Operations Today
   `paper_shadow.manual_handoff` payload and the Decision/Overview surfaces to

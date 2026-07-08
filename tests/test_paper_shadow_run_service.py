@@ -578,10 +578,30 @@ def test_paper_shadow_run_marks_cancelled_and_expired_orders_as_diverged(
     assert cancelled["divergence_status"] == "diverged"
     assert cancelled["orders"][0]["status"] == "cancelled"
     assert cancelled["simulated_fill_count"] == 0
+    cancelled_item = cancelled["review_queue"][0]
+    assert cancelled_item["status"] == "cancelled"
+    assert cancelled_item["terminal_status"] == "cancelled"
+    assert cancelled_item["terminal_reason"] == "operator_cancelled"
+    assert cancelled_item["terminal_oms_transition_ref"] == (
+        f"oms_transition:{cancelled['orders'][0]['order_id']}:3:cancelled"
+    )
+    assert cancelled_item["required_action"] == "resolve_shadow_divergence"
+    assert cancelled_item["does_not_submit_broker_order"] is True
+    assert cancelled_item["does_not_mutate_production_ledger"] is True
     assert expired["status"] == "diverged"
     assert expired["divergence_status"] == "diverged"
     assert expired["orders"][0]["status"] == "expired"
     assert expired["simulated_fill_count"] == 0
+    expired_item = expired["review_queue"][0]
+    assert expired_item["status"] == "expired"
+    assert expired_item["terminal_status"] == "expired"
+    assert expired_item["terminal_reason"] == "paper_session_closed"
+    assert expired_item["terminal_oms_transition_ref"] == (
+        f"oms_transition:{expired['orders'][0]['order_id']}:3:expired"
+    )
+    assert expired_item["required_action"] == "resolve_shadow_divergence"
+    assert expired_item["does_not_submit_broker_order"] is True
+    assert expired_item["does_not_mutate_production_ledger"] is True
 
 
 def test_paper_shadow_run_records_failed_run_when_simulation_errors(tmp_path) -> None:

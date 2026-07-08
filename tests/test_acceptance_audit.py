@@ -442,6 +442,17 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         for command in fallback_review_queue.validation_commands
     )
 
+    simulation_outcomes = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "paper_shadow_simulation_outcomes"
+    )
+    assert "terminal reason" in simulation_outcomes.checkbox_text
+    assert any(
+        "cancelled_and_expired" in command
+        for command in simulation_outcomes.validation_commands
+    )
+
     manual_handoff_gate = next(
         criterion
         for criterion in audit.criteria
