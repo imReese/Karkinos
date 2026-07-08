@@ -1538,7 +1538,11 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
           last_run_at: '2026-02-10T10:00:01+08:00',
           input_fingerprint: 'abc123',
           idempotency_key: 'market_session:2026-02-10:abc123',
-          input_snapshot: { order_intent_count: 1 },
+          input_snapshot: {
+            order_intent_count: 1,
+            source_decision: 'buy',
+            input_fingerprint: 'abc123',
+          },
           retry_state: {
             attempt: 2,
             max_attempts: 2,
@@ -1569,10 +1573,18 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
   expect(todayQueue.textContent).toContain(
     'Run market-session:2026-02-10:100001',
   );
+  expect(todayQueue.textContent).toContain(
+    'Input snapshot: 1 order intent · Source Buy · Fingerprint abc123',
+  );
+  expect(todayQueue.textContent).toContain(
+    'Rerun key: market_session:2026-02-10:abc123',
+  );
   expect(todayQueue.textContent).toContain('Retry 2/2; previous attempts 1');
   expect(todayQueue.textContent).toContain('RuntimeError: fixture');
   expect(todayQueue.textContent).toContain('No broker submission');
   expect(todayQueue.textContent).not.toContain('inspect_scheduler_failure');
+  expect(todayQueue.textContent).not.toContain('input_snapshot');
+  expect(todayQueue.textContent).not.toContain('idempotency_key');
   expect(todayQueue.textContent).not.toContain('broker order');
 });
 

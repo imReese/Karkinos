@@ -2244,9 +2244,12 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "tests/test_market_session_automation.py",
                     "tests/test_automation_control.py",
                     "tests/server/test_automation_routes.py",
+                    "web/src/app/router.tsx",
+                    "web/src/app/overview-page.test.tsx",
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_market_session_automation.py tests/test_automation_control.py tests/server/test_automation_routes.py",
+                    'npm --prefix web test -- overview-page.test.tsx -t "failed scheduler run recovery"',
                 ),
             ),
             AcceptanceCriterion(

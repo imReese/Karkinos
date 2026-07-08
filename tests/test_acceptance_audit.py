@@ -442,6 +442,21 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         for command in fallback_review_queue.validation_commands
     )
 
+    scheduler_run_persistence = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "scheduler_run_persistence"
+    )
+    assert "web/src/app/router.tsx" in scheduler_run_persistence.evidence_paths
+    assert "web/src/app/overview-page.test.tsx" in (
+        scheduler_run_persistence.evidence_paths
+    )
+    assert any(
+        "overview-page.test.tsx" in command
+        and "failed scheduler run recovery" in command
+        for command in scheduler_run_persistence.validation_commands
+    )
+
     simulation_outcomes = next(
         criterion
         for criterion in audit.criteria

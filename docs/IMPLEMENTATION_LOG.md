@@ -6,6 +6,23 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Overview Today runbook scheduler-failure evidence now renders
+  scheduler `input_snapshot` and idempotency evidence as public operator
+  text. The failed scheduler recovery item shows normalized order-intent
+  count, source decision, fingerprint prefix, rerun key, retry state, error,
+  and no-broker-submission safety evidence while hiding raw field names such
+  as `input_snapshot` and `idempotency_key`. The operations-runbook acceptance
+  audit now ties scheduler run persistence to this Overview evidence command.
+  Assumption: scheduler input snapshots and rerun keys are deterministic
+  runbook review evidence for local paper/shadow automation only; they are not
+  broker truth, execution approval, or production ledger inputs. Validation:
+  `npm --prefix web test -- overview-page.test.tsx -t "failed scheduler run recovery"`
+  and
+  `uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook -q`.
+  Risk impact: improves v1.6 scheduler rerun auditability without changing
+  scheduler execution, contacting brokers, storing credentials, submitting
+  orders, creating live fills, mutating OMS/order state, writing production
+  ledger facts, enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Trading execution audit now renders the latest paper/shadow
   `input_snapshot` as public operator evidence alongside run status, review
   queue, terminal outcome, evidence refs, and no-broker/no-ledger-mutation
