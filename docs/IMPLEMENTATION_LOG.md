@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Failed paper/shadow automation alerts now preserve scheduler
+  rerun evidence from the automation run payload and render it in the Decision
+  Automation Cockpit as public operator text. The alert payload carries
+  input fingerprint, idempotency/rerun key, and normalized input snapshot
+  evidence; the UI shows order-intent count, source decision, fingerprint
+  prefix, rerun key, retry attempt summary, manual-review requirement, and
+  no-broker/no-ledger-mutation safety labels while hiding raw field names such
+  as `input_snapshot` and `idempotency_key`. The operations-runbook acceptance
+  audit now ties failed automation alerts to this rerun-evidence contract.
+  Assumption: failed automation-run snapshots are local deterministic rerun
+  evidence for paper/shadow operations only; they are not broker truth,
+  execution approval, or production ledger inputs. Validation:
+  `uv run python -m pytest tests/test_automation_alerts.py::test_alert_scan_records_failed_paper_shadow_automation_run -q`
+  and
+  `npm --prefix web test -- decision-cockpit-page.test.tsx -t "failed paper shadow automation recovery"`.
+  Risk impact: improves v1.6 operator alert auditability without changing
+  scheduler execution, contacting brokers, storing credentials, submitting
+  orders, creating live fills, mutating OMS/order state, writing production
+  ledger facts, enabling automatic trading, or bypassing manual confirmation.
 - 2026-07-08: Overview Today runbook scheduler-failure evidence now renders
   scheduler `input_snapshot` and idempotency evidence as public operator
   text. The failed scheduler recovery item shows normalized order-intent

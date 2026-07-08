@@ -2440,8 +2440,9 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 key="automation_run_failure_alerts",
                 checkbox_text=(
                     "* [x] Failed paper/shadow automation runs generate "
-                    "acknowledgeable operations alerts with retry context, "
-                    "limitations, and explicit non-submission safety evidence."
+                    "acknowledgeable operations alerts with input snapshots, "
+                    "rerun keys, retry context, limitations, and explicit "
+                    "non-submission safety evidence."
                 ),
                 evidence_paths=(
                     "server/services/automation_alerts.py",
@@ -2455,6 +2456,8 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_automation_alerts.py tests/server/test_automation_routes.py",
+                    "uv run python -m pytest tests/test_automation_alerts.py::test_alert_scan_records_failed_paper_shadow_automation_run -q",
+                    'npm --prefix web test -- decision-cockpit-page.test.tsx -t "failed paper shadow automation recovery"',
                     "npm --prefix web test -- decision-cockpit-page.test.tsx",
                 ),
             ),
