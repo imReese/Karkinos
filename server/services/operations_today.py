@@ -555,6 +555,7 @@ def _paper_shadow_run_summary(
         "effective_status": effective_status,
         "run_id": run.get("run_id"),
         "input_fingerprint": run.get("input_fingerprint"),
+        "input_snapshot": _dict(payload.get("input_snapshot")),
         "evidence_refs": _list(payload.get("evidence_refs")),
         "order_intent_count": _int(
             run.get("order_intent_count"),

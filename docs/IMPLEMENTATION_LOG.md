@@ -6,6 +6,25 @@ roadmap promises.
 
 ## v1.6.1 Progress
 
+- 2026-07-08: Paper/shadow run payloads now include a deterministic
+  `input_snapshot` with run fingerprint, input refs, normalized order-intent
+  summaries, account-truth state, account constraint summary, outcome
+  overrides, and explicit no-broker / no-production-ledger-mutation safety
+  flags. Operations Today also surfaces the persisted snapshot through
+  `paper_shadow.input_snapshot`, giving Decision/Overview/Operations consumers
+  enough evidence to verify what inputs a run used without replaying the
+  trading plan. Assumption: this snapshot is audit evidence for deterministic
+  paper/shadow rerun review only; it is not broker truth, execution authority,
+  or a production ledger source. Validation:
+  `uv run python -m pytest tests/test_paper_shadow_run_service.py::test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutation -q`
+  and
+  `uv run python -m pytest tests/test_operations_today.py::test_operations_today_prefers_persisted_paper_shadow_run -q`.
+  Risk impact: improves v1.6/v1.6.1 runbook reproducibility and operator
+  auditability without changing order-state transitions, contacting brokers,
+  storing credentials, submitting broker orders, mutating OMS state beyond the
+  existing paper/shadow simulation path, creating live fills, writing
+  production ledger facts, enabling automatic trading, or bypassing manual
+  confirmation.
 - 2026-07-08: Trading execution audit now renders terminal paper/shadow review
   reasons alongside the latest run evidence, matching the Decision and
   Overview terminal outcome summaries. Expired or cancelled simulated

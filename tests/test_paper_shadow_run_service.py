@@ -51,6 +51,52 @@ def test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutati
     }
     assert run["input_refs"] == expected_input_refs
     assert json.loads(latest["payload_json"])["input_refs"] == expected_input_refs
+    expected_input_snapshot = {
+        "schema_version": "karkinos.paper_shadow_run.input_snapshot.v1",
+        "plan_date": "2026-07-02",
+        "input_fingerprint": run["input_fingerprint"],
+        "input_refs": expected_input_refs,
+        "source_decision": "buy",
+        "trading_plan_schema_version": "karkinos.daily_trading_plan.v1",
+        "order_intent_count": 1,
+        "order_intents": [
+            {
+                "action_ref": "action:ACTION-1",
+                "symbol": "600519",
+                "side": "buy",
+                "estimated_quantity": 100.0,
+                "estimated_price": 10.0,
+                "price_basis": "estimated_price",
+                "estimated_gross_amount": 1000.0,
+                "estimated_total_fee": 5.0,
+                "fee_rule_id": "stock_a_commission_v1",
+                "risk_gate_status": "passed",
+                "manual_confirmation_status": "ready_for_manual_confirmation",
+                "submission_status": "manual_confirmation_required",
+                "strategy_refs": ["strategy:dual_ma"],
+                "risk_refs": ["risk:risk-001"],
+                "signal_refs": ["signal:signal-001"],
+            }
+        ],
+        "current_account_facts": {
+            "available_cash": 5000.0,
+            "cash_status_counts": {"sufficient": 1},
+            "constraint_status_counts": {"pass": 2},
+            "position_effect_count": 1,
+        },
+        "broker_account_truth_state": {
+            "gate_status": "pass",
+            "has_evidence": True,
+            "blocking_reasons": [],
+        },
+        "outcome_overrides": {},
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+    assert run["input_snapshot"] == expected_input_snapshot
+    assert json.loads(latest["payload_json"])["input_snapshot"] == (
+        expected_input_snapshot
+    )
     expected_evidence_refs = [
         "action:ACTION-1",
         "strategy:dual_ma",
