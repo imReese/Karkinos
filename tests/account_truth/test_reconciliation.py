@@ -24,6 +24,11 @@ synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SY
 synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,
 """
 
+STOCK_POSITION_SCOPE_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+synthetic-stock-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,STK001,合成股票持仓,stock,CNY,0,10.50,0.00,0.00,0.00,0.00,,100,10.20,stock account snapshot,,broker_remaining_cost
+synthetic-cash-001,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0.00,0.00,0.00,0.00,1000.00,,,,,
+"""
+
 
 def test_reconciliation_report_passes_when_account_facts_match(tmp_path) -> None:
     repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
@@ -195,6 +200,52 @@ synthetic-fee-001,fee,2026-01-13T15:30:00+08:00,2026-01-13,,,,CNY,0,0,0.00,1.25,
         ("cash", "warning"),
         ("position", "warning"),
     ]
+
+
+def test_reconciliation_scopes_position_snapshot_to_covered_asset_classes(
+    tmp_path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(STOCK_POSITION_SCOPE_STATEMENT)
+    import_run = repository.save_preview(preview, source_name="stock-account.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("1000.00"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="STK001",
+                quantity=Decimal("100"),
+                cost_basis=Decimal("10.20"),
+                cost_basis_method="broker_remaining_cost",
+                asset_class="stock",
+            ),
+            KarkinosPositionFact(
+                symbol="FUND001",
+                quantity=Decimal("50"),
+                cost_basis=Decimal("2.00"),
+                asset_class="fund",
+            ),
+        ],
+    )
+
+    by_key = {(item.category, item.symbol): item for item in report.items}
+
+    assert by_key[("position", "STK001")].status == "pass"
+    assert by_key[("cost_basis", "STK001")].status == "pass"
+    assert ("position", "FUND001") not in by_key
+    assert ("cost_basis", "FUND001") not in by_key
+
+    scope_item = by_key[("position", "")]
+    assert scope_item.status == "warning"
+    assert scope_item.suggested_review_action == "provide_position_snapshot"
+    assert scope_item.detail_context == {
+        "covered_asset_classes": "stock",
+        "uncovered_asset_classes": "fund",
+    }
+    assert report.status == "warning"
 
 
 def test_reconciliation_report_distinguishes_trade_cash_fee_tax_transfer_and_cost_basis(

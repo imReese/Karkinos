@@ -6,6 +6,36 @@ roadmap promises.
 
 ## v1.7 Progress
 
+- 2026-07-10: Production trade ledger entries can now receive an explicit,
+  idempotent broker-settlement confirmation through
+  `POST /api/ledger/trades/{entry_id}/settlement`. The confirmation preserves
+  the first estimated commission, fee breakdown, net cash impact, and fee-rule
+  metadata; promotes broker-confirmed values to the effective trade fields;
+  and appends a `portfolio.trade_settlement.confirmed` audit event with the
+  cash adjustment. Assumption: the operator supplies per-trade settlement
+  evidence from a broker trade detail or contract note, not a rounded account
+  summary. Validation covers persistence, idempotency, API consistency checks,
+  projection cash, and Account Truth reconciliation of per-component rounding.
+  Risk impact: confirmed broker values can remove deterministic rounding
+  mismatches without broad tolerances or silent history loss; imported broker
+  evidence remains read-only until this explicit endpoint is called, and the
+  flow does not contact brokers, submit orders, enable automatic trading, or
+  bypass manual confirmation.
+- 2026-07-10: Account Truth position and broker cost-basis reconciliation now
+  scopes explicit `position_snapshot` evidence to the asset classes covered by
+  that snapshot. A stock-only broker snapshot therefore reconciles stock
+  positions without treating fund positions from another platform as missing;
+  uncovered asset classes remain a localized warning that requires separate
+  evidence. Legacy callers that do not provide a Karkinos position asset class
+  retain the prior full-portfolio comparison behavior. Assumption: a non-empty
+  broker snapshot `asset_class` defines the evidence coverage boundary, while
+  an empty asset class remains unscoped for backward compatibility. Validation:
+  `uv run pytest tests/account_truth/test_reconciliation.py tests/server/test_account_truth_gate.py tests/server/test_account_truth_routes.py tests/account_truth/test_account_truth_score.py -q`
+  and `npm --prefix web test -- public-labels.test.ts`. Risk impact: prevents
+  cross-platform false position mismatches while keeping uncovered holdings
+  degraded for review; it does not accept missing evidence, mutate the
+  production ledger, change cash or positions, contact brokers, submit orders,
+  enable automatic trading, or bypass manual confirmation.
 - 2026-07-08: Execution reconciliation staged-broker trade cost summaries now
   explicitly carry a ledger-review contract:
   `requires_reconciliation_before_ledger_update=true`,

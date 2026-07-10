@@ -24,6 +24,16 @@ class LedgerEntry:
     fee_breakdown: dict[str, Any] | None = None
     fee_rule_id: str | None = None
     fee_rule_version: str | None = None
+    estimated_commission: float | None = None
+    estimated_net_cash_impact: float | None = None
+    estimated_fee_breakdown: dict[str, Any] | None = None
+    estimated_fee_rule_id: str | None = None
+    estimated_fee_rule_version: str | None = None
+    settlement_status: str | None = None
+    settled_at: str | None = None
+    settlement_source: str | None = None
+    settlement_source_ref: str | None = None
+    settlement_note: str = ""
     cost_basis_method: str | None = None
     asset_class: str = "stock"
     note: str = ""
@@ -49,6 +59,18 @@ class LedgerEntry:
             fee_breakdown=_as_fee_breakdown(row.get("fee_breakdown_json")),
             fee_rule_id=row.get("fee_rule_id"),
             fee_rule_version=row.get("fee_rule_version"),
+            estimated_commission=_as_float(row.get("estimated_commission")),
+            estimated_net_cash_impact=_as_float(row.get("estimated_net_cash_impact")),
+            estimated_fee_breakdown=_as_fee_breakdown(
+                row.get("estimated_fee_breakdown_json")
+            ),
+            estimated_fee_rule_id=row.get("estimated_fee_rule_id"),
+            estimated_fee_rule_version=row.get("estimated_fee_rule_version"),
+            settlement_status=row.get("settlement_status"),
+            settled_at=row.get("settled_at"),
+            settlement_source=row.get("settlement_source"),
+            settlement_source_ref=row.get("settlement_source_ref"),
+            settlement_note=str(row.get("settlement_note") or ""),
             cost_basis_method=row.get("cost_basis_method"),
             asset_class=str(row.get("asset_class") or "stock"),
             note=str(row.get("note") or ""),

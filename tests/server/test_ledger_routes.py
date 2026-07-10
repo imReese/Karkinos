@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
 from types import SimpleNamespace
 
+import pytest
 from fastapi.routing import APIRoute
 
 from server.db import AppDatabase
@@ -411,3 +411,123 @@ def test_ledger_trade_route_uses_configured_convertible_bond_fee_contract(
     assert saved.fee_rule_id == "manual_configured_commission"
     assert saved.fee_rule_version == "local_bond_fee_schedule_v1"
     assert saved.cost_basis_method == "moving_average_buy_cost"
+
+
+def test_ledger_trade_settlement_route_confirms_broker_values(tmp_path, monkeypatch):
+    from server.routes import ledger as ledger_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    entry_id = db.insert_ledger_entry_sync(
+        entry_type="trade_sell",
+        timestamp="2026-07-03T14:08:29+08:00",
+        amount=2896.0,
+        symbol="600066",
+        direction="sell",
+        quantity=100,
+        price=28.96,
+        commission=5.0,
+        gross_amount=2896.0,
+        net_cash_impact=2889.52304,
+        fee_breakdown_json=(
+            '{"commission":"5.00","other_fees":"0",'
+            '"stamp_tax":"1.448000","total_fee":"6.476960",'
+            '"transfer_fee":"0.028960"}'
+        ),
+        fee_rule_id="manual_configured_commission",
+        fee_rule_version="broker_fee_schedule",
+        source_ref="sell-stock-600066-20260703",
+    )
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=db),
+    )
+
+    router = ledger_routes.create_router()
+    confirm_settlement = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/ledger/trades/{entry_id}/settlement"
+    ).endpoint
+    list_entries = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/ledger/entries"
+    ).endpoint
+
+    response = asyncio.run(
+        confirm_settlement(
+            entry_id,
+            ledger_routes.LedgerTradeSettlementCreate(
+                settled_at="2026-07-03T14:08:29+08:00",
+                commission=5.0,
+                stamp_tax=1.45,
+                transfer_fee=0.03,
+                net_cash_impact=2889.52,
+                source_ref="sell-stock-600066-20260703",
+                note="券商交割单确认",
+            ),
+        )
+    )
+    saved = asyncio.run(list_entries())[0]
+
+    assert response.settlement_status == "confirmed"
+    assert response.cash_adjustment == -0.00304
+    assert response.does_not_submit_broker_order is True
+    assert saved.net_cash_impact == pytest.approx(2889.52)
+    assert saved.estimated_net_cash_impact == pytest.approx(2889.52304)
+    assert saved.fee_breakdown["stamp_tax"] == "1.45"
+    assert saved.estimated_fee_breakdown["stamp_tax"] == "1.448000"
+    assert saved.settlement_source == "broker_statement"
+    assert saved.settlement_source_ref == "sell-stock-600066-20260703"
+
+
+def test_ledger_trade_settlement_route_rejects_inconsistent_net_cash(
+    tmp_path, monkeypatch
+):
+    from server.routes import ledger as ledger_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    entry_id = db.insert_ledger_entry_sync(
+        entry_type="trade_sell",
+        timestamp="2026-07-03T14:08:29+08:00",
+        amount=2896.0,
+        symbol="600066",
+        direction="sell",
+        quantity=100,
+        price=28.96,
+        commission=5.0,
+        gross_amount=2896.0,
+        net_cash_impact=2889.52304,
+        source_ref="sell-stock-600066-20260703",
+    )
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=db),
+    )
+    router = ledger_routes.create_router()
+    confirm_settlement = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/ledger/trades/{entry_id}/settlement"
+    ).endpoint
+
+    with pytest.raises(ledger_routes.HTTPException) as error:
+        asyncio.run(
+            confirm_settlement(
+                entry_id,
+                ledger_routes.LedgerTradeSettlementCreate(
+                    commission=5.0,
+                    stamp_tax=1.45,
+                    transfer_fee=0.03,
+                    net_cash_impact=2889.0,
+                    source_ref="bad-settlement",
+                ),
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert db.get_ledger_entry_sync(entry_id)["settlement_status"] is None

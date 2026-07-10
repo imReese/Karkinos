@@ -4432,6 +4432,33 @@ def test_portfolio_overview_includes_daily_operations_summary(monkeypatch):
     assert fill_facts == []
 
 
+def test_portfolio_account_truth_gate_prefers_latest_reconciliation_score(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            get_account_truth_score_sync=lambda: {
+                "gate_status": "blocked",
+                "score": 0,
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "server.account_truth_gate.build_latest_account_truth_score_payload",
+        lambda state: {
+            "gate_status": "degraded",
+            "score": 60,
+            "blocking_reasons": [],
+        },
+    )
+
+    assert (
+        portfolio_routes._portfolio_account_truth_gate_status(fake_state) == "degraded"
+    )
+
+
 def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 

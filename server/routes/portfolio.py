@@ -3618,10 +3618,13 @@ def _portfolio_account_truth_gate_status(state: object) -> str:
     if db is None:
         return "blocked"
 
-    payload: dict[str, object] | None = None
-    reader = getattr(db, "get_account_truth_score_sync", None)
-    if callable(reader):
-        payload = _dict_payload(reader())
+    from server.account_truth_gate import build_latest_account_truth_score_payload
+
+    payload = _dict_payload(build_latest_account_truth_score_payload(state))
+    if not payload:
+        reader = getattr(db, "get_account_truth_score_sync", None)
+        if callable(reader):
+            payload = _dict_payload(reader())
     if not payload:
         list_reader = getattr(db, "list_account_truth_scores_sync", None)
         if callable(list_reader):

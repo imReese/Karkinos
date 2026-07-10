@@ -766,6 +766,16 @@ class LedgerEntryResponse(BaseModel):
     fee_breakdown: dict[str, Any] | None = None
     fee_rule_id: str | None = None
     fee_rule_version: str | None = None
+    estimated_commission: float | None = None
+    estimated_net_cash_impact: float | None = None
+    estimated_fee_breakdown: dict[str, Any] | None = None
+    estimated_fee_rule_id: str | None = None
+    estimated_fee_rule_version: str | None = None
+    settlement_status: str | None = None
+    settled_at: str | None = None
+    settlement_source: str | None = None
+    settlement_source_ref: str | None = None
+    settlement_note: str = ""
     cost_basis_method: str | None = None
     asset_class: str = "stock"
     note: str = ""
@@ -785,6 +795,30 @@ class LedgerTradeCreate(BaseModel):
     note: str = ""
     source: str = "manual"
     source_ref: str | None = None
+
+
+class LedgerTradeSettlementCreate(BaseModel):
+    settled_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    commission: float = Field(ge=0)
+    stamp_tax: float = Field(default=0.0, ge=0)
+    transfer_fee: float = Field(default=0.0, ge=0)
+    other_fees: float = Field(default=0.0, ge=0)
+    net_cash_impact: float
+    source: str = Field(default="broker_statement", min_length=1)
+    source_ref: str = Field(min_length=1)
+    note: str = ""
+
+
+class LedgerTradeSettlementResponse(BaseModel):
+    id: int
+    entry_type: str
+    settlement_status: str
+    estimated_net_cash_impact: float | None
+    settled_net_cash_impact: float
+    cash_adjustment: float | None
+    fee_breakdown: dict[str, Any]
+    audit_event_type: str = "portfolio.trade_settlement.confirmed"
+    does_not_submit_broker_order: bool = True
 
 
 class LedgerCashFlowCreate(BaseModel):

@@ -130,6 +130,14 @@ def _karkinos_account_facts(state: Any) -> dict[str, object]:
         latest_quotes=latest_quotes,
     )
     ledger_rows = db.get_ledger_entries_sync(limit=1000, offset=0)
+    asset_classes_by_symbol: dict[str, str] = {}
+    for row in ledger_rows:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol or symbol in asset_classes_by_symbol:
+            continue
+        asset_classes_by_symbol[symbol] = (
+            str(row.get("asset_class") or "stock").strip().lower() or "stock"
+        )
     ledger_facts = [
         _ledger_fact_from_entry(LedgerEntry.from_row(row)) for row in ledger_rows
     ]
@@ -145,6 +153,7 @@ def _karkinos_account_facts(state: Any) -> dict[str, object]:
             cost_basis_method=(
                 position.broker_cost_basis_method or "moving_average_buy_cost"
             ),
+            asset_class=asset_classes_by_symbol.get(position.symbol, ""),
         )
         for position in projection.positions.values()
         if position.quantity != Decimal("0")

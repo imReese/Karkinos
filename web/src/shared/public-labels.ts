@@ -445,6 +445,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       'Broker cash snapshot was compared with the Karkinos cash balance.',
     'account_truth.position_snapshot_missing':
       'Broker position snapshot is missing, so position reconciliation is incomplete.',
+    'account_truth.position_snapshot_scope_incomplete':
+      'Broker position snapshots cover only part of the portfolio; positions from other platforms remain unverified.',
     'account_truth.position_quantity_compared':
       'Broker position quantity was compared with the Karkinos position quantity.',
     'account_truth.fees_compared':
@@ -514,6 +516,8 @@ const NOTE_LABELS: Record<Locale, LabelMap> = {
       '券商现金快照已与 Karkinos 本地现金余额对比。',
     'account_truth.position_snapshot_missing':
       '缺少券商持仓快照，持仓复核尚不完整。',
+    'account_truth.position_snapshot_scope_incomplete':
+      '券商持仓快照仅覆盖部分资产类别；其他平台持仓仍待补充证据。',
     'account_truth.position_quantity_compared':
       '券商持仓数量已与 Karkinos 本地持仓数量对比。',
     'account_truth.fees_compared': '券商费用已与 Karkinos 本地账本费用对比。',
