@@ -127,10 +127,7 @@ test('formats research limitation notes for Chinese user-facing surfaces', () =>
 
 test('formats partial broker position snapshot coverage', () => {
   expect(
-    formatPublicNote(
-      'account_truth.position_snapshot_scope_incomplete',
-      'zh',
-    ),
+    formatPublicNote('account_truth.position_snapshot_scope_incomplete', 'zh'),
   ).toBe('券商持仓快照仅覆盖部分资产类别；其他平台持仓仍待补充证据。');
 });
 
