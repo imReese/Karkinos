@@ -215,7 +215,9 @@ exposing technical confirmation metadata.
 
 Account Truth import preview can parse the canonical broker statement CSV
 format documented in
-[docs/account-truth-import.zh.md](docs/account-truth-import.zh.md). The preview
+[docs/account-truth-import.zh.md](docs/account-truth-import.zh.md). Start with
+the tracked [broker statement CSV template](broker_statement.template.csv);
+keep real broker exports in the ignored local `broker_statement.csv`. The preview
 validates rows, computes file and row fingerprints, marks duplicate rows, and
 returns broker evidence objects. Valid previews can be staged through
 `BrokerEvidenceRepository.save_preview()`, which records import-run metadata and

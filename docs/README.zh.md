@@ -114,6 +114,11 @@ SQLite / 数据缓存中的运行时金融事实；`config.json` 只保存本机
 
 ## Account Truth 导入预览
 
+直接使用项目根目录的
+[`broker_statement.template.csv`](../broker_statement.template.csv) 录入数据；字段含义、
+事件类型和隐私边界见 [Account Truth 导入说明](account-truth-import.zh.md)。
+真实券商数据保存为本地 `broker_statement.csv`，该文件已被 Git 忽略，不要提交。
+
 Account Truth 当前支持 canonical broker statement CSV 的只读预览解析和 staged
 broker evidence 持久化，并提供 reconciliation report 核心比较：
 `parse_broker_statement_csv()` 会标准化本地 CSV 行、校验必填列和事件类型、
