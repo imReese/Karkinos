@@ -47,3 +47,37 @@ class LedgerRepository:
         """Return persisted ledger entries, newest first."""
         rows = self._db.get_ledger_entries_sync(limit=limit, offset=offset)
         return [LedgerEntry.from_row(row) for row in rows]
+
+    def get_entry(self, entry_id: int) -> LedgerEntry | None:
+        """Return one persisted ledger entry."""
+        row = self._db.get_ledger_entry_sync(entry_id)
+        return LedgerEntry.from_row(row) if row is not None else None
+
+    def confirm_trade_settlement(
+        self,
+        *,
+        entry_id: int,
+        commission: float,
+        net_cash_impact: float,
+        fee_breakdown: dict[str, str],
+        settled_at: str,
+        settlement_source: str,
+        settlement_source_ref: str,
+        settlement_note: str = "",
+    ) -> LedgerEntry:
+        """Persist broker-confirmed trade costs and preserve the estimate."""
+        row = self._db.confirm_ledger_trade_settlement_sync(
+            entry_id=entry_id,
+            commission=commission,
+            net_cash_impact=net_cash_impact,
+            fee_breakdown_json=json.dumps(
+                fee_breakdown,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            settled_at=settled_at,
+            settlement_source=settlement_source,
+            settlement_source_ref=settlement_source_ref,
+            settlement_note=settlement_note,
+        )
+        return LedgerEntry.from_row(row)

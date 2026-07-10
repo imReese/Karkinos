@@ -6,6 +6,7 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +144,24 @@ class AppDatabase:
             _ensure_column(conn, "ledger_entries", "fee_breakdown_json", "TEXT")
             _ensure_column(conn, "ledger_entries", "fee_rule_id", "TEXT")
             _ensure_column(conn, "ledger_entries", "fee_rule_version", "TEXT")
+            _ensure_column(conn, "ledger_entries", "estimated_commission", "REAL")
+            _ensure_column(conn, "ledger_entries", "estimated_net_cash_impact", "REAL")
+            _ensure_column(
+                conn, "ledger_entries", "estimated_fee_breakdown_json", "TEXT"
+            )
+            _ensure_column(conn, "ledger_entries", "estimated_fee_rule_id", "TEXT")
+            _ensure_column(conn, "ledger_entries", "estimated_fee_rule_version", "TEXT")
+            _ensure_column(conn, "ledger_entries", "settlement_status", "TEXT")
+            _ensure_column(conn, "ledger_entries", "settled_at", "TEXT")
+            _ensure_column(conn, "ledger_entries", "settlement_source", "TEXT")
+            _ensure_column(conn, "ledger_entries", "settlement_source_ref", "TEXT")
+            _ensure_column(conn, "ledger_entries", "settlement_note", "TEXT")
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                idx_ledger_entries_settlement_evidence
+                ON ledger_entries(settlement_source, settlement_source_ref)
+                WHERE settlement_source_ref IS NOT NULL
+                """)
             _ensure_column(conn, "ledger_entries", "cost_basis_method", "TEXT")
             _ensure_column(
                 conn,
@@ -3951,6 +3970,175 @@ class AppDatabase:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_ledger_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
+        """Read one ledger event by id."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM ledger_entries WHERE id = ? LIMIT 1",
+                (entry_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def confirm_ledger_trade_settlement_sync(
+        self,
+        *,
+        entry_id: int,
+        commission: float,
+        net_cash_impact: float,
+        fee_breakdown_json: str,
+        settled_at: str,
+        settlement_source: str,
+        settlement_source_ref: str,
+        settlement_note: str = "",
+        fee_rule_id: str = "broker_settlement_confirmation",
+        fee_rule_version: str = "broker_settlement_confirmation.v1",
+    ) -> dict[str, Any]:
+        """Confirm broker-settled trade costs while preserving the estimate."""
+        normalized_settled_at = _normalize_timestamp(settled_at)
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            current_row = conn.execute(
+                "SELECT * FROM ledger_entries WHERE id = ? LIMIT 1",
+                (entry_id,),
+            ).fetchone()
+            if current_row is None:
+                raise KeyError(f"ledger entry not found: {entry_id}")
+
+            current = dict(current_row)
+            if str(current.get("entry_type") or "") not in {
+                "trade_buy",
+                "trade_sell",
+            }:
+                raise ValueError("only trade ledger entries can be settled")
+
+            evidence_owner = conn.execute(
+                """
+                SELECT id
+                FROM ledger_entries
+                WHERE settlement_source = ?
+                  AND settlement_source_ref = ?
+                  AND id != ?
+                LIMIT 1
+                """,
+                (settlement_source, settlement_source_ref, entry_id),
+            ).fetchone()
+            if evidence_owner is not None:
+                raise ValueError(
+                    "settlement evidence reference already confirms another ledger entry"
+                )
+
+            same_evidence = (
+                current.get("settlement_status") == "confirmed"
+                and current.get("settlement_source") == settlement_source
+                and current.get("settlement_source_ref") == settlement_source_ref
+            )
+            same_values = (
+                float(current.get("commission") or 0.0) == float(commission)
+                and float(current.get("net_cash_impact") or 0.0)
+                == float(net_cash_impact)
+                and str(current.get("fee_breakdown_json") or "") == fee_breakdown_json
+            )
+            if same_evidence:
+                if not same_values:
+                    raise ValueError(
+                        "settlement evidence reference already confirmed with different values"
+                    )
+                return current
+
+            estimated_commission = current.get("estimated_commission")
+            if estimated_commission is None:
+                estimated_commission = current.get("commission")
+            estimated_net_cash_impact = current.get("estimated_net_cash_impact")
+            if estimated_net_cash_impact is None:
+                estimated_net_cash_impact = current.get("net_cash_impact")
+            estimated_fee_breakdown_json = current.get("estimated_fee_breakdown_json")
+            if estimated_fee_breakdown_json is None:
+                estimated_fee_breakdown_json = current.get("fee_breakdown_json")
+            estimated_fee_rule_id = current.get("estimated_fee_rule_id")
+            if estimated_fee_rule_id is None:
+                estimated_fee_rule_id = current.get("fee_rule_id")
+            estimated_fee_rule_version = current.get("estimated_fee_rule_version")
+            if estimated_fee_rule_version is None:
+                estimated_fee_rule_version = current.get("fee_rule_version")
+
+            conn.execute(
+                """
+                UPDATE ledger_entries
+                SET commission = ?, net_cash_impact = ?, fee_breakdown_json = ?,
+                    fee_rule_id = ?, fee_rule_version = ?,
+                    estimated_commission = ?, estimated_net_cash_impact = ?,
+                    estimated_fee_breakdown_json = ?, estimated_fee_rule_id = ?,
+                    estimated_fee_rule_version = ?, settlement_status = 'confirmed',
+                    settled_at = ?, settlement_source = ?, settlement_source_ref = ?,
+                    settlement_note = ?
+                WHERE id = ?
+                """,
+                (
+                    commission,
+                    net_cash_impact,
+                    fee_breakdown_json,
+                    fee_rule_id,
+                    fee_rule_version,
+                    estimated_commission,
+                    estimated_net_cash_impact,
+                    estimated_fee_breakdown_json,
+                    estimated_fee_rule_id,
+                    estimated_fee_rule_version,
+                    normalized_settled_at,
+                    settlement_source,
+                    settlement_source_ref,
+                    settlement_note,
+                    entry_id,
+                ),
+            )
+            updated_row = conn.execute(
+                "SELECT * FROM ledger_entries WHERE id = ? LIMIT 1",
+                (entry_id,),
+            ).fetchone()
+            if updated_row is None:
+                raise RuntimeError("settled ledger entry could not be reloaded")
+            updated = dict(updated_row)
+            _insert_event_sync(
+                conn,
+                event_type="portfolio.trade_settlement.confirmed",
+                timestamp=normalized_settled_at,
+                entity_type="ledger_entry",
+                entity_id=str(entry_id),
+                source=settlement_source,
+                source_ref=settlement_source_ref,
+                payload={
+                    "entry_id": entry_id,
+                    "symbol": current.get("symbol"),
+                    "direction": current.get("direction"),
+                    "estimated": {
+                        "commission": estimated_commission,
+                        "net_cash_impact": estimated_net_cash_impact,
+                        "fee_breakdown": _json_dict(estimated_fee_breakdown_json),
+                        "fee_rule_id": estimated_fee_rule_id,
+                        "fee_rule_version": estimated_fee_rule_version,
+                    },
+                    "settled": {
+                        "commission": commission,
+                        "net_cash_impact": net_cash_impact,
+                        "fee_breakdown": _json_dict(fee_breakdown_json),
+                        "fee_rule_id": fee_rule_id,
+                        "fee_rule_version": fee_rule_version,
+                    },
+                    "cash_adjustment": (
+                        None
+                        if estimated_net_cash_impact is None
+                        else float(
+                            Decimal(str(net_cash_impact))
+                            - Decimal(str(estimated_net_cash_impact))
+                        )
+                    ),
+                    "settlement_note": settlement_note,
+                },
+            )
+            conn.commit()
+            return updated
+
     # ---------- Market Research ----------
 
     async def add_research_note(
@@ -4725,6 +4913,16 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     fee_breakdown_json TEXT,
     fee_rule_id TEXT,
     fee_rule_version TEXT,
+    estimated_commission REAL,
+    estimated_net_cash_impact REAL,
+    estimated_fee_breakdown_json TEXT,
+    estimated_fee_rule_id TEXT,
+    estimated_fee_rule_version TEXT,
+    settlement_status TEXT,
+    settled_at TEXT,
+    settlement_source TEXT,
+    settlement_source_ref TEXT,
+    settlement_note TEXT,
     cost_basis_method TEXT,
     asset_class TEXT DEFAULT 'stock',
     note TEXT DEFAULT '',

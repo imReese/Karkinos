@@ -44,6 +44,7 @@ class KarkinosPositionFact:
     quantity: Decimal
     cost_basis: Decimal | None = None
     cost_basis_method: str = "moving_average_buy_cost"
+    asset_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,33 @@ def build_reconciliation_report(
     ]
     if has_position_snapshot:
         items.extend(_position_items(broker_events, positions))
+        uncovered_asset_classes = _uncovered_position_asset_classes(
+            broker_events,
+            positions,
+        )
+        if uncovered_asset_classes:
+            covered_asset_classes = _position_snapshot_asset_classes(broker_events)
+            items.append(
+                _warning_item(
+                    category="position",
+                    broker_value=None,
+                    karkinos_value=None,
+                    suggested_review_action="provide_position_snapshot",
+                    detail_code="account_truth.position_snapshot_scope_incomplete",
+                    detail=(
+                        "Broker position snapshots cover only selected asset "
+                        "classes; other account positions remain unverified."
+                    ),
+                    detail_context={
+                        "covered_asset_classes": ",".join(
+                            sorted(covered_asset_classes)
+                        ),
+                        "uncovered_asset_classes": ",".join(
+                            sorted(uncovered_asset_classes)
+                        ),
+                    },
+                )
+            )
     else:
         items.append(
             _warning_item(
@@ -211,6 +239,7 @@ def _position_items(
     broker_events: list[StoredBrokerEvidenceEvent],
     positions: list[KarkinosPositionFact],
 ) -> list[ReconciliationItem]:
+    positions = _positions_in_snapshot_scope(broker_events, positions)
     broker_positions = {
         event.symbol: _decimal(event.position_quantity)
         for event in broker_events
@@ -389,6 +418,7 @@ def _cost_basis_items(
     broker_events: list[StoredBrokerEvidenceEvent],
     positions: list[KarkinosPositionFact],
 ) -> list[ReconciliationItem]:
+    positions = _positions_in_snapshot_scope(broker_events, positions)
     broker_cost_basis = {
         event.symbol: _optional_decimal(event.cost_basis)
         for event in broker_events
@@ -432,6 +462,51 @@ def _cost_basis_items(
         )
         for symbol in symbols
     ]
+
+
+def _positions_in_snapshot_scope(
+    broker_events: list[StoredBrokerEvidenceEvent],
+    positions: list[KarkinosPositionFact],
+) -> list[KarkinosPositionFact]:
+    covered_asset_classes = _position_snapshot_asset_classes(broker_events)
+    if not covered_asset_classes:
+        return positions
+    return [
+        position
+        for position in positions
+        if not _normalized_asset_class(position.asset_class)
+        or _normalized_asset_class(position.asset_class) in covered_asset_classes
+    ]
+
+
+def _uncovered_position_asset_classes(
+    broker_events: list[StoredBrokerEvidenceEvent],
+    positions: list[KarkinosPositionFact],
+) -> set[str]:
+    covered_asset_classes = _position_snapshot_asset_classes(broker_events)
+    if not covered_asset_classes:
+        return set()
+    return {
+        asset_class
+        for position in positions
+        if (asset_class := _normalized_asset_class(position.asset_class))
+        and asset_class not in covered_asset_classes
+    }
+
+
+def _position_snapshot_asset_classes(
+    broker_events: list[StoredBrokerEvidenceEvent],
+) -> set[str]:
+    return {
+        asset_class
+        for event in broker_events
+        if event.event_type == "position_snapshot"
+        and (asset_class := _normalized_asset_class(event.asset_class))
+    }
+
+
+def _normalized_asset_class(value: str) -> str:
+    return str(value or "").strip().lower()
 
 
 def _cost_basis_detail(

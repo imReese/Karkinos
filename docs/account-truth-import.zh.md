@@ -214,6 +214,28 @@ decision = review_repository.record_decision(
 标记，不会自动创建或修改 `ledger_entries`；真正写入生产账本仍需要后续显式确认
 流程。
 
+## 券商结算确认
+
+当交易明细或交割单已经给出实际佣金、印花税、过户费和净现金影响时，可以通过显式
+接口确认一条已有交易流水：
+
+```text
+POST /api/ledger/trades/{entry_id}/settlement
+```
+
+该接口不会下单，也不会从 Account Truth 导入时自动调用。它会先校验净现金影响与
+成交总额、费用分项是否一致，然后在同一事务中：
+
+- 首次保存原始估算佣金、费用分项、净现金影响和费用规则；
+- 将交易流水的有效费用和净现金影响更新为券商实际结算值；
+- 记录结算来源、证据引用、确认时间和备注；
+- 追加 `portfolio.trade_settlement.confirmed` 审计事件，保留调整前后值和现金差额；
+- 对同一个 `source` + `source_ref` 幂等处理，冲突值会被拒绝。
+
+因此，交易前费用模型仍可用于预估和回测；成交后的现金、成本和 Account Truth 对账
+则使用券商确认值。来源必须是交易明细、交割单或等价的结算证据，不能仅凭首页汇总
+展示反推每笔费用。
+
 ## Account Truth Score
 
 当前 score 入口：

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
@@ -15,6 +16,8 @@ from server.models import (
     LedgerEntryCreatedResponse,
     LedgerEntryResponse,
     LedgerTradeCreate,
+    LedgerTradeSettlementCreate,
+    LedgerTradeSettlementResponse,
 )
 from server.services.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
@@ -142,6 +145,67 @@ def _build_adjustment_entry(body: LedgerAdjustmentCreate) -> LedgerEntry:
     )
 
 
+def _settled_fee_breakdown(body: LedgerTradeSettlementCreate) -> dict[str, str]:
+    components = {
+        "commission": Decimal(str(body.commission)),
+        "stamp_tax": Decimal(str(body.stamp_tax)),
+        "transfer_fee": Decimal(str(body.transfer_fee)),
+        "other_fees": Decimal(str(body.other_fees)),
+    }
+    total_fee = sum(components.values(), Decimal("0"))
+    return {
+        **{key: format(value, "f") for key, value in components.items()},
+        "total_fee": format(total_fee, "f"),
+        "confirmation_source": body.source.strip(),
+    }
+
+
+def _cash_adjustment(settled: float, estimated: float | None) -> float | None:
+    if estimated is None:
+        return None
+    return float(Decimal(str(settled)) - Decimal(str(estimated)))
+
+
+def _validate_trade_settlement(
+    entry: LedgerEntry,
+    body: LedgerTradeSettlementCreate,
+    fee_breakdown: dict[str, str],
+) -> None:
+    if not body.source.strip() or not body.source_ref.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="broker settlement source and source_ref are required",
+        )
+    if entry.entry_type not in {"trade_buy", "trade_sell"}:
+        raise HTTPException(
+            status_code=422,
+            detail="only trade ledger entries can receive broker settlement",
+        )
+    gross_amount = entry.gross_amount
+    if gross_amount is None and entry.quantity is not None and entry.price is not None:
+        gross_amount = entry.quantity * entry.price
+    if gross_amount is None:
+        raise HTTPException(
+            status_code=422,
+            detail="trade gross amount is required before broker settlement",
+        )
+
+    gross = Decimal(str(gross_amount))
+    total_fee = Decimal(fee_breakdown["total_fee"])
+    expected_net = (
+        -(gross + total_fee) if entry.entry_type == "trade_buy" else gross - total_fee
+    )
+    actual_net = Decimal(str(body.net_cash_impact))
+    if abs(expected_net - actual_net) > Decimal("0.005"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "broker net cash impact does not match gross amount and "
+                "settled fee components"
+            ),
+        )
+
+
 def _ledger_display_name(db, entry: LedgerEntry) -> str | None:
     if not entry.symbol:
         return None
@@ -184,6 +248,52 @@ def create_router() -> APIRouter:
         entry = _build_trade_entry(body, config=getattr(state, "config", None))
         entry_id = repo.insert_entry(entry)
         return LedgerEntryCreatedResponse(id=entry_id, entry_type=entry.entry_type)
+
+    @r.post(
+        "/trades/{entry_id}/settlement",
+        response_model=LedgerTradeSettlementResponse,
+    )
+    async def confirm_trade_settlement(
+        entry_id: int,
+        body: LedgerTradeSettlementCreate,
+    ) -> LedgerTradeSettlementResponse:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        repo = LedgerRepository(state.db)
+        entry = repo.get_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="ledger entry not found")
+
+        fee_breakdown = _settled_fee_breakdown(body)
+        _validate_trade_settlement(entry, body, fee_breakdown)
+        try:
+            settled = repo.confirm_trade_settlement(
+                entry_id=entry_id,
+                commission=body.commission,
+                net_cash_impact=body.net_cash_impact,
+                fee_breakdown=fee_breakdown,
+                settled_at=body.settled_at,
+                settlement_source=body.source.strip(),
+                settlement_source_ref=body.source_ref.strip(),
+                settlement_note=body.note,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        estimated_net = settled.estimated_net_cash_impact
+        return LedgerTradeSettlementResponse(
+            id=entry_id,
+            entry_type=settled.entry_type,
+            settlement_status=settled.settlement_status or "confirmed",
+            estimated_net_cash_impact=estimated_net,
+            settled_net_cash_impact=settled.net_cash_impact or 0.0,
+            cash_adjustment=_cash_adjustment(
+                settled.net_cash_impact or 0.0,
+                estimated_net,
+            ),
+            fee_breakdown=settled.fee_breakdown or {},
+        )
 
     @r.post("/cash-flows", response_model=LedgerEntryCreatedResponse)
     async def create_cash_flow_entry(
