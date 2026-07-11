@@ -106,6 +106,26 @@ Active planning target:
   distinct future execution gateway and requires a verified same-account
   binding. The roles may not share an id or overlap in policy scope. Declared
   gateway capability remains runtime-unverified evidence, never authority.
+* Stage 2.4 can now produce short-lived, source-rechecked execution-gateway
+  readiness evidence from a registered gateway's capabilities, health,
+  account binding, and zero-side-effect dry-run. Production registers none by
+  default, and verification still cannot issue authority or submit.
+* Stage 2.5 now binds that exact current verification into each per-order
+  dossier and its recorded capital evaluation. Gateway/connector/account/order
+  mismatch, expiry, or source drift invalidates review; a clear binding removes
+  only the runtime-verification blocker and still grants no execution authority.
+* Stage 3.3 extends the same rule to bounded-session proposals with one unique
+  current verification per OMS order and an exact capital-evidence reference
+  set. One failed order blocks the whole envelope; a clear set still cannot
+  reserve budget, issue a session, or submit to a broker.
+* Stage 3.4 now requires a source-rechecked, 120-second session-start Account
+  Truth record bound to the same capital evaluation, connector, and account
+  alias. Drift, expiry, or unresolved reconciliation blocks the envelope; clear
+  evidence still cannot reserve budget or issue runtime authority.
+* Stage 3.5 now atomically reserves the exact signed envelope's conservative
+  capital, cash, China-trading-day turnover, and order-count budget with SQLite
+  write serialization. It revalidates every source first and still cannot issue
+  a runtime session, mutate OMS/ledger, or contact/submit to a broker.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

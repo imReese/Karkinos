@@ -1389,10 +1389,10 @@ issue capital authority.
   gateway evidence is missing or blocked, the latest soak is unhealthy or no
   longer fresh, prior reconciliation is not clear, or the kill switch is
   unavailable/enabled.
-* [x] A current signed Stage 1 promotion may clear only the Account Truth-linkage,
-  owner-acceptance, and Stage 1 promotion blockers; evidence-connector read-only
-  integrity, execution-gateway runtime verification, runtime authority, live
-  gateway, and broker submission remain explicit hard blockers.
+* [x] A current signed Stage 1 promotion may clear only its Stage 1 blockers,
+  and an exact current non-submitting gateway verification may clear only the
+  runtime-verification blocker; evidence-connector read-only integrity, runtime
+  authority, live gateway, and broker submission remain explicit hard blockers.
 * [x] Every per-order dossier resolves and fingerprints the current Stage 1
   promotion dossier, operational source, Account Truth source, and verified
   owner-acceptance id for the exact capital-policy connector.
@@ -1413,6 +1413,56 @@ issue capital authority.
   fail-closed gates, hard submission blockers, exact-fingerprint reuse,
   rejection audit, credential rejection, and zero execution side effects.
 
+### Stage 2.4 Non-Submitting Execution Gateway Runtime Verification
+
+* [x] Runtime verification resolves a distinct registered execution gateway,
+  verified evidence-connector/account binding, complete submit/cancel/query/
+  dry-run/idempotency capabilities, and a healthy source-fingerprinted snapshot.
+* [x] Gateway health must be healthy, timezone-aware, no more than 60 seconds
+  old, not materially future-dated, and bound to a valid source fingerprint;
+  missing/stale/provider failure evidence fails closed without leaking details.
+* [x] The verifier derives a deterministic client order id and requires dry-run
+  acceptance for the exact order fingerprint with a valid payload fingerprint,
+  no broker order id, submitted=false, and zero reported side effects.
+* [x] Exact accepted or rejected verification attempts are append-only and
+  deterministic; sequential accepted reruns reuse one event without submitting
+  or cancelling.
+* [x] Resolution re-runs current capability, binding, health, and dry-run checks,
+  rejects source drift, and expires recorded verification after five minutes.
+* [x] Production registers no execution gateway by default; status therefore
+  reports no runtime gateway, disabled execution authority, and broker submission
+  false.
+* [x] Status, preview, record, resolve, and list APIs reject undeclared credential
+  fields and expose no gateway registration, authority issue, budget, OMS/ledger,
+  submit, cancel, resume, or scale-up operation.
+* [x] Deterministic service and route tests cover ready, missing registration,
+  capability/account/health failure, unsafe dry-run, source drift, expiry, reuse,
+  rejection audit, credential rejection, and zero broker side effects.
+
+### Stage 2.5 Exact Runtime Gateway Verification Binding
+
+* [x] The recorded manual-each-order capital evaluation must contain the exact
+  typed execution-gateway verification fingerprint requested by the per-order
+  dossier.
+* [x] Every dossier re-resolves the current verification and exactly binds
+  gateway id, read-only evidence connector, account alias, OMS order id,
+  canonical order fingerprint, and the dry-run order contract.
+* [x] Missing providers and gateway, connector, account, order, fingerprint,
+  status, authority, or submission-state mismatches fail closed with sanitized
+  evidence.
+* [x] Expiry or source drift changes the dossier fingerprint, re-blocks review,
+  restores the runtime-verification hard blocker, and invalidates the prior
+  artifact-bound approval.
+* [x] A clear non-submitting verification removes only the runtime-verification
+  blocker; runtime authority, live gateway, broker submission, and strategy
+  direct execution remain blocked.
+* [x] Preview and confirmation APIs accept only a valid verification fingerprint,
+  inject the closed-by-default runtime registry resolver, reject credentials,
+  and expose no submit path.
+* [x] Deterministic tests cover exact binding, capital-reference mismatch, scope
+  mismatch, provider failure, source drift, approval invalidation, route wiring,
+  and zero execution authority.
+
 ### Stage 3 Non-Executing Session-Bounded Envelope Foundation
 
 * [x] A proposal requires one recorded `session_bounded` capital evaluation, an
@@ -1429,12 +1479,12 @@ issue capital authority.
 * [x] An exact fresh envelope can be attested only after review gates pass;
   sequential reruns reuse append-only evidence, while stale fingerprints or
   blocked envelopes create deterministic rejection evidence.
-* [x] Stage 1/2 promotion, session-start Account Truth, read-only evidence-connector
-  integrity, execution-gateway runtime verification, per-symbol
-  runtime limits, atomic budget reservation, runtime rate limiting, automatic
-  pause, session issuance/resume, live gateway, and broker submission remain
-  hard blockers after exact prior-batch reconciliation and signed operator
-  approval pass.
+* [x] Exact per-order gateway verification and current session-start Account
+  Truth may clear only their respective evidence blockers; Stage 1/2 promotion,
+  read-only evidence-connector integrity, per-symbol runtime limits, atomic budget
+  reservation, runtime rate limiting, automatic pause, session issuance/resume,
+  live gateway, and broker submission remain hard blockers after exact
+  prior-batch reconciliation and signed operator approval pass.
 * [x] Every proposal and attestation states that it does not issue/enable a
   runtime session, reserve/consume budget, mutate OMS/ledger, contact a broker,
   submit/cancel orders, auto-resume/renew/expand, or scale capital authority.
@@ -1444,6 +1494,75 @@ issue capital authority.
 * [x] Deterministic service and route tests cover time/scope/evidence/budget
   gates, freshness-stable fingerprints, exact attestation reuse, rejection
   audit, credential rejection, hard blockers, and zero execution side effects.
+
+### Stage 3.3 Per-Order Gateway Verification Set Binding
+
+* [x] A session request maps every OMS order id to one unique gateway-verification
+  fingerprint, and the recorded `session_bounded` capital evaluation contains
+  exactly the same typed verification-reference set.
+* [x] Every envelope re-resolves each current verification and independently
+  matches gateway, read-only connector, account alias, OMS order id, canonical
+  order fingerprint, and sanitized dry-run order terms.
+* [x] Missing, extra, reused, invalid, or mismatched verification references and
+  any single-order resolution failure block the whole session envelope.
+* [x] Verification expiry or source drift changes the envelope fingerprint,
+  restores the runtime-verification hard blocker, and invalidates the prior
+  artifact-bound operator approval.
+* [x] A fully clear verification set removes only the runtime-verification
+  blocker; session authority, atomic budget reservation, automatic pause, live
+  gateway, broker submission, and strategy direct execution remain disabled.
+* [x] Preview and attestation APIs validate the bounded fingerprint map, inject
+  the closed-by-default runtime registry resolver, reject credentials, and expose
+  no session-issue or submit path.
+* [x] Deterministic tests cover exact multi-order binding, capital-reference-set
+  mismatch, missing/reused references, scope/order mismatch, provider failure,
+  source drift, approval invalidation, route wiring, and zero execution authority.
+
+### Stage 3.4 Session-Start Account Truth Binding
+
+* [x] Session-start evidence rebuilds current Account Truth and requires a clear
+  reconciliation, passing gate, fresh source no more than 120 seconds old, zero
+  unresolved mismatches, and explicit zero-authority boundaries.
+* [x] Clear and rejected attempts are append-only and deterministic; resolution
+  rechecks the current source, detects drift, and expires records after 120 seconds.
+* [x] The session request and recorded `session_bounded` capital evaluation bind
+  the same typed Account Truth fingerprint, evidence connector, and account alias.
+* [x] Missing providers, identity mismatch, expiry, or source drift re-blocks the
+  envelope, restores the Account Truth hard blocker, and invalidates the prior
+  artifact-bound operator approval without leaking source details.
+* [x] A clear binding removes only `session_account_truth_snapshot_not_bound`;
+  session authority, atomic budget reservation, automatic pause, live gateway,
+  broker submission, and strategy direct execution remain disabled.
+* [x] Status, preview, record, resolve, and history APIs use the current Account
+  Truth source, reject credentials, and expose no authority, session-issue,
+  budget, ledger, or broker-submit action.
+* [x] Deterministic tests cover clear/blocked facts, freshness, append-only reuse,
+  source drift, expiry, capital-reference and identity mismatch, provider failure,
+  envelope approval invalidation, route wiring, and zero execution authority.
+
+### Stage 3.5 Atomic Session Budget Reservation
+
+* [x] Reservation requires a recorded signed envelope and re-resolves its exact
+  capital evaluation, Account Truth, gateway dry-runs, prior-batch reconciliation,
+  kill switch, time window, and currently trusted operator approval.
+* [x] The immutable reservation fingerprint binds the attestation, envelope,
+  authorization/account scope, China trading day, exact window, conservative
+  gross/cash/turnover amounts, order count, capacities, and fixed 0.0001 CNY units.
+* [x] SQLite `BEGIN IMMEDIATE` serializes overlapping reservations and atomically
+  rejects unavailable capital, cash, daily turnover, or order-count budget before
+  insert.
+* [x] Exact reruns reuse one immutable reservation, each attestation can reserve
+  only once, and malformed, stale, blocked, or transaction-rejected attempts are
+  append-only audit evidence.
+* [x] Source drift, signature/key expiry, blocked gates, or window expiry
+  invalidates reservation readiness/resolution; expired daily turnover remains
+  conservatively reserved for that China trading day until release semantics exist.
+* [x] Status, preview, record, resolve, and history APIs reject undeclared
+  credentials and expose no session-issue, OMS/ledger mutation, broker
+  submit/cancel, renewal, resume, or capital-scale action.
+* [x] Deterministic tests cover exact signed-envelope binding, source
+  revalidation, fixed precision, idempotency, real concurrent contention, every
+  budget dimension, rejection audit, route wiring, and zero execution authority.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

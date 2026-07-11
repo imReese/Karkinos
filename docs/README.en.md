@@ -193,8 +193,9 @@ this service. Any source drift invalidates the acceptance. This records Stage 1
 promotion readiness only. Stage 2 now binds the exact current promotion,
 operational, Account Truth, and verified owner-acceptance fingerprints into each
 per-order dossier using the read-only evidence connector. The distinct execution
-gateway is bound separately as runtime-unverified evidence, so this grants no
-runtime or capital authority and cannot submit or cancel broker orders.
+gateway is bound separately and remains runtime-unverified until an exact current
+Stage 2.4 record is resolved, so this grants no runtime or capital authority and
+cannot submit or cancel broker orders.
 
 The non-submitting Stage 2 foundation exposes
 `/api/automation/controlled-bridge/status`, per-order dossier preview, exact
@@ -207,17 +208,54 @@ verified attestation remains incapable of changing OMS, granting authority,
 contacting a broker, or scaling capital. Missing/invalid Stage 1 evidence,
 provider failure, connector mismatch, or source drift fails closed; a valid
 promotion clears only its three Stage 1 sub-blockers while evidence-connector
-read-only integrity, execution-gateway runtime verification, runtime authority,
-live gateway, and broker submission remain blocked.
+read-only integrity, runtime authority, live gateway, and broker submission
+remain blocked. Runtime verification clears only when the exact Stage 2.4
+evidence is current and matches every bound identity and order field.
+
+Stage 2.4 exposes `/api/automation/execution-gateway-verification` for status,
+preview, append-only record, resolve, and history. A runtime-registered gateway
+must pass verified account binding, fresh source-fingerprinted health, complete
+submit/cancel/query/dry-run/idempotency capabilities, and an exact zero-side-
+effect dry-run. Resolution rechecks source facts and expires after five minutes.
+Production registers no execution gateway by default; clear evidence still
+cannot issue authority or submit/cancel an order.
+
+Stage 2.5 requires the recorded manual-each-order capital evaluation to carry
+the exact typed `execution_gateway_verification:<fingerprint>` reference. Every
+per-order preview and confirmation re-resolves that fingerprint and exactly
+matches the runtime gateway, read-only evidence connector, account alias, OMS
+order, and canonical order fingerprint. Missing, expired, drifted, or mismatched
+evidence re-blocks review and invalidates the previous artifact-bound approval.
+A clear binding removes only the runtime-verification blocker; runtime authority,
+live gateway, broker submission, and strategy-direct execution stay disabled.
 
 The proposal-only Stage 3 foundation exposes
 `/api/automation/controlled-sessions/status`, envelope preview, exact
 attestation, and history. It binds an explicit OMS order set to a maximum
 30-minute policy window and projects conservative gross capital, cash, turnover,
 per-order, position, liquidity, and rate budgets. It also binds the v2 read-only
-evidence connector separately from the runtime-unverified execution gateway. It does not reserve budget,
+evidence connector separately from the execution gateway. Stage 3.3 requires a
+unique current verification for every OMS order and the exact same typed
+reference set in the recorded capital evaluation. Each source is re-resolved
+and matched to its gateway, connector, account, order fingerprint, and dry-run
+terms; one failure blocks the whole envelope. It does not reserve budget,
 issue or resume a runtime session, mutate OMS, contact a broker, or scale
 authority.
+
+Stage 3.4 exposes `/api/automation/session-start-account-truth` for a short-lived
+Account Truth start gate. It rebuilds the latest import/reconciliation/ledger/
+manual-review source and requires pass, fresh, clear, zero unresolved mismatches,
+and a maximum age of 120 seconds. The request and recorded capital evaluation
+must bind the same typed fingerprint, read-only connector, and account alias.
+Resolve rechecks source drift and expiry; clear evidence removes only the Account
+Truth evidence blocker and cannot reserve budget or issue a runtime session.
+
+Stage 3.5 exposes
+`/api/automation/controlled-sessions/budget-reservations`. It revalidates the
+exact signed envelope and atomically reserves conservative capital, cash,
+China-trading-day turnover, and order-count capacity with SQLite write
+serialization. This is budget state only: it cannot issue/resume a session,
+mutate OMS/ledger, contact a broker, submit/cancel, or scale capital.
 
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS

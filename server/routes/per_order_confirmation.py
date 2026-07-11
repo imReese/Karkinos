@@ -12,6 +12,9 @@ from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
 )
+from server.services.execution_gateway_verification import (
+    ExecutionGatewayVerificationService,
+)
 from server.services.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PerOrderConfirmationRejected,
@@ -28,6 +31,11 @@ class PerOrderDossierPreviewRequest(BaseModel):
         max_length=64,
         pattern=r"^$|^[a-f0-9]{64}$",
     )
+    execution_gateway_verification_fingerprint: str = Field(
+        default="",
+        max_length=64,
+        pattern=r"^$|^[a-f0-9]{64}$",
+    )
 
 
 class PerOrderConfirmationRequest(BaseModel):
@@ -35,6 +43,11 @@ class PerOrderConfirmationRequest(BaseModel):
 
     capital_evaluation_input_fingerprint: str = Field(min_length=64, max_length=64)
     prior_batch_reconciliation_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    execution_gateway_verification_fingerprint: str = Field(
         min_length=64,
         max_length=64,
         pattern=r"^[a-f0-9]{64}$",
@@ -74,11 +87,17 @@ def create_router() -> APIRouter:
         prior_batch_fingerprint = (
             request.prior_batch_reconciliation_fingerprint if request else ""
         )
+        gateway_verification_fingerprint = (
+            request.execution_gateway_verification_fingerprint if request else ""
+        )
         try:
             return _service().preview_dossier(
                 order_id,
                 capital_evaluation_input_fingerprint=fingerprint,
                 prior_batch_reconciliation_fingerprint=prior_batch_fingerprint,
+                execution_gateway_verification_fingerprint=(
+                    gateway_verification_fingerprint
+                ),
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -96,6 +115,9 @@ def create_router() -> APIRouter:
                 ),
                 prior_batch_reconciliation_fingerprint=(
                     request.prior_batch_reconciliation_fingerprint
+                ),
+                execution_gateway_verification_fingerprint=(
+                    request.execution_gateway_verification_fingerprint
                 ),
                 dossier_fingerprint=request.dossier_fingerprint,
                 operator_label=request.operator_label,
@@ -140,5 +162,11 @@ def _service() -> PerOrderConfirmationService:
                     lambda: build_latest_account_truth_promotion_evidence(state)
                 ),
             ).preview_dossier(connector_id)
+        ),
+        execution_gateway_verification_provider=(
+            ExecutionGatewayVerificationService(
+                db=state.db,
+                gateways=getattr(state, "execution_gateways", []) or [],
+            ).resolve
         ),
     )

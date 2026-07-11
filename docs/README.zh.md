@@ -153,8 +153,8 @@ Account Truth 导入属于同一复核账户，且完整进程与券商终端重
 来源事实漂移都会使 acceptance 失效。该接口只记录 Stage 1 晋级就绪证据，尚未接入
 任何提交路径。Stage 2 现在只通过只读 evidence connector 解析当前 promotion dossier、
 运营来源、Account Truth 来源和已验证 owner acceptance 指纹；不同的 execution gateway
-作为 runtime-unverified 证据单独进入每单 dossier。它仍不授予 runtime/资本权限，也不能
-提交或撤销券商订单。
+单独进入每单 dossier，并在解析到精确且当前有效的 Stage 2.4 记录前保持 runtime-
+unverified。它仍不授予 runtime/资本权限，也不能提交或撤销券商订单。
 
 Stage 2 的当前基础仍是非提交式证据层：
 
@@ -171,8 +171,23 @@ Stage 2 的当前基础仍是非提交式证据层：
 仍不修改 OMS、不授予权限、不接触券商、不提交/撤单、不恢复自动化，也不允许自动扩容。
 Stage 1 evidence 缺失、非法、connector 不匹配、provider 失败或来源漂移都会 fail closed；
 有效 promotion 只清除 Account Truth linkage、owner acceptance 和 Stage 1 promotion 三个
-子阻断；只读 evidence connector 完整性、execution gateway runtime 验证、runtime
-authority、live gateway 和 broker submission 继续阻断。
+子阻断；runtime verification 也只能由与全部身份及订单字段精确匹配的当前 Stage 2.4
+证据清除。只读 evidence connector 完整性、runtime authority、live gateway 和 broker
+submission 继续阻断。
+
+Stage 2.4 新增 `/api/automation/execution-gateway-verification` 的 status、preview、追加式
+record、resolve 和 history。运行期 gateway 必须通过 verified 同账户绑定、60 秒内且带来源
+指纹的健康事实、完整 submit/cancel/query/dry-run/idempotency 能力，以及精确且零副作用的
+dry-run；dry-run 必须明确 `submitted=false` 且没有 broker order id。resolve 会重新检查
+来源并在五分钟后过期。生产默认不注册 execution gateway；clear evidence 仍不能签发权限、
+提交或撤单。
+
+Stage 2.5 把这条短时验证精确绑定回每单 dossier。已记录的 `manual_each_order` 资本评估必须
+包含同一条 `execution_gateway_verification:<fingerprint>` 类型化证据引用；每次 preview 和
+confirmation 都重新 resolve 当前来源，并逐项匹配 execution gateway、只读 evidence
+connector、账户别名、OMS order id 与规范化订单指纹。缺失、过期、来源漂移或字段不一致会
+重新阻断 review，并使旧的 artifact-bound approval 失效。clear binding 只清除 runtime-
+verification 这一项；runtime authority、live gateway、broker submission 和策略直连仍关闭。
 
 Stage 3 的当前基础仍是 proposal-only：
 
@@ -183,8 +198,21 @@ Stage 3 的当前基础仍是 proposal-only：
 proposal 必须引用 `session_bounded` 资本评估、显式 OMS 订单集合和最长 30 分钟的带时区
 窗口；系统以不做买卖净额抵消的保守方式投影资本、现金、gross exposure、换手、单笔、
 仓位变化、流动性和订单速率预算，并分别绑定 v2 只读 evidence connector 与
-runtime-unverified execution gateway。当前不预留预算、不签发/恢复 runtime session、不改 OMS、
-不接触券商，也没有自动扩容能力。
+execution gateway。Stage 3.3 要求每个 OMS order 都有唯一且当前有效的 gateway verification，
+并要求已记录资本评估含有完全相同的类型化引用集合；每条来源都会重新解析并匹配 gateway、
+connector、账户、订单指纹与 dry-run 条款，任一失败都会阻断整个 envelope。当前不预留预算、
+不签发/恢复 runtime session、不改 OMS、不接触券商，也没有自动扩容能力。
+
+Stage 3.4 新增 `/api/automation/session-start-account-truth` 的短时账户事实门禁。它会根据最新
+Account Truth 导入、对账、账本投影和人工复核重新构建来源，要求 pass/fresh/clear、零未决
+差异且来源不超过 120 秒。session 请求与已记录资本评估必须绑定同一条类型化指纹、只读
+connector 和账户别名；resolve 会重新检查来源漂移与过期。clear evidence 只清除 Account
+Truth 证据阻断，仍不能预留预算或签发 runtime session。
+
+Stage 3.5 新增
+`/api/automation/controlled-sessions/budget-reservations`。它只接受当前仍有效的精确签名
+envelope，并通过 SQLite 写事务原子预留保守资本、现金、中国交易日换手和订单数预算。
+这只是预算状态，不会签发/恢复 session、修改 OMS/账本、联系券商、提交/撤单或扩大资本权限。
 
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须

@@ -6,6 +6,166 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-11: Stage 3.5 adds an atomic, non-authorizing controlled-session
+  budget reservation after the exact signed envelope is re-resolved. The
+  attestation now persists its exact prior-batch fingerprint and can be
+  revalidated against current capital evidence, Account Truth, per-order
+  gateway dry-runs, prior-batch reconciliation, kill switch, time window, and
+  currently trusted Ed25519 approval. The new
+  `/api/automation/controlled-sessions/budget-reservations` service fingerprints
+  the immutable authorization/account scope, China trading day, exact window,
+  conservative gross/cash/turnover amounts, order count, and capacities. SQLite
+  `BEGIN IMMEDIATE` serializes overlapping reservations; exact reruns reuse one
+  immutable row, one attestation cannot reserve twice, and unavailable capital,
+  cash, daily turnover, or order count fails before insert. Rejected attempts
+  are append-only events. Assumptions: positive monetary amounts are rounded up
+  to fixed 0.0001 CNY units; authorization id plus account alias is the shared
+  pool even when strategy ids differ; capital/cash/order-count reservations
+  overlap only for intersecting windows, while turnover remains conservatively
+  held for the whole China trading day; explicit release/cancel semantics do
+  not yet exist, so a reservation cannot be reused for another envelope; and a
+  reservation is budget state rather than runtime authority. Validation:
+  focused controlled-session/acceptance coverage passed 103 tests; the Stage
+  3.5 standalone suite passed 7 tests, including a real two-thread contention
+  test where only one over-capacity request succeeds; the new
+  `controlled_session_budget_reservation` audit reports 7/7 complete; all 27
+  registered audits report 283/283 criteria complete; `uv run pytest -q`
+  equivalent `.venv/bin/pytest -q` passed 1,110 tests; and Black, isort, and
+  `git diff --check` passed. Risk impact:
+  GitNexus reports LOW for `ControlledSessionEnvelopeService` (2 direct
+  dependants), `AppDatabase` (4 direct dependants), `create_app` (1 direct
+  caller), and `AUDIT_REGISTRY` (no direct dependants); new reservation symbols
+  are not yet indexed. This stage clears the atomic-reservation evidence
+  blocker only for a future issuance dossier. It does not issue/enable/resume a
+  session, mutate OMS/production ledger, contact a broker, submit/cancel, grant
+  or scale capital authority, or let strategy code reach a broker. The existing
+  HIGH OMS and CRITICAL broker-gateway services remain unchanged.
+- 2026-07-11: Stage 3.4 adds a short-lived session-start Account Truth gate and
+  binds it into the proposal-only controlled-session envelope. The new
+  `/api/automation/session-start-account-truth` service rebuilds a sanitized
+  current source from the latest broker import, reconciliation, current ledger
+  projection, and manual-review decisions; requires clear reconciliation, a
+  passing gate, fresh data, zero unresolved mismatches, a valid source
+  fingerprint, explicit zero-authority boundaries, and a source no more than
+  120 seconds old; and records clear/rejected attempts append-only. Resolution
+  re-runs the source and expires records after 120 seconds. The session request
+  and recorded `session_bounded` capital evaluation must carry the same typed
+  `session_start_account_truth:<fingerprint>` reference, evidence connector, and
+  account alias. Missing/failed providers, connector/account mismatch, source
+  drift, or expiry changes the envelope fingerprint, restores
+  `session_account_truth_snapshot_not_bound`, and invalidates the prior signed
+  approval. Assumptions: 120 seconds is the initial conservative start-gate
+  window and may be tightened after real broker timing evidence; the latest
+  reconcilable import must be available before session review; the Account
+  Truth source itself does not independently expose the account alias, so the
+  alias relationship still relies on capital-authorization v2 same-account
+  binding and the signed Stage 1 promotion evidence; append-only sequential
+  reuse does not replace a later concurrent database uniqueness review.
+  Validation: 11 standalone service/route tests and 41 combined session-start/
+  envelope tests passed; the broader affected regression group passed 355
+  tests; the new `session_start_account_truth_binding` audit reports 7/7
+  complete; all 26 registered acceptance audits remain complete; and
+  `uv run pytest -q` passed 1,090 tests. Risk impact: GitNexus reports LOW for
+  `ControlledSessionEnvelopeService` (2 direct dependants), its request models,
+  and `create_app` (1 direct caller); the new Account Truth service/route and
+  binding symbols are not yet indexed. A clear record removes only the session
+  Account Truth evidence blocker. It does not reserve budget, issue/enable/
+  resume a session, mutate Account Truth/OMS/production ledger, change capital
+  authority, contact a broker, submit/cancel, or scale capital. The existing
+  HIGH OMS and CRITICAL broker-gateway services remain unchanged.
+- 2026-07-11: Stage 3.3 binds an exact set of short-lived runtime gateway
+  verifications into each proposal-only controlled-session envelope. The request
+  must map every OMS order id to one unique verification fingerprint, and the
+  recorded `session_bounded` capital evaluation must contain exactly the same
+  typed `execution_gateway_verification:<fingerprint>` set. Every preview and
+  attestation re-resolves every source through the runtime registry and uses the
+  same shared allowlisted binding as Stage 2.5 to match gateway, read-only
+  connector, account alias, OMS order id, canonical order fingerprint,
+  sanitized dry-run order terms, and disabled authority/submission assertions.
+  Missing, extra, reused, non-canonical, expired, drifted, or mismatched evidence
+  for one order blocks the whole envelope, restores
+  `execution_gateway_runtime_not_verified`, changes the envelope fingerprint,
+  and invalidates the previous artifact-bound approval. The exact caller map is
+  fingerprinted and retained in rejection identity rather than silently
+  trimming keys. Assumptions: all per-order verifications are recorded before
+  the capital evaluation that references them; up to 50 order proofs may share
+  one separately reviewed gateway/account relationship but never one
+  fingerprint; adapter dry-run truthfulness still requires broker sandbox/vendor
+  validation; this remains limit-order-only; sequential append-only reuse does
+  not replace a later concurrent database uniqueness review. Validation: 24
+  controlled-session service/route tests passed; the broader gateway/per-order/
+  session/acceptance group passed 123 tests; the new
+  `controlled_session_gateway_verification_binding` audit reports 7/7 complete;
+  all 25 registered acceptance audits remain complete; and `uv run pytest -q`
+  passed 1,071 tests. Risk impact: GitNexus reports LOW for
+  `ControlledSessionEnvelopeService` (2 direct dependants) and both request
+  models; the shared binding is a new unindexed symbol and its Stage 2.5
+  refactor remains covered by per-order regression tests. A fully clear set
+  removes only the runtime-verification blocker. Session authority, Stage 1/2
+  promotion, session-start Account Truth, per-symbol limits, atomic budget
+  reservation, runtime rate limiting, automatic pause, live gateway, broker
+  submission, OMS/ledger mutation, resume, and scale-up remain disabled. The
+  HIGH OMS and CRITICAL existing broker-gateway services are unchanged.
+- 2026-07-11: Stage 2.5 binds the short-lived Stage 2.4 runtime gateway
+  verification into the exact per-order confirmation dossier. The recorded
+  `manual_each_order` capital evaluation and the request must carry the same
+  typed `execution_gateway_verification:<fingerprint>` reference. Every preview
+  and confirmation re-resolves the current append-only record, then allowlists
+  and matches gateway id, read-only evidence connector, account alias, OMS order
+  id, canonical order fingerprint, sanitized dry-run symbol/side/asset class/
+  quantity/type/limit price, and the disabled-authority/submission boundary.
+  Expiry, source drift, missing/failed providers, or any mismatch re-blocks
+  review, restores `execution_gateway_runtime_not_verified`, changes the dossier
+  fingerprint, and invalidates the previous artifact-bound operator approval.
+  The application route injects the same runtime registry into the resolver;
+  production still registers no execution gateway by default. Assumptions: the
+  capital evaluation is recorded only after the exact gateway verification it
+  references; the reviewed adapter and its zero-side-effect dry-run remain a
+  trusted runtime boundary that needs real broker sandbox/vendor validation;
+  this slice remains limit-order-only; append-only event reuse is deterministic
+  sequentially, while concurrent database uniqueness remains a later
+  persistence review. Validation: 42 gateway/per-order service and route tests
+  passed; 60 acceptance tests passed; the new
+  `per_order_gateway_verification_binding` manifest reports 7/7 complete; the
+  all-audit export remains complete; and `uv run pytest -q` passed 1,060 tests.
+  Python Black/isort and `git diff --check` are part of the final workspace
+  verification. The frontend is unchanged from the preceding green checkpoint
+  of 40 files / 405 tests, Prettier check, and production build. Risk impact:
+  GitNexus reports LOW for `PerOrderConfirmationService` (3 direct dependants)
+  and LOW for the acceptance export (3 direct consumers, including Operations);
+  new Stage 2.4/2.5 symbols are not yet indexed. A clear verification removes
+  only the runtime-verification blocker. Runtime authority, live gateway,
+  broker submission, strategy-direct execution, OMS/ledger mutation, budget
+  reservation, resume, and capital scale-up remain disabled. The HIGH OMS and
+  CRITICAL existing broker-gateway services are unchanged.
+- 2026-07-11: Stage 2.4 adds an isolated, non-submitting runtime execution-
+  gateway verifier. It resolves a distinct gateway from the optional runtime
+  registry, verifies its evidence-connector/account binding, requires complete
+  submit/cancel/order-query/fill-query/dry-run/idempotent-client-order-id
+  capabilities, and binds a healthy source-fingerprinted snapshot no more than
+  60 seconds old. Verification derives a deterministic client order id and
+  accepts only an exact limit-order dry-run that returns the same order/client
+  ids, a valid payload fingerprint, `submitted=false`, no broker order id, and
+  zero reported side effects. Preview is side-effect free with respect to
+  Karkinos state; accepted and rejected records are append-only and sequentially
+  reusable; resolution reruns all source checks and expires after five minutes.
+  Production registers no execution gateway by default. Assumptions: the
+  gateway implementation is trusted to honor and truthfully report its dry-run
+  contract—Karkinos cannot cryptographically prove that a vendor adapter had no
+  external side effect; real broker sandbox/vendor validation remains required;
+  only limit orders are eligible in this slice; concurrent duplicate database
+  uniqueness remains a future persistence review. Validation: the focused
+  verifier/route/server/bootstrap/acceptance group passed 287 tests; the new
+  acceptance manifest reports 8/8 complete; the all-audit export remains
+  complete; and `.venv/bin/pytest -q` passed 1,048 tests. The frontend was
+  unchanged from the preceding green checkpoint of 40 files / 405 tests,
+  Prettier check, and production build. Risk impact: all verifier and route
+  symbols are new and absent from the current GitNexus index; registering the
+  route touches HIGH-risk `create_app` (16 upstream, 15 direct dependants) but
+  changes no lifespan behavior. A clear record is readiness evidence only: it
+  does not issue/consume authority, reserve budget, mutate OMS/ledger, call
+  submit/cancel, resume execution, or scale capital. The CRITICAL existing
+  `BrokerGatewayService` and HIGH OMS service remain unchanged.
 - 2026-07-11: Capital-authorization v2 removes a structural gate conflict by
   separating the read-only evidence connector from the future controlled
   execution gateway. Policy scope now carries non-overlapping

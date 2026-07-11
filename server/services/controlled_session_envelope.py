@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
@@ -19,12 +20,19 @@ from server.services.execution_batch_reconciliation import (
     resolve_prior_batch_reconciliation,
 )
 from server.services.execution_gateway_binding import build_execution_gateway_binding
+from server.services.execution_gateway_verification_binding import (
+    build_execution_gateway_order_contract,
+    resolve_execution_gateway_verification_binding,
+)
 from server.services.operator_approval import resolve_operator_approval
 from server.services.per_order_confirmation import build_order_fingerprint
+from server.services.session_start_account_truth import (
+    resolve_session_start_account_truth_binding,
+)
 
-CONTROLLED_SESSION_ENVELOPE_SCHEMA_VERSION = "karkinos.controlled_session_envelope.v1"
+CONTROLLED_SESSION_ENVELOPE_SCHEMA_VERSION = "karkinos.controlled_session_envelope.v3"
 CONTROLLED_SESSION_ATTESTATION_SCHEMA_VERSION = (
-    "karkinos.controlled_session_attestation.v1"
+    "karkinos.controlled_session_attestation.v4"
 )
 CONTROLLED_SESSION_ATTESTATION_EVENT_TYPE = "controlled_session.envelope_attested"
 CONTROLLED_SESSION_ATTESTATION_ENTITY_TYPE = "controlled_session_attestation"
@@ -65,17 +73,29 @@ class ControlledSessionEnvelopeService:
         connectors: list[Any] | tuple[Any, ...] = (),
         trusted_operator_identities: list[Any] | tuple[Any, ...] = (),
         trading_controls: Any | None = None,
+        execution_gateway_verification_provider: (
+            Callable[[str], dict[str, Any]] | None
+        ) = None,
+        session_start_account_truth_provider: (
+            Callable[[str], dict[str, Any]] | None
+        ) = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
         self._connectors = list(connectors or [])
         self._trusted_operator_identities = list(trusted_operator_identities or [])
         self._trading_controls = trading_controls
+        self._execution_gateway_verification_provider = (
+            execution_gateway_verification_provider
+        )
+        self._session_start_account_truth_provider = (
+            session_start_account_truth_provider
+        )
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.controlled_session_status.v1",
+            "schema_version": "karkinos.controlled_session_status.v3",
             "contract_status": "proposal_only_non_executing",
             "runtime_session_authority": "disabled",
             "session_issue_enabled": False,
@@ -90,6 +110,8 @@ class ControlledSessionEnvelopeService:
             ),
             "automatic_scale_up_enabled": False,
             "exact_prior_batch_reconciliation_required": True,
+            "per_order_gateway_verification_binding": "required_per_envelope",
+            "session_start_account_truth_binding": "required_per_envelope",
             "maximum_proposal_duration_seconds": (
                 CONTROLLED_SESSION_MAX_DURATION_SECONDS
             ),
@@ -103,6 +125,8 @@ class ControlledSessionEnvelopeService:
         *,
         capital_evaluation_input_fingerprint: str,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprints: dict[str, str],
+        session_start_account_truth_fingerprint: str,
         order_ids: list[str] | tuple[str, ...],
         requested_start_at: datetime,
         requested_expires_at: datetime,
@@ -117,6 +141,16 @@ class ControlledSessionEnvelopeService:
         expires_at = _aware_utc(requested_expires_at)
         requested_ids = [str(item or "").strip() for item in order_ids]
         normalized_ids = sorted({item for item in requested_ids if item})
+        verification_fingerprints = {
+            str(order_id or ""): str(fingerprint or "")
+            for order_id, fingerprint in (
+                execution_gateway_verification_fingerprints or {}
+            ).items()
+        }
+        verification_reference_blockers = _verification_reference_blockers(
+            normalized_ids,
+            verification_fingerprints,
+        )
         review_blockers = [
             *timezone_blockers,
             *_time_and_request_blockers(
@@ -126,11 +160,16 @@ class ControlledSessionEnvelopeService:
                 requested_ids=requested_ids,
                 normalized_ids=normalized_ids,
             ),
+            *verification_reference_blockers,
         ]
         capital, capital_blockers = self._capital_summary(
             capital_evaluation_input_fingerprint,
             prior_batch_reconciliation_fingerprint=(
                 prior_batch_reconciliation_fingerprint
+            ),
+            execution_gateway_verification_fingerprints=(verification_fingerprints),
+            session_start_account_truth_fingerprint=(
+                session_start_account_truth_fingerprint
             ),
             now=now,
             requested_start_at=start_at,
@@ -174,7 +213,48 @@ class ControlledSessionEnvelopeService:
                 account_binding_status=context.get("connector_account_binding_status"),
             )
         )
+        gateway_verifications, gateway_verification_blockers = (
+            self._gateway_verification_bindings(
+                orders,
+                verification_fingerprints=verification_fingerprints,
+                context=context,
+            )
+        )
+        all_gateway_verifications_clear = bool(normalized_ids) and (
+            not verification_reference_blockers
+            and not gateway_verification_blockers
+            and len(gateway_verifications) == len(normalized_ids)
+        )
+        execution_gateway = {
+            **execution_gateway,
+            "runtime_verification_status": (
+                "verified_non_submitting_dry_run"
+                if all_gateway_verifications_clear
+                else "blocked"
+            ),
+            "runtime_gateway_verified": all_gateway_verifications_clear,
+            "verification_count": len(gateway_verifications),
+            "required_verification_count": len(normalized_ids),
+        }
+        if all_gateway_verifications_clear:
+            execution_gateway_hard_blockers = [
+                blocker
+                for blocker in execution_gateway_hard_blockers
+                if blocker != "execution_gateway_runtime_not_verified"
+            ]
+        session_start_account_truth, account_truth_blockers = (
+            resolve_session_start_account_truth_binding(
+                self._session_start_account_truth_provider,
+                fingerprint=session_start_account_truth_fingerprint,
+                expected_evidence_connector_id=str(
+                    context.get("evidence_connector_id") or ""
+                ),
+                expected_account_alias=str(context.get("account_alias") or ""),
+            )
+        )
         review_blockers.extend(soak_review_blockers)
+        review_blockers.extend(gateway_verification_blockers)
+        review_blockers.extend(account_truth_blockers)
         reconciliation, reconciliation_blockers = self._reconciliation_summary(
             prior_batch_reconciliation_fingerprint
         )
@@ -189,7 +269,11 @@ class ControlledSessionEnvelopeService:
                     *soak_hard_blockers,
                     *execution_gateway_hard_blockers,
                     "stage2_per_order_bridge_not_promoted",
-                    "session_account_truth_snapshot_not_bound",
+                    *(
+                        []
+                        if session_start_account_truth.get("status") == "pass"
+                        else ["session_account_truth_snapshot_not_bound"]
+                    ),
                     "per_symbol_runtime_limits_not_bound",
                     *(
                         []
@@ -215,10 +299,15 @@ class ControlledSessionEnvelopeService:
             "requested_expires_at": expires_at.isoformat(),
             "duration_seconds": max(0, int((expires_at - start_at).total_seconds())),
             "order_ids": normalized_ids,
+            "execution_gateway_verification_fingerprints": dict(
+                sorted(verification_fingerprints.items())
+            ),
             "orders": orders,
             "budget_projection": budget,
             "connector_soak": soak,
             "execution_gateway": execution_gateway,
+            "execution_gateway_verifications": gateway_verifications,
+            "session_start_account_truth": session_start_account_truth,
             "prior_execution_reconciliation": reconciliation,
             "kill_switch": kill_switch,
             "review_blockers": review_blockers,
@@ -256,6 +345,8 @@ class ControlledSessionEnvelopeService:
         *,
         capital_evaluation_input_fingerprint: str,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprints: dict[str, str],
+        session_start_account_truth_fingerprint: str,
         order_ids: list[str] | tuple[str, ...],
         requested_start_at: datetime,
         requested_expires_at: datetime,
@@ -268,6 +359,12 @@ class ControlledSessionEnvelopeService:
             capital_evaluation_input_fingerprint=(capital_evaluation_input_fingerprint),
             prior_batch_reconciliation_fingerprint=(
                 prior_batch_reconciliation_fingerprint
+            ),
+            execution_gateway_verification_fingerprints=(
+                execution_gateway_verification_fingerprints
+            ),
+            session_start_account_truth_fingerprint=(
+                session_start_account_truth_fingerprint
             ),
             order_ids=order_ids,
             requested_start_at=requested_start_at,
@@ -300,6 +397,15 @@ class ControlledSessionEnvelopeService:
             envelope=envelope,
             submitted_envelope_fingerprint=envelope_fingerprint,
             capital_evaluation_input_fingerprint=(capital_evaluation_input_fingerprint),
+            prior_batch_reconciliation_fingerprint=(
+                prior_batch_reconciliation_fingerprint
+            ),
+            execution_gateway_verification_fingerprints=(
+                execution_gateway_verification_fingerprints
+            ),
+            session_start_account_truth_fingerprint=(
+                session_start_account_truth_fingerprint
+            ),
             operator_label=str(operator_label or "").strip(),
             operator_approval=operator_approval,
             acknowledgement=acknowledgement,
@@ -323,11 +429,120 @@ class ControlledSessionEnvelopeService:
         )
         return [_event_response(row, reused=False) for row in rows]
 
+    def resolve_attestation(self, attestation_id: str) -> dict[str, Any]:
+        """Re-resolve every mutable source behind one signed envelope."""
+        normalized = str(attestation_id or "").strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{64}", normalized):
+            return _blocked_attestation_resolution(
+                normalized,
+                ["controlled_session_attestation_id_invalid"],
+            )
+        rows = self._db.list_events_sync(
+            event_type=CONTROLLED_SESSION_ATTESTATION_EVENT_TYPE,
+            entity_type=CONTROLLED_SESSION_ATTESTATION_ENTITY_TYPE,
+            entity_id=normalized,
+            source=CONTROLLED_SESSION_ATTESTATION_EVENT_SOURCE,
+            limit=1,
+        )
+        if not rows:
+            return _blocked_attestation_resolution(
+                normalized,
+                ["controlled_session_attestation_not_found"],
+            )
+        recorded = _event_response(rows[0], reused=False)
+        blockers: list[str] = []
+        if recorded.get("schema_version") != (
+            CONTROLLED_SESSION_ATTESTATION_SCHEMA_VERSION
+        ):
+            blockers.append("controlled_session_attestation_schema_invalid")
+        if recorded.get("status") != "recorded_verified_identity":
+            blockers.append("controlled_session_attestation_not_verified")
+        start_at = _parse_timestamp(recorded.get("requested_start_at"))
+        expires_at = _parse_timestamp(recorded.get("requested_expires_at"))
+        if start_at is None or expires_at is None:
+            blockers.append("controlled_session_attestation_window_invalid")
+
+        current_envelope: dict[str, Any] = {}
+        if start_at is not None and expires_at is not None:
+            try:
+                current_envelope = self.preview_envelope(
+                    capital_evaluation_input_fingerprint=str(
+                        recorded.get("capital_evaluation_input_fingerprint") or ""
+                    ),
+                    prior_batch_reconciliation_fingerprint=str(
+                        recorded.get("prior_batch_reconciliation_fingerprint") or ""
+                    ),
+                    execution_gateway_verification_fingerprints=(
+                        recorded.get("execution_gateway_verification_fingerprints")
+                        if isinstance(
+                            recorded.get("execution_gateway_verification_fingerprints"),
+                            dict,
+                        )
+                        else {}
+                    ),
+                    session_start_account_truth_fingerprint=str(
+                        recorded.get("session_start_account_truth_fingerprint") or ""
+                    ),
+                    order_ids=[str(item) for item in recorded.get("order_ids") or []],
+                    requested_start_at=start_at,
+                    requested_expires_at=expires_at,
+                )
+            except Exception:
+                blockers.append(
+                    "controlled_session_attestation_source_resolution_failed"
+                )
+        if current_envelope:
+            if current_envelope.get("envelope_fingerprint") != recorded.get(
+                "envelope_fingerprint"
+            ):
+                blockers.append("controlled_session_envelope_source_changed")
+            if current_envelope.get("review_blockers"):
+                blockers.append("controlled_session_envelope_currently_blocked")
+
+        operator_approval, approval_blockers = resolve_operator_approval(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=str(recorded.get("operator_approval_id") or ""),
+            expected_action="attest_controlled_session_envelope",
+            expected_artifact_type="controlled_session_envelope",
+            expected_artifact_fingerprint=str(
+                recorded.get("envelope_fingerprint") or ""
+            ),
+            clock=self._clock,
+        )
+        if approval_blockers:
+            blockers.append("controlled_session_operator_approval_blocked")
+        elif str(recorded.get("operator_label") or "") != str(
+            operator_approval.get("operator_id") or ""
+        ):
+            blockers.append("controlled_session_operator_identity_changed")
+        unique_blockers = list(dict.fromkeys(blockers))
+        if unique_blockers:
+            return _blocked_attestation_resolution(normalized, unique_blockers)
+        return {
+            "schema_version": CONTROLLED_SESSION_ATTESTATION_SCHEMA_VERSION,
+            "status": "current_verified_non_executing",
+            "attestation_id": normalized,
+            "envelope_fingerprint": str(recorded["envelope_fingerprint"]),
+            "operator_label": str(recorded.get("operator_label") or ""),
+            "operator_approval_id": str(recorded.get("operator_approval_id") or ""),
+            "recorded_at": str(recorded.get("recorded_at") or ""),
+            "current_envelope": current_envelope,
+            "blockers": [],
+            "runtime_session_status": "not_issued",
+            "operator_identity_verified": True,
+            "authorizes_execution": False,
+            "broker_submission_enabled": False,
+            "safety": _safety_flags(),
+        }
+
     def _capital_summary(
         self,
         input_fingerprint: str,
         *,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprints: dict[str, str],
+        session_start_account_truth_fingerprint: str,
         now: datetime,
         requested_start_at: datetime,
         requested_expires_at: datetime,
@@ -391,6 +606,27 @@ class ControlledSessionEnvelopeService:
             or expected_batch_ref not in capital_refs
         ):
             blockers.append("capital_prior_batch_reconciliation_ref_mismatch")
+        expected_gateway_refs = {
+            f"execution_gateway_verification:{fingerprint}"
+            for fingerprint in execution_gateway_verification_fingerprints.values()
+        }
+        recorded_gateway_refs = {
+            ref
+            for ref in capital_refs
+            if ref.startswith("execution_gateway_verification:")
+        }
+        if expected_gateway_refs != recorded_gateway_refs:
+            blockers.append("capital_execution_gateway_verification_refs_mismatch")
+        expected_account_truth_ref = (
+            "session_start_account_truth:" f"{session_start_account_truth_fingerprint}"
+        )
+        recorded_account_truth_refs = {
+            ref
+            for ref in capital_refs
+            if ref.startswith("session_start_account_truth:")
+        }
+        if recorded_account_truth_refs != {expected_account_truth_ref}:
+            blockers.append("capital_session_start_account_truth_ref_mismatch")
         summary = {
             "status": "pass" if not blockers else "blocked",
             "input_fingerprint": input_fingerprint,
@@ -447,14 +683,49 @@ class ControlledSessionEnvelopeService:
                     "order_fingerprint": build_order_fingerprint(order),
                     "symbol": symbol,
                     "side": str(order.get("side") or "").lower(),
+                    "asset_class": str(order.get("asset_class") or "").lower(),
                     "quantity": _decimal_string(quantity),
                     "order_type": str(order.get("order_type") or "").lower(),
                     "limit_price": _decimal_string(price),
                     "projected_order_value": _decimal_string(order_value),
                     "oms_status": status,
                     "gateway_gates": gateway_gates,
+                    "gateway_order_contract": (
+                        build_execution_gateway_order_contract(order)
+                    ),
                 }
             )
+        return results, list(dict.fromkeys(blockers))
+
+    def _gateway_verification_bindings(
+        self,
+        orders: list[dict[str, Any]],
+        *,
+        verification_fingerprints: dict[str, str],
+        context: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        results: list[dict[str, Any]] = []
+        blockers: list[str] = []
+        for order in orders:
+            order_id = str(order.get("order_id") or "")
+            binding, binding_blockers = resolve_execution_gateway_verification_binding(
+                self._execution_gateway_verification_provider,
+                fingerprint=verification_fingerprints.get(order_id, ""),
+                expected_gateway_id=str(context.get("execution_gateway_id") or ""),
+                expected_evidence_connector_id=str(
+                    context.get("evidence_connector_id") or ""
+                ),
+                expected_account_alias=str(context.get("account_alias") or ""),
+                expected_order_id=order_id,
+                expected_order_fingerprint=str(order.get("order_fingerprint") or ""),
+                expected_order_contract=(
+                    order.get("gateway_order_contract")
+                    if isinstance(order.get("gateway_order_contract"), dict)
+                    else {}
+                ),
+            )
+            results.append(binding)
+            blockers.extend(f"{reason}:{order_id}" for reason in binding_blockers)
         return results, list(dict.fromkeys(blockers))
 
     def _soak_summary(
@@ -586,6 +857,9 @@ class ControlledSessionEnvelopeService:
         envelope: dict[str, Any],
         submitted_envelope_fingerprint: str,
         capital_evaluation_input_fingerprint: str,
+        prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprints: dict[str, str],
+        session_start_account_truth_fingerprint: str,
         operator_label: str,
         operator_approval: dict[str, Any],
         acknowledgement: str,
@@ -597,6 +871,35 @@ class ControlledSessionEnvelopeService:
             "submitted_envelope_fingerprint": submitted_envelope_fingerprint,
             "capital_evaluation_input_fingerprint": (
                 capital_evaluation_input_fingerprint
+            ),
+            "prior_batch_reconciliation_fingerprint": (
+                prior_batch_reconciliation_fingerprint
+            ),
+            "execution_gateway_verification_fingerprints": dict(
+                sorted(
+                    (
+                        str(order_id or ""),
+                        str(fingerprint or ""),
+                    )
+                    for order_id, fingerprint in (
+                        execution_gateway_verification_fingerprints or {}
+                    ).items()
+                )
+            ),
+            "resolved_execution_gateway_verification_fingerprints": {
+                str(item.get("order_id") or ""): str(
+                    item.get("verification_fingerprint") or ""
+                )
+                for item in envelope.get("execution_gateway_verifications") or []
+            },
+            "session_start_account_truth_fingerprint": (
+                session_start_account_truth_fingerprint
+            ),
+            "resolved_session_start_account_truth_fingerprint": str(
+                (envelope.get("session_start_account_truth") or {}).get(
+                    "account_truth_fingerprint"
+                )
+                or ""
             ),
             "order_ids": list(envelope["order_ids"]),
             "requested_start_at": envelope["requested_start_at"],
@@ -711,6 +1014,26 @@ def _time_and_request_blockers(
     elif duration > CONTROLLED_SESSION_MAX_DURATION_SECONDS:
         blockers.append("session_duration_exceeded")
     return blockers
+
+
+def _verification_reference_blockers(
+    order_ids: list[str],
+    verification_fingerprints: dict[str, str],
+) -> list[str]:
+    blockers: list[str] = []
+    if set(verification_fingerprints) != set(order_ids):
+        blockers.append("execution_gateway_verification_order_set_mismatch")
+    for order_id, fingerprint in sorted(verification_fingerprints.items()):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", order_id):
+            blockers.append("execution_gateway_verification_order_id_invalid")
+        if not re.fullmatch(r"[a-f0-9]{64}", fingerprint):
+            blockers.append(
+                f"execution_gateway_verification_fingerprint_invalid:{order_id}"
+            )
+    values = list(verification_fingerprints.values())
+    if len(set(values)) != len(values):
+        blockers.append("execution_gateway_verification_fingerprint_reused")
+    return list(dict.fromkeys(blockers))
 
 
 def _budget_projection(
@@ -916,6 +1239,28 @@ def _event_response(row: dict[str, Any], *, reused: bool) -> dict[str, Any]:
         "persisted": True,
         "reused": reused,
         **_json_object(row.get("payload_json")),
+    }
+
+
+def _blocked_attestation_resolution(
+    attestation_id: str,
+    blockers: list[str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": CONTROLLED_SESSION_ATTESTATION_SCHEMA_VERSION,
+        "status": "blocked",
+        "attestation_id": attestation_id,
+        "envelope_fingerprint": "",
+        "operator_label": "",
+        "operator_approval_id": "",
+        "recorded_at": "",
+        "current_envelope": {},
+        "blockers": list(dict.fromkeys(blockers)),
+        "runtime_session_status": "not_issued",
+        "operator_identity_verified": False,
+        "authorizes_execution": False,
+        "broker_submission_enabled": False,
+        "safety": _safety_flags(),
     }
 
 

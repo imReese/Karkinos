@@ -19,10 +19,14 @@ from server.services.execution_batch_reconciliation import (
     resolve_prior_batch_reconciliation,
 )
 from server.services.execution_gateway_binding import build_execution_gateway_binding
+from server.services.execution_gateway_verification_binding import (
+    build_execution_gateway_order_contract,
+    resolve_execution_gateway_verification_binding,
+)
 from server.services.operator_approval import resolve_operator_approval
 
-PER_ORDER_DOSSIER_SCHEMA_VERSION = "karkinos.per_order_confirmation_dossier.v1"
-PER_ORDER_CONFIRMATION_SCHEMA_VERSION = "karkinos.per_order_confirmation.v1"
+PER_ORDER_DOSSIER_SCHEMA_VERSION = "karkinos.per_order_confirmation_dossier.v2"
+PER_ORDER_CONFIRMATION_SCHEMA_VERSION = "karkinos.per_order_confirmation.v2"
 PER_ORDER_CONFIRMATION_EVENT_TYPE = "controlled_bridge.per_order_confirmed"
 PER_ORDER_CONFIRMATION_EVENT_ENTITY_TYPE = "per_order_confirmation"
 PER_ORDER_CONFIRMATION_EVENT_SOURCE = "controlled_bridge_confirmation"
@@ -63,6 +67,9 @@ class PerOrderConfirmationService:
         broker_soak_promotion_evidence_provider: (
             Callable[[str], dict[str, Any]] | None
         ) = None,
+        execution_gateway_verification_provider: (
+            Callable[[str], dict[str, Any]] | None
+        ) = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
@@ -72,11 +79,14 @@ class PerOrderConfirmationService:
         self._broker_soak_promotion_evidence_provider = (
             broker_soak_promotion_evidence_provider
         )
+        self._execution_gateway_verification_provider = (
+            execution_gateway_verification_provider
+        )
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.per_order_confirmation_status.v1",
+            "schema_version": "karkinos.per_order_confirmation_status.v2",
             "contract_status": "evidence_only_non_submitting",
             "runtime_execution_authority": "disabled",
             "operator_identity_verified": False,
@@ -87,6 +97,7 @@ class PerOrderConfirmationService:
             "live_gateway_implemented": False,
             "stage2_promotion_ready": False,
             "stage1_signed_promotion_binding": "required_per_dossier",
+            "execution_gateway_verification_binding": "required_per_dossier",
             "acknowledgement": PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
             "safety": _safety_flags(),
             "limitations": [
@@ -94,6 +105,7 @@ class PerOrderConfirmationService:
                 "It does not change OMS status or grant broker execution authority.",
                 "An exact recorded clear prior-batch reconciliation fingerprint is required.",
                 "Each dossier resolves the current signed Stage 1 promotion evidence.",
+                "Each dossier resolves an exact, current, non-submitting gateway verification.",
                 "A reviewed submit-capable runtime remains required and unimplemented.",
             ],
         }
@@ -104,6 +116,7 @@ class PerOrderConfirmationService:
         *,
         capital_evaluation_input_fingerprint: str = "",
         prior_batch_reconciliation_fingerprint: str = "",
+        execution_gateway_verification_fingerprint: str = "",
     ) -> dict[str, Any]:
         order = self._require_order(order_id)
         now = _aware_utc(self._clock())
@@ -115,6 +128,9 @@ class PerOrderConfirmationService:
             order_fingerprint=order_fingerprint,
             prior_batch_reconciliation_fingerprint=(
                 prior_batch_reconciliation_fingerprint
+            ),
+            execution_gateway_verification_fingerprint=(
+                execution_gateway_verification_fingerprint
             ),
             now=now,
         )
@@ -134,6 +150,44 @@ class PerOrderConfirmationService:
                 account_binding_status=capital.get("connector_account_binding_status"),
             )
         )
+        execution_gateway_verification, verification_blockers = (
+            resolve_execution_gateway_verification_binding(
+                self._execution_gateway_verification_provider,
+                fingerprint=execution_gateway_verification_fingerprint,
+                expected_gateway_id=str(
+                    (capital.get("scope") or {}).get("execution_gateway_id") or ""
+                ),
+                expected_evidence_connector_id=str(
+                    (capital.get("scope") or {}).get("evidence_connector_id") or ""
+                ),
+                expected_account_alias=str(
+                    (capital.get("scope") or {}).get("account_alias") or ""
+                ),
+                expected_order_id=str(order.get("order_id") or ""),
+                expected_order_fingerprint=order_fingerprint,
+                expected_order_contract=build_execution_gateway_order_contract(order),
+            )
+        )
+        execution_gateway = {
+            **execution_gateway,
+            "runtime_verification_status": execution_gateway_verification[
+                "runtime_verification_status"
+            ],
+            "runtime_gateway_verified": execution_gateway_verification[
+                "runtime_gateway_verified"
+            ],
+            "verification_id": execution_gateway_verification["verification_id"],
+            "verification_fingerprint": execution_gateway_verification[
+                "verification_fingerprint"
+            ],
+            "verification_recorded_at": execution_gateway_verification["recorded_at"],
+        }
+        if execution_gateway_verification["runtime_gateway_verified"]:
+            execution_gateway_hard_blockers = [
+                blocker
+                for blocker in execution_gateway_hard_blockers
+                if blocker != "execution_gateway_runtime_not_verified"
+            ]
         reconciliation, reconciliation_blockers = self._reconciliation_summary(
             prior_batch_reconciliation_fingerprint
         )
@@ -145,6 +199,7 @@ class PerOrderConfirmationService:
         review_blockers.extend(capital_blockers)
         review_blockers.extend(gateway_blockers)
         review_blockers.extend(soak_review_blockers)
+        review_blockers.extend(verification_blockers)
         review_blockers.extend(reconciliation_blockers)
         review_blockers.extend(kill_switch_blockers)
         review_blockers = list(dict.fromkeys(review_blockers))
@@ -174,6 +229,7 @@ class PerOrderConfirmationService:
             "gateway_gates": gateway,
             "connector_soak": soak,
             "execution_gateway": execution_gateway,
+            "execution_gateway_verification": execution_gateway_verification,
             "prior_execution_reconciliation": reconciliation,
             "kill_switch": kill_switch,
             "review_blockers": review_blockers,
@@ -215,6 +271,7 @@ class PerOrderConfirmationService:
         *,
         capital_evaluation_input_fingerprint: str,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprint: str,
         dossier_fingerprint: str,
         operator_label: str,
         operator_approval_id: str,
@@ -225,6 +282,9 @@ class PerOrderConfirmationService:
             capital_evaluation_input_fingerprint=(capital_evaluation_input_fingerprint),
             prior_batch_reconciliation_fingerprint=(
                 prior_batch_reconciliation_fingerprint
+            ),
+            execution_gateway_verification_fingerprint=(
+                execution_gateway_verification_fingerprint
             ),
         )
         rejection_reasons: list[str] = []
@@ -256,6 +316,9 @@ class PerOrderConfirmationService:
             dossier=dossier,
             submitted_dossier_fingerprint=dossier_fingerprint,
             capital_evaluation_input_fingerprint=(capital_evaluation_input_fingerprint),
+            execution_gateway_verification_fingerprint=(
+                execution_gateway_verification_fingerprint
+            ),
             operator_label=str(operator_label or "").strip(),
             operator_approval=operator_approval,
             acknowledgement=acknowledgement,
@@ -301,6 +364,7 @@ class PerOrderConfirmationService:
         order: dict[str, Any],
         order_fingerprint: str,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprint: str,
         now: datetime,
     ) -> tuple[dict[str, Any], list[str]]:
         if not input_fingerprint:
@@ -367,6 +431,15 @@ class PerOrderConfirmationService:
             or expected_batch_ref not in capital_refs
         ):
             blockers.append("capital_prior_batch_reconciliation_ref_mismatch")
+        expected_gateway_ref = (
+            "execution_gateway_verification:"
+            f"{execution_gateway_verification_fingerprint}"
+        )
+        if (
+            not execution_gateway_verification_fingerprint
+            or expected_gateway_ref not in capital_refs
+        ):
+            blockers.append("capital_execution_gateway_verification_ref_mismatch")
         summary = {
             "status": "pass" if not blockers else "blocked",
             "input_fingerprint": input_fingerprint,
@@ -586,6 +659,7 @@ class PerOrderConfirmationService:
         dossier: dict[str, Any],
         submitted_dossier_fingerprint: str,
         capital_evaluation_input_fingerprint: str,
+        execution_gateway_verification_fingerprint: str,
         operator_label: str,
         operator_approval: dict[str, Any],
         acknowledgement: str,
@@ -599,6 +673,9 @@ class PerOrderConfirmationService:
             "submitted_dossier_fingerprint": submitted_dossier_fingerprint,
             "capital_evaluation_input_fingerprint": (
                 capital_evaluation_input_fingerprint
+            ),
+            "execution_gateway_verification_fingerprint": (
+                execution_gateway_verification_fingerprint
             ),
             "operator_label": operator_label,
             "operator_approval_id": operator_approval.get("approval_id"),

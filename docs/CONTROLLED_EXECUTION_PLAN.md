@@ -203,13 +203,34 @@ attestation still does not change OMS, grant authority, or contact a broker.
 Each preview resolves the current signed Stage 1 promotion for the exact
 read-only evidence connector and binds its promotion, operational, Account
 Truth, and verified acceptance fingerprints. The separately scoped execution
-gateway is included as declared evidence but remains runtime-unverified. When
-promotion is valid, it clears only the Stage 1 Account Truth-linkage,
-owner-acceptance, and promotion sub-blockers. Runtime authority, a reviewed live
-gateway, and broker submission remain hard blockers. The exact prior-batch gate
-is source-sensitive evidence, but never
+gateway is included as declared evidence and remains runtime-unverified unless
+an exact current Stage 2.4 record is resolved. When promotion is valid, it
+clears only the Stage 1 sub-blockers. When runtime verification is valid, it
+clears only `execution_gateway_runtime_not_verified`. Runtime authority, a
+reviewed live gateway, and broker submission remain hard blockers. The exact
+prior-batch gate is source-sensitive evidence, but never
 authorizes the next order. The CRITICAL `BrokerGatewayService` and HIGH-risk
 `OmsService` are intentionally unchanged in this slice.
+
+Stage 2.4 now provides an isolated runtime gateway verifier and local evidence
+API. Verification requires a distinct registered gateway, verified account
+binding, fresh source-fingerprinted health, complete submit/cancel/query/dry-run/
+idempotency capabilities, and an exact dry-run with no broker order id,
+`submitted=false`, and zero side effects. Accepted/rejected records are
+append-only; resolution rechecks the source and expires after five minutes.
+Production registers no execution gateway by default. A clear verification is
+still not authority and there is no submit/cancel/consume operation.
+
+Stage 2.5 now requires the per-order request and recorded capital evaluation to
+name the same typed gateway-verification fingerprint. Every dossier preview and
+confirmation re-resolves that record and exactly matches the gateway, read-only
+connector, account alias, OMS order, canonical order fingerprint, and sanitized
+dry-run order contract. Expiry, source drift, provider failure, any order-term
+mismatch, or mismatched authority/submission assertions re-block review and
+invalidate the previous signed dossier. The production
+route injects an empty runtime gateway registry by default, so this path remains
+closed until a separately reviewed adapter is registered; no API in this slice
+can register one or submit an order.
 
 ### Stage 3 — Session-Bounded Controlled Execution
 
@@ -242,12 +263,29 @@ attempts are append-only, but they do not issue a session. Current soak
 freshness and kill-switch/reconciliation state are rechecked; volatile age
 counters do not change the fingerprint until freshness crosses a policy state.
 The envelope reads soak only from the v2 evidence connector and fingerprints
-the distinct execution gateway as runtime-unverified evidence.
+the distinct execution gateway. Stage 3.3 requires one unique current gateway
+verification fingerprint per OMS order and the exact same typed reference set
+in the recorded capital evaluation. Every preview and attestation re-resolves
+all order sources; missing/extra/reused fingerprints, provider failure, expiry,
+source drift, or gateway/connector/account/order/term mismatch blocks the whole
+envelope and invalidates the previous signed artifact.
+Stage 3.4 also requires a short-lived session-start Account Truth record built
+from the latest broker import, reconciliation, current ledger projection, and
+manual-review state. It must be clear/pass/fresh with zero unresolved mismatches
+and no more than 120 seconds old. The capital evaluation and envelope request
+must name the same typed fingerprint, connector, and account alias. Resolution
+rechecks the source and expiry on every preview/attestation. A clear result
+removes only the Account Truth evidence blocker; it does not reserve budget,
+issue a session, mutate account facts, or contact a broker.
+Stage 3.5 adds an atomic reservation layer for a still-current signed envelope.
+It fingerprints exact authorization/account scope, China trading day, window,
+conservative gross/cash/turnover amounts, order count, and capacities, then uses
+SQLite `BEGIN IMMEDIATE` to prevent concurrent double allocation. Reservation
+does not issue session authority or enable OMS, ledger, or broker actions.
 The request and recorded capital evaluation must bind the same resolved clear
-prior-batch fingerprint. Stage 1/2 promotion, session-start Account Truth, per-
-symbol runtime limits, submit capability, atomic budget reservation, runtime
-rate limiting, automatic pause, runtime session issue/resume/revoke, and the
-live gateway remain hard blockers. Recording an attestation requires a current
+prior-batch fingerprint. Stage 1/2 promotion, per-symbol runtime limits, submit
+capability, runtime rate limiting, automatic pause, runtime session
+issue/resume/revoke, and the live gateway remain hard blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen
 itself, submit an order, or scale capital.

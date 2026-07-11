@@ -3128,6 +3128,252 @@ class AppDatabase:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    # ---------- Controlled Session Budget Reservations ----------
+
+    def reserve_controlled_session_budget_sync(
+        self,
+        *,
+        reservation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically reserve bounded capital without issuing execution authority."""
+        requested = dict(reservation)
+        money_fields = (
+            "reserved_gross_units",
+            "reserved_buy_units",
+            "reserved_turnover_units",
+            "capital_capacity_units",
+            "cash_capacity_units",
+            "turnover_capacity_units",
+        )
+        count_fields = ("reserved_order_count", "order_count_capacity")
+        if any(int(requested.get(field) or 0) < 0 for field in money_fields):
+            return _controlled_session_budget_rejection(
+                requested,
+                ["budget_reservation_money_units_invalid"],
+            )
+        if any(int(requested.get(field) or 0) <= 0 for field in count_fields):
+            return _controlled_session_budget_rejection(
+                requested,
+                ["budget_reservation_order_count_invalid"],
+            )
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_budget_reservations
+                    WHERE reservation_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["reservation_id"],),
+                ).fetchone()
+                if existing is not None:
+                    conn.commit()
+                    return {
+                        "status": "reserved",
+                        "blockers": [],
+                        "reused": True,
+                        "reservation": dict(existing),
+                    }
+                attestation_conflict = conn.execute(
+                    """
+                    SELECT reservation_id
+                    FROM controlled_session_budget_reservations
+                    WHERE attestation_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["attestation_id"],),
+                ).fetchone()
+                if attestation_conflict is not None:
+                    conn.rollback()
+                    return _controlled_session_budget_rejection(
+                        requested,
+                        ["budget_reservation_attestation_already_reserved"],
+                    )
+
+                scope = (
+                    requested["authorization_id"],
+                    requested["account_alias"],
+                )
+                overlap = conn.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(reserved_gross_units), 0) AS gross_units,
+                        COALESCE(SUM(reserved_buy_units), 0) AS buy_units,
+                        COALESCE(SUM(reserved_order_count), 0) AS order_count,
+                        MIN(order_count_capacity) AS minimum_order_capacity
+                    FROM controlled_session_budget_reservations
+                    WHERE authorization_id = ?
+                      AND account_alias = ?
+                      AND status = 'reserved'
+                      AND requested_start_at < ?
+                      AND requested_expires_at > ?
+                    """,
+                    (
+                        *scope,
+                        requested["requested_expires_at"],
+                        requested["requested_start_at"],
+                    ),
+                ).fetchone()
+                daily = conn.execute(
+                    """
+                    SELECT COALESCE(SUM(reserved_turnover_units), 0) AS turnover_units
+                    FROM controlled_session_budget_reservations
+                    WHERE authorization_id = ?
+                      AND account_alias = ?
+                      AND trading_day = ?
+                      AND status = 'reserved'
+                    """,
+                    (*scope, requested["trading_day"]),
+                ).fetchone()
+                before = {
+                    "overlapping_gross_units": int(overlap["gross_units"] or 0),
+                    "overlapping_buy_units": int(overlap["buy_units"] or 0),
+                    "overlapping_order_count": int(overlap["order_count"] or 0),
+                    "daily_turnover_units": int(daily["turnover_units"] or 0),
+                }
+                minimum_order_capacity = min(
+                    int(requested["order_count_capacity"]),
+                    int(
+                        overlap["minimum_order_capacity"]
+                        or requested["order_count_capacity"]
+                    ),
+                )
+                after = {
+                    "overlapping_gross_units": before["overlapping_gross_units"]
+                    + int(requested["reserved_gross_units"]),
+                    "overlapping_buy_units": before["overlapping_buy_units"]
+                    + int(requested["reserved_buy_units"]),
+                    "overlapping_order_count": before["overlapping_order_count"]
+                    + int(requested["reserved_order_count"]),
+                    "daily_turnover_units": before["daily_turnover_units"]
+                    + int(requested["reserved_turnover_units"]),
+                }
+                blockers: list[str] = []
+                if after["overlapping_gross_units"] > int(
+                    requested["capital_capacity_units"]
+                ):
+                    blockers.append("atomic_capital_budget_unavailable")
+                if after["overlapping_buy_units"] > int(
+                    requested["cash_capacity_units"]
+                ):
+                    blockers.append("atomic_cash_budget_unavailable")
+                if after["daily_turnover_units"] > int(
+                    requested["turnover_capacity_units"]
+                ):
+                    blockers.append("atomic_daily_turnover_budget_unavailable")
+                if after["overlapping_order_count"] > minimum_order_capacity:
+                    blockers.append("atomic_order_count_budget_unavailable")
+                if blockers:
+                    conn.rollback()
+                    return _controlled_session_budget_rejection(
+                        requested,
+                        blockers,
+                        before=before,
+                        after=after,
+                    )
+
+                created_at = str(requested["created_at"])
+                conn.execute(
+                    """
+                    INSERT INTO controlled_session_budget_reservations (
+                        reservation_id, attestation_id, envelope_fingerprint,
+                        capital_evaluation_input_fingerprint, authorization_id,
+                        policy_version, account_alias, strategy_id, trading_day,
+                        requested_start_at, requested_expires_at,
+                        reserved_gross_units, reserved_buy_units,
+                        reserved_turnover_units, reserved_order_count,
+                        capital_capacity_units, cash_capacity_units,
+                        turnover_capacity_units, order_count_capacity,
+                        status, payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["reservation_id"],
+                        requested["attestation_id"],
+                        requested["envelope_fingerprint"],
+                        requested["capital_evaluation_input_fingerprint"],
+                        requested["authorization_id"],
+                        requested["policy_version"],
+                        requested["account_alias"],
+                        requested["strategy_id"],
+                        requested["trading_day"],
+                        requested["requested_start_at"],
+                        requested["requested_expires_at"],
+                        int(requested["reserved_gross_units"]),
+                        int(requested["reserved_buy_units"]),
+                        int(requested["reserved_turnover_units"]),
+                        int(requested["reserved_order_count"]),
+                        int(requested["capital_capacity_units"]),
+                        int(requested["cash_capacity_units"]),
+                        int(requested["turnover_capacity_units"]),
+                        int(requested["order_count_capacity"]),
+                        "reserved",
+                        _serialize_event_payload_json(requested["payload"]),
+                        created_at,
+                    ),
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_budget_reservations
+                    WHERE reservation_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["reservation_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "reserved",
+                    "blockers": [],
+                    "reused": False,
+                    "reservation": dict(saved) if saved is not None else {},
+                    "aggregate_before": before,
+                    "aggregate_after": after,
+                }
+            except sqlite3.OperationalError:
+                conn.rollback()
+                return _controlled_session_budget_rejection(
+                    requested,
+                    ["budget_reservation_transaction_unavailable"],
+                )
+
+    def list_controlled_session_budget_reservations_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List immutable reservation records newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_session_budget_reservations
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_controlled_session_budget_reservation_sync(
+        self,
+        reservation_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one reservation by its deterministic id."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_session_budget_reservations
+                WHERE reservation_id = ?
+                LIMIT 1
+                """,
+                (reservation_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
     # ---------- Latest Quotes ----------
 
     def upsert_latest_quote_sync(
@@ -4321,6 +4567,25 @@ class AppDatabase:
             return cursor.rowcount > 0
 
 
+def _controlled_session_budget_rejection(
+    reservation: dict[str, Any],
+    blockers: list[str],
+    *,
+    before: dict[str, int] | None = None,
+    after: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": "rejected",
+        "blockers": list(dict.fromkeys(blockers)),
+        "reused": False,
+        "reservation": {},
+        "reservation_id": str(reservation.get("reservation_id") or ""),
+        "attestation_id": str(reservation.get("attestation_id") or ""),
+        "aggregate_before": before or {},
+        "aggregate_after": after or {},
+    }
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4544,6 +4809,41 @@ CREATE INDEX IF NOT EXISTS idx_event_log_entity
 ON event_log(entity_type, entity_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_event_log_source
 ON event_log(source, source_ref);
+
+CREATE TABLE IF NOT EXISTS controlled_session_budget_reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_id TEXT NOT NULL UNIQUE,
+    attestation_id TEXT NOT NULL UNIQUE,
+    envelope_fingerprint TEXT NOT NULL,
+    capital_evaluation_input_fingerprint TEXT NOT NULL,
+    authorization_id TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    account_alias TEXT NOT NULL,
+    strategy_id TEXT NOT NULL,
+    trading_day TEXT NOT NULL,
+    requested_start_at TEXT NOT NULL,
+    requested_expires_at TEXT NOT NULL,
+    reserved_gross_units INTEGER NOT NULL CHECK(reserved_gross_units >= 0),
+    reserved_buy_units INTEGER NOT NULL CHECK(reserved_buy_units >= 0),
+    reserved_turnover_units INTEGER NOT NULL CHECK(reserved_turnover_units >= 0),
+    reserved_order_count INTEGER NOT NULL CHECK(reserved_order_count > 0),
+    capital_capacity_units INTEGER NOT NULL CHECK(capital_capacity_units >= 0),
+    cash_capacity_units INTEGER NOT NULL CHECK(cash_capacity_units >= 0),
+    turnover_capacity_units INTEGER NOT NULL CHECK(turnover_capacity_units >= 0),
+    order_count_capacity INTEGER NOT NULL CHECK(order_count_capacity > 0),
+    status TEXT NOT NULL CHECK(status = 'reserved'),
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_session_budget_scope_window
+ON controlled_session_budget_reservations(
+    authorization_id, account_alias, requested_start_at, requested_expires_at
+);
+CREATE INDEX IF NOT EXISTS idx_controlled_session_budget_scope_day
+ON controlled_session_budget_reservations(
+    authorization_id, account_alias, trading_day
+);
 
 CREATE TABLE IF NOT EXISTS risk_decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
