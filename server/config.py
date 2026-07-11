@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -30,6 +33,16 @@ _CONTROLLED_BRIDGE_POLICY_ALLOWED_FIELDS = frozenset(
         "automation_allowed",
     }
 )
+_TRUSTED_OPERATOR_IDENTITY_ALLOWED_FIELDS = frozenset(
+    {
+        "operator_id",
+        "key_id",
+        "algorithm",
+        "public_key_base64",
+        "enabled",
+    }
+)
+_TRUSTED_OPERATOR_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _BROKER_CONNECTOR_SENSITIVE_KEY_PARTS = (
     "password",
     "secret",
@@ -107,6 +120,17 @@ class ControlledBridgePolicyConfig:
     allowed_symbols: tuple[str, ...] = ()
     per_order_confirmation_required: bool = True
     automation_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class TrustedOperatorIdentityConfig:
+    """Public verification key only; never an execution authorization."""
+
+    operator_id: str
+    key_id: str
+    algorithm: str = "ed25519"
+    public_key_base64: str = ""
+    enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,9 +215,13 @@ class BacktestConfig:
                 data["broker_connectors"]
             )
         if "controlled_bridge_policy" in data:
-            data["controlled_bridge_policy"] = (
-                _parse_controlled_bridge_policy_config(
-                    data["controlled_bridge_policy"]
+            data["controlled_bridge_policy"] = _parse_controlled_bridge_policy_config(
+                data["controlled_bridge_policy"]
+            )
+        if "trusted_operator_identities" in data:
+            data["trusted_operator_identities"] = (
+                _parse_trusted_operator_identity_configs(
+                    data["trusted_operator_identities"]
                 )
             )
         has_broker_fee_schedule = "broker_fee_schedule" in data
@@ -237,6 +265,9 @@ class ServerConfig(BacktestConfig):
     )
     controlled_bridge_policy: ControlledBridgePolicyConfig = field(
         default_factory=ControlledBridgePolicyConfig
+    )
+    trusted_operator_identities: list[TrustedOperatorIdentityConfig] = field(
+        default_factory=list
     )
 
 
@@ -284,6 +315,67 @@ def _parse_broker_connector_configs(value: object) -> list[BrokerConnectorConfig
     return configs
 
 
+def _parse_trusted_operator_identity_configs(
+    value: object,
+) -> list[TrustedOperatorIdentityConfig]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("trusted operator identities must be a list")
+    results: list[TrustedOperatorIdentityConfig] = []
+    seen: set[tuple[str, str]] = set()
+    for index, raw_entry in enumerate(value):
+        if not isinstance(raw_entry, dict):
+            raise ValueError(
+                f"trusted operator identity at index {index} must be an object"
+            )
+        unknown_fields = sorted(
+            set(raw_entry) - _TRUSTED_OPERATOR_IDENTITY_ALLOWED_FIELDS
+        )
+        if unknown_fields:
+            raise ValueError(
+                "trusted operator identity contains unsupported fields: "
+                + ", ".join(unknown_fields)
+            )
+        operator_id = str(raw_entry.get("operator_id") or "").strip()
+        key_id = str(raw_entry.get("key_id") or "").strip()
+        algorithm = str(raw_entry.get("algorithm") or "ed25519").strip().lower()
+        public_key_base64 = str(raw_entry.get("public_key_base64") or "").strip()
+        enabled = raw_entry.get("enabled", False)
+        if not _TRUSTED_OPERATOR_ID_PATTERN.fullmatch(operator_id):
+            raise ValueError("trusted operator identity operator_id invalid")
+        if not _TRUSTED_OPERATOR_ID_PATTERN.fullmatch(key_id):
+            raise ValueError("trusted operator identity key_id invalid")
+        if algorithm != "ed25519":
+            raise ValueError("trusted operator identity algorithm must be ed25519")
+        if not isinstance(enabled, bool):
+            raise ValueError("trusted operator identity enabled must be boolean")
+        try:
+            public_key = base64.b64decode(public_key_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError(
+                "trusted operator identity public key must be valid base64"
+            ) from exc
+        if len(public_key) != 32:
+            raise ValueError(
+                "trusted operator identity Ed25519 public key must be 32 bytes"
+            )
+        identity = (operator_id, key_id)
+        if identity in seen:
+            raise ValueError("trusted operator identity operator_id/key_id duplicated")
+        seen.add(identity)
+        results.append(
+            TrustedOperatorIdentityConfig(
+                operator_id=operator_id,
+                key_id=key_id,
+                algorithm=algorithm,
+                public_key_base64=public_key_base64,
+                enabled=enabled,
+            )
+        )
+    return results
+
+
 def _contains_sensitive_connector_key(value: object) -> bool:
     if isinstance(value, dict):
         return any(
@@ -304,7 +396,9 @@ def _tuple_of_strings(value: object) -> tuple[str, ...]:
         return ()
     if not isinstance(value, list | tuple):
         raise ValueError("controlled bridge policy whitelist fields must be lists")
-    return tuple(dict.fromkeys(str(item).strip() for item in value if str(item).strip()))
+    return tuple(
+        dict.fromkeys(str(item).strip() for item in value if str(item).strip())
+    )
 
 
 def _parse_controlled_bridge_policy_config(
@@ -338,16 +432,12 @@ def _parse_controlled_bridge_policy_config(
             "controlled bridge policy per_order_confirmation_required must be boolean"
         )
     if not per_order_confirmation_required:
-        raise ValueError(
-            "controlled bridge policy must require per-order confirmation"
-        )
+        raise ValueError("controlled bridge policy must require per-order confirmation")
     automation_allowed = value.get("automation_allowed", False)
     if not isinstance(automation_allowed, bool):
         raise ValueError("controlled bridge policy automation_allowed must be boolean")
     if automation_allowed:
-        raise ValueError(
-            "controlled bridge policy cannot enable automation in v1.7"
-        )
+        raise ValueError("controlled bridge policy cannot enable automation in v1.7")
 
     return ControlledBridgePolicyConfig(
         policy_id=str(
@@ -358,9 +448,7 @@ def _parse_controlled_bridge_policy_config(
         ).strip()
         or ControlledBridgePolicyConfig().policy_id,
         enabled=enabled,
-        allowed_connector_ids=_tuple_of_strings(
-            value.get("allowed_connector_ids", ())
-        ),
+        allowed_connector_ids=_tuple_of_strings(value.get("allowed_connector_ids", ())),
         allowed_account_aliases=_tuple_of_strings(
             value.get("allowed_account_aliases", ())
         ),

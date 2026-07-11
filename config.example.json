@@ -105,6 +105,7 @@
         "per_order_confirmation_required": true,
         "automation_allowed": false
     },
+    "trusted_operator_identities": [],
     "notification": {
         "type": "console"
     },

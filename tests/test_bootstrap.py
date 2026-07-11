@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import sys
 from decimal import Decimal
@@ -23,6 +24,7 @@ from server.config import (
     BrokerFeeScheduleConfig,
     ControlledBridgePolicyConfig,
     ServerConfig,
+    TrustedOperatorIdentityConfig,
 )
 
 
@@ -345,6 +347,116 @@ def test_server_config_rejects_controlled_bridge_policy_secret_fields(tmp_path):
         ServerConfig.from_json(config_path)
 
 
+def test_server_config_loads_public_key_only_trusted_operator_identity(tmp_path):
+    public_key_base64 = base64.b64encode(b"\x01" * 32).decode("ascii")
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "trusted_operator_identities": [
+                    {
+                        "operator_id": "local-owner",
+                        "key_id": "owner-key-1",
+                        "algorithm": "ed25519",
+                        "public_key_base64": public_key_base64,
+                        "enabled": True,
+                    }
+                ]
+            }
+        )
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.trusted_operator_identities == [
+        TrustedOperatorIdentityConfig(
+            operator_id="local-owner",
+            key_id="owner-key-1",
+            algorithm="ed25519",
+            public_key_base64=public_key_base64,
+            enabled=True,
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "identity, message",
+    [
+        (
+            {
+                "operator_id": "local-owner",
+                "key_id": "owner-key-1",
+                "algorithm": "rsa",
+                "public_key_base64": base64.b64encode(b"\x01" * 32).decode("ascii"),
+                "enabled": True,
+            },
+            "algorithm",
+        ),
+        (
+            {
+                "operator_id": "local-owner",
+                "key_id": "owner-key-1",
+                "algorithm": "ed25519",
+                "public_key_base64": "not-base64",
+                "enabled": True,
+            },
+            "valid base64",
+        ),
+        (
+            {
+                "operator_id": "local-owner",
+                "key_id": "owner-key-1",
+                "algorithm": "ed25519",
+                "public_key_base64": base64.b64encode(b"short").decode("ascii"),
+                "enabled": True,
+            },
+            "32 bytes",
+        ),
+        (
+            {
+                "operator_id": "local-owner",
+                "key_id": "owner-key-1",
+                "algorithm": "ed25519",
+                "public_key_base64": base64.b64encode(b"\x01" * 32).decode("ascii"),
+                "private_key": "must-not-be-accepted",
+                "enabled": True,
+            },
+            "unsupported fields",
+        ),
+        (
+            {
+                "operator_id": "local owner with spaces",
+                "key_id": "owner-key-1",
+                "algorithm": "ed25519",
+                "public_key_base64": base64.b64encode(b"\x01" * 32).decode("ascii"),
+                "enabled": True,
+            },
+            "operator_id invalid",
+        ),
+        (
+            {
+                "operator_id": "local-owner",
+                "key_id": "owner/key/invalid",
+                "algorithm": "ed25519",
+                "public_key_base64": base64.b64encode(b"\x01" * 32).decode("ascii"),
+                "enabled": True,
+            },
+            "key_id invalid",
+        ),
+    ],
+)
+def test_server_config_rejects_invalid_or_private_operator_key_fields(
+    tmp_path,
+    identity,
+    message,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"trusted_operator_identities": [identity]}))
+
+    with pytest.raises(ValueError, match=message):
+        ServerConfig.from_json(config_path)
+
+
 def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(
@@ -618,8 +730,10 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "per_order_confirmation_required": True,
         "automation_allowed": False,
     }
+    assert example["trusted_operator_identities"] == []
     assert not _contains_sensitive_key(example["broker_connectors"])
     assert not _contains_sensitive_key(example["controlled_bridge_policy"])
+    assert not _contains_sensitive_key(example["trusted_operator_identities"])
     assert not _contains_sensitive_key(example["broker_fee_schedule"])
 
 

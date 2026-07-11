@@ -58,6 +58,10 @@ class ExecutionReconciliationService:
         manual_execution_summary = _manual_execution_evidence_summary(events)
         matching_broker_events = _matching_broker_events(order, broker_events)
         mismatched_broker_events = _mismatched_broker_events(order, broker_events)
+        manual_broker_comparison = _manual_execution_broker_comparison(
+            manual_execution_summary,
+            matching_broker_events,
+        )
         reported_broker_events = matching_broker_events
         mismatch_reasons: list[str] = []
         if execution_mode == "paper_shadow":
@@ -76,7 +80,16 @@ class ExecutionReconciliationService:
             suggested_action = "create_manual_ticket_or_cancel"
             detail = "OMS order is confirmed but no gateway action is recorded."
         elif status == "manual_ticket_created":
-            if matching_broker_events:
+            if manual_broker_comparison["status"] == "mismatch":
+                mismatch_reasons = list(manual_broker_comparison["mismatch_reasons"])
+                item_status = "broker_evidence_mismatch"
+                suggested_action = "review_broker_evidence_mismatch"
+                detail = (
+                    "Manual execution evidence differs from staged broker trade "
+                    "evidence; review price, costs, and net cash impact before "
+                    "any ledger update."
+                )
+            elif matching_broker_events:
                 item_status = "broker_evidence_available"
                 suggested_action = "review_broker_evidence_match"
                 detail = "Matching broker trade evidence is staged; review before ledger sync."
@@ -129,6 +142,7 @@ class ExecutionReconciliationService:
                     reported_broker_events
                 ),
                 "manual_execution_evidence_summary": manual_execution_summary,
+                "manual_broker_comparison": manual_broker_comparison,
             },
         }
 
@@ -222,6 +236,79 @@ def _broker_trade_cost_summary(events: list[Any]) -> dict[str, Any]:
         "suggested_ledger_action": "review_staged_broker_evidence",
         "does_not_recommend_automatic_ledger_update": True,
         "does_not_mutate_production_ledger": True,
+    }
+
+
+def _manual_execution_broker_comparison(
+    manual_summary: dict[str, Any],
+    broker_events: list[Any],
+) -> dict[str, Any]:
+    """Compare non-mutating manual execution evidence with staged broker facts."""
+    base = {
+        "schema_version": "karkinos.manual_broker_comparison.v1",
+        "status": "not_available",
+        "mismatch_reasons": [],
+        "compared_values": {},
+        "manual_execution_event_ids": list(manual_summary.get("event_ids") or []),
+        "broker_event_ids": [
+            str(getattr(event, "event_id", "")).strip() for event in broker_events
+        ],
+        "review_required_before_ledger_update": True,
+        "does_not_recommend_automatic_ledger_update": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+    }
+    if not manual_summary or not broker_events:
+        return base
+
+    broker_quantity = sum(
+        (
+            abs(_decimal(getattr(event, "quantity", None)) or Decimal("0"))
+            for event in broker_events
+        ),
+        Decimal("0"),
+    )
+    broker_gross_amount = _sum_event_decimal(broker_events, "gross_amount")
+    broker_average_price = (
+        broker_gross_amount / broker_quantity
+        if broker_quantity != Decimal("0")
+        else Decimal("0")
+    )
+    comparisons = (
+        ("quantity", manual_summary.get("quantity"), broker_quantity),
+        ("fill_price", manual_summary.get("fill_price"), broker_average_price),
+        ("gross_amount", manual_summary.get("gross_amount"), broker_gross_amount),
+        ("fee", manual_summary.get("fee"), _sum_event_decimal(broker_events, "fee")),
+        ("tax", manual_summary.get("tax"), _sum_event_decimal(broker_events, "tax")),
+        (
+            "transfer_fee",
+            manual_summary.get("transfer_fee"),
+            _sum_event_decimal(broker_events, "transfer_fee"),
+        ),
+        (
+            "net_amount",
+            manual_summary.get("net_cash_impact"),
+            _sum_event_decimal(broker_events, "net_amount"),
+        ),
+    )
+    compared_values: dict[str, dict[str, str]] = {}
+    mismatch_reasons: list[str] = []
+    for field, manual_value, broker_value in comparisons:
+        normalized_manual = _decimal(manual_value)
+        if normalized_manual is None:
+            continue
+        compared_values[field] = {
+            "manual": format(normalized_manual, "f"),
+            "broker": format(broker_value, "f"),
+        }
+        if normalized_manual != broker_value:
+            mismatch_reasons.append(f"manual_execution_{field}_mismatch")
+
+    return {
+        **base,
+        "status": "mismatch" if mismatch_reasons else "match",
+        "mismatch_reasons": mismatch_reasons,
+        "compared_values": compared_values,
     }
 
 
