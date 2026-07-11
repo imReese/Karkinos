@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
@@ -258,6 +259,143 @@ def test_reconciliation_marks_manual_ticket_with_matching_broker_evidence_availa
     }
 
 
+def test_manual_ticket_execution_and_broker_import_form_a_non_mutating_audit_chain(
+    tmp_path,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms, gateway_evidence=True)
+    gateway = BrokerGatewayService(db=db)
+    ledger_count_before = _ledger_entry_count(Path(db._path))
+
+    ticket = gateway.create_manual_ticket(order["order_id"], actor="test")
+    preview = gateway.preview_manual_execution_record(
+        order["order_id"],
+        actor="test",
+        fill_price="1688.00",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.20",
+    )
+    recorded = gateway.record_manual_execution_evidence(
+        order["order_id"],
+        actor="test",
+        preview_fingerprint=preview["preview_fingerprint"],
+        fill_price="1688.00",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.20",
+        operator_note="manually entered at broker terminal",
+    )
+    _import_broker_trade(
+        Path(db._path),
+        event_id="broker-buy-600519-audit-chain",
+        quantity=100,
+        transfer_fee="0.20",
+        net_amount="-168805.20",
+    )
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    payload = json.loads(item["payload_json"])
+    comparison = payload["manual_broker_comparison"]
+    persisted_order = db.get_oms_order_sync(order["order_id"])
+    assert ticket["submitted_to_broker"] is False
+    assert recorded["submitted_to_broker"] is False
+    assert recorded["does_not_mutate_oms"] is True
+    assert recorded["does_not_mutate_production_ledger"] is True
+    assert item["item_status"] == "broker_evidence_available"
+    assert item["suggested_action"] == "review_broker_evidence_match"
+    assert comparison["status"] == "match"
+    assert comparison["mismatch_reasons"] == []
+    assert comparison["compared_values"]["fill_price"] == {
+        "manual": "1688.00",
+        "broker": "1688.00",
+    }
+    assert comparison["compared_values"]["transfer_fee"] == {
+        "manual": "0.20",
+        "broker": "0.20",
+    }
+    assert comparison["compared_values"]["net_amount"] == {
+        "manual": "-168805.20",
+        "broker": "-168805.20",
+    }
+    assert comparison["review_required_before_ledger_update"] is True
+    assert comparison["does_not_recommend_automatic_ledger_update"] is True
+    assert comparison["does_not_mutate_oms"] is True
+    assert comparison["does_not_mutate_production_ledger"] is True
+    assert persisted_order is not None
+    assert persisted_order["status"] == "manual_ticket_created"
+    assert _ledger_entry_count(Path(db._path)) == ledger_count_before
+
+
+def test_reconciliation_queues_manual_execution_cost_mismatch_without_mutation(
+    tmp_path,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms, gateway_evidence=True)
+    gateway = BrokerGatewayService(db=db)
+    gateway.create_manual_ticket(order["order_id"], actor="test")
+    preview = gateway.preview_manual_execution_record(
+        order["order_id"],
+        actor="test",
+        fill_price="1688.00",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.20",
+    )
+    gateway.record_manual_execution_evidence(
+        order["order_id"],
+        actor="test",
+        preview_fingerprint=preview["preview_fingerprint"],
+        fill_price="1688.00",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.20",
+    )
+    ledger_count_before = _ledger_entry_count(Path(db._path))
+    _import_broker_trade(
+        Path(db._path),
+        event_id="broker-buy-600519-price-mismatch",
+        quantity=100,
+        price="1689.00",
+        gross_amount="168900.00",
+        fee="6.00",
+        transfer_fee="0.20",
+        net_amount="-168906.20",
+    )
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    payload = json.loads(item["payload_json"])
+    comparison = payload["manual_broker_comparison"]
+    assert item["item_status"] == "broker_evidence_mismatch"
+    assert item["suggested_action"] == "review_broker_evidence_mismatch"
+    assert comparison["status"] == "mismatch"
+    assert set(comparison["mismatch_reasons"]) >= {
+        "manual_execution_fill_price_mismatch",
+        "manual_execution_gross_amount_mismatch",
+        "manual_execution_fee_mismatch",
+        "manual_execution_net_amount_mismatch",
+    }
+    assert payload["mismatch_reasons"] == comparison["mismatch_reasons"]
+    assert comparison["does_not_mutate_oms"] is True
+    assert comparison["does_not_mutate_production_ledger"] is True
+    assert db.get_oms_order_sync(order["order_id"])["status"] == (
+        "manual_ticket_created"
+    )
+    assert _ledger_entry_count(Path(db._path)) == ledger_count_before
+
+
 def test_reconciliation_flags_broker_evidence_quantity_mismatch(tmp_path) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
@@ -308,15 +446,32 @@ def _import_broker_trade(
     *,
     event_id: str,
     quantity: int,
+    price: str = "1688.00",
+    gross_amount: str = "168800.00",
+    fee: str = "5.00",
+    tax: str = "0.00",
+    transfer_fee: str = "0.00",
+    net_amount: str = "-168805.00",
 ) -> None:
-    content = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
-{event_id},trade_buy,2026-07-02T10:05:00+08:00,2026-07-03,600519,贵州茅台,stock,CNY,{quantity},1688.00,168800.00,5.00,0.00,-168805.00,100000.00,{quantity},1688.05,manual ticket match
+    content = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee
+{event_id},trade_buy,2026-07-02T10:05:00+08:00,2026-07-03,600519,贵州茅台,stock,CNY,{quantity},{price},{gross_amount},{fee},{tax},{net_amount},100000.00,{quantity},1688.05,manual ticket match,{transfer_fee}
 """.format(
         event_id=event_id,
         quantity=quantity,
+        price=price,
+        gross_amount=gross_amount,
+        fee=fee,
+        tax=tax,
+        transfer_fee=transfer_fee,
+        net_amount=net_amount,
     )
     repository = BrokerEvidenceRepository(db_path)
     repository.save_preview(
         parse_broker_statement_csv(content),
         source_name="broker_statement.csv",
     )
+
+
+def _ledger_entry_count(db_path: Path) -> int:
+    with sqlite3.connect(db_path) as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()[0])

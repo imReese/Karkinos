@@ -299,11 +299,23 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
 
     # 注册路由
     from server.routes.acceptance_audit import create_router as acceptance_audit_router
-    from server.routes.backtest import create_router as backtest_router
     from server.routes.account_strategy import create_router as account_strategy_router
     from server.routes.account_truth import create_router as account_truth_router
     from server.routes.automation import create_router as automation_router
+    from server.routes.backtest import create_router as backtest_router
+    from server.routes.broker_connector_soak import (
+        create_router as broker_connector_soak_router,
+    )
     from server.routes.broker_gateway import create_router as broker_gateway_router
+    from server.routes.capital_authorization import (
+        create_router as capital_authorization_router,
+    )
+    from server.routes.capital_scaling_review import (
+        create_router as capital_scaling_review_router,
+    )
+    from server.routes.controlled_session_envelope import (
+        create_router as controlled_session_envelope_router,
+    )
     from server.routes.decision import create_router as decision_router
     from server.routes.execution_reconciliation import (
         create_router as execution_reconciliation_router,
@@ -311,13 +323,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.ledger import create_router as ledger_router
     from server.routes.market import create_router as market_router
     from server.routes.operations import create_router as operations_router
+    from server.routes.per_order_confirmation import (
+        create_router as per_order_confirmation_router,
+    )
     from server.routes.portfolio import create_router as portfolio_router
     from server.routes.settings import create_router as settings_router
     from server.routes.signals import create_router as signals_router
-    from server.routes.trading import create_router as trading_router
     from server.routes.strategy_promotion import (
         create_router as strategy_promotion_router,
     )
+    from server.routes.trading import create_router as trading_router
     from server.ws.handlers import router as ws_router
 
     app.include_router(market_router())
@@ -326,9 +341,14 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(account_truth_router())
     app.include_router(automation_router())
     app.include_router(broker_gateway_router())
+    app.include_router(broker_connector_soak_router())
+    app.include_router(capital_authorization_router())
+    app.include_router(capital_scaling_review_router())
+    app.include_router(controlled_session_envelope_router())
     app.include_router(execution_reconciliation_router())
     app.include_router(ledger_router())
     app.include_router(operations_router())
+    app.include_router(per_order_confirmation_router())
     app.include_router(portfolio_router())
     app.include_router(signals_router())
     app.include_router(decision_router())
