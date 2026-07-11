@@ -105,6 +105,36 @@ def test_acceptance_audit_cli_per_order_confirmation_foundation_filter() -> None
     assert audit["completed_count"] == audit["required_count"]
 
 
+def test_acceptance_audit_cli_execution_gateway_verification_filter() -> None:
+    result = _run_cli("--audit", "execution_gateway_verification")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "execution_gateway_verification"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "execution_gateway_verification"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_per_order_gateway_verification_binding_filter() -> None:
+    result = _run_cli("--audit", "per_order_gateway_verification_binding")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "per_order_gateway_verification_binding"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "per_order_gateway_verification_binding"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
+    assert audit["completed_count"] == audit["required_count"]
+
+
 def test_acceptance_audit_cli_controlled_session_envelope_foundation_filter() -> None:
     result = _run_cli("--audit", "controlled_session_envelope_foundation")
 
@@ -117,6 +147,53 @@ def test_acceptance_audit_cli_controlled_session_envelope_foundation_filter() ->
     ]
     audit = payload["audits"][0]
     assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_controlled_session_gateway_binding_filter() -> None:
+    result = _run_cli("--audit", "controlled_session_gateway_verification_binding")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == (
+        "controlled_session_gateway_verification_binding"
+    )
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_session_gateway_verification_binding"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_session_start_account_truth_binding_filter() -> None:
+    result = _run_cli("--audit", "session_start_account_truth_binding")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "session_start_account_truth_binding"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "session_start_account_truth_binding"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_controlled_session_budget_reservation_filter() -> None:
+    result = _run_cli("--audit", "controlled_session_budget_reservation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "controlled_session_budget_reservation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_session_budget_reservation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
     assert audit["completed_count"] == audit["required_count"]
 
 
@@ -397,7 +474,12 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "broker_connector_soak_foundation",
         "broker_connector_soak_promotion",
         "per_order_confirmation_foundation",
+        "execution_gateway_verification",
+        "per_order_gateway_verification_binding",
         "controlled_session_envelope_foundation",
+        "controlled_session_gateway_verification_binding",
+        "session_start_account_truth_binding",
+        "controlled_session_budget_reservation",
         "capital_scaling_review_foundation",
         "capital_scaling_evidence_resolution",
         "capital_scaling_evidence_window",

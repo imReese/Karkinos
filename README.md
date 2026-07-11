@@ -266,19 +266,58 @@ short-lived Ed25519-verified identity evidence bound to the exact dossier and a
 configured operator public key. The dossier also binds the current Stage 1
 promotion, operational, Account Truth, and owner-acceptance fingerprints for
 the capital-policy evidence connector, while the distinct execution gateway is
-bound separately as runtime-unverified evidence; missing evidence, role overlap,
-or source drift fails closed. Karkinos stores no operator private key, and a
-verified attestation still cannot change OMS, grant authority, submit or cancel
-an order, resume automation, or scale capital.
+bound separately. It remains runtime-unverified unless the request, recorded
+capital evaluation, current gateway verification, OMS order, connector,
+account alias, and canonical order fingerprint all match exactly; missing
+evidence, role overlap, expiry, or source drift fails closed. Karkinos stores no
+operator private key, and a verified attestation still cannot change OMS, grant
+authority, submit or cancel an order, resume automation, or scale capital.
+
+Stage 2.4 adds `/api/automation/execution-gateway-verification` status, preview,
+record, resolve, and history endpoints. A registered runtime gateway must expose
+verified evidence-connector/account binding, fresh source-fingerprinted health,
+submit/cancel/query/dry-run/idempotency capabilities, and an exact dry-run that
+returns no broker order id, `submitted=false`, and zero side effects. Recorded
+evidence expires after five minutes and is rechecked for source drift. No
+execution gateway is registered by default, and even clear verification cannot
+issue authority or submit an order.
+
+Stage 2.5 binds that exact short-lived verification into each per-order
+dossier. The capital evaluation must already contain the typed
+`execution_gateway_verification:<fingerprint>` reference, and every preview or
+confirmation re-resolves the current source before accepting the dossier.
+Gateway, read-only connector, account, OMS order, and order fingerprint drift
+re-block review and invalidates the prior operator approval. A clear binding
+removes only the runtime-verification blocker; runtime authority, live gateway,
+and broker submission remain disabled.
 
 The Stage 3 foundation remains proposal-only. The
 `/api/automation/controlled-sessions` status, envelope preview, attestation, and
 history endpoints project an explicit OMS order set inside a timezone-aware
 window of at most 30 minutes. Capital, cash, conservative gross exposure,
 turnover, per-order, position-change, liquidity, and rate budgets are checked,
-and the v2 evidence-connector/execution-gateway split is fingerprinted, but no
-budget is reserved and no runtime session is issued. There are no enable,
-resume, runtime-revoke, submit, cancel, or automatic scale-up operations.
+and the v2 evidence-connector/execution-gateway split is fingerprinted. Stage 3.3
+additionally requires one unique, current gateway verification per OMS order and
+the exact same typed reference set in the recorded capital evaluation; one
+missing, reused, expired, drifted, or mismatched order proof blocks the whole
+envelope. No budget is reserved and no runtime session is issued. There are no
+enable, resume, runtime-revoke, submit, cancel, or automatic scale-up operations.
+
+Stage 3.4 adds `/api/automation/session-start-account-truth` status, preview,
+record, resolve, and history evidence. The source is rebuilt from the latest
+Account Truth import, reconciliation, ledger projection, and manual reviews; it
+must be pass/fresh/clear with zero unresolved mismatches and no more than 120
+seconds old. The session request and capital evaluation bind the same typed
+fingerprint, connector, and account alias. Source drift or expiry re-blocks the
+envelope, while a clear record still cannot reserve budget or issue a session.
+
+Stage 3.5 adds
+`/api/automation/controlled-sessions/budget-reservations` status, preview,
+record, resolve, and history evidence. A reservation is allowed only for a
+still-current signed envelope; SQLite `BEGIN IMMEDIATE` serializes overlapping
+capital, cash, China-trading-day turnover, and order-count checks. The record
+is a bounded budget hold, not a runtime session or broker permission: OMS,
+ledger, submit/cancel, resume/renew, and capital scaling remain unavailable.
 
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one

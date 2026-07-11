@@ -15,12 +15,17 @@ from analytics.acceptance_audit import (
     build_capital_scaling_operating_sample_acceptance_audit,
     build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
+    build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
+    build_controlled_session_gateway_verification_binding_acceptance_audit,
     build_execution_batch_reconciliation_acceptance_audit,
+    build_execution_gateway_verification_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
     build_operations_runbook_acceptance_audit,
     build_per_order_confirmation_foundation_acceptance_audit,
+    build_per_order_gateway_verification_binding_acceptance_audit,
     build_research_evidence_acceptance_audit,
+    build_session_start_account_truth_binding_acceptance_audit,
     build_signed_operator_approval_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
@@ -132,6 +137,48 @@ def test_per_order_confirmation_foundation_acceptance_audit_is_complete() -> Non
             assert Path(evidence_path).exists(), evidence_path
 
 
+def test_execution_gateway_verification_acceptance_audit_is_complete() -> None:
+    audit = build_execution_gateway_verification_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    gateway_acceptance = roadmap_text.split(
+        "### Stage 2.4 Non-Submitting Execution Gateway Runtime Verification", 1
+    )[1].split("### Stage 3 Non-Executing Session-Bounded Envelope Foundation", 1)[0]
+    normalized_gateway = _normalized_markdown(gateway_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_gateway
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_per_order_gateway_verification_binding_acceptance_audit_is_complete() -> None:
+    audit = build_per_order_gateway_verification_binding_acceptance_audit()
+
+    assert audit.required_count == 7
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    binding_acceptance = roadmap_text.split(
+        "### Stage 2.5 Exact Runtime Gateway Verification Binding", 1
+    )[1].split("### Stage 3 Non-Executing Session-Bounded Envelope Foundation", 1)[0]
+    normalized_binding = _normalized_markdown(binding_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_binding
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
 def test_controlled_session_envelope_foundation_acceptance_audit_is_complete() -> None:
     audit = build_controlled_session_envelope_foundation_acceptance_audit()
 
@@ -149,6 +196,69 @@ def test_controlled_session_envelope_foundation_acceptance_audit_is_complete() -
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
         assert _normalized_markdown(criterion.checkbox_text) in normalized_stage3
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_controlled_session_gateway_verification_binding_audit_is_complete() -> None:
+    audit = build_controlled_session_gateway_verification_binding_acceptance_audit()
+
+    assert audit.required_count == 7
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    binding_acceptance = roadmap_text.split(
+        "### Stage 3.3 Per-Order Gateway Verification Set Binding", 1
+    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
+    normalized_binding = _normalized_markdown(binding_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_binding
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_session_start_account_truth_binding_acceptance_audit_is_complete() -> None:
+    audit = build_session_start_account_truth_binding_acceptance_audit()
+
+    assert audit.required_count == 7
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    binding_acceptance = roadmap_text.split(
+        "### Stage 3.4 Session-Start Account Truth Binding", 1
+    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
+    normalized_binding = _normalized_markdown(binding_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_binding
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_controlled_session_budget_reservation_acceptance_audit_is_complete() -> None:
+    audit = build_controlled_session_budget_reservation_acceptance_audit()
+
+    assert audit.required_count == 7
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    acceptance = roadmap_text.split(
+        "### Stage 3.5 Atomic Session Budget Reservation", 1
+    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
+    normalized = _normalized_markdown(acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 

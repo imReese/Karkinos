@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -31,6 +33,10 @@ from server.services.execution_batch_reconciliation import (
     EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
     ExecutionBatchReconciliationService,
 )
+from server.services.execution_gateway_verification import (
+    EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
+    ExecutionGatewayVerificationService,
+)
 from server.services.oms import OmsService
 from server.services.operator_approval import OperatorApprovalService
 from server.services.per_order_confirmation import (
@@ -43,6 +49,7 @@ from server.services.per_order_confirmation import (
 from server.services.trading_controls import TradingControlState
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
+GATEWAY_VERIFICATION_FINGERPRINT = "e" * 64
 
 
 def _gateway_evidence() -> dict:
@@ -85,6 +92,75 @@ def _connector(now: datetime = NOW) -> FakeReadOnlyBrokerConnector:
             ),
         )
     )
+
+
+class _RuntimeExecutionGateway:
+    gateway_id = "qmt-execution-disabled"
+    evidence_connector_id = "qmt-readonly-confirmation"
+    account_alias = "qmt-review"
+    account_binding_status = "verified"
+
+    def __init__(self) -> None:
+        self.capabilities = {
+            "can_cancel_orders": True,
+            "can_dry_run_orders": True,
+            "can_query_fills": True,
+            "can_query_orders": True,
+            "can_submit_orders": True,
+            "supports_idempotent_client_order_id": True,
+        }
+        self.dry_run_calls = 0
+        self.submit_calls = 0
+
+    def get_health(self) -> dict:
+        return {
+            "status": "healthy",
+            "captured_at": NOW.isoformat(),
+            "source_fingerprint": "b" * 64,
+        }
+
+    def dry_run_order(self, order: dict) -> dict:
+        self.dry_run_calls += 1
+        payload_fingerprint = hashlib.sha256(
+            json.dumps(order, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return {
+            "status": "accepted",
+            "order_fingerprint": order["order_fingerprint"],
+            "client_order_id": order["client_order_id"],
+            "payload_fingerprint": payload_fingerprint,
+            "submitted": False,
+            "broker_order_id": "",
+            "side_effect_count": 0,
+        }
+
+
+def _clear_gateway_verification(order: dict, *, version: int = 1) -> dict:
+    return {
+        "status": "clear",
+        "verification_fingerprint": GATEWAY_VERIFICATION_FINGERPRINT,
+        "verification_id": ("f" if version == 1 else "9") * 64,
+        "gateway_id": "qmt-execution-disabled",
+        "evidence_connector_id": "qmt-readonly-confirmation",
+        "account_alias": "qmt-review",
+        "order_id": order["order_id"],
+        "order_fingerprint": build_order_fingerprint(order),
+        "order_contract": {
+            "symbol": "510300.SH",
+            "side": "buy",
+            "asset_class": "fund",
+            "quantity": "100",
+            "order_type": "limit",
+            "limit_price": "4",
+        },
+        "recorded_at": NOW.isoformat(),
+        "runtime_gateway_verified": True,
+        "runtime_verification_status": "verified_non_submitting_dry_run",
+        "blockers": [],
+        "runtime_execution_authority": "disabled",
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+    }
 
 
 def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
@@ -248,7 +324,12 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         kill_switch_enabled=False,
         order_fingerprint=order_fingerprint,
         manual_confirmation_fingerprint=order_fingerprint,
-        evidence_refs=("risk:decision-1", "paper-shadow:run-1", batch_ref),
+        evidence_refs=(
+            "risk:decision-1",
+            "paper-shadow:run-1",
+            batch_ref,
+            ("execution_gateway_verification:" f"{GATEWAY_VERIFICATION_FINGERPRINT}"),
+        ),
         evidence_connector_id="qmt-readonly-confirmation",
         execution_gateway_id="qmt-execution-disabled",
         evidence_connector_health_status="healthy",
@@ -278,6 +359,9 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         connectors=[connector],
         trusted_operator_identities=[trusted_identity],
         trading_controls=controls,
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(order)
+        ),
         clock=lambda: now,
     )
     return {
@@ -287,7 +371,10 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         "service": service,
         "order": order,
         "evaluation": evaluation,
+        "capital_policy": policy,
+        "capital_context": context,
         "batch": batch,
+        "gateway_verification_fingerprint": GATEWAY_VERIFICATION_FINGERPRINT,
         "private_key": private_key,
         "trusted_identity": trusted_identity,
     }
@@ -362,6 +449,9 @@ def test_dossier_binds_all_review_evidence_but_keeps_submission_blocked(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert dossier["review_status"] == "review_ready_non_submitting"
@@ -375,20 +465,22 @@ def test_dossier_binds_all_review_evidence_but_keeps_submission_blocked(
     assert "stage1_operational_soak_incomplete" in dossier["hard_submission_blockers"]
     assert "stage1_owner_acceptance_missing" in dossier["hard_submission_blockers"]
     assert (
-        "execution_gateway_runtime_not_verified" in dossier["hard_submission_blockers"]
+        "execution_gateway_runtime_not_verified"
+        not in dossier["hard_submission_blockers"]
     )
     assert dossier["connector_soak"]["evidence_connector_can_submit"] is False
-    assert dossier["execution_gateway"] == {
-        "schema_version": "karkinos.execution_gateway_binding.v1",
-        "gateway_id": "qmt-execution-disabled",
-        "declared_health_status": "healthy",
-        "declared_can_submit_orders": True,
-        "account_binding_status": "verified",
-        "runtime_verification_status": "unverified",
-        "broker_contacted": False,
-        "broker_submission_enabled": False,
-        "authorizes_execution": False,
-    }
+    assert dossier["execution_gateway"]["gateway_id"] == "qmt-execution-disabled"
+    assert dossier["execution_gateway"]["runtime_gateway_verified"] is True
+    assert dossier["execution_gateway"]["runtime_verification_status"] == (
+        "verified_non_submitting_dry_run"
+    )
+    assert dossier["execution_gateway"]["broker_submission_enabled"] is False
+    assert dossier["execution_gateway_verification"]["status"] == "pass"
+    assert (
+        dossier["execution_gateway_verification"]["order_id"]
+        == env["order"]["order_id"]
+    )
+    assert dossier["execution_gateway_verification"]["authorizes_execution"] is False
     assert (
         "prior_batch_reconciliation_not_bound_or_clear"
         not in dossier["hard_submission_blockers"]
@@ -412,6 +504,9 @@ def test_exact_dossier_confirmation_is_append_only_reused_and_non_mutating(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     approval = _operator_approval(env, dossier["dossier_fingerprint"])
 
@@ -421,6 +516,9 @@ def test_exact_dossier_confirmation_is_append_only_reused_and_non_mutating(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
         dossier_fingerprint=dossier["dossier_fingerprint"],
         operator_label="local-owner",
         operator_approval_id=approval["approval_id"],
@@ -432,6 +530,9 @@ def test_exact_dossier_confirmation_is_append_only_reused_and_non_mutating(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
         dossier_fingerprint=dossier["dossier_fingerprint"],
         operator_label="local-owner",
         operator_approval_id=approval["approval_id"],
@@ -457,6 +558,9 @@ def test_exact_dossier_confirmation_is_append_only_reused_and_non_mutating(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     assert refreshed["dossier_fingerprint"] == dossier["dossier_fingerprint"]
     assert refreshed["confirmation"]["status"] == "recorded_verified_identity"
@@ -470,6 +574,9 @@ def test_dossier_confirmation_rejects_approval_for_another_artifact(tmp_path) ->
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     wrong_approval = _operator_approval(env, "f" * 64)
 
@@ -480,6 +587,9 @@ def test_dossier_confirmation_rejects_approval_for_another_artifact(tmp_path) ->
             prior_batch_reconciliation_fingerprint=env["batch"][
                 "batch_reconciliation_fingerprint"
             ],
+            execution_gateway_verification_fingerprint=(
+                env["gateway_verification_fingerprint"]
+            ),
             dossier_fingerprint=dossier["dossier_fingerprint"],
             operator_label="local-owner",
             operator_approval_id=wrong_approval["approval_id"],
@@ -500,6 +610,9 @@ def test_dossier_fingerprint_ignores_age_counter_but_changes_at_stale_boundary(
         connectors=[env["connector"]],
         trusted_operator_identities=[env["trusted_identity"]],
         trading_controls=env["controls"],
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
         clock=lambda: current_time[0],
     )
     order_id = env["order"]["order_id"]
@@ -510,6 +623,9 @@ def test_dossier_fingerprint_ignores_age_counter_but_changes_at_stale_boundary(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     approval = _operator_approval(env, preview["dossier_fingerprint"])
     current_time[0] = NOW + timedelta(seconds=5)
@@ -520,6 +636,9 @@ def test_dossier_fingerprint_ignores_age_counter_but_changes_at_stale_boundary(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
         dossier_fingerprint=preview["dossier_fingerprint"],
         operator_label="local-owner",
         operator_approval_id=approval["approval_id"],
@@ -531,6 +650,9 @@ def test_dossier_fingerprint_ignores_age_counter_but_changes_at_stale_boundary(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     current_time[0] = NOW + timedelta(minutes=16)
     stale = service.preview_dossier(
@@ -539,6 +661,9 @@ def test_dossier_fingerprint_ignores_age_counter_but_changes_at_stale_boundary(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert confirmation["status"] == "recorded_verified_identity"
@@ -556,6 +681,9 @@ def test_stale_dossier_fingerprint_is_rejected_and_audited(tmp_path) -> None:
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     approval = _operator_approval(env, dossier["dossier_fingerprint"])
 
@@ -566,6 +694,9 @@ def test_stale_dossier_fingerprint_is_rejected_and_audited(tmp_path) -> None:
             prior_batch_reconciliation_fingerprint=env["batch"][
                 "batch_reconciliation_fingerprint"
             ],
+            execution_gateway_verification_fingerprint=(
+                env["gateway_verification_fingerprint"]
+            ),
             dossier_fingerprint="0" * 64,
             operator_label="local-owner",
             operator_approval_id=approval["approval_id"],
@@ -590,6 +721,9 @@ def test_kill_switch_blocks_confirmation_and_rejection_is_audited(tmp_path) -> N
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert dossier["review_status"] == "blocked_review"
@@ -602,6 +736,9 @@ def test_kill_switch_blocks_confirmation_and_rejection_is_audited(tmp_path) -> N
             prior_batch_reconciliation_fingerprint=env["batch"][
                 "batch_reconciliation_fingerprint"
             ],
+            execution_gateway_verification_fingerprint=(
+                env["gateway_verification_fingerprint"]
+            ),
             dossier_fingerprint=dossier["dossier_fingerprint"],
             operator_label="local-owner",
             operator_approval_id=approval["approval_id"],
@@ -643,6 +780,9 @@ def test_expired_capital_evaluation_and_stale_soak_evidence_fail_closed(
         db=env["db"],
         connectors=[env["connector"]],
         trading_controls=env["controls"],
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
         clock=lambda: later,
     )
 
@@ -652,6 +792,9 @@ def test_expired_capital_evaluation_and_stale_soak_evidence_fail_closed(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert "capital_authorization_expired" in dossier["review_blockers"]
@@ -672,6 +815,9 @@ def test_order_term_drift_invalidates_recorded_capital_fingerprint(tmp_path) -> 
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert "capital_order_fingerprint_mismatch" in dossier["review_blockers"]
@@ -746,6 +892,7 @@ def test_status_makes_unverified_non_submitting_boundary_explicit(tmp_path) -> N
     assert status["broker_submission_enabled"] is False
     assert status["stage2_promotion_ready"] is False
     assert status["stage1_signed_promotion_binding"] == "required_per_dossier"
+    assert status["execution_gateway_verification_binding"] == ("required_per_dossier")
 
 
 def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
@@ -760,6 +907,9 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
         broker_soak_promotion_evidence_provider=(
             lambda connector_id: _signed_stage1_promotion()
         ),
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
         clock=lambda: NOW,
     )
 
@@ -769,6 +919,9 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     promotion = dossier["connector_soak"]["signed_promotion"]
@@ -796,7 +949,8 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
     assert "stage1_owner_acceptance_missing" not in dossier["hard_submission_blockers"]
     assert "stage1_promotion_not_ready" not in dossier["hard_submission_blockers"]
     assert (
-        "execution_gateway_runtime_not_verified" in dossier["hard_submission_blockers"]
+        "execution_gateway_runtime_not_verified"
+        not in dossier["hard_submission_blockers"]
     )
     assert "runtime_execution_authority_disabled" in dossier["hard_submission_blockers"]
     assert "live_gateway_not_implemented" in dossier["hard_submission_blockers"]
@@ -815,6 +969,9 @@ def test_signed_stage1_promotion_source_drift_invalidates_exact_order_dossier(
         trusted_operator_identities=[env["trusted_identity"]],
         trading_controls=env["controls"],
         broker_soak_promotion_evidence_provider=lambda connector_id: current[0],
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
         clock=lambda: NOW,
     )
     order_id = env["order"]["order_id"]
@@ -824,6 +981,9 @@ def test_signed_stage1_promotion_source_drift_invalidates_exact_order_dossier(
         order_id,
         capital_evaluation_input_fingerprint=input_fingerprint,
         prior_batch_reconciliation_fingerprint=batch_fingerprint,
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     approval = _operator_approval(env, first["dossier_fingerprint"])
 
@@ -832,6 +992,9 @@ def test_signed_stage1_promotion_source_drift_invalidates_exact_order_dossier(
         order_id,
         capital_evaluation_input_fingerprint=input_fingerprint,
         prior_batch_reconciliation_fingerprint=batch_fingerprint,
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert drifted["dossier_fingerprint"] != first["dossier_fingerprint"]
@@ -841,6 +1004,9 @@ def test_signed_stage1_promotion_source_drift_invalidates_exact_order_dossier(
             order_id,
             capital_evaluation_input_fingerprint=input_fingerprint,
             prior_batch_reconciliation_fingerprint=batch_fingerprint,
+            execution_gateway_verification_fingerprint=(
+                env["gateway_verification_fingerprint"]
+            ),
             dossier_fingerprint=first["dossier_fingerprint"],
             operator_label="local-owner",
             operator_approval_id=approval["approval_id"],
@@ -863,6 +1029,9 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     def failed_provider(connector_id: str) -> dict:
@@ -873,6 +1042,9 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         connectors=[env["connector"]],
         trading_controls=env["controls"],
         broker_soak_promotion_evidence_provider=failed_provider,
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
         clock=lambda: NOW,
     )
     malformed_promotion = _signed_stage1_promotion()
@@ -887,6 +1059,9 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         broker_soak_promotion_evidence_provider=(
             lambda connector_id: malformed_promotion
         ),
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
         clock=lambda: NOW,
     )
     failed = failed_service.preview_dossier(
@@ -895,6 +1070,9 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
     malformed = malformed_service.preview_dossier(
         env["order"]["order_id"],
@@ -902,6 +1080,9 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         prior_batch_reconciliation_fingerprint=env["batch"][
             "batch_reconciliation_fingerprint"
         ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
     )
 
     assert missing["connector_soak"]["signed_promotion"]["blockers"] == [
@@ -917,3 +1098,303 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         "signed_promotion_trading_day_count_invalid"
     ]
     assert "stage1_promotion_not_ready" in malformed["hard_submission_blockers"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_blocker"),
+    [
+        (
+            "gateway_id",
+            "another-execution-gateway",
+            "execution_gateway_verification_gateway_mismatch",
+        ),
+        (
+            "evidence_connector_id",
+            "another-readonly-connector",
+            "execution_gateway_verification_connector_mismatch",
+        ),
+        (
+            "account_alias",
+            "another-account",
+            "execution_gateway_verification_account_mismatch",
+        ),
+        (
+            "order_id",
+            "another-order",
+            "execution_gateway_verification_order_mismatch",
+        ),
+        (
+            "order_fingerprint",
+            "7" * 64,
+            "execution_gateway_verification_order_fingerprint_mismatch",
+        ),
+        (
+            "order_contract",
+            {
+                "symbol": "510300.SH",
+                "side": "buy",
+                "asset_class": "fund",
+                "quantity": "200",
+                "order_type": "limit",
+                "limit_price": "4",
+            },
+            "execution_gateway_verification_order_contract_mismatch",
+        ),
+    ],
+)
+def test_gateway_verification_scope_mismatch_blocks_exact_dossier(
+    tmp_path,
+    field: str,
+    value: str,
+    expected_blocker: str,
+) -> None:
+    env = _ready_environment(tmp_path)
+    verification = _clear_gateway_verification(env["order"])
+    verification[field] = value
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trusted_operator_identities=[env["trusted_identity"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=lambda fingerprint: verification,
+        clock=lambda: NOW,
+    )
+
+    dossier = service.preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
+    )
+
+    assert expected_blocker in dossier["review_blockers"]
+    assert dossier["execution_gateway_verification"]["status"] == "blocked"
+    assert (
+        "execution_gateway_runtime_not_verified" in dossier["hard_submission_blockers"]
+    )
+    assert dossier["submission_status"] == "blocked"
+    assert dossier["authorizes_execution"] is False
+
+
+def test_gateway_verification_source_drift_invalidates_operator_approval(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+    current = [_clear_gateway_verification(env["order"])]
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trusted_operator_identities=[env["trusted_identity"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=lambda fingerprint: current[0],
+        clock=lambda: NOW,
+    )
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+    first = service.preview_dossier(env["order"]["order_id"], **kwargs)
+    approval = _operator_approval(env, first["dossier_fingerprint"])
+    current[0] = {
+        **current[0],
+        "status": "blocked",
+        "runtime_gateway_verified": False,
+        "runtime_verification_status": "blocked",
+        "blockers": ["verification_source_changed"],
+    }
+
+    drifted = service.preview_dossier(env["order"]["order_id"], **kwargs)
+
+    assert drifted["dossier_fingerprint"] != first["dossier_fingerprint"]
+    assert (
+        "execution_gateway_verification:verification_source_changed"
+        in drifted["review_blockers"]
+    )
+    with pytest.raises(PerOrderConfirmationRejected) as exc_info:
+        service.record_confirmation(
+            env["order"]["order_id"],
+            **kwargs,
+            dossier_fingerprint=first["dossier_fingerprint"],
+            operator_label="local-owner",
+            operator_approval_id=approval["approval_id"],
+            acknowledgement=PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
+        )
+    assert (
+        "dossier_fingerprint_mismatch" in exc_info.value.evidence["rejection_reasons"]
+    )
+    assert "dossier_review_blocked" in exc_info.value.evidence["rejection_reasons"]
+    assert "operator_approval_blocked" in exc_info.value.evidence["rejection_reasons"]
+    assert exc_info.value.evidence["authorizes_execution"] is False
+
+
+def test_gateway_verification_provider_failures_are_sanitized_and_fail_closed(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+
+    def failed_provider(fingerprint: str) -> dict:
+        raise RuntimeError("private gateway credential must not leak")
+
+    missing_service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trading_controls=env["controls"],
+        clock=lambda: NOW,
+    )
+    failed_service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=failed_provider,
+        clock=lambda: NOW,
+    )
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+
+    missing = missing_service.preview_dossier(env["order"]["order_id"], **kwargs)
+    failed = failed_service.preview_dossier(env["order"]["order_id"], **kwargs)
+
+    assert missing["execution_gateway_verification"]["blockers"] == [
+        "execution_gateway_verification_provider_unavailable"
+    ]
+    assert failed["execution_gateway_verification"]["blockers"] == [
+        "execution_gateway_verification_provider_failed"
+    ]
+    assert "private gateway credential must not leak" not in json.dumps(failed)
+    assert (
+        "execution_gateway_runtime_not_verified" in failed["hard_submission_blockers"]
+    )
+    assert failed["authorizes_execution"] is False
+
+
+def test_capital_evaluation_must_reference_exact_gateway_verification(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+    requested = "9" * 64
+    verification = {
+        **_clear_gateway_verification(env["order"]),
+        "verification_fingerprint": requested,
+    }
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=lambda fingerprint: verification,
+        clock=lambda: NOW,
+    )
+
+    dossier = service.preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=requested,
+    )
+
+    assert (
+        "capital_execution_gateway_verification_ref_mismatch"
+        in dossier["review_blockers"]
+    )
+    assert dossier["execution_gateway_verification"]["status"] == "pass"
+    assert dossier["review_ready"] is False
+
+
+def test_recorded_runtime_verification_resolves_into_exact_per_order_dossier(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+    gateway = _RuntimeExecutionGateway()
+    verifier = ExecutionGatewayVerificationService(
+        db=env["db"],
+        gateways=[gateway],
+        clock=lambda: NOW,
+    )
+    order_contract = _clear_gateway_verification(env["order"])["order_contract"]
+    verification_preview = verifier.preview(
+        gateway_id=gateway.gateway_id,
+        evidence_connector_id=gateway.evidence_connector_id,
+        account_alias=gateway.account_alias,
+        order_id=env["order"]["order_id"],
+        order_fingerprint=build_order_fingerprint(env["order"]),
+        order_contract=order_contract,
+    )
+    verification = verifier.record(
+        gateway_id=gateway.gateway_id,
+        evidence_connector_id=gateway.evidence_connector_id,
+        account_alias=gateway.account_alias,
+        order_id=env["order"]["order_id"],
+        order_fingerprint=build_order_fingerprint(env["order"]),
+        order_contract=order_contract,
+        verification_fingerprint=verification_preview["verification_fingerprint"],
+        acknowledgement=EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
+    )
+    evidence_refs = tuple(
+        ref
+        for ref in env["capital_context"].evidence_refs
+        if not ref.startswith("execution_gateway_verification:")
+    ) + (
+        "execution_gateway_verification:" f"{verification['verification_fingerprint']}",
+    )
+    current_context = replace(
+        env["capital_context"],
+        evidence_refs=evidence_refs,
+    )
+    current_evaluation = CapitalAuthorizationAuditService(
+        db=env["db"],
+        clock=lambda: NOW,
+    ).record_evaluation(
+        policy=env["capital_policy"],
+        context=current_context,
+    )
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trusted_operator_identities=[env["trusted_identity"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=verifier.resolve,
+        clock=lambda: NOW,
+    )
+
+    dossier = service.preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=current_evaluation["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=verification[
+            "verification_fingerprint"
+        ],
+    )
+
+    assert dossier["review_status"] == "review_ready_non_submitting"
+    assert dossier["execution_gateway_verification"]["status"] == "pass"
+    assert dossier["execution_gateway_verification"]["order_contract"] == (
+        order_contract
+    )
+    assert (
+        "execution_gateway_runtime_not_verified"
+        not in dossier["hard_submission_blockers"]
+    )
+    assert "runtime_execution_authority_disabled" in dossier["hard_submission_blockers"]
+    assert "broker_submission_disabled" in dossier["hard_submission_blockers"]
+    assert dossier["authorizes_execution"] is False
+    assert gateway.dry_run_calls >= 3
+    assert gateway.submit_calls == 0

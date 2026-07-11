@@ -313,10 +313,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.capital_scaling_review import (
         create_router as capital_scaling_review_router,
     )
+    from server.routes.controlled_session_budget_reservation import (
+        create_router as controlled_session_budget_reservation_router,
+    )
     from server.routes.controlled_session_envelope import (
         create_router as controlled_session_envelope_router,
     )
     from server.routes.decision import create_router as decision_router
+    from server.routes.execution_gateway_verification import (
+        create_router as execution_gateway_verification_router,
+    )
     from server.routes.execution_reconciliation import (
         create_router as execution_reconciliation_router,
     )
@@ -327,6 +333,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
         create_router as per_order_confirmation_router,
     )
     from server.routes.portfolio import create_router as portfolio_router
+    from server.routes.session_start_account_truth import (
+        create_router as session_start_account_truth_router,
+    )
     from server.routes.settings import create_router as settings_router
     from server.routes.signals import create_router as signals_router
     from server.routes.strategy_promotion import (
@@ -345,10 +354,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(capital_authorization_router())
     app.include_router(capital_scaling_review_router())
     app.include_router(controlled_session_envelope_router())
+    app.include_router(controlled_session_budget_reservation_router())
     app.include_router(execution_reconciliation_router())
+    app.include_router(execution_gateway_verification_router())
     app.include_router(ledger_router())
     app.include_router(operations_router())
     app.include_router(per_order_confirmation_router())
+    app.include_router(session_start_account_truth_router())
     app.include_router(portfolio_router())
     app.include_router(signals_router())
     app.include_router(decision_router())

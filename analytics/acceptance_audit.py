@@ -3470,11 +3470,11 @@ def build_per_order_confirmation_foundation_acceptance_audit() -> AcceptanceAudi
                 key="per_order_hard_submission_blockers",
                 checkbox_text=(
                     "* [x] A current signed Stage 1 promotion may clear only "
-                    "the Account Truth-linkage, owner-acceptance, and Stage 1 "
-                    "promotion blockers; evidence-connector read-only integrity, "
-                    "execution-gateway runtime verification, runtime authority, "
-                    "live gateway, and broker submission remain explicit hard "
-                    "blockers."
+                    "its Stage 1 blockers, and an exact current non-submitting "
+                    "gateway verification may clear only the runtime-verification "
+                    "blocker; evidence-connector read-only integrity, runtime "
+                    "authority, live gateway, and broker submission remain explicit "
+                    "hard blockers."
                 ),
                 evidence_paths=(
                     "server/services/per_order_confirmation.py",
@@ -3819,14 +3819,14 @@ def build_controlled_session_envelope_foundation_acceptance_audit() -> Acceptanc
             AcceptanceCriterion(
                 key="session_runtime_hard_blockers",
                 checkbox_text=(
-                    "* [x] Stage 1/2 promotion, session-start Account Truth, "
-                    "read-only evidence-connector integrity, execution-gateway "
-                    "runtime verification, per-symbol runtime limits, atomic "
-                    "budget reservation, runtime rate limiting, "
-                    "automatic pause, session issuance/resume, live gateway, "
-                    "and broker submission remain hard blockers after exact "
-                    "prior-batch reconciliation and signed operator approval "
-                    "pass."
+                    "* [x] Exact per-order gateway verification and current "
+                    "session-start Account Truth may clear only their respective "
+                    "evidence blockers; Stage 1/2 promotion, read-only evidence-"
+                    "connector integrity, per-symbol runtime limits, atomic budget "
+                    "reservation, runtime rate limiting, automatic pause, session "
+                    "issuance/resume, live gateway, and broker submission remain "
+                    "hard blockers after exact prior-batch reconciliation and "
+                    "signed operator approval pass."
                 ),
                 evidence_paths=(
                     "server/services/controlled_session_envelope.py",
@@ -3886,6 +3886,395 @@ def build_controlled_session_envelope_foundation_acceptance_audit() -> Acceptanc
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_controlled_session_envelope.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_controlled_session_gateway_verification_binding_acceptance_audit() -> (
+    AcceptanceAudit
+):
+    """Return evidence for the exact Stage 3.3 per-order verification set."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="session_exact_gateway_verification_reference_set",
+                checkbox_text=(
+                    "* [x] A session request maps every OMS order id to one "
+                    "unique gateway-verification fingerprint, and the recorded "
+                    "`session_bounded` capital evaluation contains exactly the "
+                    "same typed verification-reference set."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'map_must_match or capital_evaluation_must_reference' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_current_gateway_verification_exact_binding",
+                checkbox_text=(
+                    "* [x] Every envelope re-resolves each current verification "
+                    "and independently matches gateway, read-only connector, "
+                    "account alias, OMS order id, canonical order fingerprint, "
+                    "and sanitized dry-run order terms."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification_binding.py",
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'projects_conservative or recorded_gateway_verifications' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="one_gateway_verification_failure_blocks_session",
+                checkbox_text=(
+                    "* [x] Missing, extra, reused, invalid, or mismatched "
+                    "verification references and any single-order resolution "
+                    "failure block the whole session envelope."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'map_must_match or mismatched_gateway' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_gateway_drift_invalidates_approval",
+                checkbox_text=(
+                    "* [x] Verification expiry or source drift changes the "
+                    "envelope fingerprint, restores the runtime-verification "
+                    "hard blocker, and invalidates the prior artifact-bound "
+                    "operator approval."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py tests/test_controlled_session_envelope.py -k 'source_drift or expiry' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_verification_set_clears_no_authority",
+                checkbox_text=(
+                    "* [x] A fully clear verification set removes only the "
+                    "runtime-verification blocker; session authority, atomic "
+                    "budget reservation, automatic pause, live gateway, broker "
+                    "submission, and strategy direct execution remain disabled."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k projects_conservative -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_gateway_verification_api_contract",
+                checkbox_text=(
+                    "* [x] Preview and attestation APIs validate the bounded "
+                    "fingerprint map, inject the closed-by-default runtime "
+                    "registry resolver, reject credentials, and expose no "
+                    "session-issue or submit path."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_envelope.py",
+                    "server/routes/execution_gateway_verification.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_gateway_verification_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover exact multi-order binding, "
+                    "capital-reference-set mismatch, missing/reused references, "
+                    "scope/order mismatch, provider failure, source drift, "
+                    "approval invalidation, route wiring, and zero execution "
+                    "authority."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_envelope.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_session_start_account_truth_binding_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the exact Stage 3.4 Account Truth start gate."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="session_start_current_account_truth_contract",
+                checkbox_text=(
+                    "* [x] Session-start evidence rebuilds current Account "
+                    "Truth and requires a clear reconciliation, passing gate, "
+                    "fresh source no more than 120 seconds old, zero unresolved "
+                    "mismatches, and explicit zero-authority boundaries."
+                ),
+                evidence_paths=(
+                    "server/account_truth_gate.py",
+                    "server/services/session_start_account_truth.py",
+                    "tests/test_session_start_account_truth.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_session_start_account_truth.py -k 'preview_is_clear or gate_and_freshness' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_start_account_truth_append_only_resolution",
+                checkbox_text=(
+                    "* [x] Clear and rejected attempts are append-only and "
+                    "deterministic; resolution rechecks the current source, "
+                    "detects drift, and expires records after 120 seconds."
+                ),
+                evidence_paths=(
+                    "server/services/session_start_account_truth.py",
+                    "server/db.py",
+                    "tests/test_session_start_account_truth.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_session_start_account_truth.py -k 'record_reuses or drift_and_expiry or rejected' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_exact_account_truth_capital_binding",
+                checkbox_text=(
+                    "* [x] The session request and recorded `session_bounded` "
+                    "capital evaluation bind the same typed Account Truth "
+                    "fingerprint, evidence connector, and account alias."
+                ),
+                evidence_paths=(
+                    "server/services/session_start_account_truth.py",
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'recorded_session_start_account_truth or scope_mismatch' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_account_truth_drift_invalidates_approval",
+                checkbox_text=(
+                    "* [x] Missing providers, identity mismatch, expiry, or "
+                    "source drift re-blocks the envelope, restores the Account "
+                    "Truth hard blocker, and invalidates the prior artifact-bound "
+                    "operator approval without leaking source details."
+                ),
+                evidence_paths=(
+                    "server/services/session_start_account_truth.py",
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'account_truth_drift or provider_failure' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="account_truth_clear_removes_no_authority_gate",
+                checkbox_text=(
+                    "* [x] A clear binding removes only "
+                    "`session_account_truth_snapshot_not_bound`; session "
+                    "authority, atomic budget reservation, automatic pause, "
+                    "live gateway, broker submission, and strategy direct "
+                    "execution remain disabled."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k projects_conservative -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_start_account_truth_api_zero_authority",
+                checkbox_text=(
+                    "* [x] Status, preview, record, resolve, and history APIs "
+                    "use the current Account Truth source, reject credentials, "
+                    "and expose no authority, session-issue, budget, ledger, or "
+                    "broker-submit action."
+                ),
+                evidence_paths=(
+                    "server/routes/session_start_account_truth.py",
+                    "server/app.py",
+                    "tests/server/test_session_start_account_truth_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_session_start_account_truth_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_start_account_truth_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover clear/blocked facts, "
+                    "freshness, append-only reuse, source drift, expiry, "
+                    "capital-reference and identity mismatch, provider failure, "
+                    "envelope approval invalidation, route wiring, and zero "
+                    "execution authority."
+                ),
+                evidence_paths=(
+                    "tests/test_session_start_account_truth.py",
+                    "tests/server/test_session_start_account_truth_routes.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_session_start_account_truth.py tests/server/test_session_start_account_truth_routes.py tests/test_controlled_session_envelope.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_controlled_session_budget_reservation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the Stage 3.5 atomic budget reservation gate."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="current_signed_attestation_revalidation",
+                checkbox_text=(
+                    "* [x] Reservation requires a recorded signed envelope and "
+                    "re-resolves its exact capital evaluation, Account Truth, "
+                    "gateway dry-runs, prior-batch reconciliation, kill switch, "
+                    "time window, and currently trusted operator approval."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/services/controlled_session_budget_reservation.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 're_resolves or reserve_budget' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_fixed_precision_budget_contract",
+                checkbox_text=(
+                    "* [x] The immutable reservation fingerprint binds the "
+                    "attestation, envelope, authorization/account scope, China "
+                    "trading day, exact window, conservative gross/cash/turnover "
+                    "amounts, order count, capacities, and fixed 0.0001 CNY units."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_budget_reservation.py",
+                    "server/db.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_budget_reservation.py -k deterministic -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="atomic_concurrent_budget_gate",
+                checkbox_text=(
+                    "* [x] SQLite `BEGIN IMMEDIATE` serializes overlapping "
+                    "reservations and atomically rejects unavailable capital, "
+                    "cash, daily turnover, or order-count budget before insert."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_budget_reservation.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_budget_reservation.py -k 'concurrent or checks_cash' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="idempotent_reservation_and_rejection_audit",
+                checkbox_text=(
+                    "* [x] Exact reruns reuse one immutable reservation, each "
+                    "attestation can reserve only once, and malformed, stale, "
+                    "blocked, or transaction-rejected attempts are append-only "
+                    "audit evidence."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_budget_reservation.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_budget_reservation.py -k 'idempotently or rejected_reservation' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="reservation_source_drift_and_expiry_fail_closed",
+                checkbox_text=(
+                    "* [x] Source drift, signature/key expiry, blocked gates, or "
+                    "window expiry invalidates reservation readiness/resolution; "
+                    "expired daily turnover remains conservatively reserved for "
+                    "that China trading day until release semantics exist."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/services/controlled_session_budget_reservation.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_budget_reservation.py -k revalidates -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="budget_reservation_api_zero_authority",
+                checkbox_text=(
+                    "* [x] Status, preview, record, resolve, and history APIs "
+                    "reject undeclared credentials and expose no session-issue, "
+                    "OMS/ledger mutation, broker submit/cancel, renewal, resume, "
+                    "or capital-scale action."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_budget_reservation.py",
+                    "server/app.py",
+                    "tests/server/test_controlled_session_budget_reservation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_budget_reservation_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="budget_reservation_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover exact signed-envelope "
+                    "binding, source revalidation, fixed precision, idempotency, "
+                    "real concurrent contention, every budget dimension, "
+                    "rejection audit, route wiring, and zero execution authority."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_envelope.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                    "tests/server/test_controlled_session_budget_reservation_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py tests/test_controlled_session_budget_reservation.py tests/server/test_controlled_session_budget_reservation_routes.py -q",
                 ),
             ),
         )
@@ -4761,6 +5150,269 @@ def build_execution_batch_reconciliation_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     "uv run pytest tests/server/test_execution_reconciliation_routes.py -k execution_batch -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_execution_gateway_verification_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for non-submitting runtime gateway verification."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="runtime_gateway_capability_health_contract",
+                checkbox_text=(
+                    "* [x] Runtime verification resolves a distinct registered "
+                    "execution gateway, verified evidence-connector/account "
+                    "binding, complete submit/cancel/query/dry-run/idempotency "
+                    "capabilities, and a healthy source-fingerprinted snapshot."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "tests/test_execution_gateway_verification.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py -k preview_is_ready -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="execution_gateway_health_freshness",
+                checkbox_text=(
+                    "* [x] Gateway health must be healthy, timezone-aware, no "
+                    "more than 60 seconds old, not materially future-dated, and "
+                    "bound to a valid source fingerprint; missing/stale/provider "
+                    "failure evidence fails closed without leaking details."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "tests/test_execution_gateway_verification.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py -k 'source_drift or capability_account' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="non_submitting_idempotent_gateway_dry_run",
+                checkbox_text=(
+                    "* [x] The verifier derives a deterministic client order "
+                    "id and requires dry-run acceptance for the exact order "
+                    "fingerprint with a valid payload fingerprint, no broker "
+                    "order id, submitted=false, and zero reported side effects."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "tests/test_execution_gateway_verification.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py -k 'preview_is_ready or side_effects' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_verification_append_only_reuse",
+                checkbox_text=(
+                    "* [x] Exact accepted or rejected verification attempts "
+                    "are append-only and deterministic; sequential accepted "
+                    "reruns reuse one event without submitting or cancelling."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "server/db.py",
+                    "tests/test_execution_gateway_verification.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py -k 'record_reuses or rejected' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_verification_resolve_rechecks_source",
+                checkbox_text=(
+                    "* [x] Resolution re-runs current capability, binding, "
+                    "health, and dry-run checks, rejects source drift, and "
+                    "expires recorded verification after five minutes."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "tests/test_execution_gateway_verification.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py -k source_drift -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="no_production_gateway_default",
+                checkbox_text=(
+                    "* [x] Production registers no execution gateway by "
+                    "default; status therefore reports no runtime gateway, "
+                    "disabled execution authority, and broker submission false."
+                ),
+                evidence_paths=(
+                    "server/routes/execution_gateway_verification.py",
+                    "tests/test_execution_gateway_verification.py",
+                    "tests/server/test_execution_gateway_verification_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py -k status_defaults -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_verification_api_zero_authority",
+                checkbox_text=(
+                    "* [x] Status, preview, record, resolve, and list APIs "
+                    "reject undeclared credential fields and expose no gateway "
+                    "registration, authority issue, budget, OMS/ledger, submit, "
+                    "cancel, resume, or scale-up operation."
+                ),
+                evidence_paths=(
+                    "server/routes/execution_gateway_verification.py",
+                    "server/app.py",
+                    "tests/server/test_execution_gateway_verification_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_execution_gateway_verification_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_verification_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic service and route tests cover ready, "
+                    "missing registration, capability/account/health failure, "
+                    "unsafe dry-run, source drift, expiry, reuse, rejection "
+                    "audit, credential rejection, and zero broker side effects."
+                ),
+                evidence_paths=(
+                    "tests/test_execution_gateway_verification.py",
+                    "tests/server/test_execution_gateway_verification_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py tests/server/test_execution_gateway_verification_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_per_order_gateway_verification_binding_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for exact Stage 2.4 verification binding into Stage 2."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="capital_exact_gateway_verification_reference",
+                checkbox_text=(
+                    "* [x] The recorded manual-each-order capital evaluation "
+                    "must contain the exact typed execution-gateway verification "
+                    "fingerprint requested by the per-order dossier."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k capital_evaluation_must_reference -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="current_gateway_verification_exact_scope_binding",
+                checkbox_text=(
+                    "* [x] Every dossier re-resolves the current verification "
+                    "and exactly binds gateway id, read-only evidence connector, "
+                    "account alias, OMS order id, canonical order fingerprint, "
+                    "and the dry-run order contract."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "server/services/execution_gateway_verification.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k 'dossier_binds or scope_mismatch' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_verification_scope_mismatch_fails_closed",
+                checkbox_text=(
+                    "* [x] Missing providers and gateway, connector, account, "
+                    "order, fingerprint, status, authority, or submission-state "
+                    "mismatches fail closed with sanitized evidence."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k 'scope_mismatch or provider_failures' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="gateway_verification_drift_invalidates_approval",
+                checkbox_text=(
+                    "* [x] Expiry or source drift changes the dossier fingerprint, "
+                    "re-blocks review, restores the runtime-verification hard "
+                    "blocker, and invalidates the prior artifact-bound approval."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_verification.py",
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_execution_gateway_verification.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_verification.py tests/test_per_order_confirmation.py -k 'source_drift or expiry' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="verification_clears_no_execution_authority",
+                checkbox_text=(
+                    "* [x] A clear non-submitting verification removes only the "
+                    "runtime-verification blocker; runtime authority, live gateway, "
+                    "broker submission, and strategy direct execution remain blocked."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k dossier_binds -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_gateway_verification_api_contract",
+                checkbox_text=(
+                    "* [x] Preview and confirmation APIs accept only a valid "
+                    "verification fingerprint, inject the closed-by-default runtime "
+                    "registry resolver, reject credentials, and expose no submit path."
+                ),
+                evidence_paths=(
+                    "server/routes/per_order_confirmation.py",
+                    "server/routes/execution_gateway_verification.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_per_order_confirmation_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_gateway_verification_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover exact binding, capital-reference "
+                    "mismatch, scope mismatch, provider failure, source drift, "
+                    "approval invalidation, route wiring, and zero execution authority."
+                ),
+                evidence_paths=(
+                    "tests/test_per_order_confirmation.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py -q",
                 ),
             ),
         )

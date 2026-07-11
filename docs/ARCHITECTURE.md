@@ -294,9 +294,33 @@ Capital-authorization v2 separates two identities that must never be collapsed:
 The policy lists both allowed identity sets, the context names one of each, and
 an explicit same-account binding must be verified. Identical ids or overlapping
 policy sets fail closed. Per-order and session fingerprints include the split
-identities. Until a separate runtime gateway verifier exists, the execution
-gateway binding always reports `runtime_verification_status=unverified` and
-cannot contact a broker or submit an order.
+identities. The declared execution-gateway binding remains
+`runtime_verification_status=unverified` and cannot contact a broker or submit
+an order.
+
+Stage 2.4 adds the separate verifier required to produce short-lived runtime
+readiness evidence. It inspects a registered gateway's verified account
+binding, required submit/cancel/query/dry-run/idempotency capabilities, and a
+source-fingerprinted health snapshot no more than 60 seconds old. It derives an
+idempotent client order id and runs an exact limit-order dry-run; readiness
+requires `submitted=false`, no broker order id, a valid payload fingerprint,
+and zero reported side effects. Accepted and rejected attempts are append-only.
+Resolution re-runs all checks, detects source drift, and expires after five
+minutes. This is non-submitting readiness evidence, not runtime authority. The
+production registry is empty by default.
+
+Stage 2.5 consumes that evidence through the per-order dossier boundary. The
+request fingerprint must also be present as the exact typed
+`execution_gateway_verification:<fingerprint>` reference in the recorded
+`manual_each_order` capital evaluation. The dossier resolver then allowlists and
+matches the current record's gateway id, evidence connector id, account alias,
+OMS order id, and canonical order fingerprint, plus its disabled-authority and
+disabled-submission assertions. It also independently compares the sanitized
+dry-run order contract with the current OMS symbol, side, asset class, quantity,
+order type, and limit price. Missing providers, expiry, source drift, or any
+scope mismatch blocks review and changes the dossier fingerprint. A clear match
+changes only `execution_gateway_runtime_not_verified`; it does not alter OMS,
+reserve budget, create runtime authority, or make live submission available.
 
 No strategy should call a broker adapter directly. The only allowed path is
 through policy, risk, OMS, gateway, and reconciliation services. The current
@@ -325,7 +349,8 @@ Account Truth source fingerprint, and verified acceptance id. Provider failure,
 connector mismatch, malformed evidence, or source drift fails closed without
 exposing provider details. Resolution uses only the capital policy's read-only
 `evidence_connector_id`; its distinct `execution_gateway_id` is bound separately
-and remains runtime-unverified.
+and remains runtime-unverified until the exact current Stage 2.4 record is
+resolved through the Stage 2.5 binding.
 
 The Stage 2 per-order confirmation foundation is a separate evidence boundary,
 not a gateway method. It canonicalizes immutable order terms and fingerprints a
@@ -343,9 +368,10 @@ manifest: the request and capital evaluation must name the same recorded clear
 fingerprint, and current OMS/transition/fill/reconciliation facts are rehashed
 on every preview. A current signed Stage 1 promotion can clear only the Stage 1
 Account Truth-linkage, owner-acceptance, and promotion sub-blockers. A reviewed
-execution gateway remains runtime-unverified; runtime authority, live gateway,
-and broker submission remain hard-blocked independently of the verified
-attestation.
+execution gateway may clear only its runtime-verification blocker after the
+capital reference, identities, OMS order, fingerprint, and dry-run terms all
+match. Runtime authority, live gateway, and broker submission remain hard-
+blocked independently of the verified attestation.
 
 The Stage 3 session foundation follows the same separation. It accepts an
 explicit order set only as a non-executing projection under a short-lived
@@ -359,6 +385,39 @@ operator approval for the exact envelope. It does not reserve budget or create
 runtime authority. Atomic budget consumption, automatic pause, authenticated
 session issuance, and broker submission remain separate future components and
 hard blockers.
+
+Stage 3.3 applies the shared gateway-verification binding to every projected
+order independently. The request is an exact order-id-to-fingerprint map with
+no missing, extra, invalid, or reused fingerprints; the capital evaluation must
+contain exactly that typed verification-reference set. Every envelope rebuild
+re-resolves all sources and matches gateway id, read-only connector, account
+alias, OMS order id, canonical order fingerprint, dry-run order terms, and the
+disabled-authority/submission assertions. One failed order blocks the entire
+envelope and restores `execution_gateway_runtime_not_verified`. A fully clear
+set removes only that blocker: it neither reserves budget nor issues a runtime
+session and cannot reach broker submit/cancel behavior.
+
+Stage 3.4 adds a separate session-start Account Truth record. Its provider
+rebuilds the current sanitized Account Truth source from the latest broker
+import, reconciliation, current ledger projection, and manual-review decisions.
+The fact must be clear/pass/fresh, have zero unresolved mismatches, carry a
+valid source fingerprint, and be no more than 120 seconds old. Accepted and
+rejected attempts are append-only; resolution re-runs the source and expires
+the record after 120 seconds. The session request and capital evaluation bind
+the same typed fingerprint, evidence connector, and account alias. Drift or
+identity mismatch changes the envelope and invalidates its approval. A clear
+binding removes only `session_account_truth_snapshot_not_bound`; it cannot
+reserve budget, issue authority, mutate Account Truth/OMS/ledger, or contact a
+broker.
+
+Stage 3.5 introduces an immutable budget-reservation record after the exact
+signed envelope is re-resolved. Money is represented as conservative fixed
+0.0001 CNY units, while SQLite `BEGIN IMMEDIATE` serializes overlapping
+capital, cash, China-trading-day turnover, and order-count checks. Exact reruns
+reuse one row and one attestation cannot reserve twice. Expired windows stop
+overlap capital/cash use, but daily turnover stays reserved for that trading
+day until explicit release semantics are implemented. This state transition
+does not issue a session, mutate OMS/ledger, or add broker capability.
 
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must

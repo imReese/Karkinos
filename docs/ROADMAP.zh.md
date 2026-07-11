@@ -209,11 +209,26 @@ attestation，错误指纹和阻断 dossier 会留下追加式拒绝审计。记
 dossier 绑定、由配置公钥验证的短时 Ed25519 approval。每次 preview 现在还解析精确
 capital-policy evidence connector 的当前签名 Stage 1 promotion，并把 promotion dossier、
 运营来源、Account Truth 来源和 verified acceptance id 纳入每单指纹；不同的 execution
-gateway 作为 runtime-unverified 证据单独绑定。缺失、非法、connector 不匹配、provider
-失败或来源漂移都会 fail closed；有效 promotion 只清除三个 Stage 1 子阻断，execution
-gateway runtime 验证、runtime authority、live gateway 和 broker submission 继续作为硬
-阻断。
+gateway 单独绑定，并在精确当前 Stage 2.4 记录匹配前保持 runtime-unverified。缺失、非法、
+connector 不匹配、provider 失败或来源漂移都会 fail closed；有效 promotion 只清除 Stage 1
+子阻断，clear verification 也只清除 runtime-verification 阻断。runtime authority、live
+gateway 和 broker submission 继续作为硬阻断。
 该记录不修改 OMS、不接触券商、不授予执行权限。
+
+Stage 2.4 已加入独立 runtime execution-gateway verifier：它要求 verified evidence
+connector/账户绑定、完整 submit/cancel/query/dry-run/idempotency 能力、60 秒内的健康来源
+指纹，以及精确订单的零副作用 dry-run。通过/拒绝记录均追加式持久化；resolve 会重跑当前
+检查、检测来源漂移并在五分钟后过期。生产 registry 默认为空，clear verification 也只是
+非提交式 readiness evidence，不签发 authority、不预留预算、不修改 OMS/账本、不提交/
+撤单。
+
+Stage 2.5 已把 verification 精确绑定回每单 dossier：请求与已记录的 `manual_each_order`
+资本评估必须引用同一条 `execution_gateway_verification:<fingerprint>`；每次 preview 和
+confirmation 都重新 resolve，并精确匹配 gateway、只读 evidence connector、账户别名、
+OMS order id、规范化订单指纹与脱敏 dry-run 订单条款。缺失、过期、来源漂移、provider
+失败或 authority/submission 边界不一致会 fail closed，并使旧的签名 dossier 失效。clear
+binding 只清除 runtime-
+verification 阻断；runtime authority、live gateway、broker submission 与策略直连仍关闭。
 
 Stage 3 的非执行式 session envelope 基础也已加入：proposal 必须引用一条已记录的
 `session_bounded` 资本评估、显式 OMS 订单集合和最长 30 分钟的带时区窗口；系统绑定订单
@@ -223,6 +238,26 @@ Stage 3 的非执行式 session envelope 基础也已加入：proposal 必须引
 晋级、session-start Account Truth、per-symbol runtime limit、submit capability、原子预算、
 runtime 限速/自动暂停和 live gateway 继续硬阻断。attestation 同样必须引用与精确 envelope
 绑定的签名 approval，但签名通过不能签发 session。
+
+Stage 3.3 已把相同门禁扩展到多订单 envelope：请求必须为每个 OMS order 提供一条唯一的
+gateway-verification fingerprint，且 `session_bounded` 资本评估必须包含完全相同的类型化
+引用集合。每次 preview/attestation 都逐单重新 resolve，并匹配 gateway、只读 connector、
+账户、OMS order、规范化指纹与 dry-run 条款。缺失、额外、复用、过期、来源漂移或任一订单
+错配都会阻断整个 envelope，并使旧签名失效。全部 clear 也只清除 runtime-verification
+阻断；session authority、原子预算、自动暂停、live gateway 与 broker submission 继续关闭。
+
+Stage 3.4 已加入短时 session-start Account Truth 证据：来源会根据最新券商导入、对账、当前
+账本投影和人工复核重新构建，必须 clear/pass/fresh、零未决差异且不超过 120 秒。通过与拒绝
+记录均追加式持久化；resolve 会重跑来源并在 120 秒后过期。session 请求和资本评估必须绑定
+同一条类型化指纹、只读 connector 与账户别名。来源漂移、过期或身份错配会阻断 envelope 并
+使旧签名失效；clear binding 只清除 Account Truth 证据阻断，仍不预留预算、不签发 session、
+不改账户事实/OMS/账本，也不接触券商。
+
+Stage 3.5 已加入原子 session 预算预留：只有当前仍有效的精确签名 envelope 才可进入预留；
+系统重新检查资本评估、Account Truth、逐单 gateway dry-run、前批对账、kill switch、时间窗
+和操作员签名，并用 SQLite `BEGIN IMMEDIATE` 串行校验同一授权/账户范围内的重叠资本、现金、
+中国交易日换手与订单数。精确重跑复用同一条记录，并发超额只能有一个成功。预留不签发
+session、不修改 OMS/账本、不联系券商，也不提供提交、撤单、恢复、续期或扩容动作。
 
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态

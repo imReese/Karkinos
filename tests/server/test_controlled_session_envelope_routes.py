@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.routes.controlled_session_envelope as route_module
 from server.app import create_app
 from server.routes.controlled_session_envelope import create_router
 from server.services.controlled_session_envelope import (
@@ -84,6 +86,11 @@ def _preview_payload() -> dict:
     return {
         "capital_evaluation_input_fingerprint": "a" * 64,
         "prior_batch_reconciliation_fingerprint": "b" * 64,
+        "execution_gateway_verification_fingerprints": {
+            "OMS-1": "7" * 64,
+            "OMS-2": "8" * 64,
+        },
+        "session_start_account_truth_fingerprint": "5" * 64,
         "order_ids": ["OMS-1", "OMS-2"],
         "requested_start_at": NOW.isoformat(),
         "requested_expires_at": (NOW + timedelta(minutes=10)).isoformat(),
@@ -185,11 +192,36 @@ def test_controlled_session_routes_reject_credentials_and_bad_acknowledgement(
             "acknowledgement": CONTROLLED_SESSION_ACKNOWLEDGEMENT,
         },
     )
+    missing_gateway_verifications_payload = _preview_payload()
+    missing_gateway_verifications_payload.pop(
+        "execution_gateway_verification_fingerprints"
+    )
+    missing_gateway_verifications = client.post(
+        "/api/automation/controlled-sessions/envelopes/preview",
+        json=missing_gateway_verifications_payload,
+    )
+    invalid_gateway_verifications_payload = _preview_payload()
+    invalid_gateway_verifications_payload[
+        "execution_gateway_verification_fingerprints"
+    ]["OMS-1"] = "not-a-fingerprint"
+    invalid_gateway_verifications = client.post(
+        "/api/automation/controlled-sessions/envelopes/preview",
+        json=invalid_gateway_verifications_payload,
+    )
+    missing_account_truth_payload = _preview_payload()
+    missing_account_truth_payload.pop("session_start_account_truth_fingerprint")
+    missing_account_truth = client.post(
+        "/api/automation/controlled-sessions/envelopes/preview",
+        json=missing_account_truth_payload,
+    )
 
     assert credential.status_code == 422
     assert bad_ack.status_code == 422
     assert missing_batch.status_code == 422
     assert missing_approval.status_code == 422
+    assert missing_gateway_verifications.status_code == 422
+    assert invalid_gateway_verifications.status_code == 422
+    assert missing_account_truth.status_code == 422
     assert not any(call[0] == "attest" for call in service.calls)
     assert not any(call[0] == "preview" for call in service.calls)
 
@@ -215,3 +247,90 @@ def test_create_app_registers_controlled_session_routes() -> None:
     assert "/api/automation/controlled-sessions/status" in paths
     assert "/api/automation/controlled-sessions/envelopes/preview" in paths
     assert "/api/automation/controlled-sessions/attestations" in paths
+
+
+def test_controlled_session_route_service_wires_current_runtime_sources(
+    monkeypatch,
+) -> None:
+    connector = object()
+    gateway = object()
+    fake_state = SimpleNamespace(
+        db=object(),
+        config=SimpleNamespace(
+            broker_connectors=[object()],
+            trusted_operator_identities=[object()],
+        ),
+        trading_controls=object(),
+        execution_gateways=[gateway],
+    )
+    captured: dict[str, object] = {}
+
+    class FakeGatewayVerificationService:
+        def __init__(self, **kwargs) -> None:
+            captured["kwargs"] = kwargs
+
+        def resolve(self, fingerprint: str) -> dict:
+            captured["fingerprint"] = fingerprint
+            return {"status": "blocked", "verification_fingerprint": fingerprint}
+
+    class FakeSessionStartAccountTruthService:
+        def __init__(self, **kwargs) -> None:
+            captured["account_truth_kwargs"] = kwargs
+
+        def resolve(self, fingerprint: str) -> dict:
+            captured["account_truth_fingerprint"] = fingerprint
+            return {
+                "status": "blocked",
+                "account_truth_fingerprint": fingerprint,
+            }
+
+    def fake_account_truth_source(state, *, max_age_seconds: int):
+        captured["account_truth_state"] = state
+        captured["account_truth_max_age_seconds"] = max_age_seconds
+        return {"status": "blocked"}
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        route_module,
+        "build_broker_connectors",
+        lambda config: [connector],
+    )
+    monkeypatch.setattr(
+        route_module,
+        "ExecutionGatewayVerificationService",
+        FakeGatewayVerificationService,
+    )
+    monkeypatch.setattr(
+        route_module,
+        "SessionStartAccountTruthService",
+        FakeSessionStartAccountTruthService,
+    )
+    monkeypatch.setattr(
+        route_module,
+        "build_latest_account_truth_promotion_evidence",
+        fake_account_truth_source,
+    )
+
+    service = route_module._service()
+    resolution = service._execution_gateway_verification_provider("7" * 64)
+    account_truth_resolution = service._session_start_account_truth_provider("5" * 64)
+    account_truth_source = captured["account_truth_kwargs"]["account_truth_provider"]()
+
+    assert captured["kwargs"] == {
+        "db": fake_state.db,
+        "gateways": fake_state.execution_gateways,
+    }
+    assert captured["fingerprint"] == "7" * 64
+    assert resolution == {
+        "status": "blocked",
+        "verification_fingerprint": "7" * 64,
+    }
+    assert captured["account_truth_kwargs"]["db"] is fake_state.db
+    assert captured["account_truth_fingerprint"] == "5" * 64
+    assert account_truth_resolution == {
+        "status": "blocked",
+        "account_truth_fingerprint": "5" * 64,
+    }
+    assert account_truth_source == {"status": "blocked"}
+    assert captured["account_truth_state"] is fake_state
+    assert captured["account_truth_max_age_seconds"] == 120

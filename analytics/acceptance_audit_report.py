@@ -20,12 +20,17 @@ from analytics.acceptance_audit import (
     build_capital_scaling_operating_sample_acceptance_audit,
     build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
+    build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
+    build_controlled_session_gateway_verification_binding_acceptance_audit,
     build_execution_batch_reconciliation_acceptance_audit,
+    build_execution_gateway_verification_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
     build_operations_runbook_acceptance_audit,
     build_per_order_confirmation_foundation_acceptance_audit,
+    build_per_order_gateway_verification_binding_acceptance_audit,
     build_research_evidence_acceptance_audit,
+    build_session_start_account_truth_binding_acceptance_audit,
     build_signed_operator_approval_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
@@ -92,9 +97,29 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
         "Per-Order Confirmation Foundation acceptance audit",
         build_per_order_confirmation_foundation_acceptance_audit,
     ),
+    "execution_gateway_verification": (
+        "Execution Gateway Runtime Verification acceptance audit",
+        build_execution_gateway_verification_acceptance_audit,
+    ),
+    "per_order_gateway_verification_binding": (
+        "Per-Order Gateway Verification Binding acceptance audit",
+        build_per_order_gateway_verification_binding_acceptance_audit,
+    ),
     "controlled_session_envelope_foundation": (
         "Controlled Session Envelope Foundation acceptance audit",
         build_controlled_session_envelope_foundation_acceptance_audit,
+    ),
+    "controlled_session_gateway_verification_binding": (
+        "Controlled Session Gateway Verification Binding acceptance audit",
+        build_controlled_session_gateway_verification_binding_acceptance_audit,
+    ),
+    "session_start_account_truth_binding": (
+        "Session-Start Account Truth Binding acceptance audit",
+        build_session_start_account_truth_binding_acceptance_audit,
+    ),
+    "controlled_session_budget_reservation": (
+        "Controlled Session Atomic Budget Reservation acceptance audit",
+        build_controlled_session_budget_reservation_acceptance_audit,
     ),
     "capital_scaling_review_foundation": (
         "Capital Scaling Review Foundation acceptance audit",

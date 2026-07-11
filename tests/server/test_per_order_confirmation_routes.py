@@ -31,6 +31,7 @@ class FakePerOrderConfirmationService:
         *,
         capital_evaluation_input_fingerprint: str,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprint: str,
     ):
         self.calls.append(
             (
@@ -39,6 +40,7 @@ class FakePerOrderConfirmationService:
                     order_id,
                     capital_evaluation_input_fingerprint,
                     prior_batch_reconciliation_fingerprint,
+                    execution_gateway_verification_fingerprint,
                 ),
             )
         )
@@ -58,6 +60,7 @@ class FakePerOrderConfirmationService:
         *,
         capital_evaluation_input_fingerprint: str,
         prior_batch_reconciliation_fingerprint: str,
+        execution_gateway_verification_fingerprint: str,
         dossier_fingerprint: str,
         operator_label: str,
         operator_approval_id: str,
@@ -70,6 +73,7 @@ class FakePerOrderConfirmationService:
                     order_id,
                     capital_evaluation_input_fingerprint,
                     prior_batch_reconciliation_fingerprint,
+                    execution_gateway_verification_fingerprint,
                     dossier_fingerprint,
                     operator_label,
                     operator_approval_id,
@@ -129,6 +133,7 @@ def test_per_order_confirmation_routes_preview_record_list_and_status(
         json={
             "capital_evaluation_input_fingerprint": capital_fingerprint,
             "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
         },
     )
     confirmation = client.post(
@@ -136,6 +141,7 @@ def test_per_order_confirmation_routes_preview_record_list_and_status(
         json={
             "capital_evaluation_input_fingerprint": capital_fingerprint,
             "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
             "dossier_fingerprint": "d" * 64,
             "operator_label": "local-owner",
             "operator_approval_id": "c" * 64,
@@ -169,6 +175,7 @@ def test_per_order_confirmation_route_maps_audited_rejection_to_conflict(
         json={
             "capital_evaluation_input_fingerprint": "a" * 64,
             "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
             "dossier_fingerprint": "0" * 64,
             "operator_label": "local-owner",
             "operator_approval_id": "c" * 64,
@@ -191,6 +198,7 @@ def test_per_order_confirmation_routes_reject_credentials_and_bad_acknowledgemen
         json={
             "capital_evaluation_input_fingerprint": "a" * 64,
             "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
             "dossier_fingerprint": "d" * 64,
             "operator_label": "local-owner",
             "operator_approval_id": "c" * 64,
@@ -203,6 +211,7 @@ def test_per_order_confirmation_routes_reject_credentials_and_bad_acknowledgemen
         json={
             "capital_evaluation_input_fingerprint": "a" * 64,
             "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
             "dossier_fingerprint": "d" * 64,
             "operator_label": "local-owner",
             "operator_approval_id": "c" * 64,
@@ -213,6 +222,7 @@ def test_per_order_confirmation_routes_reject_credentials_and_bad_acknowledgemen
         "/api/automation/controlled-bridge/orders/OMS-1/confirmations",
         json={
             "capital_evaluation_input_fingerprint": "a" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
             "dossier_fingerprint": "d" * 64,
             "operator_label": "local-owner",
             "operator_approval_id": "c" * 64,
@@ -224,8 +234,20 @@ def test_per_order_confirmation_routes_reject_credentials_and_bad_acknowledgemen
         json={
             "capital_evaluation_input_fingerprint": "a" * 64,
             "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "execution_gateway_verification_fingerprint": "e" * 64,
             "dossier_fingerprint": "d" * 64,
             "operator_label": "local-owner",
+            "acknowledgement": PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
+        },
+    )
+    missing_gateway_verification = client.post(
+        "/api/automation/controlled-bridge/orders/OMS-1/confirmations",
+        json={
+            "capital_evaluation_input_fingerprint": "a" * 64,
+            "prior_batch_reconciliation_fingerprint": "b" * 64,
+            "dossier_fingerprint": "d" * 64,
+            "operator_label": "local-owner",
+            "operator_approval_id": "c" * 64,
             "acknowledgement": PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
         },
     )
@@ -234,6 +256,7 @@ def test_per_order_confirmation_routes_reject_credentials_and_bad_acknowledgemen
     assert bad_ack.status_code == 422
     assert missing_batch.status_code == 422
     assert missing_approval.status_code == 422
+    assert missing_gateway_verification.status_code == 422
     assert not any(call[0] == "confirm" for call in service.calls)
 
 
@@ -270,6 +293,7 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
             trusted_operator_identities=[object()],
         ),
         trading_controls=object(),
+        execution_gateways=[object()],
     )
     captured: dict[str, object] = {}
 
@@ -280,6 +304,14 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
         def preview_dossier(self, connector_id: str) -> dict:
             captured["connector_id"] = connector_id
             return {"connector_id": connector_id, "promotion_ready": False}
+
+    class FakeGatewayVerificationService:
+        def __init__(self, **kwargs) -> None:
+            captured["gateway_verification_kwargs"] = kwargs
+
+        def resolve(self, fingerprint: str) -> dict:
+            captured["gateway_verification_fingerprint"] = fingerprint
+            return {"verification_fingerprint": fingerprint, "status": "blocked"}
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
@@ -292,6 +324,11 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
     )
     monkeypatch.setattr(
         route_module,
+        "ExecutionGatewayVerificationService",
+        FakeGatewayVerificationService,
+    )
+    monkeypatch.setattr(
+        route_module,
         "build_latest_account_truth_promotion_evidence",
         lambda state: {"state_matches": state is fake_state},
     )
@@ -299,6 +336,7 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
     service = route_module._service()
     promotion = service._broker_soak_promotion_evidence_provider("readonly-1")
     account_truth = captured["account_truth_evidence_provider"]()
+    gateway_verification = service._execution_gateway_verification_provider("e" * 64)
 
     assert promotion == {"connector_id": "readonly-1", "promotion_ready": False}
     assert captured["db"] is fake_state.db
@@ -308,3 +346,11 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
     ]
     assert captured["connector_id"] == "readonly-1"
     assert account_truth == {"state_matches": True}
+    assert captured["gateway_verification_kwargs"] == {
+        "db": fake_state.db,
+        "gateways": fake_state.execution_gateways,
+    }
+    assert gateway_verification == {
+        "verification_fingerprint": "e" * 64,
+        "status": "blocked",
+    }
