@@ -211,9 +211,9 @@ function SideBadge({ side }: { side: string }) {
   const isBuy = normalized === 'buy';
   const isSell = normalized === 'sell';
   const toneClass = isBuy
-    ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
+    ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger-text)] ring-1 ring-[var(--app-danger-border)]'
     : isSell
-      ? 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
+      ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)] ring-1 ring-[var(--app-success-border)]'
       : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]';
   const label = formatLedgerOrderSideLabel(side, locale);
 

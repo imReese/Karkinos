@@ -1372,6 +1372,24 @@ test('exports confirmed manual ticket without broker submission controls', async
   expect(screen.getByText('Broker copy text')).toBeTruthy();
   expect(screen.getByText('submitted_to_broker=false')).toBeTruthy();
   expect(screen.getByText(/requires_human_broker_entry/)).toBeTruthy();
+  expect(
+    screen.getByText('Broker evidence and reconciliation handoff'),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(
+      /does not write the ledger, change positions, or submit broker orders/i,
+    ),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole('link', { name: 'Import broker statement' })
+      .getAttribute('href'),
+  ).toBe('/account-truth');
+  expect(
+    screen
+      .getByRole('link', { name: 'Review execution reconciliation' })
+      .getAttribute('href'),
+  ).toBe('/decision');
   expect(screen.queryByText(/Submit to broker/i)).toBeNull();
 });
 

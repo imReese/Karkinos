@@ -133,10 +133,10 @@ function KillSwitchBadge({
 
   return (
     <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${
         enabled
-          ? 'bg-red-500/15 text-red-300 ring-1 ring-red-500/35'
-          : 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/35'
+          ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger-text)] ring-1 ring-[var(--app-danger-border)]'
+          : 'bg-[var(--app-success-bg)] text-[var(--app-success-text)] ring-1 ring-[var(--app-success-border)]'
       }`}
     >
       {snapshot ? (enabled ? labels.enabled : labels.disabled) : labels.loading}

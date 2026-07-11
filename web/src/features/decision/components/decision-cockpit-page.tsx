@@ -280,6 +280,17 @@ type ManualExecutionEvidence = {
   safetyLabels: string[];
 };
 
+type ManualBrokerComparisonEvidence = {
+  statusLabel: string;
+  items: Array<{
+    label: string;
+    manualValue: string;
+    brokerValue: string;
+    isMismatch: boolean;
+  }>;
+  safetyLabels: string[];
+};
+
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -2432,6 +2443,123 @@ function manualExecutionEvidenceForPayload(
   };
 }
 
+function manualBrokerComparisonEvidenceForItem(
+  item: ExecutionReconciliationItem | undefined,
+  locale: Locale,
+): ManualBrokerComparisonEvidence | null {
+  const payload = objectRecord(item?.payload);
+  const comparison = objectRecord(payload?.manual_broker_comparison);
+  const comparedValues = objectRecord(comparison?.compared_values);
+  const status =
+    typeof comparison?.status === 'string' ? comparison.status : '';
+  if (
+    !comparison ||
+    !comparedValues ||
+    !['match', 'mismatch'].includes(status)
+  ) {
+    return null;
+  }
+  const mismatchReasons = Array.isArray(comparison?.mismatch_reasons)
+    ? comparison.mismatch_reasons.filter(
+        (reason): reason is string => typeof reason === 'string',
+      )
+    : [];
+  const labels =
+    locale === 'zh'
+      ? {
+          statusMatch: '手工与券商证据一致，仍需复核',
+          statusMismatch: '手工与券商证据存在差异',
+          manual: '手工记录',
+          broker: '券商证据',
+          reviewRequired: '更新账本前需复核',
+          noAutomaticLedger: '不建议自动更新账本',
+          noOmsMutation: '不修改 OMS',
+          noLedgerMutation: '不修改账本',
+          fields: {
+            quantity: '数量',
+            fill_price: '成交价',
+            gross_amount: '成交总额',
+            fee: '手续费',
+            tax: '税费',
+            transfer_fee: '过户费',
+            net_amount: '净额',
+          },
+        }
+      : {
+          statusMatch:
+            'Manual and broker evidence match; review still required',
+          statusMismatch: 'Manual and broker evidence differ',
+          manual: 'Manual record',
+          broker: 'Broker evidence',
+          reviewRequired: 'Review before ledger update',
+          noAutomaticLedger: 'No automatic ledger recommendation',
+          noOmsMutation: 'No OMS mutation',
+          noLedgerMutation: 'No ledger mutation',
+          fields: {
+            quantity: 'Quantity',
+            fill_price: 'Fill price',
+            gross_amount: 'Gross amount',
+            fee: 'Fee',
+            tax: 'Tax',
+            transfer_fee: 'Transfer fee',
+            net_amount: 'Net amount',
+          },
+        };
+  const fieldOrder = [
+    'quantity',
+    'fill_price',
+    'gross_amount',
+    'fee',
+    'tax',
+    'transfer_fee',
+    'net_amount',
+  ] as const;
+  const items = fieldOrder.flatMap((field) => {
+    const values = objectRecord(comparedValues[field]);
+    if (!values) {
+      return [];
+    }
+    const rawManual = values.manual;
+    const rawBroker = values.broker;
+    const formatValue = (value: unknown) => {
+      if (field === 'quantity') {
+        return String(value ?? '--');
+      }
+      return formatCurrency(numericCostSummaryValue(value));
+    };
+    return [
+      {
+        label: labels.fields[field],
+        manualValue: `${labels.manual}: ${formatValue(rawManual)}`,
+        brokerValue: `${labels.broker}: ${formatValue(rawBroker)}`,
+        isMismatch: mismatchReasons.includes(
+          `manual_execution_${field}_mismatch`,
+        ),
+      },
+    ];
+  });
+  if (items.length === 0) {
+    return null;
+  }
+  return {
+    statusLabel:
+      status === 'mismatch' ? labels.statusMismatch : labels.statusMatch,
+    items,
+    safetyLabels: [
+      comparison.review_required_before_ledger_update === true
+        ? labels.reviewRequired
+        : '',
+      comparison.does_not_recommend_automatic_ledger_update === true
+        ? labels.noAutomaticLedger
+        : '',
+      comparison.does_not_mutate_oms === true ? labels.noOmsMutation : '',
+      comparison.does_not_mutate_production_ledger === true
+        ? labels.noLedgerMutation
+        : '',
+    ].filter(Boolean),
+  };
+}
+
 function countLabel(
   count: number,
   singular: string,
@@ -2620,6 +2748,10 @@ function AutomationCockpitPanel({
     locale,
   );
   const manualExecutionEvidence = manualExecutionEvidenceForItem(
+    primaryExecutionReconciliationItem,
+    locale,
+  );
+  const manualBrokerComparisonEvidence = manualBrokerComparisonEvidenceForItem(
     primaryExecutionReconciliationItem,
     locale,
   );
@@ -3613,6 +3745,54 @@ function AutomationCockpitPanel({
                         ))}
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {manualBrokerComparisonEvidence ? (
+                  <div
+                    className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3"
+                    data-testid="manual-broker-comparison-evidence"
+                  >
+                    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                        {locale === 'zh'
+                          ? '手工成交 / 券商证据对比'
+                          : 'Manual / broker evidence comparison'}
+                      </div>
+                      <span className="app-chip">
+                        {manualBrokerComparisonEvidence.statusLabel}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                      {manualBrokerComparisonEvidence.items.map((entry) => (
+                        <div
+                          className={`min-w-0 rounded-2xl border px-3 py-2.5 ${
+                            entry.isMismatch
+                              ? 'border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)]'
+                              : 'border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]'
+                          }`}
+                          key={entry.label}
+                        >
+                          <div className="font-semibold text-[var(--app-text)]">
+                            {entry.label}
+                          </div>
+                          <div className="app-muted mt-1 break-words text-xs">
+                            {entry.manualValue}
+                          </div>
+                          <div className="app-muted mt-1 break-words text-xs">
+                            {entry.brokerValue}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+                      {manualBrokerComparisonEvidence.safetyLabels.map(
+                        (label) => (
+                          <span className="app-chip" key={label}>
+                            {label}
+                          </span>
+                        ),
+                      )}
+                    </div>
                   </div>
                 ) : null}
                 {showBrokerOrderQuery ? (

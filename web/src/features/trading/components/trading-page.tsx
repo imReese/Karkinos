@@ -1489,6 +1489,25 @@ function manualTicketExportReviewLabels(locale: Locale) {
   };
 }
 
+function manualTicketReconciliationHandoffLabels(locale: Locale) {
+  if (locale === 'zh') {
+    return {
+      title: '券商流水与执行对账交接',
+      detail:
+        '在券商端手工执行后，先导入券商流水作为账户事实证据，再复核执行对账。此交接不会自动写账、改变持仓或提交券商订单。',
+      importEvidence: '导入券商流水',
+      reviewReconciliation: '复核执行对账',
+    };
+  }
+  return {
+    title: 'Broker evidence and reconciliation handoff',
+    detail:
+      'After manual broker entry, import the broker statement as account-truth evidence, then review execution reconciliation. This handoff does not write the ledger, change positions, or submit broker orders.',
+    importEvidence: 'Import broker statement',
+    reviewReconciliation: 'Review execution reconciliation',
+  };
+}
+
 function PreviewMetric({
   label,
   value,
@@ -1539,6 +1558,7 @@ function ManualTicketExportPanel({
     return null;
   }
   const exportReviewLabels = manualTicketExportReviewLabels(locale);
+  const handoffLabels = manualTicketReconciliationHandoffLabels(locale);
   const operatorForm = manualTicketFormFromResult(result);
   const feeTax = operatorForm?.fee_tax_assumptions ?? null;
   const session = operatorForm?.trading_session_constraints ?? null;
@@ -1761,6 +1781,31 @@ function ManualTicketExportPanel({
           <pre className="mt-1 max-h-36 min-w-0 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-[var(--app-text)]">
             {result.export.content_json}
           </pre>
+        </div>
+      </div>
+      <div
+        className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-3"
+        data-testid="manual-ticket-reconciliation-handoff"
+      >
+        <div className="font-semibold text-[var(--app-text)]">
+          {handoffLabels.title}
+        </div>
+        <div className="app-muted mt-1 text-sm leading-6">
+          {handoffLabels.detail}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a
+            className="app-button-secondary rounded-xl px-3 py-2 text-sm font-semibold"
+            href="/account-truth"
+          >
+            {handoffLabels.importEvidence}
+          </a>
+          <a
+            className="app-button-secondary rounded-xl px-3 py-2 text-sm font-semibold"
+            href="/decision"
+          >
+            {handoffLabels.reviewReconciliation}
+          </a>
         </div>
       </div>
       {ticketGateRows.length ? (

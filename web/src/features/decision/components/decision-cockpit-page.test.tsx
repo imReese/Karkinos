@@ -2566,6 +2566,84 @@ test('surfaces manual execution evidence before ledger updates without controls'
   expect(automation.textContent).not.toContain('Cancel broker order');
 });
 
+test('surfaces manual versus broker reconciliation differences without controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 1,
+        open_item_count: 1,
+        created_at: '2026-07-06T09:45:00+08:00',
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-MISMATCH-1',
+            item_status: 'broker_evidence_mismatch',
+            suggested_action: 'review_broker_evidence_mismatch',
+            gateway_event_count: 2,
+            broker_event_count: 1,
+            detail:
+              'Manual execution evidence differs from staged broker trade evidence.',
+            payload: {
+              manual_broker_comparison: {
+                schema_version: 'karkinos.manual_broker_comparison.v1',
+                status: 'mismatch',
+                mismatch_reasons: [
+                  'manual_execution_fill_price_mismatch',
+                  'manual_execution_fee_mismatch',
+                  'manual_execution_net_amount_mismatch',
+                ],
+                compared_values: {
+                  quantity: { manual: '100', broker: '100' },
+                  fill_price: { manual: '1688.00', broker: '1689.00' },
+                  fee: { manual: '5.00', broker: '6.00' },
+                  net_amount: {
+                    manual: '-168805.20',
+                    broker: '-168906.20',
+                  },
+                },
+                review_required_before_ledger_update: true,
+                does_not_recommend_automatic_ledger_update: true,
+                does_not_mutate_oms: true,
+                does_not_mutate_production_ledger: true,
+              },
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const comparison = await screen.findByTestId(
+    'manual-broker-comparison-evidence',
+  );
+
+  expect(comparison.textContent).toContain(
+    'Manual / broker evidence comparison',
+  );
+  expect(comparison.textContent).toContain('Manual and broker evidence differ');
+  expect(comparison.textContent).toContain('Fill price');
+  expect(comparison.textContent).toContain('Manual record: ¥1,688.00');
+  expect(comparison.textContent).toContain('Broker evidence: ¥1,689.00');
+  expect(comparison.textContent).toContain('Fee');
+  expect(comparison.textContent).toContain('Manual record: ¥5.00');
+  expect(comparison.textContent).toContain('Broker evidence: ¥6.00');
+  expect(comparison.textContent).toContain('Review before ledger update');
+  expect(comparison.textContent).toContain(
+    'No automatic ledger recommendation',
+  );
+  expect(comparison.textContent).toContain('No OMS mutation');
+  expect(comparison.textContent).toContain('No ledger mutation');
+  expect(comparison.textContent).not.toContain('Sync ledger');
+  expect(comparison.textContent).not.toContain('Apply fill');
+  expect(comparison.textContent).not.toContain('Submit broker order');
+  expect(comparison.textContent).not.toContain('Cancel broker order');
+});
+
 test('surfaces manual execution alert evidence in automation cockpit without controls', async () => {
   renderDecisionCockpit({
     locale: 'en',

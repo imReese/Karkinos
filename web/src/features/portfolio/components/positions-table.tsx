@@ -547,12 +547,12 @@ export function PositionsTable({
       >
         <table
           data-testid="positions-table-desktop"
-          className="app-data-table w-[1520px] min-w-max text-left text-sm"
+          className="app-data-table w-[1520px] min-w-max text-left text-xs"
         >
           <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
             <tr>
-              <th className="w-60 px-4 py-3">{labels.symbol}</th>
-              <th className="w-24 whitespace-nowrap px-4 py-3">
+              <th className="w-60 px-3 py-1.5">{labels.symbol}</th>
+              <th className="w-24 whitespace-nowrap px-3 py-1.5">
                 {labels.assetClass}
               </th>
               <th className={numericHeaderClassName('quantity')}>
@@ -579,7 +579,7 @@ export function PositionsTable({
               <th className={numericHeaderClassName('percent')}>
                 {labels.returnPct}
               </th>
-              <th className="px-4 py-3">{labels.quoteState}</th>
+              <th className="px-3 py-1.5">{labels.quoteState}</th>
               {showFullColumns ? (
                 <>
                   <th className={numericHeaderClassName('quantity')}>
@@ -590,7 +590,7 @@ export function PositionsTable({
                   </th>
                 </>
               ) : null}
-              <th className="px-4 py-3 text-right">{labels.actions}</th>
+              <th className="px-3 py-1.5 text-right">{labels.actions}</th>
             </tr>
           </thead>
           <tbody>
@@ -642,7 +642,7 @@ export function PositionsTable({
                     handleEntryKeyDown(event, detailHref);
                   }}
                 >
-                  <td className="px-4 py-3.5 text-[var(--app-text)]">
+                  <td className="px-3 py-1.5 text-[var(--app-text)]">
                     <span className="flex min-w-44 items-start gap-2">
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-accent)] opacity-70 transition-opacity group-hover:opacity-100" />
                       <span className="min-w-0">
