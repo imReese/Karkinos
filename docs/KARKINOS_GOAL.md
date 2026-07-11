@@ -16,6 +16,11 @@ auditable. The daily product question is:
 > strategies, what should I do today — buy, sell, hold, rebalance, or do
 > nothing — and why?
 
+Its long-term execution target is a **human-supervised, capital-bounded quant
+trading system**. The owner may authorize increasingly large execution
+envelopes only after evidence supports the change, while retaining the ability
+to inspect, pause, reduce, expire, or revoke that authority at any time.
+
 ## Product Boundaries
 
 Karkinos is a personal finance app for research, portfolio evidence, and
@@ -32,6 +37,12 @@ The product boundary is:
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.
+* A future controlled mode may automate orders only inside an explicit,
+  time-bounded capital authorization. It must remain disabled when no valid
+  authorization exists.
+* "Small capital" is an initial live-validation exposure, not a permanent
+  product ceiling. Capital authority may scale up or down only through reviewed
+  evidence, never merely because account cash is available.
 * No broker login, broker password storage, default real-money automation, or
   guaranteed-profit language belongs in the product.
 * Secrets, broker credentials, real account exports, runtime databases, logs,
@@ -62,22 +73,51 @@ research idea
 
 The current roadmap status is maintained in [ROADMAP.md](ROADMAP.md).
 
-Current active milestone:
+The v1.8 planning track is active, but real-money broker submission remains
+disabled and unavailable. Planning, policy contracts, read-only adapters, and
+deterministic evidence may advance without granting execution authority.
+
+Latest completed milestones:
 
 * **v1.6 — Operations Center & Paper/Shadow Runbook**
-* Status: active roadmap milestone.
-* Purpose: make daily plans repeatable through scheduled paper/shadow runs,
-  runbooks, health checks, exception queues, and operator review states while
-  keeping real broker execution disabled by default.
+  completed the persisted, deterministic paper/shadow operating loop,
+  divergence review, scheduler/runbook evidence, and operator-facing
+  Operations, Decision, Overview, and Trading surfaces.
+* **v1.7 — Controlled Broker Bridge Foundation (Non-Submitting)** completed
+  manual-ticket preview/export/dry-run/create, local read-only connector
+  evidence, capability and health contracts, manual execution evidence,
+  broker-statement handoff, and execution reconciliation. Completion does not
+  provide live broker submission, executable broker cancellation, automatic
+  production-ledger mutation, or an auto pilot.
 
-Latest completed milestone:
+Active planning target:
 
-* **v1.5 — Daily Trading Plan & Portfolio Construction**
-* Status: completed roadmap milestone.
-* Purpose: turn validated strategy, portfolio, risk, account-truth,
-  paper/shadow, fee, and cost-basis evidence into a daily trading plan and
-  Today’s to-dos queue that default to human confirmation and do not submit
-  broker orders.
+* **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
+  policy contracts and a real read-only broker soak, then advances through a
+  per-order human-confirmed bridge, a time-bounded automation pilot, and
+  evidence-based capital scaling. The first live validation uses a deliberately
+  small authorization envelope to cap unknown failure impact; that envelope is
+  not the account-size or long-term product limit.
+* The current v1.8 evidence foundation also binds per-order and session reviews
+  to an exact source-sensitive prior-batch reconciliation fingerprint; it no
+  longer treats a generic latest reconciliation run as proof that the intended
+  batch is clear. This evidence still grants no execution authority.
+* Capital-authorization v2 separates a read-only evidence connector from a
+  distinct future execution gateway and requires a verified same-account
+  binding. The roles may not share an id or overlap in policy scope. Declared
+  gateway capability remains runtime-unverified evidence, never authority.
+* Per-order and session attestations now also require short-lived,
+  artifact-bound Ed25519 approval evidence from a configured operator public
+  key. Private keys are not stored by Karkinos, and a verified identity still
+  grants no runtime or broker authority.
+* Stage 1 can now build a signed promotion dossier that binds 20 clear-
+  reconciled read-only trading days, complete daily runbook phases, recovery
+  drills, current Account Truth evidence, and explicit owner assertions. This
+  is readiness evidence only. Stage 2 now binds its exact current source and
+  verified acceptance into every per-order dossier, but no submission path is
+  enabled.
+* The target product ends at human-supervised controlled execution. Unattended,
+  permanently authorized, full-account real-money automation is a non-goal.
 
 ## Documentation Map
 
@@ -87,6 +127,9 @@ Latest completed milestone:
   ladder, and documentation cleanup guidance.
 * [ARCHITECTURE.md](ARCHITECTURE.md): layered architecture, authority
   boundaries, automation maturity, and controlled broker-bridge requirements.
+* [CONTROLLED_EXECUTION_PLAN.md](CONTROLLED_EXECUTION_PLAN.md): staged
+  implementation plan for capital authority, read-only broker soak, per-order
+  live bridge, bounded sessions, and evidence-based scaling.
 * [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md): historical implementation
   progress moved out of the strategic goal page.
 * [BENCHMARKS.md](BENCHMARKS.md): external project notes and architectural
@@ -107,6 +150,11 @@ Latest completed milestone:
 
 Karkinos does not promise profit and should never be treated as the sole basis
 for investment decisions.
+
+"Can make money" means the system can operate strategies whose after-cost
+evidence remains acceptable under live execution, while measuring slippage,
+capacity, drawdown, and operational failures. It is an evaluation objective,
+not a return guarantee.
 
 All dashboards, backtests, scores, reconciliation reports, signals, action
 queues, paper/shadow runs, and gateway previews are evidence for human review.

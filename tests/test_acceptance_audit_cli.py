@@ -45,6 +45,169 @@ def test_acceptance_audit_cli_research_evidence_filter_outputs_one_audit() -> No
     assert audit["criteria"]
 
 
+def test_acceptance_audit_cli_capital_authorization_stage0_filter() -> None:
+    result = _run_cli("--audit", "capital_authorization_stage0")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "capital_authorization_stage0"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "capital_authorization_stage0"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_broker_connector_soak_foundation_filter() -> None:
+    result = _run_cli("--audit", "broker_connector_soak_foundation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "broker_connector_soak_foundation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "broker_connector_soak_foundation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 11
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_broker_connector_soak_promotion_filter() -> None:
+    result = _run_cli("--audit", "broker_connector_soak_promotion")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "broker_connector_soak_promotion"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "broker_connector_soak_promotion"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_per_order_confirmation_foundation_filter() -> None:
+    result = _run_cli("--audit", "per_order_confirmation_foundation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "per_order_confirmation_foundation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "per_order_confirmation_foundation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 9
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_controlled_session_envelope_foundation_filter() -> None:
+    result = _run_cli("--audit", "controlled_session_envelope_foundation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "controlled_session_envelope_foundation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_session_envelope_foundation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_capital_scaling_review_foundation_filter() -> None:
+    result = _run_cli("--audit", "capital_scaling_review_foundation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "capital_scaling_review_foundation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "capital_scaling_review_foundation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_capital_scaling_evidence_resolution_filter() -> None:
+    result = _run_cli("--audit", "capital_scaling_evidence_resolution")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "capital_scaling_evidence_resolution"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "capital_scaling_evidence_resolution"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 6
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_capital_scaling_evidence_window_filter() -> None:
+    result = _run_cli("--audit", "capital_scaling_evidence_window")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "capital_scaling_evidence_window"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "capital_scaling_evidence_window"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 9
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_capital_scaling_operating_sample_filter() -> None:
+    result = _run_cli("--audit", "capital_scaling_operating_sample")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "capital_scaling_operating_sample"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "capital_scaling_operating_sample"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 9
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_execution_batch_reconciliation_filter() -> None:
+    result = _run_cli("--audit", "execution_batch_reconciliation")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "execution_batch_reconciliation"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "execution_batch_reconciliation"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
+def test_acceptance_audit_cli_signed_operator_approval_filter() -> None:
+    result = _run_cli("--audit", "signed_operator_approval")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "signed_operator_approval"
+    assert [audit["key"] for audit in payload["audits"]] == ["signed_operator_approval"]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
 def test_acceptance_audit_cli_account_truth_filter_outputs_one_audit() -> None:
     result = _run_cli("--audit", "account_truth")
 
@@ -192,7 +355,7 @@ def test_acceptance_audit_cli_controlled_broker_bridge_foundation_filter_outputs
         "controlled_broker_bridge_foundation"
     ]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 14
+    assert audit["required_count"] == 15
     assert audit["completed_count"] == audit["required_count"]
     assert {criterion["key"] for criterion in audit["criteria"]} >= {
         "broker_submission_disabled_default",
@@ -230,6 +393,17 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "single_instrument_strategy_loop",
         "operations_runbook",
         "controlled_broker_bridge_foundation",
+        "capital_authorization_stage0",
+        "broker_connector_soak_foundation",
+        "broker_connector_soak_promotion",
+        "per_order_confirmation_foundation",
+        "controlled_session_envelope_foundation",
+        "capital_scaling_review_foundation",
+        "capital_scaling_evidence_resolution",
+        "capital_scaling_evidence_window",
+        "capital_scaling_operating_sample",
+        "execution_batch_reconciliation",
+        "signed_operator_approval",
     ]
     assert all(audit["is_complete"] for audit in payload["audits"])
 
