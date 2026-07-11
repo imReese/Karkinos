@@ -348,7 +348,7 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   const toolbarShell = toolbarTitle.closest('header') as HTMLElement | null;
   const toolbarRow = toolbarTitle.closest('header')
     ?.firstElementChild as HTMLElement | null;
-  expect(toolbarShell?.className).toContain('relative');
+  expect(toolbarShell?.className).toContain('absolute');
   expect(toolbarShell?.className).toContain('z-[80]');
   expect(toolbarShell?.className).toContain('overflow-visible');
   expect(toolbarRow).toBeTruthy();
@@ -660,9 +660,13 @@ test('toggles mobile navigation from the global toolbar', async () => {
   renderShell();
   const user = userEvent.setup();
 
-  const openButton = await screen.findByRole('button', {
-    name: 'Open navigation',
-  });
+  const openButton = (
+    await screen.findAllByRole('button', { name: 'Open navigation' })
+  ).find((button) => button.hasAttribute('aria-expanded'));
+  expect(openButton).toBeTruthy();
+  if (!openButton) {
+    return;
+  }
   expect(openButton.getAttribute('aria-expanded')).toBe('false');
 
   await user.click(openButton);

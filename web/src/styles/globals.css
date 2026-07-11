@@ -34,8 +34,15 @@
   --app-teal: #94e2d5;
   --app-success-bg: rgba(166, 227, 161, 0.12);
   --app-success-border: rgba(166, 227, 161, 0.32);
+  --app-success-text: #a6e3a1;
   --app-danger-bg: rgba(243, 139, 168, 0.12);
   --app-danger-border: rgba(243, 139, 168, 0.32);
+  --app-danger-text: #f38ba8;
+  --app-warning-bg: rgba(249, 226, 175, 0.12);
+  --app-warning-border: rgba(249, 226, 175, 0.32);
+  --app-warning-text: #f9e2af;
+  --app-info-text: #89b4fa;
+  --app-accent-strong: #cba6f7;
   --app-toolbar: #181825;
   --app-chart-line: #a6e3a1;
   --app-chart-line-alt: #cba6f7;
@@ -85,11 +92,18 @@
   --app-success: #40a02b;
   --app-success-bg: rgba(64, 160, 43, 0.1);
   --app-success-border: rgba(64, 160, 43, 0.24);
+  --app-success-text: #348022;
   --app-danger: #d20f39;
   --app-warning: #df8e1d;
   --app-teal: #179299;
   --app-danger-bg: rgba(210, 15, 57, 0.08);
   --app-danger-border: rgba(210, 15, 57, 0.2);
+  --app-danger-text: #b80c30;
+  --app-warning-bg: rgba(223, 142, 29, 0.08);
+  --app-warning-border: rgba(223, 142, 29, 0.22);
+  --app-warning-text: #b37015;
+  --app-info-text: #174eb8;
+  --app-accent-strong: #7220df;
   --app-toolbar: #e6e9ef;
   --app-chart-line: #40a02b;
   --app-chart-line-alt: #8839ef;
@@ -240,18 +254,8 @@ select {
 }
 
 .app-panel {
-  border: 1px solid color-mix(in srgb, var(--app-border) 42%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-0) 34%, transparent),
-      color-mix(in srgb, var(--app-panel-strong) 28%, transparent)
-    ),
-    var(--app-panel);
+  background: var(--app-panel);
   color: var(--app-text);
-  box-shadow:
-    0 24px 70px color-mix(in srgb, var(--app-mantle) 28%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 6%, transparent);
 }
 
 .app-panel-strong {
@@ -609,12 +613,9 @@ select {
 
 .app-surface-card {
   border: 1px solid color-mix(in srgb, var(--app-border) 22%, transparent);
-  border-radius: var(--app-radius-xl);
-  background: color-mix(in srgb, var(--app-surface-0) 12%, transparent);
+  border-radius: var(--app-radius-lg);
+  background: var(--app-surface-0);
   color: var(--app-text);
-  box-shadow:
-    0 16px 48px color-mix(in srgb, var(--app-mantle) 12%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 2%, transparent);
 }
 
 .app-inline-segmented {
@@ -708,8 +709,8 @@ select {
 
 .app-data-table tbody tr {
   transition:
-    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .app-data-table tbody tr:hover {

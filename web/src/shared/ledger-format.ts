@@ -1039,6 +1039,10 @@ function stripLedgerNotePrefix(segment: string) {
   return segment
     .replace(/^用户记录[:：]\s*/, '')
     .replace(
+      /^手工记录[:：]\s*(?:\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?\s*)?/u,
+      '',
+    )
+    .replace(
       /^手工录入(?:持仓|基金申购|现金入金|现金出金|(?:股票|证券)?交易)[:：\-－—]\s*/,
       '',
     );

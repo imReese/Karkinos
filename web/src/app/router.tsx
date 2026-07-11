@@ -5147,9 +5147,9 @@ function ExplainabilityWorkspace({
                       <div
                         className={`shrink-0 text-right text-sm font-semibold tabular-nums ${
                           item.amount < 0
-                            ? 'text-rose-300'
+                            ? 'text-[var(--app-danger-text)]'
                             : item.amount > 0
-                              ? 'text-emerald-300'
+                              ? 'text-[var(--app-success-text)]'
                               : 'app-muted'
                         }`}
                       >
@@ -5268,7 +5268,7 @@ function ExplainabilityWorkspace({
                       {point.events.map((event) => (
                         <div
                           key={`${event.timestamp}-${event.title}`}
-                          className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2"
+                          className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-2"
                         >
                           <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
                             {formatLedgerExplainabilityTitle(
@@ -5841,7 +5841,7 @@ function ReturnCalendarSegmentedControl({
             onClick={() => onChange(option.value)}
             className={`${buttonClass} ${
               active
-                ? 'bg-[color-mix(in_srgb,var(--app-accent)_82%,white_10%)] text-white shadow-sm'
+                ? 'bg-[var(--app-button)] text-[var(--app-button-text)] shadow-sm'
                 : 'text-[color-mix(in_srgb,var(--app-muted)_78%,transparent)] hover:text-[var(--app-text)]'
             }`}
           >
@@ -5978,7 +5978,9 @@ function ReturnCalendarEmptyState({
                     </span>
                     <span
                       className={
-                        positionPnl >= 0 ? 'text-red-500' : 'text-emerald-500'
+                        positionPnl >= 0
+                          ? 'text-[var(--app-danger-text)]'
+                          : 'text-[var(--app-success-text)]'
                       }
                     >
                       {formatCurrency(positionPnl)}

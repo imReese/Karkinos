@@ -79,6 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const marketHealth = useMarketDataHealthQuery();
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [desktopNavExpanded, setDesktopNavExpanded] = useState(false);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
@@ -226,13 +227,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         />
 
         <aside
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-40 flex w-[min(84vw,320px)] flex-col border-r px-5 py-6 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:relative lg:h-full lg:w-[252px] lg:translate-x-0 lg:px-5 lg:py-6 ${
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-40 flex w-[min(84vw,320px)] flex-col border-r border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[var(--app-mantle)] px-5 py-6 transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-[252px] lg:px-5' : 'lg:w-[68px] lg:px-3'} lg:translate-x-0 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
           aria-label={copy.shell.navigation}
         >
-          <div className="mb-8 flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-2">
+          <div
+            className={`mb-8 flex items-start gap-4 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
+          >
+            <div
+              className={`min-w-0 flex-1 space-y-2 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+            >
               <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold text-[10px]">
                 Karkinos
               </div>
@@ -267,25 +272,63 @@ export function AppShell({ children }: { children: ReactNode }) {
                   to={item.to}
                   onClick={() => setMobileNavOpen(false)}
                   data-testid={`sidebar-nav-${item.key}`}
-                  className={`app-nav-item rounded-[18px] px-3 py-3 text-sm font-semibold ${
+                  className={`app-nav-item rounded-[18px] px-3 py-3 text-sm font-semibold ${!desktopNavExpanded ? 'lg:px-0 lg:justify-center' : ''} ${
                     active ? 'app-nav-item-active' : ''
                   }`}
                 >
-                  <span className="app-nav-active-rail" aria-hidden="true" />
-                  <Icon
-                    data-testid={`sidebar-nav-${item.key}-icon`}
-                    className="app-nav-icon h-4 w-4 shrink-0"
+                  <span
+                    className={`app-nav-active-rail ${desktopNavExpanded ? '' : 'lg:hidden'}`}
                     aria-hidden="true"
                   />
-                  <span className="truncate">{copy.shell.nav[item.key]}</span>
+                  <Icon
+                    data-testid={`sidebar-nav-${item.key}-icon`}
+                    className="app-nav-icon h-5 w-5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span
+                    className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                  >
+                    {copy.shell.nav[item.key]}
+                  </span>
                 </Link>
               );
             })}
           </nav>
+          <div className="mt-auto hidden lg:grid pt-6">
+            <button
+              type="button"
+              className={`app-nav-item rounded-[18px] px-3 py-3 text-sm font-semibold text-[var(--app-subtext-0)] transition-colors hover:text-[var(--app-text)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] ${!desktopNavExpanded ? 'lg:px-0 lg:justify-center' : ''}`}
+              onClick={() => setDesktopNavExpanded(!desktopNavExpanded)}
+              aria-label={
+                desktopNavExpanded
+                  ? copy.shell.closeNavigation
+                  : copy.shell.openNavigation
+              }
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`app-nav-icon h-5 w-5 shrink-0 transition-transform duration-300 ${desktopNavExpanded ? '' : 'rotate-180'}`}
+              >
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              <span
+                className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+              >
+                {copy.shell.closeNavigation || '收起侧边栏'}
+              </span>
+            </button>
+          </div>
         </aside>
 
-        <main className="app-shell-main flex min-w-0 flex-1 flex-col">
-          <header className="app-toolbar-shell relative z-[80] shrink-0 overflow-visible border-b">
+        <main className="app-shell-main flex min-w-0 flex-1 flex-col relative">
+          <header className="app-toolbar-shell absolute left-4 right-4 top-4 z-[80] shrink-0 overflow-visible rounded-[20px] border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_95%,transparent)] shadow-lg backdrop-blur-xl">
             <div className="flex h-14 items-center gap-4 px-4 sm:px-5 lg:px-6">
               <div className="min-w-0 shrink-0">
                 <div className="flex min-w-0 items-center gap-3.5">
@@ -437,7 +480,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </header>
 
           <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto [contain:layout_paint]">
-            <div className="mx-auto min-w-0 w-full max-w-[1880px] px-4 py-5 sm:px-5 sm:py-6 lg:px-6 xl:px-7 2xl:px-8">
+            <div className="mx-auto min-w-0 w-full max-w-[1880px] px-4 pt-24 pb-12 sm:px-5 lg:px-6 xl:px-7 2xl:px-8">
               {children}
             </div>
           </div>

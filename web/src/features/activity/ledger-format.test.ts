@@ -127,6 +127,34 @@ describe('ledger formatter', () => {
     ).toBeNull();
   });
 
+  test('suppresses generated manual-record trade notes that repeat structured facts', () => {
+    expect(
+      formatLedgerPublicNote(
+        {
+          ...yutongBuy,
+          id: 16,
+          entry_type: 'trade_sell',
+          symbol: '600066',
+          display_name: '宇通客车',
+          direction: 'sell',
+          quantity: 100,
+          price: 28.96,
+          commission: 5,
+          gross_amount: 2896,
+          net_cash_impact: 2889.52,
+          fee_breakdown: {
+            commission: '5.00',
+            stamp_tax: '1.45',
+            transfer_fee: '0.03',
+            other_fees: '0.00',
+          },
+          note: '手工记录： 2026-07-03 14:08:29 卖出宇通客车一手，成交价 28.96',
+        },
+        'zh',
+      ),
+    ).toBeNull();
+  });
+
   test('keeps user remarks while suppressing semicolon-delimited structured facts', () => {
     expect(
       formatLedgerPublicNote(
