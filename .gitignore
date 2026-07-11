@@ -161,6 +161,8 @@ docs/*
 !docs/README.en.md
 !docs/README.zh.md
 !docs/ARCHITECTURE.md
+!docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md
+!docs/CONTROLLED_EXECUTION_PLAN.md
 !docs/KARKINOS_GOAL.md
 !docs/ROADMAP.md
 !docs/ROADMAP.zh.md
