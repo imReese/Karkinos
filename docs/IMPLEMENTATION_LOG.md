@@ -4,8 +4,496 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## v1.8 Progress
+
+- 2026-07-11: Capital-authorization v2 removes a structural gate conflict by
+  separating the read-only evidence connector from the future controlled
+  execution gateway. Policy scope now carries non-overlapping
+  `evidence_connector_ids` and `execution_gateway_ids`; context names one of
+  each, supplies independent health/capability facts, and requires a verified
+  same-account binding. Identical role ids, overlapping policy sets, an
+  unhealthy connector/gateway, submit capability on the read-only connector,
+  missing submit capability on the execution gateway, or an unverified account
+  relationship fails closed. Legacy `connector_id(s)`, health, and submit fields
+  remain serialized for compatibility but are no longer authority-bearing.
+  Per-order dossiers and session envelopes now read soak only from the evidence
+  connector and bind the distinct execution gateway through a shared sanitized
+  contract. Even a declared healthy submit-capable gateway remains
+  `runtime_unverified`; the binding always retains a hard blocker and cannot
+  contact a broker, submit, or issue authority. Assumptions: the v2 same-account
+  status and gateway facts are still evaluation inputs, not runtime-verified
+  broker facts; old v1 evaluation records lack the new identities and therefore
+  fail closed until explicitly re-evaluated; an independent runtime gateway
+  verifier is a later reviewed slice. Validation: the focused capital/per-order/
+  session/route/acceptance group passed 113 tests; the Stage 0 acceptance
+  manifest reports 8/8 complete; the all-audit export remains complete; and
+  `.venv/bin/pytest -q` passed 1,035 tests. The frontend was unchanged from the
+  preceding green checkpoint of 40 files / 405 tests, Prettier check, and
+  production build. Risk impact: GitNexus reports HIGH for
+  `CapitalAuthorizationContext` (64 upstream, 11 direct),
+  `CapitalAuthorizationPolicy` (58 upstream, 12 direct), the evaluator (21
+  upstream, 10 direct), and `ControlledSessionEnvelopeService` (46 upstream, 6
+  direct); `PerOrderConfirmationService` remains MEDIUM (42 upstream, 9 direct).
+  The change makes an impossible dual-role connector gate structurally valid
+  without enabling execution. Runtime authority, live gateway verification,
+  broker submission, OMS/ledger mutation, budget reservation, resume, and
+  automatic scale-up remain disabled; the CRITICAL broker gateway and HIGH OMS
+  services are unchanged.
+- 2026-07-11: Stage 2 now resolves the current signed Stage 1.1 broker-soak
+  promotion evidence for the exact connector named by the recorded capital
+  evaluation. The per-order dossier binds the promotion dossier fingerprint,
+  operational source fingerprint, Account Truth source fingerprint, and
+  verified owner-acceptance id. The binding independently validates connector
+  identity, exactly 20 selected trading days, clear operational and Account
+  Truth states, verified owner identity, required readiness/linkage flags, and
+  zero-authority boundaries instead of trusting `promotion_ready` alone.
+  Missing, malformed, mismatched, or failed providers fail closed with sanitized
+  blockers; source drift changes the per-order dossier fingerprint and makes the
+  previous artifact-bound operator approval unusable. Assumptions: application
+  routes resolve promotion evidence from the same startup state/config and
+  database as the per-order service; a valid promotion may clear only the Stage
+  1 Account Truth-linkage, owner-acceptance, and promotion sub-blockers; the
+  legacy operational-soak check remains independent; Stage 3 session binding is
+  deferred because its service is a separate HIGH-impact slice. Validation:
+  per-order service/route tests passed 21 tests, the focused confirmation/
+  acceptance group passed 77 tests, the per-order acceptance manifest reports
+  9/9 complete, the all-audit export remains complete, and
+  `.venv/bin/pytest -q` passed 1,027 tests. The frontend was unchanged from the
+  preceding green checkpoint of 40 files / 405 tests, Prettier check, and
+  production build. Risk impact: `PerOrderConfirmationService` is MEDIUM risk
+  (42 upstream, 9 direct dependants, one read-only status process), while its
+  soak-summary and status methods are LOW risk. This slice still cannot mutate
+  OMS/ledger, contact a broker, reserve budget, issue runtime/capital authority,
+  submit/cancel, resume, or scale capital. Connector submit capability, runtime
+  authority, live gateway, and broker submission remain hard blockers; the
+  HIGH-impact `ControlledSessionEnvelopeService`, HIGH OMS service, and CRITICAL
+  gateway service are unchanged.
+- 2026-07-11: Stage 1.1 adds a separate, signed broker-soak promotion-evidence
+  review without changing the existing Stage 1 status or Stage 2 execution
+  blocker. A deterministic dossier binds exactly the first 20 unique healthy
+  read-only trading days with clear zero-open-item reconciliation, stable
+  sanitized account alias/hash, daily startup/intraday/end-of-day evidence, all
+  five persisted recovery drills, the latest healthy observation, and a
+  source-sensitive current Account Truth fact. Account Truth is rebuilt from
+  the latest persisted import, current ledger projection, reconciliation items,
+  manual reviews, and score; it must be pass, no more than 24 hours old, and
+  have zero unresolved items. Owner acceptance requires a short-lived Ed25519
+  approval for the exact dossier and signed assertions that the import belongs
+  to the same reviewed account and that full process/broker-terminal restart
+  recovery was performed outside the service. Accepted and rejected attempts
+  are append-only; exact reruns reuse evidence and source drift invalidates the
+  prior acceptance. Assumptions: selection remains the first 20 qualifying days
+  for deterministic stability; drill coverage is repository-wide in the
+  current single-owner deployment; the account-alias relationship and full
+  external restart are owner assertions because no credentialed broker identity
+  or process supervisor is available to this service. Validation: the focused
+  Account Truth/promotion/signature/route/acceptance group passed 83 tests;
+  `broker_connector_soak_promotion` reports 8/8 complete; the all-audit export
+  remains complete; and `.venv/bin/pytest -q` passed 1,023 tests. The frontend
+  was unchanged from the preceding green checkpoint of 40 files / 405 tests,
+  Prettier check, and production build. Risk impact: this is an isolated
+  evidence-readiness service and API. It does not mutate OMS or the production
+  ledger, reserve budget, contact a gateway or broker, submit/cancel orders,
+  issue runtime/capital authority, or automatically promote into Stage 2. The
+  HIGH-impact existing `BrokerConnectorSoakService`, HIGH OMS service, and
+  CRITICAL gateway service remain unchanged; GitNexus classified the edited
+  existing Account Truth helper area as LOW risk, while the new promotion
+  symbols were not yet present in the index.
+- 2026-07-10: Stage 2.2/3.2 adds signed operator approval evidence without
+  execution authority. Trusted identity config accepts only enabled Ed25519
+  public keys and rejects malformed, duplicate, unsupported, private-key, or
+  secret-bearing entries. A short-lived canonical challenge binds server nonce,
+  operator/key, action, artifact type, exact artifact fingerprint, issued time,
+  and expiry; verification uses the maintained `cryptography` library and
+  appends verified or rejected evidence. Expired, invalid, disabled/rotated-key,
+  and cross-artifact approvals fail closed. Per-order confirmations and
+  controlled-session attestations now require the matching verified approval id
+  and operator label, but the record still cannot mutate OMS/ledger, reserve
+  budget, issue/resume authority, contact a gateway, or submit/cancel an order.
+  Assumptions: operator private keys and signing UX remain outside Karkinos;
+  trusted public keys are provisioned locally; the challenge TTL is 30–300
+  seconds; signed evidence authenticates an attestation only and is never a
+  capital or runtime authorization. Validation: the combined operator/config/
+  per-order/session/route/acceptance group passed 137 focused tests; the signed
+  approval manifest reports 8/8 complete and the full acceptance export is
+  complete; `uv run pytest -q` passed 1,013 tests. The unchanged frontend passed
+  40 files / 405 tests, Prettier check, and production build. A pre-existing
+  Stage 4 evidence-window fixture was also made wall-clock independent after an
+  Asia/Shanghai midnight rollover exposed its nondeterministic OMS creation
+  time; its 9 tests and the full suite are green. Risk impact: removes the
+  unauthenticated-label blocker from recorded Stage 2/3 evidence only. Stage 1
+  promotion, Account Truth/owner acceptance, submit capability, runtime
+  authority, atomic budget, automatic pause, live gateway, and broker
+  submission remain disabled. GitNexus reports HIGH impact for
+  `ControlledSessionEnvelopeService`, MEDIUM for
+  `PerOrderConfirmationService`/`ServerConfig`, and LOW for acceptance wiring;
+  the CRITICAL gateway and HIGH OMS services are unchanged.
+- 2026-07-10: Stage 2.1/3.1 adds exact prior-batch reconciliation evidence.
+  A manifest binds at most 100 unique non-paper terminal OMS orders to one
+  explicit reconciliation run. Every order requires exactly one `no_action`
+  item whose stored OMS status still matches; filled orders additionally
+  require exact real-fill quantity and provider, broker-order, Account Truth
+  import, and same-run reconciliation linkage. Order, transition, fill, item,
+  and run facts participate in a deterministic fingerprint; source drift
+  invalidates a recorded gate. Per-order dossiers and session envelopes now
+  require the request and recorded capital evaluation to reference the same
+  resolved clear batch fingerprint instead of reading the latest run. Exact
+  clear/blocked records are append-only and stale record attempts are audited.
+  Assumptions at that slice: only `no_action` items are clear; manual mismatch
+  acceptance and authenticated identity remained unimplemented; a
+  reconciliation run may cover unrelated orders, while only the selected exact
+  batch is evaluated.
+  Validation: focused batch, reconciliation-route, per-order, session, and
+  acceptance tests passed 91 tests; the dedicated acceptance manifest is 8/8
+  complete; and `uv run pytest -q` passed 994 tests. The unchanged frontend
+  remains green at 40 files / 405 tests, Prettier check, and production build.
+  Risk impact: this removes one ambiguous evidence shortcut and tightens both
+  proposal paths. It does not mutate OMS/ledger, reserve budget, contact a
+  broker, submit/cancel an order, or issue/expand runtime authority. GitNexus
+  reports HIGH impact for `ExecutionBatchReconciliationService` (60 upstream,
+  17 direct, one read-only status process) and
+  `ControlledSessionEnvelopeService` (46 upstream, 6 direct, no execution
+  flow), MEDIUM for `PerOrderConfirmationService` (42 upstream, 9 direct), and
+  LOW for the acceptance registry. The CRITICAL gateway service and HIGH OMS
+  service remain unchanged.
+- 2026-07-10: Stage 4.3 adds a computed `operating_sample` fact to the
+  append-only scaling evidence window. Reviewed trading days come from healthy
+  read-only connector-soak observations. Non-paper OMS orders retain distinct
+  filled, rejected, partially filled, cancelled, expired, and nonterminal
+  outcomes; a filled count requires linked real fill quantity. The latest
+  reconciliation run must cover every sampled order, and p95 latency runs from
+  the latest persisted order/fill/transition fact to the first `no_action`
+  reconciliation item. Paper/shadow divergence comes from persisted comparison
+  orders, and maximum drawdown uses cash-flow-unitized portfolio equity. The
+  resolver now requires `operating_sample:<window_id>` and compares nine review
+  metrics exactly. Assumptions: naive legacy timestamps are Asia/Shanghai;
+  reviewed days mean healthy soak days; broker rejection is only the effective
+  terminal OMS `rejected` state; cancelled/expired remain separate; and current
+  reconciliation is order-covered rather than runtime-session/broker-batch
+  bound. Cash flows between portfolio snapshots are unitized at the next
+  persisted equity point because no valuation exists at the exact flow time.
+  Validation: `uv run pytest tests/test_capital_scaling_evidence_window.py tests/test_capital_scaling_evidence_resolution.py tests/test_capital_scaling_review.py -q`
+  (26 passed); the Stage 4, route, and acceptance group passed 84 tests;
+  `uv run python scripts/export_acceptance_audit.py --audit capital_scaling_operating_sample`
+  reports 9/9 complete; the all-audit export reports
+  `overall_is_complete=true`; and `uv run pytest -q` passed 985 tests. The
+  unchanged frontend also passed 40 files / 405 tests, Prettier check, and the
+  production build. Risk impact: this is read-only, fail-closed evidence
+  aggregation. It does not mutate Account Truth, OMS, runtime limits,
+  production ledger, gateway, or broker state; it cannot issue or expand
+  authority, and it cannot submit/cancel an order. GitNexus reports MEDIUM
+  impact for `CapitalScalingEvidenceWindowService` (3 direct upstream callers,
+  no execution flow), LOW for the resolver, and LOW for the acceptance
+  registry; `BrokerGatewayService` and `OmsService` remain unchanged.
+- 2026-07-10: Stage 4.2 adds read-only computed scaling evidence windows and
+  makes Account Truth an explicit required scaling source. A sanitized Account
+  Truth point snapshot is clear only for pass/fresh/zero-unresolved evidence
+  captured within 15 minutes of its broker import; a review window requires two
+  distinct clear boundary snapshots. After-cost return is computed with
+  Modified Dietz from persisted total-equity snapshots and external cash flows.
+  Incident metrics scan critical alerts, rejected live submit/cancel attempts,
+  and connector disconnect observations. Capacity, liquidity, and slippage use
+  only non-simulated fills carrying broker/provider/order, Account Truth,
+  execution-reconciliation, capacity-model, and market-data references. Window
+  input accepts only timestamps and boundary tolerance; missing coverage creates
+  blocked evidence. The resolver verifies schema, window, per-fact fingerprint,
+  status, metric equality, and fill coverage before preserving scale-up
+  eligibility. Any source scan reaching its 5,000-row cap is treated as
+  truncated and blocked. Assumptions: naive legacy database timestamps are interpreted as
+  Asia/Shanghai; boundary tolerance defaults to 72 hours for market closures;
+  total equity is after recorded costs; Modified Dietz is account-level rather
+  than strategy attribution; monetary slippage is divided by fill notional; and
+  maximum utilization is retained instead of averaging stress away. Validation:
+  `uv run pytest tests/test_capital_scaling_evidence_window.py tests/test_capital_scaling_evidence_resolution.py tests/test_capital_scaling_review.py tests/server/test_capital_scaling_review_routes.py -q`
+  plus acceptance tests (79 passed),
+  `uv run python scripts/export_acceptance_audit.py --audit capital_scaling_evidence_window`
+  (9/9 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), and `uv run pytest -q` (980 passed). Frontend
+  verification remains 40 files / 405 tests with format and production build
+  passing; Black, isort, and `git diff --check` also pass. Risk impact: this adds sanitized append-only evidence only. It
+  does not mutate Account Truth, OMS, runtime limits, production ledger, gateway,
+  or broker state; even a fully resolved result records only a separate new-
+  authorization request. GitNexus reports LOW impact for the scaling evaluator
+  (2 direct callers), resolver (6 upstream, 2 direct), and audit service (29
+  upstream, 2 direct); the capital-scaling route symbols were not index-
+  addressable after two qualified impact attempts, so their direct app/test
+  scope was reviewed manually. BrokerGatewayService and OmsService are unchanged.
+- 2026-07-10: Stage 4.1 adds fail-closed persisted evidence-reference
+  resolution ahead of any scale-up decision. Broker-soak observations,
+  execution-reconciliation runs, paper/shadow runs, and risk decisions are
+  looked up by typed identifiers, checked for review-window membership and
+  clear state, and reduced to sanitized source fingerprints. The review-input
+  fingerprint and resolution fingerprint now form a separate evaluation
+  identity, so a changed source cannot reuse a prior append-only evaluation or
+  human decision. Missing, invalid, out-of-window, or non-clear sources add
+  typed blockers; a mathematically eligible scale-up result becomes hold, while
+  protective scale-down/disable analysis remains visible. Assumptions: the four
+  supported source types prove reference existence and clear-state provenance,
+  but do not yet independently recompute every caller-declared aggregate metric;
+  after-cost, incident-window, and capacity/liquidity authoritative aggregate
+  producers do not exist and therefore remain explicit unsupported blockers;
+  operator identity remains unauthenticated. Validation:
+  `uv run pytest tests/test_capital_scaling_evidence_resolution.py tests/test_capital_scaling_review.py tests/server/test_capital_scaling_review_routes.py -q`
+  plus the acceptance-audit tests (66 passed), and
+  `uv run python scripts/export_acceptance_audit.py --audit capital_scaling_evidence_resolution`
+  (6/6 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), and `uv run pytest -q` (967 passed), with Black,
+  isort, and `git diff --check` on the changed files. The frontend was unchanged
+  after its current 40-file / 405-test, format, and production-build pass. Risk
+  impact: this tightens scale-up eligibility only. It performs no Account Truth,
+  OMS, production-ledger, runtime-limit, gateway, or broker mutation; it issues
+  no authorization and keeps automatic scale-up and broker submission disabled.
+  GitNexus reports LOW impact for `CapitalScalingReviewAuditService` (29 upstream,
+  2 direct route dependencies, no affected execution flow) and LOW for
+  `AUDIT_REGISTRY`.
+- 2026-07-10: Stage 4 started with a pure evidence-based capital-scaling review
+  and append-only evaluation/human-decision workflow. Versioned current/proposed
+  tiers are compared with reviewed trading days, orders/fills/rejects,
+  reconciliation gaps/latency, slippage, after-cost result, drawdown,
+  capacity/liquidity, paper/shadow divergence, disconnects, violations, and
+  incidents. At least 20 reviewed trading days, 50 orders, required typed refs,
+  and all quality thresholds are needed for a scale-up candidate; invalid or
+  insufficient evidence holds, degraded quality recommends scale-down, and
+  critical incidents, violations, unresolved reconciliation, or exhausted
+  drawdown recommends disable. Human decisions bind the persisted evaluation
+  fingerprint and may choose a safer action, but cannot exceed the evidence
+  recommendation. Assumptions: thresholds are versioned engineering defaults,
+  not investment advice or a profit guarantee; positive after-cost evidence is
+  only one gate; current metric values remain declared local review inputs while
+  Stage 4.1 resolves four source types and blocks the three aggregate types that
+  lack authoritative producers; operator labels remain unauthenticated; and sequential duplicate events
+  reuse evidence while concurrent database uniqueness remains a residual
+  limitation. Even an eligible decision records only a request for a separate
+  new authorization review. Validation:
+  `uv run pytest tests/test_capital_scaling_review.py tests/server/test_capital_scaling_review_routes.py tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py -q`
+  (60 passed) and
+  `uv run python scripts/export_acceptance_audit.py --audit capital_scaling_review_foundation`
+  (8/8 complete), plus Black and isort checks for the changed Python files.
+  Risk impact: automatic scale-up, new authorization issuance, active-tier or
+  runtime-limit mutation, execution resume, OMS/ledger mutation, and broker
+  submit/cancel remain unavailable. Protective outcomes are recommendations in
+  this slice, not silent runtime mutations. GitNexus impact remains MEDIUM for
+  `create_app` registration and LOW for `AUDIT_REGISTRY`; gateway, OMS, capital
+  evaluator, and connector runtime behavior are unchanged.
+- 2026-07-10: Stage 3 started with a proposal-only controlled-session envelope
+  service. It consumes one recorded `session_bounded` capital evaluation, an
+  explicit OMS order set, and a timezone-aware window of at most 30 minutes;
+  canonical order/gateway evidence and conservative gross order value are bound
+  to cash, capital, turnover, per-order, position-change, liquidity, and
+  projected rate budgets. Missing/duplicate/unpriced/out-of-scope orders,
+  unsupported OMS state, stale soak, missing/open reconciliation, kill switch,
+  invalid time, or budget excess fails closed. Exact fresh-envelope attestations
+  reuse append-only evidence; stale fingerprints and blocked envelopes record
+  deterministic rejections. Assumptions: only priced limit orders can be
+  projected; buy and sell values are not netted; the recorded capital context
+  supplies review-time cash/exposure/turnover facts but is not runtime authority;
+  a 60-second start-time grace allows a human to attest an immediate preview;
+  the continuously changing age counter is excluded from the fingerprint while
+  source time, max age, and freshness state remain bound; per-symbol runtime
+  limits and prior-batch reconciliation are not yet bound. Stage 1/2 promotion,
+  session-start Account Truth, authenticated identity, connector submit
+  capability, atomic budget reservation, runtime rate limiting, automatic pause,
+  runtime session issue/resume/revoke, live gateway, and broker submission remain
+  hard blockers. Validation:
+  `uv run pytest tests/test_controlled_session_envelope.py tests/server/test_controlled_session_envelope_routes.py tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py -q`
+  (56 passed) and
+  `uv run python scripts/export_acceptance_audit.py --audit controlled_session_envelope_foundation`
+  (8/8 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), and `uv run pytest -q` (943 passed), plus Black,
+  isort, and `git diff --check` for the changed files. The frontend was not
+  changed after its latest 40-file / 405-test, format, and production-build pass.
+  Risk impact: this slice performs deterministic local projection and append-only
+  attestation audit only. It does not reserve/consume budget, issue/enable/pause/
+  resume/revoke a runtime session, mutate OMS/ledger, contact a broker,
+  submit/cancel an order, auto-renew/expand, or scale capital. GitNexus reports
+  MEDIUM impact for the `create_app` route registration (10 affected, 9 direct)
+  and LOW for `AUDIT_REGISTRY`; the CRITICAL gateway and HIGH-risk OMS remain
+  unchanged.
+- 2026-07-10: Stage 2 started with an isolated, non-submitting per-order dossier
+  and attestation service. It fingerprints canonical OMS order terms and binds
+  the recorded capital-evaluation decision, Account Truth/research/risk/
+  paper-shadow gateway evidence, latest connector-soak state, latest execution
+  reconciliation, and kill-switch snapshot. Missing, stale, mismatched, blocked,
+  unhealthy, or unavailable review evidence fails closed. An exact dossier can
+  be attested only after review gates pass; repeated identical attempts reuse an
+  append-only event, while stale fingerprints and blocked dossiers produce
+  deterministic rejection evidence. Assumptions: a capital evaluation is policy
+  calculation evidence rather than runtime authority; the current operator
+  label is unauthenticated local input; the latest clear reconciliation is
+  review evidence but is not yet bound to a specific prior account/strategy/
+  batch; and a local attestation may be recorded while immutable submission
+  blockers remain because it cannot authorize execution. Stage 1 promotion,
+  Account Truth linkage, owner acceptance, batch-bound reconciliation,
+  authenticated identity, actual connector submit capability, runtime
+  authority, live gateway implementation, and broker submission remain explicit
+  hard blockers. Validation:
+  `uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py -q`
+  (55 passed) and
+  `uv run python scripts/export_acceptance_audit.py --audit per_order_confirmation_foundation`
+  (7/7 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), `uv run pytest -q` (926 passed),
+  `npm --prefix web test -- --run` (40 files / 405 tests),
+  `npm --prefix web run format:check`, `npm --prefix web run build`, plus Black,
+  isort, and `git diff --check` for the changed files.
+  Risk impact: the new path reads local persisted facts and connector capability
+  metadata only. It never calls `BrokerGatewayService`, reads a broker snapshot,
+  changes OMS, mutates the production ledger, submits/cancels an order, resumes
+  automation, or grants/scales capital authority. GitNexus reports MEDIUM impact
+  for `create_app` (10 affected, 9 direct); the CRITICAL
+  `BrokerGatewayService` (90 affected, 41 direct) and HIGH-risk `OmsService`
+  (57 affected, 19 direct) were explicitly not modified.
+- 2026-07-10: Stage 1 added a broker-neutral operating runbook service and
+  append-only `startup`, `intraday`, and `end_of_day` evidence. Missing or
+  unhealthy connector observations block every phase; end-of-day additionally
+  requires the same-day execution reconciliation to be `clear` with zero open
+  items. Disconnect, unsupported-schema, stale-data, duplicate-evidence, and
+  service-instance restart-recovery drills now persist deterministic pass/fail
+  evidence, reuse identical sequential inputs, and send failed/blocked results
+  to the shared Operations alert queue. Run/drill APIs reject undeclared fields
+  and credentials, and the operator procedure is documented in
+  `docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md`. Assumptions: the operator prepares
+  disposable local-export failure conditions without changing broker settings;
+  end-of-day reconciliation evidence already exists for the snapshot trading
+  day; service-instance reconstruction proves persistence-independent replay
+  but does not prove a full operating-system or broker-terminal restart; and
+  concurrent event uniqueness remains a residual persistence limitation.
+  Validation:
+  `uv run pytest tests/test_broker_connector_soak.py tests/test_broker_connector_soak_runbook.py tests/server/test_broker_connector_soak_routes.py tests/server/test_broker_connector_soak_runbook_routes.py tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py -q`
+  (62 passed) and
+  `uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_foundation`
+  (11/11 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), and `uv run pytest -q` (909 passed), plus Black,
+  isort, and `git diff --check` for the changed files.
+  Risk impact: this adds only broker-read evidence, run/drill audit events, and
+  sanitized alerts. It cannot contact write capabilities, submit/cancel an
+  order, mutate OMS or the production ledger, or grant capital authority. A
+  successful drill or 20-day operational metric cannot promote Stage 2 without
+  real broker-specific evidence, Account Truth linkage, authenticated owner
+  acceptance, and separate controlled-bridge review.
+- 2026-07-10: Stage 1 started with a broker-neutral, read-only soak service and
+  status/capture/list APIs. Configured `qmt_readonly_export`,
+  `ptrade_readonly_export`, generic local exports, or injected read-only
+  connectors produce sanitized snapshot evidence with deterministic snapshot
+  and observation fingerprints, source/observed times, freshness, capability
+  scope, cash/position/order/fill counts and facts, execution-reconciliation
+  references when present, and provider market-calendar evidence. Raw account
+  ids are replaced by a local opaque hash and never returned in snapshot facts;
+  any submit capability blocks the observation. Missing calendar evidence,
+  closed dates, stale/future/invalid timestamps, incomplete read capabilities,
+  missing cash, degraded source health, or connector exceptions do not count as
+  healthy soak days and create sanitized shared Operations alerts. Assumptions:
+  QMT/PTrade integration remains a user-managed local JSON export, not direct
+  SDK access; provider calendar snapshots identify trading days; account-id
+  hashes are local correlation evidence, not public identifiers; sequential
+  duplicate capture reuses an observation while concurrent uniqueness remains
+  a residual persistence limitation. Validation:
+  `uv run pytest tests/test_broker_connector_soak.py tests/server/test_broker_connector_soak_routes.py tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py -q`
+  (49 passed),
+  `uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_foundation`
+  (6/6 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), `uv run pytest -q` (896 passed),
+  `npm --prefix web test -- --run` (40 files / 405 tests),
+  `npm --prefix web run format:check`, `npm --prefix web run build`, plus Black,
+  isort, and `git diff --check`. Risk impact:
+  starts measurable 20-trading-day read-only operations without contacting a
+  broker write API, exposing raw account ids, submitting/cancelling orders,
+  mutating OMS or the production ledger, or enabling capital authority. Twenty
+  healthy days mark operational soak only; promotion remains blocked until
+  Account Truth reconciliation and explicit owner acceptance are linked.
+- 2026-07-10: Stage 0 now persists capital-authorization **evaluation
+  evidence**, not execution authority, through the existing append-only event
+  log. A dedicated audit service provides side-effect-free preview, sequential
+  input-fingerprint reuse, evidence listing, and a status contract that remains
+  `runtime_authority_status=disabled` even when the pure evaluator returns
+  `allowed=true`. New status/preview/record/list routes reject undeclared
+  payload fields (including attempted credential fields) and expose no issue,
+  revoke, enable, resume, submit, cancel, OMS, or ledger action. Static
+  `config.json` is intentionally not an authorization source; the existing
+  controlled-bridge config remains whitelist preview only. Assumptions: event
+  records contain local aliases, limits, fingerprints, and evidence refs but no
+  broker credentials or real account identifiers; `authorized_by` is explicitly
+  marked as unverified input until a future authenticated operator workflow;
+  append-only event-log reuse
+  is deterministic for sequential identical requests; concurrent duplicates
+  remain a residual limitation until a dedicated unique persistence contract is
+  reviewed. Validation:
+  `uv run pytest tests/test_capital_authorization.py tests/test_capital_authorization_audit.py tests/server/test_capital_authorization_routes.py -q`
+  (22 passed),
+  `uv run pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py tests/test_capital_authorization.py tests/test_capital_authorization_audit.py tests/server/test_capital_authorization_routes.py -q`
+  (58 passed),
+  `uv run python scripts/export_acceptance_audit.py --audit capital_authorization_stage0`
+  (6/6 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`overall_is_complete=true`), `uv run pytest -q` (883 passed), plus Black and
+  isort checks for the changed Python files.
+  Risk impact: makes proposed authority limits and gate outcomes durable and
+  reviewable without activating them. GitNexus reports LOW impact for
+  `create_app` (2 upstream dependents) and `AUDIT_REGISTRY` (0); the MEDIUM-risk
+  `ControlledBridgePolicyConfig` and HIGH-risk `BrokerGatewayService` were not
+  modified. This slice cannot contact a broker, submit or cancel orders, resume
+  automation, mutate OMS or the production ledger, or expand capital authority.
+- 2026-07-10: Stage 0 started with an isolated, versioned
+  `karkinos.capital_authorization.v1` policy contract and pure fail-closed
+  evaluator. It distinguishes account capital from authorized total exposure
+  and per-order purchasing/liquidity capacity; supports `disabled`,
+  `manual_each_order`, and future `session_bounded` policy modes; checks
+  explicit operator identity, policy version, connector/account/strategy/symbol
+  scope, timezone-aware validity and expiry, matching per-order confirmation,
+  market/account/risk/paper-shadow/reconciliation/connector/kill-switch gates,
+  capital/order/position/turnover/loss/drawdown/order-rate/error limits; and
+  returns deterministic fingerprints, block reasons, effective limits,
+  remaining budgets, evidence refs, and explicit no-submit/no-cancel/no-OMS/
+  no-ledger/no-self-expansion safety flags. Assumptions: the caller supplies
+  already sourced current facts; daily loss is a non-negative loss magnitude;
+  current authorized exposure represents existing exposure inside this
+  authorization domain; Decimal amounts retain the caller's currency; and
+  connector submit capability is evaluated as evidence only. This slice does
+  not fetch, persist, authorize, or execute anything. Validation:
+  `uv run pytest tests/test_capital_authorization.py -q` (15 passed),
+  `uv run pytest tests/test_capital_authorization.py tests/test_automation_control.py tests/test_broker_gateway_service.py -q`
+  (45 passed),
+  `uv run black --check server/services/capital_authorization.py tests/test_capital_authorization.py`,
+  and
+  `uv run isort --check-only server/services/capital_authorization.py tests/test_capital_authorization.py`.
+  Risk impact: establishes the non-submitting authority contract without
+  changing configuration, routes, gateway, OMS, database, ledger, or strategy
+  promotion behavior. GitNexus reported MEDIUM impact for the existing
+  `ControlledBridgePolicyConfig` (28 upstream dependents) and HIGH impact for
+  `BrokerGatewayService` (38 dependents across gateway status, Automation
+  Cockpit, and alerts); neither existing symbol was modified or integrated in
+  this slice. Broker submission, cancellation, automatic resume, automatic
+  scale-up, and strategy-direct broker access remain unavailable.
+
 ## v1.7 Progress
 
+- 2026-07-10: v1.6/v1.6.1 and the v1.7 non-submitting bridge foundation were
+  closed against their acceptance evidence. Execution reconciliation now
+  compares a recorded manual execution with already matching staged broker
+  facts across quantity, price, gross amount, fee, tax, transfer fee, and net
+  amount. A difference becomes a structured `broker_evidence_mismatch` review
+  item with `karkinos.manual_broker_comparison.v1` evidence; a match still
+  requires operator review before any ledger action. Trading manual-ticket
+  export now links directly to Account Truth broker-statement import and the
+  read-only reconciliation review surface. The controlled-bridge acceptance
+  audit adds an end-to-end criterion covering manual confirmation -> ticket ->
+  manual execution evidence -> staged broker evidence -> reconciliation.
+  Decision renders the compared manual and broker values plus non-mutation
+  safety flags without sync, apply-fill, cancel, or submit controls.
+  Assumption: this comparison runs only after the existing broker matcher has
+  identified same-side, same-symbol, same-quantity evidence; aggregation of
+  multiple broker partial fills remains an explicit future limitation because
+  its matcher has a HIGH GitNexus blast radius and was not changed here.
+  Validation: `uv run pytest -q` (859 passed), `npm --prefix web test` (405
+  passed), `npm --prefix web run build`, `npm --prefix web run format:check`,
+  and `uv run python scripts/export_acceptance_audit.py --audit all`
+  (`operations_runbook` 19/19 and `controlled_broker_bridge_foundation` 15/15,
+  both complete). Risk impact: closes a false-clear reconciliation gap and
+  improves the operator import/review handoff while keeping manual
+  confirmation, gateway evidence, kill switch, Account Truth, research, risk,
+  paper/shadow, connector health, and reconciliation gates intact. It does not
+  aggregate partial fills, contact a broker, store credentials, submit or
+  cancel broker orders, change OMS during comparison, create live fills, write
+  production ledger entries, alter cash or positions, enable v1.8, or enable
+  automatic trading.
 - 2026-07-10: Production trade ledger entries can now receive an explicit,
   idempotent broker-settlement confirmation through
   `POST /api/ledger/trades/{entry_id}/settlement`. The confirmation preserves

@@ -23,9 +23,17 @@ user manual; current usage guidance belongs in the README files.
 | v1.3 | Completed | Professional Decision Workflow |
 | v1.4 | Completed | Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity |
 | v1.5 | Completed | Daily Trading Plan & Portfolio Construction |
-| v1.6 | Active | Operations Center & Paper/Shadow Runbook |
-| v1.7 | Active | Controlled Broker Execution Bridge |
-| v1.8 | Planned | Small-Capital Controlled Auto Pilot |
+| v1.6 | Completed | Operations Center & Paper/Shadow Runbook |
+| v1.7 | Completed | Controlled Broker Bridge Foundation (Non-Submitting) |
+| v1.8 | Planning active | Capital-Bounded Controlled Execution |
+
+Completion evidence recorded on 2026-07-10: the operations runbook acceptance
+audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
+backend suite is 859/859, the Web suite is 405/405, and the production build
+and frontend format check pass. These checks prove the non-submitting
+foundation only; they do not enable L4 broker submission or any v1.8 execution
+authority. v1.8 planning and non-submitting policy-contract work may proceed
+while all broker-write capabilities remain disabled.
 
 ## Automation Maturity Track
 
@@ -44,18 +52,20 @@ The intended maturity ladder is:
 | --- | --- | --- |
 | L0 Research evidence | Completed | Registered strategies, reproducible backtests, after-cost/OOS evidence, and promotion readiness exist. |
 | L1 Daily trading plan | Completed | The system generates a daily plan with candidates, blockers, costs, risks, and manual-confirmation next steps. |
-| L2 Paper/shadow operating loop | Active | Scheduled paper/shadow runs, divergence checks, and run summaries should operate without manual data edits. |
-| L3 Manual execution assist | Active | OMS, manual tickets, broker evidence import, and execution reconciliation now support safe operator-driven execution paths. |
+| L2 Paper/shadow operating loop | Completed | Scheduled paper/shadow runs, divergence checks, persisted review state, and run summaries operate without manual data edits. |
+| L3 Manual execution assist | Completed | OMS, manual tickets, broker evidence import, manual-execution evidence, and execution reconciliation support safe operator-driven execution paths. |
 | L4 Controlled broker bridge | Planned | Broker-specific order previews or submissions may be prepared only after account truth, risk, paper/shadow, and manual review gates pass. |
-| L5 Small-capital auto pilot | Planned | A tightly capped, explicitly enabled pilot may automate limited orders only after L0-L4 prove reliable. |
-| L6 Unattended real-money automation | Deferred | Fully automatic real-money order submission remains out of scope until every upstream layer is mature and explicitly accepted. |
+| L5 Capital-bounded controlled execution | Planning active | Start with a deliberately small live risk envelope, then allow human-reviewed evidence-based scaling without granting permanent or self-expanding authority. |
+| L6 Unattended full-account automation | Non-goal | Permanently authorized, unsupervised real-money execution is not required for the Karkinos product target. |
 
-The next product step is therefore not "auto-buy" or "auto-sell". It is a
-repeatable paper/shadow execution loop with an auditable OMS state machine,
-then a controlled non-submitting order-ticket bridge. Real broker submission is
-preserved as a future roadmap capability, but it stays behind explicit account,
-strategy, symbol, order, risk, account-truth, paper/shadow, kill-switch, and
-operator-authority gates.
+The completed v1.6-v1.7 foundation is not "auto-buy" or "auto-sell". It is a
+repeatable paper/shadow execution loop, auditable OMS state, a controlled
+non-submitting order-ticket bridge, local read-only connector evidence, and
+execution reconciliation. Real broker submission remains an unimplemented
+future capability behind explicit account, strategy, symbol, order, risk,
+account-truth, paper/shadow, kill-switch, connector-health, reconciliation, and
+operator-authority gates. v1.8 planning is active, but its broker-write and
+automation capabilities are not implemented or enabled.
 
 ## Automation Gap Matrix
 
@@ -67,18 +77,18 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Capability | Current state | Required before live-like automation | Roadmap owner |
 | --- | --- | --- | --- |
 | Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
-| Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, and Today's to-dos exist. | Candidate actions must flow automatically into paper/shadow runs, and Today's to-dos must explain every blocked/manual-ready state without raw reason codes. | v1.5-v1.6 |
-| Paper/shadow execution | Paper/shadow evidence exists in isolated preview and summary paths. | A daily paper/shadow execution engine must persist run ids, deterministic inputs, simulated order/fill state, fees/taxes, divergence status, retry/idempotency state, and review outcomes. | v1.6.1 |
-| OMS state machine | Paper order evidence and OMS concepts exist, but the daily operations loop still lacks a first-class persisted run state for order-intent lifecycle review. | Order intents need staged/submitted/accepted/partially-filled/filled/rejected/cancelled/expired/reconciled states, deterministic client order ids, idempotent reruns, and immutable audit references. | v1.6.1 |
-| Broker execution gateway | Manual-ticket gateway status, preview, and creation exist behind evidence gates; connector health, runtime read-only connector snapshot query, staged account/fill query, local order query, and default-rejected cancel contracts exist; broker submission remains disabled. | Replace deterministic connector fixtures with real local read-only adapters and keep bridge actions behind explicit query/dry-run/export-only boundaries before any real connector can be enabled. | v1.7 |
-| Order ticket export | Copy-safe manual ticket preview and recorded manual-ticket events exist after manual confirmation and required evidence; exports include operator-form context for field labels, account alias, fee/tax assumptions, net cash impact, remaining-position/cost-basis preview, regular-session constraints, and non-submission safety flags. | Add export/import ergonomics and operator review surfaces before any live broker bridge. | v1.7 |
-| Account truth and broker reconciliation | CSV import preview, staged broker evidence, reconciliation reports, manual review states, Account Truth Score, and execution reconciliation API exist. | Automation gates must require fresh account-truth pass/degraded policy, reconcile fills/orders back into local facts, and block stale or unresolved differences. | v0.6-v0.7, v1.7 |
+| Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, Today's to-dos, and automatic paper/shadow handoff exist. | Continue requiring public explanations for every blocked/manual-ready state and keep order intents non-submitting. | v1.5-v1.6, ongoing |
+| Paper/shadow execution | Persisted daily runs include deterministic inputs, simulated order/fill state, fees/taxes, divergence, retry/idempotency, and review outcomes. | Keep evidence fresh and require divergence review before any later live-like authority. | v1.6.1, ongoing |
+| OMS state machine | Paper/shadow lifecycle states, deterministic client order ids, accepted-transition audit records, idempotent reruns, and reconciliation evidence exist. | A future live connector would need separate broker-confirmed lifecycle evidence without weakening the paper/manual boundaries. | v1.6.1, future L4 |
+| Broker execution gateway | Manual-ticket preview/export/dry-run/create, local JSON read-only connector snapshots, staged account/fill queries, local order queries, capability health, kill-switch blocking, and default-rejected cancel exist; submission remains unavailable. | Any broker-specific read-only adapter or future controlled submission path must preserve the same query/dry-run/export boundaries and complete a separate L4 review. | v1.7, future L4 |
+| Order ticket export | Copy-safe ticket export, operator forms, manual-execution preview/evidence, and explicit links to broker-statement import and execution reconciliation exist. | Validate operator ergonomics with local workflows before considering any broker-write capability. | v1.7, ongoing |
+| Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
 | Risk controls | Mandatory pre-trade risk gate, batch risk checks, cash buffer, concentration, T+1, data-quality, and kill-switch concepts exist. | Live-like execution must enforce global, strategy, account, and per-symbol controls with policy snapshots, escalation notes, and irreversible audit logs. | v1.5-v1.7 |
-| Scheduler and runbook | Operations summary exists, but persistent scheduler run records and deterministic rerun state remain incomplete. | Persist scheduled strategy, risk, paper/shadow, reconciliation, and report runs with input snapshots, result hashes, errors, retries, and operator actions. | v1.6 |
+| Scheduler and runbook | Operations summary, persistent scheduler records, deterministic rerun keys, input snapshots, errors, retries, limitations, and operator review state exist. | Continue operational soak and preserve idempotency as scheduled workflows expand. | v1.6, ongoing |
 | Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
-| Strategy promotion pipeline | Promotion readiness consumes evidence; strategy assignment and attribution exist. | Add explicit lifecycle states from research-only to paper, shadow, manual-confirmation, controlled bridge pilot, paused, and retired, with promotion/demotion audit. | v1.6-v1.7 |
-| Small-capital controlled auto pilot | Not supported. | Add capped account/strategy/symbol budgets, per-order or policy-bounded approvals, drawdown stops, automatic pause, and mandatory reconciliation before the next run. | v1.8 |
-| Real-money unattended automation | Not supported. | Deferred until every upstream capability is mature, small-capital pilot evidence is reviewed, and the product owner explicitly accepts the operational and regulatory risk. | Deferred |
+| Strategy promotion pipeline | Research/paper lifecycle, readiness evidence, audit-only pause/retire states, and default rejection of controlled-bridge pilot promotion exist. | A future L4/L5 pilot must add explicit enablement without allowing promotion evidence to authorize execution by itself. | v1.6-v1.7, future L4-L5 |
+| Capital-bounded controlled execution | Not supported. | Add expiring operator authorizations, capped account/strategy/symbol/session budgets, per-order or session-bounded approvals, drawdown stops, automatic pause, mandatory reconciliation, and evidence-based scale-up/scale-down decisions. Initial live validation uses a small risk envelope but the architecture is not permanently capital-limited. | v1.8 |
+| Unattended full-account automation | Not supported. | Keep permanently authorized, unsupervised execution outside the product target. | Non-goal |
 
 ## Controlled Automation Architecture
 
@@ -111,7 +121,7 @@ Recommended implementation phases:
 | D | Execution reconciliation: compare OMS/order/fill facts with broker evidence and Account Truth. | No automatic ledger mutation. |
 | E | Strategy promotion pipeline: research, paper, shadow, manual-confirmation, bridge-pilot, paused, retired. | Promotion does not authorize execution by itself. |
 | F | Future controlled live bridge: explicit account enablement, kill switch, connector capability check, and per-order confirmation. | Disabled by default. |
-| G | Small-capital auto pilot: capped strategy/account budgets, hard stops, reconciliation-before-next-run, and automatic pause on divergence. | Explicit opt-in only. |
+| G | Capital-bounded controlled execution: start with small pilot exposure, use expiring operator authority, enforce hard stops and reconciliation-before-next-run, then scale only through reviewed evidence. | Explicit opt-in only; no automatic scale-up. |
 
 Key new contracts should include:
 
@@ -124,8 +134,9 @@ Key new contracts should include:
 * `execution_reconciliation_runs` and `execution_reconciliation_items` for
   order/fill/cash/position agreement.
 * `strategy_promotion_states` for strategy lifecycle gates.
-* `auto_pilot_policies` for any future capped small-capital automation
-  experiment.
+* `capital_authorization_policies` and immutable authorization decisions for
+  future per-order or session-bounded execution; the initial live tier is small
+  exposure, not a permanent account-size ceiling.
 
 The first user-visible ladder should be:
 
@@ -939,19 +950,19 @@ review into a repeatable daily operating loop.
 
 ### Acceptance Criteria for v1.6
 
-* [ ] Operations Center can show health, last run, next action, and limitations
+* [x] Operations Center can show health, last run, next action, and limitations
   for core data, account, strategy, risk, paper/shadow, scheduler, and audit
   subsystems.
-* [ ] Daily run summaries distinguish successful, degraded, blocked, skipped,
+* [x] Daily run summaries distinguish successful, degraded, blocked, skipped,
   and manual-action-required states.
-* [ ] Paper/shadow run summaries include generated order intents, simulated
+* [x] Paper/shadow run summaries include generated order intents, simulated
   fills, fee/cost assumptions, divergence status, and next manual review step.
-* [ ] Scheduler reruns are idempotent and record run ids, input snapshots,
+* [x] Scheduler reruns are idempotent and record run ids, input snapshots,
   errors, retry state, and limitations.
-* [ ] Acceptance audit CLI includes market data, strategy runtime, paper OMS,
+* [x] Acceptance audit CLI includes market data, strategy runtime, paper OMS,
   broker evidence, decision workflow, strategy attribution, portfolio
   construction, and operations capabilities as they are completed.
-* [ ] Operations records do not commit runtime logs, private account data,
+* [x] Operations records do not commit runtime logs, private account data,
   screenshots, or generated reports to source control.
 
 Initial v1.6 implementation note:
@@ -985,16 +996,14 @@ Initial v1.6 implementation note:
   fixtures. Market-session automation now uses a trading-plan fingerprint
   idempotency key as the persisted run id, so repeated scheduler invocations
   for the same plan/date update one audit run while changed inputs create a
-  new run. Remaining v1.6 work is continued operator-facing divergence review
-  and runbook hardening. Paper/shadow run payloads now also persist a
+  new run. Paper/shadow run payloads also persist a
   deterministic `input_snapshot` with normalized order-intent inputs,
   account-truth state, constraint summary, outcome overrides, fingerprint, and
   no-broker/no-ledger-mutation safety flags for operator rerun review.
 
-### v1.6.1 Implementation Goal — Paper/Shadow Execution Engine & OMS Run Records
+### v1.6.1 Completed Implementation — Paper/Shadow Execution Engine & OMS Run Records
 
-This is the active development goal after the daily trading-plan and risk-block
-clarity work. It should turn manual-ready order intents into a repeatable
+This completed implementation turns manual-ready order intents into a repeatable
 paper/shadow execution run without creating production ledger entries, broker
 orders, or live fills.
 
@@ -1026,27 +1035,27 @@ orders, or live fills.
 
 #### v1.6.1 Acceptance Criteria
 
-* [ ] Backend storage exists for paper/shadow runs, simulated orders, simulated
+* [x] Backend storage exists for paper/shadow runs, simulated orders, simulated
   fills, status transitions, evidence refs, and run limitations.
-* [ ] A service can create or reuse a paper/shadow run from the current daily
+* [x] A service can create or reuse a paper/shadow run from the current daily
   trading plan and returns deterministic counts and evidence refs.
-* [ ] OMS transitions reject invalid state moves and record every accepted move
+* [x] OMS transitions reject invalid state moves and record every accepted move
   with timestamp, reason, and source.
-* [ ] Paper/shadow fill simulation covers full fill, partial fill, rejection,
+* [x] Paper/shadow fill simulation covers full fill, partial fill, rejection,
   cancellation, expiration, fee/tax projection, and idempotent rerun behavior.
-* [ ] `/api/operations/today` includes latest paper/shadow run id, status,
+* [x] `/api/operations/today` includes latest paper/shadow run id, status,
   order/fill counts, divergence status, structured review queue, and next
   manual review step.
-* [ ] Decision and Overview surfaces show paper/shadow next actions and
+* [x] Decision and Overview surfaces show paper/shadow next actions and
   structured review queue summaries without exposing raw state-machine
   internals or implying broker submission.
-* [ ] Backend deterministic tests cover storage, idempotency, state transitions,
+* [x] Backend deterministic tests cover storage, idempotency, state transitions,
   fill simulation, divergence summary, review queue, and no production-ledger
   mutation.
-* [ ] Frontend tests cover not-run, review-required, diverged,
+* [x] Frontend tests cover not-run, review-required, diverged,
   within-expectations, failed paper/shadow states, and structured review queue
   presentation.
-* [ ] README/docs keep the safety boundary explicit: paper/shadow records are
+* [x] README/docs keep the safety boundary explicit: paper/shadow records are
   simulation evidence and do not submit broker orders.
 
 ## Target for v1.7
@@ -1063,6 +1072,11 @@ calling a broker directly. A deterministic strategy broker-boundary scanner now
 checks the current strategy tree for forbidden broker/gateway adapter imports
 and direct broker-style calls, so future connector work has a regression guard
 for this authority boundary.
+
+v1.7 is complete as a **non-submitting controlled-bridge foundation**. This
+completion does not include a live broker submit method, executable broker
+cancel, automatic ledger mutation, or a v1.8 auto pilot. L4 broker submission
+therefore remains planned and unavailable.
 
 ### v1.7 Scope
 
@@ -1124,81 +1138,482 @@ for this authority boundary.
   save-ledger, apply-fill, or broker-submit controls.
   The gateway can also record a matching-fingerprint manual execution evidence
   event for audit continuity without creating fills, changing OMS status, or
-  writing production ledger entries.
+  writing production ledger entries. Trading links the operator from the
+  exported ticket to broker-statement import and execution-reconciliation
+  review. Reconciliation compares matching manual-execution evidence with
+  staged broker price, quantity, gross amount, fee, tax, transfer fee, and net
+  amount; differences enter the review queue without changing OMS or the
+  production ledger. Decision renders the compared manual and broker values as
+  read-only evidence without sync, apply-fill, cancel, or submit controls.
 
 ### Acceptance Criteria for v1.7
 
-* [ ] Broker submission remains disabled by default and unavailable unless an
+* [x] Broker submission remains disabled by default and unavailable unless an
   explicit controlled bridge is configured.
-* [ ] A non-submitting order-ticket export path exists before any live broker
+* [x] A non-submitting order-ticket export path exists before any live broker
   bridge path is considered.
-* [ ] Gateway capabilities and health are visible in API/UI and include
+* [x] Gateway capabilities and health are visible in API/UI and include
   whether the connector can read account facts, query orders/fills, cancel,
   preview, dry-run, or submit.
-* [ ] Every live-like order preview requires account-truth, research-evidence,
+* [x] Every live-like order preview requires account-truth, research-evidence,
   risk, paper/shadow, and manual-confirmation evidence.
-* [ ] Kill switch, connector capability checks, and per-order confirmation are
+* [x] Kill switch, connector capability checks, and per-order confirmation are
   enforced before any live-like bridge action.
-* [ ] Strategy code has no broker adapter access; all bridge actions go through
+* [x] Strategy code has no broker adapter access; all bridge actions go through
   policy, risk, OMS, gateway, and reconciliation services. A static guard now
   covers the current strategy tree; future private strategies outside the repo
   should use the same contract before any controlled bridge pilot.
 * [x] Strategy promotion state is visible as read-only paper/shadow lifecycle
   evidence, and it does not expose live-promotion controls.
-* [ ] Broker callbacks or imported fills are staged as evidence and reconciled
+* [x] Broker callbacks or imported fills are staged as evidence and reconciled
   before any production ledger mutation is suggested.
-* [ ] Manual execution forms show user-readable field labels, fee/tax
+* [x] Manual execution forms show user-readable field labels, fee/tax
   components, net cash impact, and remaining-position/cost-basis preview before
   saving a manual execution record.
-* [ ] No broker password storage, default real-money automation,
+* [x] No broker password storage, default real-money automation,
   guaranteed-profit language, or strategy-direct broker submission is
   introduced.
 
 ## Target for v1.8
 
-Karkinos v1.8 — Small-Capital Controlled Auto Pilot — is the first milestone
-where limited real-money automation may be considered. It is not unattended
-full-account trading. It is an explicitly enabled pilot for strategies that
-have already passed research, after-cost/OOS validation, paper/shadow review,
-manual execution evidence, broker bridge dry-runs, and reconciliation.
+Karkinos v1.8 — Capital-Bounded Controlled Execution — is the program that
+moves the non-submitting foundation toward human-supervised real execution. It
+does not permanently limit Karkinos to a small account. Instead, it separates
+account capital from machine authority and starts each new live capability with
+a deliberately small authorization envelope until real evidence supports a
+larger one.
 
-The goal is to test whether automation improves execution discipline and
-after-cost outcomes under strict loss, size, and operational limits.
+The target is not unattended full-account trading. The owner grants either one
+order or a short-lived capital envelope, sees the capital at risk and remaining
+limits, and can pause, reduce, expire, or revoke authority. The system may
+automatically pause or scale down, but it may never enable, renew, resume, or
+scale itself up.
+
+Detailed delivery order, invariants, promotion evidence, and release gates are
+maintained in
+[CONTROLLED_EXECUTION_PLAN.md](CONTROLLED_EXECUTION_PLAN.md).
+
+### v1.8 Delivery Sequence
+
+| Stage | Capability | Broker-write boundary | Promotion evidence |
+| --- | --- | --- | --- |
+| 0 | Capital authorization policy contract and deterministic fail-closed evaluation | No submit or cancel | Contract tests and authority-boundary audit |
+| 1 | One real broker-specific read-only adapter and operational soak | Read-only only | At least 20 reviewed trading sessions, recovery drills, no unresolved critical reconciliation mismatch |
+| 2 | Per-order human-confirmed broker bridge | One evidence-fingerprinted confirmed order at a time | Idempotency, callback/poll recovery, partial-fill aggregation, cancel/reject/timeout and reconciliation evidence |
+| 3 | Session-bounded controlled execution | Explicit short-lived account/strategy/symbol envelope | Budget, expiry, auto-pause, kill-switch, reconciliation-before-next-batch and operator-control evidence |
+| 4 | Evidence-based capital scaling | New human authorization required for every higher tier | Capacity, liquidity, slippage, drawdown, incidents, reconciliation latency and after-cost review |
+
+Stages are sequential promotion gates, not calendar promises. Stage 0 and Stage
+1 can advance without broker submission. A later stage cannot use its own
+successful history to self-authorize the next stage.
 
 ### v1.8 Scope
 
-* Per-account, per-strategy, per-symbol, and per-day pilot budgets.
-* Maximum order value, maximum position change, maximum turnover, maximum daily
-  loss, maximum drawdown, and maximum consecutive-error limits.
-* Policy-bound automation modes such as `manual_each_order`,
-  `auto_within_cap`, `pause_on_divergence`, and `reconcile_before_next_run`.
+* Separate account capital from explicitly authorized capital and effective
+  risk-envelope limits.
+* Versioned operator authority for account, strategy, symbols, execution mode,
+  effective/expiry time, and policy fingerprint.
+* Per-account, per-strategy, per-symbol, per-session, and per-day budgets.
+* Maximum authorized capital, order value, position change, turnover, daily
+  loss, drawdown, order rate, and consecutive-error limits.
+* Policy-bound modes `disabled`, `manual_each_order`, and future
+  `session_bounded`; manual confirmation remains the default.
 * Automatic pause on kill switch, stale market data, account-truth degradation,
   paper/shadow divergence, gateway health degradation, rejected/cancelled order
   spikes, reconciliation gaps, or unexpected ledger/cash/position changes.
-* Operator review screens for enabling, pausing, resuming, and retiring pilot
-  strategies.
-* Pilot performance review comparing backtest expectation, paper/shadow
-  expectation, manual execution, bridge execution, and realized after-cost
-  outcome.
+* Operator review screens for previewing capital at risk, enabling with expiry,
+  pausing, reviewing before resume, revoking, and retiring controlled sessions.
+* Controlled-execution performance review comparing backtest expectation,
+  paper/shadow expectation, manual execution, bridge execution, capacity,
+  liquidity, slippage, incidents, and realized after-cost outcome.
+* Human-reviewed capital tier promotion and demotion. Automatic scale-up is
+  forbidden; automatic pause or scale-down is allowed when a hard risk gate
+  requires it.
+* Programmatic-trading reporting, broker agreement, connector testing, and
+  compliance review are explicit release evidence; Karkinos does not
+  self-certify approval.
 
 ### Acceptance Criteria for v1.8
 
-* [ ] Auto pilot is impossible unless the account, strategy, connector, and
-  execution mode are explicitly enabled in local policy.
-* [ ] Every pilot strategy has promotion evidence from research to paper/shadow
-  to manual-confirmation to controlled bridge pilot.
-* [ ] Hard caps block orders that exceed pilot budget, cash, concentration,
+* [ ] Controlled execution is impossible unless the account, strategy,
+  connector, symbols, execution mode, policy version, effective time, expiry,
+  and operator decision are explicitly valid.
+* [ ] Every controlled strategy has promotion evidence from research to
+  paper/shadow to manual confirmation to controlled bridge.
+* [ ] Hard caps block orders that exceed authorized capital, remaining budget,
+  cash, concentration,
   turnover, drawdown, liquidity, T+1, limit, suspension, or ST constraints.
-* [ ] The system automatically pauses pilot mode on data, broker, risk,
+* [ ] The system automatically pauses controlled mode on data, broker, risk,
   account-truth, reconciliation, or kill-switch failures.
-* [ ] Reconciliation must be clear or manually accepted before the next pilot
-  run can place another order.
-* [ ] UI shows pilot capital at risk, remaining budget, last order, last
+* [ ] Reconciliation must be clear or manually accepted before the next
+  controlled batch can place another order.
+* [ ] UI shows authorized and effective capital at risk, remaining budget,
+  authorization expiry, last order, last
   reconciliation result, current blockers, and the exact pause/resume reason.
-* [ ] Tests cover policy gating, budget caps, auto-pause, reconciliation-before-
-  next-run, idempotency, and no strategy-direct broker access.
-* [ ] Documentation states that v1.8 is a capped experiment, not a profit
-  guarantee or default unattended trading mode.
+* [ ] No session can enable, widen, renew, or resume itself; every scale-up
+  requires a new human decision tied to reviewed evidence.
+* [ ] Tests cover fail-closed policy evaluation, expiry/revocation, budget caps,
+  auto-pause, reconciliation-before-next-batch, idempotency, recovery, and no
+  strategy-direct broker access.
+* [ ] Documentation and UI state that the first live tier is a small validation
+  exposure, not a permanent capital limit, profit guarantee, or unattended
+  trading mode.
+
+### First v1.8 Implementation Slice
+
+The first implementation slice is Stage 0 and must remain non-submitting:
+
+* Add a versioned capital-authorization policy contract with `disabled`,
+  `manual_each_order`, and future `session_bounded` modes.
+* Add pure deterministic evaluation for scope, validity window, capital/order/
+  turnover/loss/drawdown budgets, account truth, reconciliation readiness,
+  connector health, and kill switch.
+* Return structured allow/block reasons, effective limits, remaining budget,
+  assumptions, and evidence refs without contacting a broker or mutating OMS or
+  ledger state.
+* Add focused deterministic tests before exposing a read-only API or UI status.
+* Record the GitNexus blast radius, validation commands, and risk impact for
+  every trading-related code change.
+
+Stage 0 first-slice status on 2026-07-10: the isolated versioned policy model,
+pure evaluator, deterministic decision fingerprint, structured limits/budgets/
+block reasons, safety flags, and focused tests are implemented. There is
+intentionally no static config authority, UI, OMS, gateway, broker, or ledger
+integration. The second Stage 0 slice now adds append-only evaluation evidence
+and status/preview/record/list APIs while keeping runtime authority and broker
+submission disabled. Static config remains whitelist preview only and cannot
+issue capital authority.
+
+### Stage 0 Completed Acceptance Criteria
+
+* [x] A versioned capital-authorization contract evaluates disabled, per-order,
+  and session-bounded modes fail closed across scope, expiry, evidence gates,
+  and multi-dimensional hard limits.
+* [x] Evaluation returns deterministic fingerprints, structured block reasons,
+  effective limits, remaining budgets, and explicit no-submit/no-cancel/no-OMS/
+  no-ledger/no-self-expansion safety flags.
+* [x] Capital-authorization v2 separates the read-only evidence connector from
+  the execution gateway, requires both explicit policy scopes, rejects
+  identical/overlapping roles, and requires a verified same-account binding.
+* [x] Declared execution-gateway id, health, and submit capability are
+  fingerprinted evidence only; the shared binding remains runtime-unverified
+  and cannot contact a broker, submit, or authorize execution.
+* [x] Preview remains side-effect free, while recorded evaluations use
+  append-only local audit events and reuse an existing sequential input
+  fingerprint without granting runtime authority.
+* [x] Capital-authority status, preview, record-evaluation, and list-evaluation
+  APIs expose evidence only; even an allowed evaluation leaves execution
+  authority and broker submission disabled.
+* [x] API payloads reject undeclared credential fields, and static config cannot
+  grant capital execution authority.
+* [x] Deterministic tests cover missing, disabled, expired, mismatched,
+  over-budget, upstream-gate, persistence, route, sequential-rerun, and
+  no-authority behavior.
+
+### Stage 1 Read-Only Broker Soak Foundation
+
+* [x] QMT, PTrade, and generic local read-only exports can be captured as
+  sanitized cash, position, order, fill, health, capability, and source-time
+  evidence without storing or returning raw account ids.
+* [x] Each observation has deterministic snapshot and observation fingerprints,
+  append-only local evidence, and sequential rerun reuse without broker-write,
+  OMS, or production-ledger side effects.
+* [x] Missing read capabilities, any submit capability, stale/future/invalid
+  timestamps, source-health degradation, missing cash, or connector exceptions
+  fail closed into degraded or blocked soak evidence.
+* [x] Healthy-day coverage requires a provider market-calendar snapshot and an
+  explicit trading day; missing calendars and closed days do not count toward
+  the 20-trading-day target.
+* [x] Capture, status, and observation APIs remain read-only with respect to the
+  broker, OMS, and ledger, while degraded/blocked observations create sanitized
+  Operations alerts.
+* [x] Twenty healthy trading days complete only the operational soak;
+  `promotion_ready` remains false until Account Truth reconciliation and
+  explicit owner acceptance are linked.
+* [x] Startup, intraday, and end-of-day runbook phases persist deterministic
+  evidence; missing or unhealthy read-only connector observations block the
+  phase.
+* [x] End-of-day runbook evidence requires a clear execution reconciliation
+  with zero open items; otherwise it blocks and creates a sanitized Operations
+  alert.
+* [x] Disconnect, schema-drift, stale-data, duplicate-evidence, and
+  restart-recovery drills record deterministic pass/fail evidence and verify
+  safe degradation or sequential persisted-evidence reuse.
+* [x] Run and drill APIs reject undeclared fields and credentials, expose only
+  sanitized evidence, and cannot submit/cancel orders, mutate OMS/ledger, or
+  grant capital authority.
+* [x] A broker-neutral operator runbook documents local-export setup,
+  startup/intraday/end-of-day cadence, drill preparation, expected safe states,
+  review steps, and the unchanged no-write boundary.
+
+### Stage 1.1 Signed Broker Soak Promotion Dossier
+
+* [x] Promotion uses a sanitized, source-sensitive Account Truth fact built
+  from the latest persisted import, current ledger projection, reconciliation
+  items, review decisions, and score; only pass/fresh/zero-unresolved evidence
+  is clear.
+* [x] A promotion dossier selects exactly 20 unique healthy read-only trading
+  days whose snapshots each bind a clear execution reconciliation with zero
+  open items and one stable connector account alias/hash.
+* [x] Every selected trading day requires persisted passed startup, intraday,
+  and end-of-day runbook evidence for the same connector; incomplete phase
+  coverage blocks owner acceptance.
+* [x] Disconnect, schema-drift, stale-data, duplicate-evidence, and
+  service-instance restart drills must all pass; full process and broker-terminal
+  recovery remains an explicit signed owner assertion rather than an automated
+  claim.
+* [x] The deterministic promotion fingerprint binds the selected observations,
+  phase/run ids, drill ids, latest snapshot, account alias/hash, and exact
+  Account Truth source fingerprint; source drift requires a new review.
+* [x] Owner acceptance requires a short-lived Ed25519 approval for the exact
+  promotion dossier and matching operator label; accepted/rejected records are
+  append-only, exact reruns reuse evidence, and cross-dossier approval fails
+  closed.
+* [x] Promotion status, dossier preview, acceptance, and history APIs reject
+  undeclared credential fields and expose no capital/runtime authority issue,
+  budget reservation, OMS/ledger mutation, gateway contact, submit, cancel,
+  resume, or automatic-promotion action.
+* [x] Deterministic Account Truth, promotion-service, signature, and route tests
+  cover full evidence, missing coverage, blocked Account Truth, source drift,
+  exact reuse, rejection audit, credential rejection, and zero execution side
+  effects.
+
+### Stage 2 Non-Submitting Per-Order Confirmation Foundation
+
+* [x] A canonical order fingerprint and deterministic dossier bind OMS order
+  terms, capital-evaluation evidence, Account Truth/research/risk/paper-shadow
+  gateway gates, latest connector soak, prior reconciliation, and kill-switch
+  state.
+* [x] Dossier review fails closed when the OMS order is not manually confirmed,
+  the capital evaluation is missing/stale/mismatched/not allowed, required
+  gateway evidence is missing or blocked, the latest soak is unhealthy or no
+  longer fresh, prior reconciliation is not clear, or the kill switch is
+  unavailable/enabled.
+* [x] A current signed Stage 1 promotion may clear only the Account Truth-linkage,
+  owner-acceptance, and Stage 1 promotion blockers; evidence-connector read-only
+  integrity, execution-gateway runtime verification, runtime authority, live
+  gateway, and broker submission remain explicit hard blockers.
+* [x] Every per-order dossier resolves and fingerprints the current Stage 1
+  promotion dossier, operational source, Account Truth source, and verified
+  owner-acceptance id for the exact capital-policy connector.
+* [x] Missing, invalid, mismatched, or failed promotion resolution remains
+  blocked without leaking provider details; source drift changes the per-order
+  dossier and invalidates the old artifact-bound operator approval.
+* [x] An exact dossier fingerprint can be attested only when review gates and
+  an artifact-bound signed operator approval pass; the append-only record is
+  sequentially reusable verified-identity evidence that does not authorize
+  execution.
+* [x] Stale fingerprints and blocked dossiers create deterministic rejected
+  confirmation evidence without changing OMS, contacting a broker, or mutating
+  the production ledger.
+* [x] Status, preview, confirmation, and list APIs reject undeclared credential
+  fields and expose no enable, issue-authority, submit, cancel, resume, or
+  scale-up operation.
+* [x] Deterministic service and route tests cover evidence aggregation,
+  fail-closed gates, hard submission blockers, exact-fingerprint reuse,
+  rejection audit, credential rejection, and zero execution side effects.
+
+### Stage 3 Non-Executing Session-Bounded Envelope Foundation
+
+* [x] A proposal requires one recorded `session_bounded` capital evaluation, an
+  explicit deduplicated OMS order set, timezone-aware start/expiry timestamps,
+  and a maximum 30-minute window contained by the capital policy.
+* [x] Canonical order fingerprints, required gateway evidence, conservative
+  gross exposure without buy/sell netting, cash, capital, turnover, per-order,
+  position-change, liquidity, and projected order-rate budgets are bound into a
+  deterministic session envelope.
+* [x] Missing/duplicate orders, unsupported OMS states, unpriced market orders,
+  out-of-scope symbols, missing/blocked evidence, stale connector soak, open
+  reconciliation, kill switch, invalid time, or projected budget excess fails
+  closed before attestation.
+* [x] An exact fresh envelope can be attested only after review gates pass;
+  sequential reruns reuse append-only evidence, while stale fingerprints or
+  blocked envelopes create deterministic rejection evidence.
+* [x] Stage 1/2 promotion, session-start Account Truth, read-only evidence-connector
+  integrity, execution-gateway runtime verification, per-symbol
+  runtime limits, atomic budget reservation, runtime rate limiting, automatic
+  pause, session issuance/resume, live gateway, and broker submission remain
+  hard blockers after exact prior-batch reconciliation and signed operator
+  approval pass.
+* [x] Every proposal and attestation states that it does not issue/enable a
+  runtime session, reserve/consume budget, mutate OMS/ledger, contact a broker,
+  submit/cancel orders, auto-resume/renew/expand, or scale capital authority.
+* [x] Status, preview, attestation, and list APIs reject undeclared credential
+  fields and expose no issue, enable, runtime-pause, resume, revoke-runtime,
+  submit, cancel, or scale-up action.
+* [x] Deterministic service and route tests cover time/scope/evidence/budget
+  gates, freshness-stable fingerprints, exact attestation reuse, rejection
+  audit, credential rejection, hard blockers, and zero execution side effects.
+
+### Stage 4 Evidence-Based Capital Scaling Review Foundation
+
+* [x] Versioned current/proposed capital tiers and a deterministic evidence
+  contract cover reviewed trading days, orders/fills/rejects, reconciliation
+  latency/gaps, slippage, after-cost result, drawdown, capacity, liquidity,
+  paper/shadow divergence, disconnects, policy violations, and incidents.
+* [x] Scale-up review requires at least 20 reviewed trading days, 50 orders,
+  required Account Truth and provenance references, passing fill/rejection/
+  slippage/after-cost/drawdown/capacity/liquidity/reconciliation/divergence/
+  disconnect thresholds, and a proposed tier that actually widens at least one
+  explicit limit.
+* [x] Invalid or insufficient evidence recommends hold, degraded execution
+  quality recommends scale-down, and critical incidents, policy violations,
+  unresolved reconciliation, or current-tier drawdown exhaustion recommends
+  disable before any scale-up review.
+* [x] Preview is side-effect free; recorded evaluations use deterministic
+  fingerprints and append-only sequential reuse without changing authority.
+* [x] Human review decisions bind one persisted evaluation fingerprint; a human
+  may choose the recommendation or a safer action but cannot request scale-up
+  when the evidence recommendation is hold/scale-down/disable.
+* [x] Even an eligible scale-up decision only records a request for a separate
+  new authorization; automatic scale-up, new authorization issuance, runtime
+  limit mutation, execution resume, and broker submission remain disabled.
+* [x] Status, preview, evaluation, decision, and list APIs reject undeclared
+  credential fields and expose no apply-tier, issue-authority, mutate-limit,
+  enable/resume execution, submit/cancel, or automatic scale-up action.
+* [x] Deterministic service and route tests cover eligibility, hold, scale-down,
+  disable, invalid evidence, provenance, fingerprint reuse, safer human choice,
+  rejected overreach, credential rejection, and zero authority side effects.
+
+### Stage 4.1 Fail-Closed Persisted Evidence Resolution
+
+* [x] Broker-soak observations, execution-reconciliation runs, paper/shadow
+  runs, and risk decisions resolve by typed identifier from persisted stores
+  rather than by trusting the caller-provided reference string alone.
+* [x] Missing, invalid, out-of-window, or non-clear persisted source facts fail
+  closed with typed blockers; only sanitized source fingerprints and status
+  fields are returned.
+* [x] Account Truth, after-cost, incident-window, and capacity/liquidity refs
+  must resolve through a recorded computed evidence window; caller-declared
+  aggregate metrics alone remain blocked.
+* [x] Preview and recorded evaluation evidence bind the review-input fingerprint
+  to a deterministic persisted-source resolution fingerprint, so source changes
+  create a different evaluation identity while exact reruns reuse the
+  append-only record.
+* [x] A mathematically eligible scale-up recommendation is converted to hold
+  when persisted sources are unresolved; attempted human overreach is rejected
+  and audited without issuing authority.
+* [x] Evidence resolution remains read-only with respect to Account Truth, OMS,
+  runtime limits, broker gateway, and production ledger; automatic scale-up and
+  broker submission remain disabled.
+
+### Stage 4.2 Computed Scaling Evidence Windows
+
+* [x] Account Truth point snapshots persist only a sanitized
+  pass/fresh/zero-unresolved score summary, require capture within 15 minutes
+  of the source import, and reuse an append-only deterministic identity.
+* [x] A review window requires two distinct clear Account Truth point snapshots
+  near its start and end boundaries; missing, stale, blocked, reused-as-both, or
+  out-of-tolerance boundary evidence fails closed.
+* [x] After-cost return is computed from persisted start/end portfolio equity
+  and time-weighted external cash flows using Modified Dietz; incomplete
+  boundary or Account Truth coverage blocks the fact.
+* [x] Incident evidence counts persisted critical alerts, rejected live submit/
+  cancel attempts, and read-only connector disconnect observations without
+  treating acknowledgement as deletion of incident history.
+* [x] Capacity/liquidity and slippage metrics use only non-simulated fills with
+  broker/provider/order linkage plus Account Truth, reconciliation,
+  capacity-model, and market-data references; incomplete real-fill metadata
+  blocks the fact and maximum utilization is retained.
+* [x] Evidence-window preview accepts only a time window and boundary tolerance;
+  computed metrics cannot be supplied by the caller, while recorded windows are
+  append-only, fingerprinted, and sequentially reusable.
+* [x] Any capped source scan that reaches its 5,000-row limit is marked
+  truncated and blocks the computed fact instead of treating unseen rows as
+  evidence that no incident, cash flow, fill, or boundary fact exists.
+* [x] The resolver requires Account Truth and verifies the recorded window,
+  per-fact fingerprint, exact review window, clear status, metric equality, and
+  fill coverage before a scale-up request can be recorded.
+* [x] Evidence status/snapshot/window APIs reject undeclared credential or
+  metric fields and expose no authority issue, limit mutation, OMS/ledger write,
+  broker submit/cancel, resume, or automatic scale-up operation.
+
+### Stage 4.3 Computed Operating Sample
+
+* [x] The operating sample computes reviewed trading days and non-paper OMS
+  order counts from persisted broker-soak, order, transition, and fill facts
+  inside the review window.
+* [x] Filled, rejected, partially filled, cancelled, expired, and nonterminal
+  outcomes remain distinct; filled counts require reconciled real quantity and
+  invalid or overfilled samples fail closed.
+* [x] The latest reconciliation run must cover every sampled order, unresolved
+  items are counted, and p95 latency is derived from persisted order/fill/
+  transition time to the first no-action reconciliation.
+* [x] Paper/shadow divergence is counted from persisted paper/shadow order facts
+  for the same window, and a real order sample without paper/shadow comparison
+  evidence is blocked.
+* [x] Maximum drawdown is computed from cash-flow-unitized portfolio equity so
+  deposits and withdrawals do not masquerade as trading profit or loss.
+* [x] Missing Account Truth, healthy broker-day, real-fill linkage, OMS terminal
+  state, reconciliation latency, paper/shadow sample, drawdown series, or
+  complete capped scan blocks the operating sample.
+* [x] `operating_sample:<window_id>` is a required clear source and the resolver
+  compares all nine caller-declared sample, reconciliation, divergence, and
+  drawdown metrics to the recorded fact exactly.
+* [x] Operating-sample source references, metrics, blockers, and assumptions
+  participate in the evidence-window fingerprint, so exact reruns reuse one
+  append-only record and source changes produce a new identity.
+* [x] Operating-sample computation and resolution are read-only with respect to
+  Account Truth, OMS, runtime limits, production ledger, and broker gateway;
+  they never issue authority or submit/cancel an order.
+
+### Stage 2.1 / 3.1 Exact Prior-Batch Reconciliation Evidence
+
+* [x] A batch manifest binds a non-empty unique set of at most 100 non-paper OMS
+  orders to one explicit persisted execution-reconciliation run.
+* [x] Every batch order must have exactly one no-action reconciliation item
+  whose recorded OMS status still matches a current filled, rejected,
+  cancelled, or expired terminal state.
+* [x] A filled batch order requires exact real-fill quantity plus provider,
+  broker-order, Account Truth import, and same-run reconciliation linkage;
+  incomplete or excess fill evidence blocks the batch.
+* [x] OMS order, transition, real-fill, reconciliation item, and run facts
+  participate in one deterministic fingerprint, and any later source change
+  invalidates the recorded prior-batch gate.
+* [x] Exact clear or blocked batch evidence is append-only and sequentially
+  reusable, while stale fingerprints and invalid acknowledgement attempts
+  create deterministic rejection evidence.
+* [x] Per-order dossier review requires the request and recorded capital
+  evaluation to reference the same resolved clear prior-batch fingerprint
+  instead of trusting the latest reconciliation run.
+* [x] Session-envelope review requires the request and recorded capital
+  evaluation to reference the same resolved clear prior-batch fingerprint;
+  missing, blocked, or changed batch facts fail closed.
+* [x] Batch status, preview, record, resolve, and list APIs reject undeclared
+  credential fields and cannot issue or expand authority, reserve budget,
+  mutate OMS/ledger, contact a broker, or submit/cancel an order.
+
+### Stage 2.2 / 3.2 Signed Operator Approval Evidence
+
+* [x] Trusted operator identities are configured with an operator id, key id,
+  enabled flag, and Ed25519 public key only; malformed keys, unsupported
+  algorithms, duplicate identities, and private/secret fields fail closed.
+* [x] Each short-lived challenge binds a server nonce, operator/key identity,
+  action, artifact type, exact artifact fingerprint, issued time, and expiry
+  into one canonical signing payload.
+* [x] Ed25519 verification fails closed for invalid signatures, expiry, action/
+  type/fingerprint mismatch, disabled or rotated keys, and cross-artifact reuse;
+  rejections are append-only and exact verification reruns reuse one approval
+  record.
+* [x] Per-order confirmation requires a current verified approval for the exact
+  dossier fingerprint and matching operator label; only the recorded evidence
+  clears the identity blocker, without changing OMS or authorizing broker
+  submission.
+* [x] Controlled-session attestation requires a current verified approval for
+  the exact envelope fingerprint and matching operator label; it clears only
+  the recorded identity blocker and never issues, enables, or resumes a runtime
+  session.
+* [x] Approval resolution rechecks the currently enabled trusted public key and
+  fingerprint, so disabling or rotating a key invalidates earlier approval
+  evidence instead of preserving stale identity authority.
+* [x] Status, challenge, verification, and list APIs reject undeclared
+  credential/private-key fields, expose only sanitized public-key fingerprints
+  and signing payloads, and provide no authority, budget, OMS, ledger, gateway,
+  submit, cancel, resume, or scale-up action.
+* [x] Deterministic service, configuration, integration, and route tests use the
+  maintained cryptography library to cover valid signatures, invalid
+  signatures, expiry, replay, key rotation, exact-artifact binding, credential
+  rejection, and zero execution-authority side effects.
 
 ## Deferred Capabilities
 
@@ -1206,7 +1621,8 @@ These capabilities remain intentionally out of scope until the professional
 platform foundation is mature:
 
 * Default automatic real-money trading.
-* Unattended full-account real-money order submission.
+* Unattended or permanently authorized full-account real-money order
+  submission.
 * Broker password storage.
 * Black-box AI strategy auto-buy or auto-sell.
 * Community strategy marketplace.

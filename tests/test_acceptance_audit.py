@@ -6,15 +6,30 @@ from analytics.acceptance_audit import (
     build_acceptance_audit,
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
+    build_broker_connector_soak_foundation_acceptance_audit,
+    build_broker_connector_soak_promotion_acceptance_audit,
     build_broker_fee_cost_basis_acceptance_audit,
+    build_capital_authorization_stage0_acceptance_audit,
+    build_capital_scaling_evidence_resolution_acceptance_audit,
+    build_capital_scaling_evidence_window_acceptance_audit,
+    build_capital_scaling_operating_sample_acceptance_audit,
+    build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
+    build_controlled_session_envelope_foundation_acceptance_audit,
+    build_execution_batch_reconciliation_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
     build_operations_runbook_acceptance_audit,
+    build_per_order_confirmation_foundation_acceptance_audit,
     build_research_evidence_acceptance_audit,
+    build_signed_operator_approval_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
 )
+
+
+def _normalized_markdown(value: str) -> str:
+    return " ".join(value.split()).replace("/ ", "/")
 
 
 def test_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
@@ -29,6 +44,237 @@ def test_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_capital_authorization_stage0_acceptance_audit_is_complete() -> None:
+    audit = build_capital_authorization_stage0_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage0_acceptance = roadmap_text.split(
+        "### Stage 0 Completed Acceptance Criteria", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage0 = _normalized_markdown(stage0_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage0
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_broker_connector_soak_foundation_acceptance_audit_is_complete() -> None:
+    audit = build_broker_connector_soak_foundation_acceptance_audit()
+
+    assert audit.required_count == 11
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage1_acceptance = roadmap_text.split(
+        "### Stage 1 Read-Only Broker Soak Foundation", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage1 = _normalized_markdown(stage1_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage1
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_broker_connector_soak_promotion_acceptance_audit_is_complete() -> None:
+    audit = build_broker_connector_soak_promotion_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    promotion_acceptance = roadmap_text.split(
+        "### Stage 1.1 Signed Broker Soak Promotion Dossier", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_promotion = _normalized_markdown(promotion_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_promotion
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_per_order_confirmation_foundation_acceptance_audit_is_complete() -> None:
+    audit = build_per_order_confirmation_foundation_acceptance_audit()
+
+    assert audit.required_count == 9
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage2_acceptance = roadmap_text.split(
+        "### Stage 2 Non-Submitting Per-Order Confirmation Foundation", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage2 = _normalized_markdown(stage2_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage2
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_controlled_session_envelope_foundation_acceptance_audit_is_complete() -> None:
+    audit = build_controlled_session_envelope_foundation_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage3_acceptance = roadmap_text.split(
+        "### Stage 3 Non-Executing Session-Bounded Envelope Foundation", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage3 = _normalized_markdown(stage3_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage3
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_capital_scaling_review_foundation_acceptance_audit_is_complete() -> None:
+    audit = build_capital_scaling_review_foundation_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage4_acceptance = roadmap_text.split(
+        "### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage4 = _normalized_markdown(stage4_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage4
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_capital_scaling_evidence_resolution_acceptance_audit_is_complete() -> None:
+    audit = build_capital_scaling_evidence_resolution_acceptance_audit()
+
+    assert audit.required_count == 6
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage41_acceptance = roadmap_text.split(
+        "### Stage 4.1 Fail-Closed Persisted Evidence Resolution", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage41 = _normalized_markdown(stage41_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage41
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_capital_scaling_evidence_window_acceptance_audit_is_complete() -> None:
+    audit = build_capital_scaling_evidence_window_acceptance_audit()
+
+    assert audit.required_count == 9
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage42_acceptance = roadmap_text.split(
+        "### Stage 4.2 Computed Scaling Evidence Windows", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage42 = _normalized_markdown(stage42_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage42
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_capital_scaling_operating_sample_acceptance_audit_is_complete() -> None:
+    audit = build_capital_scaling_operating_sample_acceptance_audit()
+
+    assert audit.required_count == 9
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    stage43_acceptance = roadmap_text.split(
+        "### Stage 4.3 Computed Operating Sample", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_stage43 = _normalized_markdown(stage43_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage43
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_execution_batch_reconciliation_acceptance_audit_is_complete() -> None:
+    audit = build_execution_batch_reconciliation_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    batch_acceptance = roadmap_text.split(
+        "### Stage 2.1 / 3.1 Exact Prior-Batch Reconciliation Evidence", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_batch = _normalized_markdown(batch_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_batch
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_signed_operator_approval_acceptance_audit_is_complete() -> None:
+    audit = build_signed_operator_approval_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    approval_acceptance = roadmap_text.split(
+        "### Stage 2.2 / 3.2 Signed Operator Approval Evidence", 1
+    )[1].split("## Deferred Capabilities", 1)[0]
+    normalized_approval = _normalized_markdown(approval_acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized_approval
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -533,7 +779,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
 def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> None:
     audit = build_controlled_broker_bridge_foundation_acceptance_audit()
 
-    assert audit.required_count == 14
+    assert audit.required_count == 15
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -550,6 +796,7 @@ def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> 
         "decision_cockpit_strategy_promotion_state",
         "default_rejected_cancel_audit",
         "execution_reconciliation_bridge_evidence",
+        "manual_ticket_to_reconciliation_audit_chain",
         "decision_cockpit_read_only_bridge_panel",
         "strategy_broker_boundary_static_guard",
     }
@@ -580,4 +827,29 @@ def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> 
     assert any(
         "manual execution reconciliation review" in command
         for command in reconciliation_evidence.validation_commands
+    )
+
+    audit_chain = next(
+        criterion
+        for criterion in audit.criteria
+        if criterion.key == "manual_ticket_to_reconciliation_audit_chain"
+    )
+    assert "tests/test_execution_reconciliation_service.py" in (
+        audit_chain.evidence_paths
+    )
+    assert "web/src/features/trading/components/trading-page.test.tsx" in (
+        audit_chain.evidence_paths
+    )
+    assert (
+        "web/src/features/decision/components/decision-cockpit-page.test.tsx"
+        in audit_chain.evidence_paths
+    )
+    assert "docs/ARCHITECTURE.md" in audit_chain.evidence_paths
+    assert any(
+        "audit_chain or cost_mismatch" in command
+        for command in audit_chain.validation_commands
+    )
+    assert any(
+        "manual versus broker reconciliation differences" in command
+        for command in audit_chain.validation_commands
     )

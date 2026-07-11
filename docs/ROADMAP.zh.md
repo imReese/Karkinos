@@ -32,9 +32,9 @@ paper/shadow、人工确认、对账和复盘。
 | v1.3 | 已完成 | Professional Decision Workflow |
 | v1.4 | 已完成 | Strategy Attribution 2.0 + Broker Fee & Cost Basis Fidelity |
 | v1.5 | 已完成 | Daily Trading Plan & Portfolio Construction |
-| v1.6 | 进行中 | Operations Center & Paper/Shadow Runbook |
-| v1.7 | 进行中 | Controlled Broker Execution Bridge |
-| v1.8 | 计划中 | Small-Capital Controlled Auto Pilot |
+| v1.6 | 已完成 | Operations Center & Paper/Shadow Runbook |
+| v1.7 | 已完成 | Controlled Broker Bridge Foundation（非提交式） |
+| v1.8 | 规划进行中 | Capital-Bounded Controlled Execution（受控资本执行） |
 
 ## 自动化成熟度
 
@@ -45,13 +45,13 @@ paper/shadow、人工确认、对账和复盘。
 | --- | --- | --- |
 | L0 | 研究证据 | 注册策略、可复现回测、扣费后/OOS 证据、限制说明 |
 | L1 | 每日交易计划 | 候选池、阻断原因、费用、风险和人工确认下一步 |
-| L2 | Paper/shadow 运行闭环 | 定时模拟执行、偏差复核和运行摘要 |
-| L3 | 人工执行辅助 | OMS、手工票据、券商证据导入、执行对账已进入可用路径 |
-| L4 | 受控券商桥接 | 每笔订单经过账户事实、风控、paper/shadow 和人工确认门禁 |
-| L5 | 小资金自动试点 | 显式开启、强额度上限、可暂停、必须对账后才能继续 |
-| L6 | 无人值守真实资金自动化 | 延后，直到上游能力成熟且风险被明确接受 |
+| L2 | Paper/shadow 运行闭环（已完成） | 定时模拟执行、偏差复核和运行摘要 |
+| L3 | 人工执行辅助（已完成） | OMS、手工票据、券商证据导入、手工成交证据和执行对账已进入可用路径 |
+| L4 | 受控券商桥接（计划中） | 未来每笔订单仍须经过账户事实、风控、paper/shadow、connector health、对账和人工确认门禁 |
+| L5 | 受控资本执行 | 从小风险敞口试点开始，显式授权、限时限额、可暂停，并依据证据由人决定扩容或缩容 |
+| L6 | 无人值守全账户自动化 | 非目标；Karkinos 不要求永久授权、无人监督的真实资金执行 |
 
-## 当前主线：v1.6
+## 已完成主线：v1.6
 
 v1.6 的目标是把“今天该做什么”变成可重复运行、可复核、可追踪的日常操作
 手册。
@@ -98,9 +98,11 @@ v1.6 的关键链路：
 -> 后续手工票据或受控桥接
 ```
 
-## 下一阶段：v1.7
+## 已完成基础：v1.7
 
-v1.7 是受控券商执行桥接，不是默认交易机器人。
+v1.7 完成的是受控券商桥接的**非提交式基础**，不是默认交易机器人，也不表示
+L4 实盘提交已经可用。券商 submit、可执行 cancel、自动写生产账本和 v1.8 自动试点
+仍不可用。
 
 范围包括：
 
@@ -145,28 +147,148 @@ v1.7 是受控券商执行桥接，不是默认交易机器人。
   用于后续复核串联；该事件不创建成交、不改变 OMS 状态、不写生产账本。
 * 策略代码不能直接调用券商适配器；所有桥接动作必须通过 policy、risk、OMS、
   gateway 和 reconciliation 服务。
+* Trading 的手工票据导出面板会交接到账户事实流水导入和执行对账。执行对账会比较
+  手工成交证据与匹配券商流水中的价格、数量、成交额、手续费、税费、过户费和净额；
+  Decision 只读展示逐字段的手工值/券商值，差异进入人工复核队列，不改变 OMS 或
+  生产账本，也不提供同步账本、应用成交、撤单或提交控件。
 
-## 后续阶段：v1.8
+## 规划进行中、执行未开启：v1.8
 
-v1.8 才考虑小资金自动试点。它不是全账户无人值守自动交易，而是验证自动化是否能在
-严格额度、风险和对账限制下改善执行纪律。
+v1.8 的规划已经启动，但实盘提交和自动执行仍未实现、未开启。这个里程碑不是把产品
+永久限制在“小资金”，而是把账户资产与机器权限分开：第一次真实执行使用小风险敞口
+限制未知故障影响，后续能否扩大额度必须由人根据实盘证据重新授权。
 
-试点要求：
+详细实施顺序见 [受控资本执行计划](CONTROLLED_EXECUTION_PLAN.md)：
+
+1. 非提交式资本授权合约与确定性 fail-closed 测试。
+2. 一个真实券商的只读资金、持仓、订单、成交和健康状态运行验证。
+3. 每笔订单人工确认的受控提交、回报、撤单、部分成交和恢复链路。
+4. 操作者签发的限时限额 session，在额度内受控执行并自动暂停。
+5. 根据容量、流动性、滑点、回撤、异常和对账证据人工扩容或缩容。
+
+截至 2026-07-10，第 1 步的首个隔离切片已经完成：已加入版本化资本授权模型、纯
+fail-closed 评估、确定性输入指纹、结构化额度/剩余额度/阻断原因和无提交、无撤单、
+不改 OMS、不写账本、不能自行扩权的安全标记及测试。当前故意没有接入 config、数据库、
+API、UI、OMS、gateway 或券商；这些属于后续独立评审切片。
+
+第二个 Stage 0 切片现已加入追加式评估审计和 status/preview/record/list API。即使评估
+返回 `allowed=true`，runtime authority 和 broker submission 仍保持 disabled；没有
+issue、revoke、enable、resume、submit 或 cancel 接口。静态配置继续只表示白名单预览，
+不能签发资本执行权限。相同输入指纹的顺序重跑会复用已有事件；并发重复请求的数据库级
+唯一性仍是后续持久化评审项。
+
+Stage 0 v2 进一步拆分只读 `evidence_connector` 与未来 `execution_gateway`：policy/context
+必须分别绑定两个不同且不重叠的身份、独立健康/能力事实和 verified 同账户关系。只读侧
+暴露 submit capability 会阻断；执行侧即使声明可提交也保持 runtime-unverified，不能联系
+券商、授予权限或解除默认提交阻断。每单 dossier 与 session envelope 已按这两个角色读取
+证据，消除了“同一 connector 既必须只读又必须可提交”的结构矛盾。
+
+Stage 1 的 broker-neutral 只读 soak 基础也已落地：QMT/PTrade/local export 的脱敏
+快照可以持久化并按 provider market calendar 统计真实交易日覆盖；缺日历、休市、陈旧、
+读取失败、能力不完整或暴露 submit capability 都不会计入健康日，并会进入 Operations
+告警。达到 20 个健康交易日只完成运营 soak；旧的 Stage 1 汇总接口不会仅凭天数自动
+晋级。
+
+Stage 1 运营 runbook 现已加入 startup、intraday、end-of-day 追加式运行证据；收盘阶段
+要求执行对账为 clear 且 open item 为零。断连、schema drift、stale data、重复证据和
+service-instance restart recovery 演练会记录确定性 pass/fail 结果，失败会进入统一
+Operations 告警。这些接口仍不具备提交、撤单、OMS/生产账本写入或资本授权能力；真实
+券商 20 日运行和完整进程/券商终端重启仍需要由操作者在真实环境完成。
+
+Stage 1.1 已加入独立的签名晋级证据 dossier：它绑定最早 20 个 clear-reconciled 交易日、
+每天三个运营阶段、五类恢复演练、稳定的脱敏账户身份，以及当前 clear/pass/fresh/零未清项
+的 Account Truth 来源指纹。配置公钥验证的 Ed25519 owner acceptance 还必须签署“同一
+账户”与“已在服务外完成完整进程/券商终端重启”的明确声明；来源漂移会使 acceptance
+失效。该切片只证明 Stage 1 evidence readiness，不授予资本/runtime authority、不改变
+OMS、不联系券商。
+
+Stage 2 的非提交式每单确认基础也已开始：系统可把 OMS 订单条款、资本评估、Account
+Truth/研究/风控/paper-shadow gateway evidence、最新 connector soak、前序执行对账和
+kill switch 归一化为确定性 dossier 指纹；只有 review gate 通过时才能记录精确指纹
+attestation，错误指纹和阻断 dossier 会留下追加式拒绝审计。记录现在还必须引用与精确
+dossier 绑定、由配置公钥验证的短时 Ed25519 approval。每次 preview 现在还解析精确
+capital-policy evidence connector 的当前签名 Stage 1 promotion，并把 promotion dossier、
+运营来源、Account Truth 来源和 verified acceptance id 纳入每单指纹；不同的 execution
+gateway 作为 runtime-unverified 证据单独绑定。缺失、非法、connector 不匹配、provider
+失败或来源漂移都会 fail closed；有效 promotion 只清除三个 Stage 1 子阻断，execution
+gateway runtime 验证、runtime authority、live gateway 和 broker submission 继续作为硬
+阻断。
+该记录不修改 OMS、不接触券商、不授予执行权限。
+
+Stage 3 的非执行式 session envelope 基础也已加入：proposal 必须引用一条已记录的
+`session_bounded` 资本评估、显式 OMS 订单集合和最长 30 分钟的带时区窗口；系统绑定订单
+指纹与 gateway evidence，并按不做买卖净额抵消的保守方式投影资本、现金、gross exposure、
+换手、单笔、仓位变化、流动性和速率预算。精确 envelope attestation 和拒绝尝试都会追加式
+审计，但不预留预算、不签发/恢复 runtime session、不修改 OMS、不联系券商。Stage 1/2
+晋级、session-start Account Truth、per-symbol runtime limit、submit capability、原子预算、
+runtime 限速/自动暂停和 live gateway 继续硬阻断。attestation 同样必须引用与精确 envelope
+绑定的签名 approval，但签名通过不能签发 session。
+
+Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
+订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
+未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一
+run 链接。订单/transition/fill/item/run 任一变化都会使历史指纹失效。per-order 与 session
+请求还必须与资本评估引用同一条 clear batch 记录；该记录不授权下一批执行。
+
+Stage 2.2/3.2 已加入签名操作员审批证据：信任配置只接受 Ed25519 公钥，不接受私钥或
+secret 字段；短时 challenge 绑定 nonce、operator/key、动作、工件类型、精确指纹与过期
+时间。签名 verification 形成追加式 approval，per-order/session 记录必须引用匹配 approval
+id；过期、密钥停用/轮换、签名错误和跨工件复用都会 fail closed。该能力只验证“谁确认了
+哪份证据”，不签发资本或 runtime authority，也不增加券商写能力。
+
+Stage 4 的证据化扩缩容评审基础也已加入：版本化 current/proposed tier 会绑定运行日数、
+订单/成交/拒单、对账延迟/缺口、滑点、成本后结果、回撤、容量/流动性、paper-shadow
+divergence、断连、违规和事故证据。至少 20 个复核交易日、50 笔订单及全部质量/来源门禁
+通过后，只能形成 `request_new_authorization_for_scale_up`；严重事故/违规/未清对账或回撤
+耗尽优先建议 disable，质量恶化建议 scale-down，证据不足则 hold。人工可以选择更保守
+结果，但不能越过证据建议扩容；任何决定都不签发授权、不改 runtime limit、不恢复执行、
+不接触券商，也不自动扩容。
+
+Stage 4.1 已加入 fail-closed 持久化来源解析：`broker_soak`、
+`execution_reconciliation`、`paper_shadow` 和 `risk` 引用会按 typed identifier 查回现有
+存储，校验评审窗口和 clear 状态，并把脱敏 source fingerprint 绑定进独立 evaluation
+fingerprint。源事实缺失、越窗或不清晰时，数学上可扩容的结果会转为 hold。Account Truth、
+成本后、事故窗口和容量/流动性现在必须引用一条计算后持久化的 evidence window；调用方声明
+的聚合指标本身不能支持扩容。
+
+Stage 4.2 已加入 computed evidence window：Account Truth 点时快照必须在 broker import 后
+15 分钟内记录 pass/fresh/zero-unresolved 脱敏摘要，评审窗口两端需要不同的 clear 快照；
+成本后收益按组合总权益和外部现金流计算 Modified Dietz，事故指标来自 critical alerts、被拒
+实盘写尝试和 connector 断连，容量/流动性/滑点只使用带 broker、Account Truth、对账、容量
+模型和市场数据链接的非模拟成交。接口不接受调用方聚合指标；事实缺失只生成 blocked evidence。
+resolver 会复核窗口、fact fingerprint、metric equality 和 fill coverage；即使全部 clear，也
+只允许记录“另行申请新授权”，不授予权限、不改 OMS/runtime/账本、不接触券商。
+
+Stage 4.3 已加入 computed operating sample：从健康只读 connector soak 记录计算复核
+交易日，从非 paper OMS/transition/真实成交计算 filled、rejected、partial、cancelled、
+expired 和 nonterminal 样本；最新对账必须覆盖每笔样本订单，并从最后一条订单/成交/状态
+事实到首个 `no_action` 对账项计算 p95 延迟。paper/shadow divergence 取自同窗持久化订单，
+最大回撤使用外部现金流单位化后的组合权益。`operating_sample:<window_id>` 是必需 clear
+来源，九项调用方指标必须与事实一致；缺失链接、非终态、覆盖不足或 5,000 行扫描截断都会
+fail closed。当前对账只做到逐订单覆盖，尚未绑定 runtime session/broker batch；该限制不会
+被用于放宽授权。
+
+执行要求：
 
 * 账户、策略、连接器和执行模式都必须显式开启。
-* 每日、每策略、每标的、每订单都有金额、仓位、换手、亏损和回撤上限。
+* 授权必须限定账户、策略、标的、模式、生效时间、过期时间和策略版本；默认仍是每单
+  人工确认，session 不能自行开启、续期、恢复或扩大权限。
+* 每日、每 session、每策略、每标的、每订单都有授权资本、仓位、换手、亏损、回撤和
+  订单速率上限。
 * 数据过期、账户事实降级、paper/shadow 偏差、券商连接异常、订单拒绝异常、
   对账缺口或 kill switch 开启时自动暂停。
-* 下一次自动试点运行前，上一轮执行对账必须 clear 或被人工接受。
-* UI 必须展示试点资金风险、剩余额度、最近订单、最近对账结果、当前阻断原因和
-  暂停/恢复原因。
+* 下一批受控订单前，上一批执行对账必须 clear 或被人工接受。
+* UI 必须展示已授权额度、实际有效风险敞口、剩余额度、授权过期时间、最近订单、
+  最近对账结果、当前阻断原因和暂停/恢复原因。
+* 扩大额度必须由新的人工决定绑定已复核证据；系统只允许自动暂停或缩容，不允许
+  自动扩容。
 
 ## 延后能力
 
 以下能力保持延后：
 
 * 默认真实资金自动交易。
-* 全账户无人值守自动下单。
+* 无人值守或永久授权的全账户自动下单。
 * 券商密码存储。
 * 黑盒 AI 策略自动买卖。
 * 社区策略市场。

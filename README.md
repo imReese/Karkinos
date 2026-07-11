@@ -19,7 +19,9 @@ Strategic goal, architecture, roadmap, and implementation history live in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/ROADMAP.md](docs/ROADMAP.md)
 ([中文路线图](docs/ROADMAP.zh.md)), and
-[docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md).
+[docs/IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md). The staged plan for
+human-supervised broker execution and capital scaling is
+[docs/CONTROLLED_EXECUTION_PLAN.md](docs/CONTROLLED_EXECUTION_PLAN.md).
 
 ---
 
@@ -41,6 +43,9 @@ public demos and development.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers
+- Capital-bounded execution target: account capital never grants authority by
+  itself; future machine authority is explicit, expiring, revocable, and
+  limited by the strictest operator/account/strategy/symbol/risk/liquidity gate
 - Strategy registry exposes typed parameter schemas, and backtest requests can
   use validated generic `params` while preserving legacy moving-average fields
 - Backtest parameter sweeps run bounded typed grids, persist each tested
@@ -189,13 +194,135 @@ held fund positions instead of built-in defaults.
 Karkinos is moving toward a professional automated-quant workflow whose goal is
 better after-cost trading outcomes, not faster unchecked order submission. The
 default product boundary remains daily plan generation plus manual
-confirmation. v1.5 provides a daily trading plan and portfolio-construction
-layer that prepares evidence-linked order intents, cost estimates, blockers,
-constraints, and next review steps without submitting broker orders. The active
-roadmap milestone is v1.6: paper/shadow runbooks, scheduled operation state,
-exception queues, and health checks. Later stages add manual execution assist,
-a controlled broker bridge, and only then a capped small-capital auto pilot.
-Unattended full-account real-money automation remains deferred.
+confirmation. v1.6 completed the persisted paper/shadow runbook, deterministic
+reruns, divergence review, and Operations surfaces. v1.7 completed the
+non-submitting controlled-bridge foundation: manual tickets, local read-only
+connector evidence, capability/health contracts, manual execution evidence,
+and execution reconciliation. This completion does not provide broker submit,
+executable broker cancel, automatic ledger mutation, or auto-pilot authority.
+v1.8 planning is active, but its real-money submission and automation authority
+remain unimplemented and disabled. Unattended full-account real-money
+automation remains outside the product target.
+
+v1.8 planning is now organized as Capital-Bounded Controlled Execution. It
+starts with a non-submitting authorization contract and a real read-only broker
+soak, then advances to per-order human-confirmed submission, short-lived
+session-bounded execution, and human-reviewed capital scaling. The first live
+tier deliberately uses a small risk envelope to contain unknown failures; this
+is not a permanent account-size or product limit. Manual confirmation remains
+the default, no session may widen or renew itself, and strategy code never
+receives broker authority. See the
+[controlled execution plan](docs/CONTROLLED_EXECUTION_PLAN.md).
+
+The first v1.8 Stage 0 implementation is available as non-submitting evidence
+only. `/api/automation/capital-authority/status` always reports runtime
+authority and broker submission disabled;
+`/api/automation/capital-authority/preview` performs a side-effect-free policy
+evaluation; and `/api/automation/capital-authority/evaluations` records or
+lists append-only evaluation evidence. An `allowed=true` evaluation is not an
+execution authorization. These endpoints cannot enable, resume, submit,
+cancel, mutate OMS, write the production ledger, or expand capital authority.
+The v2 evaluation contract separates `evidence_connector_ids` from
+`execution_gateway_ids`: the evidence connector must remain read-only, the
+execution gateway is a distinct scoped identity, and a verified same-account
+binding is required. Identical or overlapping roles fail closed. Declared
+gateway health/capability remains runtime-unverified evidence and cannot
+authorize or contact a broker.
+
+Stage 1 now has a broker-neutral read-only soak foundation. The
+`/api/automation/broker-soak/capture`, `/status`, and `/observations` endpoints
+can consume configured local QMT/PTrade/read-only exports, persist sanitized
+snapshot evidence, track freshness and provider-calendar trading-day coverage,
+and emit Operations alerts for degraded or blocked observations. Raw account
+ids are not returned or stored in snapshot facts, any submit capability is
+blocked, and 20 healthy trading days complete only the operational soak. Broker
+promotion is never inferred from day count alone; the legacy status remains
+blocked until separately reviewed evidence is resolved.
+`/api/automation/broker-soak/runs` adds deterministic startup, intraday, and
+end-of-day evidence with a mandatory clear reconciliation gate at end of day;
+`/drills` records disconnect, schema-drift, stale, duplicate-evidence, and
+service-instance restart-recovery checks. See
+[`docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md`](docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md).
+
+Stage 1.1 adds a separate signed promotion dossier under
+`/api/automation/broker-soak/promotion`. It requires 20 unique healthy days
+with clear zero-open-item reconciliation, passed startup/intraday/end-of-day
+evidence for every selected day, all five recovery drills, and a current
+pass/fresh/zero-unresolved Account Truth source fingerprint. Owner acceptance
+uses a short-lived Ed25519 approval for the exact dossier and explicitly
+attests the same account alias plus full process/broker-terminal recovery,
+which the service cannot verify automatically. Source drift invalidates the
+acceptance. `promotion_ready` here means Stage 1 evidence readiness only; it
+does not issue capital/runtime authority. Stage 2 now binds this exact current
+promotion dossier and acceptance into each per-order dossier, but that linkage
+does not enable the broker bridge.
+
+The Stage 2 foundation is also non-submitting. The
+`/api/automation/controlled-bridge` status, dossier preview, confirmation, and
+history endpoints bind one OMS order to the current capital evaluation,
+Account Truth/research/risk/paper-shadow gates, connector soak, prior
+reconciliation, and kill-switch state. Exact-fingerprint attestations remain
+short-lived Ed25519-verified identity evidence bound to the exact dossier and a
+configured operator public key. The dossier also binds the current Stage 1
+promotion, operational, Account Truth, and owner-acceptance fingerprints for
+the capital-policy evidence connector, while the distinct execution gateway is
+bound separately as runtime-unverified evidence; missing evidence, role overlap,
+or source drift fails closed. Karkinos stores no operator private key, and a
+verified attestation still cannot change OMS, grant authority, submit or cancel
+an order, resume automation, or scale capital.
+
+The Stage 3 foundation remains proposal-only. The
+`/api/automation/controlled-sessions` status, envelope preview, attestation, and
+history endpoints project an explicit OMS order set inside a timezone-aware
+window of at most 30 minutes. Capital, cash, conservative gross exposure,
+turnover, per-order, position-change, liquidity, and rate budgets are checked,
+and the v2 evidence-connector/execution-gateway split is fingerprinted, but no
+budget is reserved and no runtime session is issued. There are no enable,
+resume, runtime-revoke, submit, cancel, or automatic scale-up operations.
+
+Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
+batch-evidence API binds an exact non-paper terminal OMS order set to one
+persisted reconciliation run, including current order/transition/fill/item/run
+fingerprints and real-fill Account Truth linkage. Per-order and session reviews
+must provide the same batch fingerprint already present in their recorded
+capital evaluation. Missing, open, duplicated, quantity-incomplete, or later-
+changed facts fail closed. A clear batch fact does not authorize the next batch
+and adds no broker, OMS, ledger, budget, or runtime-session capability.
+
+Stage 2.2/3.2 adds public-key operator approval evidence. The capital-authority
+API can issue a short-lived, nonce-bearing challenge and verify an Ed25519
+signature for either an exact per-order dossier or controlled-session envelope.
+Per-order confirmations and session attestations require the resulting approval
+id and matching operator label. Disabled/rotated keys, expired challenges,
+invalid signatures, and cross-artifact reuse fail closed. These endpoints do
+not issue authority or add gateway, OMS, ledger, budget, submit, cancel, resume,
+or automatic scale-up capability.
+
+The Stage 4 foundation is an evidence-only capital scaling review. The
+`/api/automation/capital-scaling` status, preview, evaluation, decision, and
+history endpoints compare versioned tiers against operating days, fill/reject
+quality, slippage, after-cost result, drawdown, capacity/liquidity,
+reconciliation, divergence, disconnect, violation, and incident evidence.
+Passing evidence can only request a separate new authorization; it never applies
+a tier, mutates limits, resumes execution, or automatically scales capital.
+Stage 4.1 now resolves broker-soak, execution-reconciliation, paper/shadow, and
+risk references to persisted source facts and binds their sanitized resolution
+fingerprint into the evaluation identity. Missing, non-clear, or out-of-window
+sources fail closed. Account Truth is now a required evidence kind. Stage 4.2
+adds read-only Account Truth point snapshots and computed evidence-window APIs
+under `/api/automation/capital-scaling/evidence`: after-cost uses Modified
+Dietz over persisted equity/cash-flow facts, incident metrics scan persisted
+alerts/write rejections/connector observations, and capacity/liquidity/slippage
+require non-simulated reconciled fills with explicit source linkage. Callers
+cannot submit aggregate metric values; incomplete coverage records a blocked
+fact, and even a clear window can only support a separate authorization request.
+Stage 4.3 adds a required computed operating sample to that window: healthy
+broker-soak trading days, non-paper OMS outcomes, reconciled real-fill linkage,
+latest order-level reconciliation coverage and p95 latency, paper/shadow
+divergence, and cash-flow-unitized maximum drawdown are derived from persisted
+facts and checked exactly against the review request. Missing or truncated
+coverage fails closed. This remains evidence-only and cannot grant authority,
+change runtime limits, mutate OMS/ledger state, or contact a broker.
 
 The v1.6 paper/shadow run path is:
 daily trading plan -> pre-trade risk -> local paper/shadow run -> divergence
@@ -207,6 +334,14 @@ ledger entries, change cash or positions, store broker credentials, or submit
 broker orders. If an operator accepts a diverged paper/shadow review, Operations
 keeps the raw divergence evidence while exposing a runbook handoff status for
 manual confirmation.
+
+After a manual-ticket export, Trading links the operator to Account Truth
+broker-statement import and execution-reconciliation review. Reconciliation
+compares matching manual-execution evidence with staged broker price, quantity,
+gross amount, fee, tax, transfer fee, and net amount. Matches and differences
+are shown as a read-only Decision comparison and remain review evidence: they
+do not change OMS state, write production ledger entries, alter cash or
+positions, contact a broker, or submit orders.
 
 The Web app localizes portfolio asset classes in the selected UI language
 and keeps ledger rows auditable: trade activity surfaces the instrument name
@@ -309,6 +444,15 @@ uv run python scripts/export_acceptance_audit.py --audit all --pretty
 uv run python scripts/export_acceptance_audit.py --audit research_evidence
 uv run python scripts/export_acceptance_audit.py --audit account_truth
 uv run python scripts/export_acceptance_audit.py --audit broker_fee_cost_basis
+uv run python scripts/export_acceptance_audit.py --audit operations_runbook
+uv run python scripts/export_acceptance_audit.py --audit controlled_broker_bridge_foundation
+uv run python scripts/export_acceptance_audit.py --audit capital_authorization_stage0
+uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_foundation
+uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_promotion
+uv run python scripts/export_acceptance_audit.py --audit per_order_confirmation_foundation
+uv run python scripts/export_acceptance_audit.py --audit controlled_session_envelope_foundation
+uv run python scripts/export_acceptance_audit.py --audit signed_operator_approval
+uv run python scripts/export_acceptance_audit.py --audit capital_scaling_review_foundation
 uv run python scripts/export_acceptance_audit.py --audit all --output reports/acceptance-audit.json
 ```
 

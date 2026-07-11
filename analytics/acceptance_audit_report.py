@@ -11,11 +11,22 @@ from analytics.acceptance_audit import (
     build_acceptance_audit,
     build_account_truth_acceptance_audit,
     build_account_truth_review_acceptance_audit,
+    build_broker_connector_soak_foundation_acceptance_audit,
+    build_broker_connector_soak_promotion_acceptance_audit,
     build_broker_fee_cost_basis_acceptance_audit,
+    build_capital_authorization_stage0_acceptance_audit,
+    build_capital_scaling_evidence_resolution_acceptance_audit,
+    build_capital_scaling_evidence_window_acceptance_audit,
+    build_capital_scaling_operating_sample_acceptance_audit,
+    build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
+    build_controlled_session_envelope_foundation_acceptance_audit,
+    build_execution_batch_reconciliation_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
     build_operations_runbook_acceptance_audit,
+    build_per_order_confirmation_foundation_acceptance_audit,
     build_research_evidence_acceptance_audit,
+    build_signed_operator_approval_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
@@ -64,6 +75,50 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "controlled_broker_bridge_foundation": (
         "Controlled Broker Bridge Foundation acceptance audit",
         build_controlled_broker_bridge_foundation_acceptance_audit,
+    ),
+    "capital_authorization_stage0": (
+        "Capital Authorization Stage 0 acceptance audit",
+        build_capital_authorization_stage0_acceptance_audit,
+    ),
+    "broker_connector_soak_foundation": (
+        "Read-Only Broker Connector Soak Foundation acceptance audit",
+        build_broker_connector_soak_foundation_acceptance_audit,
+    ),
+    "broker_connector_soak_promotion": (
+        "Signed Broker Soak Promotion acceptance audit",
+        build_broker_connector_soak_promotion_acceptance_audit,
+    ),
+    "per_order_confirmation_foundation": (
+        "Per-Order Confirmation Foundation acceptance audit",
+        build_per_order_confirmation_foundation_acceptance_audit,
+    ),
+    "controlled_session_envelope_foundation": (
+        "Controlled Session Envelope Foundation acceptance audit",
+        build_controlled_session_envelope_foundation_acceptance_audit,
+    ),
+    "capital_scaling_review_foundation": (
+        "Capital Scaling Review Foundation acceptance audit",
+        build_capital_scaling_review_foundation_acceptance_audit,
+    ),
+    "capital_scaling_evidence_resolution": (
+        "Capital Scaling Evidence Resolution acceptance audit",
+        build_capital_scaling_evidence_resolution_acceptance_audit,
+    ),
+    "capital_scaling_evidence_window": (
+        "Capital Scaling Computed Evidence Window acceptance audit",
+        build_capital_scaling_evidence_window_acceptance_audit,
+    ),
+    "capital_scaling_operating_sample": (
+        "Capital Scaling Operating Sample acceptance audit",
+        build_capital_scaling_operating_sample_acceptance_audit,
+    ),
+    "execution_batch_reconciliation": (
+        "Exact Prior-Batch Reconciliation acceptance audit",
+        build_execution_batch_reconciliation_acceptance_audit,
+    ),
+    "signed_operator_approval": (
+        "Signed Operator Approval acceptance audit",
+        build_signed_operator_approval_acceptance_audit,
     ),
 }
 

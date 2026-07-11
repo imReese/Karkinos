@@ -2977,6 +2977,45 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                 ),
             ),
             AcceptanceCriterion(
+                key="manual_ticket_to_reconciliation_audit_chain",
+                checkbox_text=(
+                    "* [x] A deterministic non-submitting audit chain links "
+                    "manual confirmation, manual-ticket creation, manual "
+                    "execution evidence, staged broker-statement evidence, "
+                    "and execution reconciliation. Reconciliation compares "
+                    "manual price/cost/net evidence with matching broker "
+                    "facts, queues mismatches for review, and preserves OMS "
+                    "and production-ledger state; Trading links operators to "
+                    "broker-statement import and reconciliation review, and "
+                    "Decision renders the compared values without execution "
+                    "controls."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/services/execution_reconciliation.py",
+                    "account_truth/broker_evidence.py",
+                    "account_truth/broker_statement.py",
+                    "tests/test_execution_reconciliation_service.py",
+                    "web/src/features/trading/components/trading-page.tsx",
+                    "web/src/features/trading/components/trading-page.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "README.md",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                    "docs/ARCHITECTURE.md",
+                    "docs/ROADMAP.md",
+                    "docs/ROADMAP.zh.md",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_reconciliation_service.py -k 'audit_chain or cost_mismatch'",
+                    'npm --prefix web test -- trading-page.test.tsx -t "exports confirmed manual ticket"',
+                    'npm --prefix web test -- decision-cockpit-page.test.tsx -t "manual versus broker reconciliation differences"',
+                    'rg -n "manual execution|手工成交|manual-ticket|手工票据" README.md docs',
+                ),
+            ),
+            AcceptanceCriterion(
                 key="strategy_broker_boundary_static_guard",
                 checkbox_text=(
                     "* [x] Strategy code has no broker adapter access; all "
@@ -3022,6 +3061,1706 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                 validation_commands=(
                     "npm --prefix web test -- decision-cockpit-page.test.tsx",
                     "uv run pytest tests/server/test_broker_gateway_routes.py tests/server/test_execution_reconciliation_routes.py",
+                ),
+            ),
+        )
+    )
+
+
+def build_capital_authorization_stage0_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the completed non-submitting v1.8 Stage 0 slices."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="versioned_fail_closed_authorization_contract",
+                checkbox_text=(
+                    "* [x] A versioned capital-authorization contract evaluates "
+                    "disabled, per-order, and session-bounded modes fail closed "
+                    "across scope, expiry, evidence gates, and multi-dimensional "
+                    "hard limits."
+                ),
+                evidence_paths=(
+                    "server/services/capital_authorization.py",
+                    "tests/test_capital_authorization.py",
+                    "docs/ARCHITECTURE.md",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_authorization.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_limits_and_safety_evidence",
+                checkbox_text=(
+                    "* [x] Evaluation returns deterministic fingerprints, "
+                    "structured block reasons, effective limits, remaining "
+                    "budgets, and explicit no-submit/no-cancel/no-OMS/no-ledger/"
+                    "no-self-expansion safety flags."
+                ),
+                evidence_paths=(
+                    "server/services/capital_authorization.py",
+                    "tests/test_capital_authorization.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_authorization.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="dual_connector_gateway_identity_contract",
+                checkbox_text=(
+                    "* [x] Capital-authorization v2 separates the read-only "
+                    "evidence connector from the execution gateway, requires "
+                    "both explicit policy scopes, rejects identical/overlapping "
+                    "roles, and requires a verified same-account binding."
+                ),
+                evidence_paths=(
+                    "server/services/capital_authorization.py",
+                    "server/routes/capital_authorization.py",
+                    "tests/test_capital_authorization.py",
+                    "tests/server/test_capital_authorization_routes.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_authorization.py tests/server/test_capital_authorization_routes.py -k 'dual or roles or v2' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="declared_execution_gateway_not_runtime_authority",
+                checkbox_text=(
+                    "* [x] Declared execution-gateway id, health, and submit "
+                    "capability are fingerprinted evidence only; the shared "
+                    "binding remains runtime-unverified and cannot contact a "
+                    "broker, submit, or authorize execution."
+                ),
+                evidence_paths=(
+                    "server/services/execution_gateway_binding.py",
+                    "server/services/per_order_confirmation.py",
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_execution_gateway_binding.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_gateway_binding.py tests/test_per_order_confirmation.py tests/test_controlled_session_envelope.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="append_only_evaluation_audit",
+                checkbox_text=(
+                    "* [x] Preview remains side-effect free, while recorded "
+                    "evaluations use append-only local audit events and reuse "
+                    "an existing sequential input fingerprint without granting "
+                    "runtime authority."
+                ),
+                evidence_paths=(
+                    "server/services/capital_authorization_audit.py",
+                    "server/db.py",
+                    "tests/test_capital_authorization_audit.py",
+                    "tests/server/test_capital_authorization_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_authorization_audit.py tests/server/test_capital_authorization_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="evidence_only_capital_authority_api",
+                checkbox_text=(
+                    "* [x] Capital-authority status, preview, record-evaluation, "
+                    "and list-evaluation APIs expose evidence only; even an "
+                    "allowed evaluation leaves execution authority and broker "
+                    "submission disabled."
+                ),
+                evidence_paths=(
+                    "server/routes/capital_authorization.py",
+                    "server/services/capital_authorization_audit.py",
+                    "server/app.py",
+                    "tests/server/test_capital_authorization_routes.py",
+                    "README.md",
+                    "docs/README.en.md",
+                    "docs/README.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_capital_authorization_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="credentials_and_static_config_cannot_authorize",
+                checkbox_text=(
+                    "* [x] API payloads reject undeclared credential fields, "
+                    "and static config cannot grant capital execution authority."
+                ),
+                evidence_paths=(
+                    "server/routes/capital_authorization.py",
+                    "server/services/capital_authorization_audit.py",
+                    "server/config.py",
+                    "tests/server/test_capital_authorization_routes.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                    "docs/ROADMAP.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_capital_authorization_routes.py -k credential -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="capital_authorization_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover missing, disabled, expired, "
+                    "mismatched, over-budget, upstream-gate, persistence, route, "
+                    "sequential-rerun, and no-authority behavior."
+                ),
+                evidence_paths=(
+                    "tests/test_capital_authorization.py",
+                    "tests/test_capital_authorization_audit.py",
+                    "tests/server/test_capital_authorization_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_authorization.py tests/test_capital_authorization_audit.py tests/server/test_capital_authorization_routes.py -q",
+                    "uv run pytest -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_broker_connector_soak_foundation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the completed Stage 1 read-only soak foundation."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="sanitized_local_broker_export_capture",
+                checkbox_text=(
+                    "* [x] QMT, PTrade, and generic local read-only exports can "
+                    "be captured as sanitized cash, position, order, fill, "
+                    "health, capability, and source-time evidence without "
+                    "storing or returning raw account ids."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_connector.py",
+                    "server/services/broker_connector_runtime.py",
+                    "server/services/broker_connector_soak.py",
+                    "tests/server/test_broker_connector_soak_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_broker_connector_soak_routes.py -k local_broker_exports -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_soak_observation_evidence",
+                checkbox_text=(
+                    "* [x] Each observation has deterministic snapshot and "
+                    "observation fingerprints, append-only local evidence, and "
+                    "sequential rerun reuse without broker-write, OMS, or "
+                    "production-ledger side effects."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak.py",
+                    "server/db.py",
+                    "tests/test_broker_connector_soak.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak.py -k sanitized_persisted_and_reused -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="soak_health_capability_fail_closed",
+                checkbox_text=(
+                    "* [x] Missing read capabilities, any submit capability, "
+                    "stale/future/invalid timestamps, source-health degradation, "
+                    "missing cash, or connector exceptions fail closed into "
+                    "degraded or blocked soak evidence."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak.py",
+                    "tests/test_broker_connector_soak.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak.py -k 'stale or submit_capability or exception' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="provider_calendar_trading_day_coverage",
+                checkbox_text=(
+                    "* [x] Healthy-day coverage requires a provider market-"
+                    "calendar snapshot and an explicit trading day; missing "
+                    "calendars and closed days do not count toward the "
+                    "20-trading-day target."
+                ),
+                evidence_paths=(
+                    "data/market_calendar.py",
+                    "server/services/broker_connector_soak.py",
+                    "tests/test_broker_connector_soak.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak.py -k 'market_calendar or twenty_healthy_days' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="readonly_soak_api_and_operations_alerts",
+                checkbox_text=(
+                    "* [x] Capture, status, and observation APIs remain read-only "
+                    "with respect to the broker, OMS, and ledger, while "
+                    "degraded/blocked observations create sanitized Operations "
+                    "alerts."
+                ),
+                evidence_paths=(
+                    "server/routes/broker_connector_soak.py",
+                    "server/services/broker_connector_soak.py",
+                    "server/app.py",
+                    "server/services/automation_alerts.py",
+                    "tests/test_broker_connector_soak.py",
+                    "tests/server/test_broker_connector_soak_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak.py tests/server/test_broker_connector_soak_routes.py tests/test_automation_alerts.py tests/server/test_automation_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operational_soak_does_not_promote",
+                checkbox_text=(
+                    "* [x] Twenty healthy trading days complete only the "
+                    "operational soak; `promotion_ready` remains false until "
+                    "Account Truth reconciliation and explicit owner acceptance "
+                    "are linked."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak.py",
+                    "tests/test_broker_connector_soak.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                    "docs/ROADMAP.md",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak.py -k twenty_healthy_days -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="deterministic_operational_soak_phases",
+                checkbox_text=(
+                    "* [x] Startup, intraday, and end-of-day runbook phases "
+                    "persist deterministic evidence; missing or unhealthy "
+                    "read-only connector observations block the phase."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_runbook.py",
+                    "server/routes/broker_connector_soak.py",
+                    "tests/test_broker_connector_soak_runbook.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_runbook.py -k 'startup or no_configured' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="end_of_day_reconciliation_gate",
+                checkbox_text=(
+                    "* [x] End-of-day runbook evidence requires a clear "
+                    "execution reconciliation with zero open items; otherwise "
+                    "it blocks and creates a sanitized Operations alert."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_runbook.py",
+                    "server/services/execution_reconciliation.py",
+                    "tests/test_broker_connector_soak_runbook.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_runbook.py -k end_of_day -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="readonly_soak_recovery_drills",
+                checkbox_text=(
+                    "* [x] Disconnect, schema-drift, stale-data, duplicate-"
+                    "evidence, and restart-recovery drills record deterministic "
+                    "pass/fail evidence and verify safe degradation or "
+                    "sequential persisted-evidence reuse."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_runbook.py",
+                    "tests/test_broker_connector_soak_runbook.py",
+                    "docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_runbook.py -k drill -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="readonly_soak_runbook_api_boundary",
+                checkbox_text=(
+                    "* [x] Run and drill APIs reject undeclared fields and "
+                    "credentials, expose only sanitized evidence, and cannot "
+                    "submit/cancel orders, mutate OMS/ledger, or grant capital "
+                    "authority."
+                ),
+                evidence_paths=(
+                    "server/routes/broker_connector_soak.py",
+                    "server/services/broker_connector_soak_runbook.py",
+                    "tests/server/test_broker_connector_soak_runbook_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_broker_connector_soak_runbook_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="broker_neutral_soak_operator_runbook",
+                checkbox_text=(
+                    "* [x] A broker-neutral operator runbook documents local-"
+                    "export setup, startup/intraday/end-of-day cadence, drill "
+                    "preparation, expected safe states, review steps, and the "
+                    "unchanged no-write boundary."
+                ),
+                evidence_paths=(
+                    "docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_acceptance_audit.py -k broker_connector_soak -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_per_order_confirmation_foundation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the non-submitting Stage 2 confirmation foundation."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="deterministic_per_order_dossier",
+                checkbox_text=(
+                    "* [x] A canonical order fingerprint and deterministic "
+                    "dossier bind OMS order terms, capital-evaluation evidence, "
+                    "Account Truth/research/risk/paper-shadow gateway gates, "
+                    "latest connector soak, prior reconciliation, and kill-"
+                    "switch state."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "server/services/capital_authorization_audit.py",
+                    "tests/test_per_order_confirmation.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k 'dossier_binds or fingerprint_is_stable' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_review_gates_fail_closed",
+                checkbox_text=(
+                    "* [x] Dossier review fails closed when the OMS order is not "
+                    "manually confirmed, the capital evaluation is missing/"
+                    "stale/mismatched/not allowed, required gateway evidence is "
+                    "missing or blocked, the latest soak is unhealthy or no "
+                    "longer fresh, prior reconciliation is not clear, or the "
+                    "kill switch is unavailable/enabled."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k 'kill_switch or missing_capital' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_hard_submission_blockers",
+                checkbox_text=(
+                    "* [x] A current signed Stage 1 promotion may clear only "
+                    "the Account Truth-linkage, owner-acceptance, and Stage 1 "
+                    "promotion blockers; evidence-connector read-only integrity, "
+                    "execution-gateway runtime verification, runtime authority, "
+                    "live gateway, and broker submission remain explicit hard "
+                    "blockers."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k dossier_binds -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_signed_stage1_source_binding",
+                checkbox_text=(
+                    "* [x] Every per-order dossier resolves and fingerprints "
+                    "the current Stage 1 promotion dossier, operational source, "
+                    "Account Truth source, and verified owner-acceptance id for "
+                    "the exact capital-policy connector."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "server/services/broker_connector_soak_promotion.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k signed_stage1_promotion_is_bound -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_stage1_drift_fails_closed",
+                checkbox_text=(
+                    "* [x] Missing, invalid, mismatched, or failed promotion "
+                    "resolution remains blocked without leaking provider "
+                    "details; source drift changes the per-order dossier and "
+                    "invalidates the old artifact-bound operator approval."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                    "server/routes/per_order_confirmation.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py -k 'source_drift or failed_signed or wires_current' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="exact_dossier_attestation_reuse",
+                checkbox_text=(
+                    "* [x] An exact dossier fingerprint can be attested only "
+                    "when review gates and an artifact-bound signed operator "
+                    "approval pass; the append-only record is sequentially "
+                    "reusable verified-identity evidence that does not "
+                    "authorize execution."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "server/db.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k exact_dossier -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_rejection_audit_zero_side_effects",
+                checkbox_text=(
+                    "* [x] Stale fingerprints and blocked dossiers create "
+                    "deterministic rejected confirmation evidence without "
+                    "changing OMS, contacting a broker, or mutating the "
+                    "production ledger."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py -k 'stale_dossier or kill_switch' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_confirmation_api_boundary",
+                checkbox_text=(
+                    "* [x] Status, preview, confirmation, and list APIs reject "
+                    "undeclared credential fields and expose no enable, issue-"
+                    "authority, submit, cancel, resume, or scale-up operation."
+                ),
+                evidence_paths=(
+                    "server/routes/per_order_confirmation.py",
+                    "server/app.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_per_order_confirmation_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_confirmation_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic service and route tests cover evidence "
+                    "aggregation, fail-closed gates, hard submission blockers, "
+                    "exact-fingerprint reuse, rejection audit, credential "
+                    "rejection, and zero execution side effects."
+                ),
+                evidence_paths=(
+                    "tests/test_per_order_confirmation.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_broker_connector_soak_promotion_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the signed Stage 1.1 promotion dossier."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="promotion_account_truth_source_evidence",
+                checkbox_text=(
+                    "* [x] Promotion uses a sanitized, source-sensitive Account "
+                    "Truth fact built from the latest persisted import, current "
+                    "ledger projection, reconciliation items, review decisions, "
+                    "and score; only pass/fresh/zero-unresolved evidence is clear."
+                ),
+                evidence_paths=(
+                    "server/account_truth_gate.py",
+                    "tests/server/test_account_truth_gate.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_account_truth_gate.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="twenty_clear_reconciled_soak_days",
+                checkbox_text=(
+                    "* [x] A promotion dossier selects exactly 20 unique "
+                    "healthy read-only trading days whose snapshots each bind "
+                    "a clear execution reconciliation with zero open items and "
+                    "one stable connector account alias/hash."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_promotion.py",
+                    "tests/test_broker_connector_soak_promotion.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_promotion.py -k promotion_dossier -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="daily_runbook_phase_coverage",
+                checkbox_text=(
+                    "* [x] Every selected trading day requires persisted passed "
+                    "startup, intraday, and end-of-day runbook evidence for the "
+                    "same connector; incomplete phase coverage blocks owner "
+                    "acceptance."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_runbook.py",
+                    "server/services/broker_connector_soak_promotion.py",
+                    "tests/test_broker_connector_soak_promotion.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_promotion.py -k missing_daily_phase -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="recovery_drill_and_external_assertion_boundary",
+                checkbox_text=(
+                    "* [x] Disconnect, schema-drift, stale-data, duplicate-"
+                    "evidence, and service-instance restart drills must all "
+                    "pass; full process and broker-terminal recovery remains an "
+                    "explicit signed owner assertion rather than an automated "
+                    "claim."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_runbook.py",
+                    "server/services/broker_connector_soak_promotion.py",
+                    "docs/BROKER_CONNECTOR_SOAK_RUNBOOK.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_runbook.py tests/test_broker_connector_soak_promotion.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="source_bound_promotion_dossier",
+                checkbox_text=(
+                    "* [x] The deterministic promotion fingerprint binds the "
+                    "selected observations, phase/run ids, drill ids, latest "
+                    "snapshot, account alias/hash, and exact Account Truth "
+                    "source fingerprint; source drift requires a new review."
+                ),
+                evidence_paths=(
+                    "server/services/broker_connector_soak_promotion.py",
+                    "tests/test_broker_connector_soak_promotion.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_promotion.py -k source_drift -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="signed_append_only_owner_acceptance",
+                checkbox_text=(
+                    "* [x] Owner acceptance requires a short-lived Ed25519 "
+                    "approval for the exact promotion dossier and matching "
+                    "operator label; accepted/rejected records are append-only, "
+                    "exact reruns reuse evidence, and cross-dossier approval "
+                    "fails closed."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "server/services/broker_connector_soak_promotion.py",
+                    "tests/test_broker_connector_soak_promotion.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_broker_connector_soak_promotion.py -k 'signed_owner or another_dossier' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="promotion_api_zero_execution_authority",
+                checkbox_text=(
+                    "* [x] Promotion status, dossier preview, acceptance, and "
+                    "history APIs reject undeclared credential fields and expose "
+                    "no capital/runtime authority issue, budget reservation, "
+                    "OMS/ledger mutation, gateway contact, submit, cancel, "
+                    "resume, or automatic-promotion action."
+                ),
+                evidence_paths=(
+                    "server/routes/broker_connector_soak.py",
+                    "tests/server/test_broker_connector_soak_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_broker_connector_soak_routes.py -k promotion -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="promotion_deterministic_integration_tests",
+                checkbox_text=(
+                    "* [x] Deterministic Account Truth, promotion-service, "
+                    "signature, and route tests cover full evidence, missing "
+                    "coverage, blocked Account Truth, source drift, exact reuse, "
+                    "rejection audit, credential rejection, and zero execution "
+                    "side effects."
+                ),
+                evidence_paths=(
+                    "tests/server/test_account_truth_gate.py",
+                    "tests/test_broker_connector_soak_promotion.py",
+                    "tests/server/test_broker_connector_soak_routes.py",
+                    "tests/test_operator_approval.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_account_truth_gate.py tests/test_broker_connector_soak_promotion.py tests/server/test_broker_connector_soak_routes.py tests/test_operator_approval.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_controlled_session_envelope_foundation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the proposal-only Stage 3 session foundation."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="session_proposal_scope_and_time_window",
+                checkbox_text=(
+                    "* [x] A proposal requires one recorded `session_bounded` "
+                    "capital evaluation, an explicit deduplicated OMS order set, "
+                    "timezone-aware start/expiry timestamps, and a maximum "
+                    "30-minute window contained by the capital policy."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/services/capital_authorization.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'window or requires_session_bounded' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="conservative_session_budget_projection",
+                checkbox_text=(
+                    "* [x] Canonical order fingerprints, required gateway "
+                    "evidence, conservative gross exposure without buy/sell "
+                    "netting, cash, capital, turnover, per-order, position-"
+                    "change, liquidity, and projected order-rate budgets are "
+                    "bound into a deterministic session envelope."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/services/per_order_confirmation.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'projects_conservative or budget_blocks' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_envelope_fail_closed_gates",
+                checkbox_text=(
+                    "* [x] Missing/duplicate orders, unsupported OMS states, "
+                    "unpriced market orders, out-of-scope symbols, missing/"
+                    "blocked evidence, stale connector soak, open reconciliation, "
+                    "kill switch, invalid time, or projected budget excess fails "
+                    "closed before attestation."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'fail_closed or rejects_stale or budget_blocks' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="exact_session_attestation_and_rejection_audit",
+                checkbox_text=(
+                    "* [x] An exact fresh envelope can be attested only after "
+                    "review gates pass; sequential reruns reuse append-only "
+                    "evidence, while stale fingerprints or blocked envelopes "
+                    "create deterministic rejection evidence."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/db.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'exact_session or rejects_stale or freshness_boundary' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_runtime_hard_blockers",
+                checkbox_text=(
+                    "* [x] Stage 1/2 promotion, session-start Account Truth, "
+                    "read-only evidence-connector integrity, execution-gateway "
+                    "runtime verification, per-symbol runtime limits, atomic "
+                    "budget reservation, runtime rate limiting, "
+                    "automatic pause, session issuance/resume, live gateway, "
+                    "and broker submission remain hard blockers after exact "
+                    "prior-batch reconciliation and signed operator approval "
+                    "pass."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k projects_conservative -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_no_runtime_side_effect_contract",
+                checkbox_text=(
+                    "* [x] Every proposal and attestation states that it does "
+                    "not issue/enable a runtime session, reserve/consume budget, "
+                    "mutate OMS/ledger, contact a broker, submit/cancel orders, "
+                    "auto-resume/renew/expand, or scale capital authority."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k 'exact_session or status_exposes' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_session_api_boundary",
+                checkbox_text=(
+                    "* [x] Status, preview, attestation, and list APIs reject "
+                    "undeclared credential fields and expose no issue, enable, "
+                    "runtime-pause, resume, revoke-runtime, submit, cancel, or "
+                    "scale-up action."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_envelope.py",
+                    "server/app.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_session_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic service and route tests cover time/"
+                    "scope/evidence/budget gates, freshness-stable fingerprints, "
+                    "exact attestation reuse, rejection audit, credential "
+                    "rejection, hard blockers, and zero execution side effects."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_envelope.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_signed_operator_approval_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for Stage 2.2/3.2 signed operator approvals."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="public_key_only_operator_identity_config",
+                checkbox_text=(
+                    "* [x] Trusted operator identities are configured with an "
+                    "operator id, key id, enabled flag, and Ed25519 public key "
+                    "only; malformed keys, unsupported algorithms, duplicate "
+                    "identities, and private/secret fields fail closed."
+                ),
+                evidence_paths=(
+                    "server/config.py",
+                    "config.example.json",
+                    "tests/test_bootstrap.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_bootstrap.py -k trusted_operator -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="domain_bound_operator_challenge",
+                checkbox_text=(
+                    "* [x] Each short-lived challenge binds a server nonce, "
+                    "operator/key identity, action, artifact type, exact "
+                    "artifact fingerprint, issued time, and expiry into one "
+                    "canonical signing payload."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "tests/test_operator_approval.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_operator_approval.py -k 'exact or mismatch' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operator_signature_verification_fail_closed",
+                checkbox_text=(
+                    "* [x] Ed25519 verification fails closed for invalid "
+                    "signatures, expiry, action/type/fingerprint mismatch, "
+                    "disabled or rotated keys, and cross-artifact reuse; "
+                    "rejections are append-only and exact verification reruns "
+                    "reuse one approval record."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "server/db.py",
+                    "tests/test_operator_approval.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_operator_approval.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_requires_verified_operator_approval",
+                checkbox_text=(
+                    "* [x] Per-order confirmation requires a current verified "
+                    "approval for the exact dossier fingerprint and matching "
+                    "operator label; only the recorded evidence clears the "
+                    "identity blocker, without changing OMS or authorizing "
+                    "broker submission."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "server/routes/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_requires_verified_operator_approval",
+                checkbox_text=(
+                    "* [x] Controlled-session attestation requires a current "
+                    "verified approval for the exact envelope fingerprint and "
+                    "matching operator label; it clears only the recorded "
+                    "identity blocker and never issues, enables, or resumes a "
+                    "runtime session."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/routes/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operator_key_rotation_and_disable_fail_closed",
+                checkbox_text=(
+                    "* [x] Approval resolution rechecks the currently enabled "
+                    "trusted public key and fingerprint, so disabling or "
+                    "rotating a key invalidates earlier approval evidence "
+                    "instead of preserving stale identity authority."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "tests/test_operator_approval.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_operator_approval.py -k 'rotation or disabled' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operator_approval_api_boundary",
+                checkbox_text=(
+                    "* [x] Status, challenge, verification, and list APIs "
+                    "reject undeclared credential/private-key fields, expose "
+                    "only sanitized public-key fingerprints and signing "
+                    "payloads, and provide no authority, budget, OMS, ledger, "
+                    "gateway, submit, cancel, resume, or scale-up action."
+                ),
+                evidence_paths=(
+                    "server/routes/capital_authorization.py",
+                    "server/services/operator_approval.py",
+                    "tests/server/test_capital_authorization_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_capital_authorization_routes.py -k operator_approval -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operator_approval_deterministic_crypto_tests",
+                checkbox_text=(
+                    "* [x] Deterministic service, configuration, integration, "
+                    "and route tests use the maintained cryptography library "
+                    "to cover valid signatures, invalid signatures, expiry, "
+                    "replay, key rotation, exact-artifact binding, credential "
+                    "rejection, and zero execution-authority side effects."
+                ),
+                evidence_paths=(
+                    "pyproject.toml",
+                    "uv.lock",
+                    "tests/test_operator_approval.py",
+                    "tests/test_bootstrap.py",
+                    "tests/test_per_order_confirmation.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_operator_approval.py tests/test_bootstrap.py tests/test_per_order_confirmation.py tests/test_controlled_session_envelope.py tests/server/test_capital_authorization_routes.py tests/server/test_per_order_confirmation_routes.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_capital_scaling_review_foundation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the Stage 4 capital scaling review foundation."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="versioned_capital_tier_and_scaling_evidence",
+                checkbox_text=(
+                    "* [x] Versioned current/proposed capital tiers and a "
+                    "deterministic evidence contract cover reviewed trading "
+                    "days, orders/fills/rejects, reconciliation latency/gaps, "
+                    "slippage, after-cost result, drawdown, capacity, liquidity, "
+                    "paper/shadow divergence, disconnects, policy violations, "
+                    "and incidents."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review.py",
+                    "tests/test_capital_scaling_review.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k 'strong_evidence or fingerprint_is_sensitive' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scale_up_evidence_thresholds",
+                checkbox_text=(
+                    "* [x] Scale-up review requires at least 20 reviewed "
+                    "trading days, 50 orders, required Account Truth and "
+                    "provenance references, passing fill/rejection/slippage/"
+                    "after-cost/drawdown/capacity/liquidity/reconciliation/"
+                    "divergence/disconnect thresholds, and a proposed tier "
+                    "that actually widens at least one explicit limit."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review.py",
+                    "tests/test_capital_scaling_review.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k 'strong_evidence or insufficient_sample or same_tier' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="protective_scaling_recommendations_precede_expansion",
+                checkbox_text=(
+                    "* [x] Invalid or insufficient evidence recommends hold, "
+                    "degraded execution quality recommends scale-down, and "
+                    "critical incidents, policy violations, unresolved "
+                    "reconciliation, or current-tier drawdown exhaustion "
+                    "recommends disable before any scale-up review."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review.py",
+                    "tests/test_capital_scaling_review.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k 'invalid_evidence or degraded_execution or critical_incident or drawdown' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="append_only_scaling_evaluation",
+                checkbox_text=(
+                    "* [x] Preview is side-effect free; recorded evaluations "
+                    "use deterministic fingerprints and append-only sequential "
+                    "reuse without changing authority."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review_audit.py",
+                    "server/db.py",
+                    "tests/test_capital_scaling_review.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k evaluation_and_hold -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scaling_human_decision_cannot_exceed_evidence",
+                checkbox_text=(
+                    "* [x] Human review decisions bind one persisted evaluation "
+                    "fingerprint; a human may choose the recommendation or a "
+                    "safer action but cannot request scale-up when the evidence "
+                    "recommendation is hold/scale-down/disable."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review_audit.py",
+                    "tests/test_capital_scaling_review.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k 'cannot_exceed or unresolved' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scale_up_requires_separate_new_authorization",
+                checkbox_text=(
+                    "* [x] Even an eligible scale-up decision only records a "
+                    "request for a separate new authorization; automatic "
+                    "scale-up, new authorization issuance, runtime limit "
+                    "mutation, execution resume, and broker submission remain "
+                    "disabled."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review_audit.py",
+                    "tests/test_capital_scaling_review.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k 'hold_decision or status_exposes' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="capital_scaling_review_api_boundary",
+                checkbox_text=(
+                    "* [x] Status, preview, evaluation, decision, and list APIs "
+                    "reject undeclared credential fields and expose no apply-"
+                    "tier, issue-authority, mutate-limit, enable/resume "
+                    "execution, submit/cancel, or automatic scale-up action."
+                ),
+                evidence_paths=(
+                    "server/routes/capital_scaling_review.py",
+                    "server/app.py",
+                    "tests/server/test_capital_scaling_review_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_capital_scaling_review_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="capital_scaling_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic service and route tests cover "
+                    "eligibility, hold, scale-down, disable, invalid evidence, "
+                    "provenance, fingerprint reuse, safer human choice, rejected "
+                    "overreach, credential rejection, and zero authority side "
+                    "effects."
+                ),
+                evidence_paths=(
+                    "tests/test_capital_scaling_review.py",
+                    "tests/server/test_capital_scaling_review_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py tests/server/test_capital_scaling_review_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_capital_scaling_evidence_resolution_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the fail-closed Stage 4.1 source resolver."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="persisted_scaling_source_resolution",
+                checkbox_text=(
+                    "* [x] Broker-soak observations, execution-reconciliation "
+                    "runs, paper/shadow runs, and risk decisions resolve by "
+                    "typed identifier from persisted stores rather than by "
+                    "trusting the caller-provided reference string alone."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "tests/test_capital_scaling_evidence_resolution.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k links_supported -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scaling_source_window_and_clear_state_gates",
+                checkbox_text=(
+                    "* [x] Missing, invalid, out-of-window, or non-clear "
+                    "persisted source facts fail closed with typed blockers; "
+                    "only sanitized source fingerprints and status fields are "
+                    "returned."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "tests/test_capital_scaling_evidence_resolution.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k 'non_clear or links_supported' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="computed_scaling_aggregates_are_required",
+                checkbox_text=(
+                    "* [x] Account Truth, after-cost, incident-window, and "
+                    "capacity/liquidity refs must resolve through a recorded "
+                    "computed evidence window; caller-declared aggregate "
+                    "metrics alone remain blocked."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "server/services/capital_scaling_review_audit.py",
+                    "server/services/capital_scaling_evidence_window.py",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py tests/test_capital_scaling_review.py -k 'computed_window or unresolved_persisted' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scaling_evaluation_binds_resolution_fingerprint",
+                checkbox_text=(
+                    "* [x] Preview and recorded evaluation evidence bind the "
+                    "review-input fingerprint to a deterministic persisted-"
+                    "source resolution fingerprint, so source changes create a "
+                    "different evaluation identity while exact reruns reuse the "
+                    "append-only record."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review_audit.py",
+                    "tests/test_capital_scaling_evidence_resolution.py",
+                    "tests/test_capital_scaling_review.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py tests/test_capital_scaling_review.py -k 'source_sensitive or evaluation_and_hold' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="unresolved_sources_cannot_request_scale_up",
+                checkbox_text=(
+                    "* [x] A mathematically eligible scale-up recommendation "
+                    "is converted to hold when persisted sources are unresolved; "
+                    "attempted human overreach is rejected and audited without "
+                    "issuing authority."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review_audit.py",
+                    "tests/test_capital_scaling_review.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_review.py -k unresolved_persisted -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scaling_resolution_zero_execution_side_effects",
+                checkbox_text=(
+                    "* [x] Evidence resolution remains read-only with respect "
+                    "to Account Truth, OMS, runtime limits, broker gateway, and "
+                    "production ledger; automatic scale-up and broker "
+                    "submission remain disabled."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "server/services/capital_scaling_review_audit.py",
+                    "tests/test_capital_scaling_review.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py tests/test_capital_scaling_review.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_capital_scaling_evidence_window_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for deterministic Stage 4.2 computed windows."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="sanitized_timely_account_truth_point_snapshot",
+                checkbox_text=(
+                    "* [x] Account Truth point snapshots persist only a "
+                    "sanitized pass/fresh/zero-unresolved score summary, "
+                    "require capture within 15 minutes of the source import, "
+                    "and reuse an append-only deterministic identity."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k account_truth_snapshot -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="distinct_account_truth_window_boundaries",
+                checkbox_text=(
+                    "* [x] A review window requires two distinct clear Account "
+                    "Truth point snapshots near its start and end boundaries; "
+                    "missing, stale, blocked, reused-as-both, or out-of-"
+                    "tolerance boundary evidence fails closed."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'clear_evidence_window or missing_boundaries' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="modified_dietz_after_cost_window",
+                checkbox_text=(
+                    "* [x] After-cost return is computed from persisted start/"
+                    "end portfolio equity and time-weighted external cash "
+                    "flows using Modified Dietz; incomplete boundary or "
+                    "Account Truth coverage blocks the fact."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'clear_evidence_window or missing_boundaries' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="persisted_incident_window_aggregation",
+                checkbox_text=(
+                    "* [x] Incident evidence counts persisted critical alerts, "
+                    "rejected live submit/cancel attempts, and read-only "
+                    "connector disconnect observations without treating "
+                    "acknowledgement as deletion of incident history."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k incident_fact -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="reconciled_real_fill_capacity_evidence",
+                checkbox_text=(
+                    "* [x] Capacity/liquidity and slippage metrics use only "
+                    "non-simulated fills with broker/provider/order linkage "
+                    "plus Account Truth, reconciliation, capacity-model, and "
+                    "market-data references; incomplete real-fill metadata "
+                    "blocks the fact and maximum utilization is retained."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'clear_evidence_window or incomplete_real_fill' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="computed_window_input_and_append_only_boundary",
+                checkbox_text=(
+                    "* [x] Evidence-window preview accepts only a time window "
+                    "and boundary tolerance; computed metrics cannot be "
+                    "supplied by the caller, while recorded windows are "
+                    "append-only, fingerprinted, and sequentially reusable."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "server/routes/capital_scaling_review.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                    "tests/server/test_capital_scaling_review_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py tests/server/test_capital_scaling_review_routes.py -k 'clear_evidence_window or evidence_routes' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="computed_window_scan_truncation_fails_closed",
+                checkbox_text=(
+                    "* [x] Any capped source scan that reaches its 5,000-row "
+                    "limit is marked truncated and blocks the computed fact "
+                    "instead of treating unseen rows as evidence that no "
+                    "incident, cash flow, fill, or boundary fact exists."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k truncated_source_scan -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scaling_resolver_metric_and_fill_coverage",
+                checkbox_text=(
+                    "* [x] The resolver requires Account Truth and verifies the "
+                    "recorded window, per-fact fingerprint, exact review "
+                    "window, clear status, metric equality, and fill coverage "
+                    "before a scale-up request can be recorded."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review.py",
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "server/services/capital_scaling_review_audit.py",
+                    "tests/test_capital_scaling_evidence_resolution.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k 'computed_window or all_resolved' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="scaling_evidence_window_api_zero_execution_authority",
+                checkbox_text=(
+                    "* [x] Evidence status/snapshot/window APIs reject "
+                    "undeclared credential or metric fields and expose no "
+                    "authority issue, limit mutation, OMS/ledger write, broker "
+                    "submit/cancel, resume, or automatic scale-up operation."
+                ),
+                evidence_paths=(
+                    "server/routes/capital_scaling_review.py",
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/server/test_capital_scaling_review_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_capital_scaling_review_routes.py -k evidence_routes -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_capital_scaling_operating_sample_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for deterministic Stage 4.3 operating samples."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="computed_operating_sample_from_persisted_facts",
+                checkbox_text=(
+                    "* [x] The operating sample computes reviewed trading "
+                    "days and non-paper OMS order counts from persisted "
+                    "broker-soak, order, transition, and fill facts inside the "
+                    "review window."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k clear_evidence_window -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="terminal_outcome_counting_semantics",
+                checkbox_text=(
+                    "* [x] Filled, rejected, partially filled, cancelled, "
+                    "expired, and nonterminal outcomes remain distinct; filled "
+                    "counts require reconciled real quantity and invalid or "
+                    "overfilled samples fail closed."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k terminal_outcome -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="order_covered_reconciliation_latency",
+                checkbox_text=(
+                    "* [x] The latest reconciliation run must cover every "
+                    "sampled order, unresolved items are counted, and p95 "
+                    "latency is derived from persisted order/fill/transition "
+                    "time to the first no-action reconciliation."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k reconciliation_coverage -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="paper_shadow_divergence_sample",
+                checkbox_text=(
+                    "* [x] Paper/shadow divergence is counted from persisted "
+                    "paper/shadow order facts for the same window, and a real "
+                    "order sample without paper/shadow comparison evidence is "
+                    "blocked."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'clear_evidence_window or terminal_outcome' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="cash_flow_unitized_max_drawdown",
+                checkbox_text=(
+                    "* [x] Maximum drawdown is computed from cash-flow-unitized "
+                    "portfolio equity so deposits and withdrawals do not "
+                    "masquerade as trading profit or loss."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k unitized_drawdown -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operating_sample_coverage_fails_closed",
+                checkbox_text=(
+                    "* [x] Missing Account Truth, healthy broker-day, real-fill "
+                    "linkage, OMS terminal state, reconciliation latency, "
+                    "paper/shadow sample, drawdown series, or complete capped "
+                    "scan blocks the operating sample."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'missing_reconciliation or truncated_source_scan or missing_boundaries' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operating_sample_metric_equality_resolution",
+                checkbox_text=(
+                    "* [x] `operating_sample:<window_id>` is a required clear "
+                    "source and the resolver compares all nine caller-declared "
+                    "sample, reconciliation, divergence, and drawdown metrics "
+                    "to the recorded fact exactly."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_review.py",
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "tests/test_capital_scaling_evidence_resolution.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k computed_window -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operating_sample_deterministic_identity",
+                checkbox_text=(
+                    "* [x] Operating-sample source references, metrics, "
+                    "blockers, and assumptions participate in the evidence-"
+                    "window fingerprint, so exact reruns reuse one append-only "
+                    "record and source changes produce a new identity."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "tests/test_capital_scaling_evidence_window.py",
+                    "tests/test_capital_scaling_evidence_resolution.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py tests/test_capital_scaling_evidence_resolution.py -k 'clear_evidence_window or source_sensitive' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operating_sample_zero_execution_authority",
+                checkbox_text=(
+                    "* [x] Operating-sample computation and resolution are "
+                    "read-only with respect to Account Truth, OMS, runtime "
+                    "limits, production ledger, and broker gateway; they never "
+                    "issue authority or submit/cancel an order."
+                ),
+                evidence_paths=(
+                    "server/services/capital_scaling_evidence_window.py",
+                    "server/services/capital_scaling_evidence_resolution.py",
+                    "server/routes/capital_scaling_review.py",
+                    "tests/server/test_capital_scaling_review_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py tests/test_capital_scaling_evidence_resolution.py tests/server/test_capital_scaling_review_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_execution_batch_reconciliation_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the exact prior-batch reconciliation gate."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="exact_batch_order_set_contract",
+                checkbox_text=(
+                    "* [x] A batch manifest binds a non-empty unique set of at "
+                    "most 100 non-paper OMS orders to one explicit persisted "
+                    "execution-reconciliation run."
+                ),
+                evidence_paths=(
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/test_execution_batch_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_batch_reconciliation.py -k 'clear_exact or duplicate' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="exact_reconciliation_item_and_terminal_state",
+                checkbox_text=(
+                    "* [x] Every batch order must have exactly one no-action "
+                    "reconciliation item whose recorded OMS status still "
+                    "matches a current filled, rejected, cancelled, or expired "
+                    "terminal state."
+                ),
+                evidence_paths=(
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/test_execution_batch_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_batch_reconciliation.py -k 'clear_exact or nonterminal' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="batch_real_fill_linkage_and_quantity",
+                checkbox_text=(
+                    "* [x] A filled batch order requires exact real-fill "
+                    "quantity plus provider, broker-order, Account Truth import, "
+                    "and same-run reconciliation linkage; incomplete or excess "
+                    "fill evidence blocks the batch."
+                ),
+                evidence_paths=(
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/test_execution_batch_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_batch_reconciliation.py -k filled_batch -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="batch_source_sensitive_fingerprint",
+                checkbox_text=(
+                    "* [x] OMS order, transition, real-fill, reconciliation "
+                    "item, and run facts participate in one deterministic "
+                    "fingerprint, and any later source change invalidates the "
+                    "recorded prior-batch gate."
+                ),
+                evidence_paths=(
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/test_execution_batch_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_batch_reconciliation.py -k source_changes -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="batch_append_only_record_and_rejection_audit",
+                checkbox_text=(
+                    "* [x] Exact clear or blocked batch evidence is append-only "
+                    "and sequentially reusable, while stale fingerprints and "
+                    "invalid acknowledgement attempts create deterministic "
+                    "rejection evidence."
+                ),
+                evidence_paths=(
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/test_execution_batch_reconciliation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_batch_reconciliation.py -k 'append_only or stale_fingerprint' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="per_order_exact_prior_batch_binding",
+                checkbox_text=(
+                    "* [x] Per-order dossier review requires the request and "
+                    "recorded capital evaluation to reference the same resolved "
+                    "clear prior-batch fingerprint instead of trusting the "
+                    "latest reconciliation run."
+                ),
+                evidence_paths=(
+                    "server/services/per_order_confirmation.py",
+                    "server/routes/per_order_confirmation.py",
+                    "tests/test_per_order_confirmation.py",
+                    "tests/server/test_per_order_confirmation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_exact_prior_batch_binding",
+                checkbox_text=(
+                    "* [x] Session-envelope review requires the request and "
+                    "recorded capital evaluation to reference the same resolved "
+                    "clear prior-batch fingerprint; missing, blocked, or changed "
+                    "batch facts fail closed."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/routes/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="batch_api_zero_execution_authority",
+                checkbox_text=(
+                    "* [x] Batch status, preview, record, resolve, and list APIs "
+                    "reject undeclared credential fields and cannot issue or "
+                    "expand authority, reserve budget, mutate OMS/ledger, "
+                    "contact a broker, or submit/cancel an order."
+                ),
+                evidence_paths=(
+                    "server/routes/execution_reconciliation.py",
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/server/test_execution_reconciliation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_execution_reconciliation_routes.py -k execution_batch -q",
                 ),
             ),
         )
