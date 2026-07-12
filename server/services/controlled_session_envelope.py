@@ -113,6 +113,7 @@ class ControlledSessionEnvelopeService:
             "per_order_gateway_verification_binding": "required_per_envelope",
             "session_start_account_truth_binding": "required_per_envelope",
             "per_symbol_runtime_limits": "required_explicit_map_per_envelope",
+            "runtime_rate_limiter_foundation": ("implemented_internal_default_closed"),
             "maximum_proposal_duration_seconds": (
                 CONTROLLED_SESSION_MAX_DURATION_SECONDS
             ),
@@ -300,7 +301,7 @@ class ControlledSessionEnvelopeService:
                     "runtime_session_authority_disabled",
                     "session_authority_issuance_not_implemented",
                     "atomic_budget_reservation_not_implemented",
-                    "runtime_order_rate_limiter_not_implemented",
+                    "runtime_order_rate_limiter_not_wired_to_authenticated_session",
                     "automatic_pause_controller_not_implemented",
                     "session_resume_requires_new_review_not_implemented",
                     "live_gateway_not_implemented",

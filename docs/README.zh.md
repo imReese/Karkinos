@@ -218,6 +218,10 @@ Stage 3.6 要求签名 envelope 为每个 projected symbol 提供精确正数上
 中的 symbol/effective ceiling。原子事务会按标的累计重叠预留：同标的并发超额 fail closed，
 不同标的仍共同受账户级预算约束。该能力不签发 runtime session，也不增加任何券商写权限。
 
+Stage 3.7 已实现内部原子 60 秒滑动窗口 admission ledger，绑定已认证启用 session、预算预留、
+范围内订单、request id、有效时间窗和同账户最严格速率。生产环境不注入 session provider，
+仅开放只读 status/history；不存在公开 admit、OMS、提交或撤单动作。
+
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须
 带券商订单、Account Truth import 与同一 run 链接。每单 dossier 和 session proposal 必须与

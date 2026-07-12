@@ -134,6 +134,10 @@ Active planning target:
   atomically prevents overlapping sessions from exceeding the strictest
   per-symbol cap. Disjoint symbols may share an authorization only while the
   account-level budget also remains clear; no execution authority is created.
+* Stage 3.7 provides a real atomic sliding-window admission ledger for a future
+  authenticated bounded session. Production has no session provider and no
+  public admission endpoint, so the limiter cannot currently enable or submit
+  an order; authenticated session wiring remains a hard gate.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

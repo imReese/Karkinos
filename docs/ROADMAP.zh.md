@@ -265,6 +265,12 @@ symbol 的完整集合，每个正数上限不得超过资本评估的 symbol/ef
 允许一个成功，不同标的仍受共享账户预算约束。旧记录缺少逐标的证据时 fail closed；能力仍
 不签发 session、不修改 OMS/账本、不联系券商或提交订单。
 
+Stage 3.7 已实现内部 runtime rate admission ledger：服务端时间驱动 60 秒滑动窗口，精确
+绑定 session/reservation/order/request，并在同一授权/账户的重叠 session 间采用最严格速率；
+最后一个并发名额只允许一个请求成功。生产环境不注入认证 session provider，只开放只读
+status/history，且没有公开 admit/submit/cancel 接口。因此硬阻断从“未实现”更新为“尚未接入
+认证 session”，仍不产生执行权限。
+
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
 未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一

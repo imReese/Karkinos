@@ -1602,6 +1602,33 @@ issue capital authority.
   real concurrent same-symbol contention, disjoint symbols, route validation,
   and zero execution authority.
 
+### Stage 3.7 Runtime Rate Limiter Foundation
+
+* [x] Production configures no authenticated session provider and exposes only
+  read-only status/history routes; there is no public preview, admit, submit, or
+  cancel endpoint.
+* [x] Internal admission requires a current enabled and authority-verified
+  bounded session, a verified budget reservation, clear upstream/kill-switch
+  gates, exact session and reservation fingerprints, authorization/account/
+  strategy scope, an in-scope order, an active window, and an explicit positive
+  rate limit.
+* [x] SQLite `BEGIN IMMEDIATE` enforces a server-time 60-second sliding window
+  shared by authorization/account, uses the strictest overlapping session rate,
+  and admits only one contender for the final concurrent slot.
+* [x] Exact request retries reuse one immutable admission, while a second request
+  for the same session/order or reuse of one request id for another order fails
+  closed and is audited.
+* [x] Pause, authority drift, limiter disablement, expiry, out-of-scope orders,
+  unsafe rates, and provider failure block before admission without leaking
+  session tokens or broker credentials.
+* [x] Accepted admissions and rejected attempts are append-only evidence only:
+  they do not issue, enable, resume, renew, or widen a session; mutate
+  OMS/ledger; contact a broker; or authorize submission/cancellation.
+* [x] Deterministic tests cover default closure, sanitized preview, exact
+  binding, persistence, retry, boundary time, real concurrency, shared strictest
+  rate, replay conflicts, session drift, route exposure, and zero broker
+  authority.
+
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 
 * [x] Versioned current/proposed capital tiers and a deterministic evidence

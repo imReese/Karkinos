@@ -97,6 +97,15 @@ Stage 3.6 要求 controlled-session envelope preview/attestation 额外提交
 会进入 envelope/attestation 指纹和原子 reservation；缺失、额外、超精度、投影超限或并发
 累计超限都会阻断，且不会产生 session 或 broker authority。
 
+Stage 3.7 的只读可见性接口为：
+
+* `GET /api/automation/controlled-sessions/runtime-rate-limit/status`
+* `GET /api/automation/controlled-sessions/runtime-rate-limit/admissions`
+
+生产 `_service()` 明确使用 `session_provider=None`，因此 status 为等待认证 session issuance，
+且没有 POST admission 路由。内部 limiter 只供未来 session 服务调用；当前不能通过 API 获取
+admission、修改 OMS/账本、联系券商、提交或撤单。
+
 ## broker_fee_schedule
 
 `broker_fee_schedule` 是账户费用规则的唯一正式配置入口。Karkinos 会用它估算手工交易的佣金、印花税、过户费、其他费用、总费用和净现金影响；券商交割单仍是最终权威来源。

@@ -548,6 +548,18 @@ contract applies the capital evaluation's conservative symbol ceiling to every
 symbol in the signed policy scope; future account facts may tighten individual
 symbols but may never widen this signed map implicitly.
 
+Stage 3.7 adds the runtime admission primitive without pretending session
+issuance already exists. A future authenticated session provider must return a
+current enabled session, immutable session/reservation fingerprints, verified
+budget reservation, clear upstream and kill-switch gates, exact scope/order
+set, active window, verified authority, and explicit maximum rate.
+The limiter uses server time and `BEGIN IMMEDIATE` to serialize one shared
+authorization/account 60-second window, choosing the strictest overlapping
+session rate. Admissions and rejections are evidence only. Production wires no
+provider and publishes no admission mutation endpoint; therefore the envelope
+keeps `runtime_order_rate_limiter_not_wired_to_authenticated_session` as a hard
+blocker until session issuance and revocation state can participate atomically.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.
