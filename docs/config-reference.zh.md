@@ -111,11 +111,18 @@ Stage 3.8 的只读自动暂停可见性接口为：
 * `GET /api/automation/controlled-sessions/automatic-pause/status`
 * `GET /api/automation/controlled-sessions/automatic-pause/events`
 * `GET /api/automation/controlled-sessions/automatic-pause/states/{session_id}`
+* `POST /api/automation/controlled-sessions/automatic-pause/evaluations`
+* `GET /api/automation/controlled-sessions/automatic-pause/gate-snapshots`
+* `GET /api/automation/controlled-sessions/automatic-pause/gate-snapshots/{session_id}`
 
-Stage 3.9 已把 `_service()` 的 session provider 接到持久化只读 resolver，但仍明确使用
-`gate_provider=None`，且没有 evaluate、pause 或 resume 的 POST 路由。内部状态只允许首次写入
-`paused`，门禁恢复不会自动改回 active；未来
-恢复必须经过新的操作员复核协议。该接口不签发 session、不修改 OMS/账本，也不联系券商。
+Stage 3.10 已把持久化 gate snapshot provider 接入 pause controller。`evaluations` 必须提交
+精确 `session_id` 和该 session 的一次性 token，只能执行 capture + clear/no-op 或单向 pause；
+没有直接 pause、resume、renew、widen、admit 或 broker 路由。显式启动 trading scheduler 后也会
+周期检查所有 enabled session；默认 `live_auto_start=false` 时不会自动启动。snapshot 超过 30 秒、
+行情超过 120 秒、60 秒内达到 3 次 rate rejection，或任一硬事实缺失/非法都会趋向 pause。
+当前订单数消耗以持久化 runtime admissions 计数，亏损/回撤使用 attestation 中的 remaining
+budget；未来接入 broker execution/生产账本来源前，任何缺失值都不能被假定为 clear。接口不签发
+session、不修改 OMS/生产账本/资本，也不联系券商。
 
 Stage 3.9 的 runtime authority 接口为：
 

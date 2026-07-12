@@ -121,6 +121,15 @@ def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
         )
 
 
+def _evaluate_controlled_session_pauses() -> dict[str, Any]:
+    """Build fresh persisted gates and pause enabled sessions if required."""
+    from server.routes.controlled_session_automatic_pause import (
+        _orchestrator_service,
+    )
+
+    return _orchestrator_service().evaluate_all()
+
+
 def _is_spa_fallback_path(path: str) -> bool:
     requested = Path(path)
     if requested.suffix:
@@ -225,6 +234,7 @@ async def lifespan(app: FastAPI):
         notifier,
         db=db,
         trading_controls=trading_controls,
+        controlled_session_pause_runner=_evaluate_controlled_session_pauses,
     )
     state.scheduler = scheduler
 

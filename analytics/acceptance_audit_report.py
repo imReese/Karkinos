@@ -24,6 +24,7 @@ from analytics.acceptance_audit import (
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
     build_controlled_session_gateway_verification_binding_acceptance_audit,
+    build_controlled_session_live_gate_orchestration_acceptance_audit,
     build_controlled_session_runtime_authority_acceptance_audit,
     build_controlled_session_runtime_rate_limiter_acceptance_audit,
     build_controlled_session_symbol_budget_acceptance_audit,
@@ -140,6 +141,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "controlled_session_runtime_authority": (
         "Controlled Session Runtime Authority acceptance audit",
         build_controlled_session_runtime_authority_acceptance_audit,
+    ),
+    "controlled_session_live_gate_orchestration": (
+        "Controlled Session Live-Gate Orchestration acceptance audit",
+        build_controlled_session_live_gate_orchestration_acceptance_audit,
     ),
     "capital_scaling_review_foundation": (
         "Capital Scaling Review Foundation acceptance audit",

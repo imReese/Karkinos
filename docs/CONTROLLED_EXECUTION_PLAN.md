@@ -314,9 +314,18 @@ one-way revocation blocks authentication. Admission also rechecks persistent
 state transactionally, closing stale-provider revocation races. There is still
 no public admit, resume, renew, widen, broker submit/cancel, OMS/ledger mutation,
 or automatic capital change.
+Stage 3.10 now persists live-gate snapshots and connects them to the one-way
+pause controller. It evaluates Account Truth, risk, paper/shadow,
+reconciliation, gateway, market-data freshness, runtime budget/rate, kill
+switch, loss/drawdown, rejection, account-change, and consecutive-error facts.
+Missing evidence pauses. Periodic checks require explicit scheduler startup;
+the only operator-triggered check requires the same session token and cannot
+resume or widen authority. Remaining gates before broker execution include a
+separately reviewed resume protocol, production-grade broker execution and
+reconciliation sources, and an explicitly authorized submit/cancel boundary.
 The request and recorded capital evaluation must bind the same resolved clear
-prior-batch fingerprint. Stage 1/2 promotion, submit capability, automatic pause
-gate orchestration, runtime session resume, and the live gateway remain hard
+prior-batch fingerprint. Stage 1/2 promotion, submit capability, runtime session
+resume, and the live gateway remain hard
 blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen

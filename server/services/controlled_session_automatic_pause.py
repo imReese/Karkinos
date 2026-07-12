@@ -89,12 +89,22 @@ class ControlledSessionAutomaticPauseService:
             session = _sanitize_session(
                 raw_session if isinstance(raw_session, dict) else {}
             )
-        if session.get("status") != "current_enabled_bounded_session":
+        session_status = session.get("status")
+        if session_status not in {
+            "current_enabled_bounded_session",
+            "monitorable_bounded_session",
+        }:
             blockers.append("automatic_pause_session_not_current_or_enabled")
         if session.get("session_id") != normalized_session_id:
             blockers.append("automatic_pause_session_identity_mismatch")
-        if not session.get("session_authority_verified"):
+        if session_status == "current_enabled_bounded_session" and not session.get(
+            "session_authority_verified"
+        ):
             blockers.append("automatic_pause_session_authority_not_verified")
+        if session_status == "monitorable_bounded_session" and not session.get(
+            "monitoring_identity_verified"
+        ):
+            blockers.append("automatic_pause_monitoring_identity_not_verified")
         session_fingerprint = str(session.get("session_fingerprint") or "")
         reservation_id = str(session.get("reservation_id") or "")
         if not _FINGERPRINT_PATTERN.fullmatch(session_fingerprint):
@@ -358,8 +368,11 @@ def _pause_reasons(
         ("rejection_spike", "rejection_spike"),
         ("unexpected_account_change", "unexpected_account_change"),
     ):
-        if gates.get(field) is True:
+        value = gates.get(field)
+        if value is True:
             reasons.append(reason)
+        elif value is not False:
+            reasons.append(f"{field}_fact_invalid")
     consecutive_errors = gates.get("consecutive_errors")
     max_consecutive_errors = gates.get("max_consecutive_errors")
     if (
@@ -381,6 +394,8 @@ def _sanitize_session(value: dict[str, Any]) -> dict[str, Any]:
         "session_fingerprint": str(value.get("session_fingerprint") or ""),
         "reservation_id": str(value.get("reservation_id") or ""),
         "session_authority_verified": value.get("session_authority_verified") is True,
+        "monitoring_identity_verified": value.get("monitoring_identity_verified")
+        is True,
     }
 
 

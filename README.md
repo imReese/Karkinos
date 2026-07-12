@@ -356,6 +356,18 @@ rechecks persistent state against stale providers. This is bounded internal
 runtime authority, not broker authority: no public admit/resume/renew/widen,
 OMS/ledger mutation, or broker submit/cancel path exists.
 
+Stage 3.10 wires persisted live-gate snapshots into the one-way pause
+controller. Account Truth, risk, paper/shadow, reconciliation, gateway,
+market-data freshness, runtime budget/rate, kill switch, loss/drawdown,
+rejection, account-change, and consecutive-error facts are captured before
+each evaluation; missing or invalid facts pause rather than pass. The scheduler
+runs this orchestration only when explicitly started, and a token holder may
+request only a self-check that can preserve or reduce authority. Snapshots use
+a 30-second freshness window, market data uses 120 seconds, and three rate
+rejections inside 60 seconds trip the rejection-spike gate. This still creates
+no broker submit/cancel, OMS/ledger write, resume/renew/widen, or automatic
+capital-change path.
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run

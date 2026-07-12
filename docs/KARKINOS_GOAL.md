@@ -152,6 +152,15 @@ Active planning target:
   separately signed one-way revocation. Expiry, evidence drift, pause, and
   revocation fail closed; no session may resume, renew, widen, submit, or scale
   itself, and broker authority remains absent.
+* Stage 3.10 persistently captures typed live-gate snapshots and evaluates them
+  through the durable one-way pause controller. Monitoring may identify an
+  enabled session after source drift only so it can pause that original
+  session; it never grants runtime or broker authority. Missing Account Truth,
+  risk, paper/shadow, reconciliation, gateway, market-data, budget/rate, kill
+  switch, loss/drawdown, rejection, account-change, or error evidence fails
+  toward pause. Explicit scheduler startup or token-authenticated self-check
+  can trigger evaluation, but neither can resume, renew, widen, submit, or
+  mutate OMS/ledger/capital state.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

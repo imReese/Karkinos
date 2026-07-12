@@ -4828,6 +4828,161 @@ def build_controlled_session_runtime_authority_acceptance_audit() -> AcceptanceA
     )
 
 
+def build_controlled_session_live_gate_orchestration_acceptance_audit() -> (
+    AcceptanceAudit
+):
+    """Return evidence for Stage 3.10 persisted live-gate orchestration."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="live_gate_monitoring_identity_without_authority",
+                checkbox_text=(
+                    "* [x] Monitoring resolves the original persistent enabled "
+                    "session even when upstream reservation or attestation "
+                    "evidence drifts, while explicitly granting no runtime, "
+                    "resume, renewal, widening, or broker authority."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_live_gates.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py tests/test_controlled_session_live_gates.py -k 'source_drift or monitoring' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_typed_fail_closed_sources",
+                checkbox_text=(
+                    "* [x] A typed allowlisted snapshot derives Account Truth, "
+                    "risk, paper/shadow, reconciliation, gateway, market data, "
+                    "budget/rate, kill switch, loss/drawdown, rejection, "
+                    "account-change, and consecutive-error facts from persisted "
+                    "sources; missing or invalid facts fail toward pause."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_live_gates.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_live_gates.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'clear_snapshot or stale_quote or rejection_spike' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_append_only_snapshot_evidence",
+                checkbox_text=(
+                    "* [x] Gate snapshots are append-only, fingerprint-bound, "
+                    "sanitized, idempotent for an exact observation, queryable "
+                    "by session, and rejected as stale after the bounded "
+                    "freshness window."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_live_gates.py",
+                    "server/routes/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_live_gates.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'clear_snapshot or freshness' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_capture_then_one_way_pause",
+                checkbox_text=(
+                    "* [x] Every orchestration evaluation captures current "
+                    "evidence before applying the existing durable one-way "
+                    "pause; clear gates are a no-op and no evaluation can "
+                    "automatically resume a paused session."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_live_gates.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_live_gates.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'clear_snapshot or source_drift or kill_switch' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_scheduler_and_authenticated_self_check",
+                checkbox_text=(
+                    "* [x] Periodic evaluation runs only when the explicitly "
+                    "started trading scheduler is active, and an operator may "
+                    "trigger evaluation only by authenticating the same "
+                    "session token; neither path exposes runtime admission or "
+                    "execution authority."
+                ),
+                evidence_paths=(
+                    "server/app.py",
+                    "server/scheduler.py",
+                    "server/routes/controlled_session_automatic_pause.py",
+                    "tests/server/test_scheduler_quote_fetch_runs.py",
+                    "tests/server/test_controlled_session_automatic_pause_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_scheduler_quote_fetch_runs.py tests/server/test_controlled_session_automatic_pause_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_budget_and_operational_tripwires",
+                checkbox_text=(
+                    "* [x] Persisted runtime admissions enforce the bounded "
+                    "order-count and request-rate view, while stale quotes, "
+                    "kill switch activation, rejection spikes, consecutive "
+                    "errors, loss/drawdown exhaustion, and unexpected account "
+                    "change deterministically trip pause."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_live_gates.py",
+                    "tests/test_controlled_session_live_gates.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'budget_exhaustion or stale_quote or rejection_spike' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_sanitized_failure_evidence",
+                checkbox_text=(
+                    "* [x] Source drift and provider, identity, persistence, or "
+                    "evaluation failures remain fail-closed and sanitized; "
+                    "stored and returned snapshot evidence contains no runtime "
+                    "token or provider credential."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_live_gates.py",
+                    "server/routes/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_live_gates.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'monitoring_identity or freshness' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_gate_deterministic_zero_execution_tests",
+                checkbox_text=(
+                    "* [x] Deterministic service, route, scheduler, persistence, "
+                    "and source-drift tests verify pause orchestration with zero "
+                    "broker submission/cancellation, OMS or production-ledger "
+                    "mutation, capital widening, session issue/resume, or "
+                    "strategy-to-broker path."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_live_gates.py",
+                    "tests/server/test_controlled_session_automatic_pause_routes.py",
+                    "tests/server/test_scheduler_quote_fetch_runs.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_live_gates.py tests/server/test_controlled_session_automatic_pause_routes.py tests/server/test_scheduler_quote_fetch_runs.py -q",
+                ),
+            ),
+        )
+    )
+
+
 def build_signed_operator_approval_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for Stage 2.2/3.2 signed operator approvals."""
 
