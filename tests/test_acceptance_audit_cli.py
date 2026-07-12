@@ -576,6 +576,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "controlled_session_runtime_authority",
         "controlled_session_live_gate_orchestration",
         "controlled_session_signed_replacement",
+        "controlled_broker_submission",
         "capital_scaling_review_foundation",
         "capital_scaling_evidence_resolution",
         "capital_scaling_evidence_window",

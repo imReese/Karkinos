@@ -34,6 +34,7 @@ PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT = (
     "confirm_exact_non_submitting_dossier_for_review"
 )
 PER_ORDER_CONFIRMATION_MAX_SOAK_AGE_SECONDS = 900
+_FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 _REQUIRED_GATEWAY_EVIDENCE: dict[str, tuple[str, frozenset[str]]] = {
     "account_truth": ("gate_status", frozenset({"pass", "passed"})),
@@ -316,6 +317,9 @@ class PerOrderConfirmationService:
             dossier=dossier,
             submitted_dossier_fingerprint=dossier_fingerprint,
             capital_evaluation_input_fingerprint=(capital_evaluation_input_fingerprint),
+            prior_batch_reconciliation_fingerprint=(
+                prior_batch_reconciliation_fingerprint
+            ),
             execution_gateway_verification_fingerprint=(
                 execution_gateway_verification_fingerprint
             ),
@@ -331,6 +335,117 @@ class PerOrderConfirmationService:
                 evidence=attempt,
             )
         return attempt
+
+    def resolve_confirmation(self, confirmation_id: str) -> dict[str, Any]:
+        """Re-resolve one recorded confirmation against current gate evidence."""
+        normalized = str(confirmation_id or "").strip().lower()
+        if not _FINGERPRINT_PATTERN.fullmatch(normalized):
+            return _blocked_confirmation_resolution(
+                normalized,
+                ["per_order_confirmation_id_invalid"],
+            )
+        rows = self._db.list_events_sync(
+            event_type=PER_ORDER_CONFIRMATION_EVENT_TYPE,
+            entity_type=PER_ORDER_CONFIRMATION_EVENT_ENTITY_TYPE,
+            entity_id=normalized,
+            source=PER_ORDER_CONFIRMATION_EVENT_SOURCE,
+            limit=1,
+        )
+        if not rows:
+            return _blocked_confirmation_resolution(
+                normalized,
+                ["per_order_confirmation_not_found"],
+            )
+        recorded = _event_response(rows[0], reused=False)
+        blockers: list[str] = []
+        if recorded.get("status") != "recorded_verified_identity":
+            blockers.append("per_order_confirmation_not_verified")
+        order_id = str(recorded.get("order_id") or "")
+        capital_fingerprint = str(
+            recorded.get("capital_evaluation_input_fingerprint") or ""
+        )
+        prior_batch_fingerprint = str(
+            recorded.get("prior_batch_reconciliation_fingerprint") or ""
+        )
+        gateway_fingerprint = str(
+            recorded.get("execution_gateway_verification_fingerprint") or ""
+        )
+        if not _FINGERPRINT_PATTERN.fullmatch(prior_batch_fingerprint):
+            blockers.append("per_order_confirmation_prior_batch_evidence_missing")
+        try:
+            dossier = self.preview_dossier(
+                order_id,
+                capital_evaluation_input_fingerprint=capital_fingerprint,
+                prior_batch_reconciliation_fingerprint=prior_batch_fingerprint,
+                execution_gateway_verification_fingerprint=gateway_fingerprint,
+            )
+        except (KeyError, ValueError):
+            dossier = {}
+            blockers.append("per_order_confirmation_current_dossier_unavailable")
+        if str(dossier.get("dossier_fingerprint") or "") != str(
+            recorded.get("dossier_fingerprint") or ""
+        ):
+            blockers.append("per_order_confirmation_dossier_changed")
+        if dossier.get("review_blockers"):
+            blockers.append("per_order_confirmation_current_review_blocked")
+        current_confirmation = _mapping(dossier.get("confirmation"))
+        if str(current_confirmation.get("confirmation_id") or "") != normalized:
+            blockers.append("per_order_confirmation_not_current")
+        approval, approval_blockers = resolve_operator_approval(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=str(recorded.get("operator_approval_id") or ""),
+            expected_action="attest_per_order_dossier",
+            expected_artifact_type="per_order_dossier",
+            expected_artifact_fingerprint=str(
+                recorded.get("dossier_fingerprint") or ""
+            ),
+            clock=self._clock,
+        )
+        if approval_blockers:
+            blockers.append("per_order_confirmation_operator_approval_not_current")
+        elif str(approval.get("operator_id") or "") != str(
+            recorded.get("operator_label") or ""
+        ):
+            blockers.append("per_order_confirmation_operator_mismatch")
+        hard_blockers = [
+            str(item) for item in dossier.get("hard_submission_blockers") or []
+        ]
+        expected_foundation_blockers = {
+            "operator_identity_unverified",
+            "runtime_execution_authority_disabled",
+            "live_gateway_not_implemented",
+            "broker_submission_disabled",
+        }
+        unexpected_hard_blockers = [
+            item for item in hard_blockers if item not in expected_foundation_blockers
+        ]
+        if unexpected_hard_blockers:
+            blockers.append("per_order_confirmation_unexpected_hard_blockers")
+        unique_blockers = list(dict.fromkeys(blockers))
+        return {
+            "schema_version": PER_ORDER_CONFIRMATION_SCHEMA_VERSION,
+            "status": (
+                "current_verified_non_authorizing_confirmation"
+                if not unique_blockers
+                else "blocked"
+            ),
+            "confirmation_id": normalized,
+            "order_id": order_id,
+            "dossier_fingerprint": str(recorded.get("dossier_fingerprint") or ""),
+            "capital_evaluation_input_fingerprint": capital_fingerprint,
+            "prior_batch_reconciliation_fingerprint": prior_batch_fingerprint,
+            "execution_gateway_verification_fingerprint": gateway_fingerprint,
+            "operator_id": str(recorded.get("operator_label") or ""),
+            "operator_approval_id": str(recorded.get("operator_approval_id") or ""),
+            "current_dossier": dossier,
+            "expected_foundation_blockers": sorted(expected_foundation_blockers),
+            "unexpected_hard_blockers": unexpected_hard_blockers,
+            "blockers": unique_blockers,
+            "authorizes_execution": False,
+            "broker_submission_enabled": False,
+            "safety": _safety_flags(),
+        }
 
     def list_confirmations(
         self,
@@ -659,6 +774,7 @@ class PerOrderConfirmationService:
         dossier: dict[str, Any],
         submitted_dossier_fingerprint: str,
         capital_evaluation_input_fingerprint: str,
+        prior_batch_reconciliation_fingerprint: str,
         execution_gateway_verification_fingerprint: str,
         operator_label: str,
         operator_approval: dict[str, Any],
@@ -673,6 +789,9 @@ class PerOrderConfirmationService:
             "submitted_dossier_fingerprint": submitted_dossier_fingerprint,
             "capital_evaluation_input_fingerprint": (
                 capital_evaluation_input_fingerprint
+            ),
+            "prior_batch_reconciliation_fingerprint": (
+                prior_batch_reconciliation_fingerprint
             ),
             "execution_gateway_verification_fingerprint": (
                 execution_gateway_verification_fingerprint
@@ -969,6 +1088,26 @@ def _event_response(row: dict[str, Any], *, reused: bool) -> dict[str, Any]:
         "reused": reused,
         **payload,
     }
+
+
+def _blocked_confirmation_resolution(
+    confirmation_id: str,
+    blockers: list[str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": PER_ORDER_CONFIRMATION_SCHEMA_VERSION,
+        "status": "blocked",
+        "confirmation_id": confirmation_id,
+        "order_id": "",
+        "blockers": list(dict.fromkeys(blockers)),
+        "authorizes_execution": False,
+        "broker_submission_enabled": False,
+        "safety": _safety_flags(),
+    }
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _safety_flags() -> dict[str, bool]:

@@ -1523,6 +1523,404 @@ class AppDatabase:
             conn.commit()
             return dict(row)
 
+    # ---------- Controlled Broker Submit Intents ----------
+
+    def prepare_controlled_broker_submit_intent_sync(
+        self,
+        *,
+        intent: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist one one-shot submit intent before any external broker call."""
+        requested = dict(intent)
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? OR order_id = ? OR client_order_id = ?
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (
+                        requested["submit_intent_id"],
+                        requested["order_id"],
+                        requested["client_order_id"],
+                    ),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        existing["submit_intent_id"] == requested["submit_intent_id"]
+                        and existing["submit_fingerprint"]
+                        == requested["submit_fingerprint"]
+                        and existing["order_id"] == requested["order_id"]
+                        and existing["client_order_id"] == requested["client_order_id"]
+                    ):
+                        conn.commit()
+                        return {
+                            "status": str(existing["status"]),
+                            "blockers": [],
+                            "reused": True,
+                            "external_call_permitted": False,
+                            "intent": dict(existing),
+                        }
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(
+                        requested,
+                        ["controlled_broker_submit_intent_conflict"],
+                    )
+                order = conn.execute(
+                    "SELECT * FROM oms_orders WHERE order_id = ? LIMIT 1",
+                    (requested["order_id"],),
+                ).fetchone()
+                blockers: list[str] = []
+                if order is None:
+                    blockers.append("controlled_broker_submit_order_not_found")
+                else:
+                    if order["status"] != "manually_confirmed":
+                        blockers.append(
+                            "controlled_broker_submit_order_not_manually_confirmed"
+                        )
+                    snapshot = requested["order_snapshot"]
+                    for field in ("symbol", "side", "asset_class", "order_type"):
+                        if str(order[field] or "") != str(snapshot.get(field) or ""):
+                            blockers.append(
+                                f"controlled_broker_submit_order_{field}_changed"
+                            )
+                    if float(order["quantity"]) != float(snapshot.get("quantity")):
+                        blockers.append(
+                            "controlled_broker_submit_order_quantity_changed"
+                        )
+                    current_limit = (
+                        None
+                        if order["limit_price"] is None
+                        else float(order["limit_price"])
+                    )
+                    requested_limit = (
+                        None
+                        if snapshot.get("limit_price") in {None, ""}
+                        else float(snapshot.get("limit_price"))
+                    )
+                    if current_limit != requested_limit:
+                        blockers.append(
+                            "controlled_broker_submit_order_limit_price_changed"
+                        )
+                kill_switch_row = conn.execute(
+                    "SELECT value_json FROM runtime_controls WHERE key = 'kill_switch' LIMIT 1"
+                ).fetchone()
+                if kill_switch_row is not None:
+                    kill_switch = _json_dict(kill_switch_row["value_json"])
+                    if kill_switch.get("enabled") is True:
+                        blockers.append("controlled_broker_submit_kill_switch_enabled")
+                if blockers:
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(requested, blockers)
+                conn.execute(
+                    """
+                    INSERT INTO controlled_broker_submit_intents (
+                        submit_intent_id, submit_fingerprint, order_id,
+                        order_fingerprint, confirmation_id, dossier_fingerprint,
+                        gateway_id, gateway_verification_fingerprint,
+                        release_evidence_id, release_evidence_fingerprint,
+                        client_order_id, operator_id, operator_approval_id,
+                        status, broker_order_id, broker_status,
+                        prepared_at_epoch_ms, prepared_at, last_recovery_at_epoch_ms,
+                        last_recovery_at, payload_json, result_json, created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["submit_intent_id"],
+                        requested["submit_fingerprint"],
+                        requested["order_id"],
+                        requested["order_fingerprint"],
+                        requested["confirmation_id"],
+                        requested["dossier_fingerprint"],
+                        requested["gateway_id"],
+                        requested["gateway_verification_fingerprint"],
+                        requested["release_evidence_id"],
+                        requested["release_evidence_fingerprint"],
+                        requested["client_order_id"],
+                        requested["operator_id"],
+                        requested["operator_approval_id"],
+                        "prepared",
+                        "",
+                        "",
+                        int(requested["prepared_at_epoch_ms"]),
+                        requested["prepared_at"],
+                        0,
+                        "",
+                        _serialize_event_payload_json(requested["payload"]),
+                        "{}",
+                        requested["created_at"],
+                        requested["created_at"],
+                    ),
+                )
+                conn.execute(
+                    """
+                    UPDATE oms_orders
+                    SET status = 'submission_pending', updated_at = ?
+                    WHERE order_id = ? AND status = 'manually_confirmed'
+                    """,
+                    (requested["created_at"], requested["order_id"]),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO oms_transitions (
+                        order_id, from_status, to_status, reason, actor,
+                        payload_json, transitioned_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["order_id"],
+                        "manually_confirmed",
+                        "submission_pending",
+                        "signed controlled broker submit intent prepared",
+                        requested["operator_id"],
+                        _serialize_event_payload_json(
+                            {
+                                "submit_intent_id": requested["submit_intent_id"],
+                                "submit_fingerprint": requested["submit_fingerprint"],
+                                "gateway_id": requested["gateway_id"],
+                                "client_order_id": requested["client_order_id"],
+                                "one_shot_manual_authority": True,
+                                "strategy_direct_submission": False,
+                            }
+                        ),
+                        requested["created_at"],
+                        requested["created_at"],
+                    ),
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? LIMIT 1
+                    """,
+                    (requested["submit_intent_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "prepared",
+                    "blockers": [],
+                    "reused": False,
+                    "external_call_permitted": True,
+                    "intent": dict(saved) if saved is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                conn.rollback()
+                return _controlled_broker_submit_rejection(
+                    requested,
+                    ["controlled_broker_submit_prepare_transaction_unavailable"],
+                )
+
+    def finalize_controlled_broker_submit_intent_sync(
+        self,
+        *,
+        submit_intent_id: str,
+        status: str,
+        broker_order_id: str,
+        broker_status: str,
+        result: dict[str, Any],
+        actor: str,
+        finalized_at_epoch_ms: int,
+        finalized_at: str,
+        recovered: bool = False,
+    ) -> dict[str, Any]:
+        """Persist a broker result without ever retrying the external submit call."""
+        normalized_status = str(status or "")
+        if normalized_status not in {"submitted", "rejected", "submission_unknown"}:
+            return _controlled_broker_submit_rejection(
+                {"submit_intent_id": submit_intent_id},
+                ["controlled_broker_submit_result_status_invalid"],
+            )
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                intent = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? LIMIT 1
+                    """,
+                    (submit_intent_id,),
+                ).fetchone()
+                if intent is None:
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(
+                        {"submit_intent_id": submit_intent_id},
+                        ["controlled_broker_submit_intent_not_found"],
+                    )
+                current_status = str(intent["status"])
+                if current_status in {"submitted", "rejected"}:
+                    if current_status != normalized_status:
+                        conn.rollback()
+                        return _controlled_broker_submit_rejection(
+                            dict(intent),
+                            ["controlled_broker_submit_terminal_result_conflict"],
+                        )
+                    conn.commit()
+                    return {
+                        "status": current_status,
+                        "blockers": [],
+                        "reused": True,
+                        "intent": dict(intent),
+                    }
+                if current_status not in {"prepared", "submission_unknown"}:
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(
+                        dict(intent),
+                        ["controlled_broker_submit_state_invalid"],
+                    )
+                order = conn.execute(
+                    "SELECT * FROM oms_orders WHERE order_id = ? LIMIT 1",
+                    (intent["order_id"],),
+                ).fetchone()
+                expected_order_statuses = {"submission_pending", "submission_unknown"}
+                if order is None or str(order["status"]) not in expected_order_statuses:
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(
+                        dict(intent),
+                        ["controlled_broker_submit_oms_state_changed"],
+                    )
+                from_status = str(order["status"])
+                conn.execute(
+                    """
+                    UPDATE controlled_broker_submit_intents
+                    SET status = ?, broker_order_id = ?, broker_status = ?,
+                        result_json = ?, last_recovery_at_epoch_ms = ?,
+                        last_recovery_at = ?, updated_at = ?
+                    WHERE submit_intent_id = ?
+                    """,
+                    (
+                        normalized_status,
+                        broker_order_id,
+                        broker_status,
+                        _serialize_event_payload_json(result),
+                        int(finalized_at_epoch_ms) if recovered else 0,
+                        finalized_at if recovered else "",
+                        finalized_at,
+                        submit_intent_id,
+                    ),
+                )
+                if from_status != normalized_status:
+                    conn.execute(
+                        "UPDATE oms_orders SET status = ?, updated_at = ? WHERE order_id = ?",
+                        (normalized_status, finalized_at, intent["order_id"]),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO oms_transitions (
+                            order_id, from_status, to_status, reason, actor,
+                            payload_json, transitioned_at, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            intent["order_id"],
+                            from_status,
+                            normalized_status,
+                            (
+                                "controlled broker submission recovered by query"
+                                if recovered
+                                else "controlled broker submission result recorded"
+                            ),
+                            actor,
+                            _serialize_event_payload_json(
+                                {
+                                    "submit_intent_id": submit_intent_id,
+                                    "gateway_id": intent["gateway_id"],
+                                    "client_order_id": intent["client_order_id"],
+                                    "broker_order_id": broker_order_id,
+                                    "broker_status": broker_status,
+                                    "recovered": recovered,
+                                    "production_ledger_mutated": False,
+                                }
+                            ),
+                            finalized_at,
+                            finalized_at,
+                        ),
+                    )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? LIMIT 1
+                    """,
+                    (submit_intent_id,),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": normalized_status,
+                    "blockers": [],
+                    "reused": False,
+                    "intent": dict(saved) if saved is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                conn.rollback()
+                return _controlled_broker_submit_rejection(
+                    {"submit_intent_id": submit_intent_id},
+                    ["controlled_broker_submit_finalize_transaction_unavailable"],
+                )
+
+    def get_controlled_broker_submit_intent_sync(
+        self,
+        submit_intent_id: str,
+    ) -> dict[str, Any] | None:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_broker_submit_intents
+                WHERE submit_intent_id = ? LIMIT 1
+                """,
+                (submit_intent_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def get_controlled_broker_submit_intent_for_order_sync(
+        self,
+        order_id: str,
+    ) -> dict[str, Any] | None:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_broker_submit_intents
+                WHERE order_id = ? LIMIT 1
+                """,
+                (order_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def list_controlled_broker_submit_intents_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_broker_submit_intents
+                ORDER BY prepared_at_epoch_ms DESC, id DESC LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def list_oms_transitions_sync(self, order_id: str) -> list[dict[str, Any]]:
         """List OMS transitions for one order in chronological order."""
         with sqlite3.connect(self._path) as conn:
@@ -6418,6 +6816,21 @@ def _controlled_session_gate_snapshot_rejection(
     }
 
 
+def _controlled_broker_submit_rejection(
+    intent: dict[str, Any],
+    blockers: list[str],
+) -> dict[str, Any]:
+    return {
+        "status": "rejected",
+        "blockers": list(dict.fromkeys(blockers)),
+        "reused": False,
+        "external_call_permitted": False,
+        "submit_intent_id": str(intent.get("submit_intent_id") or ""),
+        "order_id": str(intent.get("order_id") or ""),
+        "intent": {},
+    }
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6947,6 +7360,40 @@ CREATE TABLE IF NOT EXISTS oms_transitions (
 
 CREATE INDEX IF NOT EXISTS idx_oms_transitions_order
 ON oms_transitions(order_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS controlled_broker_submit_intents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    submit_intent_id TEXT NOT NULL UNIQUE,
+    submit_fingerprint TEXT NOT NULL UNIQUE,
+    order_id TEXT NOT NULL UNIQUE,
+    order_fingerprint TEXT NOT NULL,
+    confirmation_id TEXT NOT NULL,
+    dossier_fingerprint TEXT NOT NULL,
+    gateway_id TEXT NOT NULL,
+    gateway_verification_fingerprint TEXT NOT NULL,
+    release_evidence_id TEXT NOT NULL,
+    release_evidence_fingerprint TEXT NOT NULL,
+    client_order_id TEXT NOT NULL UNIQUE,
+    operator_id TEXT NOT NULL,
+    operator_approval_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN (
+        'prepared', 'submitted', 'rejected', 'submission_unknown'
+    )),
+    broker_order_id TEXT NOT NULL DEFAULT '',
+    broker_status TEXT NOT NULL DEFAULT '',
+    prepared_at_epoch_ms INTEGER NOT NULL CHECK(prepared_at_epoch_ms >= 0),
+    prepared_at TEXT NOT NULL,
+    last_recovery_at_epoch_ms INTEGER NOT NULL DEFAULT 0,
+    last_recovery_at TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL,
+    result_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_broker_submit_status_time
+ON controlled_broker_submit_intents(status, prepared_at_epoch_ms DESC);
 
 CREATE TABLE IF NOT EXISTS broker_gateway_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -330,6 +330,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.capital_scaling_review import (
         create_router as capital_scaling_review_router,
     )
+    from server.routes.controlled_broker_submission import (
+        create_router as controlled_broker_submission_router,
+    )
     from server.routes.controlled_session_automatic_pause import (
         create_router as controlled_session_automatic_pause_router,
     )
@@ -379,6 +382,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(broker_connector_soak_router())
     app.include_router(capital_authorization_router())
     app.include_router(capital_scaling_review_router())
+    app.include_router(controlled_broker_submission_router())
     app.include_router(controlled_session_envelope_router())
     app.include_router(controlled_session_budget_reservation_router())
     app.include_router(controlled_session_runtime_authority_router())

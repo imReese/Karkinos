@@ -20,6 +20,7 @@ from analytics.acceptance_audit import (
     build_capital_scaling_operating_sample_acceptance_audit,
     build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
+    build_controlled_broker_submission_acceptance_audit,
     build_controlled_session_automatic_pause_acceptance_audit,
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
@@ -150,6 +151,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "controlled_session_signed_replacement": (
         "Controlled Session Signed Replacement acceptance audit",
         build_controlled_session_signed_replacement_acceptance_audit,
+    ),
+    "controlled_broker_submission": (
+        "One-Shot Controlled Broker Submission acceptance audit",
+        build_controlled_broker_submission_acceptance_audit,
     ),
     "capital_scaling_review_foundation": (
         "Capital Scaling Review Foundation acceptance audit",

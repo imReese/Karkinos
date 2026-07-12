@@ -622,6 +622,19 @@ No raw token is persisted or reissued on retry. This is human-reviewed runtime
 authority recovery only; it adds no broker, OMS, production-ledger, capital-
 scale, renew, or widen operation.
 
+Stage 3.12 introduces a separate one-shot broker-contact boundary for one exact
+`manually_confirmed` order. The boundary re-resolves current per-order evidence,
+then binds gateway verification, signed operational release evidence, fresh
+health, dry-run output, idempotent client order id, and a distinct final
+operator signature into one submit fingerprint. A SQLite `BEGIN IMMEDIATE`
+transaction records the intent and moves OMS to `submission_pending` before the
+external call, so concurrent duplicates cannot both submit. Explicit broker
+accept/reject outcomes are persisted; ambiguity becomes `submission_unknown`.
+Recovery waits 30 seconds and can only query by client order id—there is no
+resubmit operation. Production dependency injection remains empty by default,
+and the boundary cannot cancel, apply fills, mutate the production ledger,
+expand capital, accept session-wide authority, or expose a strategy path.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

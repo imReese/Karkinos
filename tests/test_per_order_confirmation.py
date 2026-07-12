@@ -20,7 +20,12 @@ from account_truth.broker_connector import (
 from data.market_calendar import build_static_market_calendar_snapshot
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
-from server.services.broker_connector_soak import BrokerConnectorSoakService
+from server.services.broker_connector_soak import (
+    BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+    BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+    BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+    BrokerConnectorSoakService,
+)
 from server.services.capital_authorization import (
     CapitalAuthorizationContext,
     CapitalAuthorizationLimits,
@@ -956,6 +961,103 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
     assert "live_gateway_not_implemented" in dossier["hard_submission_blockers"]
     assert dossier["submission_status"] == "blocked"
     assert dossier["authorizes_execution"] is False
+
+
+def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+    for offset in range(1, 20):
+        observed_at = NOW - timedelta(days=offset)
+        env["db"].append_event_sync(
+            event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+            timestamp=observed_at.isoformat(),
+            entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+            entity_id=hashlib.sha256(f"resolver-soak-{offset}".encode()).hexdigest(),
+            source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+            source_ref="qmt-readonly-confirmation",
+            payload={
+                "connector_id": "qmt-readonly-confirmation",
+                "trading_day": observed_at.date().isoformat(),
+                "observed_at": observed_at.isoformat(),
+                "soak_status": "healthy",
+                "qualifies_for_healthy_soak_day": True,
+                "execution_reconciliation": {"status": "clear"},
+                "broker_submission_enabled": False,
+            },
+        )
+    env["db"].append_event_sync(
+        event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+        timestamp=NOW.isoformat(),
+        entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+        entity_id=hashlib.sha256(b"resolver-soak-current").hexdigest(),
+        source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        source_ref="qmt-readonly-confirmation",
+        payload={
+            "connector_id": "qmt-readonly-confirmation",
+            "trading_day": NOW.date().isoformat(),
+            "observed_at": NOW.isoformat(),
+            "source_captured_at": NOW.isoformat(),
+            "soak_status": "healthy",
+            "qualifies_for_healthy_soak_day": True,
+            "execution_reconciliation": {"status": "clear"},
+            "broker_submission_enabled": False,
+        },
+    )
+    current_promotion = [_signed_stage1_promotion()]
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trusted_operator_identities=[env["trusted_identity"]],
+        trading_controls=env["controls"],
+        broker_soak_promotion_evidence_provider=(
+            lambda connector_id: current_promotion[0]
+        ),
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
+        clock=lambda: NOW,
+    )
+    order_id = env["order"]["order_id"]
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+    dossier = service.preview_dossier(order_id, **kwargs)
+    approval = _operator_approval(env, dossier["dossier_fingerprint"])
+    confirmation = service.record_confirmation(
+        order_id,
+        **kwargs,
+        dossier_fingerprint=dossier["dossier_fingerprint"],
+        operator_label="local-owner",
+        operator_approval_id=approval["approval_id"],
+        acknowledgement=PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
+    )
+
+    resolved = service.resolve_confirmation(confirmation["confirmation_id"])
+
+    assert (
+        resolved["status"] == "current_verified_non_authorizing_confirmation"
+    ), resolved["unexpected_hard_blockers"]
+    assert resolved["confirmation_id"] == confirmation["confirmation_id"]
+    assert (
+        resolved["prior_batch_reconciliation_fingerprint"]
+        == kwargs["prior_batch_reconciliation_fingerprint"]
+    )
+    assert resolved["unexpected_hard_blockers"] == []
+    assert resolved["authorizes_execution"] is False
+    assert resolved["broker_submission_enabled"] is False
+
+    current_promotion[0] = _signed_stage1_promotion(version=2)
+    drifted = service.resolve_confirmation(confirmation["confirmation_id"])
+    assert drifted["status"] == "blocked"
+    assert "per_order_confirmation_dossier_changed" in drifted["blockers"]
+    assert drifted["authorizes_execution"] is False
 
 
 def test_signed_stage1_promotion_source_drift_invalidates_exact_order_dossier(
