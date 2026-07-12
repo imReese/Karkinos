@@ -392,6 +392,16 @@ by querying the same idempotent client order id after 30 seconds. Production
 still has no configured write adapter or release provider, no automatic or
 strategy-direct submission, no broker cancel, and no fill/ledger mutation.
 
+Stage 3.13 adds a fail-closed cross-order submission interlock. Any different
+order is blocked while a controlled intent is prepared, accepted but not yet
+reconciled, or unknown; the check runs both in preview and inside the SQLite
+write transaction, so different-order concurrency cannot bypass it. Execution
+reconciliation now classifies those states, unknown outcomes produce a critical
+alert, and Operations exposes the query-only recovery task. A definitive
+rejection releases the interlock. Accepted broker evidence remains an open
+human review item and cannot infer a fill, update the ledger, or clear the next
+order; that signed reconciliation clearance is a later stage.
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run
@@ -569,6 +579,7 @@ uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_p
 uv run python scripts/export_acceptance_audit.py --audit per_order_confirmation_foundation
 uv run python scripts/export_acceptance_audit.py --audit controlled_session_envelope_foundation
 uv run python scripts/export_acceptance_audit.py --audit controlled_broker_submission
+uv run python scripts/export_acceptance_audit.py --audit controlled_submission_interlock
 uv run python scripts/export_acceptance_audit.py --audit signed_operator_approval
 uv run python scripts/export_acceptance_audit.py --audit capital_scaling_review_foundation
 uv run python scripts/export_acceptance_audit.py --audit all --output reports/acceptance-audit.json

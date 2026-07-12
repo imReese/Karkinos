@@ -91,15 +91,15 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
 | Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, Today's to-dos, and automatic paper/shadow handoff exist. | Continue requiring public explanations for every blocked/manual-ready state and keep order intents non-submitting. | v1.5-v1.6, ongoing |
 | Paper/shadow execution | Persisted daily runs include deterministic inputs, simulated order/fill state, fees/taxes, divergence, retry/idempotency, and review outcomes. | Keep evidence fresh and require divergence review before any later live-like authority. | v1.6.1, ongoing |
-| OMS state machine | Paper/shadow lifecycle states plus one-shot `submission_pending`/`submitted`/`rejected`/`submission_unknown` evidence, deterministic client order ids, atomic intent persistence, idempotent reruns, and reconciliation evidence exist. | A real adapter still needs broker-confirmed fill/cancel lifecycle evidence without weakening paper/manual boundaries; unknown outcomes must remain query-only. | v1.6.1, Stage 3.12, future L4 |
-| Broker execution gateway | Manual-ticket preview/export/dry-run/create and read-only evidence remain available; Stage 3.12 adds an injectable one-shot submit/query contract behind fresh signed release, final-signature, capability, health, dry-run, and kill-switch gates. Production registers no write adapter or release provider by default. | Implement and independently review one broker-specific adapter/release-evidence source, then prove sandbox/read-only/operational soak and reconciliation before any explicit pilot. | v1.7, Stage 3.12, future L4 |
+| OMS state machine | Paper/shadow lifecycle states plus one-shot `submission_pending`/`submitted`/`rejected`/`submission_unknown` evidence, deterministic client order ids, atomic intent persistence, idempotent reruns, and controlled-intent reconciliation classification exist. | A real adapter still needs broker-confirmed partial-fill/fill/cancel evidence and a separately signed reconciliation-clearance transition; accepted evidence cannot self-clear the current interlock. | v1.6.1, Stage 3.12-3.13, future L4 |
+| Broker execution gateway | Manual-ticket/read-only evidence remains available; Stage 3.12 adds an injectable one-shot submit/query contract, and Stage 3.13 atomically blocks every different order while any prior controlled submission is unknown or unreconciled. Production registers no write adapter or release provider by default. | Implement and independently review one broker-specific adapter/release source, then add callback/poll aggregation and signed reconciliation clearance before an explicit pilot. | v1.7, Stage 3.12-3.13, future L4 |
 | Order ticket export | Copy-safe ticket export, operator forms, manual-execution preview/evidence, and explicit links to broker-statement import and execution reconciliation exist. | Validate operator ergonomics with local workflows before considering any broker-write capability. | v1.7, ongoing |
 | Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
 | Risk controls | Mandatory pre-trade risk gate, batch risk checks, cash buffer, concentration, T+1, data-quality, and kill-switch concepts exist. | Live-like execution must enforce global, strategy, account, and per-symbol controls with policy snapshots, escalation notes, and irreversible audit logs. | v1.5-v1.7 |
 | Scheduler and runbook | Operations summary, persistent scheduler records, deterministic rerun keys, input snapshots, errors, retries, limitations, and operator review state exist. | Continue operational soak and preserve idempotency as scheduled workflows expand. | v1.6, ongoing |
 | Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
 | Strategy promotion pipeline | Research/paper lifecycle, readiness evidence, audit-only pause/retire states, and default rejection of controlled-bridge pilot promotion exist. | A future L4/L5 pilot must add explicit enablement without allowing promotion evidence to authorize execution by itself. | v1.6-v1.7, future L4-L5 |
-| Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic account/symbol budgets, token-authenticated sessions, live gates, automatic pause, equal-or-narrower replacement, evidence-based scale review, and a default-closed one-order submit-intent/recovery boundary. | Supply a separately reviewed real adapter and signed release source, then prove real-account operational/reconciliation evidence before an explicit bounded pilot. Initial validation uses a small risk envelope, but evidence may authorize later scale review. | v1.8, Stage 3.12 |
+| Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic budgets, token-authenticated sessions, live gates, pause/replacement, evidence-based scale review, a one-order submit boundary, and an unreconciled-submission interlock visible in reconciliation/alerts/Operations. | Supply a reviewed real adapter and release source, then complete signed fill/reconciliation clearance and prove operational evidence before an explicit bounded pilot. Initial validation uses a small risk envelope; later scale remains evidence-reviewed. | v1.8, Stage 3.12-3.13 |
 | Unattended full-account automation | Not supported. | Keep permanently authorized, unsupervised execution outside the product target. | Non-goal |
 
 ## Controlled Automation Architecture
@@ -1790,6 +1790,37 @@ issue capital authority.
   execution, session-wide submission, capital widening, broker cancel, fill
   apply, or ledger-sync action; deterministic tests cover terminal, unknown,
   retry, concurrency, signature, and kill-switch boundaries.
+
+### Stage 3.13 Unreconciled Submission Interlock & Visibility
+
+* [x] Preview and status fail closed when any other controlled intent is
+  `prepared`, `submitted`, or `submission_unknown`; the response identifies
+  only sanitized intent/order/status evidence and never treats an accepted
+  broker acknowledgement as reconciliation.
+* [x] The same interlock is rechecked inside SQLite `BEGIN IMMEDIATE` before
+  intent insertion, so two different concurrently confirmed orders cannot both
+  receive permission for an external call.
+* [x] Only a definitive rejected/not-found outcome removes the current
+  interlock in this stage; unknown and accepted-but-unreconciled outcomes remain
+  blocked, exact retries remain read-only, and recovery remains query-only.
+* [x] Execution reconciliation consumes persisted submit intent evidence and
+  distinguishes pending/unknown, accepted awaiting broker evidence, matching
+  staged broker evidence, quantity/evidence conflict, and definitive rejection
+  without inferring fills.
+* [x] Matching imported broker evidence remains an open human reconciliation
+  item; it does not infer an OMS fill, apply a broker callback, write a fill,
+  mutate the production ledger, or clear the next-order interlock.
+* [x] Automation alert scanning raises a critical, sanitized alert for an
+  unknown controlled submission, states that new submissions are blocked, and
+  exposes only query recovery with resubmission disabled.
+* [x] Operations surfaces controlled-submission review and unknown counts, the
+  sanitized first open item, and the query-recovery next action from each
+  order's latest reconciliation fact ahead of ordinary execution review,
+  without deleting history or adding a submit, retry, or ledger action.
+* [x] Deterministic concurrency, terminal, unknown, reconciliation, alert, and
+  Operations tests preserve manual final authority and prove no strategy-direct
+  or automatic submission, broker cancel, fill apply, ledger sync,
+  reconciliation self-clear, or capital widening.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

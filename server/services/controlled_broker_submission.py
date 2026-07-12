@@ -109,12 +109,17 @@ class ControlledBrokerSubmissionService:
             and self._trusted_operator_identities
             and self._trading_controls is not None
         )
+        interlock = self._submission_interlock()
         return {
             "schema_version": CONTROLLED_BROKER_SUBMISSION_STATUS_SCHEMA_VERSION,
             "contract_status": (
-                "one_shot_manual_submission_available"
-                if dependencies_ready
-                else "disabled_waiting_for_explicit_write_gateway_and_release_evidence"
+                "disabled_waiting_for_explicit_write_gateway_and_release_evidence"
+                if not dependencies_ready
+                else (
+                    "blocked_by_unreconciled_controlled_submission"
+                    if interlock["blocked"]
+                    else "one_shot_manual_submission_available"
+                )
             ),
             "registered_gateway_ids": sorted(set(gateway_ids)),
             "duplicate_gateway_ids": duplicates,
@@ -133,6 +138,7 @@ class ControlledBrokerSubmissionService:
             "recovery_minimum_wait_seconds": (
                 CONTROLLED_BROKER_RECOVERY_MINIMUM_WAIT_SECONDS
             ),
+            "submission_interlock": interlock,
             "safety": _safety_flags(),
         }
 
@@ -154,6 +160,10 @@ class ControlledBrokerSubmissionService:
             blockers.append("controlled_broker_submit_confirmation_id_invalid")
         if not _FINGERPRINT_PATTERN.fullmatch(normalized_release_id):
             blockers.append("controlled_broker_submit_release_evidence_id_invalid")
+
+        interlock = self._submission_interlock(exclude_order_id=normalized_order_id)
+        if interlock["blocked"]:
+            blockers.append("controlled_broker_submit_unreconciled_intent_exists")
 
         order = self._db.get_oms_order_sync(normalized_order_id) or {}
         if not order:
@@ -272,6 +282,7 @@ class ControlledBrokerSubmissionService:
             "dry_run": dry_run,
             "release_evidence": release,
             "kill_switch": kill_switch,
+            "submission_interlock": interlock,
             "required_operator_approval": {
                 "action": "submit_confirmed_broker_order",
                 "artifact_type": "controlled_broker_submission",
@@ -633,6 +644,40 @@ class ControlledBrokerSubmissionService:
             blockers.append(failed)
             return {}
         return value if isinstance(value, dict) else {}
+
+    def _submission_interlock(
+        self,
+        *,
+        exclude_order_id: str = "",
+    ) -> dict[str, Any]:
+        try:
+            rows = self._db.list_controlled_broker_submit_intents_sync(limit=500)
+        except Exception:
+            return {
+                "status": "blocked_source_unavailable",
+                "blocked": True,
+                "unresolved_count": 0,
+                "unresolved_intents": [],
+                "clearing_operation_available": False,
+            }
+        unresolved = [
+            {
+                "submit_intent_id": str(row.get("submit_intent_id") or ""),
+                "order_id": str(row.get("order_id") or ""),
+                "status": str(row.get("status") or "unknown"),
+            }
+            for row in rows
+            if str(row.get("status") or "")
+            in {"prepared", "submitted", "submission_unknown"}
+            and str(row.get("order_id") or "") != exclude_order_id
+        ]
+        return {
+            "status": "blocked_unreconciled_submission" if unresolved else "clear",
+            "blocked": bool(unresolved),
+            "unresolved_count": len(unresolved),
+            "unresolved_intents": unresolved[:20],
+            "clearing_operation_available": False,
+        }
 
     def _resolve_release(
         self,
@@ -1104,4 +1149,5 @@ def _safety_flags() -> dict[str, bool]:
         "unknown_outcome_resubmission_disabled": True,
         "production_ledger_mutation_disabled": True,
         "automatic_capital_expansion_disabled": True,
+        "unreconciled_submission_blocks_new_orders": True,
     }

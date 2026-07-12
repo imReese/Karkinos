@@ -5445,6 +5445,155 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
     )
 
 
+def build_controlled_submission_interlock_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for Stage 3.13 submission interlock and visibility."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="unreconciled_submission_preview_interlock",
+                checkbox_text=(
+                    "* [x] Preview and status fail closed when any other "
+                    "controlled intent is `prepared`, `submitted`, or "
+                    "`submission_unknown`; the response identifies only "
+                    "sanitized intent/order/status evidence and never treats "
+                    "an accepted broker acknowledgement as reconciliation."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_broker_submission.py",
+                    "tests/test_controlled_broker_submission.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'interlock' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="unreconciled_submission_atomic_write_interlock",
+                checkbox_text=(
+                    "* [x] The same interlock is rechecked inside SQLite "
+                    "`BEGIN IMMEDIATE` before intent insertion, so two "
+                    "different concurrently confirmed orders cannot both "
+                    "receive permission for an external call."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "tests/test_controlled_broker_submission.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'atomic_interlock' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="interlock_safe_terminal_release",
+                checkbox_text=(
+                    "* [x] Only a definitive rejected/not-found outcome removes "
+                    "the current interlock in this stage; unknown and accepted-"
+                    "but-unreconciled outcomes remain blocked, exact retries "
+                    "remain read-only, and recovery remains query-only."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_broker_submission.py",
+                    "server/db.py",
+                    "tests/test_controlled_broker_submission.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'definitive_rejection_clears or unknown_submit' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_submission_reconciliation_states",
+                checkbox_text=(
+                    "* [x] Execution reconciliation consumes persisted submit "
+                    "intent evidence and distinguishes pending/unknown, "
+                    "accepted awaiting broker evidence, matching staged broker "
+                    "evidence, quantity/evidence conflict, and definitive "
+                    "rejection without inferring fills."
+                ),
+                evidence_paths=(
+                    "server/services/execution_reconciliation.py",
+                    "tests/test_execution_reconciliation_service.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_reconciliation_service.py -k 'controlled' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_submission_no_ledger_or_oms_inference",
+                checkbox_text=(
+                    "* [x] Matching imported broker evidence remains an open "
+                    "human reconciliation item; it does not infer an OMS fill, "
+                    "apply a broker callback, write a fill, mutate the "
+                    "production ledger, or clear the next-order interlock."
+                ),
+                evidence_paths=(
+                    "server/services/execution_reconciliation.py",
+                    "tests/test_execution_reconciliation_service.py",
+                    "tests/test_controlled_broker_submission.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_reconciliation_service.py -k 'submitted_controlled_broker_evidence' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_submission_critical_alert",
+                checkbox_text=(
+                    "* [x] Automation alert scanning raises a critical, "
+                    "sanitized alert for an unknown controlled submission, "
+                    "states that new submissions are blocked, and exposes only "
+                    "query recovery with resubmission disabled."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "tests/test_automation_alerts.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_automation_alerts.py -k 'unknown_controlled_submission' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_submission_operations_visibility",
+                checkbox_text=(
+                    "* [x] Operations surfaces controlled-submission review and "
+                    "unknown counts, the sanitized first open item, and the "
+                    "query-recovery next action from each order's latest "
+                    "reconciliation fact ahead of ordinary execution review, "
+                    "without deleting history or adding a submit, retry, or "
+                    "ledger action."
+                ),
+                evidence_paths=(
+                    "server/services/operations_today.py",
+                    "server/routes/operations.py",
+                    "tests/test_operations_today.py",
+                    "tests/server/test_operations_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_operations_today.py -k 'unknown_controlled_submission' tests/server/test_operations_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="controlled_submission_interlock_boundary",
+                checkbox_text=(
+                    "* [x] Deterministic concurrency, terminal, unknown, "
+                    "reconciliation, alert, and Operations tests preserve "
+                    "manual final authority and prove no strategy-direct or "
+                    "automatic submission, broker cancel, fill apply, ledger "
+                    "sync, reconciliation self-clear, or capital widening."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_broker_submission.py",
+                    "tests/test_execution_reconciliation_service.py",
+                    "tests/test_automation_alerts.py",
+                    "tests/test_operations_today.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_broker_submission.py tests/test_execution_reconciliation_service.py tests/test_automation_alerts.py tests/test_operations_today.py -q",
+                ),
+            ),
+        )
+    )
+
+
 def build_capital_scaling_review_foundation_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for the Stage 4 capital scaling review foundation."""
 

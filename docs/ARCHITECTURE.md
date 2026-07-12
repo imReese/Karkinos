@@ -635,6 +635,18 @@ resubmit operation. Production dependency injection remains empty by default,
 and the boundary cannot cancel, apply fills, mutate the production ledger,
 expand capital, accept session-wide authority, or expose a strategy path.
 
+Stage 3.13 places a serialized cross-order interlock in front of that boundary.
+The read-only preview reports sanitized unresolved intent ids, while the same
+`prepared`/`submitted`/`submission_unknown` check runs again under the
+`BEGIN IMMEDIATE` insert transaction. Consequently two different orders cannot
+both become externally callable, and an acknowledgement is not confused with
+reconciliation. Execution reconciliation maps the persisted intent and OMS
+state to explicit unknown, awaiting-evidence, evidence-available, mismatch, or
+definitive-rejection facts. Unknown states raise critical Operations alerts and
+offer query-only recovery. In this stage only a definitive rejection/not-found
+result releases the interlock; accepted broker evidence remains open and cannot
+self-clear, create fills, mutate OMS/ledger, or authorize another order.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

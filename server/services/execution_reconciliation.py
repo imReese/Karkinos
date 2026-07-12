@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
+from server.services.per_order_confirmation import build_order_fingerprint
 
 EXECUTION_RECONCILIATION_SCHEMA_VERSION = "karkinos.execution_reconciliation.v1"
 
@@ -62,6 +63,22 @@ class ExecutionReconciliationService:
             manual_execution_summary,
             matching_broker_events,
         )
+        controlled_intent = (
+            self._db.get_controlled_broker_submit_intent_for_order_sync(
+                str(order["order_id"])
+            )
+            if hasattr(
+                self._db,
+                "get_controlled_broker_submit_intent_for_order_sync",
+            )
+            else None
+        )
+        controlled = _controlled_submission_reconciliation(
+            order,
+            controlled_intent,
+            matching_broker_events=matching_broker_events,
+            mismatched_broker_events=mismatched_broker_events,
+        )
         reported_broker_events = matching_broker_events
         mismatch_reasons: list[str] = []
         if execution_mode == "paper_shadow":
@@ -71,6 +88,12 @@ class ExecutionReconciliationService:
                 "Paper/shadow OMS order is simulation evidence and does not "
                 "require broker execution reconciliation."
             )
+        elif controlled:
+            item_status = str(controlled["item_status"])
+            suggested_action = str(controlled["suggested_action"])
+            detail = str(controlled["detail"])
+            reported_broker_events = list(controlled["reported_broker_events"])
+            mismatch_reasons = list(controlled["mismatch_reasons"])
         elif status == "awaiting_manual_confirmation":
             item_status = "awaiting_manual_confirmation"
             suggested_action = "confirm_or_cancel_order"
@@ -143,6 +166,9 @@ class ExecutionReconciliationService:
                 ),
                 "manual_execution_evidence_summary": manual_execution_summary,
                 "manual_broker_comparison": manual_broker_comparison,
+                "controlled_submission_evidence_summary": (
+                    controlled.get("evidence_summary") if controlled else {}
+                ),
             },
         }
 
@@ -183,6 +209,127 @@ def _matching_broker_events(
         if abs(event_quantity) == abs(quantity):
             matches.append(event)
     return matches
+
+
+def _controlled_submission_reconciliation(
+    order: dict[str, Any],
+    intent: dict[str, Any] | None,
+    *,
+    matching_broker_events: list[Any],
+    mismatched_broker_events: list[Any],
+) -> dict[str, Any]:
+    if not isinstance(intent, dict) or not intent:
+        return {}
+    intent_status = str(intent.get("status") or "unknown")
+    oms_status = str(order.get("status") or "unknown")
+    expected_oms_status = {
+        "prepared": "submission_pending",
+        "submission_unknown": "submission_unknown",
+        "submitted": "submitted",
+        "rejected": "rejected",
+    }.get(intent_status)
+    mismatch_reasons: list[str] = []
+    if expected_oms_status != oms_status:
+        mismatch_reasons.append("controlled_submission_oms_status_mismatch")
+    if str(intent.get("order_id") or "") != str(order.get("order_id") or ""):
+        mismatch_reasons.append("controlled_submission_order_id_mismatch")
+    if str(intent.get("order_fingerprint") or "") != build_order_fingerprint(order):
+        mismatch_reasons.append("controlled_submission_order_fingerprint_mismatch")
+
+    reported_broker_events: list[Any] = []
+    if mismatch_reasons:
+        item_status = "controlled_submission_evidence_mismatch"
+        suggested_action = "enable_kill_switch_and_review_controlled_submission"
+        detail = (
+            "Controlled submission intent and current OMS evidence disagree; "
+            "do not submit another order until the mismatch is resolved."
+        )
+    elif intent_status in {"prepared", "submission_unknown"}:
+        reported_broker_events = matching_broker_events or mismatched_broker_events
+        item_status = (
+            "controlled_submission_unknown_broker_evidence_available"
+            if matching_broker_events
+            else "controlled_submission_unknown"
+        )
+        suggested_action = "recover_controlled_submission_by_query"
+        detail = (
+            "Controlled broker submission outcome is unknown. Query only by the "
+            "persisted client order id; never resubmit, and block every new order."
+        )
+    elif intent_status == "submitted":
+        if matching_broker_events:
+            reported_broker_events = matching_broker_events
+            item_status = "controlled_submission_broker_evidence_available"
+            suggested_action = "review_controlled_submission_broker_evidence"
+            detail = (
+                "Matching staged broker trade evidence is available for the "
+                "controlled submission; reconcile it before any new submission "
+                "or production-ledger update."
+            )
+        elif mismatched_broker_events:
+            reported_broker_events = mismatched_broker_events
+            mismatch_reasons.append("controlled_submission_quantity_mismatch")
+            item_status = "controlled_submission_broker_evidence_mismatch"
+            suggested_action = "enable_kill_switch_and_review_controlled_submission"
+            detail = (
+                "Staged broker trade evidence disagrees with the controlled "
+                "submission quantity; keep new submissions blocked."
+            )
+        else:
+            item_status = "controlled_submission_awaiting_broker_evidence"
+            suggested_action = "query_or_import_controlled_submission_evidence"
+            detail = (
+                "The broker accepted the controlled submission, but staged "
+                "broker trade evidence is not yet available; keep new "
+                "submissions blocked."
+            )
+    elif intent_status == "rejected":
+        if matching_broker_events or mismatched_broker_events:
+            reported_broker_events = matching_broker_events or mismatched_broker_events
+            mismatch_reasons.append("controlled_rejection_has_broker_trade_evidence")
+            item_status = "controlled_rejection_broker_evidence_conflict"
+            suggested_action = "enable_kill_switch_and_review_controlled_submission"
+            detail = (
+                "The controlled intent records a definitive rejection but staged "
+                "broker trade evidence matches the order; investigate before "
+                "another submission."
+            )
+        else:
+            item_status = "controlled_submission_rejected"
+            suggested_action = "no_action"
+            detail = (
+                "The broker definitively rejected the controlled submission; no "
+                "fill or production-ledger mutation was recorded."
+            )
+    else:
+        mismatch_reasons.append("controlled_submission_intent_status_invalid")
+        item_status = "controlled_submission_evidence_mismatch"
+        suggested_action = "enable_kill_switch_and_review_controlled_submission"
+        detail = "Controlled submission intent status is invalid or unsupported."
+
+    return {
+        "item_status": item_status,
+        "suggested_action": suggested_action,
+        "detail": detail,
+        "reported_broker_events": reported_broker_events,
+        "mismatch_reasons": mismatch_reasons,
+        "evidence_summary": {
+            "schema_version": "karkinos.controlled_submission_reconciliation.v1",
+            "submit_intent_id": str(intent.get("submit_intent_id") or ""),
+            "submit_fingerprint": str(intent.get("submit_fingerprint") or ""),
+            "client_order_id": str(intent.get("client_order_id") or ""),
+            "gateway_id": str(intent.get("gateway_id") or ""),
+            "broker_order_id": str(intent.get("broker_order_id") or ""),
+            "intent_status": intent_status,
+            "oms_status": oms_status,
+            "new_submissions_blocked": intent_status
+            in {"prepared", "submitted", "submission_unknown"},
+            "recovery_resubmission_enabled": False,
+            "review_required_before_ledger_update": True,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+        },
+    }
 
 
 def _mismatched_broker_events(

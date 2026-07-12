@@ -232,6 +232,18 @@ route injects an empty runtime gateway registry by default, so this path remains
 closed until a separately reviewed adapter is registered; no API in this slice
 can register one or submit an order.
 
+Stage 3.12 adds the first default-closed one-shot submit/query boundary for one
+exact manually confirmed order. It requires a distinct final Ed25519 signature,
+current signed release evidence, runtime gateway verification, fresh health,
+zero-side-effect dry-run, and clear kill switch. Intent and OMS pending state
+persist before one external call; unknown recovery is query-only. Stage 3.13
+then adds the missing cross-order safety interlock: any prepared, accepted-but-
+unreconciled, or unknown intent blocks every different order in preview and
+inside the serialized insert transaction. Reconciliation, alerts, and
+Operations expose the unresolved fact. Production still injects no write
+adapter/release provider, and matching broker evidence cannot yet self-clear
+the interlock or infer an OMS fill/ledger update.
+
 ### Stage 3 — Session-Bounded Controlled Execution
 
 Deliverables:
@@ -331,6 +343,13 @@ retries cannot reissue the secret and conflicting concurrent handoffs cannot
 both succeed. A blocked or superseding gate fact aborts the handoff. This still
 does not create broker submit/cancel, OMS/ledger mutation, renew, widen, or
 automatic capital expansion.
+Stage 3.13 also enforces reconciliation-before-next-order at the controlled
+submission boundary. Different-order concurrency is serialized, unknown
+outcomes remain query-only and critical, and accepted acknowledgements remain
+blocked until a future independently signed reconciliation-clearance protocol
+binds broker fill/cancel evidence and Account Truth. This stage cannot submit
+under session authority, apply fills, mutate the production ledger, or widen a
+session.
 The request and recorded capital evaluation must bind the same resolved clear
 prior-batch fingerprint. Stage 1/2 promotion, broker submit capability, and the
 live gateway remain hard

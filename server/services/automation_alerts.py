@@ -137,8 +137,12 @@ class AutomationAlertService:
             manual_execution_summary = _object_dict(
                 item_payload.get("manual_execution_evidence_summary")
             )
+            controlled_submission_summary = _object_dict(
+                item_payload.get("controlled_submission_evidence_summary")
+            )
             title = "Execution reconciliation requires review"
             detail = str(item.get("detail") or item_status)
+            severity = "warning"
             payload = {
                 "schema_version": AUTOMATION_ALERT_SCHEMA_VERSION,
                 "item_status": item_status,
@@ -146,7 +150,38 @@ class AutomationAlertService:
                 "gateway_event_count": item.get("gateway_event_count"),
                 "requires_manual_review": True,
             }
-            if manual_execution_summary:
+            if controlled_submission_summary:
+                severity = (
+                    "critical"
+                    if item_status
+                    in {
+                        "controlled_submission_unknown",
+                        "controlled_submission_unknown_broker_evidence_available",
+                        "controlled_submission_evidence_mismatch",
+                        "controlled_submission_broker_evidence_mismatch",
+                        "controlled_rejection_broker_evidence_conflict",
+                    }
+                    else "warning"
+                )
+                title = (
+                    "Controlled broker submission outcome is unknown"
+                    if "unknown" in item_status
+                    else "Controlled broker submission requires reconciliation"
+                )
+                payload.update(
+                    {
+                        "controlled_submission_evidence_summary": (
+                            controlled_submission_summary
+                        ),
+                        "blocks_new_submissions": (
+                            controlled_submission_summary.get("new_submissions_blocked")
+                            is True
+                        ),
+                        "recovery_resubmission_enabled": False,
+                        "does_not_mutate_production_ledger": True,
+                    }
+                )
+            elif manual_execution_summary:
                 title = "Manual execution evidence requires reconciliation review"
                 detail = (
                     f"{detail} no broker order was submitted; OMS and "
@@ -171,7 +206,7 @@ class AutomationAlertService:
                 )
             alert = self._db.upsert_automation_alert_sync(
                 alert_key=f"execution_reconciliation:{order_id}:{item_status}",
-                severity="warning",
+                severity=severity,
                 category="execution_reconciliation",
                 title=title,
                 detail=detail,

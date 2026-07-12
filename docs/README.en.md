@@ -320,6 +320,14 @@ and can only be queried after 30 seconds by the same client order id. Production
 still injects no write adapter or release provider, and automatic/strategy
 submission, cancel, fill apply, ledger sync, and capital widening are absent.
 
+Stage 3.13 adds a serialized cross-order interlock. A prepared, accepted-but-
+unreconciled, or unknown controlled intent blocks every different order in both
+preview and the database write transaction. Reconciliation classifies the
+persisted intent, critical alerts flag unknown outcomes, and Operations exposes
+query-only recovery. A definitive rejection can release the interlock; matching
+broker evidence cannot yet self-clear it, infer a fill, mutate OMS/ledger, or
+authorize another order.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

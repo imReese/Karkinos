@@ -175,6 +175,12 @@ Active planning target:
   the call; unknown outcomes are query-only and never resubmitted. Production
   has no write adapter or release provider by default, and automatic,
   strategy-direct, cancel, fill-apply, and ledger-sync paths remain absent.
+* Stage 3.13 closes the cross-order gap: any prepared, accepted-but-unreconciled,
+  or unknown controlled submission blocks every different order in both preview
+  and the serialized database transaction. Execution reconciliation, critical
+  alerts, and Operations expose the sanitized recovery task. Only a definitive
+  rejection clears the interlock today; broker evidence cannot self-clear it,
+  infer a fill, write the ledger, or authorize another order.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

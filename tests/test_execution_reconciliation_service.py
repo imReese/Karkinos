@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -10,6 +11,7 @@ from server.db import AppDatabase
 from server.services.broker_gateway import BrokerGatewayService
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
+from server.services.per_order_confirmation import build_order_fingerprint
 
 
 def _db_and_oms(tmp_path) -> tuple[AppDatabase, OmsService]:
@@ -65,6 +67,232 @@ def _confirmed_order(
         reason="operator approved paper/shadow evidence",
         actor="test",
     )
+
+
+def _record_controlled_intent(
+    db: AppDatabase,
+    order: dict,
+    *,
+    status: str,
+) -> dict:
+    seed = str(order["order_id"])
+    submit_intent_id = hashlib.sha256(f"intent:{seed}".encode()).hexdigest()
+    submit_fingerprint = hashlib.sha256(f"submit:{seed}".encode()).hexdigest()
+    order_fingerprint = build_order_fingerprint(order)
+    prepared = db.prepare_controlled_broker_submit_intent_sync(
+        intent={
+            "submit_intent_id": submit_intent_id,
+            "submit_fingerprint": submit_fingerprint,
+            "order_id": order["order_id"],
+            "order_fingerprint": order_fingerprint,
+            "confirmation_id": "c" * 64,
+            "dossier_fingerprint": "d" * 64,
+            "gateway_id": "qmt-controlled-write-1",
+            "gateway_verification_fingerprint": "e" * 64,
+            "release_evidence_id": "f" * 64,
+            "release_evidence_fingerprint": "a" * 64,
+            "client_order_id": f"KARK-{submit_fingerprint[:32]}",
+            "operator_id": "local-owner",
+            "operator_approval_id": "b" * 64,
+            "order_snapshot": {
+                key: order.get(key)
+                for key in (
+                    "symbol",
+                    "side",
+                    "asset_class",
+                    "quantity",
+                    "order_type",
+                    "limit_price",
+                )
+            },
+            "prepared_at_epoch_ms": 1782957600000,
+            "prepared_at": "2026-07-02T02:00:00+00:00",
+            "payload": {
+                "submit_intent_id": submit_intent_id,
+                "submit_fingerprint": submit_fingerprint,
+                "order_id": order["order_id"],
+            },
+            "created_at": "2026-07-02T02:00:00+00:00",
+        }
+    )
+    assert prepared["external_call_permitted"] is True
+    finalized = db.finalize_controlled_broker_submit_intent_sync(
+        submit_intent_id=submit_intent_id,
+        status=status,
+        broker_order_id="BROKER-ORDER-1" if status == "submitted" else "",
+        broker_status=(
+            "accepted"
+            if status == "submitted"
+            else "rejected" if status == "rejected" else "gateway_submit_exception"
+        ),
+        result={
+            "status": (
+                "accepted"
+                if status == "submitted"
+                else "rejected" if status == "rejected" else "gateway_submit_exception"
+            ),
+            "client_order_id": f"KARK-{submit_fingerprint[:32]}",
+            "order_fingerprint": order_fingerprint,
+            "broker_order_id": ("BROKER-ORDER-1" if status == "submitted" else ""),
+            "submitted": (
+                True
+                if status == "submitted"
+                else False if status == "rejected" else None
+            ),
+        },
+        actor="controlled-broker-submission",
+        finalized_at_epoch_ms=1782957601000,
+        finalized_at="2026-07-02T02:00:01+00:00",
+    )
+    return finalized["intent"]
+
+
+def test_reconciliation_blocks_unknown_controlled_submission_without_mutation(
+    tmp_path,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms)
+    intent = _record_controlled_intent(db, order, status="submission_unknown")
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    payload = json.loads(item["payload_json"])
+    summary = payload["controlled_submission_evidence_summary"]
+    assert run["status"] == "open_items"
+    assert item["item_status"] == "controlled_submission_unknown"
+    assert item["suggested_action"] == "recover_controlled_submission_by_query"
+    assert summary["submit_intent_id"] == intent["submit_intent_id"]
+    assert summary["new_submissions_blocked"] is True
+    assert summary["recovery_resubmission_enabled"] is False
+    assert summary["does_not_mutate_production_ledger"] is True
+    assert db.get_ledger_entries_sync() == []
+
+    db.upsert_execution_reconciliation_run_sync(
+        run_id="execution-reconciliation:ordinary-review",
+        run_date="2026-07-02",
+        status="open_items",
+        item_count=1,
+        open_item_count=1,
+        payload={"schema_version": "karkinos.execution_reconciliation.v1"},
+        items=[
+            {
+                "order_id": "MANUAL-LATER",
+                "item_status": "manual_execution_recorded",
+                "suggested_action": (
+                    "review_manual_execution_and_import_broker_statement"
+                ),
+                "detail": "Ordinary review inserted after controlled unknown.",
+                "payload": {},
+            }
+        ],
+    )
+    prioritized = db.list_execution_reconciliation_open_items_sync()
+    assert [row["order_id"] for row in prioritized] == [
+        order["order_id"],
+        "MANUAL-LATER",
+    ]
+
+    db.finalize_controlled_broker_submit_intent_sync(
+        submit_intent_id=intent["submit_intent_id"],
+        status="rejected",
+        broker_order_id="",
+        broker_status="not_found",
+        result={
+            "status": "not_found",
+            "submitted": False,
+            "definitive": True,
+        },
+        actor="controlled-broker-submission",
+        finalized_at_epoch_ms=1782957631000,
+        finalized_at="2026-07-02T02:00:31+00:00",
+        recovered=True,
+    )
+    ExecutionReconciliationService(db=db).run_reconciliation(run_date="2026-07-03")
+
+    current_open = db.list_execution_reconciliation_open_items_sync()
+    assert [row["order_id"] for row in current_open] == ["MANUAL-LATER"]
+    historical = db.list_execution_reconciliation_items_sync(
+        "execution-reconciliation:2026-07-02"
+    )
+    assert historical[0]["item_status"] == "controlled_submission_unknown"
+
+
+def test_reconciliation_requires_review_for_submitted_controlled_broker_evidence(
+    tmp_path,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms)
+    _record_controlled_intent(db, order, status="submitted")
+    _import_matching_broker_trade(Path(db._path))
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    payload = json.loads(item["payload_json"])
+    assert item["item_status"] == ("controlled_submission_broker_evidence_available")
+    assert item["suggested_action"] == ("review_controlled_submission_broker_evidence")
+    assert item["broker_event_count"] == 1
+    assert (
+        payload["controlled_submission_evidence_summary"]["new_submissions_blocked"]
+        is True
+    )
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "submitted"
+    assert db.get_ledger_entries_sync() == []
+
+
+def test_reconciliation_treats_definitive_controlled_rejection_as_terminal(
+    tmp_path,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms)
+    _record_controlled_intent(db, order, status="rejected")
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    assert run["status"] == "clear"
+    assert item["item_status"] == "controlled_submission_rejected"
+    assert item["suggested_action"] == "no_action"
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "rejected"
+    assert db.get_ledger_entries_sync() == []
+
+
+def test_reconciliation_flags_any_broker_trade_after_controlled_rejection(
+    tmp_path,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms)
+    _record_controlled_intent(db, order, status="rejected")
+    _import_broker_trade(
+        Path(db._path),
+        event_id="broker-buy-after-rejection",
+        quantity=50,
+        gross_amount="84400.00",
+        net_amount="-84405.00",
+    )
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    payload = json.loads(item["payload_json"])
+    assert run["status"] == "open_items"
+    assert item["item_status"] == "controlled_rejection_broker_evidence_conflict"
+    assert item["suggested_action"] == (
+        "enable_kill_switch_and_review_controlled_submission"
+    )
+    assert (
+        "controlled_rejection_has_broker_trade_evidence" in payload["mismatch_reasons"]
+    )
+    assert db.get_ledger_entries_sync() == []
 
 
 def test_reconciliation_flags_confirmed_order_without_gateway_action(tmp_path) -> None:
