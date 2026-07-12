@@ -17,8 +17,8 @@ class FakeRuntimeRateLimiterService:
     def get_status(self):
         self.calls.append(("status", None))
         return {
-            "contract_status": "disabled_waiting_for_authenticated_session_issuance",
-            "runtime_admission_enabled": False,
+            "contract_status": "runtime_admission_ready_internal_only",
+            "runtime_admission_enabled": True,
             "public_admission_endpoint_exposed": False,
             "broker_submission_enabled": False,
         }
@@ -59,7 +59,7 @@ def test_runtime_rate_limit_routes_are_read_only(monkeypatch) -> None:
     )
 
     assert status.status_code == 200
-    assert status.json()["runtime_admission_enabled"] is False
+    assert status.json()["runtime_admission_enabled"] is True
     assert status.json()["public_admission_endpoint_exposed"] is False
     assert admissions.status_code == 200
     assert admissions.json()[0]["authorizes_broker_submission"] is False
@@ -67,15 +67,25 @@ def test_runtime_rate_limit_routes_are_read_only(monkeypatch) -> None:
     assert ("list", 10) in service.calls
 
 
-def test_route_service_keeps_production_session_provider_closed(monkeypatch) -> None:
+def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
+    monkeypatch,
+) -> None:
     fake_state = SimpleNamespace(db=object())
+    fake_authority = SimpleNamespace(
+        authenticate=lambda session_id, session_token: {"session_id": session_id}
+    )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.controlled_session_runtime_authority._service",
+        lambda: fake_authority,
+    )
 
     service = route_module._service()
 
     assert service._db is fake_state.db
-    assert service._session_provider is None
-    assert service.get_status()["runtime_admission_enabled"] is False
+    assert service._session_provider == fake_authority.authenticate
+    assert service.get_status()["runtime_admission_enabled"] is True
+    assert service.get_status()["public_admission_endpoint_exposed"] is False
 
 
 def test_create_app_registers_only_rate_limit_status_and_history() -> None:

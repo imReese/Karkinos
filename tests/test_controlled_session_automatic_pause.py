@@ -26,6 +26,8 @@ def _session(*, fingerprint: str = "a" * 64) -> dict:
         "session_fingerprint": fingerprint,
         "reservation_id": "b" * 64,
         "session_authority_verified": True,
+        "persistent_session_state_verified": True,
+        "runtime_authentication_verified": True,
         "budget_reservation_verified": True,
         "upstream_gates_clear": True,
         "kill_switch_clear": True,
@@ -203,12 +205,13 @@ def test_paused_state_rejects_identity_drift_and_runtime_admission(tmp_path) -> 
 
     rate_limiter = ControlledSessionRuntimeRateLimiterService(
         db=db,
-        session_provider=lambda session_id: _session(),
+        session_provider=lambda session_id, session_token: _session(),
         clock=lambda: NOW,
     )
     with pytest.raises(ControlledSessionRateAdmissionRejected) as rate_exc:
         rate_limiter.admit(
             session_id="session-a",
+            session_token="pause-test-token-000000000000000000000000001",
             order_id="OMS-1",
             request_id="1" * 64,
         )

@@ -14,6 +14,7 @@ from server.services.controlled_session_runtime_rate_limiter import (
 )
 
 NOW = datetime(2026, 7, 12, 6, 0, tzinfo=timezone.utc)
+SESSION_TOKEN = "runtime-rate-token-000000000000000000000000001"
 
 
 def _session(
@@ -47,6 +48,8 @@ def _session(
         "expires_at": expires_at.isoformat(),
         "max_order_rate_per_minute": rate,
         "session_authority_verified": authority_verified,
+        "persistent_session_state_verified": True,
+        "runtime_authentication_verified": True,
         "budget_reservation_verified": reservation_verified,
         "upstream_gates_clear": upstream_gates_clear,
         "kill_switch_clear": kill_switch_clear,
@@ -59,16 +62,83 @@ def _session(
 def _service(tmp_path, sessions: dict[str, dict], current_time=None):
     db = AppDatabase(tmp_path / "controlled-session-rate-limit.db")
     db.init_sync()
+    for session in sessions.values():
+        _persist_runtime_session(db, session)
     clock = current_time or [NOW]
     service = ControlledSessionRuntimeRateLimiterService(
         db=db,
-        session_provider=lambda session_id: sessions.get(
-            session_id,
-            {"status": "missing"},
+        session_provider=lambda session_id, session_token: (
+            sessions.get(session_id, {"status": "missing"})
+            if session_token == SESSION_TOKEN
+            else {"status": "blocked"}
         ),
         clock=lambda: clock[0],
     )
     return db, service
+
+
+def _persist_runtime_session(db: AppDatabase, session: dict) -> None:
+    reservation = {
+        "reservation_id": session["reservation_id"],
+        "attestation_id": ("1" if session["session_id"].endswith("a") else "2") * 64,
+        "envelope_fingerprint": "e" * 64,
+        "capital_evaluation_input_fingerprint": "f" * 64,
+        "authorization_id": session["authorization_id"],
+        "policy_version": "policy-v1",
+        "account_alias": session["account_alias"],
+        "strategy_id": session["strategy_id"],
+        "trading_day": "2026-07-12",
+        "requested_start_at": session["effective_at"],
+        "requested_expires_at": session["expires_at"],
+        "reserved_gross_units": 0,
+        "reserved_buy_units": 0,
+        "reserved_turnover_units": 0,
+        "reserved_order_count": 1,
+        "capital_capacity_units": 1_000_000_000,
+        "cash_capacity_units": 1_000_000_000,
+        "turnover_capacity_units": 1_000_000_000,
+        "order_count_capacity": 1000,
+        "reserved_by_symbol_units": {"510300.SH": 0},
+        "symbol_capacity_units": {"510300.SH": 1_000_000_000},
+        "payload": {},
+        "created_at": NOW.isoformat(),
+    }
+    reserved = db.reserve_controlled_session_budget_sync(reservation=reservation)
+    assert reserved["status"] == "reserved"
+    effective_at = datetime.fromisoformat(session["effective_at"])
+    expires_at = datetime.fromisoformat(session["expires_at"])
+    issued = db.issue_controlled_session_sync(
+        session={
+            "session_id": session["session_id"],
+            "session_fingerprint": session["session_fingerprint"],
+            "issuance_fingerprint": (
+                "3" if session["session_id"].endswith("a") else "4"
+            )
+            * 64,
+            "reservation_id": session["reservation_id"],
+            "attestation_id": reservation["attestation_id"],
+            "envelope_fingerprint": reservation["envelope_fingerprint"],
+            "authorization_id": session["authorization_id"],
+            "account_alias": session["account_alias"],
+            "strategy_id": session["strategy_id"],
+            "operator_id": "local-owner",
+            "operator_approval_id": "5" * 64,
+            "order_ids": session["order_ids"],
+            "requested_start_at": session["effective_at"],
+            "requested_expires_at": session["expires_at"],
+            "effective_at_epoch_ms": int(effective_at.timestamp() * 1000),
+            "expires_at_epoch_ms": int(expires_at.timestamp() * 1000),
+            "max_order_rate_per_minute": max(
+                1,
+                int(session["max_order_rate_per_minute"]),
+            ),
+            "token_salt": "ab" * 16,
+            "token_hash": "6" * 64,
+            "payload": {},
+            "created_at": NOW.isoformat(),
+        }
+    )
+    assert issued["status"] == "enabled"
 
 
 def _admit(
@@ -80,6 +150,7 @@ def _admit(
 ) -> dict:
     return service.admit(
         session_id=session_id,
+        session_token=SESSION_TOKEN,
         order_id=order_id,
         request_id=request_id,
     )
@@ -95,6 +166,7 @@ def test_rate_limiter_is_closed_without_authenticated_session_provider(
     status = service.get_status()
     preview = service.preview(
         session_id="session-a",
+        session_token=SESSION_TOKEN,
         order_id="OMS-1",
         request_id="1" * 64,
     )
@@ -117,11 +189,13 @@ def test_preview_is_deterministic_sanitized_and_side_effect_free(tmp_path) -> No
 
     first = service.preview(
         session_id="session-a",
+        session_token=SESSION_TOKEN,
         order_id="OMS-1",
         request_id="1" * 64,
     )
     second = service.preview(
         session_id="session-a",
+        session_token=SESSION_TOKEN,
         order_id="OMS-1",
         request_id="1" * 64,
     )
@@ -143,7 +217,7 @@ def test_atomic_admission_is_persisted_and_exact_retry_is_idempotent(tmp_path) -
 
     assert first["status"] == "admitted"
     assert first["runtime_admission_granted"] is True
-    assert first["runtime_session_issued"] is False
+    assert first["runtime_session_issued"] is True
     assert first["authorizes_broker_submission"] is False
     assert first["admitted_before"] == 0
     assert first["admitted_after"] == 1
@@ -290,7 +364,7 @@ def test_provider_failure_and_unsafe_rate_are_sanitized_and_blocked(tmp_path) ->
     db = AppDatabase(tmp_path / "failed-provider-rate-limit.db")
     db.init_sync()
 
-    def failed_provider(session_id: str) -> dict:
+    def failed_provider(session_id: str, session_token: str) -> dict:
         raise RuntimeError("private session token must not leak")
 
     failed_service = ControlledSessionRuntimeRateLimiterService(
@@ -300,6 +374,7 @@ def test_provider_failure_and_unsafe_rate_are_sanitized_and_blocked(tmp_path) ->
     )
     failed = failed_service.preview(
         session_id="session-a",
+        session_token=SESSION_TOKEN,
         order_id="OMS-1",
         request_id="1" * 64,
     )
@@ -309,6 +384,7 @@ def test_provider_failure_and_unsafe_rate_are_sanitized_and_blocked(tmp_path) ->
     )
     unsafe = unsafe_service.preview(
         session_id="session-a",
+        session_token=SESSION_TOKEN,
         order_id="OMS-1",
         request_id="2" * 64,
     )

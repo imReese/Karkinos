@@ -135,16 +135,23 @@ Active planning target:
   per-symbol cap. Disjoint symbols may share an authorization only while the
   account-level budget also remains clear; no execution authority is created.
 * Stage 3.7 provides a real atomic sliding-window admission ledger for a future
-  authenticated bounded session. Production has no session provider and no
-  public admission endpoint, so the limiter cannot currently enable or submit
-  an order; authenticated session wiring remains a hard gate.
+  authenticated bounded session. Stage 3.9 supplies the persistent token-
+  authenticated provider, but there is still no public admission endpoint and
+  the limiter cannot submit an order or contact a broker.
 * Stage 3.8 provides a durable fail-closed automatic-pause primitive. Identified
   sessions pause on missing or failed account, risk, reconciliation,
   paper/shadow, gateway, market-data, budget, rate, kill-switch, loss, rejection,
   account-change, or error facts. Pause state is one-way and atomically blocks
-  later rate admission; production has no session/gate providers, public pause
-  action, or resume path, so authenticated wiring and a separately reviewed
-  resume protocol remain hard gates.
+  later rate admission; Stage 3.9 supplies session identity, but production has
+  no live gate provider, public pause action, or resume path, so gate
+  orchestration and a separately reviewed resume protocol remain hard gates.
+* Stage 3.9 turns one current signed attestation plus atomic reservation into an
+  expiring runtime session only after a second exact Ed25519 issuance approval
+  and proof of signature possession; public approval history omits signatures.
+  It returns a capability token once, stores only a salted hash, and supports a
+  separately signed one-way revocation. Expiry, evidence drift, pause, and
+  revocation fail closed; no session may resume, renew, widen, submit, or scale
+  itself, and broker authority remains absent.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

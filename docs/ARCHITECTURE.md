@@ -548,17 +548,16 @@ contract applies the capital evaluation's conservative symbol ceiling to every
 symbol in the signed policy scope; future account facts may tighten individual
 symbols but may never widen this signed map implicitly.
 
-Stage 3.7 adds the runtime admission primitive without pretending session
-issuance already exists. A future authenticated session provider must return a
-current enabled session, immutable session/reservation fingerprints, verified
-budget reservation, clear upstream and kill-switch gates, exact scope/order
-set, active window, verified authority, and explicit maximum rate.
+Stage 3.7 adds the runtime admission primitive. Its authenticated session
+provider must return a current enabled session, immutable session/reservation
+fingerprints, verified budget reservation, clear upstream and kill-switch
+gates, exact scope/order set, active window, verified authority, and explicit
+maximum rate.
 The limiter uses server time and `BEGIN IMMEDIATE` to serialize one shared
 authorization/account 60-second window, choosing the strictest overlapping
-session rate. Admissions and rejections are evidence only. Production wires no
-provider and publishes no admission mutation endpoint; therefore the envelope
-keeps `runtime_order_rate_limiter_not_wired_to_authenticated_session` as a hard
-blocker until session issuance and revocation state can participate atomically.
+session rate. Admissions and rejections are evidence only. Stage 3.9 wires the
+persistent token-authenticated provider, but production publishes no admission
+mutation endpoint and the limiter has no broker or OMS capability.
 
 Stage 3.8 adds the companion automatic-pause state without enabling session
 issuance. A future authenticated session provider supplies only immutable
@@ -567,11 +566,29 @@ Missing/failed or non-clear hard facts produce deterministic reasons and one
 immutable pause event. SQLite persists only a `paused` runtime state; there is
 deliberately no update-to-active method. Runtime admission reads that state
 again after its own `BEGIN IMMEDIATE`, closing the stale-provider race. The
-production route factory supplies neither provider and exposes only status,
-event history, and per-session state reads, so the envelope retains
-`automatic_pause_controller_not_wired_to_authenticated_session` as a hard
-blocker. Resume must later require a new operator review and cannot be inferred
-from gates becoming clear.
+production route factory uses Stage 3.9 session identity but supplies no live
+gate provider and exposes only status, event history, and per-session state
+reads, so the envelope retains
+`automatic_pause_controller_not_wired_to_live_gates` as a hard blocker. Resume
+must later require a new operator review and cannot be inferred from gates
+becoming clear.
+
+Stage 3.9 introduces the durable runtime-authority boundary. Envelope approval
+and budget reservation remain non-authorizing inputs; issuance re-resolves both
+and requires a distinct Ed25519 approval plus possession of the matching
+signature over a deterministic issuance fingerprint. Verification and history
+APIs omit signature bytes, so a public approval id is not a runtime capability.
+One reservation can create only one session under `BEGIN
+IMMEDIATE`. The raw capability token is returned only on the first successful
+response and only a salted SHA-256 hash is persisted. Internal admission must
+authenticate that token, then its own write transaction rechecks the persisted
+session fingerprint, reservation, enabled status, effective/expiry time, and
+pause state. Revocation is a separately signed, allowlisted-reason, one-way
+enabled-to-revoked transition under the same database lock, so a stale provider
+cannot race it. Public APIs expose issue/revoke review actions and sanitized
+state, but no runtime admit, resume, renew, widen, OMS/ledger write, broker
+submit, or broker cancel action. The remaining automatic-pause blocker refers
+to live gate-provider orchestration, not session identity or rate wiring.
 
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must

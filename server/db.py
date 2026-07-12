@@ -3582,6 +3582,345 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    # ---------- Controlled Session Runtime Authority ----------
+
+    def issue_controlled_session_sync(
+        self,
+        *,
+        session: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Issue one persisted bounded session for one exact reservation."""
+        requested = dict(session)
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_sessions
+                    WHERE session_id = ? OR reservation_id = ?
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (requested["session_id"], requested["reservation_id"]),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        existing["session_id"] == requested["session_id"]
+                        and existing["session_fingerprint"]
+                        == requested["session_fingerprint"]
+                        and existing["issuance_fingerprint"]
+                        == requested["issuance_fingerprint"]
+                        and existing["reservation_id"] == requested["reservation_id"]
+                    ):
+                        conn.commit()
+                        return {
+                            "status": str(existing["status"]),
+                            "blockers": [],
+                            "reused": True,
+                            "session": dict(existing),
+                        }
+                    conn.rollback()
+                    return _controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_reservation_or_identity_conflict"],
+                    )
+
+                reservation = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_budget_reservations
+                    WHERE reservation_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["reservation_id"],),
+                ).fetchone()
+                if reservation is None:
+                    conn.rollback()
+                    return _controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_reservation_not_found"],
+                    )
+                reservation_blockers: list[str] = []
+                for field in (
+                    "attestation_id",
+                    "envelope_fingerprint",
+                    "authorization_id",
+                    "account_alias",
+                    "strategy_id",
+                    "requested_start_at",
+                    "requested_expires_at",
+                ):
+                    if str(reservation[field] or "") != str(requested[field] or ""):
+                        reservation_blockers.append(
+                            f"runtime_session_reservation_{field}_mismatch"
+                        )
+                if str(reservation["status"] or "") != "reserved":
+                    reservation_blockers.append(
+                        "runtime_session_reservation_not_reserved"
+                    )
+                if reservation_blockers:
+                    conn.rollback()
+                    return _controlled_session_authority_rejection(
+                        requested,
+                        reservation_blockers,
+                    )
+
+                conn.execute(
+                    """
+                    INSERT INTO controlled_session_runtime_sessions (
+                        session_id, session_fingerprint, issuance_fingerprint,
+                        reservation_id, attestation_id, envelope_fingerprint,
+                        authorization_id, account_alias, strategy_id,
+                        operator_id, operator_approval_id, order_ids_json,
+                        effective_at_epoch_ms, expires_at_epoch_ms,
+                        effective_at, expires_at, max_order_rate_per_minute,
+                        token_salt, token_hash, status, payload_json, created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["session_id"],
+                        requested["session_fingerprint"],
+                        requested["issuance_fingerprint"],
+                        requested["reservation_id"],
+                        requested["attestation_id"],
+                        requested["envelope_fingerprint"],
+                        requested["authorization_id"],
+                        requested["account_alias"],
+                        requested["strategy_id"],
+                        requested["operator_id"],
+                        requested["operator_approval_id"],
+                        _serialize_event_payload_json(requested["order_ids"]),
+                        int(requested["effective_at_epoch_ms"]),
+                        int(requested["expires_at_epoch_ms"]),
+                        requested["requested_start_at"],
+                        requested["requested_expires_at"],
+                        int(requested["max_order_rate_per_minute"]),
+                        requested["token_salt"],
+                        requested["token_hash"],
+                        "enabled",
+                        _serialize_event_payload_json(requested["payload"]),
+                        requested["created_at"],
+                        requested["created_at"],
+                    ),
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_sessions
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "enabled",
+                    "blockers": [],
+                    "reused": False,
+                    "session": dict(saved) if saved is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                conn.rollback()
+                return _controlled_session_authority_rejection(
+                    requested,
+                    ["runtime_session_issuance_transaction_unavailable"],
+                )
+
+    def revoke_controlled_session_sync(
+        self,
+        *,
+        revocation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist an operator-signed one-way session revocation."""
+        requested = dict(revocation)
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                session = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_sessions
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                if session is None:
+                    conn.rollback()
+                    return _controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_not_found"],
+                    )
+                if session["session_fingerprint"] != requested["session_fingerprint"]:
+                    conn.rollback()
+                    return _controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_revocation_identity_mismatch"],
+                    )
+                existing = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_revocation_events
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                if session["status"] == "revoked":
+                    if (
+                        existing is None
+                        or existing["revocation_id"] != requested["revocation_id"]
+                        or existing["revocation_fingerprint"]
+                        != requested["revocation_fingerprint"]
+                        or existing["reason_code"] != requested["reason_code"]
+                    ):
+                        conn.rollback()
+                        return _controlled_session_authority_rejection(
+                            requested,
+                            ["runtime_session_revocation_conflict"],
+                        )
+                    conn.commit()
+                    return {
+                        "status": "revoked",
+                        "blockers": [],
+                        "reused": True,
+                        "session": dict(session),
+                        "revocation": dict(existing) if existing is not None else {},
+                    }
+                if session["status"] != "enabled":
+                    conn.rollback()
+                    return _controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_not_enabled"],
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO controlled_session_revocation_events (
+                        revocation_id, revocation_fingerprint, session_id,
+                        session_fingerprint, reason_code, operator_id,
+                        operator_approval_id, revoked_at_epoch_ms, revoked_at,
+                        payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["revocation_id"],
+                        requested["revocation_fingerprint"],
+                        requested["session_id"],
+                        requested["session_fingerprint"],
+                        requested["reason_code"],
+                        requested["operator_id"],
+                        requested["operator_approval_id"],
+                        int(requested["revoked_at_epoch_ms"]),
+                        requested["revoked_at"],
+                        _serialize_event_payload_json(requested["payload"]),
+                        requested["created_at"],
+                    ),
+                )
+                conn.execute(
+                    """
+                    UPDATE controlled_session_runtime_sessions
+                    SET status = 'revoked', updated_at = ?
+                    WHERE session_id = ? AND status = 'enabled'
+                    """,
+                    (requested["created_at"], requested["session_id"]),
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_sessions
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                event = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_revocation_events
+                    WHERE revocation_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["revocation_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "revoked",
+                    "blockers": [],
+                    "reused": False,
+                    "session": dict(saved) if saved is not None else {},
+                    "revocation": dict(event) if event is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                conn.rollback()
+                return _controlled_session_authority_rejection(
+                    requested,
+                    ["runtime_session_revocation_transaction_unavailable"],
+                )
+
+    def get_controlled_session_runtime_session_sync(
+        self,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one runtime session including private hash fields for verification."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_session_runtime_sessions
+                WHERE session_id = ?
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def list_controlled_session_runtime_sessions_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List runtime sessions without interpreting current authority."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_session_runtime_sessions
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_controlled_session_revocations_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List immutable signed revocation evidence newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_session_revocation_events
+                ORDER BY revoked_at_epoch_ms DESC, id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Controlled Session Runtime Rate Admissions ----------
 
     def admit_controlled_session_order_sync(
@@ -3609,6 +3948,37 @@ class AppDatabase:
             conn.execute("PRAGMA busy_timeout=2000")
             try:
                 conn.execute("BEGIN IMMEDIATE")
+                runtime_session = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_sessions
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                session_blockers: list[str] = []
+                if runtime_session is None:
+                    session_blockers.append("runtime_session_persistent_state_missing")
+                else:
+                    if runtime_session["status"] != "enabled":
+                        session_blockers.append("runtime_session_not_enabled")
+                    if (
+                        runtime_session["session_fingerprint"]
+                        != requested["session_fingerprint"]
+                    ):
+                        session_blockers.append("runtime_session_fingerprint_changed")
+                    if runtime_session["reservation_id"] != requested["reservation_id"]:
+                        session_blockers.append("runtime_session_reservation_changed")
+                    if int(runtime_session["effective_at_epoch_ms"]) > now_epoch_ms:
+                        session_blockers.append("runtime_session_not_yet_effective")
+                    if int(runtime_session["expires_at_epoch_ms"]) <= now_epoch_ms:
+                        session_blockers.append("runtime_session_expired")
+                if session_blockers:
+                    conn.rollback()
+                    return _controlled_session_rate_admission_rejection(
+                        requested,
+                        session_blockers,
+                    )
                 pause_state = conn.execute(
                     """
                     SELECT * FROM controlled_session_runtime_states
@@ -5251,6 +5621,21 @@ def _controlled_session_pause_rejection(
     }
 
 
+def _controlled_session_authority_rejection(
+    payload: dict[str, Any],
+    blockers: list[str],
+) -> dict[str, Any]:
+    return {
+        "status": "rejected",
+        "blockers": list(dict.fromkeys(blockers)),
+        "reused": False,
+        "session": {},
+        "revocation": {},
+        "session_id": str(payload.get("session_id") or ""),
+        "session_fingerprint": str(payload.get("session_fingerprint") or ""),
+    }
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5555,6 +5940,53 @@ CREATE TABLE IF NOT EXISTS controlled_session_pause_events (
 
 CREATE INDEX IF NOT EXISTS idx_controlled_session_pause_session_time
 ON controlled_session_pause_events(session_id, paused_at_epoch_ms DESC);
+
+CREATE TABLE IF NOT EXISTS controlled_session_runtime_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL UNIQUE,
+    session_fingerprint TEXT NOT NULL UNIQUE,
+    issuance_fingerprint TEXT NOT NULL UNIQUE,
+    reservation_id TEXT NOT NULL UNIQUE,
+    attestation_id TEXT NOT NULL,
+    envelope_fingerprint TEXT NOT NULL,
+    authorization_id TEXT NOT NULL,
+    account_alias TEXT NOT NULL,
+    strategy_id TEXT NOT NULL,
+    operator_id TEXT NOT NULL,
+    operator_approval_id TEXT NOT NULL,
+    order_ids_json TEXT NOT NULL,
+    effective_at_epoch_ms INTEGER NOT NULL CHECK(effective_at_epoch_ms >= 0),
+    expires_at_epoch_ms INTEGER NOT NULL CHECK(expires_at_epoch_ms > effective_at_epoch_ms),
+    effective_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    max_order_rate_per_minute INTEGER NOT NULL CHECK(max_order_rate_per_minute > 0),
+    token_salt TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('enabled', 'revoked')),
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_session_runtime_scope_window
+ON controlled_session_runtime_sessions(
+    authorization_id, account_alias, effective_at_epoch_ms, expires_at_epoch_ms
+);
+
+CREATE TABLE IF NOT EXISTS controlled_session_revocation_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    revocation_id TEXT NOT NULL UNIQUE,
+    revocation_fingerprint TEXT NOT NULL UNIQUE,
+    session_id TEXT NOT NULL UNIQUE,
+    session_fingerprint TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    operator_id TEXT NOT NULL,
+    operator_approval_id TEXT NOT NULL,
+    revoked_at_epoch_ms INTEGER NOT NULL CHECK(revoked_at_epoch_ms >= 0),
+    revoked_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS controlled_session_runtime_states (
     session_id TEXT PRIMARY KEY,

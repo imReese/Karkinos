@@ -19,6 +19,7 @@ from analytics.acceptance_audit import (
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
     build_controlled_session_gateway_verification_binding_acceptance_audit,
+    build_controlled_session_runtime_authority_acceptance_audit,
     build_controlled_session_runtime_rate_limiter_acceptance_audit,
     build_controlled_session_symbol_budget_acceptance_audit,
     build_execution_batch_reconciliation_acceptance_audit,
@@ -318,6 +319,27 @@ def test_controlled_session_automatic_pause_acceptance_audit_is_complete() -> No
     roadmap_text = Path("docs/ROADMAP.md").read_text()
     acceptance = roadmap_text.split(
         "### Stage 3.8 Automatic Pause Controller Foundation", 1
+    )[1].split("### Stage 3.9 Signed Runtime Session Authority", 1)[0]
+    normalized = _normalized_markdown(acceptance)
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        assert _normalized_markdown(criterion.checkbox_text) in normalized
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_controlled_session_runtime_authority_acceptance_audit_is_complete() -> None:
+    audit = build_controlled_session_runtime_authority_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    acceptance = roadmap_text.split(
+        "### Stage 3.9 Signed Runtime Session Authority", 1
     )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
     normalized = _normalized_markdown(acceptance)
     for criterion in audit.criteria:

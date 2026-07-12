@@ -1,4 +1,4 @@
-"""Atomic runtime order-rate admission, closed until session issuance exists."""
+"""Atomic runtime order-rate admission for authenticated persisted sessions."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ CONTROLLED_SESSION_MAX_RATE_PER_MINUTE = 600
 
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 
 
 class ControlledSessionRateAdmissionRejected(ValueError):
@@ -43,7 +44,7 @@ class ControlledSessionRuntimeRateLimiterService:
         self,
         *,
         db: Any,
-        session_provider: Callable[[str], dict[str, Any]] | None = None,
+        session_provider: Callable[[str, str], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
@@ -66,7 +67,8 @@ class ControlledSessionRuntimeRateLimiterService:
             "maximum_supported_rate_per_minute": (
                 CONTROLLED_SESSION_MAX_RATE_PER_MINUTE
             ),
-            "runtime_session_issuance_enabled": False,
+            "runtime_session_issuance_enabled": provider_configured,
+            "runtime_session_token_required": True,
             "broker_submission_enabled": False,
             "safety": _safety_flags(),
         }
@@ -75,16 +77,20 @@ class ControlledSessionRuntimeRateLimiterService:
         self,
         *,
         session_id: str,
+        session_token: str,
         order_id: str,
         request_id: str,
     ) -> dict[str, Any]:
         now = _aware_utc(self._clock())
         normalized_session_id = str(session_id or "").strip()
+        normalized_session_token = str(session_token or "")
         normalized_order_id = str(order_id or "").strip()
         normalized_request_id = str(request_id or "").strip().lower()
         blockers: list[str] = []
         if not _ID_PATTERN.fullmatch(normalized_session_id):
             blockers.append("runtime_session_id_invalid")
+        if not _TOKEN_PATTERN.fullmatch(normalized_session_token):
+            blockers.append("runtime_session_token_invalid")
         if not _ID_PATTERN.fullmatch(normalized_order_id):
             blockers.append("runtime_order_id_invalid")
         if not _FINGERPRINT_PATTERN.fullmatch(normalized_request_id):
@@ -106,7 +112,13 @@ class ControlledSessionRuntimeRateLimiterService:
             blockers.append("authenticated_runtime_session_provider_unavailable")
         elif _ID_PATTERN.fullmatch(normalized_session_id):
             try:
-                raw = self._session_provider(normalized_session_id) or {}
+                raw = (
+                    self._session_provider(
+                        normalized_session_id,
+                        normalized_session_token,
+                    )
+                    or {}
+                )
             except Exception:
                 raw = {}
                 blockers.append("authenticated_runtime_session_provider_failed")
@@ -117,6 +129,10 @@ class ControlledSessionRuntimeRateLimiterService:
             blockers.append("runtime_session_identity_mismatch")
         if not session.get("session_authority_verified"):
             blockers.append("runtime_session_authority_not_verified")
+        if not session.get("persistent_session_state_verified"):
+            blockers.append("runtime_session_persistent_state_not_verified")
+        if not session.get("runtime_authentication_verified"):
+            blockers.append("runtime_session_authentication_not_verified")
         if not session.get("budget_reservation_verified"):
             blockers.append("runtime_session_budget_reservation_not_verified")
         if not session.get("upstream_gates_clear"):
@@ -204,11 +220,13 @@ class ControlledSessionRuntimeRateLimiterService:
         self,
         *,
         session_id: str,
+        session_token: str,
         order_id: str,
         request_id: str,
     ) -> dict[str, Any]:
         preview = self.preview(
             session_id=session_id,
+            session_token=session_token,
             order_id=order_id,
             request_id=request_id,
         )
@@ -244,7 +262,7 @@ class ControlledSessionRuntimeRateLimiterService:
             },
             "status": "admitted",
             "runtime_admission_granted": True,
-            "runtime_session_issued": False,
+            "runtime_session_issued": True,
             "authorizes_broker_submission": False,
             "safety": _safety_flags(),
         }
@@ -359,6 +377,12 @@ def _sanitize_session(value: dict[str, Any]) -> dict[str, Any]:
         "expires_at": str(value.get("expires_at") or ""),
         "max_order_rate_per_minute": value.get("max_order_rate_per_minute"),
         "session_authority_verified": value.get("session_authority_verified") is True,
+        "persistent_session_state_verified": value.get(
+            "persistent_session_state_verified"
+        )
+        is True,
+        "runtime_authentication_verified": value.get("runtime_authentication_verified")
+        is True,
         "budget_reservation_verified": value.get("budget_reservation_verified") is True,
         "upstream_gates_clear": value.get("upstream_gates_clear") is True,
         "kill_switch_clear": value.get("kill_switch_clear") is True,

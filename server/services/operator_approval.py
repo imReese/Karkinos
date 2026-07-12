@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import hmac
 import json
 import re
 import secrets
@@ -33,6 +34,8 @@ OPERATOR_APPROVAL_ACTIONS = frozenset(
         "attest_per_order_dossier",
         "attest_controlled_session_envelope",
         "accept_broker_connector_soak_promotion",
+        "issue_controlled_session",
+        "revoke_controlled_session",
     }
 )
 OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
@@ -40,6 +43,8 @@ OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
         "per_order_dossier",
         "controlled_session_envelope",
         "broker_connector_soak_promotion_dossier",
+        "controlled_session_issuance",
+        "controlled_session_revocation",
     }
 )
 OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
@@ -48,6 +53,8 @@ OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
     "accept_broker_connector_soak_promotion": (
         "broker_connector_soak_promotion_dossier"
     ),
+    "issue_controlled_session": "controlled_session_issuance",
+    "revoke_controlled_session": "controlled_session_revocation",
 }
 
 DEFAULT_CHALLENGE_TTL_SECONDS = 180
@@ -221,7 +228,7 @@ class OperatorApprovalService:
         if existing:
             recorded = _event_response(existing[0], reused=True)
             if recorded.get("signature_fingerprint") == signature_fingerprint:
-                return recorded
+                return _public_approval_event(recorded)
             evidence = self._record_rejection(
                 challenge=challenge,
                 signature_fingerprint=signature_fingerprint,
@@ -319,7 +326,7 @@ class OperatorApprovalService:
         )
         if not saved:
             raise RuntimeError("verified operator approval was not recorded")
-        return _event_response(saved[0], reused=False)
+        return _public_approval_event(_event_response(saved[0], reused=False))
 
     def resolve_approval(
         self,
@@ -377,6 +384,56 @@ class OperatorApprovalService:
             blockers.append("trusted_operator_key_changed")
         return _approval_resolution(normalized, approval, blockers)
 
+    def resolve_approval_with_proof(
+        self,
+        *,
+        approval_id: str,
+        proof_signature_base64: str,
+        expected_action: str,
+        expected_artifact_type: str,
+        expected_artifact_fingerprint: str,
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Require possession of the verified signature without exposing it."""
+        resolved, blockers = self.resolve_approval(
+            approval_id=approval_id,
+            expected_action=expected_action,
+            expected_artifact_type=expected_artifact_type,
+            expected_artifact_fingerprint=expected_artifact_fingerprint,
+        )
+        normalized = str(approval_id or "").strip().lower()
+        proof = str(proof_signature_base64 or "").strip()
+        rows = self._db.list_events_sync(
+            event_type=OPERATOR_APPROVAL_VERIFIED_EVENT_TYPE,
+            entity_type=OPERATOR_APPROVAL_VERIFIED_ENTITY_TYPE,
+            entity_id=normalized,
+            source=OPERATOR_APPROVAL_VERIFIED_SOURCE,
+            limit=1,
+        )
+        proof_blockers = list(blockers)
+        try:
+            decoded = base64.b64decode(proof, validate=True)
+        except (binascii.Error, ValueError):
+            decoded = b""
+        if len(decoded) != 64:
+            proof_blockers.append("operator_approval_proof_signature_invalid")
+        recorded = _event_response(rows[0], reused=False) if rows else {}
+        if not recorded or not hmac.compare_digest(
+            str(recorded.get("signature_fingerprint") or ""),
+            _fingerprint(proof),
+        ):
+            proof_blockers.append("operator_approval_proof_signature_mismatch")
+        unique_blockers = list(dict.fromkeys(proof_blockers))
+        return (
+            {
+                **resolved,
+                "status": "verified" if not unique_blockers else "blocked",
+                "operator_identity_verified": not unique_blockers,
+                "proof_signature_verified": not unique_blockers,
+                "blockers": unique_blockers,
+            },
+            unique_blockers,
+        )
+
     def list_challenges(self, *, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.list_events_sync(
             event_type=OPERATOR_APPROVAL_CHALLENGE_EVENT_TYPE,
@@ -393,7 +450,9 @@ class OperatorApprovalService:
             source=OPERATOR_APPROVAL_VERIFIED_SOURCE,
             limit=max(1, min(int(limit), 500)),
         )
-        return [_event_response(row, reused=False) for row in rows]
+        return [
+            _public_approval_event(_event_response(row, reused=False)) for row in rows
+        ]
 
     def _get_challenge(self, challenge_id: str) -> dict[str, Any]:
         if not _FINGERPRINT_PATTERN.fullmatch(challenge_id):
@@ -512,6 +571,30 @@ def resolve_operator_approval(
     )
 
 
+def resolve_operator_approval_with_proof(
+    *,
+    db: Any,
+    trusted_identities: list[Any] | tuple[Any, ...],
+    approval_id: str,
+    proof_signature_base64: str,
+    expected_action: str,
+    expected_artifact_type: str,
+    expected_artifact_fingerprint: str,
+    clock: Callable[[], datetime] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    return OperatorApprovalService(
+        db=db,
+        trusted_identities=trusted_identities,
+        clock=clock,
+    ).resolve_approval_with_proof(
+        approval_id=approval_id,
+        proof_signature_base64=proof_signature_base64,
+        expected_action=expected_action,
+        expected_artifact_type=expected_artifact_type,
+        expected_artifact_fingerprint=expected_artifact_fingerprint,
+    )
+
+
 def _normalize_identities(values: list[Any] | tuple[Any, ...]) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -603,6 +686,10 @@ def _approval_resolution(
         "safety": _safety_flags(),
     }
     return result, unique_blockers
+
+
+def _public_approval_event(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: item for key, item in value.items() if key != "signature_base64"}
 
 
 def _parse_timestamp(value: Any) -> datetime | None:

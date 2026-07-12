@@ -40,14 +40,23 @@ def test_automatic_pause_routes_are_read_only(monkeypatch) -> None:
     assert client.post(f"{prefix}/states/session-a/resume", json={}).status_code == 404
 
 
-def test_route_service_keeps_production_providers_closed(monkeypatch) -> None:
+def test_route_service_wires_session_identity_but_keeps_gate_provider_closed(
+    monkeypatch,
+) -> None:
     fake_state = SimpleNamespace(db=object())
+    fake_authority = SimpleNamespace(
+        resolve_current=lambda session_id: {"session_id": session_id}
+    )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.controlled_session_runtime_authority._service",
+        lambda: fake_authority,
+    )
 
     service = route_module._service()
 
     assert service._db is fake_state.db
-    assert service._session_provider is None
+    assert service._session_provider == fake_authority.resolve_current
     assert service._gate_provider is None
     assert service.get_status()["automatic_pause_enabled"] is False
 

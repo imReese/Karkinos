@@ -532,11 +532,11 @@ def test_session_envelope_projects_conservative_budget_and_stays_non_executing(
     assert envelope["runtime_session_status"] == "not_issued"
     assert envelope["submission_status"] == "blocked"
     assert (
-        "atomic_budget_reservation_not_implemented"
+        "atomic_budget_reservation_required_after_attestation"
         in envelope["hard_submission_blockers"]
     )
     assert (
-        "automatic_pause_controller_not_wired_to_authenticated_session"
+        "automatic_pause_controller_not_wired_to_live_gates"
         in envelope["hard_submission_blockers"]
     )
     assert (
@@ -808,7 +808,7 @@ def test_signed_current_envelope_can_reserve_budget_but_cannot_issue_session(
     assert reservation["broker_submission_enabled"] is False
     assert reservation["authorizes_execution"] is False
     assert reservation["cleared_hard_submission_blockers"] == [
-        "atomic_budget_reservation_not_implemented"
+        "atomic_budget_reservation_required_after_attestation"
     ]
     assert {
         env["db"].get_oms_order_sync(order_id)["status"]
@@ -1050,8 +1050,10 @@ def test_controlled_session_status_exposes_no_runtime_actions(tmp_path) -> None:
     status = env["service"].get_status()
 
     assert status["contract_status"] == "proposal_only_non_executing"
-    assert status["runtime_session_authority"] == "disabled"
+    assert status["runtime_session_authority"] == "separate_signed_service_required"
     assert status["session_issue_enabled"] is False
+    assert status["separate_session_issue_endpoint_available"] is True
+    assert status["session_revoke_runtime_enabled"] is True
     assert status["session_resume_enabled"] is False
     assert status["broker_submission_enabled"] is False
     assert status["automatic_scale_up_enabled"] is False
@@ -1374,9 +1376,12 @@ def test_recorded_gateway_verifications_bind_end_to_end_for_all_session_orders(
         "execution_gateway_runtime_not_verified"
         not in envelope["hard_submission_blockers"]
     )
-    assert "runtime_session_authority_disabled" in envelope["hard_submission_blockers"]
     assert (
-        "atomic_budget_reservation_not_implemented"
+        "runtime_session_requires_separate_signed_issuance"
+        in envelope["hard_submission_blockers"]
+    )
+    assert (
+        "atomic_budget_reservation_required_after_attestation"
         in envelope["hard_submission_blockers"]
     )
     assert envelope["runtime_session_status"] == "not_issued"
@@ -1598,7 +1603,10 @@ def test_recorded_session_start_account_truth_binds_end_to_end(tmp_path) -> None
         "session_account_truth_snapshot_not_bound"
         not in envelope["hard_submission_blockers"]
     )
-    assert "runtime_session_authority_disabled" in envelope["hard_submission_blockers"]
+    assert (
+        "runtime_session_requires_separate_signed_issuance"
+        in envelope["hard_submission_blockers"]
+    )
     assert envelope["runtime_session_status"] == "not_issued"
     assert envelope["submission_status"] == "blocked"
     assert envelope["authorizes_execution"] is False

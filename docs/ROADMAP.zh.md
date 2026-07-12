@@ -267,16 +267,22 @@ symbol 的完整集合，每个正数上限不得超过资本评估的 symbol/ef
 
 Stage 3.7 已实现内部 runtime rate admission ledger：服务端时间驱动 60 秒滑动窗口，精确
 绑定 session/reservation/order/request，并在同一授权/账户的重叠 session 间采用最严格速率；
-最后一个并发名额只允许一个请求成功。生产环境不注入认证 session provider，只开放只读
-status/history，且没有公开 admit/submit/cancel 接口。因此硬阻断从“未实现”更新为“尚未接入
-认证 session”，仍不产生执行权限。
+最后一个并发名额只允许一个请求成功。Stage 3.9 已接入持久化 token 认证 session provider，
+但仍只开放只读 status/history，且没有公开 admit/submit/cancel 接口；它不产生券商权限。
 
 Stage 3.8 已实现内部 automatic pause controller：对精确识别的 session 读取 allowlist 门禁事实，
 Account Truth、风控、前批对账、paper/shadow、gateway、行情、预算、速率、kill switch、亏损/回撤、
 拒单、账户变化、连续错误任一缺失或失败都会持久化不可变 pause event 与单向 `paused` 状态。
 rate admission 在写事务内部复查 pause state，可阻断仍声称 session 启用的陈旧 provider。生产仅
-开放只读 status/state/events，未注入 session/gate provider，不存在自动恢复或券商写权限；硬阻断
-更新为“尚未接入认证 session”，恢复仍需未来独立的人审协议。
+开放只读 status/state/events；Stage 3.9 已提供 session identity，但未注入 live gate provider，
+不存在自动恢复或券商写权限。硬阻断缩小为“实时门禁编排未接入”，恢复仍需未来独立的人审协议。
+
+Stage 3.9 已实现独立签名的 runtime session authority。当前 attestation 与原子 reservation 会
+被重新解析，owner 必须针对精确 issuance fingerprint 再签一次 Ed25519，并提交匹配签名作为
+possession proof；公开 approval history 不回显签名，旧审批不能复用为 runtime 权限。token 只
+首次显示且只保存 salted hash。session 到期、来源漂移、pause 或独立签名
+revoke 后认证立即 fail closed；admission 写事务还会复查持久化 enabled/expiry/fingerprint/pause，
+阻断陈旧 provider 竞态。公开 API 没有 admit、resume、renew、widen 或任何 broker 写动作。
 
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态

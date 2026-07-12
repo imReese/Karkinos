@@ -164,11 +164,15 @@ class OperatorApprovalChallengeRequest(BaseModel):
         "attest_per_order_dossier",
         "attest_controlled_session_envelope",
         "accept_broker_connector_soak_promotion",
+        "issue_controlled_session",
+        "revoke_controlled_session",
     ]
     artifact_type: Literal[
         "per_order_dossier",
         "controlled_session_envelope",
         "broker_connector_soak_promotion_dossier",
+        "controlled_session_issuance",
+        "controlled_session_revocation",
     ]
     artifact_fingerprint: str = Field(
         min_length=64,

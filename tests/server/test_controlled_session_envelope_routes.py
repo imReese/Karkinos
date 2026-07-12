@@ -25,7 +25,7 @@ class FakeControlledSessionEnvelopeService:
         self.calls.append(("status", None))
         return {
             "contract_status": "proposal_only_non_executing",
-            "runtime_session_authority": "disabled",
+            "runtime_session_authority": "separate_signed_service_required",
             "broker_submission_enabled": False,
         }
 
@@ -122,7 +122,9 @@ def test_controlled_session_routes_status_preview_attest_and_list(monkeypatch) -
     listing = client.get("/api/automation/controlled-sessions/attestations?limit=10")
 
     assert status.status_code == 200
-    assert status.json()["runtime_session_authority"] == "disabled"
+    assert status.json()["runtime_session_authority"] == (
+        "separate_signed_service_required"
+    )
     assert preview.status_code == 200
     assert preview.json()["runtime_session_status"] == "not_issued"
     assert attestation.status_code == 200

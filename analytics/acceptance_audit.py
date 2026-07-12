@@ -4547,10 +4547,11 @@ def build_controlled_session_automatic_pause_acceptance_audit() -> AcceptanceAud
             AcceptanceCriterion(
                 key="automatic_pause_default_closed",
                 checkbox_text=(
-                    "* [x] Production configures no authenticated session or "
-                    "gate provider and exposes only read-only status, state, "
-                    "and event routes; there is no public evaluate, pause, "
-                    "resume, submit, or cancel endpoint."
+                    "* [x] Production wires only the persisted read-only "
+                    "session resolver, configures no live gate provider, and "
+                    "exposes only read-only status, state, and event routes; "
+                    "there is no public evaluate, pause, resume, submit, or "
+                    "cancel endpoint."
                 ),
                 evidence_paths=(
                     "server/routes/controlled_session_automatic_pause.py",
@@ -4662,6 +4663,165 @@ def build_controlled_session_automatic_pause_acceptance_audit() -> AcceptanceAud
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_controlled_session_automatic_pause.py tests/server/test_controlled_session_automatic_pause_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
+def build_controlled_session_runtime_authority_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for Stage 3.9 signed runtime-session authority."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="runtime_authority_separate_signed_issuance",
+                checkbox_text=(
+                    "* [x] Issuance re-resolves one exact current reservation "
+                    "and attestation, binds account/strategy/orders/window/rate, "
+                    "and requires a new Ed25519 `issue_controlled_session` "
+                    "approval plus possession of its signature for the "
+                    "deterministic issuance fingerprint; public approval "
+                    "history is sanitized and the earlier envelope approval "
+                    "cannot be reused as authority."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_authority.py",
+                    "server/services/operator_approval.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'preview or wrong_action' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_atomic_single_issue",
+                checkbox_text=(
+                    "* [x] SQLite `BEGIN IMMEDIATE` permits only one session per "
+                    "reservation, validates the persisted reservation identity "
+                    "again, reuses exact/concurrent retries, and rejects a "
+                    "conflicting session or reservation identity."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'concurrent_exact_issue or token_once' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_hashed_token_authentication",
+                checkbox_text=(
+                    "* [x] A high-entropy runtime token is returned only on the "
+                    "first successful issue response, only a salted hash is "
+                    "stored, list/resolve/rejection evidence never exposes it, "
+                    "and every internal rate-admission request requires exact "
+                    "token authentication."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_authority.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'token_once' tests/test_controlled_session_runtime_rate_limiter.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_expiry_and_source_revalidation",
+                checkbox_text=(
+                    "* [x] Every resolution rechecks time, durable pause state, "
+                    "and the current reservation/attestation chain; expiry, "
+                    "source drift, pause, or identity mismatch fails closed "
+                    "without automatically renewing, widening, or resuming the "
+                    "session."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_authority.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'source_drift or expiry' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_signed_one_way_revocation",
+                checkbox_text=(
+                    "* [x] Revocation binds an exact session fingerprint and "
+                    "allowlisted reason to a separate Ed25519 "
+                    "`revoke_controlled_session` approval plus matching "
+                    "signature possession, persists one immutable event, changes "
+                    "enabled to revoked only once, and exposes no resume or "
+                    "re-enable transition."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'signed_revocation' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_atomic_admission_state_recheck",
+                checkbox_text=(
+                    "* [x] Rate admission rechecks persistent enabled status, "
+                    "session/reservation fingerprints, effective/expiry time, "
+                    "and pause state inside its own `BEGIN IMMEDIATE` transaction, "
+                    "so a stale authenticated provider cannot race revocation or "
+                    "pause."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py tests/test_controlled_session_automatic_pause.py -k 'atomic_admission or runtime_admission' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_explicit_non_broker_routes",
+                checkbox_text=(
+                    "* [x] Public routes expose signed issuance preview/record, "
+                    "sanitized session visibility, signed revocation preview/"
+                    "record, and history only; there is no resume, renew, widen, "
+                    "runtime admit, broker submit, or broker cancel endpoint."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_runtime_authority.py",
+                    "server/routes/controlled_session_runtime_rate_limiter.py",
+                    "tests/server/test_controlled_session_runtime_authority_routes.py",
+                    "tests/server/test_controlled_session_runtime_rate_limiter_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_runtime_authority_routes.py tests/server/test_controlled_session_runtime_rate_limiter_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_authority_deterministic_zero_broker_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover exact signatures, replay, "
+                    "real concurrent issuance, token secrecy/authentication, "
+                    "expiry, source drift, signed revocation, stale-provider "
+                    "race blocking, strict route models, and zero broker, OMS, "
+                    "production-ledger, capital-scale, auto-resume, or auto-renew "
+                    "side effects."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                    "tests/server/test_controlled_session_runtime_authority_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py tests/test_controlled_session_runtime_rate_limiter.py tests/server/test_controlled_session_runtime_authority_routes.py -q",
                 ),
             ),
         )
