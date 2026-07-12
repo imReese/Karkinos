@@ -11,10 +11,10 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 CONTROLLED_SESSION_BUDGET_RESERVATION_SCHEMA_VERSION = (
-    "karkinos.controlled_session_budget_reservation.v1"
+    "karkinos.controlled_session_budget_reservation.v2"
 )
 CONTROLLED_SESSION_BUDGET_RESERVATION_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_session_budget_reservation_status.v1"
+    "karkinos.controlled_session_budget_reservation_status.v2"
 )
 CONTROLLED_SESSION_BUDGET_RESERVATION_REJECTION_EVENT_TYPE = (
     "controlled_session.budget_reservation_rejected"
@@ -66,6 +66,7 @@ class ControlledSessionBudgetReservationService:
             "transaction_mode": "sqlite_begin_immediate_fail_closed",
             "money_unit_scale": CONTROLLED_SESSION_MONEY_UNIT_SCALE,
             "money_rounding": "positive_amounts_round_up_to_0.0001_cny",
+            "per_symbol_runtime_budget": "required_and_atomic",
             "runtime_session_authority": "disabled",
             "session_issue_enabled": False,
             "broker_submission_enabled": False,
@@ -113,6 +114,11 @@ class ControlledSessionBudgetReservationService:
             if isinstance(envelope.get("budget_projection"), dict)
             else {}
         )
+        symbol_limit_summary = (
+            envelope.get("per_symbol_runtime_limits")
+            if isinstance(envelope.get("per_symbol_runtime_limits"), dict)
+            else {}
+        )
         gross = _decimal(budget.get("projected_gross_order_value"))
         buy = _decimal(budget.get("projected_buy_value"))
         effective_capital = _decimal(budget.get("effective_capital"))
@@ -137,6 +143,20 @@ class ControlledSessionBudgetReservationService:
             blockers.append("controlled_session_order_count_projection_invalid")
         elif order_count > order_count_capacity:
             blockers.append("controlled_session_order_count_projection_exceeded")
+        projected_by_symbol = _decimal_map(budget.get("projected_by_symbol"))
+        symbol_capacity = _decimal_map(symbol_limit_summary.get("requested_limits"))
+        if symbol_limit_summary.get("status") != "pass":
+            blockers.append("per_symbol_runtime_limits_not_clear")
+        if (
+            not projected_by_symbol
+            or set(projected_by_symbol) != set(symbol_capacity)
+            or any(value < 0 for value in projected_by_symbol.values())
+            or any(value <= 0 for value in symbol_capacity.values())
+        ):
+            blockers.append("per_symbol_runtime_budget_invalid")
+        for symbol, projected in projected_by_symbol.items():
+            if projected > symbol_capacity.get(symbol, Decimal("0")):
+                blockers.append(f"per_symbol_runtime_budget_exceeded:{symbol}")
 
         requested_start_at = _parse_timestamp(envelope.get("requested_start_at"))
         requested_expires_at = _parse_timestamp(envelope.get("requested_expires_at"))
@@ -198,12 +218,20 @@ class ControlledSessionBudgetReservationService:
                 "buy_value": _decimal_string(safe_buy),
                 "daily_turnover_value": _decimal_string(safe_gross),
                 "order_count": order_count or 0,
+                "by_symbol": {
+                    symbol: _decimal_string(value)
+                    for symbol, value in sorted(projected_by_symbol.items())
+                },
             },
             "reservation_capacity": {
                 "capital_value": _decimal_string(capital_capacity),
                 "cash_value": _decimal_string(available_cash or Decimal("0")),
                 "daily_turnover_value": _decimal_string(turnover_capacity),
                 "order_count": order_count_capacity or 0,
+                "by_symbol": {
+                    symbol: _decimal_string(value)
+                    for symbol, value in sorted(symbol_capacity.items())
+                },
             },
             "money_unit_scale": CONTROLLED_SESSION_MONEY_UNIT_SCALE,
             "money_rounding": "round_ceiling",
@@ -323,6 +351,14 @@ class ControlledSessionBudgetReservationService:
                     capacity["daily_turnover_value"]
                 ),
                 "order_count_capacity": int(capacity["order_count"]),
+                "reserved_by_symbol_units": {
+                    symbol: _money_units(value)
+                    for symbol, value in reserved_budget["by_symbol"].items()
+                },
+                "symbol_capacity_units": {
+                    symbol: _capacity_units(value)
+                    for symbol, value in capacity["by_symbol"].items()
+                },
                 "payload": payload,
                 "created_at": now.isoformat(),
             }
@@ -525,6 +561,18 @@ def _decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, TypeError, ValueError):
         return None
     return parsed if parsed.is_finite() else None
+
+
+def _decimal_map(value: Any) -> dict[str, Decimal]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, Decimal] = {}
+    for key, item in value.items():
+        parsed = _decimal(item)
+        if parsed is None:
+            return {}
+        result[str(key)] = parsed
+    return result
 
 
 def _decimal_string(value: Decimal) -> str:

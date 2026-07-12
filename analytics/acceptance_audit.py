@@ -4281,6 +4281,135 @@ def build_controlled_session_budget_reservation_acceptance_audit() -> Acceptance
     )
 
 
+def build_controlled_session_symbol_budget_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the Stage 3.6 per-symbol runtime budget gate."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="explicit_exact_per_symbol_limit_map",
+                checkbox_text=(
+                    "* [x] Every envelope requires an explicit positive "
+                    "per-symbol limit for exactly the projected symbol set; "
+                    "missing, extra, malformed, or over-precision values fail "
+                    "closed before attestation."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "server/routes/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k per_symbol_runtime_limits_fail_closed -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="capital_capped_symbol_limits",
+                checkbox_text=(
+                    "* [x] Each signed symbol limit is no greater than both the "
+                    "recorded capital evaluation's symbol ceiling and effective "
+                    "capital, and each conservative projected gross amount fits "
+                    "inside its own limit."
+                ),
+                evidence_paths=(
+                    "server/services/capital_authorization.py",
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k per_symbol_runtime_limits_fail_closed -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="symbol_limit_signed_artifact_binding",
+                checkbox_text=(
+                    "* [x] The canonical symbol-limit map is part of the "
+                    "envelope and attestation identity, so any limit change "
+                    "changes the envelope fingerprint and invalidates the prior "
+                    "artifact-bound operator approval."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_envelope.py",
+                    "tests/test_controlled_session_envelope.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py -k per_symbol_runtime_limit_change -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="symbol_budget_reservation_contract",
+                checkbox_text=(
+                    "* [x] The immutable reservation persists fixed-precision "
+                    "projected and capacity maps per symbol, and exact reruns "
+                    "retain those maps without granting session or broker "
+                    "authority."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_budget_reservation.py",
+                    "server/db.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_budget_reservation.py -k 'idempotently or disjoint_symbols' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="atomic_concurrent_symbol_budget",
+                checkbox_text=(
+                    "* [x] The same SQLite `BEGIN IMMEDIATE` transaction sums "
+                    "overlapping reservations per symbol, allows disjoint "
+                    "symbols inside shared capital, rejects same-symbol "
+                    "contention above the strictest limit, and fails closed on "
+                    "legacy rows without symbol evidence."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_budget_reservation.py -k 'double_spend_symbol or disjoint_symbols or legacy_reservation' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="symbol_limit_api_zero_authority",
+                checkbox_text=(
+                    "* [x] Envelope APIs require the bounded symbol map, reject "
+                    "undeclared credentials and invalid precision, and still "
+                    "expose no session-issue, OMS/ledger mutation, broker "
+                    "submit/cancel, resume, renewal, or scale-up action."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_envelope.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                    "docs/config-reference.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="symbol_budget_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover exact-set validation, "
+                    "capital ceilings, projection excess, approval invalidation, "
+                    "fixed precision, persisted maps, real concurrent same-symbol "
+                    "contention, disjoint symbols, route validation, and zero "
+                    "execution authority."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_envelope.py",
+                    "tests/test_controlled_session_budget_reservation.py",
+                    "tests/server/test_controlled_session_envelope_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_envelope.py tests/test_controlled_session_budget_reservation.py tests/server/test_controlled_session_envelope_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
 def build_signed_operator_approval_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for Stage 2.2/3.2 signed operator approvals."""
 

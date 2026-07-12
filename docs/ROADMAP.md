@@ -1576,6 +1576,32 @@ issue capital authority.
   revalidation, fixed precision, idempotency, real concurrent contention, every
   budget dimension, rejection audit, route wiring, and zero execution authority.
 
+### Stage 3.6 Atomic Per-Symbol Runtime Budget
+
+* [x] Every envelope requires an explicit positive per-symbol limit for exactly
+  the projected symbol set; missing, extra, malformed, or over-precision values
+  fail closed before attestation.
+* [x] Each signed symbol limit is no greater than both the recorded capital
+  evaluation's symbol ceiling and effective capital, and each conservative
+  projected gross amount fits inside its own limit.
+* [x] The canonical symbol-limit map is part of the envelope and attestation
+  identity, so any limit change changes the envelope fingerprint and invalidates
+  the prior artifact-bound operator approval.
+* [x] The immutable reservation persists fixed-precision projected and capacity
+  maps per symbol, and exact reruns retain those maps without granting session or
+  broker authority.
+* [x] The same SQLite `BEGIN IMMEDIATE` transaction sums overlapping
+  reservations per symbol, allows disjoint symbols inside shared capital,
+  rejects same-symbol contention above the strictest limit, and fails closed on
+  legacy rows without symbol evidence.
+* [x] Envelope APIs require the bounded symbol map, reject undeclared credentials
+  and invalid precision, and still expose no session-issue, OMS/ledger mutation,
+  broker submit/cancel, resume, renewal, or scale-up action.
+* [x] Deterministic tests cover exact-set validation, capital ceilings,
+  projection excess, approval invalidation, fixed precision, persisted maps,
+  real concurrent same-symbol contention, disjoint symbols, route validation,
+  and zero execution authority.
+
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 
 * [x] Versioned current/proposed capital tiers and a deterministic evidence

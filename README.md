@@ -319,6 +319,14 @@ capital, cash, China-trading-day turnover, and order-count checks. The record
 is a bounded budget hold, not a runtime session or broker permission: OMS,
 ledger, submit/cancel, resume/renew, and capital scaling remain unavailable.
 
+Stage 3.6 binds an explicit per-symbol runtime-limit map into the same signed
+envelope and atomic reservation. Each limit must cover exactly the projected
+symbol set, remain below the recorded capital evaluation's symbol ceiling, and
+cover its conservative gross projection. Concurrent overlapping reservations
+are summed per symbol; same-symbol excess fails while disjoint symbols still
+share the stricter account budget. This does not issue a session or enable a
+broker action.
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run

@@ -190,6 +190,18 @@ class AppDatabase:
             _ensure_column(conn, "paper_shadow_runs", "reviewed_at", "TEXT")
             _ensure_column(conn, "paper_shadow_runs", "review_notes", "TEXT")
             _ensure_column(conn, "paper_shadow_runs", "reviewer", "TEXT")
+            _ensure_column(
+                conn,
+                "controlled_session_budget_reservations",
+                "reserved_by_symbol_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            _ensure_column(
+                conn,
+                "controlled_session_budget_reservations",
+                "symbol_capacity_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
@@ -3250,15 +3262,49 @@ class AppDatabase:
             "turnover_capacity_units",
         )
         count_fields = ("reserved_order_count", "order_count_capacity")
-        if any(int(requested.get(field) or 0) < 0 for field in money_fields):
+        try:
+            requested_by_symbol = {
+                str(symbol): int(value)
+                for symbol, value in (
+                    requested.get("reserved_by_symbol_units") or {}
+                ).items()
+            }
+            symbol_capacities = {
+                str(symbol): int(value)
+                for symbol, value in (
+                    requested.get("symbol_capacity_units") or {}
+                ).items()
+            }
+            invalid_money_units = any(
+                int(requested.get(field) or 0) < 0 for field in money_fields
+            )
+            invalid_count_units = any(
+                int(requested.get(field) or 0) <= 0 for field in count_fields
+            )
+        except (AttributeError, TypeError, ValueError):
+            return _controlled_session_budget_rejection(
+                requested,
+                ["budget_reservation_units_invalid"],
+            )
+        if invalid_money_units:
             return _controlled_session_budget_rejection(
                 requested,
                 ["budget_reservation_money_units_invalid"],
             )
-        if any(int(requested.get(field) or 0) <= 0 for field in count_fields):
+        if invalid_count_units:
             return _controlled_session_budget_rejection(
                 requested,
                 ["budget_reservation_order_count_invalid"],
+            )
+        if (
+            not requested_by_symbol
+            or set(requested_by_symbol) != set(symbol_capacities)
+            or any(value < 0 for value in requested_by_symbol.values())
+            or any(value <= 0 for value in symbol_capacities.values())
+        ):
+            return _controlled_session_budget_rejection(
+                requested,
+                ["budget_reservation_symbol_units_invalid"],
             )
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
@@ -3321,6 +3367,22 @@ class AppDatabase:
                         requested["requested_start_at"],
                     ),
                 ).fetchone()
+                overlap_symbol_rows = conn.execute(
+                    """
+                    SELECT reserved_by_symbol_json, symbol_capacity_json
+                    FROM controlled_session_budget_reservations
+                    WHERE authorization_id = ?
+                      AND account_alias = ?
+                      AND status = 'reserved'
+                      AND requested_start_at < ?
+                      AND requested_expires_at > ?
+                    """,
+                    (
+                        *scope,
+                        requested["requested_expires_at"],
+                        requested["requested_start_at"],
+                    ),
+                ).fetchall()
                 daily = conn.execute(
                     """
                     SELECT COALESCE(SUM(reserved_turnover_units), 0) AS turnover_units
@@ -3337,7 +3399,38 @@ class AppDatabase:
                     "overlapping_buy_units": int(overlap["buy_units"] or 0),
                     "overlapping_order_count": int(overlap["order_count"] or 0),
                     "daily_turnover_units": int(daily["turnover_units"] or 0),
+                    "overlapping_by_symbol_units": {
+                        symbol: 0 for symbol in sorted(requested_by_symbol)
+                    },
                 }
+                effective_symbol_capacities = dict(symbol_capacities)
+                symbol_evidence_blockers: list[str] = []
+                for row in overlap_symbol_rows:
+                    existing_reserved = _json_dict(row["reserved_by_symbol_json"])
+                    existing_capacities = _json_dict(row["symbol_capacity_json"])
+                    if not existing_reserved or not existing_capacities:
+                        symbol_evidence_blockers.extend(
+                            f"atomic_existing_symbol_budget_evidence_missing:{symbol}"
+                            for symbol in requested_by_symbol
+                        )
+                        continue
+                    for symbol in requested_by_symbol:
+                        reserved_present = symbol in existing_reserved
+                        capacity_present = symbol in existing_capacities
+                        if reserved_present != capacity_present:
+                            symbol_evidence_blockers.append(
+                                f"atomic_existing_symbol_budget_evidence_missing:{symbol}"
+                            )
+                            continue
+                        if not reserved_present:
+                            continue
+                        before["overlapping_by_symbol_units"][symbol] += int(
+                            existing_reserved[symbol]
+                        )
+                        effective_symbol_capacities[symbol] = min(
+                            effective_symbol_capacities[symbol],
+                            int(existing_capacities[symbol]),
+                        )
                 minimum_order_capacity = min(
                     int(requested["order_count_capacity"]),
                     int(
@@ -3354,8 +3447,13 @@ class AppDatabase:
                     + int(requested["reserved_order_count"]),
                     "daily_turnover_units": before["daily_turnover_units"]
                     + int(requested["reserved_turnover_units"]),
+                    "overlapping_by_symbol_units": {
+                        symbol: before["overlapping_by_symbol_units"][symbol]
+                        + requested_by_symbol[symbol]
+                        for symbol in sorted(requested_by_symbol)
+                    },
                 }
-                blockers: list[str] = []
+                blockers: list[str] = list(dict.fromkeys(symbol_evidence_blockers))
                 if after["overlapping_gross_units"] > int(
                     requested["capital_capacity_units"]
                 ):
@@ -3370,6 +3468,9 @@ class AppDatabase:
                     blockers.append("atomic_daily_turnover_budget_unavailable")
                 if after["overlapping_order_count"] > minimum_order_capacity:
                     blockers.append("atomic_order_count_budget_unavailable")
+                for symbol, after_units in after["overlapping_by_symbol_units"].items():
+                    if after_units > effective_symbol_capacities[symbol]:
+                        blockers.append(f"atomic_symbol_budget_unavailable:{symbol}")
                 if blockers:
                     conn.rollback()
                     return _controlled_session_budget_rejection(
@@ -3391,8 +3492,9 @@ class AppDatabase:
                         reserved_turnover_units, reserved_order_count,
                         capital_capacity_units, cash_capacity_units,
                         turnover_capacity_units, order_count_capacity,
+                        reserved_by_symbol_json, symbol_capacity_json,
                         status, payload_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         requested["reservation_id"],
@@ -3414,6 +3516,8 @@ class AppDatabase:
                         int(requested["cash_capacity_units"]),
                         int(requested["turnover_capacity_units"]),
                         int(requested["order_count_capacity"]),
+                        _serialize_event_payload_json(requested_by_symbol),
+                        _serialize_event_payload_json(symbol_capacities),
                         "reserved",
                         _serialize_event_payload_json(requested["payload"]),
                         created_at,
@@ -3436,7 +3540,7 @@ class AppDatabase:
                     "aggregate_before": before,
                     "aggregate_after": after,
                 }
-            except sqlite3.OperationalError:
+            except (sqlite3.OperationalError, TypeError, ValueError):
                 conn.rollback()
                 return _controlled_session_budget_rejection(
                     requested,
@@ -4993,6 +5097,8 @@ CREATE TABLE IF NOT EXISTS controlled_session_budget_reservations (
     cash_capacity_units INTEGER NOT NULL CHECK(cash_capacity_units >= 0),
     turnover_capacity_units INTEGER NOT NULL CHECK(turnover_capacity_units >= 0),
     order_count_capacity INTEGER NOT NULL CHECK(order_count_capacity > 0),
+    reserved_by_symbol_json TEXT NOT NULL DEFAULT '{}',
+    symbol_capacity_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL CHECK(status = 'reserved'),
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL
