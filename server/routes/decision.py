@@ -7,8 +7,11 @@ import json
 from datetime import date, datetime
 from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
+
+from core.types import Symbol
 
 _ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
 _STRATEGY_ATTRIBUTION_READY_STATUSES = {"estimated_from_linked_fills"}
@@ -24,6 +27,7 @@ _REVIEW_DATA_STATUSES = {
     "unknown",
 }
 _BLOCKING_DATA_STATUSES = {"blocked", "error", "missing", "unavailable"}
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def create_router() -> APIRouter:
@@ -42,11 +46,18 @@ def create_router() -> APIRouter:
         from server.services.daily_trading_plan import build_daily_trading_plan
 
         state = get_app_state()
-        decision_payload = await _today_decision_payload(state)
+        portfolio_context = _decision_portfolio_context(state)
+        decision_payload = await _today_decision_payload(
+            state,
+            portfolio_context=portfolio_context,
+        )
         return build_daily_trading_plan(
             decision_payload=decision_payload,
             config=getattr(state, "config", None),
-            positions=_trading_plan_positions(state),
+            positions=_trading_plan_positions(
+                state,
+                portfolio_context=portfolio_context,
+            ),
         )
 
     @r.post("/pre-trade-risk/batch")
@@ -63,17 +74,33 @@ def create_router() -> APIRouter:
                 status_code=503,
                 detail="trading controls are unavailable",
             )
-        scheduler = getattr(state, "scheduler", None)
+        portfolio_context = _decision_portfolio_context(state)
+        portfolio = portfolio_context.get("portfolio")
+        positions = getattr(portfolio, "positions", {}) if portfolio is not None else {}
+        risk_portfolio = SimpleNamespace(
+            cash=getattr(portfolio, "cash", 0),
+            positions={
+                Symbol(str(symbol)): position
+                for symbol, position in dict(positions or {}).items()
+            },
+            instruments={},
+        )
         context_provider = LiveContextProvider(
-            portfolio_getter=lambda: (
-                getattr(scheduler, "portfolio", None) if scheduler is not None else None
-            ),
+            portfolio_getter=lambda: risk_portfolio,
             controls=state.trading_controls,
         )
         return run_pre_trade_risk_batch(
             db=state.db,
             context_provider=context_provider,
             config=getattr(state, "config", None),
+            tasks=_allocate_decision_actions(
+                state,
+                portfolio_context,
+                _read_action_tasks(
+                    state.db,
+                    decision_date=_action_filter_date(portfolio_context),
+                ),
+            ),
         )
 
     @r.get("/intraday")
@@ -82,7 +109,16 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         db = state.db
-        actions = _read_action_tasks(db)
+        portfolio_context = _decision_portfolio_context(state)
+        actions = _allocate_decision_actions(
+            state,
+            portfolio_context,
+            _read_action_tasks(
+                db,
+                decision_date=_action_filter_date(portfolio_context),
+            ),
+        )
+        decision_date = _response_decision_date(portfolio_context, actions)
         intraday_actions = [action for action in actions if _is_intraday_action(action)]
         daily_actions = [
             action for action in actions if not _is_intraday_action(action)
@@ -103,6 +139,10 @@ def create_router() -> APIRouter:
                 db,
                 account_truth,
                 strategy_attribution,
+                quotes=dict(portfolio_context.get("quotes") or {}),
+                allow_direct_quote_fallback=(
+                    portfolio_context.get("authority") != "persisted_valuation_snapshot"
+                ),
             )
             for action in intraday_actions
         ]
@@ -111,7 +151,7 @@ def create_router() -> APIRouter:
         )
         return {
             "lane": "intraday",
-            "decision_date": date.today().isoformat(),
+            "decision_date": decision_date,
             "generated_at": datetime.now().isoformat(),
             "cadence": "polling_or_minute_level",
             "decision": _overall_decision(candidates),
@@ -124,6 +164,7 @@ def create_router() -> APIRouter:
                     journal_by_signal=journal_by_signal,
                     account_truth=account_truth,
                     strategy_attribution=strategy_attribution,
+                    portfolio_context=portfolio_context,
                 ),
                 "excluded_daily_count": len(daily_actions),
             },
@@ -142,9 +183,22 @@ def create_router() -> APIRouter:
     return r
 
 
-async def _today_decision_payload(state: Any) -> dict[str, Any]:
+async def _today_decision_payload(
+    state: Any,
+    *,
+    portfolio_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     db = state.db
-    actions = _read_action_tasks(db)
+    resolved_portfolio_context = portfolio_context or _decision_portfolio_context(state)
+    actions = _allocate_decision_actions(
+        state,
+        resolved_portfolio_context,
+        _read_action_tasks(
+            db,
+            decision_date=_action_filter_date(resolved_portfolio_context),
+        ),
+    )
+    decision_date = _response_decision_date(resolved_portfolio_context, actions)
     journal_by_signal = _journal_by_signal_id(db)
     validation_by_strategy = await _validation_by_strategy_id(db)
     account_truth = _account_truth_gate_evidence(state)
@@ -161,13 +215,18 @@ async def _today_decision_payload(state: Any) -> dict[str, Any]:
             db,
             account_truth,
             strategy_attribution,
+            quotes=dict(resolved_portfolio_context.get("quotes") or {}),
+            allow_direct_quote_fallback=(
+                resolved_portfolio_context.get("authority")
+                != "persisted_valuation_snapshot"
+            ),
         )
         for action in actions
     ]
     no_action_reasons = [] if candidates else ["no_pending_action_tasks"]
     return {
         "lane": "daily",
-        "decision_date": date.today().isoformat(),
+        "decision_date": decision_date,
         "generated_at": datetime.now().isoformat(),
         "decision": _overall_decision(candidates),
         "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
@@ -178,6 +237,7 @@ async def _today_decision_payload(state: Any) -> dict[str, Any]:
             journal_by_signal=journal_by_signal,
             account_truth=account_truth,
             strategy_attribution=strategy_attribution,
+            portfolio_context=resolved_portfolio_context,
         ),
         "candidates": candidates,
         "no_action_reasons": no_action_reasons,
@@ -188,18 +248,210 @@ async def _today_decision_payload(state: Any) -> dict[str, Any]:
     }
 
 
-def _read_action_tasks(db: Any) -> list[dict[str, Any]]:
+def _read_action_tasks(
+    db: Any,
+    *,
+    decision_date: str | None = None,
+) -> list[dict[str, Any]]:
     reader = getattr(db, "get_action_tasks_sync", None)
     if not callable(reader):
         return []
-    return list(reader(statuses=["pending", "deferred"], limit=50, offset=0))
+    rows = list(reader(statuses=["pending", "deferred"], limit=500, offset=0))
+    row_dates = [
+        trade_date
+        for row in rows
+        for trade_date in [_action_trade_date(row)]
+        if trade_date is not None
+    ]
+    effective_date = decision_date or (max(row_dates) if row_dates else None)
+    filtered = [
+        row
+        for row in rows
+        if effective_date is None or _action_trade_date(row) in {None, effective_date}
+    ]
+    ordered = sorted(filtered, key=_action_sort_key, reverse=True)
+    deduplicated: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for row in ordered:
+        identity = (
+            str(row.get("symbol") or ""),
+            str(row.get("strategy_id") or ""),
+            str(row.get("asset_class") or ""),
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduplicated.append(row)
+    return deduplicated
 
 
-def _trading_plan_positions(state: Any) -> dict[str, Any]:
-    scheduler = getattr(state, "scheduler", None)
-    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+def _action_sort_key(action: dict[str, Any]) -> tuple[float, int]:
+    timestamp = _parse_action_timestamp(action.get("timestamp"))
+    try:
+        action_id = int(action.get("id") or 0)
+    except (TypeError, ValueError):
+        action_id = 0
+    return (
+        timestamp.timestamp() if timestamp is not None else float("-inf"),
+        action_id,
+    )
+
+
+def _trading_plan_positions(
+    state: Any,
+    *,
+    portfolio_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    context = portfolio_context or _decision_portfolio_context(state)
+    portfolio = context.get("portfolio")
     positions = getattr(portfolio, "positions", {}) if portfolio else {}
     return dict(positions) if isinstance(positions, dict) else {}
+
+
+def _allocate_decision_actions(
+    state: Any,
+    portfolio_context: dict[str, Any],
+    actions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    portfolio = portfolio_context.get("portfolio")
+    if portfolio is None:
+        return actions
+    from server.services.portfolio_allocation import allocate_action_tasks
+
+    return allocate_action_tasks(
+        actions,
+        portfolio=portfolio,
+        quotes=dict(portfolio_context.get("quotes") or {}),
+        config=getattr(state, "config", None),
+    )
+
+
+def _decision_portfolio_context(state: Any) -> dict[str, Any]:
+    """Resolve Decision facts from the same persisted snapshot as Portfolio."""
+
+    db = getattr(state, "db", None)
+    persistent_facts_available = db is not None and any(
+        callable(getattr(db, name, None))
+        for name in (
+            "list_latest_quotes_sync",
+            "get_latest_quotes_sync",
+            "list_quote_snapshots_sync",
+            "get_ledger_entries_sync",
+        )
+    )
+    if persistent_facts_available:
+        from server.routes.portfolio import (
+            _current_valuation_snapshot,
+            _quotes_from_valuation_snapshot,
+            _resolve_projection_sources,
+        )
+        from server.services.valuation_snapshot import build_current_valuation_snapshot
+
+        snapshot = (
+            _current_valuation_snapshot(state)
+            if callable(getattr(db, "save_valuation_snapshot_sync", None))
+            else build_current_valuation_snapshot(db, persist=False)
+        )
+        quotes = _quotes_from_valuation_snapshot(snapshot)
+        scheduler = getattr(state, "scheduler", None)
+        projection_scheduler = (
+            SimpleNamespace(
+                portfolio=getattr(scheduler, "portfolio", None),
+                instruments=getattr(scheduler, "instruments", {}),
+            )
+            if scheduler is not None
+            else None
+        )
+        projection_state = SimpleNamespace(
+            db=db,
+            scheduler=projection_scheduler,
+            config=getattr(
+                state,
+                "config",
+                SimpleNamespace(initial_cash=0, assets=[]),
+            ),
+        )
+        portfolio, instruments = _resolve_projection_sources(
+            projection_state,
+            latest_quotes=quotes,
+        )
+        return {
+            "portfolio": portfolio,
+            "instruments": instruments,
+            "quotes": quotes,
+            "valuation_snapshot": snapshot,
+            "authority": "persisted_valuation_snapshot",
+        }
+
+    scheduler = getattr(state, "scheduler", None)
+    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+    return {
+        "portfolio": portfolio,
+        "instruments": getattr(scheduler, "instruments", {}) if scheduler else {},
+        "quotes": _collect_decision_quotes(state),
+        "valuation_snapshot": None,
+        "authority": "legacy_runtime_fallback",
+    }
+
+
+def _decision_date_from_context(context: dict[str, Any]) -> str:
+    snapshot = context.get("valuation_snapshot")
+    if isinstance(snapshot, dict) and snapshot.get("trade_date"):
+        return str(snapshot["trade_date"])
+    timestamps = [
+        _parse_action_timestamp(quote.get("quote_timestamp") or quote.get("timestamp"))
+        for quote in (context.get("quotes") or {}).values()
+        if isinstance(quote, dict)
+    ]
+    parsed = [timestamp for timestamp in timestamps if timestamp is not None]
+    return max(parsed).date().isoformat() if parsed else date.today().isoformat()
+
+
+def _action_filter_date(context: dict[str, Any]) -> str | None:
+    if context.get("authority") != "persisted_valuation_snapshot":
+        return None
+    snapshot = context.get("valuation_snapshot")
+    if isinstance(snapshot, dict) and snapshot.get("status") == "missing":
+        return None
+    return _decision_date_from_context(context)
+
+
+def _response_decision_date(
+    context: dict[str, Any],
+    actions: list[dict[str, Any]],
+) -> str:
+    snapshot = context.get("valuation_snapshot")
+    if (
+        context.get("authority") == "persisted_valuation_snapshot"
+        and isinstance(snapshot, dict)
+        and snapshot.get("status") != "missing"
+    ):
+        return _decision_date_from_context(context)
+    action_dates = [
+        trade_date
+        for action in actions
+        for trade_date in [_action_trade_date(action)]
+        if trade_date is not None
+    ]
+    return max(action_dates) if action_dates else _decision_date_from_context(context)
+
+
+def _action_trade_date(action: dict[str, Any]) -> str | None:
+    parsed = _parse_action_timestamp(action.get("timestamp"))
+    return parsed.date().isoformat() if parsed is not None else None
+
+
+def _parse_action_timestamp(value: Any) -> datetime | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=_SHANGHAI_TZ)
+    return parsed.astimezone(_SHANGHAI_TZ)
 
 
 def _journal_by_signal_id(db: Any) -> dict[int, dict[str, Any]]:
@@ -225,6 +477,7 @@ def _decision_summary(
     journal_by_signal: dict[int, dict[str, Any]],
     account_truth: dict[str, Any],
     strategy_attribution: dict[str, Any],
+    portfolio_context: dict[str, Any],
 ) -> dict[str, Any]:
     risk_blocked_count = sum(
         1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
@@ -234,14 +487,21 @@ def _decision_summary(
         for candidate in candidates
         if candidate["manual_confirmation_status"] == "ready_for_manual_confirmation"
     )
-    market_data = _market_data_summary(state, actions)
+    market_data = _market_data_summary(
+        state,
+        actions,
+        portfolio_context=portfolio_context,
+    )
     action_tasks = _action_task_summary(actions)
     audit = _audit_summary(actions, candidates, journal_by_signal)
     return {
         "candidate_count": len(candidates),
         "risk_blocked_count": risk_blocked_count,
         "ready_for_manual_confirmation_count": ready_for_manual_confirmation_count,
-        "portfolio": _portfolio_state_summary(state),
+        "portfolio": _portfolio_state_summary(
+            state,
+            portfolio_context=portfolio_context,
+        ),
         "market_data": market_data,
         "account_truth": account_truth,
         "strategy_attribution": strategy_attribution,
@@ -259,9 +519,13 @@ def _decision_summary(
     }
 
 
-def _portfolio_state_summary(state: Any) -> dict[str, Any]:
-    scheduler = getattr(state, "scheduler", None)
-    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+def _portfolio_state_summary(
+    state: Any,
+    *,
+    portfolio_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    context = portfolio_context or _decision_portfolio_context(state)
+    portfolio = context.get("portfolio")
     if portfolio is None:
         return {
             "status": "missing",
@@ -280,7 +544,7 @@ def _portfolio_state_summary(state: Any) -> dict[str, Any]:
         total_market_value += _position_market_value(position)
     cash = _float_or_zero(getattr(portfolio, "cash", 0.0))
     total_equity = _portfolio_total_equity(portfolio, cash, total_market_value)
-    return {
+    result = {
         "status": "available",
         "cash": cash,
         "position_count": len(symbols),
@@ -288,6 +552,13 @@ def _portfolio_state_summary(state: Any) -> dict[str, Any]:
         "total_market_value": total_market_value,
         "total_equity": total_equity,
     }
+    snapshot = context.get("valuation_snapshot")
+    if isinstance(snapshot, dict):
+        from server.services.valuation_snapshot import valuation_identity_fields
+
+        result.update(valuation_identity_fields(snapshot))
+    result["fact_authority"] = context.get("authority")
+    return result
 
 
 def _portfolio_total_equity(
@@ -338,16 +609,21 @@ def _float_or_zero(value: Any) -> float:
 def _market_data_summary(
     state: Any,
     actions: list[dict[str, Any]],
+    *,
+    portfolio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    symbols = _decision_symbols(state, actions)
-    quotes = _collect_decision_quotes(state)
+    context = portfolio_context or _decision_portfolio_context(state)
+    symbols = _decision_symbols(state, actions, portfolio_context=context)
+    quotes = dict(context.get("quotes") or {})
     relevant_quotes = {symbol: quotes[symbol] for symbol in symbols if symbol in quotes}
     statuses = [
         str(quote.get("quote_status") or quote.get("provider_status") or "live")
         for quote in relevant_quotes.values()
     ]
     live_count = sum(1 for status in statuses if status == "live")
-    stale_count = sum(1 for status in statuses if status != "live")
+    confirmed_count = sum(1 for status in statuses if status == "confirmed")
+    trusted_count = sum(1 for status in statuses if status in _TRUSTED_DATA_STATUSES)
+    stale_count = sum(1 for status in statuses if status not in _TRUSTED_DATA_STATUSES)
     missing_symbols = [symbol for symbol in symbols if symbol not in quotes]
     latest_timestamp = _latest_quote_timestamp(relevant_quotes.values())
     if not symbols:
@@ -355,13 +631,15 @@ def _market_data_summary(
     elif missing_symbols and not relevant_quotes:
         source_health = "missing"
     elif missing_symbols or stale_count:
-        source_health = "partial" if live_count else "stale"
+        source_health = "partial" if trusted_count else "stale"
     else:
-        source_health = "live"
+        source_health = "live" if live_count == len(statuses) else "confirmed"
     return {
         "source_health": source_health,
         "quote_count": len(relevant_quotes),
         "live_quote_count": live_count,
+        "confirmed_quote_count": confirmed_count,
+        "trusted_quote_count": trusted_count,
         "stale_quote_count": stale_count,
         "missing_symbols": missing_symbols,
         "latest_quote_timestamp": latest_timestamp,
@@ -369,7 +647,12 @@ def _market_data_summary(
     }
 
 
-def _decision_symbols(state: Any, actions: list[dict[str, Any]]) -> list[str]:
+def _decision_symbols(
+    state: Any,
+    actions: list[dict[str, Any]],
+    *,
+    portfolio_context: dict[str, Any] | None = None,
+) -> list[str]:
     symbols: list[str] = []
     for action in actions:
         _append_unique_symbol(symbols, action.get("symbol"))
@@ -377,7 +660,8 @@ def _decision_symbols(state: Any, actions: list[dict[str, Any]]) -> list[str]:
     for item in getattr(scheduler, "watchlist", []) or []:
         symbol = item[0] if isinstance(item, (list, tuple)) and item else item
         _append_unique_symbol(symbols, symbol)
-    portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
+    context = portfolio_context or _decision_portfolio_context(state)
+    portfolio = context.get("portfolio")
     positions = getattr(portfolio, "positions", {}) if portfolio else {}
     if isinstance(positions, dict):
         for symbol in positions:
@@ -399,13 +683,11 @@ def _append_unique_symbol(symbols: list[str], symbol: Any) -> None:
 
 def _collect_decision_quotes(state: Any) -> dict[str, dict[str, Any]]:
     quotes: dict[str, dict[str, Any]] = {}
-    scheduler = getattr(state, "scheduler", None)
-    for symbol, quote in (getattr(scheduler, "latest_quotes", {}) or {}).items():
-        if isinstance(quote, dict):
-            quotes[str(symbol)] = _normalize_quote(symbol, quote)
     db = getattr(state, "db", None)
-    if db is None:
-        return quotes
+    persistent_reader_available = db is not None and any(
+        callable(getattr(db, name, None))
+        for name in ("list_latest_quotes_sync", "get_latest_quotes_sync")
+    )
     for reader_name in ("list_latest_quotes_sync", "get_latest_quotes_sync"):
         reader = getattr(db, reader_name, None)
         if not callable(reader):
@@ -417,6 +699,12 @@ def _collect_decision_quotes(state: Any) -> dict[str, dict[str, Any]]:
             if symbol is None:
                 continue
             quotes[str(symbol)] = _normalize_quote(symbol, row)
+    if persistent_reader_available:
+        return quotes
+    scheduler = getattr(state, "scheduler", None)
+    for symbol, quote in (getattr(scheduler, "latest_quotes", {}) or {}).items():
+        if isinstance(quote, dict):
+            quotes[str(symbol)] = _normalize_quote(symbol, quote)
     return quotes
 
 
@@ -520,11 +808,11 @@ def _workflow_tasks(
 
 def _data_refresh_workflow_task(market_data: dict[str, Any]) -> dict[str, Any]:
     source_health = str(market_data.get("source_health") or "unknown")
-    if source_health == "live":
+    if source_health in _TRUSTED_DATA_STATUSES:
         status = "pass"
         required_actions: list[str] = []
         blocking_reasons: list[str] = []
-        description = "Market data is live for the decision universe."
+        description = "Market data is trusted for the decision universe."
     elif source_health == "missing":
         status = "blocked"
         required_actions = ["refresh_market_data"]
@@ -767,11 +1055,19 @@ def _decision_candidate(
     db: Any,
     account_truth: dict[str, Any],
     strategy_attribution: dict[str, Any],
+    *,
+    quotes: dict[str, dict[str, Any]],
+    allow_direct_quote_fallback: bool,
 ) -> dict[str, Any]:
     signal_id = action.get("source_signal_id")
     journal = journal_by_signal.get(int(signal_id)) if signal_id is not None else None
     account_truth_gate_status = str(account_truth.get("gate_status") or "blocked")
-    data_freshness = _data_freshness_evidence(action, db)
+    data_freshness = _data_freshness_evidence(
+        action,
+        db,
+        quotes=quotes,
+        allow_direct_quote_fallback=allow_direct_quote_fallback,
+    )
     manual_confirmation_status = (
         action.get("manual_confirmation_status", "awaiting_risk_gate")
         if account_truth_gate_status == "pass"
@@ -801,7 +1097,11 @@ def _decision_candidate(
         action,
         manual_confirmation_status=manual_confirmation_status,
     )
-    paper_shadow = _paper_shadow_evidence(action, manual_confirmation_status)
+    paper_shadow = _paper_shadow_evidence(
+        action,
+        manual_confirmation_status,
+        db=db,
+    )
     return {
         "action_id": action.get("id"),
         "action": _normalize_decision_action(action),
@@ -810,8 +1110,15 @@ def _decision_candidate(
         "title": action.get("title"),
         "detail": action.get("detail"),
         "urgency": action.get("urgency"),
+        "raw_target_weight": action.get(
+            "raw_target_weight",
+            action.get("target_weight"),
+        ),
         "target_weight": action.get("target_weight"),
         "price": action.get("price"),
+        "allocation_quantity": action.get("allocation_quantity"),
+        "allocation_status": action.get("allocation_status"),
+        "allocation_evidence": dict(action.get("allocation_evidence") or {}),
         "risk_gate_status": action.get("risk_gate_status", "not_checked"),
         "manual_confirmation_required": bool(
             action.get("manual_confirmation_required", True)
@@ -819,6 +1126,7 @@ def _decision_candidate(
         "manual_confirmation_status": manual_confirmation_status,
         "evidence": {
             "strategy": {"strategy_id": action.get("strategy_id")},
+            "portfolio_allocation": dict(action.get("allocation_evidence") or {}),
             "signal": _signal_evidence(action, journal),
             "risk_gate": risk_gate,
             "after_cost_oos_validation": validation,
@@ -923,11 +1231,11 @@ def _has_ready_manual_confirmation(candidates: list[dict[str, Any]]) -> bool:
 
 def _account_truth_gate_evidence(state: Any) -> dict[str, Any]:
     db = getattr(state, "db", None)
-    score_payload = _latest_account_truth_score(db)
-    if not score_payload:
-        from server.account_truth_gate import build_latest_account_truth_score_payload
+    from server.account_truth_gate import build_latest_account_truth_score_payload
 
-        score_payload = _json_object(build_latest_account_truth_score_payload(state))
+    score_payload = _json_object(build_latest_account_truth_score_payload(state))
+    if not score_payload:
+        score_payload = _latest_account_truth_score(db)
     if not score_payload:
         return {
             "status": "missing",
@@ -962,6 +1270,7 @@ def _account_truth_gate_evidence(state: Any) -> dict[str, Any]:
         "source_type": score_payload.get("source_type"),
         "source_name": score_payload.get("source_name"),
         "created_at": score_payload.get("created_at"),
+        "ledger_coverage": score_payload.get("ledger_coverage"),
     }
 
 
@@ -1142,15 +1451,23 @@ def _after_cost_oos_validation_evidence(
     }
 
 
-def _data_freshness_evidence(action: dict[str, Any], db: Any) -> dict[str, Any]:
-    reader = getattr(db, "get_latest_quote_sync", None)
-    if not callable(reader):
-        return {"status": "unknown", "reason": "latest_quote_reader_unavailable"}
+def _data_freshness_evidence(
+    action: dict[str, Any],
+    db: Any,
+    *,
+    quotes: dict[str, dict[str, Any]],
+    allow_direct_quote_fallback: bool,
+) -> dict[str, Any]:
     symbol = str(action.get("symbol") or "")
-    asset_type = action.get("asset_class")
-    quote = reader(symbol, asset_type=asset_type)
-    if quote is None:
-        quote = reader(symbol)
+    quote = quotes.get(symbol)
+    if quote is None and allow_direct_quote_fallback:
+        reader = getattr(db, "get_latest_quote_sync", None)
+        if not callable(reader):
+            return {"status": "unknown", "reason": "latest_quote_reader_unavailable"}
+        asset_type = action.get("asset_class")
+        quote = reader(symbol, asset_type=asset_type)
+        if quote is None:
+            quote = reader(symbol)
     if quote is None:
         return {"status": "missing", "reason": "missing_latest_quote"}
     return {
@@ -1239,21 +1556,71 @@ def _manual_confirmation_evidence(
 def _paper_shadow_evidence(
     action: dict[str, Any],
     manual_confirmation_status: str,
+    *,
+    db: Any,
 ) -> dict[str, Any]:
     status = str(action.get("paper_shadow_status") or "review_required")
     has_evidence = status in {"attached", "pass", "reviewed", "shadow_recorded"}
-    required_actions = [] if has_evidence else ["review_paper_shadow_evidence"]
+    run_id = None
+    input_fingerprint = None
+    divergence_status = None
+    review_status = None
+    order_id = action.get("paper_shadow_order_id")
+    if not has_evidence:
+        reader = getattr(db, "latest_paper_shadow_run_sync", None)
+        plan_date = _action_trade_date(action)
+        latest_run = (
+            reader(plan_date=plan_date)
+            if callable(reader) and plan_date is not None
+            else None
+        )
+        payload = _json_object(
+            latest_run.get("payload_json") if isinstance(latest_run, dict) else None
+        )
+        action_ref = f"action:{action.get('id')}"
+        matching_order = next(
+            (
+                order
+                for order in payload.get("orders") or []
+                if isinstance(order, dict)
+                and _json_object(order.get("order_intent")).get("action_ref")
+                == action_ref
+            ),
+            None,
+        )
+        if isinstance(latest_run, dict) and isinstance(matching_order, dict):
+            run_id = latest_run.get("run_id")
+            input_fingerprint = latest_run.get("input_fingerprint")
+            divergence_status = latest_run.get("divergence_status")
+            review_status = latest_run.get("review_status")
+            order_id = matching_order.get("order_id")
+            has_evidence = True
+            if str(divergence_status or "") == "within_expectations":
+                status = "pass"
+            else:
+                status = "review_required"
+    if has_evidence and status != "review_required":
+        required_actions: list[str] = []
+        blocking_reasons: list[str] = []
+    elif has_evidence:
+        required_actions = ["review_paper_shadow_divergence"]
+        blocking_reasons = ["paper_shadow_divergence_requires_review"]
+    else:
+        required_actions = ["review_paper_shadow_evidence"]
+        blocking_reasons = ["paper_shadow_evidence_required_before_manual_confirmation"]
     return {
         "status": status,
         "has_evidence": has_evidence,
-        "execution_mode": action.get("execution_mode"),
-        "order_id": action.get("paper_shadow_order_id"),
-        "required_actions": required_actions,
-        "blocking_reasons": (
-            []
-            if has_evidence
-            else ["paper_shadow_evidence_required_before_manual_confirmation"]
+        "execution_mode": (
+            "paper_shadow" if run_id is not None else action.get("execution_mode")
         ),
+        "run_id": run_id,
+        "input_fingerprint": input_fingerprint,
+        "order_id": order_id,
+        "divergence_status": divergence_status,
+        "review_status": review_status,
+        "required_actions": required_actions,
+        "blocking_reasons": blocking_reasons,
         "manual_confirmation_status": manual_confirmation_status,
     }
 

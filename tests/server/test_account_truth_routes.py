@@ -261,6 +261,7 @@ def test_account_truth_review_action_records_ledger_candidate_without_mutating_l
     assert response["review_status"] == "ledger_candidate"
     assert response["note"] == "prepare candidate for later explicit confirmation"
     assert response["reviewer"] == "local-reviewer"
+    assert response["evidence_fingerprint"]
     assert response["does_not_mutate_production_ledger"] is True
     assert _ledger_entry_count(db._path) == ledger_count_before
 
@@ -268,7 +269,31 @@ def test_account_truth_review_action_records_ledger_candidate_without_mutating_l
         item for item in detail["items"] if item["item_key"] == "position:SYN001"
     )
     assert reviewed_item["latest_review"]["review_status"] == "ledger_candidate"
+    assert reviewed_item["latest_review"]["is_current"] is True
     assert reviewed_item["latest_review"]["does_not_mutate_production_ledger"] is True
+
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-01-16T09:35:00+08:00",
+        symbol="SYN001",
+        direction="buy",
+        quantity=10,
+        price=10.0,
+        gross_amount=100.0,
+        net_cash_impact=-100.0,
+        created_at="2099-01-01T00:00:00+08:00",
+    )
+    changed_detail = asyncio.run(detail_endpoint(import_run_id=first_run.import_run_id))
+    changed_item = next(
+        item
+        for item in changed_detail["items"]
+        if item["item_key"] == "position:SYN001"
+    )
+    assert changed_item["latest_review"]["is_current"] is False
+    assert (
+        changed_item["latest_review"]["evidence_fingerprint"]
+        != changed_item["evidence_fingerprint"]
+    )
 
 
 def test_account_truth_score_endpoint_exposes_component_reasons(
@@ -301,6 +326,40 @@ def test_account_truth_score_endpoint_exposes_component_reasons(
     assert "review_position_difference" in score["required_actions"]
     assert "unresolved_position_difference" in score["blocking_reasons"]
     assert score["limitations"]
+
+
+def test_account_truth_score_blocks_when_broker_import_predates_ledger(
+    tmp_path,
+    monkeypatch,
+):
+    from server.routes import account_truth as account_truth_routes
+
+    db, _first_run, _duplicate_run = _seed_account_truth_db(tmp_path)
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-01-16T09:00:00+08:00",
+        amount=100.0,
+        created_at="2099-01-01T00:00:00+08:00",
+    )
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=db),
+    )
+    score_endpoint = _route(
+        account_truth_routes.create_router(),
+        "/api/account-truth/score",
+    ).endpoint
+
+    score = asyncio.run(score_endpoint())
+
+    assert score["gate_status"] == "blocked"
+    assert score["data_freshness_status"] == "stale"
+    assert score["ledger_coverage"]["status"] == "stale"
+    assert "account_truth_evidence_predates_latest_ledger" in score["blocking_reasons"]
+    assert (
+        "reimport_broker_statement_after_latest_ledger_fact"
+        in score["required_actions"]
+    )
 
 
 def _ledger_entry_count(db_path) -> int:

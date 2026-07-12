@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from decimal import Decimal, ROUND_FLOOR
+from decimal import ROUND_FLOOR, Decimal
 from typing import Any
 
 from core.events import OrderIntentEvent, RiskDecisionEvent
@@ -29,17 +29,22 @@ def run_pre_trade_risk_batch(
     config: Any = None,
     statuses: list[str] | None = None,
     limit: int = 50,
+    tasks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run mandatory pre-trade risk checks for unchecked action tasks.
 
     The runner only persists risk decisions. It does not create broker orders,
     manual orders, fills, or ledger entries.
     """
-    tasks = list(
-        db.get_action_tasks_sync(
-            statuses=statuses or ["pending", "deferred"],
-            limit=limit,
-            offset=0,
+    selected_tasks = (
+        list(tasks)
+        if tasks is not None
+        else list(
+            db.get_action_tasks_sync(
+                statuses=statuses or ["pending", "deferred"],
+                limit=limit,
+                offset=0,
+            )
         )
     )
     context = context_provider.snapshot()
@@ -47,7 +52,7 @@ def run_pre_trade_risk_batch(
     results: list[dict[str, Any]] = []
     skipped_count = 0
 
-    for task in tasks:
+    for task in selected_tasks:
         if str(task.get("risk_gate_status") or "not_checked") in _CHECKED_RISK_STATUSES:
             skipped_count += 1
             results.append(_skipped_result(task, "already_checked"))
@@ -113,7 +118,7 @@ def run_pre_trade_risk_batch(
         "passed_count": passed_count,
         "blocked_count": blocked_count,
         "skipped_count": skipped_count,
-        "candidate_count": len(tasks),
+        "candidate_count": len(selected_tasks),
         "does_not_create_order": True,
         "does_not_submit_broker_order": True,
         "does_not_write_ledger": True,
@@ -193,6 +198,12 @@ def _intent_from_action_task(
         metadata={
             "action_id": task.get("id"),
             "source": "decision_pre_trade_batch",
+            "raw_target_weight": task.get(
+                "raw_target_weight",
+                task.get("target_weight"),
+            ),
+            "effective_target_weight": task.get("target_weight"),
+            "portfolio_allocation": dict(task.get("allocation_evidence") or {}),
             "does_not_create_order": True,
         },
     )
@@ -207,6 +218,8 @@ def _estimated_quantity(
     target_weight: Decimal,
     context,
 ) -> Decimal:
+    if "allocation_quantity" in task:
+        return _decimal(task.get("allocation_quantity"))
     explicit_quantity = _decimal(
         task.get("quantity") or task.get("estimated_quantity") or task.get("shares")
     )
@@ -217,14 +230,21 @@ def _estimated_quantity(
         position = context.positions.get(Symbol(str(task.get("symbol"))))
         return _position_quantity(position)
 
+    position = context.positions.get(Symbol(str(task.get("symbol"))))
+    current_quantity = _position_total_quantity(position)
     target_notional = context.total_equity * target_weight
     if target_notional <= 0:
         return Decimal("0")
     raw_quantity = target_notional / price
     if str(task.get("asset_class") or "").lower() in _BOARD_LOT_ASSET_CLASSES:
         lots = (raw_quantity / Decimal("100")).to_integral_value(rounding=ROUND_FLOOR)
-        return lots * Decimal("100")
-    return raw_quantity.quantize(Decimal("0.000001"), rounding=ROUND_FLOOR)
+        target_quantity = lots * Decimal("100")
+    else:
+        target_quantity = raw_quantity.quantize(
+            Decimal("0.000001"),
+            rounding=ROUND_FLOOR,
+        )
+    return max(target_quantity - current_quantity, Decimal("0"))
 
 
 def _order_side(task: dict[str, Any]) -> OrderSide | None:
@@ -262,6 +282,16 @@ def _position_quantity(position: Any) -> Decimal:
         quantity = _decimal(value)
         if quantity > 0:
             return quantity
+    return Decimal("0")
+
+
+def _position_total_quantity(position: Any) -> Decimal:
+    if position is None:
+        return Decimal("0")
+    for name in ("quantity", "shares"):
+        value = getattr(position, name, None)
+        if value is not None:
+            return max(_decimal(value), Decimal("0"))
     return Decimal("0")
 
 

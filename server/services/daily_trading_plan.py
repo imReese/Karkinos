@@ -54,6 +54,7 @@ def build_daily_trading_plan(
 
     blockers: list[dict[str, Any]] = []
     order_intents: list[dict[str, Any]] = []
+    planning_cash = available_cash
 
     for candidate in candidates:
         candidate_blocker = _candidate_blocker(
@@ -69,7 +70,7 @@ def build_daily_trading_plan(
             candidate,
             config=config,
             total_equity=total_equity,
-            available_cash=available_cash,
+            available_cash=planning_cash,
             position=_position_for_candidate(candidate, position_map),
             portfolio=portfolio,
             controls=controls,
@@ -80,6 +81,8 @@ def build_daily_trading_plan(
             )
             continue
         order_intents.append(intent)
+        if intent.get("side") == "buy":
+            planning_cash = _float(intent.get("available_cash_after"), planning_cash)
         intent_blocker = _intent_blocker(candidate, intent)
         if intent_blocker is not None:
             blockers.append(intent_blocker)
@@ -237,10 +240,16 @@ def _order_intent_preview(
         "symbol": candidate.get("symbol"),
         "asset_class": candidate.get("asset_class"),
         "side": side,
+        "raw_target_weight": _float(
+            candidate.get("raw_target_weight"),
+            target_weight,
+        ),
         "target_weight": target_weight,
         "estimated_price": price,
         "estimated_quantity": float(quantity),
         "quantity_basis": quantity_basis,
+        "allocation_status": candidate.get("allocation_status"),
+        "allocation_evidence": dict(candidate.get("allocation_evidence") or {}),
         "estimated_gross_amount": gross_amount,
         "estimated_total_fee": total_fee,
         "estimated_net_cash_impact": net_cash_impact,
@@ -524,6 +533,11 @@ def _estimated_quantity(
 ) -> tuple[float, str]:
     if price <= 0:
         return 0.0, "price_unavailable"
+    if "allocation_quantity" in candidate:
+        return (
+            _float(candidate.get("allocation_quantity"), 0.0),
+            "portfolio_allocation_quantity",
+        )
     if side == "sell":
         quantity = _float(
             candidate.get("current_quantity")
@@ -532,13 +546,17 @@ def _estimated_quantity(
             _position_float(position, "quantity", "shares"),
         )
         return quantity, "current_position_quantity"
-    raw_quantity = (total_equity * target_weight) / price
+    target_total_quantity = (total_equity * target_weight) / price
     asset_class = str(candidate.get("asset_class") or "").lower()
     if asset_class in _BOARD_LOT_ASSET_CLASSES:
-        return float(floor(raw_quantity / 100) * 100), (
-            "target_weight_total_equity_lot_rounded"
-        )
-    return raw_quantity, "target_weight_total_equity"
+        target_total_quantity = float(floor(target_total_quantity / 100) * 100)
+    current_quantity = _position_float(position, "quantity", "shares")
+    delta_quantity = max(target_total_quantity - current_quantity, 0.0)
+    return delta_quantity, (
+        "target_position_delta_lot_rounded"
+        if asset_class in _BOARD_LOT_ASSET_CLASSES
+        else "target_position_delta"
+    )
 
 
 def _intent_blocker(
@@ -848,6 +866,14 @@ def _evidence_refs(candidate: dict[str, Any]) -> list[str]:
     strategy_id = strategy.get("strategy_id")
     if strategy_id is not None:
         refs.append(f"strategy:{strategy_id}")
+    risk_gate = _dict(evidence.get("risk_gate"))
+    risk_decision_id = risk_gate.get("decision_id")
+    if risk_decision_id is not None:
+        refs.append(f"risk:{risk_decision_id}")
+    account_truth = _dict(evidence.get("account_truth"))
+    import_run_id = account_truth.get("import_run_id")
+    if import_run_id is not None:
+        refs.append(f"account_truth:{import_run_id}")
     return refs
 
 

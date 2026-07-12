@@ -6,6 +6,59 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-12: Overview's review queue now deduplicates the Operations manual
+  handoff and the daily trading-plan card when both represent the exact same
+  manual order-intent review. Quote diagnostics also treat the canonical
+  normalized quote status as authoritative: an optional provider error or
+  stale-reason annotation cannot turn a persisted `confirmed` close/NAV into
+  an artificial user action, while missing, stale, estimated, error, and fund
+  estimate sources still require review. Manual-confirmation summaries join
+  each intent to canonical holding/market instrument metadata by exact symbol,
+  showing readable names with codes and quantities for the first three orders
+  plus a remaining count. Validation: 406 Web tests and the production Web
+  build passed. Risk impact: this changes presentation and action counting
+  only; it does not relax market-data gates, confirm orders, mutate OMS/ledger
+  state, contact a broker, or bypass manual confirmation.
+
+- 2026-07-12: Decision candidates now pass through one deterministic
+  account-level portfolio allocator before daily-plan and batch-risk
+  construction. Raw strategy targets remain auditable as
+  `raw_target_weight`; executable targets are capped by the configured
+  single-position limit, cash reserve, current holdings, persisted prices, and
+  board-lot rules. Quantities are target-position deltas rather than total
+  target holdings, buy cash is consumed sequentially, and expected sell
+  proceeds are not reused before settlement. Daily order intents now carry the
+  exact risk-decision and Account Truth import references; persisted
+  paper/shadow orders are reattached to their matching Decision action, while
+  all paper, shadow, and backtest orders/fills are excluded from production
+  strategy-PnL attribution. Assumptions: allocation uses only the canonical
+  persisted valuation snapshot; A-share buys use 100-share lots; fund
+  redemptions may use fractional current quantities; no simulated fill grants
+  production execution authority. Validation: 1,141 backend tests, 405 Web
+  tests, production Web build, and a real-account deterministic rerun with five
+  passed risk decisions, five manual-confirmation intents, five simulated
+  orders/fills, and zero production-attributed simulated fills. Risk impact:
+  this removes false concentration/cash blockers and false evidence gaps while
+  preserving Account Truth, risk, manual-confirmation, kill-switch, disabled
+  broker submission, and production-ledger gates.
+
+- 2026-07-12: Decision, daily trading-plan, and batch pre-trade risk reads now
+  use the same persisted immutable valuation snapshot and ledger projection as
+  Portfolio instead of scheduler portfolio/quote memory. Candidate action
+  tasks are restricted to the valuation trade date (or the latest dated batch
+  when no valuation exists) and deterministically deduplicated by symbol and
+  strategy. Account Truth manual reviews now bind the exact reconciliation
+  item fingerprint, append review history, become visibly stale after source
+  facts change, and cannot override material mismatches. Broker evidence that
+  predates the latest local ledger fact fails closed. Assumptions: naive action
+  and ledger timestamps are China-market facts interpreted in Asia/Shanghai;
+  missing persisted valuation evidence cannot be replaced by scheduler memory.
+  Validation: `uv run pytest -q`, `cd web && npm test -- --run`, and
+  `cd web && npm run build`. Risk impact: this intentionally increases
+  Account Truth and execution-gate blocking when evidence is stale or merely
+  annotated, while preserving manual confirmation, disabled broker submission,
+  production-ledger immutability, and kill-switch precedence.
+
 - 2026-07-12: Financial data paths now use persisted observations and
   content-addressed valuation policy v2. The snapshot freezes confirmed
   close/NAV, previous-close baselines, original intraday observations, ledger

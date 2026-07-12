@@ -72,6 +72,18 @@ def test_manual_review_repository_updates_existing_item_decision(
     assert updated.created_at == first.created_at
     assert updated.updated_at >= first.updated_at
     assert repository.list_decisions("import_synthetic") == [updated]
+    history = repository.list_decision_history(
+        "import_synthetic",
+        item_key="position:SYN001",
+    )
+    assert [decision.review_status for decision in history] == [
+        "needs_investigation",
+        "known_difference",
+    ]
+    assert [decision.note for decision in history] == [
+        "initial review",
+        "broker rounding difference",
+    ]
 
 
 def test_manual_review_repository_rejects_unknown_status(tmp_path: Path) -> None:
@@ -123,3 +135,50 @@ def test_ledger_candidate_review_does_not_mutate_production_ledger(
 
     assert ledger_count == 1
     assert ledger_amount == 1000.0
+
+
+def test_manual_review_repository_migrates_v1_rows_as_stale_evidence(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE reconciliation_review_decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_run_id TEXT NOT NULL,
+                item_key TEXT NOT NULL,
+                category TEXT NOT NULL,
+                symbol TEXT NOT NULL DEFAULT '',
+                review_status TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                reviewer TEXT NOT NULL DEFAULT 'local',
+                schema_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(import_run_id, item_key)
+            )
+        """)
+        conn.execute(
+            """
+            INSERT INTO reconciliation_review_decisions (
+                import_run_id, item_key, category, review_status,
+                schema_version, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "import_v1",
+                "cash",
+                "cash",
+                "known_difference",
+                "karkinos.account_truth.manual_review.v1",
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    decisions = ManualReviewRepository(db_path).list_decisions("import_v1")
+
+    assert len(decisions) == 1
+    assert decisions[0].review_status == "known_difference"
+    assert decisions[0].evidence_fingerprint == ""

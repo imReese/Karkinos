@@ -143,10 +143,10 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     assert intent["action_id"] == 7
     assert intent["symbol"] == "600519"
     assert intent["side"] == "buy"
-    assert intent["estimated_quantity"] == 1000.0
-    assert intent["estimated_net_cash_impact"] == -10005.1
+    assert intent["estimated_quantity"] == 800.0
+    assert intent["estimated_net_cash_impact"] == -8005.08
     assert intent["position_effect"]["current_quantity"] == 200.0
-    assert intent["position_effect"]["estimated_quantity_after"] == 1200.0
+    assert intent["position_effect"]["estimated_quantity_after"] == 1000.0
     assert intent["position_effect"]["cost_basis_method"] == "weighted_average_preview"
     assert intent["does_not_submit_broker_order"] is True
     assert fake_db.manual_orders == []

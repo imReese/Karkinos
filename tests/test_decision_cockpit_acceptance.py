@@ -168,7 +168,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         symbol=str(signal.symbol),
         asset_type="fund",
         price=float(signal.price or Decimal("4.92")),
-        quote_timestamp="2026-01-30T14:50:00+08:00",
+        quote_timestamp=signal.timestamp.isoformat(),
         quote_source="deterministic_fixture",
         provider_name="fixture",
         provider_status="ok",

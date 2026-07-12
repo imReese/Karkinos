@@ -288,7 +288,9 @@ ledger 费用、税费和成本基础，输出 `pass` / `warning` / `mismatch` /
 状态、差异明细和建议复核动作。
 `ManualReviewRepository.record_decision()` 可把 reconciliation item 标记为
 `accepted`、`ignored`、`known_difference`、`ledger_candidate` 或
-`needs_investigation`；这些标记只记录人工审计状态，不会自动改生产账本。
+`needs_investigation`；每次复核会绑定当时差异事实指纹并追加审计历史。事实变化后旧复核
+保留但失效，任何人工标签都不能覆盖仍存在的物质性差异；券商证据早于最新本地账本事实
+时也会按 stale fail closed。这些标记不会自动改生产账本。
 `build_account_truth_score()` 会把 reconciliation 状态、人工复核状态、数据新鲜度
 和未解决差异汇总为 0-100 分与 `pass` / `degraded` / `blocked` gate 状态，供后续
 平台决策视图和策略晋级 gate 消费。

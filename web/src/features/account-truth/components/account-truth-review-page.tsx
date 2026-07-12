@@ -113,10 +113,12 @@ const labels = {
     suggestedAction: 'Suggested action',
     evidence: 'Evidence',
     latestReview: 'Latest review',
+    currentReview: 'Bound to current facts',
+    staleReview: 'Stale review — reconciliation facts changed',
     reviewSaved: 'Review saved',
     reviewFailed: 'Review failed',
     safety:
-      'Ledger candidate is an audit label only. It does not mutate the production ledger or submit broker orders.',
+      'Manual review is an audit label only. It cannot clear a material mismatch, mutate the production ledger, or submit broker orders.',
     componentLabels: {
       cash: 'Cash',
       position: 'Position',
@@ -188,9 +190,12 @@ const labels = {
     suggestedAction: '建议动作',
     evidence: '证据',
     latestReview: '最近复核',
+    currentReview: '已绑定当前事实',
+    staleReview: '复核已失效：对账事实已变化',
     reviewSaved: '复核已保存',
     reviewFailed: '复核保存失败',
-    safety: '账本候选只是审计标签，不会修改生产账本，也不会提交券商订单。',
+    safety:
+      '人工复核只是审计标签，不能清除仍存在的物质性差异，不会修改生产账本，也不会提交券商订单。',
     componentLabels: {
       cash: '现金',
       position: '持仓',
@@ -1071,10 +1076,21 @@ function ReviewItemCard({
       </div>
 
       {item.latest_review ? (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] p-3 text-sm font-bold text-[var(--app-success)]">
+        <div
+          className={`mt-4 rounded-2xl border p-3 text-sm font-bold ${
+            item.latest_review.is_current === false
+              ? 'border-[color-mix(in_srgb,var(--app-danger)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] text-[var(--app-danger)]'
+              : 'border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] text-[var(--app-success)]'
+          }`}
+        >
           <div>
             {text.latestReview}:{' '}
             {formatPublicStatus(item.latest_review.review_status, locale)}
+          </div>
+          <div className="mt-1 text-xs font-semibold leading-5">
+            {item.latest_review.is_current === false
+              ? text.staleReview
+              : text.currentReview}
           </div>
           {latestReviewNote ? (
             <div className="mt-1 text-xs font-semibold leading-5 text-[var(--app-soft)]">

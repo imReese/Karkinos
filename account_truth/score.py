@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Literal
 
@@ -190,8 +192,37 @@ def _is_resolved(
     item: ReconciliationItem,
     review_by_item: dict[str, ManualReviewDecision],
 ) -> bool:
+    if item.status in {"mismatch", "blocked"}:
+        return False
     decision = review_by_item.get(_item_key(item))
-    return bool(decision and decision.review_status in _RESOLVED_REVIEW_STATUSES)
+    return bool(
+        decision
+        and decision.review_status in _RESOLVED_REVIEW_STATUSES
+        and decision.evidence_fingerprint == reconciliation_item_fingerprint(item)
+    )
+
+
+def reconciliation_item_fingerprint(item: ReconciliationItem) -> str:
+    """Bind a review decision to the exact reconciliation facts it reviewed."""
+
+    payload = {
+        "item_key": _item_key(item),
+        "category": item.category,
+        "symbol": item.symbol,
+        "status": item.status,
+        "broker_value": item.broker_value,
+        "karkinos_value": item.karkinos_value,
+        "difference": item.difference,
+        "detail_code": item.detail_code,
+        "detail_context": dict(sorted(item.detail_context.items())),
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _item_key(item: ReconciliationItem) -> str:

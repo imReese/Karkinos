@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -415,7 +414,7 @@ def test_today_operations_route_surfaces_execution_reconciliation_open_items(
 
 def test_today_operations_route_surfaces_scheduler_run_evidence(monkeypatch):
     fake_db = FakeOperationsDb()
-    plan_date = date.today().isoformat()
+    plan_date = "2026-07-01"
     run_id = f"market-session:{plan_date}:100000"
     fake_db.automation_runs.append(
         {

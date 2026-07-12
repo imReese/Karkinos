@@ -559,6 +559,7 @@ test('localizes latest review notes without showing backend operational text', a
               review_status: 'known_difference',
               note: 'Reviewed from Account Truth center.',
               reviewer: 'local',
+              is_current: false,
               schema_version: 'karkinos.account_truth.manual_review.v1',
               created_at: '2026-06-18T10:12:00+08:00',
               updated_at: '2026-06-18T10:12:00+08:00',
@@ -574,6 +575,7 @@ test('localizes latest review notes without showing backend operational text', a
   const item = await screen.findByTestId('account-truth-item-position:SYN001');
 
   expect(within(item).getByText('最近复核: 已知差异')).toBeTruthy();
+  expect(within(item).getByText('复核已失效：对账事实已变化')).toBeTruthy();
   expect(
     within(item).getByText('已从账户事实复核中心记录人工处理。'),
   ).toBeTruthy();
