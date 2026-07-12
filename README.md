@@ -342,7 +342,9 @@ one-way `paused` state, and runtime rate admission rechecks that state inside
 its write transaction. Stage 3.9 supplied authenticated session identity while
 that slice still had no live gate provider. Stage 3.10 now supplies persisted
 gate orchestration, and Stage 3.11 supplies signed replacement rather than
-automatic resume. There remains no OMS mutation or broker submit/cancel path.
+automatic resume. Stage 3.12 adds the first one-shot OMS submit-intent
+transition and an injectable broker-contact boundary, but production still
+registers no write gateway or signed release-evidence provider by default.
 
 Stage 3.9 adds separately signed runtime-session issuance and one-way
 revocation. A current envelope attestation and atomic reservation are
@@ -378,6 +380,17 @@ One SQLite transaction revokes the predecessor and issues a same-or-narrower
 session with a new one-time token; exact retries never reissue it. There is
 still no renew, widen, public runtime admit, OMS/ledger mutation, automatic
 capital increase, or broker submit/cancel path.
+
+Stage 3.12 adds a deliberately narrow per-order broker submission foundation.
+It re-resolves the current manually confirmed dossier and exact prior-batch
+reconciliation, requires a separate final Ed25519 signature, current signed
+broker/regulatory release evidence, gateway capability/health/dry-run checks,
+and a clear kill switch. The submit intent and `submission_pending` OMS state
+are committed before one external call; accepted, rejected, and unknown results
+are distinct. Unknown results are never resubmitted and may only be recovered
+by querying the same idempotent client order id after 30 seconds. Production
+still has no configured write adapter or release provider, no automatic or
+strategy-direct submission, no broker cancel, and no fill/ledger mutation.
 
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
@@ -555,6 +568,7 @@ uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_f
 uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_promotion
 uv run python scripts/export_acceptance_audit.py --audit per_order_confirmation_foundation
 uv run python scripts/export_acceptance_audit.py --audit controlled_session_envelope_foundation
+uv run python scripts/export_acceptance_audit.py --audit controlled_broker_submission
 uv run python scripts/export_acceptance_audit.py --audit signed_operator_approval
 uv run python scripts/export_acceptance_audit.py --audit capital_scaling_review_foundation
 uv run python scripts/export_acceptance_audit.py --audit all --output reports/acceptance-audit.json

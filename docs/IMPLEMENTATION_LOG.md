@@ -6,6 +6,27 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 3.12 adds a default-closed one-shot controlled broker
+  submission foundation. Assumptions: an explicitly injected gateway must
+  support idempotent client order ids, side-effect-free dry-run, fresh health,
+  one exact submit call, and query-by-client-id; a separately owned signed
+  release source must attest broker agreement, connector testing, program-
+  trading reporting review, risk-control review, and manual-each-order mode.
+  SQLite atomically persists the submit intent and OMS `submission_pending`
+  transition before broker contact; accepted/rejected/unknown outcomes remain
+  distinct, and unknown recovery waits 30 seconds and only queries—never
+  resubmits. Validation: `uv run pytest -q tests/test_controlled_broker_submission.py
+  tests/test_per_order_confirmation.py tests/test_operator_approval.py
+  tests/server/test_controlled_broker_submission_routes.py
+  tests/server/test_per_order_confirmation_routes.py`. Risk impact: this is the
+  first code path capable of calling an explicitly injected broker write
+  gateway and therefore is HIGH/CRITICAL-sensitive. Production injects neither
+  the write gateway nor release provider by default; manual final signature,
+  Account Truth/risk/paper-shadow/reconciliation/kill-switch gates remain
+  mandatory, while strategy-direct/automatic submission, broker cancel,
+  fill/ledger mutation, session-wide authority, and automatic scale-up remain
+  unavailable.
+
 - 2026-07-12: Overview's review queue now deduplicates the Operations manual
   handoff and the daily trading-plan card when both represent the exact same
   manual order-intent review. Quote diagnostics also treat the canonical

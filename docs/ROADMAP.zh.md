@@ -298,6 +298,14 @@ Stage 3.11 已实现签名 paused-session replacement，而不是把旧状态原
 订单/标的、gross/现金/换手/订单数/逐标的/rate/期限只能不变或缩小；SQLite 单事务 revoke 旧
 session 并签发新 token，并发冲突只能一个成功。没有原地 resume、renew、widen 或 broker 写权限。
 
+Stage 3.12 新增默认关闭的单笔券商提交与恢复基础。只有精确 `manually_confirmed` 订单在重新
+解析 Account Truth、风控、paper/shadow、前批对账、connector promotion 与 gateway verification
+后，才能进入最终签名预览；实际接触券商还需独立 `submit_confirmed_broker_order` Ed25519 签名、
+当前签名 release evidence、capability/health/dry-run 和 clear kill switch。SQLite 会先原子保存
+intent 并把 OMS 置为 `submission_pending`，并发时只放行一次外部调用。accepted/rejected/unknown
+分开持久化，unknown 绝不重提，只能 30 秒后按同一 client order id 查询。生产默认不注入 write
+adapter 或 release provider，且没有自动/策略直连、撤单、成交应用、账本同步或扩资路径。
+
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
 未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一

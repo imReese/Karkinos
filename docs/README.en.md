@@ -311,6 +311,15 @@ issues only an equal-or-narrower session with a new one-time token; exact
 retries do not reissue it. Renew/widen, public runtime admission, OMS/ledger
 mutation, automatic capital increase, and broker submit/cancel remain absent.
 
+Stage 3.12 adds a default-closed one-shot submission foundation for one exact
+manually confirmed order. A separate final Ed25519 signature, current signed
+broker/regulatory release evidence, fresh gateway capability/health/dry-run
+checks, and a clear kill switch are mandatory. Intent and OMS pending state are
+persisted before the only external call; an unknown result is never resubmitted
+and can only be queried after 30 seconds by the same client order id. Production
+still injects no write adapter or release provider, and automatic/strategy
+submission, cancel, fill apply, ledger sync, and capital widening are absent.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

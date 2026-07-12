@@ -168,6 +168,13 @@ Active planning target:
   approval; it atomically revokes the predecessor and issues only an equal-or-
   narrower session with a new one-time token. It cannot renew, widen, scale
   capital, mutate OMS/ledger, or contact/submit to a broker.
+* Stage 3.12 adds a default-closed, one-shot per-order submission boundary. It
+  requires a fresh exact confirmation chain, separate final Ed25519 signature,
+  signed broker/regulatory release evidence, gateway capability/health/dry-run
+  checks, and a clear kill switch. Intent and OMS pending state persist before
+  the call; unknown outcomes are query-only and never resubmitted. Production
+  has no write adapter or release provider by default, and automatic,
+  strategy-direct, cancel, fill-apply, and ledger-sync paths remain absent.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still
