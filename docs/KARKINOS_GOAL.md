@@ -142,9 +142,9 @@ Active planning target:
   sessions pause on missing or failed account, risk, reconciliation,
   paper/shadow, gateway, market-data, budget, rate, kill-switch, loss, rejection,
   account-change, or error facts. Pause state is one-way and atomically blocks
-  later rate admission; Stage 3.9 supplies session identity, but production has
-  no live gate provider, public pause action, or resume path, so gate
-  orchestration and a separately reviewed resume protocol remain hard gates.
+  later rate admission. Stage 3.9 supplied session identity while this slice
+  still lacked live gates; Stage 3.10 now orchestrates persisted gates and Stage
+  3.11 provides signed replacement instead of an in-place resume.
 * Stage 3.9 turns one current signed attestation plus atomic reservation into an
   expiring runtime session only after a second exact Ed25519 issuance approval
   and proof of signature possession; public approval history omits signatures.
@@ -161,6 +161,13 @@ Active planning target:
   toward pause. Explicit scheduler startup or token-authenticated self-check
   can trigger evaluation, but neither can resume, renew, widen, submit, or
   mutate OMS/ledger/capital state.
+* Stage 3.11 replaces the unsafe idea of toggling a paused session back to
+  enabled with a separately signed atomic handoff. Ordinary issuance cannot
+  bypass an unexpired paused scope. A replacement needs a fresh attestation and
+  reservation, continuously clear recovery evidence, and a distinct Ed25519
+  approval; it atomically revokes the predecessor and issues only an equal-or-
+  narrower session with a new one-time token. It cannot renew, widen, scale
+  capital, mutate OMS/ledger, or contact/submit to a broker.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

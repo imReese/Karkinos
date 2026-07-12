@@ -4983,6 +4983,155 @@ def build_controlled_session_live_gate_orchestration_acceptance_audit() -> (
     )
 
 
+def build_controlled_session_signed_replacement_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for Stage 3.11 signed paused-session replacement."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="replacement_paused_scope_cannot_bypass_review",
+                checkbox_text=(
+                    "* [x] Ordinary issuance fails closed while an unexpired "
+                    "enabled session in the same authorization/account/strategy "
+                    "scope is durably paused; recovery must use the distinct "
+                    "signed replacement contract or explicitly revoke and start "
+                    "a genuinely new authorization chain."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_authority.py",
+                    "server/db.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'signed_replacement' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_distinct_signed_domain_and_fresh_chain",
+                checkbox_text=(
+                    "* [x] Replacement requires a new current attestation, a "
+                    "new atomic reservation, and a short-lived Ed25519 "
+                    "`replace_paused_controlled_session` approval plus matching "
+                    "signature possession over the exact replacement artifact; "
+                    "issue, revoke, or envelope approvals cannot be reused."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'wrong_operator_action or signed_replacement' tests/test_operator_approval.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_continuous_recovery_evidence",
+                checkbox_text=(
+                    "* [x] Recovery binds two post-pause clear gate snapshots "
+                    "spanning at least 60 seconds, requires the newest snapshot "
+                    "to be no older than 30 seconds, resets the stability window "
+                    "after any blocked observation, and rechecks the latest fact "
+                    "inside the replacement transaction."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'stable_fresh or newer_blocked' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_equal_or_narrower_boundary",
+                checkbox_text=(
+                    "* [x] The replacement must preserve authorization, account, "
+                    "strategy, and operator identity; use a subset of prior "
+                    "orders and symbols; and never increase reserved gross, "
+                    "cash, turnover, order count, per-symbol amount, request "
+                    "rate, or session duration."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'wider_rate or widening_dimension or signed_replacement' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_atomic_retire_and_issue",
+                checkbox_text=(
+                    "* [x] One SQLite `BEGIN IMMEDIATE` transaction records "
+                    "replacement and revocation evidence, changes the paused "
+                    "predecessor from enabled to revoked, and inserts the new "
+                    "bounded session, so old and replacement authority are "
+                    "never simultaneously usable."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'atomically_retires or concurrent_conflicting' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_one_time_token_and_concurrency",
+                checkbox_text=(
+                    "* [x] The replacement returns a newly generated token only "
+                    "on the first successful response, stores only its salted "
+                    "hash, reuses exact retries without reissuing the token, and "
+                    "allows only one of two conflicting concurrent handoffs."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py -k 'atomically_retires or concurrent_conflicting' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_strict_non_resume_routes",
+                checkbox_text=(
+                    "* [x] Strict preview/record/history routes expose signed "
+                    "replacement only; undeclared credentials are rejected and "
+                    "there is still no in-place resume, renew, widen, runtime "
+                    "admit, broker submit, or broker cancel endpoint."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_runtime_authority.py",
+                    "tests/server/test_controlled_session_runtime_authority_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_runtime_authority_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="replacement_deterministic_zero_execution_tests",
+                checkbox_text=(
+                    "* [x] Deterministic signature, recovery-window, widening, "
+                    "idempotency, concurrency, stale-preview, route, and token-"
+                    "secrecy tests verify zero broker contact, OMS or production-"
+                    "ledger mutation, capital scale-up, automatic resume, or "
+                    "strategy-direct execution."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/server/test_controlled_session_runtime_authority_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py tests/server/test_controlled_session_runtime_authority_routes.py tests/test_operator_approval.py -q",
+                ),
+            ),
+        )
+    )
+
+
 def build_signed_operator_approval_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for Stage 2.2/3.2 signed operator approvals."""
 

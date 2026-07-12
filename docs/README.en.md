@@ -275,9 +275,10 @@ an allowlisted set of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
 account-change, and consecutive-error facts. A hard failure persists an
 immutable event and one-way `paused` state; rate admission rechecks that state
-inside its transaction. Stage 3.9 supplies session identity, but production has
-no live gate provider and only read-only status/state/event APIs, with no
-automatic resume or broker action.
+inside its transaction. Stage 3.9 supplied session identity while that slice
+still had no live gate provider. Stage 3.10 now orchestrates persisted gates,
+and Stage 3.11 uses signed replacement instead of automatic resume; broker
+actions remain absent.
 
 Stage 3.9 implements separately signed runtime-session issuance and one-way
 revocation. It re-resolves the current attestation and atomic reservation and
@@ -299,6 +300,16 @@ its own safety check and cannot resume or widen authority. Snapshot freshness
 is 30 seconds, quote freshness is 120 seconds, and three rate rejections within
 60 seconds trip the spike gate. No broker submit/cancel, OMS/production-ledger
 mutation, resume/renew/widen, or automatic capital change is added.
+
+Stage 3.11 adds signed paused-session replacement without re-enabling the old
+session in place. Ordinary issuance fails closed for an unexpired paused scope.
+Replacement requires a fresh attestation and atomic reservation, continuously
+clear post-pause snapshots for at least 60 seconds with the newest no older than
+30 seconds, and a distinct Ed25519 `replace_paused_controlled_session` approval
+plus possession proof. One SQLite transaction revokes the predecessor and
+issues only an equal-or-narrower session with a new one-time token; exact
+retries do not reissue it. Renew/widen, public runtime admission, OMS/ledger
+mutation, automatic capital increase, and broker submit/cancel remain absent.
 
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS

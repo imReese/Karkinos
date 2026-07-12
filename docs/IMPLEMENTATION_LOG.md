@@ -81,6 +81,38 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-13: Stage 3.11 adds a separately signed paused-session replacement
+  protocol without an in-place resume or broker path. Ordinary issuance now
+  blocks an unexpired paused session in the same authorization/account/strategy
+  scope. Replacement requires a fresh attestation and atomic reservation, a
+  continuous suffix of at least two post-pause clear gate snapshots spanning
+  60 seconds with the newest no older than 30 seconds, and a distinct Ed25519
+  `replace_paused_controlled_session` approval plus signature possession. Any
+  blocked observation restarts the window; the write transaction rejects a
+  newer superseding snapshot. Authorization/account/strategy/operator,
+  order/symbol scope, reserved gross/buy/turnover/order count, per-symbol
+  amount, request rate, and session duration cannot widen. One SQLite
+  `BEGIN IMMEDIATE` transaction records replacement/revocation evidence,
+  revokes the predecessor, and inserts the new salted-token-hash session;
+  exact retries do not reissue the token and conflicting handoffs cannot both
+  succeed. Assumptions: expired or explicitly revoked sessions are terminal and
+  may be followed by a genuinely new signed chain; source-drift pauses that
+  cannot regain clear evidence require explicit revocation rather than bypass;
+  the predecessor budget reservation remains immutable and continues counting
+  through its original window, so replacement allocation is conservative.
+  Validation: 124 focused authority, approval, envelope, reservation, pause,
+  live-gate, rate, and route tests passed; the full backend suite passed 1,232
+  tests; all 33 acceptance audits report 328/328 complete; and Black, isort,
+  and `git diff --check` passed. Risk impact: GitNexus reports CRITICAL for
+  shared `AppDatabase` (340 direct dependants and
+  app lifespan), HIGH for runtime authority (6 direct dependants) and operator
+  approval (19), and LOW for input/route/audit registration. Changes add
+  isolated append-only tables/methods and exact signed-domain mapping; no
+  existing broker gateway, OMS, production ledger, capital evaluator, or
+  strategy execution flow is modified. This adds no broker submit/cancel,
+  public runtime admit, renew/widen, automatic capital increase, raw credential
+  storage, or strategy-direct broker access.
+
 - 2026-07-12: Stage 3.10 adds persisted live-gate snapshots and automatic-pause
   orchestration without broker execution. A monitoring-only resolver retains
   enough persistent identity to pause an enabled session after upstream source

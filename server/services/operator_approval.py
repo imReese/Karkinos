@@ -35,6 +35,7 @@ OPERATOR_APPROVAL_ACTIONS = frozenset(
         "attest_controlled_session_envelope",
         "accept_broker_connector_soak_promotion",
         "issue_controlled_session",
+        "replace_paused_controlled_session",
         "revoke_controlled_session",
     }
 )
@@ -44,6 +45,7 @@ OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
         "controlled_session_envelope",
         "broker_connector_soak_promotion_dossier",
         "controlled_session_issuance",
+        "controlled_session_replacement",
         "controlled_session_revocation",
     }
 )
@@ -54,6 +56,7 @@ OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
         "broker_connector_soak_promotion_dossier"
     ),
     "issue_controlled_session": "controlled_session_issuance",
+    "replace_paused_controlled_session": "controlled_session_replacement",
     "revoke_controlled_session": "controlled_session_revocation",
 }
 

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from server.services.controlled_session_runtime_authority import (
     CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
+    CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_REVOCATION_ACKNOWLEDGEMENT,
     ControlledSessionRuntimeAuthorityRejected,
     ControlledSessionRuntimeAuthorityService,
@@ -71,6 +72,33 @@ class ControlledSessionRevocationRequest(ControlledSessionRevocationPreviewReque
     )
 
 
+class ControlledSessionReplacementPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reservation_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+
+
+class ControlledSessionReplacementRequest(ControlledSessionReplacementPreviewRequest):
+    replacement_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_approval_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
+    acknowledgement: Literal[
+        "replace_paused_session_with_equal_or_narrower_fresh_authority"
+    ] = CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT
+
+
 def create_router() -> APIRouter:
     router = APIRouter(
         prefix="/api/automation/controlled-sessions/runtime-authority",
@@ -114,6 +142,35 @@ def create_router() -> APIRouter:
     async def resolve_controlled_session(session_id: str) -> dict[str, Any]:
         return _service().resolve_current(session_id)
 
+    @router.post("/sessions/{session_id}/replacement/preview")
+    async def preview_controlled_session_replacement(
+        session_id: str,
+        request: ControlledSessionReplacementPreviewRequest,
+    ) -> dict[str, Any]:
+        return _service().preview_replacement(
+            predecessor_session_id=session_id,
+            reservation_id=request.reservation_id,
+        )
+
+    @router.post("/sessions/{session_id}/replacements")
+    async def replace_paused_controlled_session(
+        session_id: str,
+        request: ControlledSessionReplacementRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _service().replace_paused(
+                predecessor_session_id=session_id,
+                reservation_id=request.reservation_id,
+                replacement_fingerprint=request.replacement_fingerprint,
+                operator_approval_id=request.operator_approval_id,
+                operator_proof_signature_base64=(
+                    request.operator_proof_signature_base64
+                ),
+                acknowledgement=request.acknowledgement,
+            )
+        except ControlledSessionRuntimeAuthorityRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
+
     @router.post("/sessions/{session_id}/revocation/preview")
     async def preview_controlled_session_revocation(
         session_id: str,
@@ -148,6 +205,12 @@ def create_router() -> APIRouter:
         limit: int = Query(default=100, ge=1, le=500),
     ) -> list[dict[str, Any]]:
         return _service().list_revocations(limit=limit)
+
+    @router.get("/replacements")
+    async def list_controlled_session_replacements(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        return _service().list_replacements(limit=limit)
 
     return router
 

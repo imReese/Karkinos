@@ -273,6 +273,7 @@ def test_operator_approval_routes_challenge_verify_and_list_without_authority(
         "accept_broker_connector_soak_promotion" in status.json()["supported_actions"]
     )
     assert "issue_controlled_session" in status.json()["supported_actions"]
+    assert "replace_paused_controlled_session" in status.json()["supported_actions"]
     assert "revoke_controlled_session" in status.json()["supported_actions"]
     assert challenge.status_code == 200
     assert challenge_payload["authorizes_execution"] is False

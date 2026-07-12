@@ -566,12 +566,10 @@ Missing/failed or non-clear hard facts produce deterministic reasons and one
 immutable pause event. SQLite persists only a `paused` runtime state; there is
 deliberately no update-to-active method. Runtime admission reads that state
 again after its own `BEGIN IMMEDIATE`, closing the stale-provider race. The
-production route factory uses Stage 3.9 session identity but supplies no live
-gate provider and exposes only status, event history, and per-session state
-reads, so the envelope retains
-`automatic_pause_controller_not_wired_to_live_gates` as a hard blocker. Resume
-must later require a new operator review and cannot be inferred from gates
-becoming clear.
+Stage 3.8's production route factory used Stage 3.9 session identity but still
+supplied no live gate provider. Stage 3.10 later replaced that temporary closure
+with persisted gate orchestration, and Stage 3.11 added signed replacement.
+Gates becoming clear still never mutate a paused state back to enabled.
 
 Stage 3.9 introduces the durable runtime-authority boundary. Envelope approval
 and budget reservation remain non-authorizing inputs; issuance re-resolves both
@@ -587,8 +585,8 @@ pause state. Revocation is a separately signed, allowlisted-reason, one-way
 enabled-to-revoked transition under the same database lock, so a stale provider
 cannot race it. Public APIs expose issue/revoke review actions and sanitized
 state, but no runtime admit, resume, renew, widen, OMS/ledger write, broker
-submit, or broker cancel action. The remaining automatic-pause blocker refers
-to live gate-provider orchestration, not session identity or rate wiring.
+submit, or broker cancel action. At Stage 3.9 the remaining automatic-pause
+blocker referred to live gate-provider orchestration; Stage 3.10 closes it.
 
 Stage 3.10 closes that orchestration blocker with append-only,
 fingerprint-bound live-gate snapshots. A monitoring-only resolver deliberately
@@ -606,6 +604,23 @@ seconds form a spike. The explicitly started scheduler evaluates enabled
 sessions; the only mutation route requires that session's token and can only
 evaluate/pause. There is still no automatic resume or broker, OMS,
 production-ledger, or capital mutation capability.
+
+Stage 3.11 implements recovery as a new signed authority, never as a mutable
+`paused -> enabled` transition. Normal issuance queries durable paused state and
+blocks an unexpired matching authorization/account/strategy scope. A
+replacement binds the predecessor fingerprint and pause event, a fresh current
+attestation and reservation, and the latest continuous suffix of clear gate
+snapshots: at least two observations over 60 seconds, with the newest at most 30
+seconds old. Any blocked observation restarts the window, and the write
+transaction rejects a newer superseding fact. Authorization, account, strategy,
+operator, order/symbol scope, reserved gross/buy/turnover/order count,
+per-symbol amount, request rate, and session duration can only remain equal or
+shrink. A distinct Ed25519 replacement approval plus signature possession
+authorizes one `BEGIN IMMEDIATE` handoff that records replacement and revocation
+evidence, revokes the old token, and inserts the new salted-token-hash session.
+No raw token is persisted or reissued on retry. This is human-reviewed runtime
+authority recovery only; it adds no broker, OMS, production-ledger, capital-
+scale, renew, or widen operation.
 
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must

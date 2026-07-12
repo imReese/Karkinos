@@ -99,7 +99,7 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Scheduler and runbook | Operations summary, persistent scheduler records, deterministic rerun keys, input snapshots, errors, retries, limitations, and operator review state exist. | Continue operational soak and preserve idempotency as scheduled workflows expand. | v1.6, ongoing |
 | Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
 | Strategy promotion pipeline | Research/paper lifecycle, readiness evidence, audit-only pause/retire states, and default rejection of controlled-bridge pilot promotion exist. | A future L4/L5 pilot must add explicit enablement without allowing promotion evidence to authorize execution by itself. | v1.6-v1.7, future L4-L5 |
-| Capital-bounded controlled execution | Not supported. | Add expiring operator authorizations, capped account/strategy/symbol/session budgets, per-order or session-bounded approvals, drawdown stops, automatic pause, mandatory reconciliation, and evidence-based scale-up/scale-down decisions. Initial live validation uses a small risk envelope but the architecture is not permanently capital-limited. | v1.8 |
+| Capital-bounded controlled execution | The non-broker control plane now includes signed expiring authority, atomic account/symbol budgets, token-authenticated sessions, rate admission, persisted live gates, automatic pause, signed equal-or-narrower replacement, and evidence-based scale review; broker submission is still unavailable. | Add a separately reviewed broker execution/reconciliation boundary and prove real-account operational evidence before any explicit pilot. Initial live validation uses a small risk envelope, but the architecture is not permanently capital-limited. | v1.8 |
 | Unattended full-account automation | Not supported. | Keep permanently authorized, unsupervised execution outside the product target. | Non-goal |
 
 ## Controlled Automation Architecture
@@ -1722,6 +1722,40 @@ issue capital authority.
   tests verify pause orchestration with zero broker submission/cancellation, OMS
   or production-ledger mutation, capital widening, session issue/resume, or
   strategy-to-broker path.
+
+### Stage 3.11 Signed Paused-Session Replacement
+
+* [x] Ordinary issuance fails closed while an unexpired enabled session in the
+  same authorization/account/strategy scope is durably paused; recovery must
+  use the distinct signed replacement contract or explicitly revoke and start a
+  genuinely new authorization chain.
+* [x] Replacement requires a new current attestation, a new atomic reservation,
+  and a short-lived Ed25519 `replace_paused_controlled_session` approval plus
+  matching signature possession over the exact replacement artifact; issue,
+  revoke, or envelope approvals cannot be reused.
+* [x] Recovery binds two post-pause clear gate snapshots spanning at least 60
+  seconds, requires the newest snapshot to be no older than 30 seconds, resets
+  the stability window after any blocked observation, and rechecks the latest
+  fact inside the replacement transaction.
+* [x] The replacement must preserve authorization, account, strategy, and
+  operator identity; use a subset of prior orders and symbols; and never
+  increase reserved gross, cash, turnover, order count, per-symbol amount,
+  request rate, or session duration.
+* [x] One SQLite `BEGIN IMMEDIATE` transaction records replacement and
+  revocation evidence, changes the paused predecessor from enabled to revoked,
+  and inserts the new bounded session, so old and replacement authority are
+  never simultaneously usable.
+* [x] The replacement returns a newly generated token only on the first
+  successful response, stores only its salted hash, reuses exact retries without
+  reissuing the token, and allows only one of two conflicting concurrent
+  handoffs.
+* [x] Strict preview/record/history routes expose signed replacement only;
+  undeclared credentials are rejected and there is still no in-place resume,
+  renew, widen, runtime admit, broker submit, or broker cancel endpoint.
+* [x] Deterministic signature, recovery-window, widening, idempotency,
+  concurrency, stale-preview, route, and token-secrecy tests verify zero broker
+  contact, OMS or production-ledger mutation, capital scale-up, automatic
+  resume, or strategy-direct execution.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

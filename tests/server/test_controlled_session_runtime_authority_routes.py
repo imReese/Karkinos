@@ -40,6 +40,33 @@ class FakeRuntimeAuthorityService:
     def resolve_current(self, session_id: str):
         return {"session_id": session_id, "status": "current_enabled_bounded_session"}
 
+    def preview_replacement(
+        self,
+        *,
+        predecessor_session_id: str,
+        reservation_id: str,
+    ):
+        return {
+            "predecessor_session_id": predecessor_session_id,
+            "replacement_reservation_id": reservation_id,
+            "replacement_fingerprint": "9" * 64,
+            "ready": True,
+            "broker_submission_enabled": False,
+        }
+
+    def replace_paused(self, **kwargs):
+        return {
+            "status": "enabled",
+            "session_id": "8" * 64,
+            "session_token": "replacement-token-shown-once",
+            "session_token_issued": True,
+            "broker_submission_enabled": False,
+            **kwargs,
+        }
+
+    def list_replacements(self, *, limit: int):
+        return [{"status": "replaced", "limit": limit, "session_token": ""}]
+
     def preview_revocation(self, *, session_id: str, reason_code: str):
         return {
             "session_id": session_id,
@@ -94,6 +121,28 @@ def test_runtime_authority_routes_require_exact_models_and_expose_no_resume(
     assert client.get(f"{prefix}/sessions?limit=7").json()[0]["limit"] == 7
     assert client.get(f"{prefix}/sessions/{session_id}").status_code == 200
 
+    replacement_preview = client.post(
+        f"{prefix}/sessions/{session_id}/replacement/preview",
+        json={"reservation_id": "7" * 64},
+    )
+    assert replacement_preview.status_code == 200
+    replaced = client.post(
+        f"{prefix}/sessions/{session_id}/replacements",
+        json={
+            "reservation_id": "7" * 64,
+            "replacement_fingerprint": "9" * 64,
+            "operator_approval_id": "6" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": (
+                "replace_paused_session_with_equal_or_narrower_fresh_authority"
+            ),
+        },
+    )
+    assert replaced.status_code == 200
+    assert replaced.json()["session_token_issued"] is True
+    assert replaced.json()["broker_submission_enabled"] is False
+    assert client.get(f"{prefix}/replacements?limit=5").json()[0]["limit"] == 5
+
     preview = client.post(
         f"{prefix}/sessions/{session_id}/revocation/preview",
         json={"reason_code": "manual_operator_stop"},
@@ -131,6 +180,20 @@ def test_runtime_authority_routes_require_exact_models_and_expose_no_resume(
         },
     )
     assert rejected_secret.status_code == 422
+    rejected_replacement_secret = client.post(
+        f"{prefix}/sessions/{session_id}/replacements",
+        json={
+            "reservation_id": "7" * 64,
+            "replacement_fingerprint": "9" * 64,
+            "operator_approval_id": "6" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": (
+                "replace_paused_session_with_equal_or_narrower_fresh_authority"
+            ),
+            "broker_password": "must-not-be-accepted",
+        },
+    )
+    assert rejected_replacement_secret.status_code == 422
 
 
 def test_route_service_wires_exact_evidence_providers_without_gateway(
@@ -185,6 +248,12 @@ def test_create_app_registers_runtime_authority_without_resume_or_broker_routes(
         "/api/automation/controlled-sessions/runtime-authority/sessions/{session_id}": {
             "GET"
         },
+        "/api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/replacement/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/replacements": {
+            "POST"
+        },
         "/api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/revocation/preview": {
             "POST"
         },
@@ -192,4 +261,5 @@ def test_create_app_registers_runtime_authority_without_resume_or_broker_routes(
             "POST"
         },
         "/api/automation/controlled-sessions/runtime-authority/revocations": {"GET"},
+        "/api/automation/controlled-sessions/runtime-authority/replacements": {"GET"},
     }
