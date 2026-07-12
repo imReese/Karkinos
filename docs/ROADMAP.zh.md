@@ -271,6 +271,13 @@ Stage 3.7 已实现内部 runtime rate admission ledger：服务端时间驱动 
 status/history，且没有公开 admit/submit/cancel 接口。因此硬阻断从“未实现”更新为“尚未接入
 认证 session”，仍不产生执行权限。
 
+Stage 3.8 已实现内部 automatic pause controller：对精确识别的 session 读取 allowlist 门禁事实，
+Account Truth、风控、前批对账、paper/shadow、gateway、行情、预算、速率、kill switch、亏损/回撤、
+拒单、账户变化、连续错误任一缺失或失败都会持久化不可变 pause event 与单向 `paused` 状态。
+rate admission 在写事务内部复查 pause state，可阻断仍声称 session 启用的陈旧 provider。生产仅
+开放只读 status/state/events，未注入 session/gate provider，不存在自动恢复或券商写权限；硬阻断
+更新为“尚未接入认证 session”，恢复仍需未来独立的人审协议。
+
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
 未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一

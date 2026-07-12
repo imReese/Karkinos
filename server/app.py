@@ -320,6 +320,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.capital_scaling_review import (
         create_router as capital_scaling_review_router,
     )
+    from server.routes.controlled_session_automatic_pause import (
+        create_router as controlled_session_automatic_pause_router,
+    )
     from server.routes.controlled_session_budget_reservation import (
         create_router as controlled_session_budget_reservation_router,
     )
@@ -366,6 +369,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(controlled_session_envelope_router())
     app.include_router(controlled_session_budget_reservation_router())
     app.include_router(controlled_session_runtime_rate_limiter_router())
+    app.include_router(controlled_session_automatic_pause_router())
     app.include_router(execution_reconciliation_router())
     app.include_router(execution_gateway_verification_router())
     app.include_router(ledger_router())

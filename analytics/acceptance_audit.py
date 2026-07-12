@@ -4539,6 +4539,135 @@ def build_controlled_session_runtime_rate_limiter_acceptance_audit() -> Acceptan
     )
 
 
+def build_controlled_session_automatic_pause_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the Stage 3.8 automatic-pause foundation."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="automatic_pause_default_closed",
+                checkbox_text=(
+                    "* [x] Production configures no authenticated session or "
+                    "gate provider and exposes only read-only status, state, "
+                    "and event routes; there is no public evaluate, pause, "
+                    "resume, submit, or cancel endpoint."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_automatic_pause.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/server/test_controlled_session_automatic_pause_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_automatic_pause_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="automatic_pause_exact_session_gate_binding",
+                checkbox_text=(
+                    "* [x] Internal evaluation requires an exact current, "
+                    "enabled, authority-verified session identity and binds a "
+                    "sanitized allowlisted gate snapshot, reservation id, and "
+                    "deterministic fingerprints without retaining provider "
+                    "credentials."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_automatic_pause.py -k 'clear_gates or identity_drift' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="automatic_pause_hard_gate_coverage",
+                checkbox_text=(
+                    "* [x] Missing gate evidence, Account Truth, risk, prior "
+                    "reconciliation, paper/shadow divergence, gateway health, "
+                    "market data, budget, rate, kill switch, loss/drawdown, "
+                    "rejection, account-change, and consecutive-error facts "
+                    "all fail toward pause."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_automatic_pause.py -k 'hard_gate or provider_failure' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="durable_one_way_pause_state",
+                checkbox_text=(
+                    "* [x] The first valid pause is persisted as immutable "
+                    "evidence plus a durable one-way `paused` runtime state; "
+                    "later clear gates do not automatically resume, renew, or "
+                    "replace that state."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_automatic_pause.py -k 'idempotent_concurrent' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="pause_blocks_runtime_admission_atomically",
+                checkbox_text=(
+                    "* [x] Runtime rate admission checks durable pause state "
+                    "inside its `BEGIN IMMEDIATE` transaction, so an applied "
+                    "pause blocks new admissions even if a stale provider still "
+                    "claims that the session is enabled."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_automatic_pause.py -k 'runtime_admission' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="automatic_pause_idempotent_sanitized_evidence",
+                checkbox_text=(
+                    "* [x] Exact and concurrent evaluations reuse one pause "
+                    "event, identity conflicts fail closed, and rejected or "
+                    "provider-failure evidence remains append-only and "
+                    "sanitized."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_automatic_pause.py -k 'default_closed or idempotent_concurrent or identity_drift or provider_failure' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="automatic_pause_deterministic_zero_execution_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover default closure, clear "
+                    "no-op evaluation, every hard gate, persistence, real "
+                    "concurrency, no automatic resume, identity drift, route "
+                    "exposure, atomic rate blocking, secret sanitization, and "
+                    "zero broker authority."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_automatic_pause.py",
+                    "tests/server/test_controlled_session_automatic_pause_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_automatic_pause.py tests/server/test_controlled_session_automatic_pause_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
 def build_signed_operator_approval_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for Stage 2.2/3.2 signed operator approvals."""
 

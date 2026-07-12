@@ -89,6 +89,17 @@ class ControlledSessionRuntimeRateLimiterService:
             blockers.append("runtime_order_id_invalid")
         if not _FINGERPRINT_PATTERN.fullmatch(normalized_request_id):
             blockers.append("runtime_rate_request_id_invalid")
+        pause_event_id = ""
+        state_getter = getattr(
+            self._db,
+            "get_controlled_session_runtime_state_sync",
+            None,
+        )
+        if callable(state_getter) and _ID_PATTERN.fullmatch(normalized_session_id):
+            pause_state = state_getter(normalized_session_id) or {}
+            if pause_state.get("status") == "paused":
+                blockers.append("runtime_session_paused")
+                pause_event_id = str(pause_state.get("pause_event_id") or "")
 
         session: dict[str, Any] = {}
         if not callable(self._session_provider):
@@ -183,6 +194,7 @@ class ControlledSessionRuntimeRateLimiterService:
             ),
             "ready": not unique_blockers,
             "blockers": unique_blockers,
+            "pause_event_id": pause_event_id,
             "runtime_admission_granted": False,
             "authorizes_broker_submission": False,
             "safety": _safety_flags(),
@@ -304,6 +316,11 @@ class ControlledSessionRuntimeRateLimiterService:
             "transaction_blockers": list(dict.fromkeys(transaction_blockers)),
             "admitted_before": int((transaction or {}).get("admitted_before") or 0),
             "admitted_after": int((transaction or {}).get("admitted_after") or 0),
+            "pause_event_id": str(
+                (transaction or {}).get("pause_event_id")
+                or preview.get("pause_event_id")
+                or ""
+            ),
             "runtime_admission_granted": False,
             "runtime_session_issued": False,
             "authorizes_broker_submission": False,

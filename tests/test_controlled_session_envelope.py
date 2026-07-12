@@ -536,7 +536,7 @@ def test_session_envelope_projects_conservative_budget_and_stays_non_executing(
         in envelope["hard_submission_blockers"]
     )
     assert (
-        "automatic_pause_controller_not_implemented"
+        "automatic_pause_controller_not_wired_to_authenticated_session"
         in envelope["hard_submission_blockers"]
     )
     assert (

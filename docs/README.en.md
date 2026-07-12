@@ -269,6 +269,14 @@ request id, active window, and strictest shared account rate. Production has no
 session provider and exposes only read-only status/history APIs; no public
 admit, OMS, submit, or cancel action exists.
 
+Stage 3.8 implements the internal durable automatic-pause primitive. It checks
+an allowlisted set of Account Truth, risk, reconciliation, paper/shadow,
+gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
+account-change, and consecutive-error facts. A hard failure persists an
+immutable event and one-way `paused` state; rate admission rechecks that state
+inside its transaction. Production has no session/gate providers and only
+read-only status/state/event APIs, with no automatic resume or broker action.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

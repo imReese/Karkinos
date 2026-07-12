@@ -3609,6 +3609,21 @@ class AppDatabase:
             conn.execute("PRAGMA busy_timeout=2000")
             try:
                 conn.execute("BEGIN IMMEDIATE")
+                pause_state = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_states
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                if pause_state is not None and pause_state["status"] == "paused":
+                    conn.rollback()
+                    return _controlled_session_rate_admission_rejection(
+                        requested,
+                        ["runtime_session_paused"],
+                        pause_event_id=str(pause_state["pause_event_id"] or ""),
+                    )
                 existing = conn.execute(
                     """
                     SELECT * FROM controlled_session_rate_admissions
@@ -3753,6 +3768,198 @@ class AppDatabase:
                 """
                 SELECT * FROM controlled_session_rate_admissions
                 ORDER BY admitted_at_epoch_ms DESC, id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # ---------- Controlled Session Automatic Pause ----------
+
+    def pause_controlled_session_sync(
+        self,
+        *,
+        pause: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist the first automatic pause; no automatic resume path exists."""
+        requested = dict(pause)
+        reasons = [str(item) for item in requested.get("reasons") or [] if str(item)]
+        if not reasons:
+            return _controlled_session_pause_rejection(
+                requested,
+                ["automatic_pause_reason_missing"],
+            )
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing_state = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_states
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                if existing_state is not None:
+                    if (
+                        existing_state["session_fingerprint"]
+                        != requested["session_fingerprint"]
+                    ):
+                        conn.rollback()
+                        return _controlled_session_pause_rejection(
+                            requested,
+                            ["automatic_pause_session_identity_conflict"],
+                        )
+                    existing_event = conn.execute(
+                        """
+                        SELECT * FROM controlled_session_pause_events
+                        WHERE pause_event_id = ?
+                        LIMIT 1
+                        """,
+                        (existing_state["pause_event_id"],),
+                    ).fetchone()
+                    conn.commit()
+                    return {
+                        "status": "paused",
+                        "blockers": [],
+                        "reused": True,
+                        "state": dict(existing_state),
+                        "event": (
+                            dict(existing_event) if existing_event is not None else {}
+                        ),
+                    }
+
+                conn.execute(
+                    """
+                    INSERT INTO controlled_session_pause_events (
+                        pause_event_id, session_id, session_fingerprint,
+                        reservation_id, gate_fingerprint, reason_fingerprint,
+                        reasons_json, gate_snapshot_json, paused_at_epoch_ms,
+                        paused_at, status, payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["pause_event_id"],
+                        requested["session_id"],
+                        requested["session_fingerprint"],
+                        requested["reservation_id"],
+                        requested["gate_fingerprint"],
+                        requested["reason_fingerprint"],
+                        _serialize_event_payload_json(reasons),
+                        _serialize_event_payload_json(requested["gate_snapshot"]),
+                        int(requested["paused_at_epoch_ms"]),
+                        requested["paused_at"],
+                        "paused",
+                        _serialize_event_payload_json(requested["payload"]),
+                        requested["created_at"],
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO controlled_session_runtime_states (
+                        session_id, session_fingerprint, reservation_id,
+                        status, pause_event_id, reason_fingerprint,
+                        reasons_json, paused_at_epoch_ms, paused_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["session_id"],
+                        requested["session_fingerprint"],
+                        requested["reservation_id"],
+                        "paused",
+                        requested["pause_event_id"],
+                        requested["reason_fingerprint"],
+                        _serialize_event_payload_json(reasons),
+                        int(requested["paused_at_epoch_ms"]),
+                        requested["paused_at"],
+                        requested["created_at"],
+                    ),
+                )
+                state = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_runtime_states
+                    WHERE session_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                event = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_pause_events
+                    WHERE pause_event_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["pause_event_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "paused",
+                    "blockers": [],
+                    "reused": False,
+                    "state": dict(state) if state is not None else {},
+                    "event": dict(event) if event is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                conn.rollback()
+                return _controlled_session_pause_rejection(
+                    requested,
+                    ["automatic_pause_transaction_unavailable"],
+                )
+
+    def get_controlled_session_runtime_state_sync(
+        self,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        """Read the durable pause state for one session."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_session_runtime_states
+                WHERE session_id = ?
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def get_controlled_session_pause_event_sync(
+        self,
+        pause_event_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one immutable automatic-pause event by fingerprint."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_session_pause_events
+                WHERE pause_event_id = ?
+                LIMIT 1
+                """,
+                (pause_event_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def list_controlled_session_pause_events_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List immutable automatic-pause evidence newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_session_pause_events
+                ORDER BY paused_at_epoch_ms DESC, id DESC
                 LIMIT ?
                 """,
                 (max(1, min(int(limit), 500)),),
@@ -5012,6 +5219,7 @@ def _controlled_session_rate_admission_rejection(
     admitted_before: int = 0,
     admitted_after: int = 0,
     effective_rate: int = 0,
+    pause_event_id: str = "",
 ) -> dict[str, Any]:
     return {
         "status": "rejected",
@@ -5024,6 +5232,22 @@ def _controlled_session_rate_admission_rejection(
         "admitted_before": admitted_before,
         "admitted_after": admitted_after,
         "effective_rate": effective_rate,
+        "pause_event_id": pause_event_id,
+    }
+
+
+def _controlled_session_pause_rejection(
+    pause: dict[str, Any],
+    blockers: list[str],
+) -> dict[str, Any]:
+    return {
+        "status": "rejected",
+        "blockers": list(dict.fromkeys(blockers)),
+        "reused": False,
+        "state": {},
+        "event": {},
+        "pause_event_id": str(pause.get("pause_event_id") or ""),
+        "session_id": str(pause.get("session_id") or ""),
     }
 
 
@@ -5310,6 +5534,39 @@ ON controlled_session_budget_reservations(
 CREATE INDEX IF NOT EXISTS idx_controlled_session_budget_scope_day
 ON controlled_session_budget_reservations(
     authorization_id, account_alias, trading_day
+);
+
+CREATE TABLE IF NOT EXISTS controlled_session_pause_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pause_event_id TEXT NOT NULL UNIQUE,
+    session_id TEXT NOT NULL,
+    session_fingerprint TEXT NOT NULL,
+    reservation_id TEXT NOT NULL,
+    gate_fingerprint TEXT NOT NULL,
+    reason_fingerprint TEXT NOT NULL,
+    reasons_json TEXT NOT NULL,
+    gate_snapshot_json TEXT NOT NULL,
+    paused_at_epoch_ms INTEGER NOT NULL CHECK(paused_at_epoch_ms >= 0),
+    paused_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status = 'paused'),
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_session_pause_session_time
+ON controlled_session_pause_events(session_id, paused_at_epoch_ms DESC);
+
+CREATE TABLE IF NOT EXISTS controlled_session_runtime_states (
+    session_id TEXT PRIMARY KEY,
+    session_fingerprint TEXT NOT NULL,
+    reservation_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status = 'paused'),
+    pause_event_id TEXT NOT NULL UNIQUE,
+    reason_fingerprint TEXT NOT NULL,
+    reasons_json TEXT NOT NULL,
+    paused_at_epoch_ms INTEGER NOT NULL CHECK(paused_at_epoch_ms >= 0),
+    paused_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS controlled_session_rate_admissions (

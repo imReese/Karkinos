@@ -81,6 +81,33 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-12: Stage 3.8 adds a durable automatic-pause controller while
+  retaining default closure. An internal evaluation binds an exact current,
+  enabled, authority-verified session and reservation to a sanitized allowlist
+  of Account Truth, risk, prior reconciliation, paper/shadow, gateway health,
+  market data, budget, rate, kill-switch, loss/drawdown, rejection,
+  account-change, and consecutive-error facts. Missing gate-provider evidence
+  for an identified session fails toward pause; missing or invalid session
+  identity is rejected and audited because no safe target exists. SQLite
+  `BEGIN IMMEDIATE` stores the first immutable pause event and a one-way
+  `paused` runtime state; exact/concurrent repeats reuse it, identity drift
+  fails closed, and later clear gates cannot auto-resume. Runtime rate admission
+  checks the durable state inside its own write transaction before retry/window
+  logic, blocking a stale provider. Production uses no session/gate providers
+  and exposes only read-only status/state/event routes. Assumptions: the first
+  pause cause is authoritative for the state; provider snapshots are allowlist-
+  sanitized; session providers expose only currently enabled identities; and a
+  future resume requires a distinct signed operator review. Validation commands:
+  `uv run pytest tests/test_controlled_session_automatic_pause.py
+  tests/server/test_controlled_session_automatic_pause_routes.py -q`, the full
+  backend suite (1,196 passed), all 30 acceptance audits (304/304), formatters,
+  and `git diff --check` passed.
+  Risk impact: GitNexus reported MEDIUM for `AppDatabase` (4 direct dependants)
+  and `ControlledSessionEnvelopeService` (2), LOW for the runtime limiter (2)
+  and `create_app` (1), with no HIGH/CRITICAL change. This adds no session
+  issuance/resume, OMS/ledger mutation, broker contact, order submission/
+  cancellation, capital expansion, or automatic real-money execution.
+
 - 2026-07-12: Stage 3.7 adds a real internal runtime order-rate admission
   ledger while keeping production closed until authenticated session issuance
   exists. A candidate admission must resolve a current enabled and

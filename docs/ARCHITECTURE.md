@@ -560,6 +560,19 @@ provider and publishes no admission mutation endpoint; therefore the envelope
 keeps `runtime_order_rate_limiter_not_wired_to_authenticated_session` as a hard
 blocker until session issuance and revocation state can participate atomically.
 
+Stage 3.8 adds the companion automatic-pause state without enabling session
+issuance. A future authenticated session provider supplies only immutable
+session identity, while a gate provider is reduced to an allowlisted snapshot.
+Missing/failed or non-clear hard facts produce deterministic reasons and one
+immutable pause event. SQLite persists only a `paused` runtime state; there is
+deliberately no update-to-active method. Runtime admission reads that state
+again after its own `BEGIN IMMEDIATE`, closing the stale-provider race. The
+production route factory supplies neither provider and exposes only status,
+event history, and per-session state reads, so the envelope retains
+`automatic_pause_controller_not_wired_to_authenticated_session` as a hard
+blocker. Resume must later require a new operator review and cannot be inferred
+from gates becoming clear.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

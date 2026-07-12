@@ -334,6 +334,15 @@ last-slot serialization. Production intentionally injects no authenticated
 session provider and exposes only read-only status/history endpoints, so no
 runtime admission, OMS mutation, or broker action is publicly available.
 
+Stage 3.8 adds an internal durable automatic-pause controller. It evaluates an
+allowlisted snapshot of Account Truth, risk, reconciliation, paper/shadow,
+gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
+account-change, and consecutive-error facts. The first failure persists a
+one-way `paused` state, and runtime rate admission rechecks that state inside
+its write transaction. Production still injects no authenticated session or
+gate provider and exposes only read-only status/state/event endpoints. There is
+no automatic resume, OMS mutation, or broker submit/cancel path.
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run

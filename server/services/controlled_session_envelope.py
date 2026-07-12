@@ -302,7 +302,7 @@ class ControlledSessionEnvelopeService:
                     "session_authority_issuance_not_implemented",
                     "atomic_budget_reservation_not_implemented",
                     "runtime_order_rate_limiter_not_wired_to_authenticated_session",
-                    "automatic_pause_controller_not_implemented",
+                    "automatic_pause_controller_not_wired_to_authenticated_session",
                     "session_resume_requires_new_review_not_implemented",
                     "live_gateway_not_implemented",
                     "broker_submission_disabled",

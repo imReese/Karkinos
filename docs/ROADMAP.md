@@ -1629,6 +1629,33 @@ issue capital authority.
   rate, replay conflicts, session drift, route exposure, and zero broker
   authority.
 
+### Stage 3.8 Automatic Pause Controller Foundation
+
+* [x] Production configures no authenticated session or gate provider and
+  exposes only read-only status, state, and event routes; there is no public
+  evaluate, pause, resume, submit, or cancel endpoint.
+* [x] Internal evaluation requires an exact current, enabled,
+  authority-verified session identity and binds a sanitized allowlisted gate
+  snapshot, reservation id, and deterministic fingerprints without retaining
+  provider credentials.
+* [x] Missing gate evidence, Account Truth, risk, prior reconciliation,
+  paper/shadow divergence, gateway health, market data, budget, rate, kill
+  switch, loss/drawdown, rejection, account-change, and consecutive-error facts
+  all fail toward pause.
+* [x] The first valid pause is persisted as immutable evidence plus a durable
+  one-way `paused` runtime state; later clear gates do not automatically resume,
+  renew, or replace that state.
+* [x] Runtime rate admission checks durable pause state inside its `BEGIN
+  IMMEDIATE` transaction, so an applied pause blocks new admissions even if a
+  stale provider still claims that the session is enabled.
+* [x] Exact and concurrent evaluations reuse one pause event, identity conflicts
+  fail closed, and rejected or provider-failure evidence remains append-only and
+  sanitized.
+* [x] Deterministic tests cover default closure, clear no-op evaluation, every
+  hard gate, persistence, real concurrency, no automatic resume, identity drift,
+  route exposure, atomic rate blocking, secret sanitization, and zero broker
+  authority.
+
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 
 * [x] Versioned current/proposed capital tiers and a deterministic evidence
