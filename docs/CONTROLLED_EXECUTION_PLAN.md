@@ -295,10 +295,18 @@ overlapping sessions for the same authorization/account. Production exposes
 only read-only status/history and injects no session provider. The rate limiter
 therefore remains a hard blocker described as not yet wired to authenticated
 session issuance rather than being treated as execution permission.
+Stage 3.8 implements the internal automatic-pause state machine. Once an exact
+identified session sees a missing or failed hard gate, the first pause event and
+one-way `paused` state are stored atomically; later clear facts do not resume it.
+The rate-admission transaction checks this durable state before retry or slot
+logic, so a stale provider cannot admit a paused session. Production exposes
+only read-only pause status/state/history and supplies no session or gate
+provider. Authenticated wiring and a new human-reviewed resume protocol are
+still required before controlled execution can use this primitive.
 The request and recorded capital evaluation must bind the same resolved clear
-prior-batch fingerprint. Stage 1/2 promotion, submit capability, automatic
-pause, runtime session
-issue/resume/revoke, and the live gateway remain hard blockers. Recording an attestation requires a current
+prior-batch fingerprint. Stage 1/2 promotion, submit capability, automatic pause
+wiring, runtime session issue/resume/revoke, and the live gateway remain hard
+blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen
 itself, submit an order, or scale capital.

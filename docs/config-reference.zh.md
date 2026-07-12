@@ -106,6 +106,16 @@ Stage 3.7 的只读可见性接口为：
 且没有 POST admission 路由。内部 limiter 只供未来 session 服务调用；当前不能通过 API 获取
 admission、修改 OMS/账本、联系券商、提交或撤单。
 
+Stage 3.8 的只读自动暂停可见性接口为：
+
+* `GET /api/automation/controlled-sessions/automatic-pause/status`
+* `GET /api/automation/controlled-sessions/automatic-pause/events`
+* `GET /api/automation/controlled-sessions/automatic-pause/states/{session_id}`
+
+生产 `_service()` 明确使用 `session_provider=None` 和 `gate_provider=None`，没有 evaluate、pause
+或 resume 的 POST 路由。内部状态只允许首次写入 `paused`，门禁恢复不会自动改回 active；未来
+恢复必须经过新的操作员复核协议。该接口不签发 session、不修改 OMS/账本，也不联系券商。
+
 ## broker_fee_schedule
 
 `broker_fee_schedule` 是账户费用规则的唯一正式配置入口。Karkinos 会用它估算手工交易的佣金、印花税、过户费、其他费用、总费用和净现金影响；券商交割单仍是最终权威来源。

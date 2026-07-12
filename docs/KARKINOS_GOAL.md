@@ -138,6 +138,13 @@ Active planning target:
   authenticated bounded session. Production has no session provider and no
   public admission endpoint, so the limiter cannot currently enable or submit
   an order; authenticated session wiring remains a hard gate.
+* Stage 3.8 provides a durable fail-closed automatic-pause primitive. Identified
+  sessions pause on missing or failed account, risk, reconciliation,
+  paper/shadow, gateway, market-data, budget, rate, kill-switch, loss, rejection,
+  account-change, or error facts. Pause state is one-way and atomically blocks
+  later rate admission; production has no session/gate providers, public pause
+  action, or resume path, so authenticated wiring and a separately reviewed
+  resume protocol remain hard gates.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still
