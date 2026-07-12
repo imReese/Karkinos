@@ -8,7 +8,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from analytics.acceptance_audit_report import build_acceptance_audit_export
-from server.routes.decision import _today_decision_payload, _trading_plan_positions
+from server.routes.decision import (
+    _decision_portfolio_context,
+    _today_decision_payload,
+    _trading_plan_positions,
+)
 from server.services.daily_operations import build_daily_operations_summary
 from server.services.daily_trading_plan import build_daily_trading_plan
 from server.services.operations_today import build_operations_today_summary
@@ -156,11 +160,18 @@ def create_router() -> APIRouter:
 async def _current_decision_and_trading_plan(
     state: Any,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    decision_payload = await _today_decision_payload(state)
+    portfolio_context = _decision_portfolio_context(state)
+    decision_payload = await _today_decision_payload(
+        state,
+        portfolio_context=portfolio_context,
+    )
     trading_plan = build_daily_trading_plan(
         decision_payload=decision_payload,
         config=state.config,
-        positions=_trading_plan_positions(state),
+        positions=_trading_plan_positions(
+            state,
+            portfolio_context=portfolio_context,
+        ),
     )
     return decision_payload, trading_plan
 

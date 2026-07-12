@@ -398,7 +398,12 @@ broker evidence events while detecting duplicate files.
 cash, position, fee, tax, and cost-basis facts and returns pass, warning,
 mismatch, or blocked review evidence. `ManualReviewRepository.record_decision()`
 can persist accepted, ignored, known-difference, ledger-candidate, or
-needs-investigation review states for reconciliation items.
+needs-investigation review states for reconciliation items. Each review is
+bound to the exact reconciliation-item fingerprint and appended to audit
+history. A stale or current manual label cannot override a material mismatch;
+the broker evidence, ledger fact, or explicit reconciliation tolerance must
+actually remove the difference. Broker evidence older than the latest local
+ledger fact also fails closed as stale.
 `build_account_truth_score()` converts reconciliation state, manual review
 state, freshness, and unresolved differences into a 0-100 score plus pass,
 degraded, or blocked gate status. These paths do not write production ledger

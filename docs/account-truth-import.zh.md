@@ -210,9 +210,11 @@ decision = review_repository.record_decision(
 - `ledger_candidate`
 - `needs_investigation`
 
-同一个 `import_run_id` + `item_key` 会幂等更新。`ledger_candidate` 只是人工复核
-标记，不会自动创建或修改 `ledger_entries`；真正写入生产账本仍需要后续显式确认
-流程。
+同一个 `import_run_id` + `item_key` 会更新当前复核状态，同时把每次决定追加到复核
+历史表。每条复核决定绑定当时 reconciliation item 的事实指纹；券商值、本地值、差额、
+状态或口径上下文发生变化后，旧复核保留用于审计，但会标记为失效。`ledger_candidate`
+只是人工复核标记，不会自动创建或修改 `ledger_entries`；真正写入生产账本仍需要后续
+显式确认流程。
 
 ## 券商结算确认
 
@@ -259,6 +261,8 @@ score = build_account_truth_score(
 - `unresolved_mismatch_count` 与 `resolved_review_count`；
 - `required_actions`、`blocking_reasons` 和 `limitations`。
 
-`accepted`、`ignored`、`known_difference` 会把对应 reconciliation item 视为已复核；
-`needs_investigation` 与 `ledger_candidate` 仍会保留为未解决项。Score 只是
-cockpit、promotion gate 和报告可消费的账户事实信号，不会自动修改账本或提交订单。
+人工复核状态只记录审计处置，不覆盖仍然存在的 `mismatch` 或 `blocked`。物质性差异
+必须通过更新券商证据、显式纠正账本，或由 reconciliation 的明确数值容差重新归类后
+才能解除门禁。最新券商导入若早于最新本地账本事实，score 会标为 `stale` 并附加
+`account_truth_evidence_predates_latest_ledger` 阻断。Score 只是 cockpit、promotion
+gate 和报告可消费的账户事实信号，不会自动修改账本或提交订单。

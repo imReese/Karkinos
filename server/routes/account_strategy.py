@@ -291,7 +291,13 @@ def _linked_strategy_evidence(
         if risk and risk.get("intent_id")
     }
 
-    orders = order_reader(limit=1000, offset=0) if callable(order_reader) else []
+    all_orders = order_reader(limit=1000, offset=0) if callable(order_reader) else []
+    excluded_simulation_order_ids = {
+        str(order.get("order_id"))
+        for order in all_orders
+        if _is_simulation_order(order)
+    }
+    orders = [order for order in all_orders if not _is_simulation_order(order)]
     linked_orders = []
     for order in orders:
         source_signal_id = _order_source_signal_id(order)
@@ -309,6 +315,10 @@ def _linked_strategy_evidence(
     unattributed_fill_count = 0
     for fill in fills:
         metadata = _fill_metadata(fill)
+        if str(fill.get("order_id")) in excluded_simulation_order_ids or str(
+            metadata.get("execution_mode") or ""
+        ).lower() in {"paper", "paper_shadow", "shadow", "backtest"}:
+            continue
         metadata_signal_id = _source_signal_id(
             metadata.get("source_signal_id") or metadata.get("signal_id")
         )
@@ -329,6 +339,14 @@ def _linked_strategy_evidence(
         "unattributed_fills": unattributed_fills,
         "unattributed_fill_count": unattributed_fill_count,
     }
+
+
+def _is_simulation_order(order: dict[str, Any]) -> bool:
+    payload = _json_dict(order.get("payload_json"))
+    execution_mode = str(
+        order.get("execution_mode") or payload.get("execution_mode") or ""
+    ).lower()
+    return execution_mode in {"paper", "paper_shadow", "shadow", "backtest"}
 
 
 def _build_attribution_summary(

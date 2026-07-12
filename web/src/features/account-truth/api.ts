@@ -30,6 +30,14 @@ export type AccountTruthScore = {
   source_type?: string;
   source_name?: string;
   created_at?: string;
+  ledger_coverage?: {
+    status: 'covered' | 'stale' | 'unknown';
+    import_created_at: string;
+    latest_ledger_created_at: string | null;
+    latest_ledger_event_at?: string | null;
+    broker_evidence_as_of?: string | null;
+    reasons?: string[];
+  };
 };
 
 export type ImportRun = {
@@ -75,6 +83,8 @@ export type ReviewDecision = {
   review_status: ReviewStatus;
   note: string;
   reviewer: string;
+  evidence_fingerprint?: string;
+  is_current?: boolean;
   schema_version: string;
   created_at: string;
   updated_at: string;
@@ -96,6 +106,8 @@ export type ReconciliationItem = {
   detail: string;
   detail_context?: Record<string, string>;
   evidence_references: string[];
+  evidence_fingerprint?: string;
+  manual_review_does_not_override_mismatch?: boolean;
   latest_review: ReviewDecision | null;
 };
 

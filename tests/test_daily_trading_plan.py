@@ -67,6 +67,8 @@ def _candidate(
     risk_status: str = "passed",
     manual_status: str = "ready_for_manual_confirmation",
     risk_reasons: list[str] | None = None,
+    risk_decision_id: str | None = None,
+    account_truth_import_run_id: str | None = None,
 ) -> dict:
     return {
         "action_id": action_id,
@@ -82,11 +84,31 @@ def _candidate(
         "manual_confirmation_status": manual_status,
         "evidence": {
             "strategy": {"strategy_id": "dual_ma"},
-            "risk_gate": {"status": risk_status, "passed": risk_status == "passed"},
-            "account_truth": {"gate_status": "pass"},
+            "risk_gate": {
+                "status": risk_status,
+                "passed": risk_status == "passed",
+                "decision_id": risk_decision_id,
+            },
+            "account_truth": {
+                "gate_status": "pass",
+                "import_run_id": account_truth_import_run_id,
+            },
             "data_freshness": {"status": "live"},
         },
     }
+
+
+def test_trading_plan_carries_risk_and_account_truth_evidence_refs() -> None:
+    plan = _plan(
+        candidate=_candidate(
+            risk_decision_id="RISK-123",
+            account_truth_import_run_id="import-456",
+        )
+    )
+
+    refs = plan["order_intents"][0]["evidence_refs"]
+    assert "risk:RISK-123" in refs
+    assert "account_truth:import-456" in refs
 
 
 def test_trading_plan_blocker_summary_preserves_specific_risk_gate_reasons() -> None:
@@ -185,19 +207,19 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert intent["side"] == "buy"
     assert intent["target_weight"] == pytest.approx(0.2)
     assert intent["estimated_price"] == pytest.approx(10.0)
-    assert intent["estimated_quantity"] == pytest.approx(1000.0)
-    assert intent["estimated_gross_amount"] == pytest.approx(10000.0)
+    assert intent["estimated_quantity"] == pytest.approx(800.0)
+    assert intent["estimated_gross_amount"] == pytest.approx(8000.0)
     assert intent["fee_breakdown"]["commission"] == "5.00"
-    assert intent["fee_breakdown"]["transfer_fee"] == "0.100000"
-    assert intent["estimated_total_fee"] == pytest.approx(5.1)
-    assert intent["estimated_net_cash_impact"] == pytest.approx(-10005.1)
-    assert intent["quantity_basis"] == "target_weight_total_equity_lot_rounded"
+    assert intent["fee_breakdown"]["transfer_fee"] == "0.080000"
+    assert intent["estimated_total_fee"] == pytest.approx(5.08)
+    assert intent["estimated_net_cash_impact"] == pytest.approx(-8005.08)
+    assert intent["quantity_basis"] == "target_position_delta_lot_rounded"
     assert intent["position_effect"] == {
         "current_quantity": 200.0,
         "current_avg_cost": 8.0,
         "current_market_value": 2000.0,
-        "estimated_quantity_after": 1200.0,
-        "estimated_avg_cost_after": pytest.approx(9.666666666666666),
+        "estimated_quantity_after": 1000.0,
+        "estimated_avg_cost_after": pytest.approx(9.6),
         "cost_basis_method": "weighted_average_preview",
     }
     assert intent["submission_status"] == "manual_confirmation_required"

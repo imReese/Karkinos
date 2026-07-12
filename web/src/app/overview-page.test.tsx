@@ -752,6 +752,156 @@ test('surfaces paper shadow next action in today todos', async () => {
   ).toBe('/trading');
 });
 
+test('deduplicates manual-plan review and trusts confirmed quotes over provider diagnostics', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {
+      quote_status: 'confirmed',
+      stale_reason: 'tushare_fund_nav_permission_denied',
+    },
+    {
+      marketQuotes: [
+        ['600066', '宇通客车', 'stock'],
+        ['601985', '中国核电', 'stock'],
+        ['018125', '永赢先进制造智选混合发起C', 'fund'],
+        ['026539', '融通科技臻选混合发起式C', 'fund'],
+        ['012710', '华夏核心成长混合C', 'fund'],
+      ].map(([symbol, displayName, assetClass]) => ({
+        symbol,
+        asset_class: assetClass,
+        display_name: displayName,
+        timestamp: '2026-07-10T15:00:00+08:00',
+        price: 1.25,
+        quote_status: 'confirmed',
+        quote_source: 'market_bar_close',
+        quote_age_seconds: null,
+        stale_reason:
+          assetClass === 'fund' ? 'tushare_fund_nav_permission_denied' : null,
+        last_refresh_attempt: '2026-07-10T21:30:00+08:00',
+        last_refresh_error:
+          assetClass === 'fund' ? 'tushare_fund_nav_permission_denied' : null,
+        daily_change_pct: null,
+      })),
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-07-10',
+        generated_at: '2026-07-12T21:54:00+08:00',
+        source_decision: 'rebalance',
+        conclusion_status: 'manual_confirmation_ready',
+        primary_target: 'trading',
+        candidate_pool_count: 5,
+        manual_ready_count: 5,
+        order_intent_count: 5,
+        blocked_count: 0,
+        available_cash: 6731.61,
+        total_equity: 19973.54,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [
+          {
+            action_id: 893,
+            symbol: '600066',
+            side: 'buy',
+            estimated_quantity: 100,
+            submission_status: 'manual_confirmation_required',
+          },
+          {
+            action_id: 892,
+            symbol: '601985',
+            side: 'buy',
+            estimated_quantity: 300,
+            submission_status: 'manual_confirmation_required',
+          },
+          {
+            action_id: 888,
+            symbol: '018125',
+            side: 'sell',
+            estimated_quantity: 502.2539,
+            submission_status: 'manual_confirmation_required',
+          },
+          {
+            action_id: 836,
+            symbol: '026539',
+            side: 'sell',
+            estimated_quantity: 442.3704,
+            submission_status: 'manual_confirmation_required',
+          },
+          {
+            action_id: 818,
+            symbol: '012710',
+            side: 'sell',
+            estimated_quantity: 898.3131,
+            submission_status: 'manual_confirmation_required',
+          },
+        ],
+        blockers: [],
+        limitations: [],
+      },
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-07-10',
+        generated_at: '2026-07-12T21:54:00+08:00',
+        conclusion_status: 'manual_action_required',
+        primary_target: 'trading',
+        health: {
+          total: 9,
+          pass: 7,
+          degraded: 1,
+          blocked: 0,
+          manual_action_required: 1,
+          skipped: 0,
+        },
+        subsystems: [
+          {
+            id: 'daily_trading_plan',
+            status: 'manual_action_required',
+            tone: 'warning',
+            target: 'trading',
+            last_run_at: '2026-07-12T21:54:00+08:00',
+            next_action: 'review_manual_order_intents',
+            limitations: [],
+            detail_status: 'manual_confirmation_ready',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 5,
+          manual_ready_count: 5,
+          blocked_count: 0,
+          order_intent_count: 5,
+          conclusion_status: 'manual_confirmation_ready',
+        },
+        paper_shadow: {
+          status: 'within_expectations',
+          run_id: 'shadow:2026-07-10:c088bce50bb2',
+          order_intent_count: 5,
+          simulated_order_count: 5,
+          simulated_fill_count: 5,
+          divergence_reviewed_count: 5,
+          divergence_status: 'within_expectations',
+          next_manual_review_step: 'review_manual_confirmation',
+          last_run_at: '2026-07-12T21:54:00+08:00',
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+  expect(within(todayQueue).getByText('5 个订单意图待人工确认')).toBeTruthy();
+  expect(todayQueue.textContent).toContain('买入 · 宇通客车（600066） · 100');
+  expect(todayQueue.textContent).toContain('买入 · 中国核电（601985） · 300');
+  expect(todayQueue.textContent).toContain(
+    '卖出 · 永赢先进制造智选混合发起C（018125） · 502.2539',
+  );
+  expect(todayQueue.textContent).toContain('另 2 笔待确认');
+  expect(within(todayQueue).queryByText('今日待办需要人工复核')).toBeNull();
+  expect(within(todayQueue).queryByText('行情或净值需要复核。')).toBeNull();
+  expect(within(todayQueue).getByText('行情与净值可用于解读。')).toBeTruthy();
+});
+
 test('surfaces paper shadow divergence evidence summary in today todos', async () => {
   installOverviewFetchMock(
     {},

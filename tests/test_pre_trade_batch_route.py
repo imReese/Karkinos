@@ -76,7 +76,7 @@ def test_decision_batch_pre_trade_risk_route_runs_without_creating_orders(
     assert db.list_manual_orders_sync() == []
 
 
-def test_decision_batch_pre_trade_risk_route_applies_portfolio_controls(
+def test_decision_batch_pre_trade_risk_route_applies_cash_bounded_allocation(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -106,12 +106,10 @@ def test_decision_batch_pre_trade_risk_route_applies_portfolio_controls(
     result = asyncio.run(endpoint())
 
     assert result["processed_count"] == 1
-    assert result["blocked_count"] == 1
+    assert result["passed_count"] == 1
     action = db.get_action_tasks_sync()[0]
-    assert action["risk_gate_status"] == "blocked"
-    assert (
-        "cash reserve would fall below min_cash_reserve" in action["risk_gate_reasons"]
-    )
+    assert action["risk_gate_status"] == "passed"
+    assert action["risk_gate_reasons"] == ["approved"]
 
 
 def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(

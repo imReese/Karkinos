@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from account_truth.broker_evidence import (
     BrokerEvidenceRepository,
@@ -29,6 +30,7 @@ ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.account_truth.promotion_evidence.v1"
 )
 ACCOUNT_TRUTH_PROMOTION_MAX_AGE_SECONDS = 86400
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def build_latest_account_truth_score_payload(
@@ -47,20 +49,53 @@ def build_latest_account_truth_score_payload(
     if import_run is None:
         return {}
 
+    ledger_coverage = _ledger_coverage_for_import(state, import_run)
+    effective_freshness = _freshness_with_ledger_coverage(
+        data_freshness_status,
+        ledger_coverage,
+    )
     score = build_account_truth_score_for_import_run(
         state,
         repository=repository,
         import_run=import_run,
-        data_freshness_status=data_freshness_status,
+        data_freshness_status=effective_freshness,
     )
-    return {
+    payload = {
         **score.to_json_dict(),
         "status": "available",
         "import_run_id": import_run.import_run_id,
         "source_type": import_run.source_type,
         "source_name": import_run.source_name,
         "created_at": import_run.created_at,
+        "ledger_coverage": ledger_coverage,
     }
+    if ledger_coverage["status"] == "stale":
+        payload["gate_status"] = "blocked"
+        payload["blocking_reasons"] = list(
+            dict.fromkeys(
+                [
+                    *list(payload.get("blocking_reasons") or []),
+                    "account_truth_evidence_predates_latest_ledger",
+                ]
+            )
+        )
+        payload["required_actions"] = list(
+            dict.fromkeys(
+                [
+                    *list(payload.get("required_actions") or []),
+                    "reimport_broker_statement_after_latest_ledger_fact",
+                ]
+            )
+        )
+        payload["limitations"] = list(
+            dict.fromkeys(
+                [
+                    *list(payload.get("limitations") or []),
+                    "The latest broker evidence does not cover the latest local ledger fact.",
+                ]
+            )
+        )
+    return payload
 
 
 def build_latest_account_truth_promotion_evidence(
@@ -101,6 +136,14 @@ def build_latest_account_truth_promotion_evidence(
             freshness_status = "stale"
         else:
             freshness_status = "fresh"
+
+    ledger_coverage = _ledger_coverage_for_import(state, import_run)
+    freshness_status = _freshness_with_ledger_coverage(
+        freshness_status,
+        ledger_coverage,
+    )
+    if ledger_coverage["status"] == "stale":
+        blockers.append("account_truth_evidence_predates_latest_ledger")
 
     report = build_reconciliation_report_for_import_run(
         state,
@@ -173,6 +216,7 @@ def build_latest_account_truth_promotion_evidence(
         "freshness": {
             "status": freshness_status,
             "max_age_seconds": effective_max_age,
+            "ledger_coverage": ledger_coverage,
         },
     }
     unique_blockers = list(dict.fromkeys(blockers))
@@ -187,6 +231,7 @@ def build_latest_account_truth_promotion_evidence(
         "current_age_seconds": age_seconds,
         "max_age_seconds": effective_max_age,
         "data_freshness_status": freshness_status,
+        "ledger_coverage": ledger_coverage,
         "reconciliation_status": report.status,
         "score": score.score,
         "gate_status": score.gate_status,
@@ -223,10 +268,14 @@ def build_account_truth_score_for_import_run(
         if db_path is not None
         else []
     )
+    effective_freshness = _freshness_with_ledger_coverage(
+        data_freshness_status,
+        _ledger_coverage_for_import(state, import_run),
+    )
     return build_account_truth_score(
         report=report,
         review_decisions=review_decisions,
-        data_freshness_status=data_freshness_status,
+        data_freshness_status=effective_freshness,
     )
 
 
@@ -321,6 +370,113 @@ def _latest_quotes_by_symbol(db: Any) -> dict[str, dict[str, object]]:
         for row in db.get_latest_quotes_sync()
         if row.get("symbol")
     }
+
+
+def _ledger_coverage_for_import(
+    state: Any,
+    import_run: BrokerImportRun,
+) -> dict[str, object]:
+    db = getattr(state, "db", None)
+    reader = getattr(db, "get_ledger_entries_sync", None)
+    import_timestamp = _parse_aware_timestamp(import_run.created_at)
+    if not callable(reader):
+        return {
+            "status": "unknown",
+            "import_created_at": import_run.created_at,
+            "latest_ledger_created_at": None,
+        }
+    rows = list(reader(limit=1000, offset=0) or [])
+    ledger_created_timestamps = [
+        _parse_fact_timestamp(row.get("created_at"))
+        for row in rows
+        if isinstance(row, dict) and row.get("created_at")
+    ]
+    ledger_event_timestamps = [
+        _parse_fact_timestamp(row.get("timestamp"))
+        for row in rows
+        if isinstance(row, dict) and row.get("timestamp")
+    ]
+    latest_ledger_created = max(
+        (value for value in ledger_created_timestamps if value is not None),
+        default=None,
+    )
+    latest_ledger_event = max(
+        (value for value in ledger_event_timestamps if value is not None),
+        default=None,
+    )
+    broker_evidence_as_of: datetime | None = None
+    db_path = _db_path_for_state(state)
+    if db_path is not None:
+        repository = BrokerEvidenceRepository(db_path)
+        broker_timestamps = [
+            _parse_fact_timestamp(event.occurred_at)
+            for event in broker_events_for_import_run(repository, import_run)
+        ]
+        broker_evidence_as_of = max(
+            (value for value in broker_timestamps if value is not None),
+            default=None,
+        )
+    stale_reasons: list[str] = []
+    if (
+        latest_ledger_created is not None
+        and import_timestamp is not None
+        and latest_ledger_created > import_timestamp
+    ):
+        stale_reasons.append("ledger_was_revised_after_broker_import")
+    if (
+        latest_ledger_event is not None
+        and broker_evidence_as_of is not None
+        and latest_ledger_event > broker_evidence_as_of
+    ):
+        stale_reasons.append("broker_evidence_does_not_cover_latest_ledger_event")
+    if stale_reasons:
+        status = "stale"
+    elif rows and (import_timestamp is None or broker_evidence_as_of is None):
+        status = "unknown"
+    else:
+        status = "covered"
+    return {
+        "status": status,
+        "reasons": stale_reasons,
+        "import_created_at": import_run.created_at,
+        "latest_ledger_created_at": (
+            latest_ledger_created.isoformat()
+            if latest_ledger_created is not None
+            else None
+        ),
+        "latest_ledger_event_at": (
+            latest_ledger_event.isoformat() if latest_ledger_event is not None else None
+        ),
+        "broker_evidence_as_of": (
+            broker_evidence_as_of.isoformat()
+            if broker_evidence_as_of is not None
+            else None
+        ),
+    }
+
+
+def _freshness_with_ledger_coverage(
+    freshness_status: str,
+    ledger_coverage: dict[str, object],
+) -> str:
+    if freshness_status == "fresh" and ledger_coverage.get("status") == "stale":
+        return "stale"
+    return freshness_status
+
+
+def _parse_fact_timestamp(value: object) -> datetime | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
+    return parsed.astimezone(timezone.utc)
 
 
 def _ledger_fact_from_entry(entry: LedgerEntry) -> KarkinosLedgerFact:

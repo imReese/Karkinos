@@ -28,6 +28,7 @@ from account_truth.reconciliation import (
     ReconciliationReport,
     ReconciliationStatus,
 )
+from account_truth.score import reconciliation_item_fingerprint
 from server.account_truth_gate import (
     broker_events_for_import_run,
     build_latest_account_truth_score_payload,
@@ -149,8 +150,21 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         repository = _repository_for_state(state)
-        if repository.get_import_run(import_run_id) is None:
+        import_run = repository.get_import_run(import_run_id)
+        if import_run is None:
             raise HTTPException(status_code=404, detail="Import run not found")
+        report = _build_report_for_import_run(state, repository, import_run)
+        current_item = next(
+            (item for item in report.items if _item_key(item) == item_key),
+            None,
+        )
+        if current_item is None:
+            raise HTTPException(status_code=404, detail="Reconciliation item not found")
+        if body.category != current_item.category or body.symbol != current_item.symbol:
+            raise HTTPException(
+                status_code=409,
+                detail="Review identity does not match the current reconciliation item",
+            )
         review_repository = _manual_review_repository_for_state(state)
         decision = review_repository.record_decision(
             import_run_id=import_run_id,
@@ -160,6 +174,7 @@ def create_router() -> APIRouter:
             review_status=body.review_status,
             note=body.note,
             reviewer=body.reviewer,
+            evidence_fingerprint=reconciliation_item_fingerprint(current_item),
         )
         return _decision_response(decision)
 
@@ -359,9 +374,17 @@ def _item_response(
         "detail": item.detail,
         "detail_context": dict(item.detail_context),
         "evidence_references": _evidence_references(item, events),
+        "evidence_fingerprint": reconciliation_item_fingerprint(item),
         "latest_review": (
-            _decision_response(latest_review) if latest_review is not None else None
+            {
+                **_decision_response(latest_review),
+                "is_current": latest_review.evidence_fingerprint
+                == reconciliation_item_fingerprint(item),
+            }
+            if latest_review is not None
+            else None
         ),
+        "manual_review_does_not_override_mismatch": True,
     }
 
 
@@ -432,6 +455,7 @@ def _decision_response(decision: ManualReviewDecision) -> dict[str, object]:
         "review_status": decision.review_status,
         "note": decision.note,
         "reviewer": decision.reviewer,
+        "evidence_fingerprint": decision.evidence_fingerprint,
         "schema_version": decision.schema_version,
         "created_at": decision.created_at,
         "updated_at": decision.updated_at,

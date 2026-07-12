@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 from account_truth.manual_review import ManualReviewDecision
 from account_truth.reconciliation import ReconciliationItem, ReconciliationReport
-from account_truth.score import build_account_truth_score
+from account_truth.score import (
+    build_account_truth_score,
+    reconciliation_item_fingerprint,
+)
 
 
 def test_account_truth_score_passes_for_fresh_fully_reconciled_report() -> None:
@@ -82,15 +86,19 @@ def test_account_truth_score_blocks_for_unresolved_mismatches() -> None:
         data_freshness_status="fresh",
     )
 
-    assert score.score == 40
+    assert score.score == 20
     assert score.gate_status == "blocked"
-    assert score.unresolved_mismatch_count == 2
-    assert score.resolved_review_count == 2
+    assert score.unresolved_mismatch_count == 4
+    assert score.resolved_review_count == 0
     assert score.blocking_reasons == [
+        "unresolved_cash_difference",
         "unresolved_position_difference",
+        "unresolved_fee_difference",
         "unresolved_cost_basis_difference",
     ]
+    assert "review_cash_difference" in score.required_actions
     assert "review_position_difference" in score.required_actions
+    assert "review_fee_difference" in score.required_actions
     assert "review_cost_basis_difference" in score.required_actions
 
 
@@ -112,6 +120,40 @@ def test_account_truth_score_blocks_when_report_is_blocked() -> None:
         "missing_account_or_market_evidence",
         "unresolved_import_difference",
     ]
+
+
+def test_account_truth_score_invalidates_review_when_item_facts_change() -> None:
+    reviewed_item = _item("cash", "warning", action="review_cash_difference")
+    decision = ManualReviewDecision(
+        id=1,
+        import_run_id="import_synthetic",
+        item_key="cash",
+        category="cash",
+        symbol="",
+        review_status="known_difference",
+        note="reviewed exact synthetic difference",
+        reviewer="local",
+        evidence_fingerprint=reconciliation_item_fingerprint(reviewed_item),
+        schema_version="karkinos.account_truth.manual_review.v2",
+        created_at="2026-06-17T00:00:00+00:00",
+        updated_at="2026-06-17T00:00:00+00:00",
+    )
+    changed_item = replace(
+        reviewed_item,
+        karkinos_value="1",
+        difference="-1",
+    )
+
+    score = build_account_truth_score(
+        report=_report(status="warning", items=[changed_item]),
+        review_decisions=[decision],
+        data_freshness_status="fresh",
+    )
+
+    assert score.resolved_review_count == 0
+    assert score.unresolved_mismatch_count == 1
+    assert score.gate_status == "degraded"
+    assert score.blocking_reasons == []
 
 
 def _report(
@@ -169,7 +211,14 @@ def _decision(
         review_status=review_status,  # type: ignore[arg-type]
         note="synthetic review",
         reviewer="local",
-        schema_version="karkinos.account_truth.manual_review.v1",
+        evidence_fingerprint=reconciliation_item_fingerprint(
+            _item(
+                item_key.split(":", 1)[0],
+                "mismatch",
+                symbol=item_key.split(":", 1)[1] if ":" in item_key else "",
+            )
+        ),
+        schema_version="karkinos.account_truth.manual_review.v2",
         created_at="2026-06-17T00:00:00+00:00",
         updated_at="2026-06-17T00:00:00+00:00",
     )

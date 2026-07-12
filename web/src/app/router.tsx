@@ -491,7 +491,10 @@ export function OverviewPage() {
                 overview={overview.data}
                 dailyOperations={overview.data.daily_operations}
                 marketHealth={marketHealth.data}
-                quoteDiagnostics={positions}
+                quoteDiagnostics={[
+                  ...positions,
+                  ...(marketHealth.data?.quotes ?? []),
+                ]}
                 pendingOrders={pendingOrders.data ?? []}
                 pendingOrdersLoading={pendingOrders.isLoading}
                 pendingOrdersError={pendingOrders.isError}
@@ -719,7 +722,7 @@ function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
     const quoteStatus = item.quote_status?.toLowerCase();
     const quoteSource = item.quote_source?.toLowerCase();
     return (
-      Boolean(item.stale_reason) ||
+      (!quoteStatus && Boolean(item.stale_reason)) ||
       isUnconfirmedMarketDataStatus(quoteStatus) ||
       quoteStatus === 'error' ||
       quoteSource === 'eastmoney_fund_estimate'
@@ -735,6 +738,59 @@ function decisionCandidateDisplayName(candidate: DecisionCandidate) {
     candidate.evidence.signal?.name ??
     candidate.symbol
   );
+}
+
+function tradingPlanIntentInstrumentLabel(
+  intent: DailyTradingPlanResponse['order_intents'][number],
+  candidates: DecisionCandidate[],
+  quoteDiagnostics: QuoteDiagnosticItem[],
+) {
+  const symbol = String(intent.symbol ?? '').trim();
+  const candidate = candidates.find(
+    (item) =>
+      (intent.action_id !== null && item.action_id === intent.action_id) ||
+      item.symbol === symbol,
+  );
+  const quote = quoteDiagnostics.find((item) => item.symbol === symbol);
+  const displayName =
+    quote?.display_name ??
+    quote?.name ??
+    (candidate ? decisionCandidateDisplayName(candidate) : null);
+  if (!displayName || displayName === symbol) {
+    return symbol || '--';
+  }
+  return `${displayName}（${symbol}）`;
+}
+
+function tradingPlanManualIntentSummary(
+  tradingPlan: DailyTradingPlanResponse,
+  candidates: DecisionCandidate[],
+  quoteDiagnostics: QuoteDiagnosticItem[],
+  locale: Locale,
+) {
+  const intents = tradingPlan.order_intents.filter(
+    (intent) => intent.submission_status === 'manual_confirmation_required',
+  );
+  const visibleIntents = intents.slice(0, 3);
+  const formatter = new Intl.NumberFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    maximumFractionDigits: 4,
+  });
+  const summaries = visibleIntents.map((intent) =>
+    [
+      formatPublicStatus(intent.side, locale),
+      tradingPlanIntentInstrumentLabel(intent, candidates, quoteDiagnostics),
+      formatter.format(intent.estimated_quantity),
+    ].join(' · '),
+  );
+  const remaining = intents.length - visibleIntents.length;
+  if (remaining > 0) {
+    summaries.push(
+      locale === 'zh'
+        ? `另 ${remaining} 笔待确认`
+        : `${remaining} more awaiting confirmation`,
+    );
+  }
+  return summaries.join(locale === 'zh' ? '；' : '; ');
 }
 
 function operationsTargetHref(target: string | undefined) {
@@ -810,6 +866,28 @@ function operationsQueueTarget(
     return 'risk';
   }
   return primarySubsystem?.target ?? operations?.primary_target;
+}
+
+function operationsDuplicatesTradingPlanReview(
+  operations: OperationsTodayResponse | null | undefined,
+  tradingPlan: DailyTradingPlanResponse | null | undefined,
+  primarySubsystem: OperationsTodayResponse['subsystems'][number] | undefined,
+) {
+  if (!operations || !tradingPlan) {
+    return false;
+  }
+  const operationsManualReady = operations.daily_plan.manual_ready_count;
+  const nextAction = operationsPrimaryNextAction(operations, primarySubsystem);
+  return (
+    operations.conclusion_status === 'manual_action_required' &&
+    operationsQueueTarget(operations, primarySubsystem) === 'trading' &&
+    (nextAction === 'review_manual_order_intents' ||
+      nextAction === 'review_manual_confirmation') &&
+    operations.daily_plan.blocked_count === 0 &&
+    tradingPlan.blocked_count === 0 &&
+    operationsManualReady > 0 &&
+    tradingPlan.manual_ready_count === operationsManualReady
+  );
 }
 
 function operationsStatusTitle(
@@ -1964,7 +2042,6 @@ function DashboardTodayQueue({
   const decisionCandidateDetail = leadingCandidate
     ? `${decisionActionLabel} · ${decisionCandidateDisplayName(leadingCandidate)}`
     : labels.strategyCandidateEmptyDetail;
-  const firstOrderIntent = tradingPlan?.order_intents?.[0];
   const cashShortfall = tradingPlan
     ? tradingPlan.order_intents.reduce(
         (total, intent) => total + Math.max(intent.cash_shortfall ?? 0, 0),
@@ -1991,11 +2068,12 @@ function DashboardTodayQueue({
             formatCurrencyValue(cashShortfall),
           )
         : (tradingPlan?.manual_ready_count ?? 0) > 0
-          ? firstOrderIntent
-            ? labels.tradingPlanManualIntentDetail(
-                formatPublicStatus(firstOrderIntent.side, locale),
-                String(firstOrderIntent.symbol ?? '--'),
-                firstOrderIntent.estimated_quantity,
+          ? tradingPlan && tradingPlan.order_intents.length > 0
+            ? tradingPlanManualIntentSummary(
+                tradingPlan,
+                candidates,
+                quoteDiagnostics,
+                locale,
               )
             : labels.tradingPlanManualReadyDetail(
                 tradingPlan?.manual_ready_count ?? 0,
@@ -2072,8 +2150,13 @@ function DashboardTodayQueue({
       : operationsToday?.conclusion_status === 'degraded'
         ? 'watch'
         : 'normal';
+  const hideDuplicateOperationsReview = operationsDuplicatesTradingPlanReview(
+    operationsToday,
+    tradingPlan,
+    operationsPrimarySubsystem,
+  );
 
-  const items: TodayQueueItem[] = [
+  const allItems: TodayQueueItem[] = [
     {
       key: 'operations',
       title: operationsTodayError
@@ -2197,6 +2280,9 @@ function DashboardTodayQueue({
           : 'watch',
     },
   ];
+  const items = allItems.filter(
+    (item) => !(hideDuplicateOperationsReview && item.key === 'operations'),
+  );
   const priorityGroups = TODAY_QUEUE_PRIORITY_ORDER.map((priority) => ({
     priority,
     items: items.filter((item) => item.priority === priority),
@@ -2832,14 +2918,9 @@ export function PortfolioPage() {
         (sum, item) => sum + item.market_value,
         0,
       ),
-      total_today_change: group.items.some(
-        (item) => item.today_change === null,
-      )
+      total_today_change: group.items.some((item) => item.today_change === null)
         ? null
-        : group.items.reduce(
-            (sum, item) => sum + (item.today_change ?? 0),
-            0,
-          ),
+        : group.items.reduce((sum, item) => sum + (item.today_change ?? 0), 0),
       total_since_buy_pnl: group.items.reduce(
         (sum, item) => sum + item.since_buy_pnl,
         0,

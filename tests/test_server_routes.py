@@ -8678,11 +8678,11 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
     assert response["summary"]["candidate_count"] == 2
     assert response["summary"]["excluded_daily_count"] == 1
     assert [candidate["symbol"] for candidate in response["candidates"]] == [
-        "600519",
         "510300",
+        "600519",
     ]
-    assert response["candidates"][1]["asset_class"] == "fund"
-    assert response["candidates"][1]["evidence"]["data_freshness"]["status"] == "live"
+    assert response["candidates"][0]["asset_class"] == "fund"
+    assert response["candidates"][0]["evidence"]["data_freshness"]["status"] == "live"
     assert response["excluded_daily_symbols"] == ["019999"]
     assert response["no_action_reasons"] == []
 

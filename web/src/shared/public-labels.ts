@@ -164,6 +164,10 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     account_truth_gate_pass: 'Account truth gate must pass',
     account_truth_score_unavailable:
       'Account truth score is unavailable because no broker evidence has been staged',
+    account_truth_evidence_predates_latest_ledger:
+      'Broker evidence predates the latest local ledger fact',
+    reimport_broker_statement_after_latest_ledger_fact:
+      'Import a broker statement captured after the latest local ledger fact',
     after_cost_report: 'After-cost report',
     account_truth: 'Account truth',
     cash: 'Cash',
@@ -269,6 +273,10 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     account_truth_gate_pass: '账户事实闸门需要通过',
     account_truth_score_unavailable:
       '缺少已暂存的券商证据，暂时无法计算账户事实分',
+    account_truth_evidence_predates_latest_ledger:
+      '券商证据早于最新本地账本事实',
+    reimport_broker_statement_after_latest_ledger_fact:
+      '请导入覆盖最新本地账本事实的券商流水',
     after_cost_report: '成本后报告',
     account_truth: '账户事实',
     cash: '现金',
