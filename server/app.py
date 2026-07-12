@@ -192,6 +192,13 @@ async def lifespan(app: FastAPI):
                 migrated_count,
             )
     state.db = db
+    try:
+        db.publish_current_valuation_snapshot_sync()
+    except Exception:
+        logger.warning(
+            "Failed to publish startup valuation snapshot; financial reads must fail closed",
+            exc_info=True,
+        )
 
     # 初始化 WebSocket hub
     hub = ConnectionHub()

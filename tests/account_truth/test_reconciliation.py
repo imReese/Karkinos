@@ -451,10 +451,107 @@ def test_reconciliation_cost_basis_context_explains_methods_and_precision(
         "broker_cost_basis_method": "broker_remaining_cost",
         "karkinos_cost_basis_method": "broker_remaining_cost",
         "comparison_unit": "per_share_cost_basis",
-        "comparison_precision": "decimal_string_no_rounding",
+        "comparison_precision": "broker_display_half_unit",
         "precision_limitation": (
             "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
         ),
+        "broker_decimal_places": "2",
+        "applied_tolerance": "0.005",
+        "raw_difference": "0.0000",
+        "precision_match_policy": "broker_display_precision",
     }
     assert "per-share" in cost_basis_item.detail
     assert "precision" in cost_basis_item.detail
+
+
+def test_reconciliation_cost_basis_uses_broker_display_precision(tmp_path) -> None:
+    statement = COMPONENT_STATEMENT.replace(
+        ",0,8.80,synthetic position snapshot",
+        ",400,25.4468,synthetic position snapshot",
+    )
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(statement)
+    import_run = repository.save_preview(preview, source_name="display-precision.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("400"),
+                cost_basis=Decimal("25.446762125"),
+                cost_basis_method="broker_remaining_cost",
+            )
+        ],
+    )
+
+    item = next(item for item in report.items if item.category == "cost_basis")
+    assert item.status == "pass"
+    assert item.difference == "0"
+    assert item.detail_context["broker_decimal_places"] == "4"
+    assert item.detail_context["applied_tolerance"] == "0.00005"
+    assert item.detail_context["raw_difference"] == "0.000037875"
+
+
+def test_reconciliation_cost_basis_rejects_difference_beyond_display_precision(
+    tmp_path,
+) -> None:
+    statement = COMPONENT_STATEMENT.replace(
+        ",0,8.80,synthetic position snapshot",
+        ",400,25.4468,synthetic position snapshot",
+    )
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(statement)
+    import_run = repository.save_preview(preview, source_name="display-mismatch.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("400"),
+                cost_basis=Decimal("25.4467"),
+                cost_basis_method="broker_remaining_cost",
+            )
+        ],
+    )
+
+    item = next(item for item in report.items if item.category == "cost_basis")
+    assert item.status == "mismatch"
+    assert item.difference == "0.0001"
+
+
+def test_reconciliation_cost_basis_method_mismatch_remains_strict(tmp_path) -> None:
+    statement = COMPONENT_STATEMENT.replace(
+        ",0,8.80,synthetic position snapshot",
+        ",400,25.4468,synthetic position snapshot",
+    )
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(statement)
+    import_run = repository.save_preview(preview, source_name="method-mismatch.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("10196.40"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="SYN001",
+                quantity=Decimal("400"),
+                cost_basis=Decimal("25.446762125"),
+                cost_basis_method="moving_average_buy_cost",
+            )
+        ],
+    )
+
+    item = next(item for item in report.items if item.category == "cost_basis")
+    assert item.status == "mismatch"
+    assert item.difference == "0.000037875"
+    assert item.detail_context["comparison_precision"] == ("decimal_string_no_rounding")

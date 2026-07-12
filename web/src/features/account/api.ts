@@ -51,6 +51,14 @@ export type AccountOverview = {
   refresh_policy?: string | null;
   using_persistent_cache?: boolean;
   daily_operations?: DailyOperationsSummary | null;
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_trade_date?: string | null;
+  valuation_policy?: string | null;
+  valuation_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
 };
 
 export type DailyOperationsSummary = {
@@ -96,6 +104,14 @@ export type EquitySeriesPoint = {
   stale_reason?: string | null;
   using_persistent_cache?: boolean;
   nav_date?: string | null;
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_trade_date?: string | null;
+  valuation_policy?: string | null;
+  valuation_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
 };
 
 export type EquityCurveRange = '1d' | '5d' | '1m' | '6m' | '1y' | 'all';
@@ -231,6 +247,14 @@ export type ExplainabilityResponse = {
       asset_class?: string | null;
     }>;
   }>;
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_trade_date?: string | null;
+  valuation_policy?: string | null;
+  valuation_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
 };
 
 export type RiskWorkspaceResponse = {

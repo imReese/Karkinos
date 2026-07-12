@@ -441,24 +441,12 @@ def _cost_basis_items(
     }
     symbols = sorted(set(broker_cost_basis) | set(karkinos_cost_basis))
     return [
-        _item(
-            category="cost_basis",
+        _cost_basis_item(
             broker_value=broker_cost_basis.get(symbol),
             karkinos_value=karkinos_cost_basis.get(symbol),
-            difference=_difference(
-                broker_cost_basis.get(symbol), karkinos_cost_basis.get(symbol)
-            ),
-            suggested_review_action="review_cost_basis_difference",
+            broker_cost_basis_method=broker_cost_basis_methods.get(symbol, ""),
+            karkinos_cost_basis_method=karkinos_cost_basis_methods.get(symbol, ""),
             symbol=symbol,
-            detail_code="account_truth.cost_basis_compared",
-            detail=_cost_basis_detail(
-                broker_cost_basis_methods.get(symbol, ""),
-                karkinos_cost_basis_methods.get(symbol, ""),
-            ),
-            detail_context=_cost_basis_context(
-                broker_cost_basis_methods.get(symbol, ""),
-                karkinos_cost_basis_methods.get(symbol, ""),
-            ),
         )
         for symbol in symbols
     ]
@@ -540,6 +528,61 @@ def _cost_basis_context(
             "broker_display_precision_fee_allocation_tax_timing_transfer_fee_rounding"
         ),
     }
+
+
+def _cost_basis_item(
+    *,
+    broker_value: Decimal | None,
+    karkinos_value: Decimal | None,
+    broker_cost_basis_method: str,
+    karkinos_cost_basis_method: str,
+    symbol: str,
+) -> ReconciliationItem:
+    difference = _difference(broker_value, karkinos_value)
+    detail_context = _cost_basis_context(
+        broker_cost_basis_method,
+        karkinos_cost_basis_method,
+    )
+    tolerance = RECONCILIATION_TOLERANCE
+    methods_match = (
+        broker_cost_basis_method.strip().lower() == "broker_remaining_cost"
+        and karkinos_cost_basis_method.strip().lower() == "broker_remaining_cost"
+    )
+    if methods_match and broker_value is not None and karkinos_value is not None:
+        decimal_places = max(0, -broker_value.as_tuple().exponent)
+        display_half_unit = Decimal("0.5") * (Decimal("0.1") ** decimal_places)
+        tolerance = min(display_half_unit, MONEY_RECONCILIATION_TOLERANCE)
+        detail_context.update(
+            {
+                "comparison_precision": "broker_display_half_unit",
+                "broker_decimal_places": str(decimal_places),
+                "applied_tolerance": _decimal_to_text(tolerance),
+                "raw_difference": _decimal_to_text(difference),
+                "precision_match_policy": "broker_display_precision",
+            }
+        )
+
+    normalized_difference = Decimal("0") if abs(difference) <= tolerance else difference
+    status: ReconciliationStatus = (
+        "pass" if normalized_difference == Decimal("0") else "mismatch"
+    )
+    return ReconciliationItem(
+        category="cost_basis",
+        status=status,
+        broker_value=_decimal_to_text(broker_value),
+        karkinos_value=_decimal_to_text(karkinos_value),
+        difference=_decimal_to_text(normalized_difference),
+        suggested_review_action=(
+            "" if status == "pass" else "review_cost_basis_difference"
+        ),
+        symbol=symbol,
+        detail_code="account_truth.cost_basis_compared",
+        detail=_cost_basis_detail(
+            broker_cost_basis_method,
+            karkinos_cost_basis_method,
+        ),
+        detail_context=detail_context,
+    )
 
 
 def _item(

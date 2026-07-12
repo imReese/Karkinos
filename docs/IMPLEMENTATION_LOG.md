@@ -4,6 +4,28 @@ This file keeps historical implementation progress out of the strategic goal
 page and roadmap. Entries are factual implementation notes, not user-facing
 roadmap promises.
 
+## Cross-Cutting Reliability
+
+- 2026-07-12: Financial data paths now use persisted observations and
+  content-addressed valuation policy v2. The snapshot freezes confirmed
+  close/NAV, previous-close baselines, original intraday observations, ledger
+  cutoff, ingestion-run references, and exact effective timestamps. Holdings,
+  intraday/daily equity, Overview, and Explainability share one canonical daily
+  performance calculation; known fees are attributed rather than labeled as
+  residual; missing baselines propagate unavailable rather than zero; current
+  prices cannot leak into historical reconstruction; and closed instruments no
+  longer degrade later dates. Quote-run completion, ledger insertion, broker
+  settlement, and startup publish replayable snapshots, while a publication
+  pointer blocks newer unpublished facts with HTTP 503. Assumptions: naive
+  China-market timestamps use `Asia/Shanghai`; a persisted `1d` bar is confirmed
+  close/NAV evidence; same-day sells remain fail-closed until canonical lot
+  attribution exists. Validation: 1,131 backend tests, 36 affected Web tests,
+  production Web build, real-account cross-surface accounting invariants,
+  snapshot-id replay, and `git diff --check` passed. Risk impact: valuation and
+  quote adaptation affect HIGH/CRITICAL portfolio paths, so all direct surfaces
+  were migrated and tested together. This change adds no broker-write path,
+  execution authority, or automatic real-money order behavior.
+
 ## v1.8 Progress
 
 - 2026-07-11: Stage 3.5 adds an atomic, non-authorizing controlled-session

@@ -79,9 +79,7 @@ def _scheduler_runtime(
             }
         ),
         watchlist=(
-            [(Symbol("600519"), AssetClass.STOCK)]
-            if watchlist is None
-            else watchlist
+            [(Symbol("600519"), AssetClass.STOCK)] if watchlist is None else watchlist
         ),
         instruments={} if instruments is None else instruments,
         data_manager=data_manager if data_manager is not None else SimpleNamespace(),
@@ -237,6 +235,7 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert metadata["provider_status"] == "live"
     assert quotes[0]["symbol"] == "600519"
     assert quotes[0]["captured_reason"] == "scheduler_poll"
+    assert quotes[0]["fetch_run_id"] == runs[0]["run_id"]
     assert latest is not None
     assert latest["symbol"] == "600519"
     assert latest["asset_type"] == "stock"
@@ -245,6 +244,7 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert latest["provider_status"] == "live"
     assert latest["quote_status"] == "live"
     assert latest["captured_reason"] == "scheduler_poll"
+    assert latest["fetch_run_id"] == runs[0]["run_id"]
     assert instrument is not None
     assert instrument["display_name"] == "贵州茅台"
     assert instrument["provider_name"] == "akshare"
@@ -620,9 +620,7 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
         Symbol("600001"),
         Symbol("019999"),
     }
-    assert {call[1]["end"].date().isoformat() for call in bar_calls} == {
-        "2026-06-17"
-    }
+    assert {call[1]["end"].date().isoformat() for call in bar_calls} == {"2026-06-17"}
 
 
 def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_path):
@@ -674,6 +672,7 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
         "_sync_fund_nav_quotes",
         lambda self: None,
     )
+
     class FakeDateTime(datetime):
         @classmethod
         def now(cls, tz=None):

@@ -2832,10 +2832,14 @@ export function PortfolioPage() {
         (sum, item) => sum + item.market_value,
         0,
       ),
-      total_today_change: group.items.reduce(
-        (sum, item) => sum + (item.today_change ?? 0),
-        0,
-      ),
+      total_today_change: group.items.some(
+        (item) => item.today_change === null,
+      )
+        ? null
+        : group.items.reduce(
+            (sum, item) => sum + (item.today_change ?? 0),
+            0,
+          ),
       total_since_buy_pnl: group.items.reduce(
         (sum, item) => sum + item.since_buy_pnl,
         0,

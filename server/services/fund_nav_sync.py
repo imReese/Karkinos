@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from core.types import AssetClass, Symbol
 from data.manager import build_sources
+from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ class FundNavSyncResult:
     skipped: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
     quotes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    run_id: str | None = None
 
 
 def _is_fund_asset_class(asset_class: AssetClass | str) -> bool:
@@ -122,7 +125,13 @@ def _normalize_snapshot(
     }
 
 
-def _persist_fund_quote(db: Any, quote: dict[str, Any], *, now: datetime) -> None:
+def _persist_fund_quote(
+    db: Any,
+    quote: dict[str, Any],
+    *,
+    now: datetime,
+    fetch_run_id: str,
+) -> None:
     if hasattr(db, "save_quote_snapshot_sync"):
         db.save_quote_snapshot_sync(
             symbol=quote["symbol"],
@@ -136,6 +145,7 @@ def _persist_fund_quote(db: Any, quote: dict[str, Any], *, now: datetime) -> Non
             provider_status=quote["provider_status"],
             captured_reason=quote["captured_reason"],
             nav_date=quote["nav_date"],
+            fetch_run_id=fetch_run_id,
         )
     if hasattr(db, "upsert_latest_quote_sync"):
         db.upsert_latest_quote_sync(
@@ -151,6 +161,7 @@ def _persist_fund_quote(db: Any, quote: dict[str, Any], *, now: datetime) -> Non
             captured_at=now.isoformat(),
             captured_reason=quote["captured_reason"],
             nav_date=quote["nav_date"],
+            fetch_run_id=fetch_run_id,
             metadata={
                 "source": quote["source"],
                 "quote_source": quote["quote_source"],
@@ -207,10 +218,35 @@ def refresh_fund_nav_quotes(
     if not due_symbols:
         return result
 
+    run_id = f"fund_nav_sync:{current.isoformat()}:{uuid.uuid4().hex}"
+    result.run_id = run_id
+    create_run = getattr(db, "create_quote_fetch_run", None)
+    finish_run = getattr(db, "finish_quote_fetch_run", None)
+    if callable(create_run):
+        create_run(
+            run_id=run_id,
+            started_at=current.isoformat(),
+            trigger="fund_nav_sync",
+            provider=str(getattr(config, "data_source", "akshare") or "akshare"),
+            asset_type=AssetClass.FUND.value,
+            symbol_count=len(due_symbols),
+            status="running",
+            metadata={"requested_symbols": due_symbols},
+        )
+
     sources = _source_chain(config)
     if not sources:
         for symbol in due_symbols:
             result.failed[symbol] = "no fund quote source configured"
+        if callable(finish_run):
+            finish_run(
+                run_id=run_id,
+                finished_at=current.isoformat(),
+                status="failed",
+                failure_count=len(due_symbols),
+                error_message="no fund quote source configured",
+                metadata={"requested_symbols": due_symbols},
+            )
         return result
 
     for symbol in due_symbols:
@@ -225,7 +261,12 @@ def refresh_fund_nav_quotes(
                     now=current,
                 )
                 if db is not None:
-                    _persist_fund_quote(db, quote, now=current)
+                    _persist_fund_quote(
+                        db,
+                        quote,
+                        now=current,
+                        fetch_run_id=run_id,
+                    )
                 cached_quote = {
                     "price": quote["price"],
                     "volume": quote["volume"],
@@ -253,4 +294,44 @@ def refresh_fund_nav_quotes(
                 )
         if last_error is not None:
             result.failed[symbol] = last_error
+
+    valuation_snapshot_id: str | None = None
+    publication_error: str | None = None
+    try:
+        valuation_snapshot = build_current_valuation_snapshot(db, persist=True)
+        valuation_snapshot_id = str(valuation_snapshot["snapshot_id"])
+    except Exception as exc:
+        publication_error = "valuation_snapshot_persistence_failed"
+        result.failed["__valuation_snapshot__"] = publication_error
+        logger.exception("Failed to publish valuation snapshot after fund NAV sync")
+
+    if callable(finish_run):
+        success_count = len(result.refreshed)
+        symbol_failure_count = sum(
+            1 for symbol in due_symbols if symbol in result.failed
+        )
+        failure_count = symbol_failure_count + (1 if publication_error else 0)
+        if publication_error or (failure_count and not success_count):
+            status = "failed"
+        elif failure_count:
+            status = "partial_success"
+        else:
+            status = "success"
+        finish_run(
+            run_id=run_id,
+            finished_at=datetime.now().isoformat(),
+            status=status,
+            success_count=success_count,
+            failure_count=failure_count,
+            error_message=publication_error,
+            metadata={
+                "requested_symbols": due_symbols,
+                "refreshed_symbols": result.refreshed,
+                "failed_symbols": sorted(
+                    symbol for symbol in result.failed if not symbol.startswith("__")
+                ),
+                "valuation_snapshot_id": valuation_snapshot_id,
+                "facts_persisted_only": True,
+            },
+        )
     return result

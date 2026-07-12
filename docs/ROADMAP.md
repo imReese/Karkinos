@@ -35,6 +35,18 @@ foundation only; they do not enable L4 broker submission or any v1.8 execution
 authority. v1.8 planning and non-submitting policy-contract work may proceed
 while all broker-write capabilities remain disabled.
 
+Cross-cutting financial-data reliability hardening completed on 2026-07-12:
+persisted observations became the only authoritative read source; content-
+addressed valuation v2 freezes confirmed close/NAV, previous-close baselines,
+ledger cutoff, and evidence fingerprints; quote/ledger/startup commit boundaries
+publish replayable snapshots; unpublished facts fail closed; canonical daily
+performance now reconciles Holdings, Equity Curve, Overview, and Explainability;
+and historical reconstruction rejects future-price fallback and closed-position
+quote contamination. Final validation passed 1,131 backend tests, 36 affected
+Web tests, the production Web build, real-account cross-surface invariants, and
+snapshot-id replay. This improves evidence reliability only and grants no broker
+submission or execution authority.
+
 ## Automation Maturity Track
 
 Karkinos is moving toward a professional automated-quant workflow whose purpose

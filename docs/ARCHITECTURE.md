@@ -81,6 +81,124 @@ and candidate actions, but it cannot submit broker orders. Broker connectors
 can contribute evidence, but they cannot mutate production ledger state without
 review and reconciliation.
 
+## Financial Data Integrity and Valuation
+
+Financial accuracy takes precedence over freshness and UI convenience across
+market data, account facts, valuation, PnL, risk, paper/shadow evidence,
+reconciliation, and controlled execution.
+
+### Authority Boundary
+
+External providers and broker connectors produce observations, not account
+truth. A collector must persist each observation with its provider, effective
+timestamp, received timestamp, status, and ingestion run id before an
+authoritative calculation may consume it. Runtime caches are provisional
+telemetry only. Query endpoints are pure reads: they do not contact providers,
+schedule refreshes, or mutate market-data state.
+
+The authoritative flow is:
+
+```text
+provider or broker observation
+-> auditable ingestion run
+-> persisted observation
+-> immutable valuation snapshot
+-> canonical calculation
+-> Overview / Portfolio / Decision / Operations / Explainability projection
+```
+
+### Immutable Valuation Identity
+
+Every authoritative result binds:
+
+* `valuation_snapshot_id`, effective `as_of`, and market `trade_date`;
+* valuation-policy version;
+* exact selected quote, close, or NAV observation for each instrument;
+* exact previous-close/NAV baseline used for daily attribution;
+* ledger cutoff and ledger fingerprint;
+* quote-set fingerprint and completeness/freshness/estimation status.
+
+Policy `karkinos.persisted_valuation.v2` freezes both the valuation price and
+daily baseline in the content address. A persisted same-day `1d` market bar is
+treated as confirmed close/NAV evidence with an effective China-market close
+time of `15:00 Asia/Shanghai`; the original intraday observation remains in the
+snapshot for audit. Partial intraday bars must never be stored under that `1d`
+confirmed-evidence contract.
+
+`valuation_as_of` follows the newest selected valuation or ledger fact.
+`valuation_trade_date` follows market evidence and is not advanced by a later
+non-market ledger event. Request time never changes fact time. Historical
+reconstructions do not inherit the current snapshot id and current quotes are
+never backfilled into past dates.
+
+Snapshots are published only at committed fact boundaries:
+
+* successful or partially successful quote-ingestion completion;
+* ledger-entry insertion;
+* broker-settlement confirmation;
+* application-startup backfill for facts created before this contract.
+
+Successful publication advances the persisted
+`valuation_snapshot_publication` pointer. If committed facts imply a different
+content id before publication succeeds, authoritative financial reads return
+HTTP `503`. They never expose an id that cannot be resolved through
+`/api/portfolio/valuation-snapshots/{snapshot_id}`. A quote batch whose facts
+persist but whose snapshot cannot publish is recorded as failed, not successful.
+
+### Canonical Daily Accounting
+
+Daily account change obeys one equation:
+
+```text
+ending_equity - starting_equity = event_flow + market_move
+
+market_move = symbol_price_contribution
+            + trading_fees_and_taxes
+            + other_attributed_components
+            + explicit_residual
+```
+
+Holdings, asset-class totals, symbol contributors, Overview, intraday/daily
+equity, and Explainability are projections of the same canonical daily
+performance result. Known fees belong to the traded asset class; `Residual` is
+reserved for genuinely unexplained differences. A residual above tolerance is
+a data-quality failure, not a rounding bucket.
+
+Current positions split overnight quantity from same-day buy lots. Overnight
+quantity uses the persisted previous close; same-day lots use their actual
+execution cost including the complete persisted fee breakdown. Same-day sells
+remain unavailable until realized and remaining-lot attribution can be
+performed deterministically.
+
+### Fail-Closed Rules
+
+Authoritative calculations block or degrade explicitly when:
+
+* an ingestion batch is incomplete or cannot link observations to its run;
+* a required quote, close, NAV, ledger entry, fee, or corporate action is
+  missing;
+* confirmed evidence is required but only stale or estimated evidence exists;
+* same-day trading cannot be attributed deterministically;
+* account reconciliation has unresolved material differences;
+* current committed facts have not produced a replayable snapshot.
+
+Missing daily baselines propagate as unavailable (`null` / `--`), never zero.
+Historical reconstruction requests prices only for positions open on that date,
+so a closed instrument cannot degrade later valuations.
+
+### Deterministic Verification
+
+Trading-related changes cover the relevant cases below:
+
+* overnight holding with no trade;
+* full same-day buy and partial same-day addition;
+* same-day sell or buy/sell fail-closed behavior;
+* fees and taxes;
+* deposits, withdrawals, income, and manual adjustments;
+* missing, stale, estimated, and unpublished observations;
+* cross-endpoint accounting invariants;
+* deterministic replay from a frozen snapshot and ledger cutoff.
+
 ## Current Core Flows
 
 ### Research and Strategy Runtime

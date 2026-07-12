@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Karkinos** (8676 symbols, 30052 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Karkinos** (9339 symbols, 32147 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -152,3 +152,36 @@ Do not make real-money automatic trading the default. Manual confirmation must r
 
 Every trading-related change should include explicit assumptions, deterministic tests or validation commands, and a short explanation of risk impact.
 <!-- karkinos:end -->
+
+<!-- financial-data-integrity:start -->
+# Financial Data Integrity — Mandatory Rule
+
+Karkinos is a financial tool. Accuracy, provenance, deterministic replay, and
+fail-closed behavior take precedence over freshness or UI convenience.
+
+For account, valuation, PnL, risk, paper/shadow, reconciliation, and execution
+workflows:
+
+1. Persisted facts are the source of truth. Runtime caches and provider
+   responses are ingestion inputs, never authoritative account facts.
+2. Read/query endpoints must not contact market-data providers or silently
+   refresh facts. Refresh is an explicit ingestion command with an auditable
+   run id.
+3. Every derived result must bind an explicit market-data as-of/snapshot and a
+   ledger cutoff so it can be deterministically replayed from the database.
+4. One financial concept must have one canonical implementation. Overview,
+   Portfolio, Decision, Operations, and Explainability surfaces may project the
+   result but must not independently recalculate it.
+5. Cross-surface accounting invariants must be tested. Asset, symbol, fee,
+   event-flow, and residual components must reconcile to the account-level
+   change.
+6. Missing, stale, estimated, partial-batch, or unreconciled evidence must be
+   explicit and must block authoritative results. Never substitute a plausible
+   value silently.
+7. In-memory values may be shown only as clearly labeled provisional telemetry;
+   they must not enter risk gates, account truth, performance evidence, or
+   execution authority until persisted and validated.
+
+The detailed contract is documented in
+`docs/ARCHITECTURE.md#financial-data-integrity-and-valuation`.
+<!-- financial-data-integrity:end -->

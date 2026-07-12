@@ -9,11 +9,26 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 _DB_DIR = Path("data/store")
 _DB_PATH = _DB_DIR / "app.db"
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_MIN_QUOTE_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _quote_observation_rank(row: dict[str, Any]) -> tuple[datetime, int]:
+    """Order quote observations by instant, never by ISO string spelling."""
+    raw = str(row.get("timestamp") or row.get("quote_timestamp") or "").strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        parsed = _MIN_QUOTE_TIMESTAMP
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
+    return parsed.astimezone(timezone.utc), int(row.get("id") or 0)
 
 
 def _ensure_column(
@@ -139,6 +154,8 @@ class AppDatabase:
             _ensure_column(conn, "quote_snapshots", "provider_status", "TEXT")
             _ensure_column(conn, "quote_snapshots", "captured_reason", "TEXT")
             _ensure_column(conn, "quote_snapshots", "nav_date", "TEXT")
+            _ensure_column(conn, "quote_snapshots", "fetch_run_id", "TEXT")
+            _ensure_column(conn, "latest_quotes", "fetch_run_id", "TEXT")
             _ensure_column(conn, "ledger_entries", "gross_amount", "REAL")
             _ensure_column(conn, "ledger_entries", "net_cash_impact", "REAL")
             _ensure_column(conn, "ledger_entries", "fee_breakdown_json", "TEXT")
@@ -1522,7 +1539,7 @@ class AppDatabase:
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Persist one broker gateway audit event."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
@@ -1937,7 +1954,7 @@ class AppDatabase:
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Persist an idempotent automation alert by alert key."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
@@ -2848,6 +2865,69 @@ class AppDatabase:
 
     # ---------- Quote Fetch Runs ----------
 
+    def save_valuation_snapshot_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist one immutable, content-addressed valuation snapshot."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO valuation_snapshots (
+                    snapshot_id, as_of, trade_date, valuation_policy,
+                    ledger_cutoff_id, ledger_fingerprint, quote_set_fingerprint,
+                    status, quotes_json, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["snapshot_id"],
+                    payload["as_of"],
+                    payload["trade_date"],
+                    payload["valuation_policy"],
+                    int(payload.get("ledger_cutoff_id") or 0),
+                    payload["ledger_fingerprint"],
+                    payload["quote_set_fingerprint"],
+                    payload["status"],
+                    _serialize_metadata_json(payload.get("quotes") or []),
+                    _serialize_metadata_json(payload.get("metadata") or {}),
+                    now,
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM valuation_snapshots WHERE snapshot_id = ?",
+                (payload["snapshot_id"],),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("valuation snapshot persistence failed")
+            return dict(row)
+
+    def publish_current_valuation_snapshot_sync(self) -> dict[str, Any]:
+        """Build and persist the immutable snapshot for committed facts."""
+        from server.services.valuation_snapshot import build_current_valuation_snapshot
+
+        snapshot = build_current_valuation_snapshot(self, persist=True)
+        self.set_runtime_control_sync(
+            "valuation_snapshot_publication",
+            {
+                "status": "ready",
+                "snapshot_id": snapshot["snapshot_id"],
+                "as_of": snapshot["as_of"],
+            },
+        )
+        return snapshot
+
+    def get_valuation_snapshot_sync(self, snapshot_id: str) -> dict[str, Any] | None:
+        """Read one immutable valuation snapshot by content id."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM valuation_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    # ---------- Quote Fetch Runs ----------
+
     def create_quote_fetch_run(
         self,
         *,
@@ -2929,6 +3009,30 @@ class AppDatabase:
         metadata: dict[str, Any] | str | None = None,
     ) -> dict[str, Any] | None:
         """Mark a quote fetch run as finished and return the updated row."""
+        successful_statuses = {"success", "partial", "partial_success"}
+        if success_count > 0 and status in successful_statuses:
+            try:
+                valuation_snapshot = self.publish_current_valuation_snapshot_sync()
+                metadata_value = _metadata_payload_value(metadata)
+                if isinstance(metadata_value, dict):
+                    metadata = {
+                        **metadata_value,
+                        "valuation_snapshot_id": valuation_snapshot["snapshot_id"],
+                    }
+            except Exception as exc:
+                logger.exception(
+                    "Failed to publish valuation snapshot for quote run %s", run_id
+                )
+                status = "failed"
+                error_message = (
+                    f"valuation snapshot publication failed: {type(exc).__name__}"
+                )
+                metadata_value = _metadata_payload_value(metadata)
+                if isinstance(metadata_value, dict):
+                    metadata = {
+                        **metadata_value,
+                        "valuation_snapshot_publication": "failed",
+                    }
         metadata_json = _serialize_metadata_json(metadata)
         metadata_payload = _metadata_payload_value(metadata)
         with sqlite3.connect(self._path) as conn:
@@ -3396,6 +3500,7 @@ class AppDatabase:
         stale_reason: str | None = None,
         captured_reason: str | None = None,
         nav_date: str | None = None,
+        fetch_run_id: str | None = None,
         metadata: dict[str, Any] | str | None = None,
     ) -> dict[str, Any] | None:
         """Upsert the current materialized quote for one instrument."""
@@ -3411,8 +3516,8 @@ class AppDatabase:
                     change_percent, volume, turnover, quote_timestamp,
                     quote_source, provider_name, provider_status, quote_status,
                     stale_reason, captured_at, captured_reason, nav_date,
-                    metadata_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    fetch_run_id, metadata_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(symbol, asset_type) DO UPDATE SET
                     price = excluded.price,
                     previous_close = excluded.previous_close,
@@ -3429,6 +3534,7 @@ class AppDatabase:
                     captured_at = excluded.captured_at,
                     captured_reason = excluded.captured_reason,
                     nav_date = excluded.nav_date,
+                    fetch_run_id = excluded.fetch_run_id,
                     metadata_json = excluded.metadata_json,
                     updated_at = excluded.updated_at
                 """,
@@ -3450,6 +3556,7 @@ class AppDatabase:
                     captured_at_value,
                     captured_reason,
                     nav_date,
+                    fetch_run_id,
                     metadata_json,
                     now,
                     now,
@@ -3533,6 +3640,7 @@ class AppDatabase:
         provider_status: str | None = None,
         captured_reason: str | None = None,
         nav_date: str | None = None,
+        fetch_run_id: str | None = None,
     ) -> None:
         """同步写入实时行情快照（后台线程调用）。"""
         with sqlite3.connect(self._path) as conn:
@@ -3541,9 +3649,9 @@ class AppDatabase:
                    (
                        symbol, asset_class, price, volume, timestamp, created_at,
                        quote_source, provider_name, quote_status, stale_reason,
-                       provider_status, captured_reason, nav_date
+                       provider_status, captured_reason, nav_date, fetch_run_id
                    )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     symbol,
                     asset_class,
@@ -3558,6 +3666,7 @@ class AppDatabase:
                     provider_status,
                     captured_reason,
                     nav_date,
+                    fetch_run_id,
                 ),
             )
             snapshot_id = cursor.lastrowid or 0
@@ -3583,6 +3692,7 @@ class AppDatabase:
                     "provider_status": provider_status,
                     "captured_reason": captured_reason,
                     "nav_date": nav_date,
+                    "fetch_run_id": fetch_run_id,
                 },
             )
             conn.commit()
@@ -3595,17 +3705,16 @@ class AppDatabase:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 """SELECT
-                        symbol, asset_class, price, volume, timestamp,
+                        id, symbol, asset_class, price, volume, timestamp,
                         quote_source, provider_name, quote_status, stale_reason,
-                        provider_status, captured_reason, nav_date
+                        provider_status, captured_reason, nav_date, fetch_run_id
                    FROM quote_snapshots
                    WHERE symbol = ?
-                   ORDER BY timestamp DESC, id DESC
-                   LIMIT 1""",
+                   ORDER BY id DESC""",
                 (symbol,),
             )
-            row = await cursor.fetchone()
-            return dict(row) if row else None
+            rows = [dict(row) for row in await cursor.fetchall()]
+            return max(rows, key=_quote_observation_rank) if rows else None
 
     def get_latest_quotes_sync(self) -> list[dict[str, Any]]:
         """同步获取各标的最新行情快照，供启动恢复使用。"""
@@ -3613,18 +3722,28 @@ class AppDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
                 SELECT
-                    qs.symbol, qs.asset_class, qs.price, qs.volume, qs.timestamp,
-                    qs.quote_source, qs.provider_name, qs.quote_status, qs.stale_reason,
-                    qs.provider_status, qs.captured_reason, qs.nav_date
-                FROM quote_snapshots qs
-                JOIN (
-                    SELECT symbol, MAX(timestamp) AS max_timestamp
-                    FROM quote_snapshots
-                    GROUP BY symbol
-                ) latest
-                ON qs.symbol = latest.symbol AND qs.timestamp = latest.max_timestamp
-                ORDER BY qs.symbol
+                    id, symbol, asset_class, price, volume, timestamp,
+                    quote_source, provider_name, quote_status, stale_reason,
+                    provider_status, captured_reason, nav_date, fetch_run_id,
+                    created_at
+                FROM quote_snapshots
+                ORDER BY id
                 """).fetchall()
+            selected: dict[str, dict[str, Any]] = {}
+            for raw_row in rows:
+                row = dict(raw_row)
+                existing = selected.get(str(row["symbol"]))
+                if existing is None or _quote_observation_rank(
+                    row
+                ) > _quote_observation_rank(existing):
+                    selected[str(row["symbol"])] = row
+            return [selected[symbol] for symbol in sorted(selected)]
+
+    def list_quote_snapshots_sync(self) -> list[dict[str, Any]]:
+        """List append-only quote observations for canonical snapshot selection."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM quote_snapshots ORDER BY id").fetchall()
             return [dict(row) for row in rows]
 
     def get_recent_quote_snapshots_sync(
@@ -3636,17 +3755,22 @@ class AppDatabase:
             rows = conn.execute(
                 """
                 SELECT
-                    symbol, asset_class, price, volume, timestamp,
+                    id, symbol, asset_class, price, volume, timestamp,
                     quote_source, provider_name, quote_status, stale_reason,
-                    provider_status, captured_reason, nav_date
+                    provider_status, captured_reason, nav_date, fetch_run_id,
+                    created_at
                 FROM quote_snapshots
                 WHERE symbol = ?
-                ORDER BY timestamp DESC, id DESC
-                LIMIT ?
+                ORDER BY id DESC
                 """,
-                (symbol, limit),
+                (symbol,),
             ).fetchall()
-            return [dict(row) for row in rows]
+            ordered = sorted(
+                (dict(row) for row in rows),
+                key=_quote_observation_rank,
+                reverse=True,
+            )
+            return ordered[:limit]
 
     def save_daily_close_snapshot_sync(
         self,
@@ -4199,7 +4323,14 @@ class AppDatabase:
                 payload=event_payload,
             )
             conn.commit()
-            return row_id
+        try:
+            self.publish_current_valuation_snapshot_sync()
+        except Exception:
+            logger.exception(
+                "Ledger entry %s committed but valuation snapshot publication failed",
+                row_id,
+            )
+        return row_id
 
     def get_ledger_entries_sync(
         self, limit: int = 50, offset: int = 0
@@ -4383,7 +4514,14 @@ class AppDatabase:
                 },
             )
             conn.commit()
-            return updated
+        try:
+            self.publish_current_valuation_snapshot_sync()
+        except Exception:
+            logger.exception(
+                "Ledger settlement %s committed but valuation snapshot publication failed",
+                entry_id,
+            )
+        return updated
 
     # ---------- Market Research ----------
 
@@ -4666,7 +4804,8 @@ CREATE TABLE IF NOT EXISTS quote_snapshots (
     stale_reason TEXT,
     provider_status TEXT,
     captured_reason TEXT,
-    nav_date TEXT
+    nav_date TEXT,
+    fetch_run_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS daily_close_snapshots (
@@ -4699,6 +4838,7 @@ CREATE TABLE IF NOT EXISTS latest_quotes (
     captured_at TEXT NOT NULL,
     captured_reason TEXT,
     nav_date TEXT,
+    fetch_run_id TEXT,
     metadata_json TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -4790,6 +4930,28 @@ CREATE INDEX IF NOT EXISTS idx_quote_fetch_runs_status
 ON quote_fetch_runs(status);
 CREATE INDEX IF NOT EXISTS idx_quote_fetch_runs_provider
 ON quote_fetch_runs(provider);
+
+CREATE TABLE IF NOT EXISTS valuation_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id TEXT NOT NULL UNIQUE,
+    as_of TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    valuation_policy TEXT NOT NULL,
+    ledger_cutoff_id INTEGER NOT NULL DEFAULT 0,
+    ledger_fingerprint TEXT NOT NULL,
+    quote_set_fingerprint TEXT NOT NULL,
+    status TEXT NOT NULL,
+    quotes_json TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_valuation_snapshots_as_of
+ON valuation_snapshots(as_of DESC);
+CREATE INDEX IF NOT EXISTS idx_valuation_snapshots_trade_date
+ON valuation_snapshots(trade_date DESC);
+CREATE INDEX IF NOT EXISTS idx_valuation_snapshots_status
+ON valuation_snapshots(status);
 
 CREATE TABLE IF NOT EXISTS event_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5371,6 +5533,7 @@ def _latest_quote_event_payload(row: sqlite3.Row) -> dict[str, Any]:
         "captured_at": row["captured_at"],
         "captured_reason": row["captured_reason"],
         "nav_date": row["nav_date"],
+        "fetch_run_id": row["fetch_run_id"],
         "metadata": _metadata_payload_value(row["metadata_json"]),
     }
 

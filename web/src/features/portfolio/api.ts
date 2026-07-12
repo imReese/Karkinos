@@ -131,6 +131,14 @@ export type PortfolioSnapshot = {
   positions: Position[];
   allocation: AllocationItem[];
   allocation_grouped: AllocationGroup[];
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_trade_date?: string | null;
+  valuation_policy?: string | null;
+  valuation_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
 };
 
 export type LiveHoldingItem = {
@@ -163,13 +171,21 @@ export type LiveHoldingGroup = {
   asset_class: string;
   label: string;
   total_market_value: number;
-  total_today_change: number;
+  total_today_change: number | null;
   total_since_buy_pnl: number;
   items: LiveHoldingItem[];
 };
 
 export type LiveHoldingsResponse = {
   groups: LiveHoldingGroup[];
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_trade_date?: string | null;
+  valuation_policy?: string | null;
+  valuation_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
 };
 
 export function usePositionsQuery() {
