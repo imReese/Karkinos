@@ -102,9 +102,9 @@ Stage 3.7 的只读可见性接口为：
 * `GET /api/automation/controlled-sessions/runtime-rate-limit/status`
 * `GET /api/automation/controlled-sessions/runtime-rate-limit/admissions`
 
-生产 `_service()` 明确使用 `session_provider=None`，因此 status 为等待认证 session issuance，
-且没有 POST admission 路由。内部 limiter 只供未来 session 服务调用；当前不能通过 API 获取
-admission、修改 OMS/账本、联系券商、提交或撤单。
+Stage 3.9 已将 `_service()` 接到持久化 runtime authority 的 token authentication provider，
+但仍没有 POST admission 路由。外部不能通过 API 获取 admission、修改 OMS/账本、联系券商、
+提交或撤单。
 
 Stage 3.8 的只读自动暂停可见性接口为：
 
@@ -112,9 +112,27 @@ Stage 3.8 的只读自动暂停可见性接口为：
 * `GET /api/automation/controlled-sessions/automatic-pause/events`
 * `GET /api/automation/controlled-sessions/automatic-pause/states/{session_id}`
 
-生产 `_service()` 明确使用 `session_provider=None` 和 `gate_provider=None`，没有 evaluate、pause
-或 resume 的 POST 路由。内部状态只允许首次写入 `paused`，门禁恢复不会自动改回 active；未来
+Stage 3.9 已把 `_service()` 的 session provider 接到持久化只读 resolver，但仍明确使用
+`gate_provider=None`，且没有 evaluate、pause 或 resume 的 POST 路由。内部状态只允许首次写入
+`paused`，门禁恢复不会自动改回 active；未来
 恢复必须经过新的操作员复核协议。该接口不签发 session、不修改 OMS/账本，也不联系券商。
+
+Stage 3.9 的 runtime authority 接口为：
+
+* `GET /api/automation/controlled-sessions/runtime-authority/status`
+* `POST /api/automation/controlled-sessions/runtime-authority/issuance/preview`
+* `POST/GET /api/automation/controlled-sessions/runtime-authority/sessions`
+* `GET /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}`
+* `POST /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/revocation/preview`
+* `POST /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/revocations`
+* `GET /api/automation/controlled-sessions/runtime-authority/revocations`
+
+签发和撤销分别要求 `issue_controlled_session` 与 `revoke_controlled_session` 的短时 Ed25519
+approval，并在签发/撤销请求中再次提交对应签名作为 possession proof。verification/history API
+不回显签名原文，公开 approval id 本身不能消费 session。runtime token 只在首次签发响应显示，
+禁止写入配置、日志或版本库；数据库只保存 salted hash。没有 resume/renew/widen/admit/broker
+submit/cancel 路由，session authority 不能扩大资本
+授权，也不会修改 OMS 或生产账本。
 
 ## broker_fee_schedule
 

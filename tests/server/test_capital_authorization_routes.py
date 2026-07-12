@@ -247,6 +247,24 @@ def test_operator_approval_routes_challenge_verify_and_list_without_authority(
             "artifact_fingerprint": "b" * 64,
         },
     )
+    issuance_challenge = client.post(
+        "/api/automation/capital-authority/operator-approvals/challenges",
+        json={
+            **challenge_request,
+            "action": "issue_controlled_session",
+            "artifact_type": "controlled_session_issuance",
+            "artifact_fingerprint": "c" * 64,
+        },
+    )
+    revocation_challenge = client.post(
+        "/api/automation/capital-authority/operator-approvals/challenges",
+        json={
+            **challenge_request,
+            "action": "revoke_controlled_session",
+            "artifact_type": "controlled_session_revocation",
+            "artifact_fingerprint": "d" * 64,
+        },
+    )
 
     assert status.status_code == 200
     assert status.json()["enabled_identity_count"] == 1
@@ -254,16 +272,26 @@ def test_operator_approval_routes_challenge_verify_and_list_without_authority(
     assert (
         "accept_broker_connector_soak_promotion" in status.json()["supported_actions"]
     )
+    assert "issue_controlled_session" in status.json()["supported_actions"]
+    assert "revoke_controlled_session" in status.json()["supported_actions"]
     assert challenge.status_code == 200
     assert challenge_payload["authorizes_execution"] is False
     assert verified.status_code == 200
     assert verified.json()["operator_identity_verified"] is True
     assert verified.json()["authorizes_execution"] is False
+    assert "signature_base64" not in verified.json()
     assert approvals.status_code == 200
     assert approvals.json()[0]["approval_id"] == challenge_payload["challenge_id"]
+    assert "signature_base64" not in approvals.json()[0]
     assert promotion_challenge.status_code == 200
     assert promotion_challenge.json()["artifact_type"] == (
         "broker_connector_soak_promotion_dossier"
+    )
+    assert issuance_challenge.status_code == 200
+    assert issuance_challenge.json()["artifact_type"] == ("controlled_session_issuance")
+    assert revocation_challenge.status_code == 200
+    assert revocation_challenge.json()["artifact_type"] == (
+        "controlled_session_revocation"
     )
 
 

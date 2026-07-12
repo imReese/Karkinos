@@ -266,16 +266,28 @@ subject to the shared account budget. No runtime or broker authority is added.
 Stage 3.7 implements the internal atomic 60-second runtime rate-admission
 ledger. It binds an enabled authenticated session, reservation, scoped order,
 request id, active window, and strictest shared account rate. Production has no
-session provider and exposes only read-only status/history APIs; no public
-admit, OMS, submit, or cancel action exists.
+Stage 3.9 now supplies its persistent token-authenticated session provider, but
+only read-only status/history APIs are exposed; no public admit, OMS, submit,
+or cancel action exists.
 
 Stage 3.8 implements the internal durable automatic-pause primitive. It checks
 an allowlisted set of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
 account-change, and consecutive-error facts. A hard failure persists an
 immutable event and one-way `paused` state; rate admission rechecks that state
-inside its transaction. Production has no session/gate providers and only
-read-only status/state/event APIs, with no automatic resume or broker action.
+inside its transaction. Stage 3.9 supplies session identity, but production has
+no live gate provider and only read-only status/state/event APIs, with no
+automatic resume or broker action.
+
+Stage 3.9 implements separately signed runtime-session issuance and one-way
+revocation. It re-resolves the current attestation and atomic reservation and
+requires a second exact Ed25519 issuance approval plus possession of its
+signature; public approval history omits signature bytes. The high-entropy
+token is returned once and only its salted hash is stored. Expiry, evidence drift,
+pause, or signed revocation blocks authentication, while admission atomically
+rechecks persisted state. This is bounded internal runtime authority, not
+broker authority: no public admit/resume/renew/widen, OMS/ledger mutation, or
+broker submit/cancel action exists.
 
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS

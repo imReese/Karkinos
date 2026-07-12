@@ -1631,9 +1631,10 @@ issue capital authority.
 
 ### Stage 3.8 Automatic Pause Controller Foundation
 
-* [x] Production configures no authenticated session or gate provider and
-  exposes only read-only status, state, and event routes; there is no public
-  evaluate, pause, resume, submit, or cancel endpoint.
+* [x] Production wires only the persisted read-only session resolver,
+  configures no live gate provider, and exposes only read-only status, state,
+  and event routes; there is no public evaluate, pause, resume, submit, or
+  cancel endpoint.
 * [x] Internal evaluation requires an exact current, enabled,
   authority-verified session identity and binds a sanitized allowlisted gate
   snapshot, reservation id, and deterministic fingerprints without retaining
@@ -1655,6 +1656,41 @@ issue capital authority.
   hard gate, persistence, real concurrency, no automatic resume, identity drift,
   route exposure, atomic rate blocking, secret sanitization, and zero broker
   authority.
+
+### Stage 3.9 Signed Runtime Session Authority
+
+* [x] Issuance re-resolves one exact current reservation and attestation, binds
+  account/strategy/orders/window/rate, and requires a new Ed25519
+  `issue_controlled_session` approval plus possession of its signature for the
+  deterministic issuance fingerprint; public approval history is sanitized
+  and the earlier envelope approval cannot be reused as authority.
+* [x] SQLite `BEGIN IMMEDIATE` permits only one session per reservation,
+  validates the persisted reservation identity again, reuses exact/concurrent
+  retries, and rejects a conflicting session or reservation identity.
+* [x] A high-entropy runtime token is returned only on the first successful
+  issue response, only a salted hash is stored, list/resolve/rejection evidence
+  never exposes it, and every internal rate-admission request requires exact
+  token authentication.
+* [x] Every resolution rechecks time, durable pause state, and the current
+  reservation/attestation chain; expiry, source drift, pause, or identity
+  mismatch fails closed without automatically renewing, widening, or resuming
+  the session.
+* [x] Revocation binds an exact session fingerprint and allowlisted reason to a
+  separate Ed25519 `revoke_controlled_session` approval plus matching signature
+  possession, persists one immutable event, changes enabled to revoked only
+  once, and exposes no resume or re-enable transition.
+* [x] Rate admission rechecks persistent enabled status, session/reservation
+  fingerprints, effective/expiry time, and pause state inside its own `BEGIN
+  IMMEDIATE` transaction, so a stale authenticated provider cannot race
+  revocation or pause.
+* [x] Public routes expose signed issuance preview/record, sanitized session
+  visibility, signed revocation preview/record, and history only; there is no
+  resume, renew, widen, runtime admit, broker submit, or broker cancel endpoint.
+* [x] Deterministic tests cover exact signatures, replay, real concurrent
+  issuance, token secrecy/authentication, expiry, source drift, signed
+  revocation, stale-provider race blocking, strict route models, and zero
+  broker, OMS, production-ledger, capital-scale, auto-resume, or auto-renew side
+  effects.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

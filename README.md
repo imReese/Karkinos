@@ -330,18 +330,31 @@ broker action.
 Stage 3.7 adds an internal atomic runtime rate-admission ledger with a
 server-time 60-second sliding window, exact session/reservation/order/request
 binding, idempotent retries, shared account-rate enforcement, and concurrent
-last-slot serialization. Production intentionally injects no authenticated
-session provider and exposes only read-only status/history endpoints, so no
-runtime admission, OMS mutation, or broker action is publicly available.
+last-slot serialization. Stage 3.9 now supplies its authenticated persistent
+session provider, while the API still exposes only read-only status/history:
+there is no public runtime-admit, OMS mutation, or broker action.
 
 Stage 3.8 adds an internal durable automatic-pause controller. It evaluates an
 allowlisted snapshot of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
 account-change, and consecutive-error facts. The first failure persists a
 one-way `paused` state, and runtime rate admission rechecks that state inside
-its write transaction. Production still injects no authenticated session or
-gate provider and exposes only read-only status/state/event endpoints. There is
+its write transaction. Stage 3.9 supplies authenticated session identity, but
+production still injects no live gate provider and exposes only read-only
+status/state/event endpoints. There is
 no automatic resume, OMS mutation, or broker submit/cancel path.
+
+Stage 3.9 adds separately signed runtime-session issuance and one-way
+revocation. A current envelope attestation and atomic reservation are
+re-resolved, then the owner must sign the exact issuance fingerprint with the
+new `issue_controlled_session` action and submit the matching signature as
+possession proof; public approval history omits signature bytes. The high-
+entropy session token is shown only once and only its salted hash is stored.
+Expiry, source drift, pause, or a
+separately signed revocation blocks authentication; rate admission atomically
+rechecks persistent state against stale providers. This is bounded internal
+runtime authority, not broker authority: no public admit/resume/renew/widen,
+OMS/ledger mutation, or broker submit/cancel path exists.
 
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one

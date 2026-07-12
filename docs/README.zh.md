@@ -219,14 +219,22 @@ Stage 3.6 要求签名 envelope 为每个 projected symbol 提供精确正数上
 不同标的仍共同受账户级预算约束。该能力不签发 runtime session，也不增加任何券商写权限。
 
 Stage 3.7 已实现内部原子 60 秒滑动窗口 admission ledger，绑定已认证启用 session、预算预留、
-范围内订单、request id、有效时间窗和同账户最严格速率。生产环境不注入 session provider，
-仅开放只读 status/history；不存在公开 admit、OMS、提交或撤单动作。
+范围内订单、request id、有效时间窗和同账户最严格速率。Stage 3.9 已接入持久化 token 认证
+session provider，但仍仅开放只读 status/history；不存在公开 admit、OMS、提交或撤单动作。
 
 Stage 3.8 已实现内部持久化自动暂停原语。它按 allowlist 检查 Account Truth、风控、对账、
 paper/shadow、gateway、行情、预算、速率、kill switch、亏损/回撤、拒单、账户变化与连续错误；
 任一硬事实缺失或失败会写入不可变 pause event 和单向 `paused` 状态。rate admission 会在自己的
-写事务内再次检查该状态。生产环境不注入 session/gate provider，只开放只读 status/state/events；
-不存在自动恢复、OMS 修改或券商提交/撤单能力。
+写事务内再次检查该状态。Stage 3.9 已提供 session identity，但生产仍不注入 live gate provider，
+只开放只读 status/state/events；不存在自动恢复、OMS 修改或券商提交/撤单能力。
+
+Stage 3.9 已实现独立签名的 runtime session issuance 与单向 revoke。系统会重新解析当前
+attestation 和原子 reservation，并要求 owner 对精确 issuance fingerprint 再做一次 Ed25519
+签名并提交匹配签名作为 possession proof；公开 approval history 不返回签名原文，旧 envelope
+approval 不能直接签发。高熵 token 只在首次成功响应中返回，数据库只保存 salted hash。过期、
+来源漂移、pause 或独立签名撤销都会阻断认证，rate admission 还会在写事务
+内复查持久状态。该能力是限时限额的内部 runtime authority，不是券商权限；没有公开 admit、
+resume、renew、widen、OMS/账本修改或 broker submit/cancel。
 
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须

@@ -291,21 +291,32 @@ evidence gate only and still does not issue a runtime session.
 Stage 3.7 implements the internal sliding-window rate-admission ledger. It
 requires a current authority-verified session, binds exact session/reservation/
 order/request identity, uses server time, and serializes the final slot across
-overlapping sessions for the same authorization/account. Production exposes
-only read-only status/history and injects no session provider. The rate limiter
-therefore remains a hard blocker described as not yet wired to authenticated
-session issuance rather than being treated as execution permission.
+overlapping sessions for the same authorization/account. Stage 3.9 supplies a
+persistent token-authenticated provider; production still exposes only
+read-only admission status/history, so the primitive is not a public execution
+or broker permission.
 Stage 3.8 implements the internal automatic-pause state machine. Once an exact
 identified session sees a missing or failed hard gate, the first pause event and
 one-way `paused` state are stored atomically; later clear facts do not resume it.
 The rate-admission transaction checks this durable state before retry or slot
 logic, so a stale provider cannot admit a paused session. Production exposes
-only read-only pause status/state/history and supplies no session or gate
-provider. Authenticated wiring and a new human-reviewed resume protocol are
-still required before controlled execution can use this primitive.
+only read-only pause status/state/history. Stage 3.9 supplies session identity,
+but no live gate provider is configured. Gate orchestration and a new human-
+reviewed resume protocol are still required before controlled execution can use
+this primitive.
+Stage 3.9 implements signed runtime issuance and revocation. A second operator
+signature and matching possession proof bind the exact current reservation,
+attestation, scope, order set, window, and rate; public approval history omits
+signature bytes, and the attestation signature alone cannot issue authority. The
+token is returned once, stored only as a salted hash, and required by the
+internal rate limiter. Expiry, source drift, durable pause, or separately signed
+one-way revocation blocks authentication. Admission also rechecks persistent
+state transactionally, closing stale-provider revocation races. There is still
+no public admit, resume, renew, widen, broker submit/cancel, OMS/ledger mutation,
+or automatic capital change.
 The request and recorded capital evaluation must bind the same resolved clear
 prior-batch fingerprint. Stage 1/2 promotion, submit capability, automatic pause
-wiring, runtime session issue/resume/revoke, and the live gateway remain hard
+gate orchestration, runtime session resume, and the live gateway remain hard
 blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen

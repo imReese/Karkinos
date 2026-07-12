@@ -84,6 +84,7 @@ def test_ed25519_challenge_verification_is_append_only_and_exact(tmp_path) -> No
     assert challenge["challenge_status"] == "pending_signature"
     assert challenge["operator_identity_verified"] is False
     assert approval["approval_status"] == "verified"
+    assert "signature_base64" not in approval
     assert approval["operator_identity_verified"] is True
     assert approval["authorizes_execution"] is False
     assert rerun["event_id"] == approval["event_id"]
@@ -94,6 +95,7 @@ def test_ed25519_challenge_verification_is_append_only_and_exact(tmp_path) -> No
     assert resolved["safety"]["stores_private_keys"] is False
     assert db.list_oms_orders_sync() == []
     assert db.list_fills_sync() == []
+    assert "signature_base64" not in service.list_approvals()[0]
 
 
 def test_signature_or_artifact_mismatch_fails_closed_and_is_audited(tmp_path) -> None:

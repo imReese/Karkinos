@@ -38,10 +38,13 @@ def create_router() -> APIRouter:
 
 def _service() -> ControlledSessionAutomaticPauseService:
     from server.app import get_app_state
+    from server.routes.controlled_session_runtime_authority import (
+        _service as controlled_session_runtime_authority_service,
+    )
 
     state = get_app_state()
     return ControlledSessionAutomaticPauseService(
         db=state.db,
-        session_provider=None,
+        session_provider=controlled_session_runtime_authority_service().resolve_current,
         gate_provider=None,
     )

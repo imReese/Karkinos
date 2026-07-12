@@ -312,7 +312,7 @@ class ControlledSessionBudgetReservationService:
             "status": "reserved",
             "budget_reserved": True,
             "cleared_hard_submission_blockers": [
-                "atomic_budget_reservation_not_implemented"
+                "atomic_budget_reservation_required_after_attestation"
             ],
             "runtime_session_status": "not_issued",
             "broker_submission_enabled": False,

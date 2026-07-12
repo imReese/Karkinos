@@ -81,6 +81,39 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-12: Stage 3.9 adds separately signed, expiring runtime-session
+  authority without adding broker authority. Issuance re-resolves one exact
+  current envelope attestation and atomic reservation, binds account, strategy,
+  orders, window, and rate, then requires a distinct Ed25519
+  `issue_controlled_session` approval plus possession of its matching signature
+  over the deterministic issuance fingerprint. Public verification/history
+  responses omit signature bytes, so an approval id alone cannot consume the
+  token; the earlier attestation approval cannot be reused. SQLite
+  `BEGIN IMMEDIATE` allows one session per reservation and serializes exact or
+  concurrent retries. A high-entropy capability token is returned only once;
+  only a salted SHA-256 hash is stored, and internal rate admission requires
+  token authentication. Resolution rechecks expiry, pause state, and the
+  current reservation/attestation chain. A separate signed
+  `revoke_controlled_session` action plus matching signature possession persists
+  one allowlisted-reason event and changes enabled to revoked without a resume
+  transition. Admission rechecks
+  persistent enabled state, fingerprints, expiry, and pause inside its own
+  write transaction, preventing a stale authenticated provider from racing
+  revocation. Assumptions: losing the one-time token requires a separately
+  reviewed future recovery flow rather than token replay; one reservation may
+  never issue a replacement session; expiry is computed without mutating the
+  immutable issuance row; and future resume must be a new signed protocol, not
+  an update to enabled. Validation: focused authority/rate/route/approval/
+  envelope tests passed; the full backend suite passed 1,210 tests; all 31
+  acceptance audits report 312/312 complete; and Black, isort, and
+  `git diff --check` passed. Risk impact: GitNexus reports MEDIUM for
+  `AppDatabase` (4 direct dependants), `OperatorApprovalService` (6), runtime
+  limiter (2), envelope (2), and budget reservation (2); route models and
+  `create_app` are LOW; no HIGH/CRITICAL symbol changed. This enables bounded
+  internal runtime authority only. It adds no public runtime admit, session
+  resume/renew/widen, automatic capital change, OMS/production-ledger mutation,
+  gateway contact, broker submit/cancel, or strategy-direct broker path.
+
 - 2026-07-12: Stage 3.8 adds a durable automatic-pause controller while
   retaining default closure. An internal evaluation binds an exact current,
   enabled, authority-verified session and reservation to a sanitized allowlist
