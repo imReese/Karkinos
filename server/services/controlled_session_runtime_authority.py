@@ -510,22 +510,10 @@ class ControlledSessionRuntimeAuthorityService:
         current = self.resolve_current(session_id)
         if current.get("status") != "current_enabled_bounded_session":
             return current
-        normalized_token = str(session_token or "")
-        row = (
-            self._db.get_controlled_session_runtime_session_sync(
-                str(current.get("session_id") or "")
-            )
-            or {}
-        )
-        stored_hash = str(row.get("token_hash") or "")
-        salt = str(row.get("token_salt") or "")
-        valid = bool(
-            _TOKEN_PATTERN.fullmatch(normalized_token)
-            and stored_hash
-            and salt
-            and hmac.compare_digest(_token_hash(normalized_token, salt), stored_hash)
-        )
-        if not valid:
+        if not self._token_matches(
+            str(current.get("session_id") or ""),
+            session_token,
+        ):
             return {
                 **current,
                 "status": "blocked",
@@ -536,6 +524,62 @@ class ControlledSessionRuntimeAuthorityService:
             }
         return {
             **current,
+            "runtime_authentication_verified": True,
+        }
+
+    def resolve_for_monitoring(self, session_id: str) -> dict[str, Any]:
+        """Resolve immutable identity even when an upstream gate has degraded."""
+        normalized = str(session_id or "").strip().lower()
+        if not _FINGERPRINT_PATTERN.fullmatch(normalized):
+            return _blocked_session(normalized, ["runtime_session_id_invalid"])
+        row = self._db.get_controlled_session_runtime_session_sync(normalized)
+        if row is None:
+            return _blocked_session(normalized, ["runtime_session_not_found"])
+        response = _session_response(row, reused=False)
+        if response.get("status") != "enabled":
+            return {
+                **response,
+                "status": "blocked",
+                "blockers": ["runtime_session_not_monitorable"],
+                "monitoring_identity_verified": False,
+                "runtime_authentication_verified": False,
+                "runtime_authority_enabled": False,
+                "safety": _safety_flags(runtime_authority=False),
+            }
+        return {
+            **response,
+            "status": "monitorable_bounded_session",
+            "blockers": [],
+            "session_authority_verified": False,
+            "monitoring_identity_verified": True,
+            "persistent_session_state_verified": True,
+            "runtime_authentication_verified": False,
+            "runtime_authority_enabled": False,
+            "safety": _safety_flags(runtime_authority=False),
+        }
+
+    def authenticate_for_monitoring(
+        self,
+        session_id: str,
+        session_token: str,
+    ) -> dict[str, Any]:
+        """Authenticate a self-check without treating degraded gates as authority."""
+        monitored = self.resolve_for_monitoring(session_id)
+        if monitored.get("status") != "monitorable_bounded_session":
+            return monitored
+        if not self._token_matches(
+            str(monitored.get("session_id") or ""),
+            session_token,
+        ):
+            return {
+                **monitored,
+                "status": "blocked",
+                "blockers": ["runtime_session_authentication_failed"],
+                "monitoring_identity_verified": False,
+                "runtime_authentication_verified": False,
+            }
+        return {
+            **monitored,
             "runtime_authentication_verified": True,
         }
 
@@ -551,6 +595,18 @@ class ControlledSessionRuntimeAuthorityService:
             }
             for row in rows
         ]
+
+    def _token_matches(self, session_id: str, session_token: str) -> bool:
+        normalized_token = str(session_token or "")
+        row = self._db.get_controlled_session_runtime_session_sync(session_id) or {}
+        stored_hash = str(row.get("token_hash") or "")
+        salt = str(row.get("token_salt") or "")
+        return bool(
+            _TOKEN_PATTERN.fullmatch(normalized_token)
+            and stored_hash
+            and salt
+            and hmac.compare_digest(_token_hash(normalized_token, salt), stored_hash)
+        )
 
     def preview_revocation(
         self,

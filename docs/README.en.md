@@ -289,6 +289,17 @@ rechecks persisted state. This is bounded internal runtime authority, not
 broker authority: no public admit/resume/renew/widen, OMS/ledger mutation, or
 broker submit/cancel action exists.
 
+Stage 3.10 wires persisted live-gate snapshots to the one-way pause controller.
+Each evaluation first captures Account Truth, risk, paper/shadow,
+reconciliation, gateway, market-data freshness, runtime budget/rate, kill
+switch, loss/drawdown, rejection, account-change, and consecutive-error facts;
+missing or invalid evidence fails toward pause. Periodic evaluation runs only
+with explicit scheduler startup, while a session-token holder can request only
+its own safety check and cannot resume or widen authority. Snapshot freshness
+is 30 seconds, quote freshness is 120 seconds, and three rate rejections within
+60 seconds trip the spike gate. No broker submit/cancel, OMS/production-ledger
+mutation, resume/renew/widen, or automatic capital change is added.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

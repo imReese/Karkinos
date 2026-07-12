@@ -257,6 +257,21 @@ def test_acceptance_audit_cli_controlled_session_runtime_authority_filter() -> N
     assert audit["completed_count"] == audit["required_count"]
 
 
+def test_acceptance_audit_cli_controlled_session_live_gate_filter() -> None:
+    result = _run_cli("--audit", "controlled_session_live_gate_orchestration")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "controlled_session_live_gate_orchestration"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_session_live_gate_orchestration"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+
+
 def test_acceptance_audit_cli_capital_scaling_review_foundation_filter() -> None:
     result = _run_cli("--audit", "capital_scaling_review_foundation")
 
@@ -544,6 +559,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "controlled_session_runtime_rate_limiter",
         "controlled_session_automatic_pause",
         "controlled_session_runtime_authority",
+        "controlled_session_live_gate_orchestration",
         "capital_scaling_review_foundation",
         "capital_scaling_evidence_resolution",
         "capital_scaling_evidence_window",

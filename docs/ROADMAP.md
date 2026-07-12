@@ -1692,6 +1692,37 @@ issue capital authority.
   broker, OMS, production-ledger, capital-scale, auto-resume, or auto-renew side
   effects.
 
+### Stage 3.10 Persisted Live-Gate Pause Orchestration
+
+* [x] Monitoring resolves the original persistent enabled session even when
+  upstream reservation or attestation evidence drifts, while explicitly
+  granting no runtime, resume, renewal, widening, or broker authority.
+* [x] A typed allowlisted snapshot derives Account Truth, risk, paper/shadow,
+  reconciliation, gateway, market data, budget/rate, kill switch,
+  loss/drawdown, rejection, account-change, and consecutive-error facts from
+  persisted sources; missing or invalid facts fail toward pause.
+* [x] Gate snapshots are append-only, fingerprint-bound, sanitized, idempotent
+  for an exact observation, queryable by session, and rejected as stale after
+  the bounded freshness window.
+* [x] Every orchestration evaluation captures current evidence before applying
+  the existing durable one-way pause; clear gates are a no-op and no evaluation
+  can automatically resume a paused session.
+* [x] Periodic evaluation runs only when the explicitly started trading
+  scheduler is active, and an operator may trigger evaluation only by
+  authenticating the same session token; neither path exposes runtime admission
+  or execution authority.
+* [x] Persisted runtime admissions enforce the bounded order-count and
+  request-rate view, while stale quotes, kill switch activation, rejection
+  spikes, consecutive errors, loss/drawdown exhaustion, and unexpected account
+  change deterministically trip pause.
+* [x] Source drift and provider, identity, persistence, or evaluation failures
+  remain fail-closed and sanitized; stored and returned snapshot evidence
+  contains no runtime token or provider credential.
+* [x] Deterministic service, route, scheduler, persistence, and source-drift
+  tests verify pause orchestration with zero broker submission/cancellation, OMS
+  or production-ledger mutation, capital widening, session issue/resume, or
+  strategy-to-broker path.
+
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 
 * [x] Versioned current/proposed capital tiers and a deterministic evidence

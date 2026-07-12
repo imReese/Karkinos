@@ -7,7 +7,7 @@ import threading
 import uuid
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from core.event_bus import EventBus
 from core.events import SignalEvent
@@ -58,12 +58,14 @@ class TradingScheduler:
         notifier=None,
         db=None,
         trading_controls: TradingControlState | None = None,
+        controlled_session_pause_runner: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._config = config
         self._bridge = bridge
         self._notifier = notifier
         self._db = db
         self._trading_controls = trading_controls or TradingControlState(db=db)
+        self._controlled_session_pause_runner = controlled_session_pause_runner
         self._running = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -829,6 +831,7 @@ class TradingScheduler:
         # 主循环
         while self._running.is_set():
             current = datetime.now()
+            self._evaluate_controlled_session_pauses()
 
             # Bug 7: 非交易时段跳过轮询
             if not self._is_market_open():
@@ -1028,6 +1031,31 @@ class TradingScheduler:
 
             # 使用 wait 替代 sleep，允许立即停止
             self._stop_requested.wait(timeout=self._config.live_poll_interval)
+
+    def _evaluate_controlled_session_pauses(self) -> dict[str, Any] | None:
+        """Run fail-closed session gate checks when live monitoring is explicit."""
+        if not callable(self._controlled_session_pause_runner):
+            return None
+        try:
+            result = self._controlled_session_pause_runner() or {}
+        except Exception:
+            logger.exception("Controlled-session automatic-pause evaluation failed")
+            return {
+                "status": "failed",
+                "failure_count": 1,
+                "broker_submission_enabled": False,
+            }
+        if int(result.get("paused_count") or 0):
+            logger.warning(
+                "Automatically paused %d controlled session(s)",
+                int(result.get("paused_count") or 0),
+            )
+        if int(result.get("failure_count") or 0):
+            logger.warning(
+                "Controlled-session pause evaluation had %d failure(s)",
+                int(result.get("failure_count") or 0),
+            )
+        return result
 
     def _on_signal(self, event: SignalEvent) -> None:
         """信号回调：持久化候选动作并按需推送通知。"""

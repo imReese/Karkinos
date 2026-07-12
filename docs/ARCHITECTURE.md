@@ -590,6 +590,23 @@ state, but no runtime admit, resume, renew, widen, OMS/ledger write, broker
 submit, or broker cancel action. The remaining automatic-pause blocker refers
 to live gate-provider orchestration, not session identity or rate wiring.
 
+Stage 3.10 closes that orchestration blocker with append-only,
+fingerprint-bound live-gate snapshots. A monitoring-only resolver deliberately
+survives upstream source drift so the originally persisted enabled session can
+still be paused, but explicitly grants no runtime authority. Snapshot capture
+reduces persisted Account Truth, signed-envelope risk/paper-shadow/
+reconciliation/gateway facts, materialized quotes, runtime admissions and
+rejections, and the kill switch to a typed allowlist; missing facts fail toward
+pause. The initial runtime order-count view treats persisted admissions as
+budget consumption. Loss and drawdown use the current attestation's remaining
+budgets until broker execution and production-ledger sources exist; any absent
+replacement source pauses rather than inferring clear. Snapshots expire after
+30 seconds, quotes after 120 seconds, and three rejection events inside 60
+seconds form a spike. The explicitly started scheduler evaluates enabled
+sessions; the only mutation route requires that session's token and can only
+evaluate/pause. There is still no automatic resume or broker, OMS,
+production-ledger, or capital mutation capability.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

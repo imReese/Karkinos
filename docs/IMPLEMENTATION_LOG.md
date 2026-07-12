@@ -81,6 +81,32 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-12: Stage 3.10 adds persisted live-gate snapshots and automatic-pause
+  orchestration without broker execution. A monitoring-only resolver retains
+  enough persistent identity to pause an enabled session after upstream source
+  drift but explicitly grants no runtime authority. Snapshot capture reduces
+  Account Truth, signed-envelope risk/paper-shadow/reconciliation/gateway
+  evidence, materialized quote freshness, persisted runtime admissions and
+  rate rejections, and kill-switch state to a typed allowlist; missing or
+  invalid facts fail toward pause. Exact observations reuse an append-only
+  fingerprint-bound row, snapshots expire after 30 seconds, quotes after 120
+  seconds, and three rate rejections in 60 seconds trip the spike gate. The
+  explicitly started scheduler evaluates enabled sessions, and the sole POST
+  evaluation route requires that session's token and can only preserve or
+  reduce authority. Assumptions: persisted admissions represent initial
+  order-count consumption; loss/drawdown use remaining budgets from the current
+  attestation until broker-execution and production-ledger sources exist; any
+  missing replacement fact pauses. Validation: focused live-gate, pause,
+  authority, route, and scheduler tests passed 56 tests; the full backend suite
+  passed 1,221 tests; all 32 acceptance audits report 320/320 complete; and
+  Black, isort, and `git diff --check` passed. Risk impact: prior GitNexus
+  analysis reports MEDIUM for `AppDatabase`
+  (4 direct callers), runtime authority (2), automatic pause (2), and scheduler
+  (3), and LOW for app lifecycle/route registration; no HIGH/CRITICAL symbol is
+  changed. This adds no broker submit/cancel, OMS/production-ledger mutation,
+  session issue/resume/renew/widen, automatic capital change, or strategy-direct
+  broker path.
+
 - 2026-07-12: Stage 3.9 adds separately signed, expiring runtime-session
   authority without adding broker authority. Issuance re-resolves one exact
   current envelope attestation and atomic reservation, binds account, strategy,

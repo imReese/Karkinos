@@ -722,6 +722,41 @@ def test_scheduler_strategy_warmup_does_not_fetch_remote_bars(monkeypatch):
     assert calls[0][1]["asset_class"] == AssetClass.FUND
 
 
+def test_scheduler_runs_controlled_session_pause_callback_fail_closed() -> None:
+    from server.scheduler import TradingScheduler
+
+    calls: list[str] = []
+    scheduler = TradingScheduler(
+        _scheduler_config(),
+        FakeBridge(),
+        controlled_session_pause_runner=lambda: (
+            calls.append("evaluated")
+            or {
+                "evaluated_count": 1,
+                "paused_count": 1,
+                "failure_count": 0,
+                "broker_submission_enabled": False,
+            }
+        ),
+    )
+
+    result = scheduler._evaluate_controlled_session_pauses()
+
+    assert calls == ["evaluated"]
+    assert result is not None and result["paused_count"] == 1
+    assert result["broker_submission_enabled"] is False
+
+    scheduler._controlled_session_pause_runner = lambda: (_ for _ in ()).throw(
+        RuntimeError("provider unavailable")
+    )
+    failed = scheduler._evaluate_controlled_session_pauses()
+    assert failed == {
+        "status": "failed",
+        "failure_count": 1,
+        "broker_submission_enabled": False,
+    }
+
+
 def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
     from server import scheduler as scheduler_module
 

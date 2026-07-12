@@ -297,6 +297,15 @@ def test_wrong_action_approval_and_source_drift_fail_closed_and_are_audited(
     current = env["authority"].resolve_current(issued["session_id"])
     assert current["status"] == "blocked"
     assert "runtime_session_reservation_not_current" in current["blockers"]
+    monitoring = env["authority"].resolve_for_monitoring(issued["session_id"])
+    assert monitoring["status"] == "monitorable_bounded_session"
+    assert monitoring["monitoring_identity_verified"] is True
+    authenticated_monitoring = env["authority"].authenticate_for_monitoring(
+        issued["session_id"],
+        TOKEN,
+    )
+    assert authenticated_monitoring["runtime_authentication_verified"] is True
+    assert authenticated_monitoring["runtime_authority_enabled"] is False
 
 
 def test_public_approval_id_without_private_signature_proof_cannot_issue(
