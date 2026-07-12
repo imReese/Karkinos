@@ -294,6 +294,14 @@ def _execution_reconciliation_summary(
     manual_execution_items = [
         row for row in rows if _manual_execution_evidence_summary(row)
     ]
+    controlled_submission_items = [
+        row for row in rows if _controlled_submission_evidence_summary(row)
+    ]
+    unknown_controlled_items = [
+        row
+        for row in controlled_submission_items
+        if "unknown" in str(row.get("item_status") or "")
+    ]
     first = rows[0] if rows else None
     next_step = (
         str(first.get("suggested_action") or "review_execution_reconciliation")
@@ -306,12 +314,22 @@ def _execution_reconciliation_summary(
         "status": "manual_action_required" if rows else "pass",
         "open_item_count": len(rows),
         "manual_execution_review_count": manual_count,
+        "controlled_submission_review_count": len(controlled_submission_items),
+        "controlled_submission_unknown_count": len(unknown_controlled_items),
         "next_review_step": next_step,
         "last_open_item_at": _latest_timestamp(rows),
         "detail_status": (
-            f"manual_execution_recorded:{manual_count}"
-            if manual_count
-            else f"{len(rows)} open items"
+            f"controlled_submission_unknown:{len(unknown_controlled_items)}"
+            if unknown_controlled_items
+            else (
+                f"controlled_submission_review:{len(controlled_submission_items)}"
+                if controlled_submission_items
+                else (
+                    f"manual_execution_recorded:{manual_count}"
+                    if manual_count
+                    else f"{len(rows)} open items"
+                )
+            )
         ),
         "first_open_item": first_item,
         "does_not_submit_broker_order": True,
@@ -320,6 +338,7 @@ def _execution_reconciliation_summary(
         "limitations": [
             "Execution reconciliation review is read-only and does not submit broker orders.",
             "Manual execution evidence must be reconciled before any production ledger update is suggested.",
+            "A controlled submission that is unknown or not yet reconciled blocks every new controlled order.",
         ],
     }
 
@@ -327,17 +346,27 @@ def _execution_reconciliation_summary(
 def _execution_reconciliation_open_item(
     item: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
+    result = {
         "order_id": item.get("order_id"),
         "item_status": str(item.get("item_status") or "unknown"),
         "suggested_action": str(item.get("suggested_action") or "review_item"),
         "detail": str(item.get("detail") or ""),
         "manual_execution_evidence_summary": _manual_execution_evidence_summary(item),
     }
+    controlled = _controlled_submission_evidence_summary(item)
+    if controlled:
+        result["controlled_submission_evidence_summary"] = controlled
+    return result
 
 
 def _manual_execution_evidence_summary(item: dict[str, Any]) -> dict[str, Any]:
     return _dict(_payload(item).get("manual_execution_evidence_summary"))
+
+
+def _controlled_submission_evidence_summary(
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    return _dict(_payload(item).get("controlled_submission_evidence_summary"))
 
 
 def _scheduler_retry_limitations(retry_state: Any) -> list[str]:

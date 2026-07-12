@@ -259,6 +259,12 @@ gateway capability/health/dry-run 与 clear kill switch。intent 和 OMS `submis
 生产默认仍不注入 write adapter 或 release provider，也没有自动/策略直连提交、撤单、成交应用、
 账本同步或扩资路径。
 
+Stage 3.13 增加跨订单串行 interlock：只要存在 `prepared`、已接收但未对账的 `submitted` 或
+`submission_unknown` intent，任何不同订单都会在 preview 和 SQLite 写事务内同时被阻断，
+不同订单并发也不能绕过。execution reconciliation 会分类这些状态，unknown 会产生 critical
+alert，Operations 会展示只查询不重提的恢复任务。当前只有确定性拒绝/not-found 可解除门禁；
+匹配券商证据仍是人工复核项，不能自行清门禁、推断成交、修改 OMS/账本或授权下一单。
+
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须
 带券商订单、Account Truth import 与同一 run 链接。每单 dossier 和 session proposal 必须与

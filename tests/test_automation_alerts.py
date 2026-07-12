@@ -176,6 +176,57 @@ def test_alert_scan_preserves_manual_execution_reconciliation_evidence(
     assert alert["payload"]["does_not_mutate_production_ledger"] is True
 
 
+def test_alert_scan_escalates_unknown_controlled_submission_to_critical(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "alerts.db")
+    db.init_sync()
+    db.upsert_execution_reconciliation_run_sync(
+        run_id="execution-reconciliation:2026-07-13",
+        run_date="2026-07-13",
+        status="open_items",
+        item_count=1,
+        open_item_count=1,
+        payload={"schema_version": "karkinos.execution_reconciliation.v1"},
+        items=[
+            {
+                "order_id": "OMS-CONTROLLED-1",
+                "item_status": "controlled_submission_unknown",
+                "suggested_action": "recover_controlled_submission_by_query",
+                "gateway_event_count": 0,
+                "broker_event_count": 0,
+                "detail": "Outcome unknown; query only and never resubmit.",
+                "payload": {
+                    "controlled_submission_evidence_summary": {
+                        "schema_version": (
+                            "karkinos.controlled_submission_reconciliation.v1"
+                        ),
+                        "submit_intent_id": "a" * 64,
+                        "client_order_id": "KARK-unknown-1",
+                        "intent_status": "submission_unknown",
+                        "new_submissions_blocked": True,
+                        "recovery_resubmission_enabled": False,
+                        "does_not_mutate_production_ledger": True,
+                    }
+                },
+            }
+        ],
+    )
+
+    result = AutomationAlertService(
+        db=db,
+        trading_controls=None,
+    ).scan()
+
+    assert result["open_alert_count"] == 1
+    alert = result["alerts"][0]
+    assert alert["severity"] == "critical"
+    assert alert["title"] == "Controlled broker submission outcome is unknown"
+    assert alert["payload"]["blocks_new_submissions"] is True
+    assert alert["payload"]["recovery_resubmission_enabled"] is False
+    assert alert["payload"]["does_not_mutate_production_ledger"] is True
+
+
 def test_alert_scan_records_failed_paper_shadow_automation_run(tmp_path) -> None:
     db = AppDatabase(tmp_path / "alerts.db")
     db.init_sync()

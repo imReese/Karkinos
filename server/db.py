@@ -1571,11 +1571,26 @@ class AppDatabase:
                         requested,
                         ["controlled_broker_submit_intent_conflict"],
                     )
+                unresolved = conn.execute(
+                    """
+                    SELECT submit_intent_id, order_id, status
+                    FROM controlled_broker_submit_intents
+                    WHERE status IN ('prepared', 'submitted', 'submission_unknown')
+                      AND order_id != ?
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (requested["order_id"],),
+                ).fetchone()
                 order = conn.execute(
                     "SELECT * FROM oms_orders WHERE order_id = ? LIMIT 1",
                     (requested["order_id"],),
                 ).fetchone()
                 blockers: list[str] = []
+                if unresolved is not None:
+                    blockers.append(
+                        "controlled_broker_submit_unreconciled_intent_exists"
+                    )
                 if order is None:
                     blockers.append("controlled_broker_submit_order_not_found")
                 else:
@@ -2498,10 +2513,24 @@ class AppDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
-                SELECT *
-                FROM execution_reconciliation_items
-                WHERE suggested_action != 'no_action'
-                ORDER BY id DESC
+                SELECT current.*
+                FROM execution_reconciliation_items AS current
+                INNER JOIN (
+                    SELECT order_id, MAX(id) AS latest_id
+                    FROM execution_reconciliation_items
+                    GROUP BY order_id
+                ) AS latest
+                    ON latest.latest_id = current.id
+                WHERE current.suggested_action != 'no_action'
+                ORDER BY
+                    CASE
+                        WHEN current.item_status LIKE 'controlled_submission_unknown%'
+                            THEN 0
+                        WHEN current.item_status LIKE 'controlled_%'
+                            THEN 1
+                        ELSE 2
+                    END ASC,
+                    current.id DESC
                 LIMIT ? OFFSET ?
                 """,
                 (int(limit), int(offset)),

@@ -6,6 +6,31 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 3.13 adds a fail-closed unreconciled-submission interlock
+  and operator visibility. Assumptions: a broker acknowledgement proves only
+  receipt, not fill or reconciliation; `prepared`, `submitted`, and
+  `submission_unknown` therefore remain globally exclusive until a future
+  signed clearance binds exact broker/Account Truth evidence, while a
+  definitive rejection/not-found safely releases the interlock. Preview reports
+  sanitized unresolved ids and the same check runs under SQLite `BEGIN
+  IMMEDIATE`, preventing different-order concurrency from issuing two external
+  calls. Execution reconciliation classifies controlled intent/OMS/broker
+  evidence, unknown outcomes create critical query-only alerts, and Operations
+  exposes the recovery task. Operations/alerts select only each order's latest
+  reconciliation item; superseded unknown items remain in historical runs but
+  no longer masquerade as the current open task. Validation: `uv run pytest -q
+  tests/test_controlled_broker_submission.py
+  tests/test_execution_reconciliation_service.py tests/test_automation_alerts.py
+  tests/test_operations_today.py tests/server/test_controlled_broker_submission_routes.py
+  tests/server/test_execution_reconciliation_routes.py
+  tests/server/test_operations_routes.py tests/server/test_automation_routes.py`.
+  Risk impact: this changes HIGH-risk automation alerts and the critical
+  submission/database boundary, but only toward additional blocking. It does
+  not register a production gateway, submit automatically, resubmit unknown
+  orders, cancel at the broker, infer fills, mutate OMS from broker evidence,
+  write the production ledger, clear reconciliation, or widen capital/session
+  authority.
+
 - 2026-07-13: Stage 3.12 adds a default-closed one-shot controlled broker
   submission foundation. Assumptions: an explicitly injected gateway must
   support idempotent client order ids, side-effect-free dry-run, fresh health,

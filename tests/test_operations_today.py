@@ -194,6 +194,62 @@ def test_operations_today_surfaces_manual_execution_reconciliation_review() -> N
     assert subsystem["detail_status"] == "manual_execution_recorded:1"
 
 
+def test_operations_today_prioritizes_unknown_controlled_submission() -> None:
+    controlled_summary = {
+        "schema_version": "karkinos.controlled_submission_reconciliation.v1",
+        "submit_intent_id": "a" * 64,
+        "client_order_id": "KARK-controlled-1",
+        "intent_status": "submission_unknown",
+        "new_submissions_blocked": True,
+        "recovery_resubmission_enabled": False,
+        "does_not_mutate_production_ledger": True,
+    }
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        execution_reconciliation_open_items=[
+            {
+                "order_id": "OMS-CONTROLLED-1",
+                "item_status": "controlled_submission_unknown",
+                "suggested_action": "recover_controlled_submission_by_query",
+                "detail": "Outcome unknown; query only and never resubmit.",
+                "created_at": "2026-07-13T10:00:00+08:00",
+                "payload_json": {
+                    "controlled_submission_evidence_summary": controlled_summary,
+                },
+            }
+        ],
+        generated_at="2026-07-13T10:01:00+08:00",
+    )
+
+    reconciliation = summary["execution_reconciliation"]
+    assert summary["conclusion_status"] == "manual_action_required"
+    assert reconciliation["controlled_submission_review_count"] == 1
+    assert reconciliation["controlled_submission_unknown_count"] == 1
+    assert reconciliation["next_review_step"] == (
+        "recover_controlled_submission_by_query"
+    )
+    assert reconciliation["detail_status"] == "controlled_submission_unknown:1"
+    assert (
+        reconciliation["first_open_item"]["controlled_submission_evidence_summary"]
+        == controlled_summary
+    )
+    subsystem = next(
+        item
+        for item in summary["subsystems"]
+        if item["id"] == "execution_reconciliation"
+    )
+    assert subsystem["next_action"] == "recover_controlled_submission_by_query"
+    assert subsystem["detail_status"] == "controlled_submission_unknown:1"
+
+
 def test_operations_today_requires_shadow_divergence_review() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),

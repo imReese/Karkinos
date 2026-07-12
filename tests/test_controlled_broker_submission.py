@@ -295,6 +295,52 @@ def _submit(env: dict, preview: dict, approval: dict) -> dict:
     )
 
 
+def _direct_submit_intent(order: dict, *, seed: str) -> dict:
+    fingerprint = build_order_fingerprint(order)
+    intent_id = hashlib.sha256(f"intent:{seed}".encode()).hexdigest()
+    submit_fingerprint = hashlib.sha256(f"submit:{seed}".encode()).hexdigest()
+    return {
+        "submit_intent_id": intent_id,
+        "submit_fingerprint": submit_fingerprint,
+        "order_id": order["order_id"],
+        "order_fingerprint": fingerprint,
+        "confirmation_id": hashlib.sha256(f"confirm:{seed}".encode()).hexdigest(),
+        "dossier_fingerprint": hashlib.sha256(f"dossier:{seed}".encode()).hexdigest(),
+        "gateway_id": "qmt-controlled-write-1",
+        "gateway_verification_fingerprint": hashlib.sha256(
+            f"gateway:{seed}".encode()
+        ).hexdigest(),
+        "release_evidence_id": hashlib.sha256(
+            f"release-id:{seed}".encode()
+        ).hexdigest(),
+        "release_evidence_fingerprint": hashlib.sha256(
+            f"release:{seed}".encode()
+        ).hexdigest(),
+        "client_order_id": f"KARK-{submit_fingerprint[:32]}",
+        "operator_id": "local-submit-owner",
+        "operator_approval_id": hashlib.sha256(f"approval:{seed}".encode()).hexdigest(),
+        "order_snapshot": {
+            key: order.get(key)
+            for key in (
+                "symbol",
+                "side",
+                "asset_class",
+                "quantity",
+                "order_type",
+                "limit_price",
+            )
+        },
+        "prepared_at_epoch_ms": int(NOW.timestamp() * 1000),
+        "prepared_at": NOW.isoformat(),
+        "payload": {
+            "submit_intent_id": intent_id,
+            "submit_fingerprint": submit_fingerprint,
+            "order_id": order["order_id"],
+        },
+        "created_at": NOW.isoformat(),
+    }
+
+
 def test_default_closed_without_write_gateway_or_release_evidence(tmp_path) -> None:
     env = _environment(tmp_path)
     service = ControlledBrokerSubmissionService(
@@ -503,6 +549,122 @@ def test_concurrent_exact_submit_grants_only_one_external_call(tmp_path) -> None
     assert second_result["external_call_performed"] is False
     assert second_result["status"] == "prepared"
     assert persisted["status"] == "submitted"
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_atomic_interlock_allows_only_one_different_order_intent(tmp_path) -> None:
+    env = _environment(tmp_path)
+    second = env["oms"].create_order_intent(
+        intent_key="controlled-submit-intent-2",
+        symbol="159915.SZ",
+        side="buy",
+        asset_class="fund",
+        quantity=100,
+        order_type="limit",
+        limit_price=2,
+        source="manual_confirmation_test",
+        source_ref="decision-2",
+    )
+    second = env["oms"].transition_order(
+        second["order_id"],
+        to_status="manually_confirmed",
+        reason="operator confirmed second exact order",
+        actor="local-submit-owner",
+    )
+    intents = [
+        _direct_submit_intent(env["order"], seed="first"),
+        _direct_submit_intent(second, seed="second"),
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda intent: env["db"].prepare_controlled_broker_submit_intent_sync(
+                    intent=intent
+                ),
+                intents,
+            )
+        )
+
+    permitted = [row for row in results if row["external_call_permitted"]]
+    blocked = [row for row in results if row["status"] == "rejected"]
+    assert len(permitted) == 1
+    assert len(blocked) == 1
+    assert blocked[0]["blockers"] == [
+        "controlled_broker_submit_unreconciled_intent_exists"
+    ]
+    statuses = {
+        env["db"].get_oms_order_sync(order["order_id"])["status"]
+        for order in (env["order"], second)
+    }
+    assert statuses == {"manually_confirmed", "submission_pending"}
+    status = env["service"].get_status()
+    assert status["contract_status"] == (
+        "blocked_by_unreconciled_controlled_submission"
+    )
+    assert status["submission_interlock"]["unresolved_count"] == 1
+    assert env["gateway"].submit_calls == 0
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_definitive_rejection_clears_interlock_but_unknown_does_not(tmp_path) -> None:
+    env = _environment(tmp_path)
+    second = env["oms"].create_order_intent(
+        intent_key="controlled-submit-intent-after-rejection",
+        symbol="159915.SZ",
+        side="buy",
+        asset_class="fund",
+        quantity=100,
+        order_type="limit",
+        limit_price=2,
+        source="manual_confirmation_test",
+        source_ref="decision-after-rejection",
+    )
+    second = env["oms"].transition_order(
+        second["order_id"],
+        to_status="manually_confirmed",
+        reason="operator confirmed exact follow-up order",
+        actor="local-submit-owner",
+    )
+    first_intent = _direct_submit_intent(env["order"], seed="rejected-first")
+    prepared = env["db"].prepare_controlled_broker_submit_intent_sync(
+        intent=first_intent
+    )
+    assert prepared["external_call_permitted"] is True
+    finalized = env["db"].finalize_controlled_broker_submit_intent_sync(
+        submit_intent_id=first_intent["submit_intent_id"],
+        status="rejected",
+        broker_order_id="",
+        broker_status="rejected",
+        result={
+            "status": "rejected",
+            "submitted": False,
+            "definitive": True,
+        },
+        actor="controlled-broker-submission",
+        finalized_at_epoch_ms=int(NOW.timestamp() * 1000) + 1,
+        finalized_at=(NOW + timedelta(milliseconds=1)).isoformat(),
+    )
+    assert finalized["status"] == "rejected"
+    assert env["service"].get_status()["submission_interlock"]["blocked"] is False
+
+    follow_up = env["db"].prepare_controlled_broker_submit_intent_sync(
+        intent=_direct_submit_intent(second, seed="after-rejection")
+    )
+
+    assert follow_up["external_call_permitted"] is True
+    unknown = env["db"].finalize_controlled_broker_submit_intent_sync(
+        submit_intent_id=follow_up["intent"]["submit_intent_id"],
+        status="submission_unknown",
+        broker_order_id="",
+        broker_status="gateway_submit_exception",
+        result={"status": "gateway_submit_exception", "submitted": None},
+        actor="controlled-broker-submission",
+        finalized_at_epoch_ms=int(NOW.timestamp() * 1000) + 2,
+        finalized_at=(NOW + timedelta(milliseconds=2)).isoformat(),
+    )
+    assert unknown["status"] == "submission_unknown"
+    assert env["service"].get_status()["submission_interlock"]["blocked"] is True
     assert env["db"].get_ledger_entries_sync() == []
 
 
