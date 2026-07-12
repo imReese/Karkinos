@@ -291,6 +291,13 @@ closed 到 pause。监控 resolver 在上游来源漂移后仍能识别原 sessi
 runtime/broker authority。显式启动 scheduler 才会周期运行；token 持有者只能触发自身检查，不能
 resume/renew/widen。当前 snapshot/行情/rejection 窗口分别为 30 秒、120 秒和 60 秒内 3 次。
 
+Stage 3.11 已实现签名 paused-session replacement，而不是把旧状态原地改回 enabled。同一授权/
+账户/策略存在未过期 paused scope 时普通 issuance 会阻断。replacement 必须绑定新 attestation、
+新原子 reservation、暂停后连续至少 60 秒 clear 且最新不超过 30 秒的两条 snapshot，以及独立
+`replace_paused_controlled_session` Ed25519 审批和签名 possession proof。账户/策略/操作员、
+订单/标的、gross/现金/换手/订单数/逐标的/rate/期限只能不变或缩小；SQLite 单事务 revoke 旧
+session 并签发新 token，并发冲突只能一个成功。没有原地 resume、renew、widen 或 broker 写权限。
+
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
 未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一

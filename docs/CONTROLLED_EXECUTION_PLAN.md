@@ -299,11 +299,10 @@ Stage 3.8 implements the internal automatic-pause state machine. Once an exact
 identified session sees a missing or failed hard gate, the first pause event and
 one-way `paused` state are stored atomically; later clear facts do not resume it.
 The rate-admission transaction checks this durable state before retry or slot
-logic, so a stale provider cannot admit a paused session. Production exposes
-only read-only pause status/state/history. Stage 3.9 supplies session identity,
-but no live gate provider is configured. Gate orchestration and a new human-
-reviewed resume protocol are still required before controlled execution can use
-this primitive.
+logic, so a stale provider cannot admit a paused session. That Stage 3.8 slice
+exposed only read-only pause status/state/history; Stage 3.10 now supplies live-
+gate orchestration and Stage 3.11 supplies signed replacement rather than
+in-place resume.
 Stage 3.9 implements signed runtime issuance and revocation. A second operator
 signature and matching possession proof bind the exact current reservation,
 attestation, scope, order set, window, and rate; public approval history omits
@@ -320,12 +319,21 @@ reconciliation, gateway, market-data freshness, runtime budget/rate, kill
 switch, loss/drawdown, rejection, account-change, and consecutive-error facts.
 Missing evidence pauses. Periodic checks require explicit scheduler startup;
 the only operator-triggered check requires the same session token and cannot
-resume or widen authority. Remaining gates before broker execution include a
-separately reviewed resume protocol, production-grade broker execution and
-reconciliation sources, and an explicitly authorized submit/cancel boundary.
+resume or widen authority. At this stage, reviewed recovery, production-grade
+broker execution/reconciliation sources, and an explicitly authorized submit/
+cancel boundary remained. Stage 3.11 now closes reviewed recovery only.
+Stage 3.11 completes the reviewed recovery boundary without exposing in-place
+resume. An unexpired paused scope blocks ordinary issuance. The owner must
+prepare a new current attestation and atomic reservation, wait for continuously
+clear post-pause gates, and sign the exact equal-or-narrower replacement. One
+transaction revokes the predecessor and issues a new session/token; exact
+retries cannot reissue the secret and conflicting concurrent handoffs cannot
+both succeed. A blocked or superseding gate fact aborts the handoff. This still
+does not create broker submit/cancel, OMS/ledger mutation, renew, widen, or
+automatic capital expansion.
 The request and recorded capital evaluation must bind the same resolved clear
-prior-batch fingerprint. Stage 1/2 promotion, submit capability, runtime session
-resume, and the live gateway remain hard
+prior-batch fingerprint. Stage 1/2 promotion, broker submit capability, and the
+live gateway remain hard
 blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen

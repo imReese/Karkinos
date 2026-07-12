@@ -339,10 +339,10 @@ allowlisted snapshot of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
 account-change, and consecutive-error facts. The first failure persists a
 one-way `paused` state, and runtime rate admission rechecks that state inside
-its write transaction. Stage 3.9 supplies authenticated session identity, but
-production still injects no live gate provider and exposes only read-only
-status/state/event endpoints. There is
-no automatic resume, OMS mutation, or broker submit/cancel path.
+its write transaction. Stage 3.9 supplied authenticated session identity while
+that slice still had no live gate provider. Stage 3.10 now supplies persisted
+gate orchestration, and Stage 3.11 supplies signed replacement rather than
+automatic resume. There remains no OMS mutation or broker submit/cancel path.
 
 Stage 3.9 adds separately signed runtime-session issuance and one-way
 revocation. A current envelope attestation and atomic reservation are
@@ -367,6 +367,17 @@ a 30-second freshness window, market data uses 120 seconds, and three rate
 rejections inside 60 seconds trip the rejection-spike gate. This still creates
 no broker submit/cancel, OMS/ledger write, resume/renew/widen, or automatic
 capital-change path.
+
+Stage 3.11 adds a signed paused-session replacement protocol without adding an
+in-place resume. Ordinary issuance cannot bypass an unexpired paused session in
+the same authorization/account/strategy scope. Replacement requires a fresh
+attestation and reservation, two continuously clear post-pause snapshots over
+at least 60 seconds, a newest snapshot no older than 30 seconds, and a distinct
+Ed25519 `replace_paused_controlled_session` approval with signature possession.
+One SQLite transaction revokes the predecessor and issues a same-or-narrower
+session with a new one-time token; exact retries never reissue it. There is
+still no renew, widen, public runtime admit, OMS/ledger mutation, automatic
+capital increase, or broker submit/cancel path.
 
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one

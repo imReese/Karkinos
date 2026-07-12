@@ -130,8 +130,11 @@ Stage 3.9 的 runtime authority 接口为：
 * `POST /api/automation/controlled-sessions/runtime-authority/issuance/preview`
 * `POST/GET /api/automation/controlled-sessions/runtime-authority/sessions`
 * `GET /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}`
+* `POST /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/replacement/preview`
+* `POST /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/replacements`
 * `POST /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/revocation/preview`
 * `POST /api/automation/controlled-sessions/runtime-authority/sessions/{session_id}/revocations`
+* `GET /api/automation/controlled-sessions/runtime-authority/replacements`
 * `GET /api/automation/controlled-sessions/runtime-authority/revocations`
 
 签发和撤销分别要求 `issue_controlled_session` 与 `revoke_controlled_session` 的短时 Ed25519
@@ -140,6 +143,14 @@ approval，并在签发/撤销请求中再次提交对应签名作为 possession
 禁止写入配置、日志或版本库；数据库只保存 salted hash。没有 resume/renew/widen/admit/broker
 submit/cancel 路由，session authority 不能扩大资本
 授权，也不会修改 OMS 或生产账本。
+
+Stage 3.11 的 replacement 不是原地 resume：同 scope 未过期 paused session 会阻断普通 issuance。
+replacement 请求必须引用新的 reservation、精确 replacement fingerprint、短时
+`replace_paused_controlled_session` approval、匹配签名原文，以及固定 acknowledgement。系统要求
+暂停后连续 60 秒 clear gate evidence 且最新 snapshot 不超过 30 秒；任何 blocked 或更新事实都会
+在事务内重新阻断。新 session 的账户/策略/操作员、订单/标的、预算、rate 与期限只能等宽或缩窄，
+同一事务会 revoke 旧 session 并生成一次性新 token。仍无 `/resume`、`/renew`、`/widen`、公开
+`/admit`、broker submit/cancel、OMS/生产账本或自动扩资动作。
 
 ## broker_fee_schedule
 
