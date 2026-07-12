@@ -130,6 +130,10 @@ Active planning target:
   capital, cash, China-trading-day turnover, and order-count budget with SQLite
   write serialization. It revalidates every source first and still cannot issue
   a runtime session, mutate OMS/ledger, or contact/submit to a broker.
+* Stage 3.6 requires an explicit signed limit for every projected symbol and
+  atomically prevents overlapping sessions from exceeding the strictest
+  per-symbol cap. Disjoint symbols may share an authorization only while the
+  account-level budget also remains clear; no execution authority is created.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

@@ -537,6 +537,17 @@ overlap capital/cash use, but daily turnover stays reserved for that trading
 day until explicit release semantics are implemented. This state transition
 does not issue a session, mutate OMS/ledger, or add broker capability.
 
+Stage 3.6 makes symbol concentration explicit at both signed-review and
+transaction boundaries. The envelope must contain exactly one positive,
+canonical limit per projected symbol; every limit is capped by the recorded
+capital evaluation's symbol and effective-capital ceilings. The reservation
+stores projected/capacity maps in fixed units and, under the same write lock,
+sums overlapping reservations per symbol. A legacy overlapping reservation
+without symbol evidence blocks rather than being treated as zero. The initial
+contract applies the capital evaluation's conservative symbol ceiling to every
+symbol in the signed policy scope; future account facts may tighten individual
+symbols but may never widen this signed map implicitly.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

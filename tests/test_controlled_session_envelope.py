@@ -444,6 +444,10 @@ def _ready_environment(tmp_path) -> dict:
             session_start_account_truth_fingerprint
         ),
         "session_start_account_truth": session_start_account_truth,
+        "per_symbol_runtime_limits": {
+            "159915.SZ": "6000",
+            "510300.SH": "6000",
+        },
         "start_at": NOW,
         "expires_at": NOW + timedelta(minutes=10),
         "private_key": private_key,
@@ -468,6 +472,10 @@ def _preview(env: dict, *, service=None, **overrides):
         session_start_account_truth_fingerprint=overrides.get(
             "session_start_account_truth_fingerprint",
             env["session_start_account_truth_fingerprint"],
+        ),
+        per_symbol_runtime_limits=overrides.get(
+            "per_symbol_runtime_limits",
+            env["per_symbol_runtime_limits"],
         ),
         order_ids=overrides.get("order_ids", env["order_ids"]),
         requested_start_at=overrides.get("requested_start_at", env["start_at"]),
@@ -512,6 +520,15 @@ def test_session_envelope_projects_conservative_budget_and_stays_non_executing(
     assert budget["projected_buy_value"] == "1000"
     assert budget["remaining_authorized_capital_after_projection"] == "9000"
     assert budget["reserved"] is False
+    assert envelope["per_symbol_runtime_limits"]["status"] == "pass"
+    assert envelope["per_symbol_runtime_limits"]["requested_limits"] == {
+        "159915.SZ": "6000",
+        "510300.SH": "6000",
+    }
+    assert (
+        "per_symbol_runtime_limits_not_bound"
+        not in envelope["hard_submission_blockers"]
+    )
     assert envelope["runtime_session_status"] == "not_issued"
     assert envelope["submission_status"] == "blocked"
     assert (
@@ -562,6 +579,81 @@ def test_session_envelope_projects_conservative_budget_and_stays_non_executing(
     assert "private-session-account-id-must-not-leak" not in str(envelope)
 
 
+@pytest.mark.parametrize(
+    ("limits", "expected_blocker"),
+    [
+        (
+            {"510300.SH": "6000"},
+            "per_symbol_runtime_limit_set_mismatch",
+        ),
+        (
+            {"159915.SZ": "6000", "510300.SH": "10001"},
+            "per_symbol_runtime_limit_exceeds_cap:510300.SH",
+        ),
+        (
+            {"159915.SZ": "100", "510300.SH": "100"},
+            "per_symbol_runtime_limit_projection_exceeded:159915.SZ",
+        ),
+    ],
+)
+def test_per_symbol_runtime_limits_fail_closed(
+    tmp_path,
+    limits: dict[str, str],
+    expected_blocker: str,
+) -> None:
+    env = _ready_environment(tmp_path)
+
+    envelope = _preview(env, per_symbol_runtime_limits=limits)
+
+    assert expected_blocker in envelope["review_blockers"]
+    assert envelope["per_symbol_runtime_limits"]["status"] == "blocked"
+    assert "per_symbol_runtime_limits_not_bound" in (
+        envelope["hard_submission_blockers"]
+    )
+    assert envelope["runtime_session_status"] == "not_issued"
+    assert envelope["authorizes_execution"] is False
+
+
+def test_per_symbol_runtime_limit_change_invalidates_signed_envelope(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+    first = _preview(env)
+    approval = _operator_approval(env, first["envelope_fingerprint"])
+    changed_limits = {
+        **env["per_symbol_runtime_limits"],
+        "510300.SH": "5000",
+    }
+
+    changed = _preview(env, per_symbol_runtime_limits=changed_limits)
+
+    assert changed["envelope_fingerprint"] != first["envelope_fingerprint"]
+    with pytest.raises(ControlledSessionAttestationRejected) as exc_info:
+        env["service"].record_attestation(
+            capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+            prior_batch_reconciliation_fingerprint=env["batch"][
+                "batch_reconciliation_fingerprint"
+            ],
+            execution_gateway_verification_fingerprints=env[
+                "gateway_verification_fingerprints"
+            ],
+            session_start_account_truth_fingerprint=env[
+                "session_start_account_truth_fingerprint"
+            ],
+            per_symbol_runtime_limits=changed_limits,
+            order_ids=env["order_ids"],
+            requested_start_at=env["start_at"],
+            requested_expires_at=env["expires_at"],
+            envelope_fingerprint=first["envelope_fingerprint"],
+            operator_label="local-session-owner",
+            operator_approval_id=approval["approval_id"],
+            acknowledgement=CONTROLLED_SESSION_ACKNOWLEDGEMENT,
+        )
+    assert "envelope_fingerprint_mismatch" in (
+        exc_info.value.evidence["rejection_reasons"]
+    )
+    assert "operator_approval_blocked" in (exc_info.value.evidence["rejection_reasons"])
+    assert exc_info.value.evidence["authorizes_execution"] is False
+
+
 def test_exact_session_attestation_is_append_only_reused_and_has_no_side_effects(
     tmp_path,
 ) -> None:
@@ -580,6 +672,7 @@ def test_exact_session_attestation_is_append_only_reused_and_has_no_side_effects
         session_start_account_truth_fingerprint=env[
             "session_start_account_truth_fingerprint"
         ],
+        per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
         order_ids=env["order_ids"],
         requested_start_at=env["start_at"],
         requested_expires_at=env["expires_at"],
@@ -599,6 +692,7 @@ def test_exact_session_attestation_is_append_only_reused_and_has_no_side_effects
         session_start_account_truth_fingerprint=env[
             "session_start_account_truth_fingerprint"
         ],
+        per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
         order_ids=env["order_ids"],
         requested_start_at=env["start_at"],
         requested_expires_at=env["expires_at"],
@@ -641,6 +735,7 @@ def test_recorded_attestation_re_resolves_every_current_source(tmp_path) -> None
         session_start_account_truth_fingerprint=env[
             "session_start_account_truth_fingerprint"
         ],
+        per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
         order_ids=env["order_ids"],
         requested_start_at=env["start_at"],
         requested_expires_at=env["expires_at"],
@@ -685,6 +780,7 @@ def test_signed_current_envelope_can_reserve_budget_but_cannot_issue_session(
         session_start_account_truth_fingerprint=env[
             "session_start_account_truth_fingerprint"
         ],
+        per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
         order_ids=env["order_ids"],
         requested_start_at=env["start_at"],
         requested_expires_at=env["expires_at"],
@@ -737,6 +833,7 @@ def test_session_attestation_rejects_approval_for_another_artifact(tmp_path) -> 
             session_start_account_truth_fingerprint=env[
                 "session_start_account_truth_fingerprint"
             ],
+            per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
             order_ids=env["order_ids"],
             requested_start_at=env["start_at"],
             requested_expires_at=env["expires_at"],
@@ -769,6 +866,7 @@ def test_session_attestation_rejects_stale_fingerprint_and_blocked_envelope(
             session_start_account_truth_fingerprint=env[
                 "session_start_account_truth_fingerprint"
             ],
+            per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
             order_ids=env["order_ids"],
             requested_start_at=env["start_at"],
             requested_expires_at=env["expires_at"],
@@ -796,6 +894,7 @@ def test_session_attestation_rejects_stale_fingerprint_and_blocked_envelope(
             session_start_account_truth_fingerprint=env[
                 "session_start_account_truth_fingerprint"
             ],
+            per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
             order_ids=env["order_ids"],
             requested_start_at=env["start_at"],
             requested_expires_at=env["expires_at"],
@@ -894,6 +993,7 @@ def test_session_envelope_fingerprint_is_stable_until_freshness_boundary(
         session_start_account_truth_fingerprint=env[
             "session_start_account_truth_fingerprint"
         ],
+        per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
         order_ids=env["order_ids"],
         requested_start_at=env["start_at"],
         requested_expires_at=env["expires_at"],
@@ -1097,6 +1197,7 @@ def test_session_gateway_source_drift_invalidates_envelope_approval(tmp_path) ->
             session_start_account_truth_fingerprint=env[
                 "session_start_account_truth_fingerprint"
             ],
+            per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
             order_ids=env["order_ids"],
             requested_start_at=env["start_at"],
             requested_expires_at=env["expires_at"],
@@ -1352,6 +1453,7 @@ def test_session_start_account_truth_drift_invalidates_envelope_approval(
             session_start_account_truth_fingerprint=env[
                 "session_start_account_truth_fingerprint"
             ],
+            per_symbol_runtime_limits=env["per_symbol_runtime_limits"],
             order_ids=env["order_ids"],
             requested_start_at=env["start_at"],
             requested_expires_at=env["expires_at"],

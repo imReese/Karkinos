@@ -197,6 +197,21 @@ def test_acceptance_audit_cli_controlled_session_budget_reservation_filter() -> 
     assert audit["completed_count"] == audit["required_count"]
 
 
+def test_acceptance_audit_cli_controlled_session_symbol_budget_filter() -> None:
+    result = _run_cli("--audit", "controlled_session_symbol_budget")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "controlled_session_symbol_budget"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_session_symbol_budget"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
+    assert audit["completed_count"] == audit["required_count"]
+
+
 def test_acceptance_audit_cli_capital_scaling_review_foundation_filter() -> None:
     result = _run_cli("--audit", "capital_scaling_review_foundation")
 
@@ -480,6 +495,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "controlled_session_gateway_verification_binding",
         "session_start_account_truth_binding",
         "controlled_session_budget_reservation",
+        "controlled_session_symbol_budget",
         "capital_scaling_review_foundation",
         "capital_scaling_evidence_resolution",
         "capital_scaling_evidence_window",

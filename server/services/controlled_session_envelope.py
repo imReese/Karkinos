@@ -30,9 +30,9 @@ from server.services.session_start_account_truth import (
     resolve_session_start_account_truth_binding,
 )
 
-CONTROLLED_SESSION_ENVELOPE_SCHEMA_VERSION = "karkinos.controlled_session_envelope.v3"
+CONTROLLED_SESSION_ENVELOPE_SCHEMA_VERSION = "karkinos.controlled_session_envelope.v4"
 CONTROLLED_SESSION_ATTESTATION_SCHEMA_VERSION = (
-    "karkinos.controlled_session_attestation.v4"
+    "karkinos.controlled_session_attestation.v5"
 )
 CONTROLLED_SESSION_ATTESTATION_EVENT_TYPE = "controlled_session.envelope_attested"
 CONTROLLED_SESSION_ATTESTATION_ENTITY_TYPE = "controlled_session_attestation"
@@ -95,7 +95,7 @@ class ControlledSessionEnvelopeService:
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.controlled_session_status.v3",
+            "schema_version": "karkinos.controlled_session_status.v4",
             "contract_status": "proposal_only_non_executing",
             "runtime_session_authority": "disabled",
             "session_issue_enabled": False,
@@ -112,6 +112,7 @@ class ControlledSessionEnvelopeService:
             "exact_prior_batch_reconciliation_required": True,
             "per_order_gateway_verification_binding": "required_per_envelope",
             "session_start_account_truth_binding": "required_per_envelope",
+            "per_symbol_runtime_limits": "required_explicit_map_per_envelope",
             "maximum_proposal_duration_seconds": (
                 CONTROLLED_SESSION_MAX_DURATION_SECONDS
             ),
@@ -127,6 +128,7 @@ class ControlledSessionEnvelopeService:
         prior_batch_reconciliation_fingerprint: str,
         execution_gateway_verification_fingerprints: dict[str, str],
         session_start_account_truth_fingerprint: str,
+        per_symbol_runtime_limits: dict[str, Any],
         order_ids: list[str] | tuple[str, ...],
         requested_start_at: datetime,
         requested_expires_at: datetime,
@@ -199,6 +201,16 @@ class ControlledSessionEnvelopeService:
             duration_seconds=max(0, int((expires_at - start_at).total_seconds())),
         )
         review_blockers.extend(budget_blockers)
+        symbol_limits, symbol_limit_blockers = _per_symbol_runtime_limit_summary(
+            requested_limits=per_symbol_runtime_limits,
+            projected_by_symbol=(budget.get("projected_by_symbol") or {}),
+            capital_decision=(
+                capital.get("decision")
+                if isinstance(capital.get("decision"), dict)
+                else {}
+            ),
+        )
+        review_blockers.extend(symbol_limit_blockers)
 
         connector_id = str(context.get("evidence_connector_id") or "")
         soak, soak_review_blockers, soak_hard_blockers = self._soak_summary(
@@ -274,7 +286,11 @@ class ControlledSessionEnvelopeService:
                         if session_start_account_truth.get("status") == "pass"
                         else ["session_account_truth_snapshot_not_bound"]
                     ),
-                    "per_symbol_runtime_limits_not_bound",
+                    *(
+                        []
+                        if symbol_limits.get("status") == "pass"
+                        else ["per_symbol_runtime_limits_not_bound"]
+                    ),
                     *(
                         []
                         if reconciliation.get("status") == "pass"
@@ -304,6 +320,7 @@ class ControlledSessionEnvelopeService:
             ),
             "orders": orders,
             "budget_projection": budget,
+            "per_symbol_runtime_limits": symbol_limits,
             "connector_soak": soak,
             "execution_gateway": execution_gateway,
             "execution_gateway_verifications": gateway_verifications,
@@ -347,6 +364,7 @@ class ControlledSessionEnvelopeService:
         prior_batch_reconciliation_fingerprint: str,
         execution_gateway_verification_fingerprints: dict[str, str],
         session_start_account_truth_fingerprint: str,
+        per_symbol_runtime_limits: dict[str, Any],
         order_ids: list[str] | tuple[str, ...],
         requested_start_at: datetime,
         requested_expires_at: datetime,
@@ -366,6 +384,7 @@ class ControlledSessionEnvelopeService:
             session_start_account_truth_fingerprint=(
                 session_start_account_truth_fingerprint
             ),
+            per_symbol_runtime_limits=per_symbol_runtime_limits,
             order_ids=order_ids,
             requested_start_at=requested_start_at,
             requested_expires_at=requested_expires_at,
@@ -406,6 +425,7 @@ class ControlledSessionEnvelopeService:
             session_start_account_truth_fingerprint=(
                 session_start_account_truth_fingerprint
             ),
+            per_symbol_runtime_limits=per_symbol_runtime_limits,
             operator_label=str(operator_label or "").strip(),
             operator_approval=operator_approval,
             acknowledgement=acknowledgement,
@@ -482,6 +502,11 @@ class ControlledSessionEnvelopeService:
                     ),
                     session_start_account_truth_fingerprint=str(
                         recorded.get("session_start_account_truth_fingerprint") or ""
+                    ),
+                    per_symbol_runtime_limits=(
+                        recorded.get("per_symbol_runtime_limits")
+                        if isinstance(recorded.get("per_symbol_runtime_limits"), dict)
+                        else {}
                     ),
                     order_ids=[str(item) for item in recorded.get("order_ids") or []],
                     requested_start_at=start_at,
@@ -860,6 +885,7 @@ class ControlledSessionEnvelopeService:
         prior_batch_reconciliation_fingerprint: str,
         execution_gateway_verification_fingerprints: dict[str, str],
         session_start_account_truth_fingerprint: str,
+        per_symbol_runtime_limits: dict[str, Any],
         operator_label: str,
         operator_approval: dict[str, Any],
         acknowledgement: str,
@@ -895,6 +921,10 @@ class ControlledSessionEnvelopeService:
             "session_start_account_truth_fingerprint": (
                 session_start_account_truth_fingerprint
             ),
+            "per_symbol_runtime_limits": {
+                str(symbol): _decimal_string(_decimal(value))
+                for symbol, value in sorted((per_symbol_runtime_limits or {}).items())
+            },
             "resolved_session_start_account_truth_fingerprint": str(
                 (envelope.get("session_start_account_truth") or {}).get(
                     "account_truth_fingerprint"
@@ -1034,6 +1064,74 @@ def _verification_reference_blockers(
     if len(set(values)) != len(values):
         blockers.append("execution_gateway_verification_fingerprint_reused")
     return list(dict.fromkeys(blockers))
+
+
+def _per_symbol_runtime_limit_summary(
+    *,
+    requested_limits: dict[str, Any],
+    projected_by_symbol: dict[str, Any],
+    capital_decision: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    expected_symbols = {str(symbol) for symbol in projected_by_symbol}
+    raw_limits = requested_limits if isinstance(requested_limits, dict) else {}
+    submitted_symbols = {str(symbol) for symbol in raw_limits}
+    blockers: list[str] = []
+    if submitted_symbols != expected_symbols:
+        blockers.append("per_symbol_runtime_limit_set_mismatch")
+    effective_limits = (
+        capital_decision.get("effective_limits")
+        if isinstance(capital_decision.get("effective_limits"), dict)
+        else {}
+    )
+    capital_symbol_ceiling = _decimal(effective_limits.get("symbol_capital_limit"))
+    effective_capital = _decimal(effective_limits.get("effective_capital"))
+    if capital_symbol_ceiling is None or capital_symbol_ceiling <= 0:
+        blockers.append("capital_symbol_limit_missing_or_invalid")
+    if effective_capital is None or effective_capital <= 0:
+        blockers.append("capital_effective_limit_missing_or_invalid")
+    ceiling = min(
+        value
+        for value in (
+            capital_symbol_ceiling or Decimal("0"),
+            effective_capital or Decimal("0"),
+        )
+    )
+    results: dict[str, dict[str, str]] = {}
+    canonical_limits: dict[str, str] = {}
+    for raw_symbol, raw_limit in sorted(raw_limits.items()):
+        symbol = str(raw_symbol)
+        if symbol != symbol.strip() or not symbol:
+            blockers.append("per_symbol_runtime_limit_symbol_invalid")
+        limit = _decimal(raw_limit)
+        projected = _decimal(projected_by_symbol.get(symbol))
+        if limit is None or limit <= 0:
+            blockers.append(f"per_symbol_runtime_limit_invalid:{symbol}")
+            continue
+        canonical_limits[symbol] = _decimal_string(limit)
+        if ceiling <= 0 or limit > ceiling:
+            blockers.append(f"per_symbol_runtime_limit_exceeds_cap:{symbol}")
+        if projected is None or projected < 0:
+            blockers.append(f"per_symbol_projection_invalid:{symbol}")
+            projected = Decimal("0")
+        if projected > limit:
+            blockers.append(f"per_symbol_runtime_limit_projection_exceeded:{symbol}")
+        results[symbol] = {
+            "limit_value": _decimal_string(limit),
+            "projected_gross_value": _decimal_string(projected),
+            "remaining_after_projection": _decimal_string(
+                max(Decimal("0"), limit - projected)
+            ),
+        }
+    unique_blockers = list(dict.fromkeys(blockers))
+    return {
+        "status": "pass" if not unique_blockers else "blocked",
+        "calculation_mode": "explicit_signed_map_capped_by_capital_evaluation",
+        "capital_symbol_ceiling": _decimal_string(ceiling),
+        "requested_limits": canonical_limits,
+        "symbols": results,
+        "blockers": unique_blockers,
+        "authorizes_execution": False,
+    }, unique_blockers
 
 
 def _budget_projection(

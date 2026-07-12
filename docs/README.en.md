@@ -257,6 +257,12 @@ China-trading-day turnover, and order-count capacity with SQLite write
 serialization. This is budget state only: it cannot issue/resume a session,
 mutate OMS/ledger, contact a broker, submit/cancel, or scale capital.
 
+Stage 3.6 requires an exact positive per-symbol limit map in the signed
+envelope. Limits cannot exceed the capital evaluation's symbol/effective
+ceiling, and the atomic transaction aggregates overlapping reservations per
+symbol. Same-symbol contention fails closed while disjoint symbols remain
+subject to the shared account budget. No runtime or broker authority is added.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

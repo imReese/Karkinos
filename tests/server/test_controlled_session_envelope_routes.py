@@ -91,6 +91,10 @@ def _preview_payload() -> dict:
             "OMS-2": "8" * 64,
         },
         "session_start_account_truth_fingerprint": "5" * 64,
+        "per_symbol_runtime_limits": {
+            "159915.SZ": "6000",
+            "510300.SH": "6000",
+        },
         "order_ids": ["OMS-1", "OMS-2"],
         "requested_start_at": NOW.isoformat(),
         "requested_expires_at": (NOW + timedelta(minutes=10)).isoformat(),
@@ -127,6 +131,10 @@ def test_controlled_session_routes_status_preview_attest_and_list(monkeypatch) -
     assert attestation.json()["authorizes_execution"] is False
     assert listing.status_code == 200
     assert listing.json()[0]["runtime_session_status"] == "not_issued"
+    assert service.calls[1][1]["per_symbol_runtime_limits"] == {
+        "159915.SZ": 6000,
+        "510300.SH": 6000,
+    }
     assert ("list", 10) in service.calls
 
 
@@ -214,6 +222,19 @@ def test_controlled_session_routes_reject_credentials_and_bad_acknowledgement(
         "/api/automation/controlled-sessions/envelopes/preview",
         json=missing_account_truth_payload,
     )
+    missing_symbol_limits_payload = _preview_payload()
+    missing_symbol_limits_payload.pop("per_symbol_runtime_limits")
+    missing_symbol_limits = client.post(
+        "/api/automation/controlled-sessions/envelopes/preview",
+        json=missing_symbol_limits_payload,
+    )
+    overprecise_symbol_limits = client.post(
+        "/api/automation/controlled-sessions/envelopes/preview",
+        json={
+            **_preview_payload(),
+            "per_symbol_runtime_limits": {"510300.SH": "0.00001"},
+        },
+    )
 
     assert credential.status_code == 422
     assert bad_ack.status_code == 422
@@ -222,6 +243,8 @@ def test_controlled_session_routes_reject_credentials_and_bad_acknowledgement(
     assert missing_gateway_verifications.status_code == 422
     assert invalid_gateway_verifications.status_code == 422
     assert missing_account_truth.status_code == 422
+    assert missing_symbol_limits.status_code == 422
+    assert overprecise_symbol_limits.status_code == 422
     assert not any(call[0] == "attest" for call in service.calls)
     assert not any(call[0] == "preview" for call in service.calls)
 

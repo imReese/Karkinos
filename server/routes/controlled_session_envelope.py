@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -27,6 +28,10 @@ GatewayVerificationFingerprint = Annotated[
     str,
     Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$"),
 ]
+PerSymbolRuntimeLimit = Annotated[
+    Decimal,
+    Field(gt=0, max_digits=20, decimal_places=4),
+]
 
 
 class ControlledSessionEnvelopePreviewRequest(BaseModel):
@@ -45,6 +50,10 @@ class ControlledSessionEnvelopePreviewRequest(BaseModel):
         min_length=64,
         max_length=64,
         pattern=r"^[a-f0-9]{64}$",
+    )
+    per_symbol_runtime_limits: dict[str, PerSymbolRuntimeLimit] = Field(
+        min_length=1,
+        max_length=50,
     )
     order_ids: list[str] = Field(min_length=1, max_length=50)
     requested_start_at: datetime
@@ -95,6 +104,7 @@ def create_router() -> APIRouter:
             session_start_account_truth_fingerprint=(
                 request.session_start_account_truth_fingerprint
             ),
+            per_symbol_runtime_limits=request.per_symbol_runtime_limits,
             order_ids=request.order_ids,
             requested_start_at=request.requested_start_at,
             requested_expires_at=request.requested_expires_at,
@@ -118,6 +128,7 @@ def create_router() -> APIRouter:
                 session_start_account_truth_fingerprint=(
                     request.session_start_account_truth_fingerprint
                 ),
+                per_symbol_runtime_limits=request.per_symbol_runtime_limits,
                 order_ids=request.order_ids,
                 requested_start_at=request.requested_start_at,
                 requested_expires_at=request.requested_expires_at,

@@ -81,6 +81,37 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-12: Stage 3.6 binds explicit per-symbol runtime limits into the
+  proposal-only controlled-session envelope and its atomic budget reservation.
+  The request must provide one positive value (maximum four decimal places) for
+  exactly every projected symbol. Each limit is capped by both the recorded
+  capital evaluation's `symbol_capital_limit` and effective capital, must cover
+  the conservative gross projection, and is included in the signed envelope
+  and attestation identity. The reservation persists projected/capacity maps in
+  fixed 0.0001 CNY units. Under the existing SQLite `BEGIN IMMEDIATE` lock,
+  overlapping reservations are summed independently per symbol; same-symbol
+  contention above the strictest signed limit fails, disjoint symbols may
+  proceed only while shared capital/cash/turnover/order budgets remain clear,
+  and legacy overlapping rows without symbol evidence fail closed.
+  Assumptions: the current capital-evaluation contract exposes one conservative
+  `symbol_capital_limit`, so this initial stage applies that ceiling to every
+  symbol already inside the signed policy scope; the operator may choose a
+  lower explicit value for any symbol, while future Account Truth facts may
+  tighten but never implicitly widen it; gross buy/sell values are not netted;
+  and symbol reservations have no release semantics before their window ends.
+  Validation: focused envelope/reservation/route/acceptance coverage passed 118
+  tests, including real two-thread same-symbol contention, disjoint-symbol, and
+  legacy-missing-evidence cases; the new `controlled_session_symbol_budget`
+  audit reports 7/7 complete; all 28 registered audits report 290/290 criteria
+  complete; `.venv/bin/pytest -q` passed 1,150 tests; and Black, isort, and
+  `git diff --check` passed. Risk impact: GitNexus
+  reports MEDIUM for `ControlledSessionEnvelopeService`,
+  `ControlledSessionBudgetReservationService`, and `AppDatabase`, with only 2,
+  2, and 4 direct dependants respectively; request models and the acceptance
+  registry are LOW. No HIGH/CRITICAL symbol was changed. A clear map removes
+  only `per_symbol_runtime_limits_not_bound`; runtime rate limiting, automatic
+  pause, authenticated session issuance/resume/revoke, live gateway, broker
+  submission, OMS/production-ledger mutation, and scale-up remain disabled.
 - 2026-07-11: Stage 3.5 adds an atomic, non-authorizing controlled-session
   budget reservation after the exact signed envelope is re-resolved. The
   attestation now persists its exact prior-batch fingerprint and can be

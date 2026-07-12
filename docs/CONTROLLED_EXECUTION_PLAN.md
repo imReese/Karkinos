@@ -282,9 +282,15 @@ It fingerprints exact authorization/account scope, China trading day, window,
 conservative gross/cash/turnover amounts, order count, and capacities, then uses
 SQLite `BEGIN IMMEDIATE` to prevent concurrent double allocation. Reservation
 does not issue session authority or enable OMS, ledger, or broker actions.
+Stage 3.6 adds an explicit per-symbol runtime-limit map to the signed envelope
+and atomic row. The map must exactly match projected symbols, stay below the
+capital evaluation's symbol/effective ceilings, and cover conservative gross
+projection. Overlapping reservations are accumulated per symbol under the same
+write lock; legacy missing evidence fails closed. This clears the per-symbol
+evidence gate only and still does not issue a runtime session.
 The request and recorded capital evaluation must bind the same resolved clear
-prior-batch fingerprint. Stage 1/2 promotion, per-symbol runtime limits, submit
-capability, runtime rate limiting, automatic pause, runtime session
+prior-batch fingerprint. Stage 1/2 promotion, submit capability, runtime rate
+limiting, automatic pause, runtime session
 issue/resume/revoke, and the live gateway remain hard blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen
