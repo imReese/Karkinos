@@ -34,6 +34,10 @@ The product boundary is:
   be imported, checked, reconciled, scored, and surfaced for review.
 * Signals and strategy outputs remain research evidence until they pass data,
   cost, OOS, risk, account-truth, paper/shadow, and manual-review gates.
+* Financial data integrity is a product safety boundary: persisted facts are
+  authoritative, one canonical calculation owns each financial concept,
+  cross-surface totals must reconcile, and missing or unpublished evidence
+  fails closed instead of being replaced by a plausible value.
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.

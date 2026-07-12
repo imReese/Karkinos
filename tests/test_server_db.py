@@ -33,6 +33,28 @@ def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
     assert "idx_quote_fetch_runs_provider" in indexes
 
 
+def test_app_database_initializes_valuation_snapshots_table(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        table = conn.execute("""
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'valuation_snapshots'
+            """).fetchone()
+        indexes = {row[0] for row in conn.execute("""
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'valuation_snapshots'
+                """).fetchall()}
+
+    assert table is not None
+    assert "idx_valuation_snapshots_as_of" in indexes
+    assert "idx_valuation_snapshots_trade_date" in indexes
+    assert "idx_valuation_snapshots_status" in indexes
+
+
 def test_app_database_initializes_event_log_table(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -403,6 +425,7 @@ def test_app_database_upserts_and_reads_latest_quote(tmp_path):
         "change_percent": 0.012245,
         "metadata": {"provider_status": "live", "sequence": 2},
         "nav_date": "2026-05-23",
+        "fetch_run_id": None,
         "previous_close": 122.5,
         "price": 124.0,
         "provider_name": "akshare",
@@ -669,6 +692,7 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
     assert json.loads(events[0]["payload_json"]) == {
         "asset_class": "stock",
         "captured_reason": "test_refresh",
+        "fetch_run_id": None,
         "nav_date": "2026-04-18",
         "price": 123.45,
         "provider_name": "akshare",

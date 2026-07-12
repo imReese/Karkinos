@@ -274,6 +274,14 @@ class PortfolioSnapshot(BaseModel):
     positions: list[PositionResponse]
     allocation: list[AllocationItem]
     allocation_grouped: list[AllocationGroup] = []
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_trade_date: str | None = None
+    valuation_policy: str | None = None
+    valuation_status: str = "missing"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
 
 
 class LiveHoldingItemResponse(BaseModel):
@@ -306,13 +314,21 @@ class LiveHoldingGroupResponse(BaseModel):
     asset_class: str
     label: str
     total_market_value: float
-    total_today_change: float
+    total_today_change: float | None
     total_since_buy_pnl: float
     items: list[LiveHoldingItemResponse]
 
 
 class LiveHoldingsResponse(BaseModel):
     groups: list[LiveHoldingGroupResponse]
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_trade_date: str | None = None
+    valuation_policy: str | None = None
+    valuation_status: str = "missing"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
 
 
 class TodayPnlBreakdown(BaseModel):
@@ -376,6 +392,14 @@ class AccountOverview(BaseModel):
     refresh_policy: str | None = None
     using_persistent_cache: bool = False
     daily_operations: DailyOperationsSummary | None = None
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_trade_date: str | None = None
+    valuation_policy: str | None = None
+    valuation_status: str = "missing"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
 
 
 class AccountStateResponse(BaseModel):
@@ -477,6 +501,14 @@ class ExplainabilityResponse(BaseModel):
     recent_drivers: list[ExplainabilityDriver]
     positions: list[ExplainabilityPositionDriver]
     timeline: list[ExplainabilityTimelinePoint] = []
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_trade_date: str | None = None
+    valuation_policy: str | None = None
+    valuation_status: str = "missing"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
 
 
 class RiskMetricItem(BaseModel):
@@ -733,6 +765,14 @@ class EquitySeriesPoint(BaseModel):
     others_daily_change: float | None = None
     quote_status: str = "live"
     missing_price_symbols: list[str] = []
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_trade_date: str | None = None
+    valuation_policy: str | None = None
+    valuation_status: str = "missing"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
 
 
 class ActivityItem(BaseModel):

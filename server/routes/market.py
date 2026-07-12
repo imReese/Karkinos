@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from functools import partial
 import json
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import date, datetime, timedelta
+from functools import partial
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -25,12 +26,12 @@ from server.models import (
     MarketHealthQuote,
     MarketQuote,
     QuoteFetchRunResponse,
+    ResearchBoardItem,
+    ResearchBoardResponse,
     ResearchNoteCreate,
     ResearchNoteListResponse,
     ResearchNoteResponse,
     ResearchNoteUpdate,
-    ResearchBoardItem,
-    ResearchBoardResponse,
     WatchlistCreateRequest,
     WatchlistItem,
 )
@@ -38,13 +39,14 @@ from server.services.asset_metadata import (
     metadata_configured_count,
     resolve_asset_metadata,
 )
-from server.services.market_hours import is_cn_trading_session
 from server.services.data_health import build_data_health
+from server.services.market_hours import is_cn_trading_session
 from server.services.market_indices import (
     default_market_index_assets,
     market_index_display_name,
 )
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -340,21 +342,33 @@ def _quote_metadata(
         fallback_name=symbol,
     )
     display_name = (
-        str(quote.get("display_name") or quote.get("name") or "").strip()
-        if quote
-        else ""
-    ) or market_index_display_name(symbol) or metadata.display_name
-    daily_change = None if quote is None else _optional_float(
-        quote.get("daily_change")
-        or quote.get("day_change_value")
-        or quote.get("change")
+        (
+            str(quote.get("display_name") or quote.get("name") or "").strip()
+            if quote
+            else ""
+        )
+        or market_index_display_name(symbol)
+        or metadata.display_name
     )
-    daily_change_pct = None if quote is None else _optional_float(
-        quote.get("daily_change_pct")
-        or quote.get("day_change_pct")
-        or quote.get("change_pct")
-        or quote.get("change_percent")
-        or quote.get("pct_chg")
+    daily_change = (
+        None
+        if quote is None
+        else _optional_float(
+            quote.get("daily_change")
+            or quote.get("day_change_value")
+            or quote.get("change")
+        )
+    )
+    daily_change_pct = (
+        None
+        if quote is None
+        else _optional_float(
+            quote.get("daily_change_pct")
+            or quote.get("day_change_pct")
+            or quote.get("change_pct")
+            or quote.get("change_percent")
+            or quote.get("pct_chg")
+        )
     )
     quote_status = (
         "missing"
@@ -559,19 +573,29 @@ def _extract_runtime_portfolio(state):
     portfolio = getattr(scheduler, "portfolio", None) if scheduler else None
     instruments = getattr(scheduler, "instruments", {}) if scheduler else {}
     latest_quotes: dict[str, dict] = {}
-    if scheduler and getattr(scheduler, "latest_quotes", None):
-        for symbol, quote in scheduler.latest_quotes.items():
-            latest_quotes[symbol] = quote
     db = getattr(state, "db", None)
+    persistent_reader_available = db is not None and (
+        hasattr(db, "get_latest_quotes_sync") or hasattr(db, "list_latest_quotes_sync")
+    )
+    if db is not None and hasattr(db, "list_latest_quotes_sync"):
+        for row in db.list_latest_quotes_sync():
+            latest_quotes[str(row["symbol"])] = row
     if db is not None and hasattr(db, "get_latest_quotes_sync"):
         for row in db.get_latest_quotes_sync():
-            latest_quotes.setdefault(row["symbol"], row)
+            latest_quotes.setdefault(str(row["symbol"]), row)
+    if (
+        not persistent_reader_available
+        and scheduler
+        and getattr(scheduler, "latest_quotes", None)
+    ):
+        for symbol, quote in scheduler.latest_quotes.items():
+            latest_quotes[str(symbol)] = quote
 
     if (
-        portfolio is None
-        and db is not None
+        db is not None
         and hasattr(db, "get_trades_sync")
         and hasattr(db, "get_cash_flows_sync")
+        and hasattr(state.config, "initial_cash")
     ):
         rebuilt = rebuild_portfolio_from_ledger(
             state.config,
@@ -805,21 +829,18 @@ def _create_manual_quote_fetch_run(
     db = getattr(state, "db", None)
     if db is None or not hasattr(db, "create_quote_fetch_run"):
         return
-    try:
-        db.create_quote_fetch_run(
-            run_id=run_id,
-            started_at=started_at,
-            trigger="manual_refresh",
-            provider=_configured_provider_name(state),
-            asset_type=asset_type,
-            symbol_count=len(requested_symbols),
-            status="running",
-            metadata={
-                "requested_symbols": requested_symbols,
-            },
-        )
-    except Exception:
-        logger.warning("Failed to create quote fetch run audit row", exc_info=True)
+    db.create_quote_fetch_run(
+        run_id=run_id,
+        started_at=started_at,
+        trigger="manual_refresh",
+        provider=_configured_provider_name(state),
+        asset_type=asset_type,
+        symbol_count=len(requested_symbols),
+        status="running",
+        metadata={
+            "requested_symbols": requested_symbols,
+        },
+    )
 
 
 def _manual_quote_fetch_run_status(
@@ -870,6 +891,7 @@ def _finish_manual_quote_fetch_run(
     refresh_policy: str,
     market_open: bool,
     last_refresh_error: str | None,
+    valuation_snapshot_id: str | None = None,
 ) -> None:
     db = getattr(state, "db", None)
     if db is None or not hasattr(db, "finish_quote_fetch_run"):
@@ -900,20 +922,18 @@ def _finish_manual_quote_fetch_run(
         "refreshed_symbols": [result.symbol for result in refreshed],
         "failed_symbols": [result.symbol for result in failed],
         "skipped_symbols": [result.symbol for result in skipped],
+        "valuation_snapshot_id": valuation_snapshot_id,
     }
-    try:
-        db.finish_quote_fetch_run(
-            run_id=run_id,
-            finished_at=finished_at,
-            status=status,
-            success_count=success_count,
-            failure_count=failure_count,
-            cache_hit_count=cache_hit_count,
-            error_message=last_refresh_error,
-            metadata=metadata,
-        )
-    except Exception:
-        logger.warning("Failed to finish quote fetch run audit row", exc_info=True)
+    db.finish_quote_fetch_run(
+        run_id=run_id,
+        finished_at=finished_at,
+        status=status,
+        success_count=success_count,
+        failure_count=failure_count,
+        cache_hit_count=cache_hit_count,
+        error_message=last_refresh_error,
+        metadata=metadata,
+    )
 
 
 def _quote_fetch_run_metadata(row: dict) -> dict | None:
@@ -1301,20 +1321,6 @@ async def _backfill_instrument_metadata(
     )
 
 
-def _latest_cached_quote(state, symbol: str) -> dict | None:
-    scheduler = state.scheduler
-    if scheduler and getattr(scheduler, "latest_quotes", None):
-        quote = scheduler.latest_quotes.get(symbol)
-        if quote:
-            return quote
-
-    if state.db is not None and hasattr(state.db, "get_latest_quotes_sync"):
-        for row in state.db.get_latest_quotes_sync():
-            if row.get("symbol") == symbol:
-                return row
-    return None
-
-
 def _latest_persistent_real_quote(state, symbol: str) -> dict | None:
     if state.db is None or not hasattr(state.db, "get_latest_quotes_sync"):
         return None
@@ -1404,6 +1410,7 @@ def _upsert_latest_quote_snapshot(
     quote_status: str,
     captured_reason: str,
     nav_date: str | None = None,
+    fetch_run_id: str | None = None,
 ) -> None:
     db = getattr(state, "db", None)
     if db is None or not hasattr(db, "upsert_latest_quote_sync"):
@@ -1434,6 +1441,7 @@ def _upsert_latest_quote_snapshot(
             captured_at=datetime.now().isoformat(),
             captured_reason=captured_reason,
             nav_date=nav_date,
+            fetch_run_id=fetch_run_id,
             metadata={
                 "source": snapshot.get("source"),
                 "display_name": snapshot.get("display_name") or snapshot.get("name"),
@@ -1586,7 +1594,13 @@ def _fetch_provider_latest_with_timeout(
         executor.shutdown(wait=False, cancel_futures=True)
 
 
-def _persist_latest_snapshot(state, symbol: str, payload: dict) -> None:
+def _persist_latest_snapshot(
+    state,
+    symbol: str,
+    payload: dict,
+    *,
+    fetch_run_id: str | None = None,
+) -> None:
     if (
         state.db is not None
         and hasattr(state.db, "save_quote_snapshot_sync")
@@ -1605,6 +1619,7 @@ def _persist_latest_snapshot(state, symbol: str, payload: dict) -> None:
             provider_status=payload["provider_status"],
             captured_reason=captured_reason,
             nav_date=payload.get("nav_date"),
+            fetch_run_id=fetch_run_id,
         )
         snapshot_metadata = dict(payload)
         _upsert_latest_quote_snapshot(
@@ -1618,6 +1633,7 @@ def _persist_latest_snapshot(state, symbol: str, payload: dict) -> None:
             quote_status=payload["quote_status"],
             captured_reason=captured_reason,
             nav_date=payload.get("nav_date"),
+            fetch_run_id=fetch_run_id,
         )
         previous_close = payload.get("previous_close")
         previous_close_date = payload.get("previous_close_date")
@@ -1647,6 +1663,7 @@ async def _refresh_one_quote(
     symbol: str,
     asset_class: AssetClass,
     timeout_seconds: float | None = None,
+    fetch_run_id: str | None = None,
 ) -> QuoteRefreshSymbolResult:
     timeout = (
         _MANUAL_REFRESH_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
@@ -1771,7 +1788,29 @@ async def _refresh_one_quote(
             using_persistent_cache=bool(cached_quote),
         )
 
-    _persist_latest_snapshot(state, symbol, snapshot)
+    try:
+        _persist_latest_snapshot(
+            state,
+            symbol,
+            snapshot,
+            fetch_run_id=fetch_run_id,
+        )
+    except Exception:
+        logger.exception("Failed to persist refreshed quote for %s", symbol)
+        error_message = "quote_persistence_failed"
+        _QUOTE_REFRESH_ERRORS[key] = error_message
+        return QuoteRefreshSymbolResult(
+            symbol=symbol,
+            asset_class=asset_class.value,
+            status="failed",
+            quote_timestamp=snapshot.get("timestamp"),
+            quote_source=snapshot.get("quote_source"),
+            error=error_message,
+            reason="行情已获取但未完整落库，拒绝发布为可用行情",
+            last_refresh_attempt=attempted_at.isoformat(),
+            last_refresh_error=error_message,
+            using_persistent_cache=bool(_latest_persistent_real_quote(state, symbol)),
+        )
     _store_runtime_quote(state, symbol, snapshot)
     quote_status = _resolve_quote_status(state, snapshot)
     metadata = _quote_metadata(
@@ -2013,12 +2052,15 @@ def create_router() -> APIRouter:
         return await get_watchlist()
 
     @r.get("/quote/{symbol}", response_model=MarketQuote)
-    async def get_quote(symbol: str, background_tasks: BackgroundTasks) -> MarketQuote:
-        """本地优先获取报价，并异步刷新快照。"""
+    async def get_quote(
+        symbol: str,
+        background_tasks: BackgroundTasks,
+    ) -> MarketQuote:
+        """只读取持久化报价事实；行情刷新必须走显式命令接口。"""
+        del background_tasks
         from server.app import get_app_state
 
         state = get_app_state()
-        scheduler = state.scheduler
         asset_class = _ASSET_CLASS_MAP.get(
             next(
                 (
@@ -2031,35 +2073,10 @@ def create_router() -> APIRouter:
             AssetClass.STOCK,
         )
 
-        if scheduler and scheduler.is_running:
-            q = scheduler.latest_quotes.get(symbol)
-            if q:
-                _maybe_schedule_quote_refresh(
-                    state, background_tasks, symbol, asset_class
-                )
-                payload = dict(q)
-                payload.setdefault("symbol", symbol)
-                return MarketQuote(**payload)
-
         if state.db is not None:
             cached = await state.db.get_latest_quote(symbol)
             if cached:
-                _maybe_schedule_quote_refresh(
-                    state, background_tasks, symbol, asset_class
-                )
                 return MarketQuote(**cached)
-
-        if not is_cn_trading_session():
-            return MarketQuote(symbol=symbol, price=0, asset_class=asset_class.value)
-
-        try:
-            snapshot = await asyncio.to_thread(
-                _fetch_latest_snapshot, state, symbol, asset_class
-            )
-            if snapshot:
-                return MarketQuote(**snapshot)
-        except Exception:
-            logger.warning("Failed to fetch quote for %s", symbol, exc_info=True)
 
         return MarketQuote(symbol=symbol, price=0, asset_class=asset_class.value)
 
@@ -2070,7 +2087,7 @@ def create_router() -> APIRouter:
         end: str = _DEFAULT_END_DATE,
         interval: str = "1d",
     ) -> list[KlineBar]:
-        """获取历史 K 线数据。"""
+        """只读取已持久化历史 K 线；远端同步必须走 bars/backfill。"""
         from server.app import get_app_state
 
         state = get_app_state()
@@ -2111,7 +2128,7 @@ def create_router() -> APIRouter:
                 datetime.strptime(end, "%Y-%m-%d"),
                 frequency,
                 ac,
-                allow_remote_refresh=is_cn_trading_session(),
+                allow_remote_refresh=False,
                 refresh_ttl_seconds=max(int(config.live_poll_interval or 60), 15),
                 degrade_to_cache=True,
             )
@@ -2147,8 +2164,6 @@ def create_router() -> APIRouter:
         from server.app import get_app_state
 
         state = get_app_state()
-        scheduler = state.scheduler
-
         market_health_assets = _with_default_market_indices(
             _merged_watchlist_assets(state)
         )
@@ -2158,11 +2173,23 @@ def create_router() -> APIRouter:
         ]
 
         latest_quotes: dict[str, dict] = {}
-        if scheduler and getattr(scheduler, "latest_quotes", None):
-            for symbol, quote in scheduler.latest_quotes.items():
-                latest_quotes[symbol] = quote
-
         persistent_quotes: dict[str, dict] = {}
+        persistent_reader_available = state.db is not None and (
+            hasattr(state.db, "list_latest_quotes_sync")
+            or hasattr(state.db, "get_latest_quotes_sync")
+        )
+        scheduler = state.scheduler
+        if (
+            not persistent_reader_available
+            and scheduler
+            and getattr(scheduler, "latest_quotes", None)
+        ):
+            latest_quotes.update(
+                {
+                    str(symbol): quote
+                    for symbol, quote in scheduler.latest_quotes.items()
+                }
+            )
         if state.db is not None:
             if hasattr(state.db, "list_latest_quotes_sync"):
                 for row in state.db.list_latest_quotes_sync():
@@ -2266,9 +2293,7 @@ def create_router() -> APIRouter:
             and not any(item.quote_status == "live" for item in status_health_quotes)
             else source_health
         )
-        has_funds = any(
-            asset_class in {"fund", "etf"} for _, asset_class in watchlist
-        )
+        has_funds = any(asset_class in {"fund", "etf"} for _, asset_class in watchlist)
         effective_provider_supports_funds = (
             True
             if has_funds and _has_live_fund_quotes(health_quotes)
@@ -2402,6 +2427,7 @@ def create_router() -> APIRouter:
                 refresh_policy=refresh_policy,
                 market_open=market_open,
                 last_refresh_error="no_refresh_symbols",
+                valuation_snapshot_id=None,
             )
             return QuoteRefreshResponse(
                 requested_symbols=[],
@@ -2442,6 +2468,7 @@ def create_router() -> APIRouter:
                     state,
                     symbol,
                     asset_class_by_symbol.get(symbol, AssetClass.STOCK),
+                    fetch_run_id=run_id,
                 )
                 for symbol in requested_symbols
             ]
@@ -2477,6 +2504,35 @@ def create_router() -> APIRouter:
         )
         has_persistent_cache = any(result.using_persistent_cache for result in results)
         completed_at = completed_at_dt.isoformat()
+        try:
+            valuation_snapshot = build_current_valuation_snapshot(
+                getattr(state, "db", None),
+                persist=True,
+            )
+        except Exception as exc:
+            logger.exception("Failed to create valuation snapshot after manual refresh")
+            db = getattr(state, "db", None)
+            if db is not None and hasattr(db, "finish_quote_fetch_run"):
+                db.finish_quote_fetch_run(
+                    run_id=run_id,
+                    finished_at=completed_at,
+                    status="failed",
+                    success_count=len(refreshed),
+                    failure_count=max(len(failed), 1),
+                    cache_hit_count=sum(
+                        1 for result in results if result.using_persistent_cache
+                    ),
+                    error_message="valuation_snapshot_persistence_failed",
+                    metadata={
+                        "requested_symbols": requested_symbols,
+                        "error": str(exc),
+                        "facts_persisted_but_not_published": True,
+                    },
+                )
+            raise HTTPException(
+                status_code=503,
+                detail="行情已落库但估值快照生成失败，本批次未发布",
+            ) from exc
         _finish_manual_quote_fetch_run(
             state,
             run_id=run_id,
@@ -2489,6 +2545,7 @@ def create_router() -> APIRouter:
             refresh_policy=refresh_policy,
             market_open=market_open,
             last_refresh_error=last_refresh_error,
+            valuation_snapshot_id=str(valuation_snapshot["snapshot_id"]),
         )
         return QuoteRefreshResponse(
             requested_symbols=requested_symbols,

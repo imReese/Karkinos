@@ -961,7 +961,7 @@ def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch
 
     assert response.price == 111.11
     assert response.asset_class == "stock"
-    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks == []
 
 
 def test_market_quote_refresh_is_throttled(monkeypatch):
@@ -1004,8 +1004,8 @@ def test_market_quote_refresh_is_throttled(monkeypatch):
     asyncio.run(endpoint("600519", first_tasks))
     asyncio.run(endpoint("600519", second_tasks))
 
-    assert len(first_tasks.tasks) == 1
-    assert len(second_tasks.tasks) == 0
+    assert first_tasks.tasks == []
+    assert second_tasks.tasks == []
 
 
 def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
@@ -1050,8 +1050,8 @@ def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
     response = asyncio.run(endpoint("600003", BackgroundTasks()))
 
     assert response.symbol == "600003"
-    assert response.price == 26.08
-    assert response.timestamp == "2026-01-15T13:12:13"
+    assert response.price == 0
+    assert response.timestamp is None
 
 
 def test_market_quote_prefers_persisted_snapshot_without_refresh_when_closed(
@@ -1130,11 +1130,11 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert response.quotes[0].symbol == "600519"
-    assert response.quotes[0].price == 123.45
-    assert response.quotes[0].quote_status == "stale"
-    assert response.quotes[0].quote_source == "akshare"
-    assert response.quotes[0].quote_age_seconds is not None
-    assert response.quotes[0].stale_reason == "market_closed_cache_only"
+    assert response.quotes[0].price is None
+    assert response.quotes[0].quote_status == "missing"
+    assert response.quotes[0].quote_source is None
+    assert response.quotes[0].quote_age_seconds is None
+    assert response.quotes[0].stale_reason == "no_real_data_available"
     assert response.provider_name == "akshare"
     assert response.provider_configured is True
     assert response.provider_requires_token is False
@@ -1142,10 +1142,10 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
     assert response.provider_timeout_seconds is not None
     assert response.provider_last_error is None
     assert response.next_action == "refresh_quotes_or_check_source"
-    assert response.provider_status == "stale"
-    assert response.source_health == "stale"
-    assert response.cache_age_seconds is not None
-    assert response.latest_quote_timestamp is not None
+    assert response.provider_status == "missing"
+    assert response.source_health == "missing"
+    assert response.cache_age_seconds is None
+    assert response.latest_quote_timestamp is None
     assert response.stale_symbols_count == 1
     assert response.stale_symbols_sample == ["600519"]
     assert response.market_open is False
@@ -1747,6 +1747,7 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(monkeypat
 def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path):
     from server.db import AppDatabase
     from server.routes import market as market_routes
+    from server.services.valuation_snapshot import build_current_valuation_snapshot
 
     router = market_routes.create_router()
     refresh_route = next(
@@ -1814,6 +1815,13 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     assert metadata["provider_status"] == "live"
     assert metadata["quote_status"] == "live"
     assert metadata["using_persistent_cache"] is False
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    snapshots = db.get_recent_quote_snapshots_sync("600519", limit=10)
+    assert latest is not None
+    assert latest["fetch_run_id"] == runs[0]["run_id"]
+    assert snapshots[0]["fetch_run_id"] == runs[0]["run_id"]
+    valuation = build_current_valuation_snapshot(db, persist=False)
+    assert valuation["metadata"]["ingestion_run_ids"] == [runs[0]["run_id"]]
 
 
 def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path):
@@ -2816,7 +2824,7 @@ def test_market_research_board_merges_watchlist_and_health(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert response.items[0].symbol == "600519"
-    assert response.items[0].price == 123.45
+    assert response.items[0].price is None
     assert response.items[0].is_holding is True
     assert response.health.market_open is True
 
@@ -3078,7 +3086,7 @@ def test_market_watchlist_includes_holding_fields(monkeypatch):
     assert response[0].is_holding is True
     assert response[0].quantity == 100
     assert response[0].unrealized_pnl == 184.5
-    assert response[0].last_snapshot_at == "2026-04-18T10:00:00"
+    assert response[0].last_snapshot_at is None
 
 
 def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
@@ -3842,7 +3850,19 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
                 }
             },
         ),
-        db=None,
+        db=SimpleNamespace(
+            get_latest_quotes_sync=lambda: [
+                {
+                    "symbol": "019999",
+                    "asset_class": "fund",
+                    "price": 2.2503,
+                    "volume": None,
+                    "timestamp": "2026-04-22",
+                    "previous_close": 2.2606,
+                    "previous_close_date": "2026-04-21",
+                }
+            ]
+        ),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
@@ -4245,11 +4265,16 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
             instruments={},
         ),
     )
+    valuation_snapshot_id = portfolio_routes.build_current_valuation_snapshot(
+        fake_db,
+        persist=False,
+    )["snapshot_id"]
 
     monkeypatch.setattr(
         portfolio_routes,
         "_build_live_holdings_response",
         lambda state: portfolio_routes.LiveHoldingsResponse(
+            valuation_snapshot_id=valuation_snapshot_id,
             groups=[
                 portfolio_routes.LiveHoldingGroupResponse(
                     asset_class="stock",
@@ -4552,7 +4577,7 @@ def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
-        lambda state, portfolio, instruments: portfolio_routes.EquitySeriesPoint(
+        lambda state, portfolio, instruments, latest_quotes=None: portfolio_routes.EquitySeriesPoint(
             timestamp="2026-06-26T15:00:00+08:00",
             total=20000,
             stocks=10000,
@@ -4672,7 +4697,7 @@ def test_portfolio_overview_drawdown_counts_already_applied_future_cash_deposit(
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
-        lambda state, portfolio, instruments: portfolio_routes.EquitySeriesPoint(
+        lambda state, portfolio, instruments, latest_quotes=None: portfolio_routes.EquitySeriesPoint(
             timestamp="2026-06-26T15:00:00+08:00",
             total=20000,
             stocks=10000,
@@ -5587,8 +5612,8 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
     assert timeline_by_date["2026-04-22"].equity == pytest.approx(100050.0)
     assert timeline_by_date["2026-05-08"].equity == pytest.approx(100100.0)
     assert timeline_by_date["2026-05-08"].market_pnl == pytest.approx(50.0)
-    assert response.timeline[-1].date == "2026-05-11"
-    assert "2026-05-12" not in timeline_by_date
+    assert response.timeline[-1].date == "2026-05-12"
+    assert timeline_by_date["2026-05-12"].market_pnl == pytest.approx(100.0)
 
 
 def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
@@ -5674,8 +5699,8 @@ def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
     response = asyncio.run(endpoint(limit=50))
     timeline_by_date = {point.date: point for point in response.timeline}
 
-    assert timeline_by_date["2026-04-22"].valuation_status == "missing"
-    assert timeline_by_date["2026-04-22"].missing_price_symbols == ["600519"]
+    assert response.valuation_status == "missing"
+    assert "2026-04-22" not in timeline_by_date
 
 
 def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
@@ -6088,6 +6113,114 @@ def test_historical_equity_quote_does_not_use_current_latest_quote_for_daily_att
     assert quote["price"] == pytest.approx(0.9194)
 
 
+def test_historical_equity_quote_fails_closed_without_historical_reader():
+    from server.routes.portfolio import _historical_quote_for_equity_day
+
+    latest = {
+        "600519": {
+            "symbol": "600519",
+            "asset_class": "stock",
+            "price": 1500.0,
+            "timestamp": "2026-07-10T14:57:00+08:00",
+        }
+    }
+    state = SimpleNamespace(db=SimpleNamespace())
+
+    historical = _historical_quote_for_equity_day(
+        state,
+        symbol="600519",
+        asset_class="stock",
+        trade_date=date(2026, 7, 9),
+        latest_quotes=latest,
+        is_current_day=False,
+    )
+    current = _historical_quote_for_equity_day(
+        state,
+        symbol="600519",
+        asset_class="stock",
+        trade_date=date(2026, 7, 10),
+        latest_quotes=latest,
+        is_current_day=True,
+    )
+
+    assert historical is None
+    assert current == latest["600519"]
+
+
+def test_historical_equity_ignores_missing_quotes_for_closed_positions(tmp_path):
+    from server.db import AppDatabase
+    from server.models import EquitySeriesPoint
+    from server.routes.portfolio import _daily_equity_series_from_ledger_history
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-06T09:00:00+08:00",
+        amount=10000.0,
+        asset_class="cash",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-07-07T10:00:00+08:00",
+        amount=100.0,
+        symbol="CLOSED",
+        direction="buy",
+        quantity=10.0,
+        price=10.0,
+        asset_class="stock",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_sell",
+        timestamp="2026-07-08T09:45:00+08:00",
+        amount=110.0,
+        symbol="CLOSED",
+        direction="sell",
+        quantity=10.0,
+        price=11.0,
+        asset_class="stock",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-07-08T10:00:00+08:00",
+        amount=200.0,
+        symbol="OPEN",
+        direction="buy",
+        quantity=10.0,
+        price=20.0,
+        asset_class="stock",
+    )
+    for trade_date, close in (("2026-07-08", 20.5), ("2026-07-09", 21.0)):
+        db.save_daily_close_snapshot_sync(
+            symbol="OPEN",
+            asset_class="stock",
+            trade_date=trade_date,
+            close_price=close,
+            source="test_close",
+        )
+
+    points = _daily_equity_series_from_ledger_history(
+        SimpleNamespace(db=db, config=SimpleNamespace(initial_cash=0)),
+        selected_range="7d",
+        current_point=EquitySeriesPoint(
+            timestamp="2026-07-10T14:57:00+08:00",
+            total=10000.0,
+            stocks=210.0,
+            funds=0.0,
+            others=0.0,
+            cash=9790.0,
+            quote_status="live",
+        ),
+    )
+
+    july_ninth = next(
+        point for point in points if point.timestamp.startswith("2026-07-09")
+    )
+    assert july_ninth.quote_status == "live"
+    assert july_ninth.missing_price_symbols == []
+    assert july_ninth.stocks == pytest.approx(210.0)
+
+
 def test_quote_status_allows_live_provider_lag_with_asset_specific_windows():
     from zoneinfo import ZoneInfo
 
@@ -6462,7 +6595,20 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
             ]
 
         def get_latest_quotes_sync(self):
-            return []
+            return [
+                {
+                    "symbol": "600001",
+                    "asset_class": "stock",
+                    "price": 9.24,
+                    "timestamp": "2026-06-12T15:00:00+08:00",
+                },
+                {
+                    "symbol": "600002",
+                    "asset_class": "stock",
+                    "price": 28.34,
+                    "timestamp": "2026-06-12T15:00:00+08:00",
+                },
+            ]
 
         def get_latest_market_bar_before_date_sync(self, symbol: str, trade_date: str):
             candidates = [
@@ -6642,7 +6788,7 @@ def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
     monkeypatch.setattr(
         portfolio_routes,
         "_resolve_projection_sources",
-        lambda state: (fake_state.scheduler.portfolio, {}),
+        lambda state, **kwargs: (fake_state.scheduler.portfolio, {}),
     )
     monkeypatch.setattr(
         portfolio_routes,
@@ -6679,9 +6825,9 @@ def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
 
     response = asyncio.run(endpoint())
 
-    assert response.drawdown.latest_equity == pytest.approx(1200)
-    assert response.drawdown.peak_equity == pytest.approx(1600)
-    assert response.drawdown.current_drawdown == pytest.approx(0.25)
+    assert response.drawdown.latest_equity == pytest.approx(2000)
+    assert response.drawdown.peak_equity == pytest.approx(2000)
+    assert response.drawdown.current_drawdown == pytest.approx(0.0)
 
 
 def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(
@@ -9825,11 +9971,36 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
 
         def get_latest_quotes_sync(self):
             return [
-                {"symbol": "600519", "price": 1100.0, "asset_class": "stock"},
-                {"symbol": "019999", "price": 2.1, "asset_class": "fund"},
-                {"symbol": "510300", "price": 3.2, "asset_class": "etf"},
-                {"symbol": "BOND1", "price": 101.0, "asset_class": "bond"},
-                {"symbol": "GOLD1", "price": 2100.0, "asset_class": "gold"},
+                {
+                    "symbol": "600519",
+                    "price": 1100.0,
+                    "asset_class": "stock",
+                    "timestamp": "2026-04-30T15:00:00+08:00",
+                },
+                {
+                    "symbol": "019999",
+                    "price": 2.1,
+                    "asset_class": "fund",
+                    "timestamp": "2026-04-30T15:00:00+08:00",
+                },
+                {
+                    "symbol": "510300",
+                    "price": 3.2,
+                    "asset_class": "etf",
+                    "timestamp": "2026-04-30T15:00:00+08:00",
+                },
+                {
+                    "symbol": "BOND1",
+                    "price": 101.0,
+                    "asset_class": "bond",
+                    "timestamp": "2026-04-30T15:00:00+08:00",
+                },
+                {
+                    "symbol": "GOLD1",
+                    "price": 2100.0,
+                    "asset_class": "gold",
+                    "timestamp": "2026-04-30T15:00:00+08:00",
+                },
             ]
 
     fake_state = SimpleNamespace(
@@ -9845,18 +10016,18 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
 
     assert len(series) > 7
     assert series[0].timestamp.endswith("T15:00:00+08:00")
-    assert series[0].stocks == pytest.approx(11000.0)
-    assert series[0].funds == pytest.approx(5300.0)
-    assert series[0].others == pytest.approx(9250.0)
+    assert series[0].stocks == pytest.approx(10000.0)
+    assert series[0].funds == pytest.approx(5000.0)
+    assert series[0].others == pytest.approx(9000.0)
     assert series[0].cash == pytest.approx(76000.0)
-    assert series[0].total == pytest.approx(101550.0)
-    assert series[-2].stocks == pytest.approx(11000.0)
-    assert series[-2].funds == pytest.approx(5300.0)
-    assert series[-2].others == pytest.approx(9250.0)
+    assert series[0].total == pytest.approx(100000.0)
+    assert series[-2].stocks == pytest.approx(10000.0)
+    assert series[-2].funds == pytest.approx(5000.0)
+    assert series[-2].others == pytest.approx(9000.0)
     assert series[-2].cash == pytest.approx(76000.0)
-    assert series[-2].total == pytest.approx(101550.0)
+    assert series[-2].total == pytest.approx(100000.0)
     assert series[-1].timestamp > series[-2].timestamp
-    assert series[-1].total == pytest.approx(series[-2].total)
+    assert series[-1].total == pytest.approx(101550.0)
     assert series[-1].quote_status == "stale"
 
 
@@ -9923,6 +10094,27 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
         def get_latest_quote_before_date_sync(self, symbol: str, trade_date: str):
             return None
 
+        def get_recent_quote_snapshots_sync(self, symbol: str, limit: int = 1000):
+            prices = {
+                "600519": [
+                    ("2026-04-20T09:35:00", 1005.0),
+                    ("2026-04-20T09:40:00", 1010.0),
+                ],
+                "510300": [
+                    ("2026-04-20T09:35:00", 3.1),
+                    ("2026-04-20T09:40:00", 3.2),
+                ],
+            }
+            return [
+                {
+                    "symbol": symbol,
+                    "timestamp": timestamp,
+                    "price": price,
+                    "quote_status": "live",
+                }
+                for timestamp, price in prices.get(symbol, [])
+            ]
+
         async def get_total_deposits(self):
             return 0.0
 
@@ -9953,32 +10145,12 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
         db=FakeDb(),
     )
 
-    class FakeSource:
-        def fetch_bars(self, symbol, start, end, frequency, asset_class):
-            if str(symbol) == "600519":
-                return pd.DataFrame(
-                    {
-                        "timestamp": pd.to_datetime(
-                            ["2026-04-20T09:35:00", "2026-04-20T09:40:00"]
-                        ),
-                        "close": [1005.0, 1010.0],
-                    }
-                )
-            if str(symbol) == "510300":
-                return pd.DataFrame(
-                    {
-                        "timestamp": pd.to_datetime(
-                            ["2026-04-20T09:35:00", "2026-04-20T09:40:00"]
-                        ),
-                        "close": [3.1, 3.2],
-                    }
-                )
-            raise AssertionError(f"unexpected symbol {symbol}")
-
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
-        lambda **kwargs: {"akshare": FakeSource()},
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("equity GET must not construct provider sources")
+        ),
     )
     monkeypatch.setattr(
         portfolio_routes,
@@ -9992,7 +10164,6 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
         "09:30",
         "09:35",
         "09:40",
-        "09:45",
     ]
     assert series[0].stocks == pytest.approx(10000.0)
     assert series[0].funds == pytest.approx(3000.0)
@@ -10547,14 +10718,133 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
     assert series[0].stocks == pytest.approx(0.0)
     assert series[0].total == pytest.approx(5763.0)
     assert series[1].cash == pytest.approx(2508.0)
-    assert series[1].stocks == pytest.approx(3255.0)
-    assert series[1].total == pytest.approx(5763.0)
-    assert series[1].stocks_daily_change == pytest.approx(0.0)
+    assert series[1].stocks == pytest.approx(3250.0)
+    assert series[1].total == pytest.approx(5758.0)
+    assert series[1].stocks_daily_change == pytest.approx(-5.0)
     assert series[-1].stocks == pytest.approx(3252.0)
     assert series[-1].cash == pytest.approx(2508.0)
     assert series[-1].total - series[0].total == pytest.approx(-3.0)
     assert series[-1].stocks_daily_change == pytest.approx(-3.0)
     assert series[-1].total_daily_change == pytest.approx(-3.0)
+
+
+def test_portfolio_equity_curve_series_1d_splits_overnight_and_intraday_lots(
+    monkeypatch,
+):
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+
+    class FakeDb:
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "603659",
+                    "asset_class": "stock",
+                    "price": 24.60,
+                    "timestamp": "2026-07-10T14:57:00+08:00",
+                    "previous_close": 25.46,
+                    "previous_close_date": "2026-07-09",
+                }
+            ]
+
+        def get_latest_daily_close_before_sync(self, symbol, trade_date):
+            return None
+
+        def get_latest_quote_before_date_sync(self, symbol, trade_date):
+            return None
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            if offset:
+                return []
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-07-09T09:00:00+08:00",
+                    "amount": 30000.0,
+                    "symbol": None,
+                    "asset_class": "cash",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-07-09T10:00:00+08:00",
+                    "symbol": "603659",
+                    "quantity": 100.0,
+                    "price": 25.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                },
+                {
+                    "id": 3,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-07-10T10:00:00+08:00",
+                    "symbol": "603659",
+                    "quantity": 300.0,
+                    "price": 24.95,
+                    "commission": 5.0,
+                    "fee_breakdown_json": json.dumps({"total_fee": 5.07485}),
+                    "asset_class": "stock",
+                },
+            ]
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            assets=[],
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=SimpleNamespace(
+                cash=10000.0,
+                positions={"603659": SimpleNamespace(quantity=400.0, avg_cost=25.0)},
+            ),
+            instruments={
+                Symbol("603659"): SimpleNamespace(
+                    asset_class=SimpleNamespace(value="stock")
+                )
+            },
+            latest_quotes={},
+        ),
+        db=FakeDb(),
+    )
+
+    class EmptySource:
+        def fetch_bars(self, symbol, start, end, frequency, asset_class):
+            return pd.DataFrame(columns=["timestamp", "close"])
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {"akshare": EmptySource()},
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
+
+    series = asyncio.run(endpoint("1d"))
+
+    assert series[0].stocks == pytest.approx(100 * 25.46)
+    assert series[0].cash - series[-1].cash == pytest.approx(300 * 24.95 + 5.07485)
+    assert series[-1].stocks == pytest.approx(400 * 24.60)
+    assert series[-1].stocks_daily_change == pytest.approx(-196.07485)
+    assert series[-1].total - series[0].total == pytest.approx(-196.07485)
 
 
 def test_portfolio_equity_curve_series_1d_skips_intraday_source_when_market_closed(
@@ -10824,6 +11114,230 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
     assert item.today_change == pytest.approx(-3.0)
     assert item.today_change_pct == pytest.approx(3252.0 / 3255.0 - 1)
     assert response.groups[0].total_today_change == pytest.approx(-3.0)
+
+
+def test_portfolio_live_holdings_splits_overnight_and_same_day_buy_pnl(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    state = SimpleNamespace(
+        db=SimpleNamespace(
+            get_latest_market_bar_before_date_sync=lambda symbol, trade_date: {
+                "trade_date": "2026-07-09",
+                "close": 25.46,
+            },
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                {
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-07-10T05:44:20+00:00",
+                    "symbol": "603659",
+                    "quantity": 300.0,
+                    "price": 24.95,
+                    "commission": 5.0,
+                    "fee_breakdown_json": json.dumps(
+                        {
+                            "commission": "5.00",
+                            "transfer_fee": "0.074850",
+                            "total_fee": "5.074850",
+                        }
+                    ),
+                }
+            ],
+        )
+    )
+
+    result = portfolio_routes._resolve_position_today_change(
+        state,
+        symbol="603659",
+        quantity=400.0,
+        avg_cost=25.929012125,
+        latest_quote={
+            "price": 24.6,
+            "timestamp": "2026-07-10T14:57:03+08:00",
+        },
+        latest_price_value=24.6,
+    )
+
+    today_change, today_change_pct, baseline_price, baseline_timestamp, source = result
+    expected_baseline = 100.0 * 25.46 + 300.0 * 24.95 + 5.07485
+    assert today_change == pytest.approx(400.0 * 24.6 - expected_baseline)
+    assert today_change_pct == pytest.approx(400.0 * 24.6 / expected_baseline - 1)
+    assert baseline_price == pytest.approx(expected_baseline / 400.0)
+    assert baseline_timestamp == "2026-07-10"
+    assert source == "mixed_previous_close_intraday_trade_cost"
+
+
+def test_daily_performance_is_identical_across_holdings_curve_and_overview(
+    monkeypatch,
+    tmp_path,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.db import AppDatabase
+    from server.routes import portfolio as portfolio_routes
+
+    db = AppDatabase(tmp_path / "daily-performance.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-09T09:00:00+08:00",
+        amount=30000,
+        asset_class="cash",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-07-09T10:00:00+08:00",
+        symbol="603659",
+        direction="buy",
+        quantity=100,
+        price=25.0,
+        gross_amount=2500,
+        net_cash_impact=-2500,
+        asset_class="stock",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-07-10T10:00:00+08:00",
+        symbol="603659",
+        direction="buy",
+        quantity=300,
+        price=24.95,
+        commission=5.0,
+        gross_amount=7485,
+        net_cash_impact=-7490.07485,
+        fee_breakdown_json=json.dumps(
+            {
+                "commission": 5.0,
+                "transfer_fee": 0.07485,
+                "total_fee": 5.07485,
+            }
+        ),
+        asset_class="stock",
+    )
+    db.save_daily_close_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        trade_date="2026-07-09",
+        close_price=25.46,
+        source="test_close",
+    )
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.60,
+        volume=1000,
+        timestamp="2026-07-10T14:57:00+08:00",
+        quote_source="test",
+        provider_name="test",
+        quote_status="live",
+        provider_status="live",
+        captured_reason="deterministic_test",
+        fetch_run_id="run-daily-performance",
+    )
+    db.publish_current_valuation_snapshot_sync()
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            assets=[],
+            live_poll_interval=60,
+            intraday_curve_timeout_seconds=4,
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            latest_quotes={},
+            watchlist=[],
+        ),
+        db=db,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 7, 12, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
+    router = portfolio_routes.create_router()
+    live_endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/live-holdings"
+    )
+    curve_endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+    overview_endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/overview"
+    )
+    explainability_endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/explainability"
+    )
+
+    holdings = asyncio.run(live_endpoint())
+    curve = asyncio.run(curve_endpoint("1d"))
+    overview = asyncio.run(overview_endpoint())
+    explainability = asyncio.run(explainability_endpoint())
+
+    expected = -196.07485
+    assert holdings.groups[0].items[0].today_change == pytest.approx(expected)
+    assert curve[-1].total_daily_change == pytest.approx(expected)
+    assert curve[-1].timestamp.startswith("2026-07-10T14:57:00")
+    assert overview.today_pnl == pytest.approx(expected)
+    assert explainability.timeline[-1].market_pnl == pytest.approx(expected)
+    assert {
+        item.key: item.value for item in explainability.timeline[-1].market_breakdown
+    } == pytest.approx({"stock": expected})
+    assert holdings.valuation_snapshot_id == curve[-1].valuation_snapshot_id
+    assert overview.valuation_snapshot_id == curve[-1].valuation_snapshot_id
+    assert explainability.valuation_snapshot_id == curve[-1].valuation_snapshot_id
+
+
+def test_position_today_change_fails_closed_for_same_day_sell():
+    from server.routes import portfolio as portfolio_routes
+
+    state = SimpleNamespace(
+        db=SimpleNamespace(
+            get_latest_market_bar_before_date_sync=lambda symbol, trade_date: {
+                "trade_date": "2026-07-09",
+                "close": 25.46,
+            },
+            get_ledger_entries_sync=lambda limit=500, offset=0: [
+                {
+                    "entry_type": "trade_sell",
+                    "timestamp": "2026-07-10T05:44:20+00:00",
+                    "symbol": "603659",
+                    "quantity": 100.0,
+                    "price": 24.95,
+                }
+            ],
+        )
+    )
+
+    result = portfolio_routes._resolve_position_today_change(
+        state,
+        symbol="603659",
+        quantity=300.0,
+        avg_cost=25.929012125,
+        latest_quote={
+            "price": 24.6,
+            "timestamp": "2026-07-10T14:57:03+08:00",
+        },
+        latest_price_value=24.6,
+    )
+
+    assert result[0] is None
+    assert result[1] is None
+    assert result[4] == "same_day_sell_requires_daily_attribution"
 
 
 def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
@@ -11152,7 +11666,17 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
             return []
 
         def get_latest_quotes_sync(self):
-            return []
+            return [
+                {
+                    "symbol": "600003",
+                    "asset_class": "stock",
+                    "price": 27.03,
+                    "timestamp": "2026-06-17T14:20:25+08:00",
+                    "quote_source": "tushare_realtime_quote",
+                    "previous_close": 28.26,
+                    "previous_close_date": "2026-01-15",
+                }
+            ]
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -11245,7 +11769,17 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
             return []
 
         def get_latest_quotes_sync(self):
-            return []
+            return [
+                {
+                    "symbol": "600001",
+                    "asset_class": "stock",
+                    "price": 9.31,
+                    "timestamp": "2026-06-17T14:59:15+08:00",
+                    "quote_source": "tushare_realtime_quote",
+                    "previous_close": 9.23,
+                    "previous_close_date": "2026-01-15",
+                }
+            ]
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -11354,7 +11888,15 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
             return []
 
         def get_latest_quotes_sync(self):
-            return []
+            return [
+                {
+                    "symbol": "012999",
+                    "asset_class": "fund",
+                    "price": 0.8827,
+                    "timestamp": "2026-06-17 15:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                }
+            ]
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -11460,7 +12002,17 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
             return []
 
         def get_latest_quotes_sync(self):
-            return []
+            return [
+                {
+                    "symbol": "029999",
+                    "asset_class": "fund",
+                    "price": 1.9836,
+                    "timestamp": "2026-06-17 15:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                    "provider_status": "fallback",
+                    "quote_status": "live",
+                }
+            ]
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -11535,7 +12087,9 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
     assert item.stale_reason == "confirmed_fund_nav_missing_estimate_only"
 
 
-def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
+def test_portfolio_live_holdings_fails_closed_when_only_runtime_quote_exists(
+    monkeypatch,
+):
     from server.routes import portfolio as portfolio_routes
 
     router = portfolio_routes.create_router()
@@ -11594,7 +12148,11 @@ def test_portfolio_live_holdings_does_not_block_on_remote_refresh(monkeypatch):
 
     response = asyncio.run(live_holdings_route.endpoint())
 
-    assert response.groups[0].items[0].latest_price == 9.25
+    item = response.groups[0].items[0]
+    assert item.latest_price is None
+    assert item.today_change is None
+    assert item.quote_status == "missing"
+    assert item.stale_reason == "no_real_data_available"
 
 
 def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch):
@@ -11667,9 +12225,7 @@ def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch)
 
     assert response.groups[0].items[0].baseline_source == "fallback_close"
     assert response.groups[0].items[0].today_change == 25.0
-    assert persisted["trade_date"] == "2026-04-18"
-    assert persisted["close_price"] == 20.5
-    assert persisted["source"] == "quote_fallback"
+    assert persisted == {}
 
 
 def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
@@ -11736,7 +12292,15 @@ def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
     assert response.groups[0].asset_class == "stock"
     assert response.groups[0].items[0].today_change is None
     assert response.groups[0].items[0].today_change_pct is None
-    assert response.groups[0].items[0].baseline_source == "unavailable"
+    assert response.groups[0].total_today_change is None
+    overview_update = portfolio_routes._overview_today_pnl_update(response)
+    assert overview_update["today_pnl"] is None
+    assert overview_update["today_pnl_breakdown"] is None
+    assert overview_update["quote_status"] == "missing"
+    assert overview_update["stale_reason"] == "daily_baseline_unavailable"
+    assert (
+        response.groups[0].items[0].baseline_source == "overnight_baseline_unavailable"
+    )
 
 
 def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch):
@@ -12095,9 +12659,9 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     assert response.groups[0].items[0].quote_age_seconds is not None
     assert response.groups[0].items[0].stale_reason == "market_closed_cache_only"
     assert response.groups[0].items[0].refresh_policy == "cache_only"
-    assert overview.quote_status == "stale"
+    assert overview.quote_status == "missing"
     assert overview.quote_age_seconds is not None
-    assert overview.stale_reason == "market_closed_cache_only"
+    assert overview.stale_reason == "daily_baseline_unavailable"
     assert overview.refresh_policy == "cache_only"
 
 
@@ -12258,7 +12822,7 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
     assert groups["stock"].items[0].name == "贵州茅台"
 
 
-def test_collect_latest_quotes_prefers_newer_persistent_quote_over_runtime():
+def test_collect_latest_quotes_uses_persisted_fact_instead_of_runtime_cache():
     from server.routes import portfolio as portfolio_routes
 
     fake_state = SimpleNamespace(
@@ -12293,13 +12857,13 @@ def test_collect_latest_quotes_prefers_newer_persistent_quote_over_runtime():
 
     latest = portfolio_routes._collect_latest_quotes(fake_state)
 
-    assert latest["600001"]["price"] == 9.13
-    assert latest["600001"]["timestamp"] == "2026-01-12T 11:01:13"
-    assert latest["600001"]["quote_source"] == "tushare_realtime_quote"
+    assert latest["600001"]["price"] == 8.99
+    assert latest["600001"]["timestamp"] == "2026-01-12"
+    assert latest["600001"]["quote_source"] == "tushare_daily"
     assert latest["600001"]["display_name"] == "示例能源"
 
 
-def test_collect_latest_quotes_prefers_newer_runtime_quote_over_later_captured_daily():
+def test_collect_latest_quotes_does_not_merge_newer_runtime_price():
     from server.routes import portfolio as portfolio_routes
 
     fake_state = SimpleNamespace(
@@ -12335,9 +12899,9 @@ def test_collect_latest_quotes_prefers_newer_runtime_quote_over_later_captured_d
 
     latest = portfolio_routes._collect_latest_quotes(fake_state)
 
-    assert latest["600003"]["price"] == 16.04
-    assert latest["600003"]["timestamp"] == "2026-01-15T13:11:31"
-    assert latest["600003"]["quote_source"] == "tushare_realtime_quote"
+    assert latest["600003"]["price"] == 18.26
+    assert latest["600003"]["timestamp"] == "2026-01-14"
+    assert latest["600003"]["quote_source"] == "tushare_daily"
     assert latest["600003"]["display_name"] == "示例制造"
 
 
@@ -12400,7 +12964,7 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
                     "asset_class": "stock",
                     "price": 12.0,
                     "volume": 1000.0,
-                    "timestamp": "2026-04-22T15:00:00",
+                    "timestamp": "2026-05-12T15:00:00+08:00",
                 }
             ]
 
@@ -12440,11 +13004,11 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
     assert len(series) > 5
     assert series[0].timestamp.startswith("2026-04-20")
     assert any(point.timestamp.startswith("2026-05-08") for point in series)
-    assert series[-1].timestamp.startswith("2026-05-12T20:00:00")
+    assert series[-1].timestamp.startswith("2026-05-12T15:00:00")
     assert series[-1].total == 100200.0
     assert series[-1].stocks == 1200.0
     assert series[-1].cash == 99000.0
-    assert series[-1].quote_status == "stale"
+    assert series[-1].quote_status == "live"
 
 
 def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
@@ -12576,7 +13140,7 @@ def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
     assert apr22.stocks == pytest.approx(1050.0)
     assert may8.total == pytest.approx(100100.0)
     assert may8.stocks == pytest.approx(1100.0)
-    assert series[-1].timestamp.startswith("2026-05-12T20:00:00")
+    assert series[-1].timestamp.startswith("2026-05-12T15:00:00")
     assert series[-1].total == pytest.approx(100200.0)
 
 

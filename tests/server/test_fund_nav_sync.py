@@ -69,6 +69,13 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
     assert latest["quote_status"] == "live"
     assert latest["captured_reason"] == "fund_nav_sync"
     assert latest["nav_date"] == "2026-06-12"
+    assert result.run_id is not None
+    assert latest["fetch_run_id"] == result.run_id
+    snapshots = db.get_recent_quote_snapshots_sync("019999", limit=10)
+    assert snapshots[0]["fetch_run_id"] == result.run_id
+    run = db.list_quote_fetch_runs(trigger="fund_nav_sync")[0]
+    assert run["run_id"] == result.run_id
+    assert run["status"] == "success"
     assert stock_latest is None
 
 

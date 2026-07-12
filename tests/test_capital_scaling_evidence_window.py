@@ -347,7 +347,7 @@ def test_incident_fact_counts_persisted_critical_policy_and_disconnect_events(
 ) -> None:
     db = AppDatabase(tmp_path / "capital-scaling-window.db")
     db.init_sync()
-    observed_at = datetime.now(timezone.utc)
+    observed_at = _FIXED_DB_NOW.astimezone(timezone.utc)
     db.upsert_automation_alert_sync(
         alert_key="critical:test",
         severity="critical",

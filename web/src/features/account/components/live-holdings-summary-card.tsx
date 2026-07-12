@@ -2,8 +2,8 @@ import { useCopy } from '../../../app/copy';
 import { formatCurrency } from '../../../shared/format';
 import type { LiveHoldingGroup } from '../../portfolio/api';
 
-function toneClass(value: number) {
-  if (value === 0) {
+function toneClass(value: number | null) {
+  if (value === null || value === 0) {
     return 'text-[var(--app-foreground)]';
   }
   return value > 0 ? 'app-positive' : 'app-negative';

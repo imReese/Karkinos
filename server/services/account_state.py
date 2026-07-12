@@ -32,6 +32,14 @@ def build_account_state_projection(
         unrealized_pnl=sum(position.unrealized_pnl for position in snapshot.positions),
         realized_pnl=sum(position.realized_pnl for position in snapshot.positions),
         cash_ratio=cash_ratio,
+        valuation_snapshot_id=snapshot.valuation_snapshot_id,
+        valuation_as_of=snapshot.valuation_as_of,
+        valuation_trade_date=snapshot.valuation_trade_date,
+        valuation_policy=snapshot.valuation_policy,
+        valuation_status=snapshot.valuation_status,
+        ledger_cutoff_id=snapshot.ledger_cutoff_id,
+        ledger_fingerprint=snapshot.ledger_fingerprint,
+        quote_set_fingerprint=snapshot.quote_set_fingerprint,
     )
     next_step = (
         "确认待执行建议"

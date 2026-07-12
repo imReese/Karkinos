@@ -23,11 +23,12 @@ from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
 from server.services.fund_nav_sync import refresh_fund_nav_quotes
 from server.services.live_context import LiveContextProvider
-from server.services.market_indices import default_market_index_assets
 from server.services.market_hours import is_cn_trading_session
+from server.services.market_indices import default_market_index_assets
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.recommendation_flow import build_recommendation_cycle
 from server.services.trading_controls import TradingControlState
+from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 if TYPE_CHECKING:
     from server.config import ServerConfig
@@ -418,8 +419,8 @@ class TradingScheduler:
         except Exception:
             logger.warning("Failed to finish scheduler quote fetch run", exc_info=True)
 
-    def _poll_watchlist_quotes(self, feed: LiveDataFeed) -> list:
-        """Poll live quotes once and audit only the fetch phase."""
+    def _poll_watchlist_quotes(self, feed: LiveDataFeed) -> tuple[list, str]:
+        """Poll live quotes once and return the still-open ingestion run id."""
         started_at_dt = datetime.now()
         run_id = f"scheduler_poll:{started_at_dt.isoformat()}:{uuid.uuid4().hex}"
         self._create_scheduler_quote_fetch_run(
@@ -447,6 +448,10 @@ class TradingScheduler:
             )
             raise
 
+        return events, run_id
+
+    def _finish_persisted_quote_fetch_run(self, run_id: str, events: list) -> None:
+        """Complete a quote run only after its observations are persisted."""
         success_symbols = [str(event.symbol) for event in events]
         success_symbol_set = set(success_symbols)
         failed_symbols = [
@@ -477,7 +482,6 @@ class TradingScheduler:
             failure_count=failure_count,
             metadata=metadata,
         )
-        return events
 
     def _sync_fund_nav_quotes(self) -> None:
         """Refresh fund NAV/estimate quotes independently from stock quote polling."""
@@ -511,7 +515,9 @@ class TradingScheduler:
         symbol: Symbol,
     ) -> dict | None:
         for candidate_source in (source, fallback_source):
-            if candidate_source is None or not hasattr(candidate_source, "fetch_latest"):
+            if candidate_source is None or not hasattr(
+                candidate_source, "fetch_latest"
+            ):
                 continue
             try:
                 snapshot = candidate_source.fetch_latest(symbol, AssetClass.INDEX)
@@ -839,8 +845,9 @@ class TradingScheduler:
             self._sync_fund_nav_quotes()
             self._sync_default_market_index_quotes(source, fallback_source)
 
+            quote_fetch_run_id = None
             try:
-                events = self._poll_watchlist_quotes(feed)
+                events, quote_fetch_run_id = self._poll_watchlist_quotes(feed)
                 if events:
                     for market_event in events:
                         snapshot = (
@@ -891,6 +898,7 @@ class TradingScheduler:
                                 provider_status="live",
                                 captured_reason="scheduler_poll",
                                 nav_date=snapshot.get("nav_date"),
+                                fetch_run_id=quote_fetch_run_id,
                             )
                             previous_close = snapshot.get("previous_close")
                             previous_close_date = snapshot.get("previous_close_date")
@@ -936,6 +944,7 @@ class TradingScheduler:
                                         captured_at=datetime.now().isoformat(),
                                         captured_reason="scheduler_poll",
                                         nav_date=snapshot.get("nav_date"),
+                                        fetch_run_id=quote_fetch_run_id,
                                         metadata={
                                             "source": snapshot.get("source"),
                                             "previous_close_date": previous_close_date,
@@ -994,7 +1003,27 @@ class TradingScheduler:
                             for sym, _ in self._watchlist
                         }
                     self._portfolio.mark_to_market(prices)
-            except Exception:
+                if self._db is not None:
+                    build_current_valuation_snapshot(self._db)
+                self._finish_persisted_quote_fetch_run(quote_fetch_run_id, events)
+            except Exception as exc:
+                if quote_fetch_run_id is not None:
+                    failed_symbols = [str(symbol) for symbol, _ in self._watchlist]
+                    metadata = self._scheduler_quote_fetch_metadata(
+                        provider_status="failed",
+                        success_symbols=[],
+                        failed_symbols=failed_symbols,
+                        error_message=str(exc),
+                    )
+                    self._finish_scheduler_quote_fetch_run(
+                        run_id=quote_fetch_run_id,
+                        finished_at=datetime.now().isoformat(),
+                        status="failed",
+                        success_count=0,
+                        failure_count=len(self._watchlist),
+                        metadata=metadata,
+                        error_message=str(exc),
+                    )
                 logger.exception("Error in trading loop iteration")
 
             # 使用 wait 替代 sleep，允许立即停止
