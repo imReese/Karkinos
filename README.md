@@ -327,6 +327,13 @@ are summed per symbol; same-symbol excess fails while disjoint symbols still
 share the stricter account budget. This does not issue a session or enable a
 broker action.
 
+Stage 3.7 adds an internal atomic runtime rate-admission ledger with a
+server-time 60-second sliding window, exact session/reservation/order/request
+binding, idempotent retries, shared account-rate enforcement, and concurrent
+last-slot serialization. Production intentionally injects no authenticated
+session provider and exposes only read-only status/history endpoints, so no
+runtime admission, OMS mutation, or broker action is publicly available.
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run

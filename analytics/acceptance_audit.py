@@ -4410,6 +4410,135 @@ def build_controlled_session_symbol_budget_acceptance_audit() -> AcceptanceAudit
     )
 
 
+def build_controlled_session_runtime_rate_limiter_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the Stage 3.7 runtime rate-limiter foundation."""
+
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="runtime_rate_limiter_default_closed",
+                checkbox_text=(
+                    "* [x] Production configures no authenticated session "
+                    "provider and exposes only read-only status/history routes; "
+                    "there is no public preview, admit, submit, or cancel "
+                    "endpoint."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_runtime_rate_limiter.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/server/test_controlled_session_runtime_rate_limiter_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_runtime_rate_limiter_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="exact_authenticated_session_admission_binding",
+                checkbox_text=(
+                    "* [x] Internal admission requires a current enabled and "
+                    "authority-verified bounded session, a verified budget "
+                    "reservation, clear upstream/kill-switch gates, exact "
+                    "session and reservation fingerprints, authorization/"
+                    "account/strategy scope, an in-scope order, an active "
+                    "window, and an explicit positive rate limit."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'preview or session_pause' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="atomic_shared_sliding_rate_window",
+                checkbox_text=(
+                    "* [x] SQLite `BEGIN IMMEDIATE` enforces a server-time "
+                    "60-second sliding window shared by authorization/account, "
+                    "uses the strictest overlapping session rate, and admits "
+                    "only one contender for the final concurrent slot."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'sliding_window or concurrent_last_slot or strictest_account_rate' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="rate_admission_replay_and_idempotency",
+                checkbox_text=(
+                    "* [x] Exact request retries reuse one immutable admission, "
+                    "while a second request for the same session/order or reuse "
+                    "of one request id for another order fails closed and is "
+                    "audited."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'idempotent or order_and_request_reuse' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="session_drift_expiry_provider_failure_blocking",
+                checkbox_text=(
+                    "* [x] Pause, authority drift, limiter disablement, expiry, "
+                    "out-of-scope orders, unsafe rates, and provider failure "
+                    "block before admission without leaking session tokens or "
+                    "broker credentials."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'session_pause or provider_failure' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="rate_admission_evidence_zero_execution_side_effects",
+                checkbox_text=(
+                    "* [x] Accepted admissions and rejected attempts are "
+                    "append-only evidence only: they do not issue, enable, "
+                    "resume, renew, or widen a session; mutate OMS/ledger; "
+                    "contact a broker; or authorize submission/cancellation."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_rate_limiter_deterministic_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover default closure, sanitized "
+                    "preview, exact binding, persistence, retry, boundary time, "
+                    "real concurrency, shared strictest rate, replay conflicts, "
+                    "session drift, route exposure, and zero broker authority."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                    "tests/server/test_controlled_session_runtime_rate_limiter_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py tests/server/test_controlled_session_runtime_rate_limiter_routes.py -q",
+                ),
+            ),
+        )
+    )
+
+
 def build_signed_operator_approval_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for Stage 2.2/3.2 signed operator approvals."""
 

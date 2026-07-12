@@ -263,6 +263,12 @@ ceiling, and the atomic transaction aggregates overlapping reservations per
 symbol. Same-symbol contention fails closed while disjoint symbols remain
 subject to the shared account budget. No runtime or broker authority is added.
 
+Stage 3.7 implements the internal atomic 60-second runtime rate-admission
+ledger. It binds an enabled authenticated session, reservation, scoped order,
+request id, active window, and strictest shared account rate. Production has no
+session provider and exposes only read-only status/history APIs; no public
+admit, OMS, submit, or cancel action exists.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

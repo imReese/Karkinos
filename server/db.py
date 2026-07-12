@@ -3582,6 +3582,183 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    # ---------- Controlled Session Runtime Rate Admissions ----------
+
+    def admit_controlled_session_order_sync(
+        self,
+        *,
+        admission: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically admit one order under a shared 60-second rate window."""
+        requested = dict(admission)
+        try:
+            now_epoch_ms = int(requested["admitted_at_epoch_ms"])
+            requested_rate = int(requested["max_order_rate_per_minute"])
+        except (KeyError, TypeError, ValueError):
+            return _controlled_session_rate_admission_rejection(
+                requested,
+                ["runtime_rate_admission_input_invalid"],
+            )
+        if now_epoch_ms < 0 or requested_rate <= 0:
+            return _controlled_session_rate_admission_rejection(
+                requested,
+                ["runtime_rate_admission_limit_invalid"],
+            )
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_rate_admissions
+                    WHERE admission_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["admission_id"],),
+                ).fetchone()
+                if existing is not None:
+                    conn.commit()
+                    return {
+                        "status": "admitted",
+                        "blockers": [],
+                        "reused": True,
+                        "admission": dict(existing),
+                    }
+                order_conflict = conn.execute(
+                    """
+                    SELECT admission_id FROM controlled_session_rate_admissions
+                    WHERE session_id = ? AND order_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"], requested["order_id"]),
+                ).fetchone()
+                request_conflict = conn.execute(
+                    """
+                    SELECT admission_id FROM controlled_session_rate_admissions
+                    WHERE session_id = ? AND request_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["session_id"], requested["request_id"]),
+                ).fetchone()
+                conflict_blockers: list[str] = []
+                if order_conflict is not None:
+                    conflict_blockers.append("runtime_rate_order_already_admitted")
+                if request_conflict is not None:
+                    conflict_blockers.append("runtime_rate_request_id_reused")
+                if conflict_blockers:
+                    conn.rollback()
+                    return _controlled_session_rate_admission_rejection(
+                        requested,
+                        conflict_blockers,
+                    )
+
+                window_start_epoch_ms = now_epoch_ms - 60_000
+                window = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS admitted_count,
+                        MIN(max_order_rate_per_minute) AS minimum_rate
+                    FROM controlled_session_rate_admissions
+                    WHERE authorization_id = ?
+                      AND account_alias = ?
+                      AND admitted_at_epoch_ms > ?
+                      AND admitted_at_epoch_ms <= ?
+                    """,
+                    (
+                        requested["authorization_id"],
+                        requested["account_alias"],
+                        window_start_epoch_ms,
+                        now_epoch_ms,
+                    ),
+                ).fetchone()
+                admitted_before = int(window["admitted_count"] or 0)
+                effective_rate = min(
+                    requested_rate,
+                    int(window["minimum_rate"] or requested_rate),
+                )
+                if admitted_before >= effective_rate:
+                    conn.rollback()
+                    return _controlled_session_rate_admission_rejection(
+                        requested,
+                        ["runtime_order_rate_limit_reached"],
+                        admitted_before=admitted_before,
+                        admitted_after=admitted_before,
+                        effective_rate=effective_rate,
+                    )
+
+                conn.execute(
+                    """
+                    INSERT INTO controlled_session_rate_admissions (
+                        admission_id, session_id, session_fingerprint,
+                        reservation_id, authorization_id, account_alias,
+                        strategy_id, order_id, request_id,
+                        max_order_rate_per_minute, admitted_at_epoch_ms,
+                        admitted_at, status, payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["admission_id"],
+                        requested["session_id"],
+                        requested["session_fingerprint"],
+                        requested["reservation_id"],
+                        requested["authorization_id"],
+                        requested["account_alias"],
+                        requested["strategy_id"],
+                        requested["order_id"],
+                        requested["request_id"],
+                        requested_rate,
+                        now_epoch_ms,
+                        requested["admitted_at"],
+                        "admitted",
+                        _serialize_event_payload_json(requested["payload"]),
+                        requested["created_at"],
+                    ),
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_rate_admissions
+                    WHERE admission_id = ?
+                    LIMIT 1
+                    """,
+                    (requested["admission_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "admitted",
+                    "blockers": [],
+                    "reused": False,
+                    "admission": dict(saved) if saved is not None else {},
+                    "admitted_before": admitted_before,
+                    "admitted_after": admitted_before + 1,
+                    "effective_rate": effective_rate,
+                    "window_start_epoch_ms": window_start_epoch_ms,
+                }
+            except (sqlite3.IntegrityError, sqlite3.OperationalError, KeyError):
+                conn.rollback()
+                return _controlled_session_rate_admission_rejection(
+                    requested,
+                    ["runtime_rate_admission_transaction_unavailable"],
+                )
+
+    def list_controlled_session_rate_admissions_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List immutable runtime rate-admission evidence newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_session_rate_admissions
+                ORDER BY admitted_at_epoch_ms DESC, id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     # ---------- Latest Quotes ----------
 
     def upsert_latest_quote_sync(
@@ -4828,6 +5005,28 @@ def _controlled_session_budget_rejection(
     }
 
 
+def _controlled_session_rate_admission_rejection(
+    admission: dict[str, Any],
+    blockers: list[str],
+    *,
+    admitted_before: int = 0,
+    admitted_after: int = 0,
+    effective_rate: int = 0,
+) -> dict[str, Any]:
+    return {
+        "status": "rejected",
+        "blockers": list(dict.fromkeys(blockers)),
+        "reused": False,
+        "admission": {},
+        "admission_id": str(admission.get("admission_id") or ""),
+        "session_id": str(admission.get("session_id") or ""),
+        "order_id": str(admission.get("order_id") or ""),
+        "admitted_before": admitted_before,
+        "admitted_after": admitted_after,
+        "effective_rate": effective_rate,
+    }
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5112,6 +5311,35 @@ CREATE INDEX IF NOT EXISTS idx_controlled_session_budget_scope_day
 ON controlled_session_budget_reservations(
     authorization_id, account_alias, trading_day
 );
+
+CREATE TABLE IF NOT EXISTS controlled_session_rate_admissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admission_id TEXT NOT NULL UNIQUE,
+    session_id TEXT NOT NULL,
+    session_fingerprint TEXT NOT NULL,
+    reservation_id TEXT NOT NULL,
+    authorization_id TEXT NOT NULL,
+    account_alias TEXT NOT NULL,
+    strategy_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    max_order_rate_per_minute INTEGER NOT NULL
+        CHECK(max_order_rate_per_minute > 0),
+    admitted_at_epoch_ms INTEGER NOT NULL CHECK(admitted_at_epoch_ms >= 0),
+    admitted_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status = 'admitted'),
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(session_id, order_id),
+    UNIQUE(session_id, request_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_session_rate_scope_time
+ON controlled_session_rate_admissions(
+    authorization_id, account_alias, admitted_at_epoch_ms DESC
+);
+CREATE INDEX IF NOT EXISTS idx_controlled_session_rate_session_time
+ON controlled_session_rate_admissions(session_id, admitted_at_epoch_ms DESC);
 
 CREATE TABLE IF NOT EXISTS risk_decisions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -81,6 +81,39 @@ roadmap promises.
 
 ## v1.8 Progress
 
+- 2026-07-12: Stage 3.7 adds a real internal runtime order-rate admission
+  ledger while keeping production closed until authenticated session issuance
+  exists. A candidate admission must resolve a current enabled and
+  authority-verified bounded session; bind exact session/reservation
+  fingerprints, verified budget reservation, clear upstream/kill-switch gates,
+  authorization/account/strategy, in-scope order and unique request id; fall
+  inside the server-validated effective/expiry window; and use a positive rate
+  no greater than 600 orders/minute. SQLite `BEGIN IMMEDIATE`
+  serializes a server-time 60-second sliding window shared by authorization and
+  account, applies the strictest overlapping-session rate, and permits only one
+  contender for the final slot. Exact retries reuse one immutable admission;
+  order/request replay conflicts and rate failures become append-only rejection
+  evidence. Production explicitly sets `session_provider=None` and exposes only
+  read-only status/history routes, so no public admission mutation exists.
+  Assumptions: server UTC epoch milliseconds are authoritative; events exactly
+  60 seconds old leave the window; all strategies sharing one authorization and
+  account also share its rate; 600/minute is a defensive implementation ceiling
+  rather than a recommended trading rate; and future session issuance/revocation
+  must provide database-backed current state before the limiter can be wired.
+  Validation: 118 focused service/route/acceptance tests passed, including real
+  concurrent last-slot contention, exact boundary, shared strictest-rate,
+  replay, pause/expiry, provider-failure, and route exposure cases; the new
+  `controlled_session_runtime_rate_limiter` audit reports 7/7 complete; all 29
+  registered audits report 297/297 criteria complete; `.venv/bin/pytest -q`
+  passed 1,170 tests; and Black, isort, and `git diff --check` passed. Risk
+  impact: GitNexus reports MEDIUM for `AppDatabase` and
+  `ControlledSessionEnvelopeService`, with 4 and 2 direct dependants, and LOW
+  for `create_app` with 1 direct caller; new limiter symbols are not yet indexed.
+  No HIGH/CRITICAL symbol was changed. The envelope blocker is renamed to
+  `runtime_order_rate_limiter_not_wired_to_authenticated_session`; automatic
+  pause, authenticated session issuance/resume/revoke, live gateway, broker
+  submission, OMS/production-ledger mutation, and capital scale-up remain
+  disabled.
 - 2026-07-12: Stage 3.6 binds explicit per-symbol runtime limits into the
   proposal-only controlled-session envelope and its atomic budget reservation.
   The request must provide one positive value (maximum four decimal places) for

@@ -288,9 +288,16 @@ capital evaluation's symbol/effective ceilings, and cover conservative gross
 projection. Overlapping reservations are accumulated per symbol under the same
 write lock; legacy missing evidence fails closed. This clears the per-symbol
 evidence gate only and still does not issue a runtime session.
+Stage 3.7 implements the internal sliding-window rate-admission ledger. It
+requires a current authority-verified session, binds exact session/reservation/
+order/request identity, uses server time, and serializes the final slot across
+overlapping sessions for the same authorization/account. Production exposes
+only read-only status/history and injects no session provider. The rate limiter
+therefore remains a hard blocker described as not yet wired to authenticated
+session issuance rather than being treated as execution permission.
 The request and recorded capital evaluation must bind the same resolved clear
-prior-batch fingerprint. Stage 1/2 promotion, submit capability, runtime rate
-limiting, automatic pause, runtime session
+prior-batch fingerprint. Stage 1/2 promotion, submit capability, automatic
+pause, runtime session
 issue/resume/revoke, and the live gateway remain hard blockers. Recording an attestation requires a current
 Ed25519 approval for the exact envelope and matching operator, but that approval
 cannot issue a session. A proposal can never auto-renew, auto-resume, widen
