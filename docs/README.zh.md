@@ -13,15 +13,19 @@ Karkinos 是一个面向中国市场的个人量化投研与交易平台。
 Karkinos 的 AI 原生方向是建立“人提出问题、AI 围绕冻结证据协作、系统确定性审计、
 人复核结论”的投研闭环。provider、model 与 agent role 相互解耦；AI 上下文必须绑定
 持久化事实、valuation snapshot 和 ledger cutoff。AI 产物不是账户事实、风控决策、
-资本授权或券商指令。第一阶段只提供本地 deterministic fixture provider，不调用真实
-外部模型、不读取 API Key，也不默认绑定 DeepSeek 或其他厂商。
+资本授权或券商指令。当前架构与运行基础只提供本地 deterministic fixture provider；
+canonical evidence 只读边界能够保存和重读显式捕获的不可变投影，但生产 capture
+入口尚未注册。系统不调用真实外部模型、不读取 API Key，也不默认绑定 DeepSeek 或
+其他厂商。
 
 核心特性：
 
 - **事件驱动架构** — 所有组件通过 EventBus 解耦通信，保证回测确定性
 - **AI 原生投研运行基础** — 提供 provider/model/agent-role 分离注册、证据绑定的
   有状态 workflow、默认拒绝的只读工具权限、claim/debate/report/trade-plan draft/
-  review/memory artifact 和哈希链审计回放；当前不注册真实 provider、不提供交易权限
+  review/memory artifact 和哈希链审计回放；不可变 canonical evidence 记录会校验
+  valuation snapshot、ledger cutoff/fingerprint 和完整性状态，partial/stale/estimated/
+  unreconciled 证据不能冒充权威结果；当前不注册真实 provider、不提供交易权限
 - **多资产支持** — A 股、ETF、黄金现货、交易所债券，Instrument 字段值承载差异
 - **目标权重信号** — 策略输出目标权重（0~1），Portfolio 自动转换为具体股数
 - **T+1 支持** — Position 内置冻结/解冻机制，每日结算自动推进

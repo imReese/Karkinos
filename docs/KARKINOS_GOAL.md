@@ -121,8 +121,11 @@ Active planning target:
   deterministic orchestration, fail-closed tool permissions, append-oriented
   audit storage, and a local fixture provider. It registers no production AI
   provider, calls no external model, exposes no Web/API workflow, and grants no
-  trading authority. Later phases may add explicit read-only projection
-  adapters and human-started research tasks only after separate review.
+  trading authority. Phase 1.1 adds content-addressed canonical-evidence
+  captures and context-bound read executors with exact valuation/ledger
+  identity checks; no production capture route or scheduler is registered.
+  Later phases may connect explicit human-started capture and research tasks
+  only after separate review.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

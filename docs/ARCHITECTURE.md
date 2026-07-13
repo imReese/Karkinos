@@ -221,7 +221,7 @@ Trading-related changes cover the relevant cases below:
 
 ## Current Core Flows
 
-### AI-Native Research Runtime Foundation
+### AI-Native Research Runtime and Canonical Evidence Boundary
 
 The Phase 1 runtime lives under `server/ai_runtime` and deliberately has no
 route registration or application-lifecycle hook. Its contract separates:
@@ -281,6 +281,32 @@ canonical persisted projection or evidence
 
 AI artifact -X-> canonical financial fact / risk decision / execution authority
 ```
+
+The first read-boundary increment adds `CanonicalEvidenceRecord`,
+`CanonicalEvidenceRepository`, `EvidenceContextBuilder`, and
+`CanonicalEvidenceToolExecutors`. An explicit capture caller may freeze an
+already-computed canonical payload under one content-addressed reference. The
+envelope always includes the exact valuation snapshot id, ledger cutoff,
+ledger fingerprint, source schema, as-of time, completeness status, and payload
+fingerprint. If the payload contains any of those identities, a contradiction
+fails closed instead of being accepted as a second truth.
+
+The repository writes only `ai_canonical_evidence`; it does not expose or
+mutate source financial tables. Duplicate content is idempotent, changed
+content receives a different reference, and a context can be assembled only
+when every record has the same valuation/ledger identity. Read executors exist
+for the registered Portfolio, Account State, Operations, Research Evidence,
+Account Truth, and paper/shadow tool names. Each executor accepts only an
+`evidence_reference_id`, re-reads the immutable row, checks the context
+reference and fingerprint, and performs no provider refresh or canonical
+calculation.
+
+Statuses such as `partial`, `stale`, `estimated`, and `unreconciled` remain
+readable for diagnosis but return `authoritative=false` with an explicit
+blocker. They are never silently promoted to complete. The production capture
+caller is intentionally not registered with a route, scheduler, startup hook,
+or background task in this increment; connecting existing projection services
+requires a separate review of the exact capture lifecycle.
 
 ### Research and Strategy Runtime
 

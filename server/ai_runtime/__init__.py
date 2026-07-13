@@ -20,6 +20,15 @@ from .contracts import (
     WorkflowDefinition,
     WorkflowStatus,
 )
+from .evidence import (
+    CANONICAL_EVIDENCE_KINDS,
+    CanonicalEvidenceRecord,
+    CanonicalEvidenceRepository,
+    CanonicalEvidenceToolExecutors,
+    EvidenceContextBuilder,
+    EvidenceIdentityMismatch,
+    EvidenceReadDenied,
+)
 from .orchestrator import DeterministicWorkflowOrchestrator
 from .permissions import ToolPermissionRegistry, default_tool_permission_registry
 from .provider import DeterministicFixtureProvider, ProviderAdapter
@@ -33,10 +42,17 @@ __all__ = [
     "ArtifactDraft",
     "ArtifactKind",
     "Claim",
+    "CANONICAL_EVIDENCE_KINDS",
+    "CanonicalEvidenceRecord",
+    "CanonicalEvidenceRepository",
+    "CanonicalEvidenceToolExecutors",
     "Debate",
     "DeterministicFixtureProvider",
     "DeterministicWorkflowOrchestrator",
     "EvidenceBoundContextSnapshot",
+    "EvidenceContextBuilder",
+    "EvidenceIdentityMismatch",
+    "EvidenceReadDenied",
     "EvidenceReference",
     "MemoryArtifact",
     "ModelRegistration",

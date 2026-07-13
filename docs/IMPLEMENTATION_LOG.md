@@ -6,6 +6,31 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: AI-native Phase 1.1 adds the immutable canonical-evidence read
+  boundary without connecting a production AI provider or capture workflow.
+  Assumptions: an explicit future capture caller must supply an already-built
+  canonical Portfolio, Account State, Operations, Research Evidence, Account
+  Truth, or paper/shadow payload; the AI boundary never recalculates those
+  concepts. Every record binds one exact valuation snapshot, ledger cutoff,
+  ledger fingerprint, source schema, as-of, completeness status, and content
+  fingerprint. Duplicate content is idempotent across restart; changed content
+  receives a new reference. Partial, stale, estimated, or unreconciled evidence
+  remains readable for diagnosis but is explicitly non-authoritative.
+  Validation: 32 AI-runtime tests, the complete 1,376-test backend suite, and
+  82 trading-safety tests passed. Under Node 24.14.0, all 413 Web tests,
+  Prettier format check, and the TypeScript/Vite production build passed;
+  Black and isort checks also passed. Deterministic cases cover restart,
+  duplicate capture, content changes, stored-payload tampering, snapshot/ledger
+  drift, partial evidence, context escape, wrong-tool/refresh arguments,
+  orchestrator consumption, audit replay, and unchanged protected financial
+  tables. Risk impact: GitNexus marks the reused portfolio projection CRITICAL
+  (3 direct callers, 12 affected processes) and account-state projection HIGH
+  (4 direct callers), so neither was modified. The new boundary is additive and
+  LOW risk: it writes only `ai_canonical_evidence`, registers no route,
+  scheduler, startup hook, background model task, real provider, or API key,
+  and cannot contact providers or modify OMS, ledger, risk decisions, kill
+  switch, capital authorization, broker submission, or cancellation state.
+
 - 2026-07-13: The canonical portfolio projection now distinguishes current,
   closed, and evidence-review position facts, so a fully sold asset no longer
   appears in current holdings, allocation, grouped allocation, Overview counts,
