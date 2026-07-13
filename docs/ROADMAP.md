@@ -27,6 +27,7 @@ user manual; current usage guidance belongs in the README files.
 | v1.7 | Completed | Controlled Broker Bridge Foundation (Non-Submitting) |
 | v1.8 | Planning active | Capital-Bounded Controlled Execution |
 | AI-native Phase 1 | Foundation implemented | Provider-neutral, evidence-bound research workflow runtime |
+| AI-native Phase 1.1 | Read boundary implemented | Immutable canonical-evidence captures and context-bound read executors |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -80,10 +81,28 @@ requests, and audit replay. It also verifies that an AI trade-plan draft cannot
 mutate OMS, ledger, risk, kill switch, capital-authority, broker submission, or
 cancellation state.
 
+Phase 1.1 implements the storage and read side of the first migration step:
+
+* an explicit caller can persist a content-addressed copy of an already-built
+  canonical projection without asking the AI runtime to recalculate it;
+* Portfolio, Account State, Operations, Research Evidence, Account Truth, and
+  paper/shadow read tools resolve only references in the frozen context;
+* all records share one exact valuation snapshot, ledger cutoff, and ledger
+  fingerprint, or context assembly fails closed;
+* duplicate capture is idempotent, changed content gets a new reference, and
+  restart reads the same SQLite evidence row;
+* incomplete, stale, estimated, or unreconciled records remain explicit and
+  non-authoritative;
+* no production capture route, scheduler hook, real provider, or external
+  model call is registered yet.
+
 Planned migration, each behind a separate review:
 
-1. add explicit read-only adapters for existing canonical Portfolio, Account
-   State, Operations, Research Evidence, Account Truth, and paper/shadow facts;
+1. **In progress:** immutable storage, identity validation, and context-bound
+   read executors exist; next connect an explicitly human-started capture caller
+   to existing canonical Portfolio, Account State, Operations, Research
+   Evidence, Account Truth, and paper/shadow projection services without
+   recomputation or GET-side refresh;
 2. add human-started task records and review UI without background model calls;
 3. add debate/report/memory lifecycle and invalidation when evidence drifts;
 4. review and explicitly authorize one or more real provider adapters without

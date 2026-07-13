@@ -36,6 +36,7 @@ paper/shadow、人工确认、对账和复盘。
 | v1.7 | 已完成 | Controlled Broker Bridge Foundation（非提交式） |
 | v1.8 | 规划进行中 | Capital-Bounded Controlled Execution（受控资本执行） |
 | AI 原生第一阶段 | 基础已实现 | 厂商中立、证据绑定的投研 workflow 运行基础 |
+| AI 原生 1.1 | 只读边界已实现 | 不可变 canonical evidence 捕获与 context 绑定读取 |
 
 ## AI 原生投研主线
 
@@ -62,7 +63,17 @@ paper/shadow、人工确认、对账和复盘。
 越权工具请求与审计重放，并验证 AI trade-plan draft 不会修改 OMS、账本、风控、
 kill switch、资本授权或券商 submit/cancel 状态。
 
-后续按独立审查逐步迁移：先接 canonical projection 的显式只读 adapter，再加入
+1.1 增量已经建立第一层 canonical evidence 只读边界：显式调用方可以把既有
+canonical projection 原样封装成内容寻址、不可变的 `ai_canonical_evidence` 记录；
+Portfolio、Account State、Operations、Research Evidence、Account Truth 和
+paper/shadow 工具只能按冻结 context 内的 evidence reference 读取。所有记录必须
+共享精确的 valuation snapshot、ledger cutoff 和 ledger fingerprint；重复捕获幂等，
+内容变化产生新引用，重启后仍读取同一记录。partial、stale、estimated 和
+unreconciled 证据只可用于诊断，明确标记为非权威。
+
+生产侧 capture route、scheduler/startup hook 和后台任务仍未注册。后续按独立审查
+逐步迁移：先把人工显式启动的 capture caller 接到既有 canonical projection 服务，
+且不得重算或触发 GET 刷新；再加入
 人工启动的任务与复核 UI，然后加入记忆失效/更新机制；真实 provider adapter 必须
 单独审查和用户授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
 既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill
