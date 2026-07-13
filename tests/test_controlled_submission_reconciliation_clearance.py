@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -12,9 +13,17 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
+from account_truth.broker_order_lifecycle import (
+    BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
+    BrokerOrderLifecycleEvidenceRepository,
+    preview_qmt_order_lifecycle_export,
+)
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
+from server.services.controlled_broker_submission import (
+    ControlledBrokerSubmissionService,
+)
 from server.services.controlled_submission_reconciliation_clearance import (
     CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
     ControlledSubmissionReconciliationClearanceRejected,
@@ -255,6 +264,80 @@ def _record(env: dict, preview: dict, approval: dict) -> dict:
     )
 
 
+def _bind_controlled_account_alias(env: dict) -> None:
+    with sqlite3.connect(env["db"]._path) as conn:
+        row = conn.execute(
+            """
+            SELECT payload_json FROM controlled_broker_submit_intents
+            WHERE submit_intent_id = ?
+            """,
+            (env["submit_intent_id"],),
+        ).fetchone()
+        payload = json.loads(row[0])
+        payload["account_alias"] = "main-cn-account"
+        conn.execute(
+            """
+            UPDATE controlled_broker_submit_intents SET payload_json = ?
+            WHERE submit_intent_id = ?
+            """,
+            (json.dumps(payload), env["submit_intent_id"]),
+        )
+        conn.commit()
+
+
+def _record_partial_lifecycle(env: dict) -> dict:
+    lifecycle_payload = {
+        "schema_version": "karkinos.qmt_order_lifecycle_export.v1",
+        "provider": "qmt",
+        "snapshot_kind": "exact_order_lifecycle",
+        "gateway_id": "qmt-controlled-write-1",
+        "account_id": "private-qmt-account-001",
+        "account_alias": "main-cn-account",
+        "captured_at": NOW.isoformat(),
+        "source_sequence": 1,
+        "orders": [
+            {
+                "broker_order_id": "BROKER-CLEARANCE-1",
+                "client_order_id": "KARK-clearance-client-order-1",
+                "symbol": "600519",
+                "side": "buy",
+                "status": "partially_filled",
+                "order_quantity": "100",
+                "cumulative_filled_quantity": "40",
+                "cancelled_quantity": "0",
+                "average_fill_price": "10",
+                "submitted_at": (NOW - timedelta(seconds=5)).isoformat(),
+                "updated_at": (NOW - timedelta(seconds=1)).isoformat(),
+            }
+        ],
+        "fills": [
+            {
+                "broker_trade_id": "QMT-LATE-PARTIAL-1",
+                "broker_order_id": "BROKER-CLEARANCE-1",
+                "client_order_id": "KARK-clearance-client-order-1",
+                "symbol": "600519",
+                "side": "buy",
+                "quantity": "40",
+                "price": "10",
+                "fee": "1",
+                "tax": "0",
+                "transfer_fee": "0",
+                "net_amount": "-401",
+                "filled_at": (NOW - timedelta(seconds=2)).isoformat(),
+            }
+        ],
+    }
+    lifecycle_preview = preview_qmt_order_lifecycle_export(
+        json.dumps(lifecycle_payload),
+        source_name="qmt local exact-order lifecycle export",
+        clock=lambda: NOW,
+    )
+    return BrokerOrderLifecycleEvidenceRepository(Path(env["db"]._path)).record(
+        lifecycle_preview,
+        acknowledgement=BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
+    )
+
+
 def test_signed_full_fill_clearance_atomically_records_fills_and_releases_interlock(
     tmp_path,
 ) -> None:
@@ -304,6 +387,130 @@ def test_signed_full_fill_clearance_atomically_records_fills_and_releases_interl
     assert batch_preview["status"] == "clear", batch_preview["blockers"]
     assert env["db"].get_ledger_entries_sync() == []
     assert "must-not-leak" not in str(cleared)
+
+
+def test_partial_lifecycle_race_rejects_signed_clearance_inside_transaction(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    _bind_controlled_account_alias(env)
+    preview = _preview(env)
+    approval = _approval(env, preview["clearance_fingerprint"])
+    recorded = _record_partial_lifecycle(env)
+    assert recorded["validation_status"] == "pass"
+
+    with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc:
+        _record(env, preview, approval)
+
+    assert "controlled_submission_clearance_transaction_rejected" in (
+        exc.value.evidence["rejection_reasons"]
+    )
+    assert "controlled_submission_clearance_lifecycle_evidence_mismatch" in (
+        exc.value.evidence["transaction_blockers"]
+    )
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "submitted"
+    )
+    assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
+    assert env["db"].list_controlled_submission_reconciliation_clearances_sync() == []
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_newer_partial_lifecycle_fact_reblocks_preview_and_submit_transaction(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    _bind_controlled_account_alias(env)
+    clearance_preview = _preview(env)
+    clearance_approval = _approval(env, clearance_preview["clearance_fingerprint"])
+    cleared = _record(env, clearance_preview, clearance_approval)
+    assert cleared["status"] == "cleared"
+
+    recorded = _record_partial_lifecycle(env)
+    assert recorded["validation_status"] == "pass"
+
+    reconciliation = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    item = next(
+        row
+        for row in reconciliation["items"]
+        if row["order_id"] == env["order"]["order_id"]
+    )
+    assert item["item_status"] == ("controlled_submission_clearance_evidence_mismatch")
+    unresolved = env["db"].list_unreconciled_controlled_broker_submit_intents_sync()
+    assert unresolved[0]["interlock_reason"] == "lifecycle_clearance_invalidated"
+    interlock = ControlledBrokerSubmissionService(db=env["db"]).get_status()[
+        "submission_interlock"
+    ]
+    assert interlock["blocked"] is True
+    assert interlock["unresolved_intents"][0]["interlock_reason"] == (
+        "lifecycle_clearance_invalidated"
+    )
+
+    next_order = env["oms"].create_order_intent(
+        intent_key="controlled-clearance-next-order",
+        symbol="510300",
+        side="buy",
+        asset_class="etf",
+        quantity=100,
+        order_type="limit",
+        limit_price=4,
+        source="controlled_clearance_test",
+        source_ref="decision-2",
+    )
+    next_order = env["oms"].transition_order(
+        next_order["order_id"],
+        to_status="manually_confirmed",
+        reason="operator confirmed exact next order",
+        actor="local-clearance-owner",
+    )
+    next_intent_id = hashlib.sha256(b"clearance-next-submit-intent").hexdigest()
+    next_submit_fingerprint = hashlib.sha256(b"clearance-next-submit").hexdigest()
+    prepared = env["db"].prepare_controlled_broker_submit_intent_sync(
+        intent={
+            "submit_intent_id": next_intent_id,
+            "submit_fingerprint": next_submit_fingerprint,
+            "order_id": next_order["order_id"],
+            "order_fingerprint": build_order_fingerprint(next_order),
+            "confirmation_id": "1" * 64,
+            "dossier_fingerprint": "2" * 64,
+            "gateway_id": "qmt-controlled-write-1",
+            "gateway_verification_fingerprint": "3" * 64,
+            "release_evidence_id": "4" * 64,
+            "release_evidence_fingerprint": "5" * 64,
+            "client_order_id": "KARK-clearance-next-order-1",
+            "operator_id": "local-clearance-owner",
+            "operator_approval_id": "6" * 64,
+            "order_snapshot": {
+                key: next_order.get(key)
+                for key in (
+                    "symbol",
+                    "side",
+                    "asset_class",
+                    "quantity",
+                    "order_type",
+                    "limit_price",
+                )
+            },
+            "prepared_at_epoch_ms": int(NOW.timestamp() * 1000) + 1000,
+            "prepared_at": (NOW + timedelta(seconds=1)).isoformat(),
+            "payload": {
+                "submit_intent_id": next_intent_id,
+                "account_alias": "main-cn-account",
+            },
+            "created_at": (NOW + timedelta(seconds=1)).isoformat(),
+        }
+    )
+
+    assert prepared["status"] == "rejected"
+    assert "controlled_broker_submit_lifecycle_clearance_invalidated" in (
+        prepared["blockers"]
+    )
+    assert env["db"].get_oms_order_sync(next_order["order_id"])["status"] == (
+        "manually_confirmed"
+    )
+    assert env["db"].get_ledger_entries_sync() == []
 
 
 def test_partial_fill_cannot_clear_or_mutate_any_terminal_state(tmp_path) -> None:

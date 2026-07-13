@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
+from account_truth.broker_order_lifecycle import (
+    BrokerOrderLifecycleEvidenceRepository,
+    broker_order_lifecycle_clearance_blockers,
+)
 from server.services.per_order_confirmation import build_order_fingerprint
 
 EXECUTION_RECONCILIATION_SCHEMA_VERSION = "karkinos.execution_reconciliation.v1"
@@ -93,6 +97,9 @@ class ExecutionReconciliationService:
             if controlled_clearance is not None
             else []
         )
+        controlled_order_lifecycle = self._controlled_order_lifecycle_evidence(
+            controlled_intent
+        )
         controlled = _controlled_submission_reconciliation(
             order,
             controlled_intent,
@@ -101,6 +108,7 @@ class ExecutionReconciliationService:
             broker_events=broker_events,
             matching_broker_events=matching_broker_events,
             mismatched_broker_events=mismatched_broker_events,
+            order_lifecycle_evidence=controlled_order_lifecycle,
         )
         reported_broker_events = matching_broker_events
         mismatch_reasons: list[str] = []
@@ -209,6 +217,29 @@ class ExecutionReconciliationService:
             if getattr(event, "event_type", "") in {"trade_buy", "trade_sell"}
         ]
 
+    def _controlled_order_lifecycle_evidence(
+        self,
+        intent: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if not isinstance(intent, dict) or not intent:
+            return {}
+        db_path = getattr(self._db, "_path", None)
+        if db_path is None:
+            return {}
+        payload = _json_object(intent.get("payload_json"))
+        repository = BrokerOrderLifecycleEvidenceRepository(
+            Path(db_path),
+            ensure_schema=False,
+        )
+        return repository.resolve_order(
+            gateway_id=str(intent.get("gateway_id") or ""),
+            account_alias=str(
+                intent.get("account_alias") or payload.get("account_alias") or ""
+            ),
+            broker_order_id=str(intent.get("broker_order_id") or ""),
+            client_order_id=str(intent.get("client_order_id") or ""),
+        )
+
 
 def _matching_broker_events(
     order: dict[str, Any], broker_events: list[Any]
@@ -241,6 +272,7 @@ def _controlled_submission_reconciliation(
     broker_events: list[Any],
     matching_broker_events: list[Any],
     mismatched_broker_events: list[Any],
+    order_lifecycle_evidence: dict[str, Any],
 ) -> dict[str, Any]:
     if not isinstance(intent, dict) or not intent:
         return {}
@@ -258,6 +290,7 @@ def _controlled_submission_reconciliation(
     controlled_quantity_mismatch = controlled_events["quantity_mismatch"]
     controlled_identity_incomplete = controlled_events["identity_incomplete"]
     controlled_identity_conflicts = controlled_events["identity_conflicts"]
+    lifecycle_summary = _order_lifecycle_evidence_summary(order_lifecycle_evidence)
     if isinstance(clearance, dict) and clearance:
         controlled_fills = [
             fill
@@ -291,6 +324,12 @@ def _controlled_submission_reconciliation(
             clearance_blockers.append(
                 "controlled_submission_clearance_fill_quantity_changed"
             )
+        clearance_blockers.extend(
+            broker_order_lifecycle_clearance_blockers(
+                order,
+                order_lifecycle_evidence,
+            )
+        )
         if clearance_blockers:
             return {
                 "item_status": "controlled_submission_clearance_evidence_mismatch",
@@ -316,6 +355,7 @@ def _controlled_submission_reconciliation(
                     "new_submissions_blocked": True,
                     "recovery_resubmission_enabled": False,
                     "does_not_mutate_production_ledger": True,
+                    "broker_order_lifecycle_evidence": lifecycle_summary,
                 },
             }
         return {
@@ -341,6 +381,7 @@ def _controlled_submission_reconciliation(
                 "review_required_before_ledger_update": False,
                 "production_ledger_mutated": False,
                 "does_not_mutate_production_ledger": True,
+                "broker_order_lifecycle_evidence": lifecycle_summary,
             },
         }
     if expected_oms_status != oms_status:
@@ -385,6 +426,19 @@ def _controlled_submission_reconciliation(
                 "Staged broker trade evidence reuses one controlled order identity "
                 "but disagrees on the other; keep new submissions blocked."
             )
+        elif lifecycle_classification := _order_lifecycle_classification(
+            order,
+            order_lifecycle_evidence,
+            controlled_matching=controlled_matching,
+            controlled_quantity_mismatch=controlled_quantity_mismatch,
+        ):
+            reported_broker_events = list(
+                lifecycle_classification["reported_broker_events"]
+            )
+            mismatch_reasons.extend(lifecycle_classification["mismatch_reasons"])
+            item_status = str(lifecycle_classification["item_status"])
+            suggested_action = str(lifecycle_classification["suggested_action"])
+            detail = str(lifecycle_classification["detail"])
         elif controlled_matching:
             reported_broker_events = controlled_matching
             item_status = "controlled_submission_broker_evidence_available"
@@ -488,7 +542,178 @@ def _controlled_submission_reconciliation(
                 controlled_identity_incomplete
             ),
             "broker_order_identity_conflict_count": len(controlled_identity_conflicts),
+            "broker_order_lifecycle_evidence": lifecycle_summary,
         },
+    }
+
+
+def _order_lifecycle_classification(
+    order: dict[str, Any],
+    evidence: dict[str, Any],
+    *,
+    controlled_matching: list[Any],
+    controlled_quantity_mismatch: list[Any],
+) -> dict[str, Any]:
+    resolution_status = str(evidence.get("status") or "")
+    if resolution_status in {"blocked", "identity_conflict"}:
+        blockers = [str(item) for item in evidence.get("blockers") or []]
+        return {
+            "item_status": "controlled_submission_order_lifecycle_evidence_blocked",
+            "suggested_action": ("enable_kill_switch_and_review_controlled_submission"),
+            "detail": (
+                "Persisted QMT order-lifecycle evidence is blocked or conflicts "
+                "with the controlled order identities; keep every new submission "
+                "blocked."
+            ),
+            "reported_broker_events": (
+                controlled_matching or controlled_quantity_mismatch
+            ),
+            "mismatch_reasons": blockers
+            or ["controlled_submission_order_lifecycle_evidence_blocked"],
+        }
+    if resolution_status != "found":
+        return {}
+
+    lifecycle_order = _json_object(evidence.get("order"))
+    mismatch_reasons: list[str] = []
+    if str(lifecycle_order.get("symbol") or "") != str(order.get("symbol") or ""):
+        mismatch_reasons.append("controlled_submission_lifecycle_symbol_mismatch")
+    if str(lifecycle_order.get("side") or "") != str(order.get("side") or ""):
+        mismatch_reasons.append("controlled_submission_lifecycle_side_mismatch")
+    expected_quantity = abs(_decimal(order.get("quantity")) or Decimal("0"))
+    lifecycle_quantity = abs(
+        _decimal(lifecycle_order.get("order_quantity")) or Decimal("0")
+    )
+    if lifecycle_quantity != expected_quantity:
+        mismatch_reasons.append("controlled_submission_lifecycle_quantity_mismatch")
+    if mismatch_reasons:
+        return {
+            "item_status": "controlled_submission_order_lifecycle_evidence_mismatch",
+            "suggested_action": ("enable_kill_switch_and_review_controlled_submission"),
+            "detail": (
+                "The exact-identity QMT lifecycle fact disagrees with the current "
+                "OMS order contract; do not infer execution or submit another order."
+            ),
+            "reported_broker_events": (
+                controlled_matching or controlled_quantity_mismatch
+            ),
+            "mismatch_reasons": mismatch_reasons,
+        }
+
+    lifecycle_status = str(lifecycle_order.get("status") or "")
+    reported_events = controlled_matching or controlled_quantity_mismatch
+    if lifecycle_status in {"submitted", "open"}:
+        return {
+            "item_status": "controlled_submission_order_open_evidence_available",
+            "suggested_action": "poll_or_import_controlled_submission_lifecycle_evidence",
+            "detail": (
+                "Fresh, exact-identity QMT evidence still reports the order open. "
+                "Continue explicit query/export ingestion; never resubmit."
+            ),
+            "reported_broker_events": reported_events,
+            "mismatch_reasons": [],
+        }
+    if lifecycle_status == "partially_filled":
+        return {
+            "item_status": "controlled_submission_partial_fill_evidence_available",
+            "suggested_action": "review_partial_fill_and_import_account_truth",
+            "detail": (
+                "Exact-identity QMT evidence reports a partial fill. It is review "
+                "evidence only and cannot mutate OMS/ledger or release the next order."
+            ),
+            "reported_broker_events": reported_events,
+            "mismatch_reasons": [],
+        }
+    if lifecycle_status == "cancelled":
+        filled_quantity = abs(
+            _decimal(lifecycle_order.get("cumulative_filled_quantity")) or Decimal("0")
+        )
+        return {
+            "item_status": (
+                "controlled_submission_partial_fill_cancel_evidence_available"
+                if filled_quantity > 0
+                else "controlled_submission_cancel_evidence_available"
+            ),
+            "suggested_action": (
+                "review_partial_fill_cancel_and_import_account_truth"
+                if filled_quantity > 0
+                else "review_cancel_evidence_before_interlock_clearance"
+            ),
+            "detail": (
+                "Exact-identity QMT evidence reports a terminal broker cancellation. "
+                "Cancellation is not an execution command and does not self-clear "
+                "the controlled-submission interlock."
+            ),
+            "reported_broker_events": reported_events,
+            "mismatch_reasons": [],
+        }
+    if lifecycle_status == "filled":
+        if controlled_matching:
+            return {}
+        return {
+            "item_status": "controlled_submission_filled_lifecycle_evidence_available",
+            "suggested_action": (
+                "import_order_linked_broker_statement_and_account_truth"
+            ),
+            "detail": (
+                "Exact-identity QMT lifecycle evidence reports a full fill, but the "
+                "independent broker-statement and Account Truth evidence required "
+                "for signed clearance is still missing."
+            ),
+            "reported_broker_events": reported_events,
+            "mismatch_reasons": [],
+        }
+    if lifecycle_status == "rejected":
+        return {
+            "item_status": "controlled_submission_lifecycle_rejection_conflict",
+            "suggested_action": ("enable_kill_switch_and_review_controlled_submission"),
+            "detail": (
+                "The controlled intent is persisted as broker-submitted while the "
+                "latest exact-identity QMT evidence reports rejection; investigate "
+                "the conflicting terminal facts."
+            ),
+            "reported_broker_events": reported_events,
+            "mismatch_reasons": ["controlled_submission_lifecycle_rejection_conflict"],
+        }
+    return {
+        "item_status": "controlled_submission_order_lifecycle_evidence_blocked",
+        "suggested_action": "enable_kill_switch_and_review_controlled_submission",
+        "detail": "The persisted QMT lifecycle status is unsupported.",
+        "reported_broker_events": reported_events,
+        "mismatch_reasons": ["controlled_submission_lifecycle_status_invalid"],
+    }
+
+
+def _order_lifecycle_evidence_summary(evidence: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(evidence, dict) or not evidence:
+        return {}
+    observation = _json_object(evidence.get("observation"))
+    order = _json_object(evidence.get("order"))
+    return {
+        "schema_version": str(evidence.get("schema_version") or ""),
+        "resolution_status": str(evidence.get("status") or ""),
+        "observation_id": str(observation.get("observation_id") or ""),
+        "evidence_fingerprint": str(observation.get("evidence_fingerprint") or ""),
+        "provider": str(observation.get("provider") or ""),
+        "gateway_id": str(observation.get("gateway_id") or ""),
+        "account_alias": str(observation.get("account_alias") or ""),
+        "source_sequence": observation.get("source_sequence"),
+        "captured_at": str(observation.get("captured_at") or ""),
+        "validation_status": str(observation.get("validation_status") or ""),
+        "blockers": [str(item) for item in evidence.get("blockers") or []],
+        "order_status": str(order.get("status") or ""),
+        "order_quantity": str(order.get("order_quantity") or ""),
+        "cumulative_filled_quantity": str(
+            order.get("cumulative_filled_quantity") or ""
+        ),
+        "cancelled_quantity": str(order.get("cancelled_quantity") or ""),
+        "fill_count": int(evidence.get("fill_count") or 0),
+        "explicit_ingestion_required": True,
+        "provider_contacted": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_release_submission_interlock": True,
+        "authorizes_execution": False,
     }
 
 

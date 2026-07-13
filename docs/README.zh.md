@@ -275,6 +275,18 @@ Ed25519 签名后，单一事务才会记录带来源链接的真实成交、把
 或部分成交证据一律 fail closed。这些字段只是证据，不是写权限；正式 pilot 前仍需券商专用、
 订单号关联的 callback/poll 证据。
 
+Stage 3.15 新增 QMT 专用的本地单笔订单生命周期证据适配基础，但不连接 QMT。
+`scripts/import_qmt_order_lifecycle.py` 默认只 preview；持久化必须显式 `--record` 并提供
+`record_qmt_order_lifecycle_evidence_without_execution_authority` acknowledgement。系统只保存
+脱敏账户哈希、单调源序号、文件/证据指纹、精确 broker/client order id、累计成交/撤单量和逐笔
+成交；凭证字段、格式或时效错误、数量不一致、序号/身份/合约漂移以及 preview 后篡改都会 fail
+closed。execution reconciliation 只读持久化事实并展示 open、partial、cancel、full 或 blocked，
+不会联系券商、修改 OMS/账本或自行解除 interlock。同一个统一判定还会在签名清算和下一单提交
+事务内复核，因此冲突事实会拒绝竞态清算，或让旧 clearance 重新阻断下一单。lifecycle full-fill
+仍不能替代独立 broker statement、最新 Account Truth 和 Stage 3.14 签名。生产仍不注册
+collector、write adapter、release provider、可执行撤单或 pilot 权限；真实 QMT callback/poll
+collector 与运行 soak 仍待独立审查。
+
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须
 带券商订单、Account Truth import 与同一 run 链接。每单 dossier 和 session proposal 必须与

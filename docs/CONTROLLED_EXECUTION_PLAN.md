@@ -257,6 +257,25 @@ The identifiers do not grant write authority. Production readiness still
 requires a reviewed broker adapter with independently verified, order-linked
 partial-fill/cancel callback or poll evidence.
 
+Stage 3.15 adds the evidence plumbing for that missing lifecycle without
+claiming production connectivity. A normalized local QMT
+`exact_order_lifecycle` export is previewed by default and recorded only by an
+explicit CLI acknowledgement. The persisted snapshot binds both order ids,
+hashed account scope, monotonic source sequence, capture/file/evidence
+fingerprints, cumulative filled/cancelled quantities, and exact fills. Strict
+validation and a serialized repository reject credentials, malformed or stale
+facts, quantity/status inconsistency, duplicate fills, identity/contract drift,
+sequence races, and preview mutation. Reconciliation consumes only persisted
+facts and exposes open/partial/cancel/full evidence without touching OMS or the
+ledger. The canonical full-fill predicate also executes under the signed-
+clearance and next-order SQLite writer transactions, so a partial/cancel/
+conflicting observation cannot race a clearance or leave a superseded
+clearance usable. Lifecycle `filled` is supporting evidence only: the Stage
+3.14 broker statement, Account Truth, and separate signature remain mandatory.
+The actual QMT callback/poll collector, deployment/release review, operational
+soak, broker cancel, and production write registration remain unimplemented and
+disabled.
+
 ### Stage 3 — Session-Bounded Controlled Execution
 
 Deliverables:
