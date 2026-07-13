@@ -78,11 +78,7 @@ export type ManualOrder = {
 };
 
 export type ManualOrderStatus =
-  | 'all'
-  | 'pending_confirm'
-  | 'confirmed'
-  | 'rejected'
-  | 'canceled';
+  'all' | 'pending_confirm' | 'confirmed' | 'rejected' | 'canceled';
 
 export type OrderFact = {
   id?: number;

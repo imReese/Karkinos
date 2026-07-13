@@ -12,11 +12,7 @@ export type PriceStructureBar = {
 };
 
 type KlineRangeKey =
-  | 'oneMonth'
-  | 'threeMonths'
-  | 'sixMonths'
-  | 'oneYear'
-  | 'all';
+  'oneMonth' | 'threeMonths' | 'sixMonths' | 'oneYear' | 'all';
 
 export type KlineRangeLabels = Record<KlineRangeKey, string>;
 

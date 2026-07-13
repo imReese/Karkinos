@@ -6,6 +6,23 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Refreshed the complete Python, frontend, build-tool, and container
+  dependency baseline to current stable releases. Assumptions: application
+  installs remain reproducible from `uv.lock` and `web/package-lock.json`;
+  Python 3.12 remains the declared minimum, Node >=20.19 is explicit and CI
+  retains Node 24, while the production image validates Python 3.14 and Node 26.
+  Dependency freshness does not grant broker, OMS, ledger, risk, kill-switch,
+  or capital authority. The migration includes Click 8.4, PyArrow 25, Pydantic
+  2.13, Uvicorn 0.51, Vite 8/Rolldown, TypeScript 7, Vitest 4, jsdom 29, and
+  Tailwind 4's dedicated Vite plugin. Validation: 1327 backend tests passed independently
+  on Python 3.12 and 3.14; 406 frontend tests, the TypeScript/Vite production
+  build, two Playwright fail-closed browser scenarios, clean lockfile installs,
+  and Python/npm production dependency audits all passed. Local Docker smoke
+  awaits the GitHub runner because Docker Desktop was not running. Risk impact:
+  MEDIUM due to the broad runtime/toolchain surface and Tailwind/Vite major
+  migrations. The changes add no QMT/provider adapter, live submission/cancel
+  route, strategy-direct broker path, or automatic capital expansion.
+
 - 2026-07-13: Stage 3.18 binds internal bounded-session order-rate admission to
   one exact fresh persisted live-gate snapshot. Assumptions: a snapshot is a
   sanitized derived gate fact rather than Account Truth itself; 30 seconds is

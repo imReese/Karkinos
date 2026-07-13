@@ -56,13 +56,7 @@ type DetailMetric = {
 };
 
 type EvidenceRefType =
-  | 'signal'
-  | 'action'
-  | 'risk'
-  | 'review'
-  | 'order'
-  | 'fill'
-  | 'unknown';
+  'signal' | 'action' | 'risk' | 'review' | 'order' | 'fill' | 'unknown';
 
 type EvidenceRefItem = {
   kind: EvidenceRefType;

@@ -42,9 +42,7 @@ import {
 
 type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
 type ManualTaskId =
-  | 'tushare_sign_in'
-  | 'guess_market_direction'
-  | 'check_points';
+  'tushare_sign_in' | 'guess_market_direction' | 'check_points';
 
 function getStatusToneClasses(tone: StatusTone) {
   if (tone === 'success') {

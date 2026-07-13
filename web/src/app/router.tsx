@@ -4803,11 +4803,7 @@ export function ActivityPage() {
 }
 
 type ActivityEntryTool =
-  | 'trade'
-  | 'fundBatch'
-  | 'cashFlow'
-  | 'dividend'
-  | 'adjustment';
+  'trade' | 'fundBatch' | 'cashFlow' | 'dividend' | 'adjustment';
 
 function ActivityEntryToolsPanel({
   activeEntryTool,
