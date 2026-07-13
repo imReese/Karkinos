@@ -765,6 +765,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
             "http://localhost:5173",
             "http://127.0.0.1:5173",
         ],
+        "notification": {"type": "console"},
     }
     assert example["data_source"] == {
         "provider": "akshare",

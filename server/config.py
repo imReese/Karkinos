@@ -97,7 +97,7 @@ _EXCHANGE_ALIASES = {
 }
 
 _SERVER_CONFIG_GROUP_FIELDS = frozenset(
-    {"host", "port", "live_auto_start", "cors_allowed_origins"}
+    {"host", "port", "live_auto_start", "cors_allowed_origins", "notification"}
 )
 _DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
     {"provider", "tushare_token", "live_poll_interval"}
