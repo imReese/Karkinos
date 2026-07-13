@@ -155,6 +155,39 @@ jobs:
           path: reports/ci/frontend-junit.xml
           if-no-files-found: error
 
+  docker-runtime:
+    name: Docker runtime smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build locked runtime image
+        run: docker build --tag karkinos:ci .
+
+      - name: Start runtime without live scheduler
+        run: |
+          mkdir -p "${RUNNER_TEMP}/karkinos-data"
+          touch "${RUNNER_TEMP}/karkinos-config.json"
+          docker run --detach --name karkinos-ci \
+            --publish 127.0.0.1:8000:8000 \
+            --volume "${RUNNER_TEMP}/karkinos-data:/app/data/store" \
+            --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
+            karkinos:ci python -m server --no-live
+
+      - name: Verify non-root fail-closed runtime
+        run: |
+          test "$(docker inspect --format '{{.Config.User}}' karkinos-ci)" = "karkinos"
+          python scripts/verify_docker_runtime.py --timeout-seconds 90
+
+      - name: Capture runtime logs
+        if: always()
+        run: docker logs karkinos-ci
+
+      - name: Stop runtime
+        if: always()
+        run: docker rm --force karkinos-ci
+
   acceptance-evidence:
     name: Acceptance evidence
     needs: [backend, frontend, trading-safety]

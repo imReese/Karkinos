@@ -6,6 +6,23 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: CI now builds and starts the actual Docker deployment artifact.
+  The runtime image uses Node 24 for the React build, pins uv 0.11.28, installs
+  the Python environment from `uv.lock` with `uv sync --frozen`, and runs as the
+  unprivileged `karkinos` user. The smoke check starts with live scheduling
+  disabled and asserts that capital runtime authority, per-order bridge broker
+  submission/live gateway, automatic/strategy-direct submission, recovery
+  resubmission, and production gateway registration all remain disabled.
+  Assumption: a generated empty local config and isolated data volume represent
+  the safest deployable default; private account/provider facts are not needed
+  for startup verification. Validation: `.venv/bin/python -m pytest
+  tests/scripts/test_verify_docker_runtime.py`; GitHub `Docker runtime smoke`
+  build/start/HTTP/non-root checks. Local Docker daemon was unavailable, so the
+  Linux image build is intentionally verified by Actions. Risk impact: the
+  deployment becomes more reproducible and gains fail-closed assertions; no
+  broker adapter, credential, account fact, OMS/ledger mutation, or execution
+  authority is added.
+
 - 2026-07-13: CI now has an independent fail-closed trading-safety gate and
   incremental Python formatting/import checks. The `trading_safety` marker
   covers Account Truth gating, manual/default automation controls, paper/shadow
