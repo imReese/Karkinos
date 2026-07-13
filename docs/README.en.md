@@ -280,6 +280,17 @@ Missing, stale, future, blocked, or identity-drifted evidence fails closed.
 Production remains status/history-only: no broker contact, OMS/fill/ledger/
 capital/kill-switch mutation, submit, or cancel authority is added.
 
+Stage 3.19 adds a persisted-fact operator view and explicit broker-lifecycle
+read boundary. Automation Cockpit shows bounded-session authorized capital,
+effective capital at risk, cash/capital/turnover headroom, remaining order
+slots, expiry, last order/submission, reconciliation, live-gate, pause, and
+blocker evidence without contacting a provider. Broker health and alerts read
+only recorded generic collector runs; missing or blocked evidence requires an
+explicit ingestion command. The former runtime snapshot entry is migration-
+only and returns no live account facts. These views cannot issue, renew, resume,
+widen, submit, cancel, mutate OMS/ledger/risk/kill-switch state, or scale
+capital automatically.
+
 Stage 3.8 implements the internal durable automatic-pause primitive. It checks
 an allowlisted set of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,
@@ -940,15 +951,16 @@ read-only preview after manual-ticket export and does not render save-ledger,
 apply-fill, or broker submit controls. The manual-execution record endpoint
 requires the matching `preview_fingerprint` and stores a gateway audit event
 only; it does not create fills, change OMS status, write ledger entries, or
-contact a broker. Account-facts query
-summarizes cash balances, positions, and fills from staged broker evidence
-only; it is not a live broker account snapshot. Runtime connector snapshot
-query reads an explicitly provided read-only connector object and returns
-current cash, positions, orders, and fills as evidence without storing
-credentials, leaking account ids, creating gateway events, mutating OMS, or
-writing ledger entries. Automation Cockpit passes that query-only evidence to
-Decision Cockpit as a compact review summary without adding submit, cancel,
-fill-apply, or ledger-sync controls. Fill query reads staged broker
+contact a broker. Account-facts query summarizes cash balances, positions, and
+fills from staged broker evidence only; it is not a live broker account
+snapshot. Broker lifecycle health/query reads persisted generic collector runs
+only and never calls an adapter or returns current cash, positions, orders, or
+fills. The former runtime connector snapshot entry is an explicitly labelled
+migration surface that returns the canonical lifecycle evidence view and no
+live account facts. Automation Cockpit passes persisted bounded-session and
+lifecycle evidence to Decision Cockpit as a compact review summary without
+adding submit, cancel, resume, fill-apply, ledger-sync, or capital-widening
+controls. Fill query reads staged broker
 trade evidence only and can filter by symbol; it does not contact broker
 clients, create gateway events, mutate OMS status, or update ledger facts.
 Order query reads local OMS facts, gateway audit events, and staged broker

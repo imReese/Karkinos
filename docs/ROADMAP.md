@@ -97,7 +97,7 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
 | Risk controls | Mandatory pre-trade risk gate, batch risk checks, cash buffer, concentration, T+1, data-quality, and kill-switch concepts exist. | Live-like execution must enforce global, strategy, account, and per-symbol controls with policy snapshots, escalation notes, and irreversible audit logs. | v1.5-v1.7 |
 | Scheduler and runbook | Operations summary, persistent scheduler records, deterministic rerun keys, input snapshots, errors, retries, limitations, and operator review state exist. | Continue operational soak and preserve idempotency as scheduled workflows expand. | v1.6, ongoing |
-| Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
+| Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs, persisted broker-lifecycle collector evidence, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow divergence. Controlled-execution operator visibility projects bounded capital, headroom, expiry, order/reconciliation, live-gate, pause, and blocker facts from the database only. | Keep all broker evidence refresh behind explicit ingestion. Before any real-provider use, separately review and authorize the chosen default-unregistered edge adapter; GET and alert paths must never poll it implicitly. | v1.6-v1.8, Stage 3.19 |
 | Strategy promotion pipeline | Research/paper lifecycle, readiness evidence, audit-only pause/retire states, and default rejection of controlled-bridge pilot promotion exist. | A future L4/L5 pilot must add explicit enablement without allowing promotion evidence to authorize execution by itself. | v1.6-v1.7, future L4-L5 |
 | Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic budgets, token-authenticated sessions, live gates, pause/replacement, evidence-based scale review, a one-order submit boundary, a cross-order interlock, signed full-fill clearance, and persisted broker-neutral lifecycle evidence that can only narrow or re-block authority. | Supply a reviewed real adapter/release source, prove partial-fill/cancel/reconciliation and ledger runbooks, then run an explicitly approved bounded pilot. Initial exposure is deliberately constrained; later scale remains evidence-reviewed. | v1.8, Stage 3.12-3.16 |
 | Unattended full-account automation | Not supported. | Keep permanently authorized, unsupervised execution outside the product target. | Non-goal |
@@ -990,12 +990,13 @@ Initial v1.6 implementation note:
   into manual-review alerts with stale-symbol evidence, and degraded or
   blocked Account Truth snapshots can be scanned into manual-review alerts,
   and diverged or review-required paper/shadow runs can be scanned into
-  manual-review alerts with divergence-count evidence. Runtime-degraded
-  read-only connector health snapshots can also be polled through the broker
-  gateway health contract and scanned into manual-review alerts with
-  heartbeat/error context, capability scope, read/query capability flags,
-  explicit preview/export/dry-run/cancel/submit blockers, and explicit
-  non-submission evidence. Paper/shadow divergence summaries now include a
+  manual-review alerts with divergence-count evidence. Persisted generic broker
+  lifecycle collector evidence can be scanned into manual-review alerts with
+  provider/gateway provenance, evidence-store state, blockers, explicit-
+  ingestion and third-party-review requirements, and no-contact/no-submission
+  flags. GET and alert paths never poll a registered edge adapter. The old
+  runtime snapshot entry is a labelled migration surface and returns no live
+  account facts. Paper/shadow divergence summaries now include a
   richer comparison of expected strategy behavior, simulated execution,
   account-truth state, realized market context, cost evidence, and
   non-submission safety flags, and the Decision daily trading plan panel
@@ -1003,9 +1004,10 @@ Initial v1.6 implementation note:
   Today's to-dos surfaces a compact divergence-review summary and Trading
   execution audit shows the latest paper/shadow run evidence. Accepted
   divergence reviews preserve raw divergence status for audit while exposing a
-  runbook effective status for manual-confirmation handoff. Read-only connector
-  polling now has a local JSON export adapter in addition to deterministic
-  fixtures. Market-session automation now uses a trading-plan fingerprint
+  runbook effective status for manual-confirmation handoff. Broker lifecycle
+  ingestion uses explicit local commands and deterministic fixtures; no edge
+  adapter is registered by default. Market-session automation now uses a
+  trading-plan fingerprint
   idempotency key as the persisted run id, so repeated scheduler invocations
   for the same plan/date update one audit run while changed inputs create a
   new run. Paper/shadow run payloads also persist a
@@ -1968,6 +1970,31 @@ issue capital authority.
   drift, preview-to-transaction replacement, revocation race, rate/budget
   exhaustion, exact retry, concurrency, sanitization, and zero OMS/fill/ledger/
   broker side effects.
+
+### Stage 3.19 Persisted-Fact Operator View and Explicit Lifecycle Read Boundary
+
+* [x] Automation Cockpit v2 derives controlled-session authorized capital,
+  effective capital at risk, capital/cash/turnover headroom, remaining order
+  slots, symbol scope, expiry, latest order/submission, reconciliation,
+  live-gate, pause, and blocker evidence from persisted database facts only.
+* [x] Missing, stale, future, expired, revoked, paused, unreconciled, invalid,
+  unavailable, or truncated inputs fail closed. The view cannot issue, renew,
+  resume, widen, submit, cancel, or automatically scale capital.
+* [x] Broker health/query and automation alerts consume only persisted generic
+  broker-order-lifecycle collector runs. GET/alert paths never call an adapter,
+  open an export file, contact a provider, or silently refresh account facts.
+* [x] `provider` remains provenance. Third-party adapters are replaceable,
+  default-unregistered edge components requiring separate dependency,
+  credential, capability, failure-mode, release, rollback, and user-
+  authorization review before use.
+* [x] The former runtime connector snapshot entry is an explicitly labelled
+  migration surface to the canonical lifecycle evidence view. It returns no
+  live cash, position, order, or fill facts and grants no execution authority.
+* [x] Decision Cockpit and alerts expose only sanitized read-only evidence and
+  no submit/cancel/resume/ledger-sync/capital-widening controls. Deterministic
+  fakes prove empty defaults, blocked evidence, restart-safe persistence,
+  adapter-call rejection, pause/reconciliation visibility, and zero broker or
+  financial-state side effects.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

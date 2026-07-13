@@ -2868,21 +2868,20 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
             AcceptanceCriterion(
                 key="staged_account_facts_and_order_query",
                 checkbox_text=(
-                    "* [x] Gateway account-facts, fill-query, runtime "
-                    "read-only connector snapshot query, and order-query "
-                    "paths read local OMS, gateway audit, staged broker "
-                    "evidence, or runtime connector evidence only without "
-                    "broker write contact, credential storage, account-id "
-                    "leakage, gateway-event creation, OMS mutation, ledger "
-                    "mutation, or order submission, and Automation/Decision "
-                    "Cockpit surface the runtime snapshot as compact "
-                    "read-only review evidence."
+                    "* [x] Gateway account-facts, fill-query, order-query, and "
+                    "broker lifecycle paths read persisted OMS, gateway audit, "
+                    "staged broker evidence, or generic collector-run evidence "
+                    "only. Automation/Decision Cockpit projects sanitized "
+                    "bounded-session and lifecycle evidence without provider "
+                    "contact, credential storage, account-id leakage, gateway-"
+                    "event creation, OMS/ledger mutation, or order submission."
                 ),
                 evidence_paths=(
                     "account_truth/broker_evidence.py",
-                    "account_truth/broker_connector.py",
                     "server/services/automation_cockpit.py",
                     "server/services/broker_gateway.py",
+                    "server/services/broker_lifecycle_evidence_view.py",
+                    "server/services/controlled_execution_operator_view.py",
                     "server/routes/automation.py",
                     "server/routes/broker_gateway.py",
                     "tests/test_automation_cockpit.py",
@@ -2893,8 +2892,8 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                     "web/src/features/decision/components/decision-cockpit-page.test.tsx",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_automation_cockpit.py tests/server/test_automation_routes.py -k runtime_connector_snapshot",
-                    "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py -k 'account_facts or query or connector_snapshot'",
+                    "uv run pytest tests/test_automation_cockpit.py tests/server/test_automation_routes.py tests/test_controlled_execution_operator_view.py -q",
+                    "uv run pytest tests/test_broker_lifecycle_evidence_view.py tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py -q",
                     "npm --prefix web test -- decision-cockpit-page.test.tsx",
                 ),
             ),
@@ -6814,6 +6813,120 @@ def build_per_order_gateway_verification_binding_acceptance_audit() -> Acceptanc
                 validation_commands=(
                     "uv run pytest tests/test_per_order_confirmation.py tests/server/test_per_order_confirmation_routes.py -q",
                 ),
+            ),
+        )
+    )
+
+
+def build_persisted_controlled_execution_operator_view_acceptance_audit() -> (
+    AcceptanceAudit
+):
+    """Return evidence for Stage 3.19 persisted operator read boundaries."""
+
+    focused = (
+        "uv run pytest tests/test_controlled_execution_operator_view.py "
+        "tests/test_broker_lifecycle_evidence_view.py "
+        "tests/test_automation_cockpit.py tests/test_automation_alerts.py "
+        "tests/server/test_automation_routes.py "
+        "tests/server/test_broker_gateway_routes.py -q"
+    )
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="persisted_controlled_execution_operator_projection",
+                checkbox_text=(
+                    "* [x] Automation Cockpit projects bounded-session capital, "
+                    "headroom, expiry, last order/submission, reconciliation, "
+                    "live-gate, pause, and blocker evidence from persisted facts "
+                    "only, with no provider or runtime-connector call."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_execution_operator_view.py",
+                    "server/services/automation_cockpit.py",
+                    "tests/test_controlled_execution_operator_view.py",
+                    "tests/test_automation_cockpit.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="operator_projection_fail_closed_and_no_recovery_action",
+                checkbox_text=(
+                    "* [x] Missing, stale, expired, revoked, paused, unreconciled, "
+                    "invalid, or truncated evidence remains explicit and blocked; "
+                    "the projection cannot issue, renew, resume, widen, submit, "
+                    "cancel, or automatically scale capital."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_execution_operator_view.py",
+                    "tests/test_controlled_execution_operator_view.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="persisted_broker_lifecycle_health_boundary",
+                checkbox_text=(
+                    "* [x] Broker health and lifecycle queries derive only from "
+                    "persisted generic collector runs. Reads never open a source "
+                    "file, call an edge adapter, contact a provider, or refresh "
+                    "account facts."
+                ),
+                evidence_paths=(
+                    "server/services/broker_lifecycle_evidence_view.py",
+                    "server/services/broker_gateway.py",
+                    "tests/test_broker_lifecycle_evidence_view.py",
+                    "tests/test_broker_gateway_service.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="broker_adapter_and_legacy_snapshot_migration_boundary",
+                checkbox_text=(
+                    "* [x] Provider is provenance only; third-party adapters remain "
+                    "replaceable and default-unregistered pending separate review "
+                    "and user authorization. The legacy runtime snapshot entry is "
+                    "migration-only and no longer returns live account facts."
+                ),
+                evidence_paths=(
+                    "server/services/broker_gateway.py",
+                    "server/routes/broker_gateway.py",
+                    "tests/server/test_broker_gateway_routes.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="operator_and_alert_read_only_surfaces",
+                checkbox_text=(
+                    "* [x] Decision Cockpit and automation alerts expose sanitized "
+                    "persisted evidence and safety flags without submit, cancel, "
+                    "resume, ledger-sync, OMS mutation, or capital-expansion controls."
+                ),
+                evidence_paths=(
+                    "server/services/automation_alerts.py",
+                    "web/src/features/decision/components/decision-cockpit-page.tsx",
+                    "tests/test_automation_alerts.py",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    focused,
+                    "npm --prefix web test -- --run src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="operator_read_boundary_deterministic_validation",
+                checkbox_text=(
+                    "* [x] Deterministic fake/fixture tests cover empty defaults, "
+                    "restart-safe persisted evidence, missing/blocked collector "
+                    "state, adapter-call rejection, pause and reconciliation "
+                    "visibility, and zero broker or financial-state side effects."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_execution_operator_view.py",
+                    "tests/test_broker_lifecycle_evidence_view.py",
+                    "tests/test_automation_alerts.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(focused,),
             ),
         )
     )

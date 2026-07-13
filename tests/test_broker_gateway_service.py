@@ -1,20 +1,9 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
-from account_truth.broker_connector import (
-    BrokerCashFact,
-    BrokerConnectorCapabilities,
-    BrokerConnectorHealth,
-    BrokerConnectorSnapshot,
-    BrokerFillFact,
-    BrokerOrderFact,
-    BrokerPositionFact,
-    FakeReadOnlyBrokerConnector,
-)
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.config import BrokerConnectorConfig
@@ -22,6 +11,15 @@ from server.db import AppDatabase
 from server.services.broker_gateway import BrokerGatewayService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+
+
+class _ConnectorWouldFailIfQueried:
+    connector_id = "fixture-readonly-edge"
+    connector_type = "deterministic_fixture"
+    enabled = True
+
+    def read_account_snapshot(self):
+        raise AssertionError("read endpoints must not call an edge adapter")
 
 
 def _required_gateway_evidence() -> dict:
@@ -231,15 +229,15 @@ def test_connector_health_contract_is_read_only_and_non_submitting(tmp_path) -> 
         db=db,
         broker_connectors=[
             BrokerConnectorConfig(
-                connector_id="local-qmt-readonly",
-                connector_type="qmt_readonly",
+                connector_id="fixture-readonly-edge",
+                connector_type="deterministic_fixture",
                 enabled=True,
-                client_path="/Applications/QMT",
-                account_alias="local-review",
+                client_path="/opt/fixture-edge",
+                account_alias="fixture-review",
             ),
             BrokerConnectorConfig(
-                connector_id="local-ptrade-readonly",
-                connector_type="ptrade_readonly",
+                connector_id="fixture-disabled-edge",
+                connector_type="deterministic_fixture",
                 enabled=False,
             ),
         ],
@@ -247,184 +245,82 @@ def test_connector_health_contract_is_read_only_and_non_submitting(tmp_path) -> 
 
     health = {item["connector_id"]: item for item in service.list_connector_health()}
 
-    qmt = health["local-qmt-readonly"]
-    assert qmt["status"] == "configured_readonly_unverified"
-    assert qmt["capability_scope"] == "local_readonly_connector_contract"
-    assert qmt["capabilities"]["can_read_account"] is True
-    assert qmt["capabilities"]["can_read_orders"] is True
-    assert qmt["capabilities"]["can_read_fills"] is True
-    assert qmt["capabilities"]["can_preview_orders"] is False
-    assert qmt["capabilities"]["can_export_tickets"] is False
-    assert qmt["capabilities"]["can_dry_run_orders"] is False
-    assert qmt["capabilities"]["can_submit_orders"] is False
-    assert qmt["capabilities"]["can_cancel_orders"] is False
-    assert qmt["stores_credentials"] is False
-    assert qmt["requires_credentials"] is False
-    assert "client_path" not in qmt
+    enabled = health["fixture-readonly-edge"]
+    assert enabled["status"] == "collector_evidence_missing"
+    assert enabled["capability_scope"] == ("persisted_broker_order_lifecycle_evidence")
+    assert enabled["provider_contact_performed"] is False
+    assert enabled["reads_persisted_facts_only"] is True
+    assert enabled["explicit_ingestion_required"] is True
+    assert enabled["capabilities"]["can_read_account"] is False
+    assert enabled["capabilities"]["can_submit_orders"] is False
+    assert enabled["capabilities"]["can_cancel_orders"] is False
+    assert enabled["stores_credentials"] is False
+    assert enabled["requires_credentials"] is False
+    assert "client_path" not in enabled
 
-    ptrade = health["local-ptrade-readonly"]
-    assert ptrade["status"] == "disabled"
-    assert ptrade["capability_scope"] == "local_readonly_connector_contract"
-    assert ptrade["capabilities"]["can_read_account"] is False
-    assert ptrade["capabilities"]["can_preview_orders"] is False
-    assert ptrade["capabilities"]["can_export_tickets"] is False
-    assert ptrade["capabilities"]["can_dry_run_orders"] is False
-    assert ptrade["capabilities"]["can_submit_orders"] is False
+    disabled = health["fixture-disabled-edge"]
+    assert disabled["status"] == "disabled"
+    assert disabled["registration_status"] == "registered_disabled"
+    assert disabled["provider_contact_performed"] is False
+    assert disabled["capabilities"]["can_submit_orders"] is False
 
 
-def test_runtime_readonly_connector_health_uses_snapshot_without_submission(
+def test_connector_health_does_not_poll_registered_edge_adapter(
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    connector = FakeReadOnlyBrokerConnector(
-        BrokerConnectorSnapshot(
-            connector_id="fake-qmt-runtime",
-            source_name="synthetic qmt readonly runtime",
-            account_id="private-account-id",
-            account_alias="local-review",
-            captured_at="2026-07-02T09:31:00+08:00",
-            health=BrokerConnectorHealth(
-                status="stale",
-                checked_at="2026-07-02T09:30:00+08:00",
-                message="Read-only connector heartbeat is stale.",
-                limitations=["Runtime connector fixture is stale."],
-            ),
-            cash=BrokerCashFact(
-                currency="CNY",
-                balance=Decimal("100000.00"),
-                available=Decimal("88000.00"),
-            ),
-            limitations=["Synthetic runtime snapshot; no broker client submitted."],
-        ),
-        capabilities=BrokerConnectorCapabilities(can_submit_orders=True),
-    )
+    connector = _ConnectorWouldFailIfQueried()
     service = BrokerGatewayService(db=db, broker_connectors=[connector])
 
     health = service.list_connector_health()
 
     assert len(health) == 1
     payload = health[0]
-    assert payload["connector_id"] == "fake-qmt-runtime"
-    assert payload["connector_type"] == "read_only_snapshot"
-    assert payload["status"] == "runtime_degraded"
-    assert payload["message"] == "Read-only connector heartbeat is stale."
-    assert payload["account_alias"] == "local-review"
-    assert payload["capability_scope"] == "runtime_readonly_connector_snapshot"
-    assert payload["last_heartbeat_at"] == "2026-07-02T09:30:00+08:00"
-    assert payload["last_error"] == "Read-only connector heartbeat is stale."
-    assert payload["capabilities"]["can_read_account"] is True
-    assert payload["capabilities"]["can_read_cash"] is True
-    assert payload["capabilities"]["can_preview_orders"] is False
-    assert payload["capabilities"]["can_export_tickets"] is False
-    assert payload["capabilities"]["can_dry_run_orders"] is False
+    assert payload["connector_id"] == "fixture-readonly-edge"
+    assert payload["connector_type"] == "deterministic_fixture"
+    assert payload["status"] == "collector_evidence_missing"
+    assert payload["capability_scope"] == ("persisted_broker_order_lifecycle_evidence")
+    assert payload["provider_contact_performed"] is False
+    assert payload["latest_collector_runs"] == []
+    assert payload["capabilities"]["can_read_account"] is False
     assert payload["capabilities"]["can_submit_orders"] is False
     assert payload["capabilities"]["can_cancel_orders"] is False
     assert payload["requires_credentials"] is False
     assert payload["stores_credentials"] is False
     assert payload["submitted_to_broker"] is False
-    assert "account_id" not in payload
-    assert "private-account-id" not in json.dumps(payload, ensure_ascii=False)
-    assert (
-        "Read-only connector snapshot is runtime evidence only."
-        in payload["limitations"]
-    )
+    assert "qmt" not in json.dumps(payload, ensure_ascii=False).lower()
     assert db.list_broker_gateway_events_sync() == []
 
 
-def test_runtime_readonly_connector_snapshot_query_is_non_mutating(
+def test_legacy_connector_snapshot_is_explicit_persisted_evidence_migration(
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    connector = FakeReadOnlyBrokerConnector(
-        BrokerConnectorSnapshot(
-            connector_id="fake-qmt-runtime",
-            source_name="synthetic qmt readonly runtime",
-            account_id="private-account-id",
-            account_alias="local-review",
-            captured_at="2026-07-02T09:31:00+08:00",
-            health=BrokerConnectorHealth(
-                status="healthy",
-                checked_at="2026-07-02T09:30:00+08:00",
-                message="Read-only connector heartbeat is healthy.",
-            ),
-            cash=BrokerCashFact(
-                currency="CNY",
-                balance=Decimal("100000.00"),
-                available=Decimal("88000.00"),
-            ),
-            positions=[
-                BrokerPositionFact(
-                    symbol="600519",
-                    instrument_name="贵州茅台",
-                    asset_class="stock",
-                    quantity=Decimal("200"),
-                    available_quantity=Decimal("100"),
-                    cost_basis=Decimal("1600.00"),
-                    market_price=Decimal("1688.00"),
-                )
-            ],
-            orders=[
-                BrokerOrderFact(
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    status="filled",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    submitted_at="2026-07-02T09:31:10+08:00",
-                )
-            ],
-            fills=[
-                BrokerFillFact(
-                    fill_id="fill-001",
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    fee=Decimal("5.10"),
-                    tax=Decimal("0"),
-                    net_amount=Decimal("-168805.10"),
-                    filled_at="2026-07-02T09:31:20+08:00",
-                )
-            ],
-        ),
-        capabilities=BrokerConnectorCapabilities(can_submit_orders=True),
-    )
+    connector = _ConnectorWouldFailIfQueried()
     service = BrokerGatewayService(db=db, broker_connectors=[connector])
 
-    result = service.query_connector_snapshot("fake-qmt-runtime")
+    result = service.query_connector_snapshot("fixture-readonly-edge")
 
-    assert result["gateway_id"] == "read_only_connector"
-    assert result["query_scope"] == "runtime_readonly_connector_snapshot"
-    assert result["status"] == "snapshot_ready"
-    assert result["connector_id"] == "fake-qmt-runtime"
-    assert result["account_alias"] == "local-review"
-    assert result["captured_at"] == "2026-07-02T09:31:00+08:00"
-    assert result["connector_health"]["status"] == "runtime_healthy"
-    assert result["cash_balance"]["currency"] == "CNY"
-    assert result["cash_balance"]["balance"] == "100000.00"
-    assert result["position_count"] == 1
-    assert result["positions"][0]["symbol"] == "600519"
-    assert result["positions"][0]["quantity"] == "200"
-    assert result["order_count"] == 1
-    assert result["orders"][0]["order_id"] == "broker-order-private"
-    assert result["fill_count"] == 1
-    assert result["fills"][0]["net_amount"] == "-168805.10"
-    assert result["capabilities"]["can_read_account"] is True
-    assert result["capabilities"]["can_preview_orders"] is False
-    assert result["capabilities"]["can_export_tickets"] is False
-    assert result["capabilities"]["can_dry_run_orders"] is False
-    assert result["capabilities"]["can_submit_orders"] is False
-    assert result["capabilities"]["can_cancel_orders"] is False
-    assert result["stores_credentials"] is False
-    assert result["submitted_to_broker"] is False
+    assert result["schema_version"] == (
+        "karkinos.broker_connector_snapshot_migration.v1"
+    )
+    assert result["query_scope"] == "snapshot_compatibility_entry"
+    assert result["status"] == "migrated_to_persisted_lifecycle_evidence"
+    assert result["connector_id"] == "fixture-readonly-edge"
+    assert result["provider_contact_performed"] is False
+    assert result["account_facts_included"] is False
+    assert result["lifecycle_evidence"]["status"] == ("explicit_ingestion_required")
+    assert result["can_submit_orders"] is False
+    assert result["can_cancel_orders"] is False
     assert result["does_not_mutate_oms"] is True
     assert result["does_not_mutate_production_ledger"] is True
-    assert "account_id" not in result
-    assert "private-account-id" not in json.dumps(result, ensure_ascii=False)
+    assert result["migration"]["canonical_contract"] == (
+        "broker_order_lifecycle_evidence"
+    )
+    assert result["migration"]["legacy_runtime_snapshot_supported"] is False
+    assert "qmt" not in json.dumps(result, ensure_ascii=False).lower()
     assert db.list_broker_gateway_events_sync() == []
 
 

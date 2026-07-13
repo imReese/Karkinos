@@ -347,6 +347,17 @@ drifted evidence fails closed. Production still exposes status/history only;
 this does not contact a broker, mutate OMS/fills/ledger/capital/kill-switch
 state, or grant submit/cancel authority.
 
+Stage 3.19 adds a persisted-fact operator view and explicit broker-lifecycle
+read boundary. Automation Cockpit shows bounded-session authorized capital,
+effective capital at risk, cash/capital/turnover headroom, remaining order
+slots, expiry, last order/submission, reconciliation, live-gate, pause, and
+blocker evidence without contacting a provider. Broker health and alerts read
+only recorded generic collector runs; missing or blocked evidence requires an
+explicit ingestion command. The former runtime snapshot entry is migration-
+only and returns no live account facts. These views cannot issue, renew, resume,
+widen, submit, cancel, mutate OMS/ledger/risk/kill-switch state, or scale
+capital automatically.
+
 Stage 3.8 adds an internal durable automatic-pause controller. It evaluates an
 allowlisted snapshot of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,

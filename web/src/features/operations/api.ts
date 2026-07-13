@@ -302,7 +302,7 @@ export type PaperShadowRunReviewResponse = {
 };
 
 export type AutomationCockpitResponse = {
-  schema_version: 'karkinos.automation_cockpit.v1';
+  schema_version: 'karkinos.automation_cockpit.v2';
   broker_submission_enabled: boolean;
   automation_status: {
     schema_version: 'karkinos.automation_status.v1';
@@ -373,42 +373,102 @@ export type AutomationCockpitResponse = {
     status: string;
     recommended_action: string;
   }>;
-  runtime_connector_snapshots?: BrokerRuntimeConnectorSnapshot[];
+  connector_registrations?: Array<{
+    connector_id: string;
+    connector_type: string;
+    registration_status: string;
+    provider_contact_performed: boolean;
+    explicit_ingestion_required: boolean;
+    can_submit_orders: boolean;
+    can_cancel_orders: boolean;
+  }>;
+  controlled_execution?: ControlledExecutionOperatorView;
   limitations: string[];
 };
 
-export type BrokerRuntimeConnectorSnapshot = {
-  schema_version?: string;
-  gateway_id: 'read_only_connector' | string;
+export type ControlledExecutionOperatorSession = {
+  session_id: string;
+  reservation_id: string;
+  authorization_id: string;
+  account_alias: string;
+  strategy_id: string;
   status: string;
-  query_scope: string;
-  connector_id: string;
-  account_alias?: string | null;
-  captured_at?: string | null;
-  connector_health?: {
-    status?: string;
-    raw_status?: string;
-    message?: string | null;
-    checked_at?: string | null;
+  persisted_status: string;
+  is_current_window: boolean;
+  effective_at: string;
+  expires_at: string;
+  authorized_capital: string | null;
+  effective_capital_at_risk: string | null;
+  remaining_budget: {
+    capital_headroom: string | null;
+    cash_headroom: string | null;
+    turnover_headroom: string | null;
+    remaining_order_slots: number;
+    reserved_order_count: number;
+    admitted_order_count: number;
   };
-  cash_balance?: {
-    currency?: string | null;
-    balance?: string | number | null;
-    available?: string | number | null;
+  allowed_symbols: string[];
+  last_order: {
+    order_id: string;
+    admitted_at: string;
+    admission_id: string;
+    submission_status: string;
+    submit_intent_id: string;
   };
-  position_count?: number;
-  positions?: Array<Record<string, unknown>>;
-  order_count?: number;
-  orders?: Array<Record<string, unknown>>;
-  fill_count?: number;
-  fills?: Array<Record<string, unknown>>;
-  capabilities?: BrokerConnectorCapabilities;
-  submitted_to_broker?: boolean;
-  can_submit_orders?: boolean;
-  stores_credentials?: boolean;
-  does_not_mutate_oms?: boolean;
-  does_not_mutate_production_ledger?: boolean;
-  limitations?: string[];
+  last_reconciliation: {
+    run_id: string;
+    run_status: string;
+    item_status: string;
+    suggested_action: string;
+    updated_at: string;
+  };
+  latest_gate_snapshot: {
+    snapshot_id: string;
+    status: string;
+    observed_at: string;
+    blockers: string[];
+  };
+  pause: {
+    status: string;
+    pause_event_id: string;
+    paused_at: string;
+    reasons: string[];
+    resume_available: false;
+    replacement_review_required: boolean;
+  };
+  blockers: string[];
+  runtime_authentication_evaluated: false;
+  runtime_authority_granted: false;
+  broker_submission_enabled: false;
+};
+
+export type ControlledExecutionOperatorView = {
+  schema_version: 'karkinos.controlled_execution_operator_view.v1';
+  as_of: string;
+  status: string;
+  next_operator_action: string;
+  session_count: number;
+  visible_session_count: number;
+  current_window_session_count: number;
+  blocked_current_session_count: number;
+  paused_session_count: number;
+  sessions: ControlledExecutionOperatorSession[];
+  latest_submission: Record<string, unknown> | null;
+  latest_reconciliation: Record<string, unknown> | null;
+  source_blockers: string[];
+  reads_persisted_facts_only: true;
+  provider_contact_performed: false;
+  runtime_connector_query_performed: false;
+  broker_submission_enabled: false;
+  broker_cancel_enabled: false;
+  authority_issue_enabled: false;
+  authority_renew_enabled: false;
+  authority_resume_enabled: false;
+  automatic_scale_up_enabled: false;
+  does_not_mutate_account_truth: true;
+  does_not_mutate_oms: true;
+  does_not_mutate_production_ledger: true;
+  limitations: string[];
 };
 
 export type BrokerGatewayCapability = {
@@ -456,6 +516,7 @@ export type BrokerGatewayStatusResponse = {
 
 export type BrokerConnectorCapabilities = {
   can_read_health?: boolean;
+  can_query_lifecycle_evidence?: boolean;
   can_read_account?: boolean;
   can_read_cash?: boolean;
   can_read_positions?: boolean;
@@ -468,16 +529,32 @@ export type BrokerConnectorCapabilities = {
   can_cancel_orders?: boolean;
 };
 
-export type BrokerConnectorHealth = {
-  schema_version: 'karkinos.broker_connector_health.v1';
+export type BrokerLifecycleEvidenceHealth = {
+  schema_version: 'karkinos.broker_lifecycle_evidence_health.v1';
   connector_id: string;
   connector_type: string;
+  gateway_id: string;
+  provider?: string | null;
+  providers?: string[];
+  registered: boolean;
+  registration_status: string;
   enabled: boolean;
   status: string;
   message?: string | null;
-  account_alias?: string | null;
+  blockers?: string[];
+  account_aliases?: string[];
   capability_scope?: string | null;
   capabilities?: BrokerConnectorCapabilities;
+  evidence_source?: string;
+  evidence_store_status?: string;
+  latest_collector_runs?: Array<Record<string, unknown>>;
+  provider_contact_performed: boolean;
+  reads_persisted_facts_only: boolean;
+  explicit_ingestion_required: boolean;
+  third_party_adapter_review_required?: boolean;
+  default_registered?: boolean;
+  can_submit_orders?: boolean;
+  can_cancel_orders?: boolean;
   requires_credentials?: boolean;
   stores_credentials?: boolean;
   submitted_to_broker?: boolean;
@@ -485,9 +562,11 @@ export type BrokerConnectorHealth = {
 };
 
 export type BrokerConnectorHealthResponse = {
-  schema_version: 'karkinos.broker_connector_health_list.v1';
+  schema_version: 'karkinos.broker_connector_health_list.v2';
   broker_submission_enabled: boolean;
-  connectors: BrokerConnectorHealth[];
+  provider_contact_performed: boolean;
+  reads_persisted_facts_only: boolean;
+  connectors: BrokerLifecycleEvidenceHealth[];
 };
 
 export type BrokerGatewayAccountFactsResponse = {

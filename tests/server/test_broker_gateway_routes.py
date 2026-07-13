@@ -1,23 +1,12 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from account_truth.broker_connector import (
-    BrokerCashFact,
-    BrokerConnectorCapabilities,
-    BrokerConnectorHealth,
-    BrokerConnectorSnapshot,
-    BrokerFillFact,
-    BrokerOrderFact,
-    BrokerPositionFact,
-    FakeReadOnlyBrokerConnector,
-)
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.config import BrokerConnectorConfig
@@ -25,6 +14,15 @@ from server.db import AppDatabase
 from server.routes.broker_gateway import create_router
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+
+
+class _ConnectorWouldFailIfQueried:
+    connector_id = "fixture-readonly-edge"
+    connector_type = "deterministic_fixture"
+    enabled = True
+
+    def read_account_snapshot(self):
+        raise AssertionError("GET routes must not call an edge adapter")
 
 
 def _client_for_db(
@@ -231,11 +229,11 @@ def test_broker_gateway_connector_health_route_is_read_only(
         db,
         broker_connectors=[
             BrokerConnectorConfig(
-                connector_id="local-qmt-readonly",
-                connector_type="qmt_readonly",
+                connector_id="fixture-readonly-edge",
+                connector_type="deterministic_fixture",
                 enabled=True,
-                client_path="/Applications/QMT",
-                account_alias="local-review",
+                client_path="/opt/fixture-edge",
+                account_alias="fixture-review",
             )
         ],
     )
@@ -244,13 +242,17 @@ def test_broker_gateway_connector_health_route_is_read_only(
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["schema_version"] == "karkinos.broker_connector_health_list.v2"
     assert payload["broker_submission_enabled"] is False
-    assert payload["connectors"][0]["connector_id"] == "local-qmt-readonly"
+    assert payload["provider_contact_performed"] is False
+    assert payload["reads_persisted_facts_only"] is True
+    assert payload["connectors"][0]["connector_id"] == "fixture-readonly-edge"
+    assert payload["connectors"][0]["status"] == "collector_evidence_missing"
     assert (
         payload["connectors"][0]["capability_scope"]
-        == "local_readonly_connector_contract"
+        == "persisted_broker_order_lifecycle_evidence"
     )
-    assert payload["connectors"][0]["capabilities"]["can_read_account"] is True
+    assert payload["connectors"][0]["capabilities"]["can_read_account"] is False
     assert payload["connectors"][0]["capabilities"]["can_preview_orders"] is False
     assert payload["connectors"][0]["capabilities"]["can_export_tickets"] is False
     assert payload["connectors"][0]["capabilities"]["can_dry_run_orders"] is False
@@ -258,133 +260,48 @@ def test_broker_gateway_connector_health_route_is_read_only(
     assert payload["connectors"][0]["capabilities"]["can_cancel_orders"] is False
     assert payload["connectors"][0]["stores_credentials"] is False
     assert "client_path" not in payload["connectors"][0]
+    assert "qmt" not in response.text.lower()
 
 
-def test_broker_gateway_connector_snapshot_route_is_query_only(
+def test_broker_gateway_connector_snapshot_route_is_migration_only(
     tmp_path,
     monkeypatch,
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    connector = FakeReadOnlyBrokerConnector(
-        BrokerConnectorSnapshot(
-            connector_id="fake-qmt-runtime",
-            source_name="synthetic qmt readonly runtime",
-            account_id="private-account-id",
-            account_alias="local-review",
-            captured_at="2026-07-02T09:31:00+08:00",
-            health=BrokerConnectorHealth(
-                status="healthy",
-                checked_at="2026-07-02T09:30:00+08:00",
-                message="Read-only connector heartbeat is healthy.",
-            ),
-            cash=BrokerCashFact(
-                currency="CNY",
-                balance=Decimal("100000.00"),
-                available=Decimal("88000.00"),
-            ),
-            positions=[
-                BrokerPositionFact(
-                    symbol="600519",
-                    instrument_name="贵州茅台",
-                    asset_class="stock",
-                    quantity=Decimal("200"),
-                    available_quantity=Decimal("100"),
-                    cost_basis=Decimal("1600.00"),
-                    market_price=Decimal("1688.00"),
-                )
-            ],
-            orders=[
-                BrokerOrderFact(
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    status="filled",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    submitted_at="2026-07-02T09:31:10+08:00",
-                )
-            ],
-            fills=[
-                BrokerFillFact(
-                    fill_id="fill-001",
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    fee=Decimal("5.10"),
-                    tax=Decimal("0"),
-                    net_amount=Decimal("-168805.10"),
-                    filled_at="2026-07-02T09:31:20+08:00",
-                )
-            ],
-        ),
-        capabilities=BrokerConnectorCapabilities(can_submit_orders=True),
-    )
+    connector = _ConnectorWouldFailIfQueried()
     client = _client_for_db(monkeypatch, db, broker_connectors=[connector])
 
-    response = client.get("/api/broker-gateway/connectors/fake-qmt-runtime/snapshot")
+    response = client.get(
+        "/api/broker-gateway/connectors/fixture-readonly-edge/snapshot"
+    )
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["schema_version"] == ("karkinos.broker_connector_snapshot_query.v2")
     assert payload["broker_submission_enabled"] is False
+    assert payload["provider_contact_performed"] is False
+    assert payload["deprecated_compatibility_entry"] is True
     snapshot = payload["snapshot"]
-    assert snapshot["gateway_id"] == "read_only_connector"
-    assert snapshot["query_scope"] == "runtime_readonly_connector_snapshot"
-    assert snapshot["connector_id"] == "fake-qmt-runtime"
-    assert snapshot["account_alias"] == "local-review"
-    assert snapshot["position_count"] == 1
-    assert snapshot["order_count"] == 1
-    assert snapshot["fill_count"] == 1
-    assert snapshot["capabilities"]["can_read_account"] is True
-    assert snapshot["capabilities"]["can_submit_orders"] is False
-    assert snapshot["submitted_to_broker"] is False
+    assert snapshot["query_scope"] == "snapshot_compatibility_entry"
+    assert snapshot["connector_id"] == "fixture-readonly-edge"
+    assert snapshot["account_facts_included"] is False
+    assert snapshot["provider_contact_performed"] is False
+    assert snapshot["lifecycle_evidence"]["status"] == ("explicit_ingestion_required")
+    assert snapshot["can_submit_orders"] is False
+    assert snapshot["can_cancel_orders"] is False
     assert snapshot["does_not_mutate_production_ledger"] is True
-    assert "account_id" not in snapshot
-    assert "private-account-id" not in response.text
+    assert snapshot["migration"]["legacy_runtime_snapshot_supported"] is False
+    assert "qmt" not in response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
 
 
-def test_broker_gateway_connector_snapshot_route_reads_local_export_config(
+def test_local_export_registration_is_not_read_by_get_routes(
     tmp_path,
     monkeypatch,
 ) -> None:
-    snapshot_path = tmp_path / "qmt-snapshot.json"
-    snapshot_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
-                "source_name": "QMT local readonly export",
-                "account_id": "private-account-id",
-                "captured_at": "2026-07-03T15:01:00+08:00",
-                "health": {
-                    "status": "healthy",
-                    "checked_at": "2026-07-03T15:00:00+08:00",
-                    "message": "Local export parsed.",
-                },
-                "cash": {
-                    "currency": "CNY",
-                    "balance": "100000.00",
-                    "available": "88000.00",
-                },
-                "positions": [
-                    {
-                        "symbol": "600519",
-                        "instrument_name": "贵州茅台",
-                        "asset_class": "stock",
-                        "quantity": "200",
-                        "available_quantity": "100",
-                        "cost_basis": "1600.00",
-                        "market_price": "1688.00",
-                    }
-                ],
-                "orders": [],
-                "fills": [],
-            }
-        ),
-        encoding="utf-8",
-    )
+    snapshot_path = tmp_path / "edge-snapshot.json"
+    snapshot_path.write_text("private-account-id:not-valid-json", encoding="utf-8")
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
     client = _client_for_db(
@@ -392,71 +309,46 @@ def test_broker_gateway_connector_snapshot_route_reads_local_export_config(
         db,
         broker_connectors=[
             BrokerConnectorConfig(
-                connector_id="local-qmt-export",
+                connector_id="fixture-local-export",
                 connector_type="local_export_readonly",
                 enabled=True,
                 client_path=str(snapshot_path),
-                account_alias="local-review",
+                account_alias="fixture-review",
             )
         ],
     )
 
     health_response = client.get("/api/broker-gateway/connectors/health")
     snapshot_response = client.get(
-        "/api/broker-gateway/connectors/local-qmt-export/snapshot"
+        "/api/broker-gateway/connectors/fixture-local-export/snapshot"
     )
 
     assert health_response.status_code == 200
     health = health_response.json()["connectors"][0]
-    assert health["connector_id"] == "local-qmt-export"
-    assert health["status"] == "runtime_healthy"
-    assert health["capability_scope"] == "runtime_readonly_connector_snapshot"
+    assert health["connector_id"] == "fixture-local-export"
+    assert health["status"] == "collector_evidence_missing"
+    assert health["capability_scope"] == ("persisted_broker_order_lifecycle_evidence")
+    assert health["provider_contact_performed"] is False
     assert health["capabilities"]["can_submit_orders"] is False
     assert "private-account-id" not in health_response.text
     assert snapshot_response.status_code == 200
     snapshot = snapshot_response.json()["snapshot"]
-    assert snapshot["connector_id"] == "local-qmt-export"
-    assert snapshot["source_name"] == "QMT local readonly export"
-    assert snapshot["account_alias"] == "local-review"
-    assert snapshot["cash_balance"]["balance"] == "100000.00"
-    assert snapshot["positions"][0]["quantity"] == "200"
-    assert snapshot["submitted_to_broker"] is False
+    assert snapshot["connector_id"] == "fixture-local-export"
+    assert snapshot["status"] == "migrated_to_persisted_lifecycle_evidence"
+    assert snapshot["provider_contact_performed"] is False
+    assert snapshot["lifecycle_evidence"]["status"] == ("explicit_ingestion_required")
     assert snapshot["does_not_mutate_oms"] is True
     assert snapshot["does_not_mutate_production_ledger"] is True
-    assert "account_id" not in snapshot
     assert "private-account-id" not in snapshot_response.text
+    assert "qmt" not in snapshot_response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
 
 
-def test_broker_gateway_local_export_invalid_snapshot_degrades_without_leaking_account(
+def test_missing_local_export_is_not_read_by_get_routes(
     tmp_path,
     monkeypatch,
 ) -> None:
-    snapshot_path = tmp_path / "qmt-snapshot-invalid.json"
-    snapshot_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
-                "source_name": "QMT local readonly export",
-                "account_id": "private-account-id",
-                "captured_at": "2026-07-03T15:01:00+08:00",
-                "health": {
-                    "status": "healthy",
-                    "checked_at": "2026-07-03T15:00:00+08:00",
-                    "message": "Local export parsed.",
-                },
-                "positions": [
-                    {
-                        "symbol": "600519",
-                        "instrument_name": "贵州茅台",
-                        "asset_class": "stock",
-                        "quantity": "not-a-number",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+    snapshot_path = tmp_path / "missing-edge-snapshot.json"
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
     client = _client_for_db(
@@ -464,60 +356,46 @@ def test_broker_gateway_local_export_invalid_snapshot_degrades_without_leaking_a
         db,
         broker_connectors=[
             BrokerConnectorConfig(
-                connector_id="local-qmt-export",
+                connector_id="fixture-local-export",
                 connector_type="local_export_readonly",
                 enabled=True,
                 client_path=str(snapshot_path),
-                account_alias="local-review",
+                account_alias="fixture-review",
             )
         ],
     )
 
     health_response = client.get("/api/broker-gateway/connectors/health")
     snapshot_response = client.get(
-        "/api/broker-gateway/connectors/local-qmt-export/snapshot"
+        "/api/broker-gateway/connectors/fixture-local-export/snapshot"
     )
 
     assert health_response.status_code == 200
     health = health_response.json()["connectors"][0]
-    assert health["connector_id"] == "local-qmt-export"
-    assert health["status"] == "runtime_degraded"
-    assert health["message"] == (
-        "Local JSON snapshot export is invalid; review the ignored local export file."
-    )
-    assert health["last_error"] == (
-        "Local JSON snapshot export is invalid; review the ignored local export file."
-    )
+    assert health["connector_id"] == "fixture-local-export"
+    assert health["status"] == "collector_evidence_missing"
+    assert health["provider_contact_performed"] is False
     assert health["capabilities"]["can_submit_orders"] is False
-    assert "private-account-id" not in health_response.text
     assert snapshot_response.status_code == 200
     snapshot = snapshot_response.json()["snapshot"]
-    assert snapshot["status"] == "snapshot_degraded"
-    assert snapshot["connector_health"]["status"] == "runtime_degraded"
-    assert snapshot["connector_health"]["raw_status"] == "incomplete"
-    assert snapshot["account_alias"] == "local-review"
-    assert snapshot["cash_balance"] == {}
-    assert snapshot["position_count"] == 0
-    assert snapshot["order_count"] == 0
-    assert snapshot["fill_count"] == 0
-    assert snapshot["submitted_to_broker"] is False
+    assert snapshot["status"] == "migrated_to_persisted_lifecycle_evidence"
+    assert snapshot["provider_contact_performed"] is False
+    assert snapshot["lifecycle_evidence"]["status"] == ("explicit_ingestion_required")
     assert snapshot["does_not_mutate_oms"] is True
     assert snapshot["does_not_mutate_production_ledger"] is True
-    assert "account_id" not in snapshot
-    assert "private-account-id" not in snapshot_response.text
     assert db.list_broker_gateway_events_sync() == []
 
 
-def test_broker_gateway_retired_qmt_export_type_is_not_registered(
+def test_unregistered_third_party_export_type_never_reads_file(
     tmp_path,
     monkeypatch,
 ) -> None:
-    snapshot_path = tmp_path / "qmt-snapshot-wrong-schema.json"
+    snapshot_path = tmp_path / "third-party-snapshot-wrong-schema.json"
     snapshot_path.write_text(
         json.dumps(
             {
                 "schema_version": "other.app.account_snapshot.v1",
-                "source_name": "QMT local readonly export",
+                "source_name": "Third-party local readonly export",
                 "account_id": "private-account-id",
                 "captured_at": "2026-07-03T15:01:00+08:00",
                 "health": {
@@ -541,27 +419,34 @@ def test_broker_gateway_retired_qmt_export_type_is_not_registered(
         db,
         broker_connectors=[
             BrokerConnectorConfig(
-                connector_id="local-qmt-export",
-                connector_type="qmt_readonly_export",
+                connector_id="fixture-third-party-export",
+                connector_type="third_party_readonly_export",
                 enabled=True,
                 client_path=str(snapshot_path),
-                account_alias="local-review",
+                account_alias="fixture-review",
             )
         ],
     )
 
     health_response = client.get("/api/broker-gateway/connectors/health")
     snapshot_response = client.get(
-        "/api/broker-gateway/connectors/local-qmt-export/snapshot"
+        "/api/broker-gateway/connectors/fixture-third-party-export/snapshot"
     )
 
     assert health_response.status_code == 200
     health = health_response.json()["connectors"][0]
-    assert health["status"] == "configured_readonly_unverified"
+    assert health["status"] == "collector_evidence_missing"
+    assert health["provider_contact_performed"] is False
+    assert health["explicit_ingestion_required"] is True
     assert health["capabilities"]["can_submit_orders"] is False
     assert "private-account-id" not in health_response.text
-    assert snapshot_response.status_code == 404
+    assert snapshot_response.status_code == 200
+    snapshot = snapshot_response.json()["snapshot"]
+    assert snapshot["status"] == "migrated_to_persisted_lifecycle_evidence"
+    assert snapshot["provider_contact_performed"] is False
+    assert snapshot["lifecycle_evidence"]["status"] == ("explicit_ingestion_required")
     assert "private-account-id" not in snapshot_response.text
+    assert "qmt" not in snapshot_response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
 
 

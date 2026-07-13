@@ -380,7 +380,7 @@ function installDecisionFetchMock({
     limitations: [],
   },
   automationCockpitResponse = {
-    schema_version: 'karkinos.automation_cockpit.v1',
+    schema_version: 'karkinos.automation_cockpit.v2',
     broker_submission_enabled: false,
     automation_status: {
       schema_version: 'karkinos.automation_status.v1',
@@ -464,6 +464,34 @@ function installDecisionFetchMock({
         recommended_action: 'import_broker_evidence',
       },
     ],
+    controlled_execution: {
+      schema_version: 'karkinos.controlled_execution_operator_view.v1',
+      as_of: '2026-06-12T09:33:00+08:00',
+      status: 'no_session_evidence',
+      next_operator_action: 'no_action_default_disabled',
+      session_count: 0,
+      visible_session_count: 0,
+      current_window_session_count: 0,
+      blocked_current_session_count: 0,
+      paused_session_count: 0,
+      sessions: [],
+      latest_submission: null,
+      latest_reconciliation: null,
+      source_blockers: [],
+      reads_persisted_facts_only: true,
+      provider_contact_performed: false,
+      runtime_connector_query_performed: false,
+      broker_submission_enabled: false,
+      broker_cancel_enabled: false,
+      authority_issue_enabled: false,
+      authority_renew_enabled: false,
+      authority_resume_enabled: false,
+      automatic_scale_up_enabled: false,
+      does_not_mutate_account_truth: true,
+      does_not_mutate_oms: true,
+      does_not_mutate_production_ledger: true,
+      limitations: [],
+    },
     limitations: [
       'Cockpit summary is read-only and does not submit broker orders.',
     ],
@@ -510,8 +538,10 @@ function installDecisionFetchMock({
     ],
   },
   brokerConnectorHealthResponse = {
-    schema_version: 'karkinos.broker_connector_health_list.v1',
+    schema_version: 'karkinos.broker_connector_health_list.v2',
     broker_submission_enabled: false,
+    provider_contact_performed: false,
+    reads_persisted_facts_only: true,
     connectors: [],
   },
   brokerAccountFactsResponse = {
@@ -1885,7 +1915,7 @@ test('surfaces controlled bridge policy whitelist as non-submitting evidence', a
         live_submission_available: false,
         automation_allowed: false,
         per_order_confirmation_required: true,
-        allowed_connector_ids: ['local-qmt-readonly'],
+        allowed_connector_ids: ['fixture-readonly-edge'],
         allowed_account_aliases: ['local-review'],
         allowed_strategy_ids: ['dual_ma'],
         allowed_symbols: ['600519'],
@@ -1940,7 +1970,7 @@ test('surfaces controlled bridge policy whitelist as non-submitting evidence', a
   expect(automation.textContent).toContain('Controlled bridge policy');
   expect(automation.textContent).toContain('Configured, no submission');
   expect(automation.textContent).toContain('local-controlled-bridge-review');
-  expect(automation.textContent).toContain('Connector: local-qmt-readonly');
+  expect(automation.textContent).toContain('Connector: fixture-readonly-edge');
   expect(automation.textContent).toContain('Account: local-review');
   expect(automation.textContent).toContain('Strategy: dual_ma');
   expect(automation.textContent).toContain('Symbol: 600519');
@@ -1952,41 +1982,60 @@ test('surfaces controlled bridge policy whitelist as non-submitting evidence', a
   expect(automation.textContent).not.toContain('Cancel broker order');
 });
 
-test('surfaces read-only connector health and staged account facts without credentials or live actions', async () => {
+test('surfaces persisted lifecycle health and staged account facts without live actions', async () => {
   renderDecisionCockpit({
     locale: 'en',
     brokerConnectorHealthResponse: {
-      schema_version: 'karkinos.broker_connector_health_list.v1',
+      schema_version: 'karkinos.broker_connector_health_list.v2',
       broker_submission_enabled: false,
+      provider_contact_performed: false,
+      reads_persisted_facts_only: true,
       connectors: [
         {
-          schema_version: 'karkinos.broker_connector_health.v1',
-          connector_id: 'local-qmt-readonly',
-          connector_type: 'qmt_readonly',
+          schema_version: 'karkinos.broker_lifecycle_evidence_health.v1',
+          connector_id: 'fixture-readonly-edge',
+          connector_type: 'deterministic_fixture',
+          gateway_id: 'fixture-readonly-edge',
+          provider: 'deterministic_fixture',
+          providers: ['deterministic_fixture'],
+          registered: true,
+          registration_status: 'registered_enabled',
           enabled: true,
-          status: 'configured_readonly_unverified',
+          status: 'collector_evidence_clear',
           message:
-            'Read-only connector is configured; live client health is not checked.',
-          account_alias: 'local-review',
-          capability_scope: 'local_readonly_connector_contract',
+            'Latest persisted broker lifecycle collector evidence is clear.',
+          blockers: [],
+          account_aliases: ['fixture-review'],
+          capability_scope: 'persisted_broker_order_lifecycle_evidence',
           capabilities: {
             can_read_health: true,
-            can_read_account: true,
-            can_read_cash: true,
-            can_read_positions: true,
-            can_read_orders: true,
-            can_read_fills: true,
+            can_query_lifecycle_evidence: true,
+            can_read_account: false,
+            can_read_cash: false,
+            can_read_positions: false,
+            can_read_orders: false,
+            can_read_fills: false,
             can_preview_orders: false,
             can_export_tickets: false,
             can_dry_run_orders: false,
             can_submit_orders: false,
             can_cancel_orders: false,
           },
+          evidence_source: 'persisted_broker_order_lifecycle_collector_runs',
+          evidence_store_status: 'available',
+          latest_collector_runs: [{ run_id: 'collector-fixture-1' }],
+          provider_contact_performed: false,
+          reads_persisted_facts_only: true,
+          explicit_ingestion_required: true,
+          third_party_adapter_review_required: true,
+          default_registered: false,
+          can_submit_orders: false,
+          can_cancel_orders: false,
           requires_credentials: false,
           stores_credentials: false,
           submitted_to_broker: false,
           limitations: [
-            'Connector health is a local configuration contract only.',
+            'Health is derived only from persisted collector-run evidence.',
           ],
         },
       ],
@@ -2009,35 +2058,40 @@ test('surfaces read-only connector health and staged account facts without crede
 
   const automation = await screen.findByTestId('decision-automation-cockpit');
 
-  expect(automation.textContent).toContain('Read-only connector health');
-  expect(automation.textContent).toContain('local-qmt-readonly');
-  expect(automation.textContent).toContain('Configured readonly unverified');
-  expect(automation.textContent).toContain('Read account available');
-  expect(automation.textContent).toContain('Read cash available');
-  expect(automation.textContent).toContain('Read positions available');
-  expect(automation.textContent).toContain('Read orders available');
-  expect(automation.textContent).toContain('Read fills available');
+  expect(automation.textContent).toContain(
+    'Persisted broker lifecycle evidence',
+  );
+  expect(automation.textContent).toContain('fixture-readonly-edge');
+  expect(automation.textContent).toContain('Persisted evidence clear');
+  expect(automation.textContent).toContain('Read account blocked');
+  expect(automation.textContent).toContain('Read cash blocked');
+  expect(automation.textContent).toContain('Read positions blocked');
+  expect(automation.textContent).toContain('Read orders blocked');
+  expect(automation.textContent).toContain('Read fills blocked');
   expect(automation.textContent).toContain('Preview orders blocked');
   expect(automation.textContent).toContain('Export tickets blocked');
   expect(automation.textContent).toContain('Dry-run orders blocked');
   expect(automation.textContent).toContain('Submit blocked');
   expect(automation.textContent).toContain('Cancel blocked');
+  expect(automation.textContent).toContain(
+    'Persisted facts only · no provider contact · no submit/cancel authority',
+  );
   expect(automation.textContent).toContain('Staged account facts');
   expect(automation.textContent).toContain('3 broker evidence events');
   expect(automation.textContent).toContain('1 cash');
   expect(automation.textContent).toContain('1 position');
   expect(automation.textContent).toContain('1 fill');
   expect(automation.textContent).not.toContain('client_path');
-  expect(automation.textContent).not.toContain('/Applications/QMT');
+  expect(automation.textContent).not.toContain('QMT');
   expect(automation.textContent).not.toContain('Submit broker order');
   expect(automation.textContent).not.toContain('Cancel broker order');
 });
 
-test('surfaces runtime connector snapshot evidence without account ids or live actions', async () => {
+test('surfaces bounded controlled execution evidence without live actions', async () => {
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v1',
+      schema_version: 'karkinos.automation_cockpit.v2',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -2052,74 +2106,125 @@ test('surfaces runtime connector snapshot evidence without account ids or live a
       recent_runs: [],
       promotion_states: [],
       execution_reconciliation_open_items: [],
-      runtime_connector_snapshots: [
-        {
-          schema_version: 'karkinos.broker_gateway.v1',
-          gateway_id: 'read_only_connector',
-          status: 'snapshot_ready',
-          query_scope: 'runtime_readonly_connector_snapshot',
-          connector_id: 'fake-qmt-runtime',
-          account_alias: 'local-review',
-          captured_at: '2026-07-02T09:31:00+08:00',
-          connector_health: {
-            status: 'runtime_healthy',
-            raw_status: 'healthy',
-            message: 'Read-only connector heartbeat is healthy.',
-            checked_at: '2026-07-02T09:30:00+08:00',
+      controlled_execution: {
+        schema_version: 'karkinos.controlled_execution_operator_view.v1',
+        as_of: '2026-07-13T08:00:00+00:00',
+        status: 'blocked',
+        next_operator_action: 'review_controlled_execution_blockers',
+        session_count: 1,
+        visible_session_count: 1,
+        current_window_session_count: 1,
+        blocked_current_session_count: 1,
+        paused_session_count: 1,
+        sessions: [
+          {
+            session_id: 'session-fixture-1',
+            reservation_id: 'reservation-fixture-1',
+            authorization_id: 'authorization-fixture-1',
+            account_alias: 'fixture-account',
+            strategy_id: 'dual_ma',
+            status: 'paused',
+            persisted_status: 'enabled',
+            is_current_window: true,
+            effective_at: '2026-07-13T07:30:00+00:00',
+            expires_at: '2026-07-13T09:00:00+00:00',
+            authorized_capital: '120000',
+            effective_capital_at_risk: '30000',
+            remaining_budget: {
+              capital_headroom: '90000',
+              cash_headroom: '70000',
+              turnover_headroom: '150000',
+              remaining_order_slots: 3,
+              reserved_order_count: 5,
+              admitted_order_count: 2,
+            },
+            allowed_symbols: ['600519', '510300'],
+            last_order: {
+              order_id: 'OMS-FIXTURE-1',
+              admitted_at: '2026-07-13T07:45:00+00:00',
+              admission_id: 'admission-fixture-1',
+              submission_status: 'accepted',
+              submit_intent_id: 'submit-fixture-1',
+            },
+            last_reconciliation: {
+              run_id: 'recon-fixture-1',
+              run_status: 'clear',
+              item_status: 'matched',
+              suggested_action: 'no_action',
+              updated_at: '2026-07-13T07:50:00+00:00',
+            },
+            latest_gate_snapshot: {
+              snapshot_id: 'gate-fixture-1',
+              status: 'blocked',
+              observed_at: '2026-07-13T07:59:50+00:00',
+              blockers: ['kill_switch_enabled'],
+            },
+            pause: {
+              status: 'paused',
+              pause_event_id: 'pause-fixture-1',
+              paused_at: '2026-07-13T07:59:51+00:00',
+              reasons: ['kill switch enabled'],
+              resume_available: false,
+              replacement_review_required: true,
+            },
+            blockers: ['runtime_session_paused'],
+            runtime_authentication_evaluated: false,
+            runtime_authority_granted: false,
+            broker_submission_enabled: false,
           },
-          cash_balance: {
-            currency: 'CNY',
-            balance: '100000.00',
-            available: '88000.00',
-          },
-          position_count: 1,
-          positions: [{ symbol: '600519', quantity: '200' }],
-          order_count: 1,
-          orders: [{ order_id: 'broker-order-private', symbol: '600519' }],
-          fill_count: 1,
-          fills: [{ fill_id: 'fill-001', symbol: '600519' }],
-          capabilities: {
-            can_read_account: true,
-            can_read_cash: true,
-            can_read_positions: true,
-            can_read_orders: true,
-            can_read_fills: true,
-            can_submit_orders: false,
-            can_cancel_orders: false,
-          },
-          submitted_to_broker: false,
-          does_not_mutate_oms: true,
-          does_not_mutate_production_ledger: true,
-          limitations: [
-            'Read-only connector snapshot query is runtime evidence only.',
-          ],
-        },
-      ],
+        ],
+        latest_submission: { order_id: 'OMS-FIXTURE-1', status: 'accepted' },
+        latest_reconciliation: { run_id: 'recon-fixture-1', status: 'clear' },
+        source_blockers: [],
+        reads_persisted_facts_only: true,
+        provider_contact_performed: false,
+        runtime_connector_query_performed: false,
+        broker_submission_enabled: false,
+        broker_cancel_enabled: false,
+        authority_issue_enabled: false,
+        authority_renew_enabled: false,
+        authority_resume_enabled: false,
+        automatic_scale_up_enabled: false,
+        does_not_mutate_account_truth: true,
+        does_not_mutate_oms: true,
+        does_not_mutate_production_ledger: true,
+        limitations: [],
+      },
       limitations: [],
     },
   });
 
-  const automation = await screen.findByTestId('decision-automation-cockpit');
+  const operatorView = await screen.findByTestId(
+    'controlled-execution-operator-view',
+  );
 
-  expect(automation.textContent).toContain('Runtime connector snapshot');
-  expect(automation.textContent).toContain('fake-qmt-runtime');
-  expect(automation.textContent).toContain('Snapshot ready');
-  expect(automation.textContent).toContain('Cash CNY 100000.00');
-  expect(automation.textContent).toContain('1 position');
-  expect(automation.textContent).toContain('1 order');
-  expect(automation.textContent).toContain('1 fill');
-  expect(automation.textContent).toContain('No broker submission');
-  expect(automation.textContent).not.toContain('private-account-id');
-  expect(automation.textContent).not.toContain('Submit broker order');
-  expect(automation.textContent).not.toContain('Cancel broker order');
-  expect(automation.textContent).not.toContain('Sync ledger');
+  expect(operatorView.textContent).toContain(
+    'Controlled execution operator view',
+  );
+  expect(operatorView.textContent).toContain('fixture-account / dual_ma');
+  expect(operatorView.textContent).toContain('¥120,000.00');
+  expect(operatorView.textContent).toContain('¥30,000.00');
+  expect(operatorView.textContent).toContain('¥90,000.00');
+  expect(operatorView.textContent).toContain('3');
+  expect(operatorView.textContent).toContain('OMS-FIXTURE-1 · accepted');
+  expect(operatorView.textContent).toContain('recon-fixture-1 · no_action');
+  expect(operatorView.textContent).toContain(
+    'Pause reason: kill switch enabled',
+  );
+  expect(operatorView.textContent).toContain('Persisted facts only');
+  expect(operatorView.textContent).toContain('No provider contact');
+  expect(operatorView.textContent).toContain('Submission off');
+  expect(operatorView.textContent).toContain('Cancellation off');
+  expect(operatorView.textContent).toContain('No resume action');
+  expect(operatorView.textContent).toContain('No automatic scale-up');
+  expect(within(operatorView).queryAllByRole('button')).toHaveLength(0);
 });
 
 test('surfaces strategy promotion state as paper shadow only without live promotion controls', async () => {
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v1',
+      schema_version: 'karkinos.automation_cockpit.v2',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -2171,7 +2276,7 @@ test('surfaces strategy promotion lifecycle audit boundary without bridge contro
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v1',
+      schema_version: 'karkinos.automation_cockpit.v2',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -2648,7 +2753,7 @@ test('surfaces manual execution alert evidence in automation cockpit without con
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v1',
+      schema_version: 'karkinos.automation_cockpit.v2',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -2740,7 +2845,7 @@ test('surfaces failed paper shadow automation recovery action without execution 
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v1',
+      schema_version: 'karkinos.automation_cockpit.v2',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',

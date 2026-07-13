@@ -619,6 +619,17 @@ broker authority: production still exposes no runtime-admit endpoint and the
 path cannot contact a gateway or mutate OMS, fills, the production ledger,
 capital limits, or the kill switch.
 
+Stage 3.19 adds a read-only operator projection over persisted runtime sessions,
+reservations, rate admissions, live-gate snapshots, controlled submit intents,
+pause state, and execution reconciliation. The projection computes authorized
+capital, effective capital at risk, capital/cash/turnover headroom, remaining
+order slots, allowed symbols, effective/expiry time, latest order/submission,
+related reconciliation, gate evidence, pause reasons, and blockers. Missing,
+stale, future, expired, revoked, paused, unreconciled, invalid, unavailable, or
+truncated sources fail closed. It is telemetry over database facts rather than
+runtime authentication and exposes no issue, renew, resume, widen, submit,
+cancel, or automatic scale action.
+
 Stage 3.11 implements recovery as a new signed authority, never as a mutable
 `paused -> enabled` transition. Normal issuance queries durable paused state and
 blocks an unexpired matching authorization/account/strategy scope. A
@@ -753,6 +764,17 @@ fills, write the production ledger, change risk/kill-switch state, issue
 capital authority, or release the interlock. The retired QMT v1 JSON schema is
 accepted only by the explicit offline migration command; it is not canonical
 and is rejected by the normal importer.
+
+Stage 3.19 also replaces implicit connector polling on GET/alert paths with the
+canonical `karkinos.broker_lifecycle_evidence_health.v1` persisted projection.
+Health is derived from the latest effective generic collector run for each
+provider/gateway/account scope, including batch, connection, cursor, validation,
+release-review, and user-authorization blockers. A registered edge descriptor
+is metadata only and is never called. Missing evidence reports explicit
+ingestion required; unreviewed releases, disconnects, partial batches, pending
+restart recovery, or cursor conflict remain blocked. The legacy runtime
+snapshot endpoint is a labelled compatibility migration to this evidence view
+and intentionally returns no current cash, position, order, or fill facts.
 
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
