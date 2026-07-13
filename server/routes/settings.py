@@ -179,16 +179,39 @@ def _persist_runtime_config(
     remove_fields: tuple[str, ...] = (),
 ) -> None:
     persisted = _read_persisted_config()
+    raw_data_source = persisted.get("data_source")
+    if isinstance(raw_data_source, dict):
+        data_source = dict(raw_data_source)
+    else:
+        data_source = (
+            {"provider": raw_data_source} if raw_data_source is not None else {}
+        )
+    for legacy_field in ("tushare_token", "live_poll_interval"):
+        if legacy_field in persisted:
+            data_source[legacy_field] = persisted.pop(legacy_field)
+
     for field in remove_fields:
-        persisted.pop(field, None)
-    persisted.update(updates)
+        if field in {"data_source", "tushare_token", "live_poll_interval"}:
+            grouped_field = "provider" if field == "data_source" else field
+            data_source.pop(grouped_field, None)
+        else:
+            persisted.pop(field, None)
+    for field, value in updates.items():
+        if field in {"data_source", "tushare_token", "live_poll_interval"}:
+            grouped_field = "provider" if field == "data_source" else field
+            data_source[grouped_field] = value
+        else:
+            persisted[field] = value
+    persisted["data_source"] = data_source
     _write_persisted_config(persisted)
 
 
 def _persist_account_cost_settings(config) -> None:
     rate, minimum = _account_cost_settings(config)
     persisted = _read_persisted_config()
-    raw_schedule = persisted.get("broker_fee_schedule")
+    raw_schedule = persisted.get("broker_fee")
+    if not isinstance(raw_schedule, dict):
+        raw_schedule = persisted.get("broker_fee_schedule")
     schedule = dict(raw_schedule) if isinstance(raw_schedule, dict) else {}
     schedule.update(
         {
@@ -198,7 +221,8 @@ def _persist_account_cost_settings(config) -> None:
     )
     persisted.pop("account_commission_rate", None)
     persisted.pop("account_min_commission", None)
-    persisted["broker_fee_schedule"] = schedule
+    persisted.pop("broker_fee_schedule", None)
+    persisted["broker_fee"] = schedule
     _write_persisted_config(persisted)
 
 

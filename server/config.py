@@ -96,6 +96,70 @@ _EXCHANGE_ALIASES = {
     "深": "shenzhen",
 }
 
+_SERVER_CONFIG_GROUP_FIELDS = frozenset(
+    {"host", "port", "live_auto_start", "cors_allowed_origins"}
+)
+_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
+    {"provider", "tushare_token", "live_poll_interval"}
+)
+
+
+def _normalize_grouped_config_payload(raw: object) -> dict:
+    """Map grouped local JSON sections onto the stable runtime config fields."""
+
+    if not isinstance(raw, dict):
+        raise ValueError("config.json root must be an object")
+    data = dict(raw)
+
+    server = data.pop("server", None)
+    if server is not None:
+        if not isinstance(server, dict):
+            raise ValueError("server config group must be an object")
+        unknown = sorted(set(server) - _SERVER_CONFIG_GROUP_FIELDS)
+        if unknown:
+            raise ValueError(
+                "server config group contains unsupported fields: " + ", ".join(unknown)
+            )
+        for field, value in server.items():
+            if field in data:
+                raise ValueError(
+                    f"config field {field} cannot appear both grouped and flat"
+                )
+            data[field] = value
+
+    data_source = data.get("data_source")
+    if isinstance(data_source, dict):
+        group = dict(data_source)
+        unknown = sorted(set(group) - _DATA_SOURCE_CONFIG_GROUP_FIELDS)
+        if unknown:
+            raise ValueError(
+                "data_source config group contains unsupported fields: "
+                + ", ".join(unknown)
+            )
+        data.pop("data_source")
+        field_mapping = {
+            "provider": "data_source",
+            "tushare_token": "tushare_token",
+            "live_poll_interval": "live_poll_interval",
+        }
+        for grouped_field, value in group.items():
+            runtime_field = field_mapping[grouped_field]
+            if runtime_field in data:
+                raise ValueError(
+                    f"config field {runtime_field} cannot appear both grouped and flat"
+                )
+            data[runtime_field] = value
+
+    broker_fee = data.pop("broker_fee", None)
+    if broker_fee is not None:
+        if not isinstance(broker_fee, dict):
+            raise ValueError("broker_fee config group must be an object")
+        if "broker_fee_schedule" in data:
+            raise ValueError("broker fee config cannot appear both grouped and flat")
+        data["broker_fee_schedule"] = broker_fee
+
+    return data
+
 
 @dataclass(frozen=True)
 class BrokerConnectorConfig:
@@ -185,7 +249,7 @@ class BacktestConfig:
         """从 JSON 文件加载配置。"""
         path = Path(path)
         with path.open("r") as f:
-            data = json.load(f)
+            data = _normalize_grouped_config_payload(json.load(f))
 
         # 将数值型 initial_cash 转为 Decimal
         if "initial_cash" in data and not isinstance(data["initial_cash"], Decimal):
