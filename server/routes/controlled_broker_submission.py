@@ -12,6 +12,12 @@ from server.services.controlled_broker_submission import (
     ControlledBrokerSubmissionRejected,
     ControlledBrokerSubmissionService,
 )
+from server.services.controlled_submission_reconciliation_clearance import (
+    CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+    CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS,
+    ControlledSubmissionReconciliationClearanceRejected,
+    ControlledSubmissionReconciliationClearanceService,
+)
 
 
 class ControlledBrokerSubmissionPreviewRequest(BaseModel):
@@ -44,6 +50,33 @@ class ControlledBrokerSubmissionRequest(ControlledBrokerSubmissionPreviewRequest
     acknowledgement: Literal["submit_one_exact_manually_confirmed_order_once"] = (
         CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT
     )
+
+
+class ControlledSubmissionClearancePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reconciliation_run_id: str = Field(
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$",
+    )
+
+
+class ControlledSubmissionClearanceRequest(ControlledSubmissionClearancePreviewRequest):
+    clearance_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_approval_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
+    acknowledgement: Literal[
+        "clear_exact_full_fill_without_automatic_ledger_mutation"
+    ] = CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT
 
 
 def create_router() -> APIRouter:
@@ -108,6 +141,51 @@ def create_router() -> APIRouter:
     ) -> dict[str, Any]:
         return _service().get_intent(submit_intent_id)
 
+    @router.get("/reconciliation-clearance/status")
+    async def get_controlled_submission_clearance_status() -> dict[str, Any]:
+        return _clearance_service().get_status()
+
+    @router.post("/intents/{submit_intent_id}/reconciliation-clearance/preview")
+    async def preview_controlled_submission_clearance(
+        submit_intent_id: str,
+        request: ControlledSubmissionClearancePreviewRequest,
+    ) -> dict[str, Any]:
+        return _clearance_service().preview(
+            submit_intent_id=submit_intent_id,
+            reconciliation_run_id=request.reconciliation_run_id,
+        )
+
+    @router.post("/intents/{submit_intent_id}/reconciliation-clearances")
+    async def record_controlled_submission_clearance(
+        submit_intent_id: str,
+        request: ControlledSubmissionClearanceRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _clearance_service().record(
+                submit_intent_id=submit_intent_id,
+                reconciliation_run_id=request.reconciliation_run_id,
+                clearance_fingerprint=request.clearance_fingerprint,
+                operator_approval_id=request.operator_approval_id,
+                operator_proof_signature_base64=(
+                    request.operator_proof_signature_base64
+                ),
+                acknowledgement=request.acknowledgement,
+            )
+        except ControlledSubmissionReconciliationClearanceRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
+
+    @router.get("/reconciliation-clearances")
+    async def list_controlled_submission_clearances(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        return _clearance_service().list_clearances(limit=limit)
+
+    @router.get("/reconciliation-clearances/{clearance_id}")
+    async def get_controlled_submission_clearance(
+        clearance_id: str,
+    ) -> dict[str, Any]:
+        return _clearance_service().get_clearance(clearance_id)
+
     return router
 
 
@@ -132,4 +210,26 @@ def _service() -> ControlledBrokerSubmissionService:
             getattr(config, "trusted_operator_identities", []) or []
         ),
         trading_controls=getattr(state, "trading_controls", None),
+    )
+
+
+def _clearance_service() -> ControlledSubmissionReconciliationClearanceService:
+    from server.account_truth_gate import build_latest_account_truth_promotion_evidence
+    from server.app import get_app_state
+
+    state = get_app_state()
+    config = getattr(state, "config", None)
+    return ControlledSubmissionReconciliationClearanceService(
+        db=state.db,
+        account_truth_provider=(
+            lambda: build_latest_account_truth_promotion_evidence(
+                state,
+                max_age_seconds=(
+                    CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS
+                ),
+            )
+        ),
+        trusted_operator_identities=(
+            getattr(config, "trusted_operator_identities", []) or []
+        ),
     )

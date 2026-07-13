@@ -265,6 +265,13 @@ Stage 3.13 增加跨订单串行 interlock：只要存在 `prepared`、已接收
 alert，Operations 会展示只查询不重提的恢复任务。当前只有确定性拒绝/not-found 可解除门禁；
 匹配券商证据仍是人工复核项，不能自行清门禁、推断成交、修改 OMS/账本或授权下一单。
 
+Stage 3.14 新增独立签名的精确全量成交清算。所有选中 trade row 必须来自同一已验证券商
+导入、合计严格等于 OMS 数量，并与同一文件的最新 clear Account Truth 一致；独立最终
+Ed25519 签名后，单一事务才会记录带来源链接的真实成交、把 OMS 推进到 `filled`、持久化
+终态对账并解除下一单 interlock。部分成交总量、跨导入聚合、生产账本自动写入、自动/策略
+直连提交和生产 adapter 注册仍禁用。通用 CSV 没有 broker order id，因此当前签名同时确认
+人工证据映射；正式 pilot 前仍需券商专用、订单号关联的 callback/poll 证据。
+
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须
 带券商订单、Account Truth import 与同一 run 链接。每单 dossier 和 session proposal 必须与

@@ -328,6 +328,16 @@ query-only recovery. A definitive rejection can release the interlock; matching
 broker evidence cannot yet self-clear it, infer a fill, mutate OMS/ledger, or
 authorize another order.
 
+Stage 3.14 adds a separately signed exact-full-fill clearance. All selected
+trade rows must come from one validated broker import, sum to the exact OMS
+quantity, and match fresh clear Account Truth from the same file. One atomic
+transaction records evidence-linked real fills, advances OMS to `filled`,
+persists terminal reconciliation, and releases the interlock. Partial totals,
+cross-import aggregation, production-ledger mutation, automatic/strategy-direct
+submission, and production adapter registration remain disabled. Generic CSV
+rows have no broker order id, so the operator signature still confirms a manual
+evidence mapping pending a broker-specific adapter.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;

@@ -244,6 +244,17 @@ Operations expose the unresolved fact. Production still injects no write
 adapter/release provider, and matching broker evidence cannot yet self-clear
 the interlock or infer an OMS fill/ledger update.
 
+Stage 3.14 now provides a deliberately narrow signed exit for exact full fills.
+It binds the latest matching reconciliation item, every selected trade row from
+one validated import, fresh clear Account Truth no older than 120 seconds, and
+a separate operator signature. A single transaction records the linked fills,
+advances OMS to `filled`, persists terminal reconciliation, and releases the
+interlock without applying the production ledger. Partial totals and cross-
+import aggregation remain blocked. The generic CSV format has no broker order
+id, so this remains a signed manual evidence mapping; production readiness
+still requires a reviewed broker adapter with order-linked partial-fill/cancel
+callback or poll evidence.
+
 ### Stage 3 — Session-Bounded Controlled Execution
 
 Deliverables:
@@ -350,6 +361,11 @@ blocked until a future independently signed reconciliation-clearance protocol
 binds broker fill/cancel evidence and Account Truth. This stage cannot submit
 under session authority, apply fills, mutate the production ledger, or widen a
 session.
+Stage 3.14 completes only the exact-full-fill branch of that protocol. A
+distinct final signature and current Account Truth permit atomic real-fill/OMS/
+terminal-reconciliation persistence and next-order interlock release, while
+partial fills, cancels, automatic ledger mutation, session-authorized submit,
+and adapter registration remain absent.
 The request and recorded capital evaluation must bind the same resolved clear
 prior-batch fingerprint. Stage 1/2 promotion, broker submit capability, and the
 live gateway remain hard

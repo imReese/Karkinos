@@ -38,6 +38,7 @@ OPERATOR_APPROVAL_ACTIONS = frozenset(
         "replace_paused_controlled_session",
         "revoke_controlled_session",
         "submit_confirmed_broker_order",
+        "clear_controlled_submission_reconciliation",
     }
 )
 OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
@@ -49,6 +50,7 @@ OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
         "controlled_session_replacement",
         "controlled_session_revocation",
         "controlled_broker_submission",
+        "controlled_submission_reconciliation_clearance",
     }
 )
 OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
@@ -61,6 +63,9 @@ OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
     "replace_paused_controlled_session": "controlled_session_replacement",
     "revoke_controlled_session": "controlled_session_revocation",
     "submit_confirmed_broker_order": "controlled_broker_submission",
+    "clear_controlled_submission_reconciliation": (
+        "controlled_submission_reconciliation_clearance"
+    ),
 }
 
 DEFAULT_CHALLENGE_TTL_SECONDS = 180

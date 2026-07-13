@@ -49,18 +49,50 @@ class FakeControlledBrokerSubmissionService:
         return {"submit_intent_id": submit_intent_id, "status": "submitted"}
 
 
+class FakeControlledSubmissionClearanceService:
+    def get_status(self):
+        return {
+            "contract_status": "signed_full_fill_clearance_available",
+            "partial_fill_clearance_enabled": False,
+        }
+
+    def preview(self, **kwargs):
+        return {
+            **kwargs,
+            "clearance_fingerprint": "4" * 64,
+            "review_ready": True,
+            "production_ledger_mutated": False,
+        }
+
+    def record(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "cleared",
+            "interlock_released": True,
+            "production_ledger_mutated": False,
+        }
+
+    def list_clearances(self, *, limit: int):
+        return [{"clearance_id": "5" * 64, "limit": limit}]
+
+    def get_clearance(self, clearance_id: str):
+        return {"clearance_id": clearance_id, "status": "cleared"}
+
+
 def _client(monkeypatch):
     service = FakeControlledBrokerSubmissionService()
+    clearance_service = FakeControlledSubmissionClearanceService()
     monkeypatch.setattr(route_module, "_service", lambda: service)
+    monkeypatch.setattr(route_module, "_clearance_service", lambda: clearance_service)
     app = FastAPI()
     app.include_router(create_router())
-    return TestClient(app), service
+    return TestClient(app), service, clearance_service
 
 
 def test_routes_require_strict_final_signature_and_expose_query_recovery(
     monkeypatch,
 ) -> None:
-    client, _ = _client(monkeypatch)
+    client, _, _ = _client(monkeypatch)
     prefix = "/api/automation/controlled-broker-submission"
     order_id = "OMS-1"
     confirmation_id = "c" * 64
@@ -124,6 +156,76 @@ def test_routes_require_strict_final_signature_and_expose_query_recovery(
     assert credential.status_code == 422
 
 
+def test_clearance_routes_require_separate_signature_and_forbid_credentials(
+    monkeypatch,
+) -> None:
+    client, _, _ = _client(monkeypatch)
+    prefix = "/api/automation/controlled-broker-submission"
+    intent_id = "1" * 64
+    run_id = "reconciliation-run-1"
+
+    status = client.get(f"{prefix}/reconciliation-clearance/status")
+    assert status.status_code == 200
+    assert status.json()["partial_fill_clearance_enabled"] is False
+    preview = client.post(
+        f"{prefix}/intents/{intent_id}/reconciliation-clearance/preview",
+        json={"reconciliation_run_id": run_id},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["production_ledger_mutated"] is False
+    cleared = client.post(
+        f"{prefix}/intents/{intent_id}/reconciliation-clearances",
+        json={
+            "reconciliation_run_id": run_id,
+            "clearance_fingerprint": "4" * 64,
+            "operator_approval_id": "3" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": (
+                "clear_exact_full_fill_without_automatic_ledger_mutation"
+            ),
+        },
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["interlock_released"] is True
+    assert cleared.json()["production_ledger_mutated"] is False
+    assert (
+        client.get(f"{prefix}/reconciliation-clearances?limit=9").json()[0]["limit"]
+        == 9
+    )
+    clearance_id = "5" * 64
+    assert (
+        client.get(f"{prefix}/reconciliation-clearances/{clearance_id}").status_code
+        == 200
+    )
+
+    missing_signature = client.post(
+        f"{prefix}/intents/{intent_id}/reconciliation-clearances",
+        json={
+            "reconciliation_run_id": run_id,
+            "clearance_fingerprint": "4" * 64,
+            "operator_approval_id": "3" * 64,
+            "acknowledgement": (
+                "clear_exact_full_fill_without_automatic_ledger_mutation"
+            ),
+        },
+    )
+    assert missing_signature.status_code == 422
+    credential = client.post(
+        f"{prefix}/intents/{intent_id}/reconciliation-clearances",
+        json={
+            "reconciliation_run_id": run_id,
+            "clearance_fingerprint": "4" * 64,
+            "operator_approval_id": "3" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": (
+                "clear_exact_full_fill_without_automatic_ledger_mutation"
+            ),
+            "broker_password": "must-not-be-accepted",
+        },
+    )
+    assert credential.status_code == 422
+
+
 def test_route_service_is_default_closed_without_injected_release_provider(
     monkeypatch,
 ) -> None:
@@ -171,6 +273,21 @@ def test_create_app_registers_controlled_submission_without_strategy_endpoint() 
         },
         "/api/automation/controlled-broker-submission/intents": {"GET"},
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}": {
+            "GET"
+        },
+        "/api/automation/controlled-broker-submission/reconciliation-clearance/status": {
+            "GET"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/reconciliation-clearance/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/reconciliation-clearances": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/reconciliation-clearances": {
+            "GET"
+        },
+        "/api/automation/controlled-broker-submission/reconciliation-clearances/{clearance_id}": {
             "GET"
         },
     }

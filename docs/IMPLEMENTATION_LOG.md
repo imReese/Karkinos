@@ -6,6 +6,33 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 3.14 adds separately signed exact-full-fill reconciliation
+  clearance. Assumptions: selected trade events are an operator-reviewed mapping
+  to one controlled broker order because the generic CSV contract has no broker
+  order id; every event must come from one validated import, aggregate to the
+  exact OMS quantity, and match Account Truth from the same import/file no older
+  than 120 seconds with clear gates, zero unresolved reconciliation, and covered
+  ledger evidence. A distinct Ed25519 action signs the exact clearance. One
+  SQLite `BEGIN IMMEDIATE` transaction re-reads source fingerprints, records
+  evidence-linked real fills, transitions OMS `submitted -> accepted -> filled`,
+  persists clearance and terminal no-action reconciliation, and releases the
+  cross-order interlock. It does not mutate the production ledger. Partial
+  totals, cross-import aggregation, superseded evidence, wrong signature domain,
+  and conflicting concurrency fail closed; exact concurrent retries are
+  idempotent. Validation: `uv run pytest -q
+  tests/test_controlled_submission_reconciliation_clearance.py
+  tests/test_execution_reconciliation_service.py
+  tests/test_controlled_broker_submission.py tests/test_operator_approval.py
+  tests/server/test_controlled_broker_submission_routes.py`; `uv run pytest -q
+  tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py`; full suite
+  `uv run pytest -q`. Risk impact: CRITICAL-sensitive because the transaction
+  creates real fill evidence, advances terminal OMS state, and releases a global
+  submission interlock. Safety is bounded by fresh Account Truth, exact source
+  fingerprints, separate human signature, transaction serialization, no
+  production adapter/release provider by default, no automatic or strategy-
+  direct submit, no partial-fill/cancel inference, no automatic ledger write,
+  and no capital/session widening.
+
 - 2026-07-13: Stage 3.13 adds a fail-closed unreconciled-submission interlock
   and operator visibility. Assumptions: a broker acknowledgement proves only
   receipt, not fill or reconciliation; `prepared`, `submitted`, and

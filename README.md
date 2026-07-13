@@ -402,6 +402,17 @@ rejection releases the interlock. Accepted broker evidence remains an open
 human review item and cannot infer a fill, update the ledger, or clear the next
 order; that signed reconciliation clearance is a later stage.
 
+Stage 3.14 implements that narrow signed clearance for exact full fills. The
+latest controlled-submission reconciliation item, all matching trade rows from
+one validated broker import, and fresh clear Account Truth must agree on the
+full OMS quantity and source file. A separate operator signature then permits
+one atomic transaction to record linked real fills, advance OMS to `filled`,
+persist the clearance, and release the next-order interlock. Partial totals,
+cross-import aggregation, automatic ledger mutation, automatic/strategy-direct
+submission, and production adapter registration remain disabled. Generic CSV
+rows lack a broker order id, so their signed selection is a manual mapping
+assumption pending a broker-specific adapter.
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run

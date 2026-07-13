@@ -647,6 +647,18 @@ offer query-only recovery. In this stage only a definitive rejection/not-found
 result releases the interlock; accepted broker evidence remains open and cannot
 self-clear, create fills, mutate OMS/ledger, or authorize another order.
 
+Stage 3.14 adds the only current accepted-submission exit from that interlock.
+An operator selects the latest matching reconciliation fact, Karkinos re-reads
+one validated broker import and fresh Account Truth (maximum age 120 seconds),
+and a distinct Ed25519 signature binds the exact full-fill evidence. One
+`BEGIN IMMEDIATE` transaction records evidence-linked real fills, advances OMS
+through `accepted` to `filled`, persists the clearance, and writes a terminal
+no-action reconciliation fact. It deliberately does not apply the production
+ledger. Partial totals and cross-import aggregation remain blocked. Because the
+generic CSV evidence contract does not carry a broker order identifier, the
+operator's signed event selection is still a manual mapping assumption; a real
+adapter must supply broker-order-linked callback/poll evidence before a pilot.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

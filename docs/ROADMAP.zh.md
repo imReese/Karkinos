@@ -313,6 +313,15 @@ Stage 3.13 增加未对账提交 interlock 与可见性。任一 `prepared`、`s
 query-only 恢复。当前只有确定性拒绝/not-found 解锁；accepted 及匹配券商证据仍持续阻断，直到
 未来独立签名的对账清算协议完成，且不会推断成交、修改 OMS/账本或自动提交下一单。
 
+Stage 3.14 已实现该协议中最窄的“精确全量成交”分支。清算只接受当前 `submitted` intent
+及其最新匹配对账项；同一验证通过的券商导入内，trade rows 必须精确合计为 OMS 全量，且
+120 秒内 clear Account Truth 必须引用相同 import/file、未解决项为 0、ledger coverage 为
+covered。独立 `clear_controlled_submission_reconciliation` Ed25519 签名后，SQLite 单事务记录
+真实成交、推进 `submitted -> accepted -> filled`、保存 clearance 与终态 no-action 对账，再
+解除 interlock；不会自动写生产账本。部分成交、跨导入聚合、撤单、自动/策略直连提交、扩资
+仍然关闭。由于通用 CSV 不含 broker order id，当前仍是操作员签名确认的人工映射；pilot 前
+必须补齐券商专用的订单号关联 callback/poll 证据。
+
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
 未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一

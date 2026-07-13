@@ -5594,6 +5594,144 @@ def build_controlled_submission_interlock_acceptance_audit() -> AcceptanceAudit:
     )
 
 
+def build_controlled_submission_reconciliation_clearance_acceptance_audit() -> (
+    AcceptanceAudit
+):
+    """Return evidence for Stage 3.14 signed full-fill clearance."""
+
+    focused = (
+        "uv run pytest tests/test_controlled_submission_reconciliation_clearance.py "
+        "tests/test_execution_reconciliation_service.py "
+        "tests/test_controlled_broker_submission.py "
+        "tests/server/test_controlled_broker_submission_routes.py -q"
+    )
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="clearance_exact_latest_evidence",
+                checkbox_text=(
+                    "* [x] Clearance is available only for the current `submitted` "
+                    "controlled intent and its latest exact "
+                    "`controlled_submission_broker_evidence_available` "
+                    "reconciliation item; superseded or changed evidence fails closed."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_submission_reconciliation_clearance.py",
+                    "server/services/execution_reconciliation.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_exact_full_fill_aggregation",
+                checkbox_text=(
+                    "* [x] Matching broker trade events must come from one validated "
+                    "import and aggregate to the exact OMS quantity; partial totals, "
+                    "cross-import aggregation, side/symbol drift, and changed row "
+                    "fingerprints remain blocked."
+                ),
+                evidence_paths=(
+                    "server/services/execution_reconciliation.py",
+                    "server/services/controlled_submission_reconciliation_clearance.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_account_truth_binding",
+                checkbox_text=(
+                    "* [x] Clearance re-resolves Account Truth no older than 120 "
+                    "seconds and requires clear gates, zero unresolved reconciliation "
+                    "items, covered ledger evidence, and the same broker import and "
+                    "file fingerprint as the selected trade events."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_submission_reconciliation_clearance.py",
+                    "server/account_truth_gate.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_distinct_operator_signature",
+                checkbox_text=(
+                    "* [x] Final clearance requires a separate short-lived Ed25519 "
+                    "`clear_controlled_submission_reconciliation` approval and "
+                    "signature-possession proof bound to the exact clearance "
+                    "fingerprint; submission signatures cannot be reused."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "server/services/controlled_submission_reconciliation_clearance.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                    "tests/test_operator_approval.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_atomic_terminal_write",
+                checkbox_text=(
+                    "* [x] One SQLite `BEGIN IMMEDIATE` transaction records real "
+                    "fills, moves OMS `submitted -> accepted -> filled`, persists the "
+                    "signed clearance, and appends a terminal no-action reconciliation "
+                    "fact without mutating the production ledger."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_atomic_interlock_release",
+                checkbox_text=(
+                    "* [x] The cross-order interlock releases only after that atomic "
+                    "persisted clearance; exact concurrent retries are idempotent, "
+                    "conflicting retries fail closed, and an open or manually tagged "
+                    "reconciliation item cannot release it."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_broker_submission.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                    "tests/test_controlled_broker_submission.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_downstream_reconciliation_linkage",
+                checkbox_text=(
+                    "* [x] Recorded fills retain provider, broker-order, Account Truth "
+                    "import, row-fingerprint, and clearance-run linkage so exact prior-"
+                    "batch reconciliation can consume them while ledger application "
+                    "remains a separate reviewed workflow."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/execution_batch_reconciliation.py",
+                    "tests/test_controlled_submission_reconciliation_clearance.py",
+                ),
+                validation_commands=(focused,),
+            ),
+            AcceptanceCriterion(
+                key="clearance_strict_routes_and_boundary",
+                checkbox_text=(
+                    "* [x] Strict status/preview/record/history routes reject "
+                    "undeclared credentials and expose no strategy-direct or automatic "
+                    "submission, partial-fill clearance, broker cancel, automatic "
+                    "ledger sync, session widening, or capital increase action."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_broker_submission.py",
+                    "tests/server/test_controlled_broker_submission_routes.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(focused,),
+            ),
+        )
+    )
+
+
 def build_capital_scaling_review_foundation_acceptance_audit() -> AcceptanceAudit:
     """Return evidence for the Stage 4 capital scaling review foundation."""
 

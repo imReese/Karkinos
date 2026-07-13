@@ -651,7 +651,9 @@ class ControlledBrokerSubmissionService:
         exclude_order_id: str = "",
     ) -> dict[str, Any]:
         try:
-            rows = self._db.list_controlled_broker_submit_intents_sync(limit=500)
+            rows = self._db.list_unreconciled_controlled_broker_submit_intents_sync(
+                limit=500
+            )
         except Exception:
             return {
                 "status": "blocked_source_unavailable",
@@ -667,9 +669,7 @@ class ControlledBrokerSubmissionService:
                 "status": str(row.get("status") or "unknown"),
             }
             for row in rows
-            if str(row.get("status") or "")
-            in {"prepared", "submitted", "submission_unknown"}
-            and str(row.get("order_id") or "") != exclude_order_id
+            if str(row.get("order_id") or "") != exclude_order_id
         ]
         return {
             "status": "blocked_unreconciled_submission" if unresolved else "clear",
