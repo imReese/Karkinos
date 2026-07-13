@@ -10,7 +10,7 @@ from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRepository,
     broker_order_lifecycle_clearance_blockers,
-    preview_qmt_order_lifecycle_export,
+    preview_broker_order_lifecycle_export,
 )
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.db import AppDatabase
@@ -57,7 +57,7 @@ def _environment(tmp_path) -> tuple[AppDatabase, dict, dict]:
             "order_fingerprint": build_order_fingerprint(order),
             "confirmation_id": "c" * 64,
             "dossier_fingerprint": "d" * 64,
-            "gateway_id": "qmt-controlled-write-1",
+            "gateway_id": "fixture-controlled-gateway-1",
             "gateway_verification_fingerprint": "e" * 64,
             "release_evidence_id": "f" * 64,
             "release_evidence_fingerprint": "a" * 64,
@@ -90,13 +90,13 @@ def _environment(tmp_path) -> tuple[AppDatabase, dict, dict]:
     finalized = db.finalize_controlled_broker_submit_intent_sync(
         submit_intent_id=submit_intent_id,
         status="submitted",
-        broker_order_id="QMT-ORDER-1",
+        broker_order_id="FIXTURE-ORDER-1",
         broker_status="accepted",
         result={
             "status": "accepted",
             "client_order_id": client_order_id,
             "order_fingerprint": build_order_fingerprint(order),
-            "broker_order_id": "QMT-ORDER-1",
+            "broker_order_id": "FIXTURE-ORDER-1",
             "submitted": True,
         },
         actor="controlled-broker-submission",
@@ -121,7 +121,7 @@ def _lifecycle_export(
     if filled_quantity != "0":
         fills.append(
             {
-                "broker_trade_id": "QMT-TRADE-1",
+                "broker_trade_id": "FIXTURE-TRADE-1",
                 "broker_order_id": intent["broker_order_id"],
                 "client_order_id": effective_client_order_id,
                 "symbol": "600519",
@@ -136,11 +136,11 @@ def _lifecycle_export(
             }
         )
     return {
-        "schema_version": "karkinos.qmt_order_lifecycle_export.v1",
-        "provider": "qmt",
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "fixture_broker",
         "snapshot_kind": "exact_order_lifecycle",
         "gateway_id": intent["gateway_id"],
-        "account_id": "private-qmt-account-001",
+        "account_id": "private-fixture-account-001",
         "account_alias": "main-cn-account",
         "captured_at": captured_at.isoformat(),
         "source_sequence": source_sequence,
@@ -169,9 +169,9 @@ def _record_lifecycle(
     **overrides,
 ) -> dict:
     captured_at = overrides["captured_at"]
-    preview = preview_qmt_order_lifecycle_export(
+    preview = preview_broker_order_lifecycle_export(
         json.dumps(_lifecycle_export(intent, **overrides)),
-        source_name="qmt local exact-order lifecycle export",
+        source_name="deterministic fixture lifecycle export",
         clock=lambda: captured_at,
     )
     return BrokerOrderLifecycleEvidenceRepository(Path(db._path)).record(
@@ -324,7 +324,7 @@ def test_newer_identity_drift_blocks_reconciliation_and_cannot_clear(
         "controlled_submission_order_lifecycle_evidence_blocked"
     )
     summary = payload["controlled_submission_evidence_summary"]
-    assert "qmt_order_lifecycle_order_identity_drift" in (
+    assert "broker_order_lifecycle_order_identity_drift" in (
         summary["broker_order_lifecycle_evidence"]["blockers"]
     )
     assert summary["new_submissions_blocked"] is True

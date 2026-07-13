@@ -201,23 +201,24 @@ replacement 请求必须引用新的 reservation、精确 replacement fingerprin
 
 ## broker_connectors
 
-`broker_connectors` 只用于只读券商事实同步的本地配置，不允许保存任何登录凭证。
+`broker_connectors` 默认是空列表，只用于显式注册只读边缘 connector，不允许保存任何登录凭证。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `connector_id` | string | connector 本地 ID，例如 `local-qmt-readonly`。 |
-| `connector_type` | string | connector 类型，例如 `qmt_readonly`、`ptrade_readonly`，或从本地导出快照读取的 `local_export_readonly`、`qmt_readonly_export`、`ptrade_readonly_export`。 |
-| `enabled` | boolean | 是否启用。默认建议 `false`。 |
-| `client_path` | string | 本机券商客户端路径；当 `connector_type` 为 `local_export_readonly`、`qmt_readonly_export` 或 `ptrade_readonly_export` 时，这是被 `.gitignore` 排除的本地 JSON snapshot 路径。不得包含密码或 token。 |
+| `connector_id` | string | connector 本地 ID，例如 `local-fixture-readonly`。 |
+| `connector_type` | string | canonical 内置类型只有 broker-neutral 的 `local_export_readonly`。任何券商专用类型都必须另行实现、审查并由用户显式授权。 |
+| `enabled` | boolean | 是否显式启用；缺省 `false`，示例配置不注册任何 connector。 |
+| `client_path` | string | `local_export_readonly` 使用的、被 `.gitignore` 排除的本地 JSON snapshot 路径。不得包含密码或 token，也不会被当作 SDK/客户端路径执行。 |
 | `account_alias` | string | 脱敏账户别名，例如 `中信证券88**16`。不要写完整资金账号。 |
 
-`local_export_readonly`、`qmt_readonly_export` 和 `ptrade_readonly_export`
-都只解析本地 JSON 快照文件里的资金、持仓、订单和成交证据，并通过 Broker Gateway
+`local_export_readonly` 只解析本地 JSON 快照文件里的资金、持仓、订单和成交证据，并通过 Broker Gateway
 的只读 snapshot contract 返回。JSON 文件必须声明
 `schema_version="karkinos.readonly_broker_snapshot_export.v1"`；缺失或不支持的
 schema 会被标记为 runtime degraded，而不会读取账户号、资金、持仓、订单或成交事实。
-这些 connector 不会启动券商客户端、不会保存凭证、不会提交或撤销券商订单，也不会写 OMS
-或生产账本。
+该 connector 不会启动券商客户端、不会保存凭证、不会提交或撤销券商订单，也不会写 OMS
+或生产账本。旧 `qmt_readonly_export` / `ptrade_readonly_export` 不再自动构造本地导出 adapter；
+如未来确需第三方 adapter，必须独立审查依赖、credential、只读 capability、故障恢复和发布/
+回滚，并取得用户明确授权。配置名称本身不构成支持声明或执行权限。
 
 启用本地只读导出后，可使用以下 Stage 1 soak 接口：
 

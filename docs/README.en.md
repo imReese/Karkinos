@@ -167,8 +167,8 @@ health/capability facts, and a verified same-account binding. Identical or
 overlapping roles fail closed. Even healthy submit-capable gateway facts remain
 runtime-unverified evidence and cannot contact a broker or grant authority.
 
-The Stage 1 read-only broker soak foundation can capture configured
-QMT/PTrade/local JSON exports through `/api/automation/broker-soak/capture` and
+The Stage 1 read-only broker soak foundation can capture an explicitly configured
+generic local JSON export through `/api/automation/broker-soak/capture` and
 expose `/status` plus `/observations`. It stores sanitized snapshot fingerprints,
 cash/position/order/fill facts, health, freshness, capabilities, and provider
 market-calendar trading-day evidence without exposing raw account ids. Missing
@@ -343,8 +343,8 @@ conflicting, cross-import, or partial evidence fails closed. The identifiers
 remain evidence rather than authority, and a broker-specific callback/poll
 adapter is still required before a pilot.
 
-Stage 3.15 adds a QMT-specific local exact-order lifecycle evidence adapter,
-not a live QMT connection. `scripts/import_qmt_order_lifecycle.py` previews by
+Stage 3.15 adds a broker-neutral exact-order lifecycle evidence contract,
+not a live broker connection. `scripts/import_broker_order_lifecycle.py` previews by
 default; persistence requires `--record` and the explicit non-authority
 acknowledgement. It stores sanitized account hashes, monotonic source sequence,
 file/evidence fingerprints, exact broker/client order ids, cumulative fill and
@@ -356,8 +356,18 @@ rechecked inside signed clearance and the next-order submit transaction, so a
 contradictory observation rejects a racing clearance or re-blocks an older one.
 Lifecycle full-fill still cannot replace the independent broker statement,
 fresh Account Truth, and Stage 3.14 signature. Production registers no
-collector, write adapter, release provider, executable cancel, or pilot
-authority; a reviewed real QMT callback/poll collector and soak remain required.
+collector, write adapter, release provider, executable cancel, or pilot authority.
+
+Stage 3.16 adds an explicitly started local collector-ingestion boundary. It
+binds deployment, release, user authorization, provider/account scope,
+connection/batch state, cursor transitions, callback telemetry, and one
+canonical lifecycle fact. Deterministic fixtures prove restart replay,
+idempotency, duplicates, out-of-order/gap rejection, disconnect, and partial
+batches. Callback and poll are metadata only: there is no SDK, provider contact,
+scheduler, or default adapter registration. The collector cannot modify OMS,
+fills, ledger, risk, kill switch, capital authority, or interlock state. QMT,
+PTrade, local-file, and other adapters require separate review and explicit user
+authorization; Karkinos does not claim official support for them.
 
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
@@ -628,7 +638,7 @@ The command lets you choose `akshare` or `tushare`, prompts for a TuShare token 
 | `notification` | object | `{"type":"console"}` | Notification config |
 | `live_poll_interval` | int | `60` | Live polling interval (seconds) |
 | `broker_fee_schedule` | object | local defaults | Local broker fee rule parameters: stock/ETF commission rates, minimum commission, stamp tax, default transfer fee, optional Shanghai/Shenzhen transfer-fee rates, bond/convertible-bond exchange fees, other fee rate, rule id, and known limitations. Account identifiers, screenshots, statements, broker passwords, tokens, secrets, or credentials are rejected. |
-| `broker_connectors` | array | `[]` | Local read-only broker connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. `local_export_readonly`, `qmt_readonly_export`, and `ptrade_readonly_export` treat `client_path` as an ignored local JSON snapshot path and only parse cash, position, order, and fill evidence with `schema_version="karkinos.readonly_broker_snapshot_export.v1"`; missing or unsupported schemas return degraded health only. |
+| `broker_connectors` | array | `[]` | Default-unregistered read-only edge connector config. Allowed fields are `connector_id`, `connector_type`, `enabled`, `client_path`, and `account_alias`; broker passwords, tokens, secrets, or credentials are rejected. Only the broker-neutral `local_export_readonly` local JSON fixture/export boundary is built in; it parses `schema_version="karkinos.readonly_broker_snapshot_export.v1"`, and missing or unsupported schemas return degraded health. Broker-specific adapter types require separate review and explicit user authorization. |
 | `controlled_bridge_policy` | object | disabled | Controlled-bridge whitelist preview. It may list connector ids, account aliases, strategy ids, and symbols for review, but the completed non-submitting v1.7 foundation still rejects automation and broker submission; passwords, tokens, secrets, or credentials are rejected. |
 | `cors_allowed_origins` | array | local Vite origins | Frontend origins allowed to call the API |
 

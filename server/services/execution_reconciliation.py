@@ -561,7 +561,7 @@ def _order_lifecycle_classification(
             "item_status": "controlled_submission_order_lifecycle_evidence_blocked",
             "suggested_action": ("enable_kill_switch_and_review_controlled_submission"),
             "detail": (
-                "Persisted QMT order-lifecycle evidence is blocked or conflicts "
+                "Persisted broker order-lifecycle evidence is blocked or conflicts "
                 "with the controlled order identities; keep every new submission "
                 "blocked."
             ),
@@ -591,7 +591,7 @@ def _order_lifecycle_classification(
             "item_status": "controlled_submission_order_lifecycle_evidence_mismatch",
             "suggested_action": ("enable_kill_switch_and_review_controlled_submission"),
             "detail": (
-                "The exact-identity QMT lifecycle fact disagrees with the current "
+                "The exact-identity broker lifecycle fact disagrees with the current "
                 "OMS order contract; do not infer execution or submit another order."
             ),
             "reported_broker_events": (
@@ -607,7 +607,7 @@ def _order_lifecycle_classification(
             "item_status": "controlled_submission_order_open_evidence_available",
             "suggested_action": "poll_or_import_controlled_submission_lifecycle_evidence",
             "detail": (
-                "Fresh, exact-identity QMT evidence still reports the order open. "
+                "Fresh, exact-identity broker evidence still reports the order open. "
                 "Continue explicit query/export ingestion; never resubmit."
             ),
             "reported_broker_events": reported_events,
@@ -618,7 +618,7 @@ def _order_lifecycle_classification(
             "item_status": "controlled_submission_partial_fill_evidence_available",
             "suggested_action": "review_partial_fill_and_import_account_truth",
             "detail": (
-                "Exact-identity QMT evidence reports a partial fill. It is review "
+                "Exact-identity broker evidence reports a partial fill. It is review "
                 "evidence only and cannot mutate OMS/ledger or release the next order."
             ),
             "reported_broker_events": reported_events,
@@ -640,7 +640,7 @@ def _order_lifecycle_classification(
                 else "review_cancel_evidence_before_interlock_clearance"
             ),
             "detail": (
-                "Exact-identity QMT evidence reports a terminal broker cancellation. "
+                "Exact-identity lifecycle evidence reports a terminal broker cancellation. "
                 "Cancellation is not an execution command and does not self-clear "
                 "the controlled-submission interlock."
             ),
@@ -656,7 +656,7 @@ def _order_lifecycle_classification(
                 "import_order_linked_broker_statement_and_account_truth"
             ),
             "detail": (
-                "Exact-identity QMT lifecycle evidence reports a full fill, but the "
+                "Exact-identity broker lifecycle evidence reports a full fill, but the "
                 "independent broker-statement and Account Truth evidence required "
                 "for signed clearance is still missing."
             ),
@@ -669,7 +669,7 @@ def _order_lifecycle_classification(
             "suggested_action": ("enable_kill_switch_and_review_controlled_submission"),
             "detail": (
                 "The controlled intent is persisted as broker-submitted while the "
-                "latest exact-identity QMT evidence reports rejection; investigate "
+                "latest exact-identity broker evidence reports rejection; investigate "
                 "the conflicting terminal facts."
             ),
             "reported_broker_events": reported_events,
@@ -678,7 +678,7 @@ def _order_lifecycle_classification(
     return {
         "item_status": "controlled_submission_order_lifecycle_evidence_blocked",
         "suggested_action": "enable_kill_switch_and_review_controlled_submission",
-        "detail": "The persisted QMT lifecycle status is unsupported.",
+        "detail": "The persisted broker lifecycle status is unsupported.",
         "reported_broker_events": reported_events,
         "mismatch_reasons": ["controlled_submission_lifecycle_status_invalid"],
     }

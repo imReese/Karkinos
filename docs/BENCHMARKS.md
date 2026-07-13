@@ -50,14 +50,13 @@ flows, order-submission defaults, or profitability claims.
   history, auditability, and reconciliation-style accounting discipline.
 * Portfolio Performance: learn local portfolio accounting UX, statement import,
   transaction taxonomy, performance attribution, and explainable holdings views.
-* QMT / miniQMT / xtquant public adapters: learn local broker-client
-  integration boundaries, read-only account snapshots, position/order/fill
-  state, callback-style order events, connector health, and gateway-style
-  adapter separation. Karkinos' near-term use is broker evidence and account
-  reconciliation. Broker submission remains out of scope until a future
-  controlled bridge is explicitly designed, configured, manually confirmed,
-  and protected by risk gates.
-* PTrade-style strategy platforms: learn strategy lifecycle ergonomics,
+* Broker-client adapter examples, including third-party QMT/miniQMT/xtquant
+  projects: learn integration boundaries, read-only account snapshots,
+  position/order/fill state, callback-style order events, connector health, and
+  gateway-style separation. These are research references only: Karkinos does
+  not depend on, bundle, register, or claim official support for them. Any real
+  adapter requires separate review and explicit user authorization.
+* External strategy platforms, including PTrade-style APIs: learn lifecycle ergonomics,
   strategy context APIs, data helpers, scheduled or bar/tick callbacks, and
   backtest/simulation/live-like consistency. Karkinos should translate this
   into a safe Strategy Runtime where strategy scripts produce auditable signals
@@ -76,10 +75,11 @@ flows, order-submission defaults, or profitability claims.
 * Diagnostics should prefer deterministic local tests and synthetic examples
   over live-provider-dependent checks.
 
-## QMT and PTrade-Inspired Roadmap Lessons
+## External Platform Lessons Without Product Binding
 
-Karkinos should use QMT as a reference for broker facts and stateful execution
-plumbing, not as permission to automate trading by default. Useful ideas are:
+Third-party broker platforms may be studied as examples of broker facts and
+stateful execution plumbing, never as a product dependency, default route, or
+permission to automate trading. Useful ideas are:
 
 * explicit connector capabilities and health;
 * read-only asset, cash, position, order, and fill snapshots;
@@ -89,8 +89,8 @@ plumbing, not as permission to automate trading by default. Useful ideas are:
 * clear separation between connector configuration, broker evidence, ledger
   mutation, and user review.
 
-Karkinos should use PTrade as a reference for strategy runtime ergonomics, not
-as a reason to let strategy code bypass gates. Useful ideas are:
+Third-party strategy platforms may be studied for runtime ergonomics, never as
+a reason to let strategy code bypass gates. Useful ideas are:
 
 * lifecycle hooks such as initialization, pre-market, bar/tick handling, and
   after-market review;

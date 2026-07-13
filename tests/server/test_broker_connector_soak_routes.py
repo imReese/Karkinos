@@ -151,15 +151,11 @@ def test_broker_soak_capture_status_and_list_are_readonly(
     assert "private-route-account-id" not in json.dumps(listing.json())
 
 
-@pytest.mark.parametrize(
-    "connector_type",
-    ["qmt_readonly_export", "ptrade_readonly_export"],
-)
-def test_broker_soak_capture_supports_sanitized_local_broker_exports(
-    connector_type,
+def test_broker_soak_capture_supports_sanitized_local_broker_export(
     tmp_path,
     monkeypatch,
 ) -> None:
+    connector_type = "local_export_readonly"
     now = datetime.now(timezone.utc)
     snapshot_path = tmp_path / f"{connector_type}.json"
     snapshot_path.write_text(

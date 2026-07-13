@@ -146,7 +146,7 @@ Exit criteria:
   produce deterministic alerts and safe degraded states.
 
 Current foundation status (2026-07-10): broker-neutral capture/status/list
-services and APIs persist sanitized QMT/PTrade/local-export snapshot evidence,
+services and APIs persist sanitized explicitly configured local-export snapshot evidence,
 deterministic fingerprints, freshness, read capabilities, fact counts, and
 provider market-calendar trading-day coverage. Startup, intraday, and
 end-of-day runbook phases now persist append-only evidence; end-of-day fails
@@ -257,10 +257,10 @@ The identifiers do not grant write authority. Production readiness still
 requires a reviewed broker adapter with independently verified, order-linked
 partial-fill/cancel callback or poll evidence.
 
-Stage 3.15 adds the evidence plumbing for that missing lifecycle without
-claiming production connectivity. A normalized local QMT
-`exact_order_lifecycle` export is previewed by default and recorded only by an
-explicit CLI acknowledgement. The persisted snapshot binds both order ids,
+Stage 3.15 adds broker-neutral evidence plumbing for that missing lifecycle
+without claiming production connectivity. A normalized local
+`exact_order_lifecycle` export identifies its provider, is previewed by default,
+and is recorded only by an explicit CLI acknowledgement. The persisted snapshot binds both order ids,
 hashed account scope, monotonic source sequence, capture/file/evidence
 fingerprints, cumulative filled/cancelled quantities, and exact fills. Strict
 validation and a serialized repository reject credentials, malformed or stale
@@ -272,9 +272,21 @@ clearance and next-order SQLite writer transactions, so a partial/cancel/
 conflicting observation cannot race a clearance or leave a superseded
 clearance usable. Lifecycle `filled` is supporting evidence only: the Stage
 3.14 broker statement, Account Truth, and separate signature remain mandatory.
-The actual QMT callback/poll collector, deployment/release review, operational
-soak, broker cancel, and production write registration remain unimplemented and
-disabled.
+Stage 3.16 wraps that canonical contract in an explicitly started, local-only
+collector-ingestion boundary. It records deployment/release/user-authorization
+references, connection and batch state, cursor transitions, callback counters,
+and the lifecycle observation. Deterministic fixtures prove exact restart,
+idempotency, duplicate, out-of-order/gap, disconnect, and partial-batch
+behavior. The boundary never imports a broker SDK or contacts a broker; callback
+and poll are descriptive modes supplied by a future edge adapter. It cannot
+submit or cancel, mutate OMS/fills/ledger/risk/kill-switch/capital state, or
+release the interlock.
+
+No broker-specific adapter is registered by default. Any QMT, PTrade, local-
+file watcher, or other third-party adapter remains replaceable and requires a
+separate dependency/capability/failure-mode review plus explicit user
+authorization. Broker cancel, production write registration, and real-provider
+operational soak remain unimplemented and disabled.
 
 ### Stage 3 — Session-Bounded Controlled Execution
 

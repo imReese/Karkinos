@@ -190,24 +190,33 @@ Active planning target:
   cross-import, or partial rows remain blocked, as does production-ledger
   mutation. A broker-specific callback/poll adapter is still required before a
   pilot.
-* Stage 3.15 establishes the first broker-specific order-lifecycle evidence
-  contract without adding a broker connection. A local normalized QMT export
-  for one exact broker/client order identity is preview-only by default and
-  requires a separate record flag plus explicit non-authority acknowledgement.
+* Stage 3.15 establishes a broker-neutral order-lifecycle evidence contract
+  without adding a broker connection. A normalized export from an explicitly
+  identified provider for one exact broker/client order identity is preview-
+  only by default and requires a separate record flag plus explicit non-
+  authority acknowledgement.
   Persisted observations bind a hashed account reference, gateway, monotonic
   account-scope sequence, capture time, file/evidence fingerprints, order
   status, cumulative fill/cancel quantities, and exact fills. Credential
   fields, stale or malformed snapshots, quantity inconsistency, sequence
   conflict, account drift, identity/contract drift, and preview mutation fail
   closed. Reconciliation may project open, partial, cancelled, or filled facts
-  but never contacts QMT or mutates OMS/ledger. The same canonical lifecycle
+  but never contacts a broker or mutates OMS/ledger. The same canonical lifecycle
   guard runs inside signed clearance and the next-order `BEGIN IMMEDIATE`
   transaction: a contradictory fact rejects a racing clearance or re-blocks an
   older clearance. Full lifecycle evidence alone still cannot clear; Stage
   3.14's independent broker statement, fresh Account Truth, and human signature
-  remain mandatory. No production collector, write adapter, release provider,
-  executable cancel, or pilot authority is registered; a reviewed QMT
-  callback/poll collector and operational soak remain future work.
+  remain mandatory.
+* Stage 3.16 adds a broker-neutral, explicitly started collector-ingestion
+  boundary. It accepts only local deterministic batches, records deployment,
+  authorization, connection, batch, callback, cursor, and lifecycle evidence,
+  and proves restart replay, idempotency, duplicate handling, out-of-order
+  rejection, disconnect, and partial-batch behavior. It does not contain a
+  broker SDK, contact a provider, modify OMS/ledger/risk/kill switch/capital
+  authority, or register any adapter by default. QMT, PTrade, local-file, and
+  other provider adapters remain replaceable edge components that require a
+  separate security/capability review and explicit user authorization before
+  registration; Karkinos does not claim official support for them.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still
@@ -232,9 +241,12 @@ Active planning target:
 * [CONTROLLED_EXECUTION_PLAN.md](CONTROLLED_EXECUTION_PLAN.md): staged
   implementation plan for capital authority, read-only broker soak, per-order
   live bridge, bounded sessions, and evidence-based scaling.
-* [qmt-order-lifecycle-import.zh.md](qmt-order-lifecycle-import.zh.md): normalized
-  local QMT exact-order evidence contract, explicit ingestion command,
-  invariants, and remaining callback/poll collector boundary.
+* [broker-order-lifecycle-ingestion.zh.md](broker-order-lifecycle-ingestion.zh.md):
+  canonical broker-neutral lifecycle evidence and explicit collector-ingestion
+  boundary, including deterministic restart and ordering rules.
+* [qmt-order-lifecycle-import.zh.md](qmt-order-lifecycle-import.zh.md): retired
+  QMT v1 schema compatibility notice and explicit offline migration entry; it
+  is not a broker adapter or support statement.
 * [IMPLEMENTATION_LOG.md](IMPLEMENTATION_LOG.md): historical implementation
   progress moved out of the strategic goal page.
 * [BENCHMARKS.md](BENCHMARKS.md): external project notes and architectural

@@ -6,11 +6,7 @@ from typing import Any
 
 from account_truth.broker_connector import LocalJsonReadOnlyBrokerConnector
 
-_LOCAL_EXPORT_CONNECTOR_TYPES = {
-    "local_export_readonly",
-    "qmt_readonly_export",
-    "ptrade_readonly_export",
-}
+_LOCAL_EXPORT_CONNECTOR_TYPES = {"local_export_readonly"}
 
 
 def build_broker_connectors(

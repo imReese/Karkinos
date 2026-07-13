@@ -16,7 +16,7 @@ from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRepository,
-    preview_qmt_order_lifecycle_export,
+    preview_broker_order_lifecycle_export,
 )
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.config import TrustedOperatorIdentityConfig
@@ -126,7 +126,7 @@ def _environment(tmp_path, *, quantities: tuple[int, ...] = (40, 60)) -> dict:
             "order_fingerprint": build_order_fingerprint(order),
             "confirmation_id": "c" * 64,
             "dossier_fingerprint": "d" * 64,
-            "gateway_id": "qmt-controlled-write-1",
+            "gateway_id": "fixture-controlled-gateway-1",
             "gateway_verification_fingerprint": "e" * 64,
             "release_evidence_id": "f" * 64,
             "release_evidence_fingerprint": "a" * 64,
@@ -287,11 +287,11 @@ def _bind_controlled_account_alias(env: dict) -> None:
 
 def _record_partial_lifecycle(env: dict) -> dict:
     lifecycle_payload = {
-        "schema_version": "karkinos.qmt_order_lifecycle_export.v1",
-        "provider": "qmt",
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "fixture_broker",
         "snapshot_kind": "exact_order_lifecycle",
-        "gateway_id": "qmt-controlled-write-1",
-        "account_id": "private-qmt-account-001",
+        "gateway_id": "fixture-controlled-gateway-1",
+        "account_id": "private-fixture-account-001",
         "account_alias": "main-cn-account",
         "captured_at": NOW.isoformat(),
         "source_sequence": 1,
@@ -312,7 +312,7 @@ def _record_partial_lifecycle(env: dict) -> dict:
         ],
         "fills": [
             {
-                "broker_trade_id": "QMT-LATE-PARTIAL-1",
+                "broker_trade_id": "FIXTURE-LATE-PARTIAL-1",
                 "broker_order_id": "BROKER-CLEARANCE-1",
                 "client_order_id": "KARK-clearance-client-order-1",
                 "symbol": "600519",
@@ -327,9 +327,9 @@ def _record_partial_lifecycle(env: dict) -> dict:
             }
         ],
     }
-    lifecycle_preview = preview_qmt_order_lifecycle_export(
+    lifecycle_preview = preview_broker_order_lifecycle_export(
         json.dumps(lifecycle_payload),
-        source_name="qmt local exact-order lifecycle export",
+        source_name="deterministic fixture lifecycle export",
         clock=lambda: NOW,
     )
     return BrokerOrderLifecycleEvidenceRepository(Path(env["db"]._path)).record(
@@ -475,7 +475,7 @@ def test_newer_partial_lifecycle_fact_reblocks_preview_and_submit_transaction(
             "order_fingerprint": build_order_fingerprint(next_order),
             "confirmation_id": "1" * 64,
             "dossier_fingerprint": "2" * 64,
-            "gateway_id": "qmt-controlled-write-1",
+            "gateway_id": "fixture-controlled-gateway-1",
             "gateway_verification_fingerprint": "3" * 64,
             "release_evidence_id": "4" * 64,
             "release_evidence_fingerprint": "5" * 64,

@@ -123,7 +123,37 @@ roadmap promises.
   removed or relaxed, renamed blockers remain fail-closed, and no broker/OMS/
   ledger/capital authority is added.
 
-- 2026-07-13: Stage 3.15 adds a QMT exact-order lifecycle evidence foundation
+- 2026-07-13: Stage 3.15/3.16 supersedes the QMT-specific naming with a
+  broker-neutral lifecycle and collector-ingestion boundary. Assumptions:
+  `provider` is provenance only; any real SDK/callback/poll/local-file adapter
+  is a default-unregistered edge component requiring separate review and user
+  authorization; a collector batch is local input rather than authoritative
+  Account Truth or execution authority. The canonical export is now
+  `karkinos.broker_order_lifecycle_export.v1`, with generic service, blocker,
+  acknowledgement, CLI, and persisted-table terminology. The retired
+  `karkinos.qmt_order_lifecycle_export.v1` contract is rejected by the normal
+  importer and isolated behind an explicit offline migration command; existing
+  historical rows are never silently rewritten. Stage 3.16 adds a strict local
+  batch contract with deployment/release/user-authorization evidence,
+  connection/batch status, cursor and callback telemetry, and two-phase
+  lifecycle-prepare/run-commit recovery. Deterministic fake/fixture tests cover
+  restart replay, exact idempotency, different-run duplicates, cursor conflicts,
+  regressions/gaps, duplicate/out-of-order callback telemetry, disconnect,
+  partial batches, deployment drift, preview integrity, and absent-database read
+  behavior. Validation: 162 focused lifecycle/collector/reconciliation/import/
+  config/gateway/soak/controlled-session tests passed; 84 acceptance-audit tests
+  passed; the full backend suite passed 1,313 tests. Black/isort, Python
+  compilation, `git diff --check`, and the documented GitNexus fallback cover
+  formatting, syntax, and patch scope. Risk
+  impact: lifecycle repository reach is CRITICAL and parser/config paths include
+  HIGH-impact symbols, so the migration only narrows authority. No SDK, provider
+  contact, strategy-direct path, submit/cancel, OMS/fill/ledger/risk/kill-switch/
+  capital mutation, scheduler, default adapter registration, or support claim is
+  added. This entry supersedes the provider-specific product direction recorded
+  immediately below while preserving it as historical audit context.
+
+- 2026-07-13 (superseded naming; retained for audit): Stage 3.15 added a QMT
+  exact-order lifecycle evidence foundation
   without registering a broker connection. Assumptions: an external read-only
   collector, not Karkinos, normalizes one QMT order into the strict
   `karkinos.qmt_order_lifecycle_export.v1` contract; `source_sequence` is
