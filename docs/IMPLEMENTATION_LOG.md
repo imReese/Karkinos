@@ -123,6 +123,26 @@ roadmap promises.
   removed or relaxed, renamed blockers remain fail-closed, and no broker/OMS/
   ledger/capital authority is added.
 
+- 2026-07-13: Stage 3.14 order-identity hardening removes the remaining manual
+  symbol/side mapping from controlled full-fill clearance. Assumptions:
+  `broker_order_id` and `client_order_id` are imported evidence only; both
+  must match the persisted controlled submit intent exactly, all selected rows
+  must still come from one validated import and total the full OMS quantity,
+  and a read-only connector or legacy CSV without both identities remains
+  incomplete and cannot clear. Canonical broker-statement and persisted
+  broker-evidence schemas advance to v2; unsafe identifiers, one-sided identity
+  reuse, quantity drift, cross-import aggregation, and post-rejection trade
+  evidence fail closed. Validation: 45 focused broker-statement, repository,
+  connector, execution-reconciliation, and signed-clearance tests passed; 81
+  acceptance-audit tests passed; the full backend suite passed 1,281 tests.
+  Black, isort, and `git diff --check` cover the changed Python and patch
+  surface. Risk impact: CRITICAL-sensitive because this evidence can feed the
+  signed transaction that records real fills, advances OMS, and releases the
+  global submission interlock. The change only narrows that boundary: it adds
+  no gateway registration, default broker submission, strategy-direct path,
+  automatic execution, partial-fill/cancel inference, production-ledger write,
+  session widening, or capital expansion.
+
 - 2026-07-13: Stage 3.14 adds separately signed exact-full-fill reconciliation
   clearance. Assumptions: selected trade events are an operator-reviewed mapping
   to one controlled broker order because the generic CSV contract has no broker

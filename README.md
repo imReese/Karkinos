@@ -12,6 +12,10 @@ Karkinos: A China-market personal quant research and trading platform.
 An integrated personal finance app for backtesting, strategy research, account
 truth, risk control, signals, reconciliation, and review.
 
+长期目标是建设一个人为可控、资本授权有界且只可依据审阅证据扩缩容的量化交易系统。
+策略不得直连券商；默认没有实盘提交权限，账户事实、风控、对账和 kill switch 始终先于
+任何执行能力。
+
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
 Strategic goal, architecture, roadmap, and implementation history live in
@@ -409,9 +413,13 @@ full OMS quantity and source file. A separate operator signature then permits
 one atomic transaction to record linked real fills, advance OMS to `filled`,
 persist the clearance, and release the next-order interlock. Partial totals,
 cross-import aggregation, automatic ledger mutation, automatic/strategy-direct
-submission, and production adapter registration remain disabled. Generic CSV
-rows lack a broker order id, so their signed selection is a manual mapping
-assumption pending a broker-specific adapter.
+submission, and production adapter registration remain disabled. The canonical
+CSV v2 contract may carry optional `broker_order_id` and `client_order_id`
+evidence. Controlled clearance requires both identities to match the persisted
+submit intent exactly; missing, conflicting, cross-import, or partial evidence
+fails closed. Those fields remain evidence, not write authority, and a broker-
+specific callback/poll adapter is still required before an explicitly approved
+pilot.
 
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one

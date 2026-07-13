@@ -95,7 +95,7 @@ def test_account_truth_broker_statement_preview_is_read_only(tmp_path, monkeypat
         )
     )
 
-    assert response["schema_version"] == "karkinos.broker_statement.v1"
+    assert response["schema_version"] == "karkinos.broker_statement.v2"
     assert response["source_name"] == "local-statement.csv"
     assert response["validation_status"] == "pass"
     assert response["row_count"] == 3

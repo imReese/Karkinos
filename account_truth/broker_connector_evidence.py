@@ -122,6 +122,8 @@ def _fill_payload(
         ),
         "transfer_fee": Decimal("0"),
         "cost_basis_method": "",
+        "broker_order_id": fill.order_id,
+        "client_order_id": "",
     }
 
 
@@ -190,6 +192,8 @@ def _events_from_payloads(payloads: list[dict[str, Any]]) -> list[BrokerEvidence
                 duplicate_of_row_number=duplicate_of,
                 transfer_fee=_decimal(payload["transfer_fee"]),
                 cost_basis_method=str(payload["cost_basis_method"]),
+                broker_order_id=str(payload.get("broker_order_id") or ""),
+                client_order_id=str(payload.get("client_order_id") or ""),
             )
         )
     return events

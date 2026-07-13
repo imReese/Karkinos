@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -71,15 +72,16 @@ def _statement(*, quantities: tuple[int, ...] = (40, 60)) -> str:
                     "10.01",
                     "reviewed controlled fill",
                     "0.00",
+                    "BROKER-CLEARANCE-1",
+                    "KARK-clearance-client-order-1",
                 ]
             )
         )
     return (
         "event_id,event_type,occurred_at,settled_at,symbol,instrument_name,"
         "asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,"
-        "cash_balance,position_quantity,cost_basis,note,transfer_fee\n"
-        + "\n".join(rows)
-        + "\n"
+        "cash_balance,position_quantity,cost_basis,note,transfer_fee,"
+        "broker_order_id,client_order_id\n" + "\n".join(rows) + "\n"
     )
 
 
@@ -417,6 +419,37 @@ def test_superseded_reconciliation_item_invalidates_signed_preview(tmp_path) -> 
         exc_info.value.evidence["rejection_reasons"]
     )
     assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_client_order_identity_drift_invalidates_signed_preview(tmp_path) -> None:
+    env = _environment(tmp_path)
+    preview = _preview(env)
+    approval = _approval(env, preview["clearance_fingerprint"])
+    with sqlite3.connect(env["db"]._path) as conn:
+        conn.execute(
+            """
+            UPDATE controlled_broker_submit_intents
+            SET client_order_id = ?
+            WHERE submit_intent_id = ?
+            """,
+            ("KARK-drifted-client-order", env["submit_intent_id"]),
+        )
+        conn.commit()
+
+    with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc_info:
+        _record(env, preview, approval)
+
+    assert "controlled_submission_clearance_review_blocked" in (
+        exc_info.value.evidence["rejection_reasons"]
+    )
+    assert "controlled_submission_clearance_client_order_identity_mismatch" in (
+        exc_info.value.evidence["review_blockers"]
+    )
+    assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "submitted"
+    )
     assert env["db"].get_ledger_entries_sync() == []
 
 

@@ -13,6 +13,9 @@ from account_truth.broker_evidence import BrokerEvidenceRepository
 from server.services.per_order_confirmation import build_order_fingerprint
 
 EXECUTION_RECONCILIATION_SCHEMA_VERSION = "karkinos.execution_reconciliation.v1"
+CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION = (
+    "karkinos.controlled_submission_reconciliation.v2"
+)
 
 
 class ExecutionReconciliationService:
@@ -95,6 +98,7 @@ class ExecutionReconciliationService:
             controlled_intent,
             clearance=controlled_clearance,
             fills=controlled_fills,
+            broker_events=broker_events,
             matching_broker_events=matching_broker_events,
             mismatched_broker_events=mismatched_broker_events,
         )
@@ -234,6 +238,7 @@ def _controlled_submission_reconciliation(
     *,
     clearance: dict[str, Any] | None,
     fills: list[dict[str, Any]],
+    broker_events: list[Any],
     matching_broker_events: list[Any],
     mismatched_broker_events: list[Any],
 ) -> dict[str, Any]:
@@ -248,6 +253,11 @@ def _controlled_submission_reconciliation(
         "rejected": "rejected",
     }.get(intent_status)
     mismatch_reasons: list[str] = []
+    controlled_events = _controlled_broker_event_sets(order, intent, broker_events)
+    controlled_matching = controlled_events["matching"]
+    controlled_quantity_mismatch = controlled_events["quantity_mismatch"]
+    controlled_identity_incomplete = controlled_events["identity_incomplete"]
+    controlled_identity_conflicts = controlled_events["identity_conflicts"]
     if isinstance(clearance, dict) and clearance:
         controlled_fills = [
             fill
@@ -291,12 +301,13 @@ def _controlled_submission_reconciliation(
                     "Persisted controlled-submission clearance no longer matches "
                     "OMS or real-fill evidence; keep new submissions blocked."
                 ),
-                "reported_broker_events": matching_broker_events
-                or mismatched_broker_events,
+                "reported_broker_events": controlled_matching
+                or controlled_quantity_mismatch
+                or controlled_identity_conflicts,
                 "mismatch_reasons": clearance_blockers,
                 "evidence_summary": {
                     "schema_version": (
-                        "karkinos.controlled_submission_reconciliation.v1"
+                        CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION
                     ),
                     "submit_intent_id": str(intent.get("submit_intent_id") or ""),
                     "clearance_id": str(clearance.get("clearance_id") or ""),
@@ -314,10 +325,10 @@ def _controlled_submission_reconciliation(
                 "Signed controlled-submission reconciliation clearance and exact "
                 "real-fill evidence remain current; production ledger is separate."
             ),
-            "reported_broker_events": matching_broker_events,
+            "reported_broker_events": controlled_matching,
             "mismatch_reasons": [],
             "evidence_summary": {
-                "schema_version": "karkinos.controlled_submission_reconciliation.v1",
+                "schema_version": CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION,
                 "submit_intent_id": str(intent.get("submit_intent_id") or ""),
                 "clearance_id": str(clearance.get("clearance_id") or ""),
                 "clearance_reconciliation_run_id": str(
@@ -348,10 +359,15 @@ def _controlled_submission_reconciliation(
             "do not submit another order until the mismatch is resolved."
         )
     elif intent_status in {"prepared", "submission_unknown"}:
-        reported_broker_events = matching_broker_events or mismatched_broker_events
+        reported_broker_events = (
+            controlled_matching
+            or controlled_quantity_mismatch
+            or controlled_identity_conflicts
+            or controlled_identity_incomplete
+        )
         item_status = (
             "controlled_submission_unknown_broker_evidence_available"
-            if matching_broker_events
+            if controlled_matching
             else "controlled_submission_unknown"
         )
         suggested_action = "recover_controlled_submission_by_query"
@@ -360,23 +376,42 @@ def _controlled_submission_reconciliation(
             "persisted client order id; never resubmit, and block every new order."
         )
     elif intent_status == "submitted":
-        if matching_broker_events:
-            reported_broker_events = matching_broker_events
+        if controlled_identity_conflicts:
+            reported_broker_events = controlled_identity_conflicts
+            mismatch_reasons.append("controlled_submission_order_identity_conflict")
+            item_status = "controlled_submission_broker_identity_conflict"
+            suggested_action = "enable_kill_switch_and_review_controlled_submission"
+            detail = (
+                "Staged broker trade evidence reuses one controlled order identity "
+                "but disagrees on the other; keep new submissions blocked."
+            )
+        elif controlled_matching:
+            reported_broker_events = controlled_matching
             item_status = "controlled_submission_broker_evidence_available"
             suggested_action = "review_controlled_submission_broker_evidence"
             detail = (
-                "Matching staged broker trade evidence is available for the "
-                "controlled submission; reconcile it before any new submission "
-                "or production-ledger update."
+                "Broker-order and client-order linked staged trade evidence is "
+                "available for the controlled submission; reconcile it before "
+                "any new submission or production-ledger update."
             )
-        elif mismatched_broker_events:
-            reported_broker_events = mismatched_broker_events
+        elif controlled_quantity_mismatch:
+            reported_broker_events = controlled_quantity_mismatch
             mismatch_reasons.append("controlled_submission_quantity_mismatch")
             item_status = "controlled_submission_broker_evidence_mismatch"
             suggested_action = "enable_kill_switch_and_review_controlled_submission"
             detail = (
                 "Staged broker trade evidence disagrees with the controlled "
                 "submission quantity; keep new submissions blocked."
+            )
+        elif controlled_identity_incomplete:
+            reported_broker_events = controlled_identity_incomplete
+            mismatch_reasons.append("controlled_submission_order_identity_incomplete")
+            item_status = "controlled_submission_broker_identity_incomplete"
+            suggested_action = "import_order_linked_controlled_submission_evidence"
+            detail = (
+                "Staged trade rows match symbol and side but do not carry both the "
+                "exact broker order id and client order id; they cannot clear the "
+                "controlled submission interlock."
             )
         else:
             item_status = "controlled_submission_awaiting_broker_evidence"
@@ -387,8 +422,18 @@ def _controlled_submission_reconciliation(
                 "submissions blocked."
             )
     elif intent_status == "rejected":
-        if matching_broker_events or mismatched_broker_events:
-            reported_broker_events = matching_broker_events or mismatched_broker_events
+        if (
+            controlled_matching
+            or controlled_quantity_mismatch
+            or controlled_identity_conflicts
+            or controlled_identity_incomplete
+        ):
+            reported_broker_events = (
+                controlled_matching
+                or controlled_quantity_mismatch
+                or controlled_identity_conflicts
+                or controlled_identity_incomplete
+            )
             mismatch_reasons.append("controlled_rejection_has_broker_trade_evidence")
             item_status = "controlled_rejection_broker_evidence_conflict"
             suggested_action = "enable_kill_switch_and_review_controlled_submission"
@@ -417,7 +462,7 @@ def _controlled_submission_reconciliation(
         "reported_broker_events": reported_broker_events,
         "mismatch_reasons": mismatch_reasons,
         "evidence_summary": {
-            "schema_version": "karkinos.controlled_submission_reconciliation.v1",
+            "schema_version": CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION,
             "submit_intent_id": str(intent.get("submit_intent_id") or ""),
             "submit_fingerprint": str(intent.get("submit_fingerprint") or ""),
             "client_order_id": str(intent.get("client_order_id") or ""),
@@ -437,6 +482,12 @@ def _controlled_submission_reconciliation(
             "broker_evidence_fingerprint": _fingerprint(
                 [_broker_event_evidence(event) for event in reported_broker_events]
             ),
+            "broker_order_identity_required": True,
+            "broker_order_identity_match_count": len(controlled_matching),
+            "broker_order_identity_incomplete_count": len(
+                controlled_identity_incomplete
+            ),
+            "broker_order_identity_conflict_count": len(controlled_identity_conflicts),
         },
     }
 
@@ -485,6 +536,65 @@ def _candidate_broker_events(
     return candidates
 
 
+def _controlled_broker_event_sets(
+    order: dict[str, Any],
+    intent: dict[str, Any],
+    broker_events: list[Any],
+) -> dict[str, list[Any]]:
+    expected_broker_order_id = str(intent.get("broker_order_id") or "")
+    expected_client_order_id = str(intent.get("client_order_id") or "")
+    linked: list[Any] = []
+    identity_incomplete: list[Any] = []
+    identity_conflicts: list[Any] = []
+    for event in _candidate_broker_events(order, broker_events):
+        broker_order_id = str(getattr(event, "broker_order_id", "") or "")
+        client_order_id = str(getattr(event, "client_order_id", "") or "")
+        if (
+            broker_order_id == expected_broker_order_id
+            and client_order_id == expected_client_order_id
+        ):
+            linked.append(event)
+            continue
+        if (
+            (
+                broker_order_id == expected_broker_order_id
+                or client_order_id == expected_client_order_id
+            )
+            and broker_order_id
+            and client_order_id
+        ):
+            identity_conflicts.append(event)
+            continue
+        if not broker_order_id or not client_order_id:
+            identity_incomplete.append(event)
+
+    expected_quantity = abs(_decimal(order.get("quantity")) or Decimal("0"))
+    import_run_ids = {
+        str(getattr(event, "import_run_id", "") or "") for event in linked
+    }
+    linked_quantity = sum(
+        (
+            abs(_decimal(getattr(event, "quantity", None)) or Decimal("0"))
+            for event in linked
+        ),
+        Decimal("0"),
+    )
+    matching = (
+        linked
+        if linked
+        and len(import_run_ids) == 1
+        and expected_quantity > 0
+        and linked_quantity == expected_quantity
+        else []
+    )
+    return {
+        "matching": matching,
+        "quantity_mismatch": linked if linked and not matching else [],
+        "identity_incomplete": identity_incomplete,
+        "identity_conflicts": identity_conflicts,
+    }
+
+
 def _broker_event_evidence(event: Any) -> dict[str, Any]:
     return {
         "import_run_id": str(getattr(event, "import_run_id", "") or ""),
@@ -502,6 +612,8 @@ def _broker_event_evidence(event: Any) -> dict[str, Any]:
         "tax": str(getattr(event, "tax", "") or ""),
         "transfer_fee": str(getattr(event, "transfer_fee", "") or ""),
         "net_amount": str(getattr(event, "net_amount", "") or ""),
+        "broker_order_id": str(getattr(event, "broker_order_id", "") or ""),
+        "client_order_id": str(getattr(event, "client_order_id", "") or ""),
     }
 
 

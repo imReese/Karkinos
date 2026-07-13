@@ -41,6 +41,8 @@ def test_connector_snapshot_normalizes_into_reconciliation_ready_evidence(tmp_pa
         "position_snapshot",
     ]
     assert preview.events[0].event_id == "fake_qmt_readonly:fill:synthetic-fill-001"
+    assert preview.events[0].broker_order_id == "synthetic-order-001"
+    assert preview.events[0].client_order_id == ""
     assert preview.events[0].fee == Decimal("5.00")
     assert preview.events[0].tax == Decimal("0.00")
     assert preview.events[1].cash_balance == Decimal("8972.00")
@@ -112,8 +114,8 @@ def test_connector_evidence_persistence_does_not_mutate_production_ledger(tmp_pa
 
 
 def test_connector_evidence_builder_is_exported_from_account_truth_package():
+    from account_truth import BROKER_CONNECTOR_SOURCE_TYPE as exported_source_type
     from account_truth import (
-        BROKER_CONNECTOR_SOURCE_TYPE as exported_source_type,
         build_broker_connector_evidence_preview as exported_builder,
     )
 

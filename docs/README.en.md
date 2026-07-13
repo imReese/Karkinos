@@ -119,8 +119,10 @@ health checks. v1.7 completed the non-submitting controlled-bridge foundation:
 manual tickets, local read-only connector evidence, capability/health
 contracts, manual execution evidence, and execution reconciliation. Completion
 does not provide broker submit, executable cancel, automatic ledger mutation,
-or auto-pilot authority. v1.8 planning is active, but execution authority
-remains unimplemented and disabled.
+or auto-pilot authority. v1.8 planning is active, but execution authority and
+production broker submission remain disabled by default; later non-default
+submission foundations do not give strategies broker access or enable
+automatic execution.
 When an operator accepts a diverged paper/shadow review, Operations preserves
 the raw divergence evidence and exposes a runbook effective status for manual
 confirmation handoff; this is not execution authorization or broker
@@ -334,9 +336,12 @@ quantity, and match fresh clear Account Truth from the same file. One atomic
 transaction records evidence-linked real fills, advances OMS to `filled`,
 persists terminal reconciliation, and releases the interlock. Partial totals,
 cross-import aggregation, production-ledger mutation, automatic/strategy-direct
-submission, and production adapter registration remain disabled. Generic CSV
-rows have no broker order id, so the operator signature still confirms a manual
-evidence mapping pending a broker-specific adapter.
+submission, and production adapter registration remain disabled. Canonical CSV
+v2 rows may carry optional broker and client order ids, but controlled
+clearance requires both to match the persisted submit intent exactly. Missing,
+conflicting, cross-import, or partial evidence fails closed. The identifiers
+remain evidence rather than authority, and a broker-specific callback/poll
+adapter is still required before a pilot.
 
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS

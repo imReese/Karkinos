@@ -15,10 +15,10 @@ from server.services.operator_approval import resolve_operator_approval_with_pro
 from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_SUBMISSION_CLEARANCE_SCHEMA_VERSION = (
-    "karkinos.controlled_submission_reconciliation_clearance.v1"
+    "karkinos.controlled_submission_reconciliation_clearance.v2"
 )
 CONTROLLED_SUBMISSION_CLEARANCE_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_submission_reconciliation_clearance_status.v1"
+    "karkinos.controlled_submission_reconciliation_clearance_status.v2"
 )
 CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT = (
     "clear_exact_full_fill_without_automatic_ledger_mutation"
@@ -140,6 +140,9 @@ class ControlledSubmissionReconciliationClearanceService:
         broker_order_id = str(intent.get("broker_order_id") or "")
         if not _ID_PATTERN.fullmatch(broker_order_id):
             blockers.append("controlled_submission_clearance_broker_order_id_invalid")
+        client_order_id = str(intent.get("client_order_id") or "")
+        if not _ID_PATTERN.fullmatch(client_order_id):
+            blockers.append("controlled_submission_clearance_client_order_id_invalid")
 
         run = (
             self._db.get_execution_reconciliation_run_sync(normalized_run_id)
@@ -234,6 +237,14 @@ class ControlledSubmissionReconciliationClearanceService:
                 order.get("asset_class") or ""
             ):
                 blockers.append("controlled_submission_clearance_asset_class_mismatch")
+            if str(event.get("broker_order_id") or "") != broker_order_id:
+                blockers.append(
+                    "controlled_submission_clearance_broker_order_identity_mismatch"
+                )
+            if str(event.get("client_order_id") or "") != client_order_id:
+                blockers.append(
+                    "controlled_submission_clearance_client_order_identity_mismatch"
+                )
 
         reconciliation_item_fingerprint = _fingerprint(
             _reconciliation_item_contract(latest_item)
@@ -246,6 +257,7 @@ class ControlledSubmissionReconciliationClearanceService:
             "order_id": order_id,
             "order_fingerprint": str(intent.get("order_fingerprint") or ""),
             "broker_order_id": broker_order_id,
+            "client_order_id": client_order_id,
             "review_reconciliation_run_id": normalized_run_id,
             "review_reconciliation_item_id": int(latest_item.get("id") or 0),
             "review_reconciliation_item_fingerprint": (reconciliation_item_fingerprint),
@@ -428,6 +440,7 @@ class ControlledSubmissionReconciliationClearanceService:
                 "order_id",
                 "order_fingerprint",
                 "broker_order_id",
+                "client_order_id",
                 "review_reconciliation_run_id",
                 "review_reconciliation_item_id",
                 "review_reconciliation_item_fingerprint",
@@ -736,6 +749,8 @@ def _fill_descriptor(
             "review_reconciliation_run_id": review_reconciliation_run_id,
             "broker_event_id": str(event.get("event_id") or ""),
             "broker_row_fingerprint": str(event.get("row_fingerprint") or ""),
+            "broker_order_id": str(event.get("broker_order_id") or ""),
+            "client_order_id": str(event.get("client_order_id") or ""),
             "fee": str(event.get("fee") or "0"),
             "tax": str(event.get("tax") or "0"),
             "transfer_fee": str(event.get("transfer_fee") or "0"),
@@ -761,6 +776,8 @@ def _broker_event_contract(event: Any) -> dict[str, Any]:
         "tax": str(getattr(event, "tax", "") or ""),
         "transfer_fee": str(getattr(event, "transfer_fee", "") or ""),
         "net_amount": str(getattr(event, "net_amount", "") or ""),
+        "broker_order_id": str(getattr(event, "broker_order_id", "") or ""),
+        "client_order_id": str(getattr(event, "client_order_id", "") or ""),
     }
 
 
@@ -869,6 +886,7 @@ def _safety_flags() -> dict[str, bool]:
     return {
         "manual_final_signature_required": True,
         "exact_latest_reconciliation_required": True,
+        "exact_broker_and_client_order_identity_required": True,
         "fresh_account_truth_required": True,
         "full_fill_only": True,
         "atomic_fill_oms_clearance": True,
