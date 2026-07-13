@@ -778,21 +778,8 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "api_keys": {},
         "allow_financial_context": False,
     }
-    assert example["broker_connectors"] == []
-    assert example["controlled_bridge_policy"] == {
-        "policy_id": "default-controlled-bridge-disabled",
-        "enabled": False,
-        "allowed_connector_ids": [],
-        "allowed_account_aliases": [],
-        "allowed_strategy_ids": [],
-        "allowed_symbols": [],
-        "per_order_confirmation_required": True,
-        "automation_allowed": False,
-    }
-    assert example["trusted_operator_identities"] == []
-    assert not _contains_sensitive_key(example["broker_connectors"])
-    assert not _contains_sensitive_key(example["controlled_bridge_policy"])
-    assert not _contains_sensitive_key(example["trusted_operator_identities"])
+    assert set(example) == {"server", "data_source", "broker_fee", "ai"}
+    assert "schema_version" not in example["broker_fee"]
     assert not _contains_sensitive_key(example["broker_fee"])
     assert example["ai"]["api_keys"] == {}
 
