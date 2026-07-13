@@ -29,6 +29,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1 | Foundation implemented | Provider-neutral, evidence-bound research workflow runtime |
 | AI-native Phase 1.1 | Read boundary implemented | Immutable canonical-evidence captures and context-bound read executors |
 | AI-native Phase 1.2 | Capture boundary implemented | Explicit human-started, model-free canonical context capture |
+| AI-native Phase 1.3 | Task/review boundary implemented | Human-created evidence-bound tasks, review UI, and hash-chain replay with model execution off |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -116,18 +117,39 @@ starting an AI workflow:
   call a provider or model, start a workflow, refresh market/broker data, or
   mutate account, execution, risk, reconciliation, or authority state.
 
+Phase 1.3 records human research intent and context review without enabling
+analysis execution:
+
+* `POST /api/ai/research-tasks` accepts only a completed Phase 1.2 capture and
+  replays its context/evidence identity before creating an audit task;
+* tasks bind exact valuation snapshot, ledger cutoff/fingerprint, context
+  fingerprint, and immutable evidence summaries; non-authoritative evidence is
+  retained but sets `blocked_by_evidence`;
+* human reviews can accept a complete context, request evidence revision, or
+  close without analysis. Acceptance is rejected for incomplete evidence and
+  never starts a workflow or model;
+* task creation and review are independently idempotent, and task/review events
+  form a replayable per-task SHA-256 chain;
+* the Strategy Lab boundary is idle until a human opens it, performs no polling,
+  and records context capture before task creation. Saved backtest evidence is
+  optional and requires the exact result id; task GETs do not initialize schema
+  or write audit facts;
+* only `ai_research_tasks`, `ai_research_task_reviews`, and
+  `ai_research_task_events` are added. No provider/model registration, model
+  call, scheduler, background task, OMS/ledger/risk/capital write, broker
+  submit, or cancel capability is introduced.
+
 Planned migration, each behind a separate review:
 
-1. **Completed foundation:** immutable storage, identity validation,
-   context-bound read executors, and explicitly human-started canonical capture
-   exist without recomputation, GET-side refresh, or model invocation;
-2. **Next review:** add human-started research-task records and review UI while
-   keeping model execution and background work disabled;
-3. connect the deterministic fixture provider to an explicitly started task and
+1. **Completed foundation and human boundary:** immutable storage, identity
+   validation, context-bound read executors, explicitly human-started canonical
+   capture, human task records, and review UI exist without recomputation,
+   GET-side provider refresh, or model invocation;
+2. **Next review:** connect the deterministic fixture provider to an explicitly started task and
    add debate/report/memory lifecycle plus invalidation when evidence drifts;
-4. review and explicitly authorize one or more real provider adapters without
+3. review and explicitly authorize one or more real provider adapters without
    making any vendor canonical;
-5. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+4. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.

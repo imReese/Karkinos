@@ -128,8 +128,12 @@ Active planning target:
   Research Evidence, Account Truth, and paper/shadow projections, verifies the
   identity again after capture, and writes only `ai_*` audit/evidence rows. It
   registers no scheduler, startup hook, background task, real provider, model
-  call, OMS action, or broker capability. Research tasks and model execution
-  remain later, separately reviewed phases.
+  call, OMS action, or broker capability. Phase 1.3 adds human-created research
+  task records, human context review, and per-task hash-chain replay. A task may
+  bind only a completed capture; incomplete evidence remains blocked, and the
+  Web boundary stays idle until explicitly opened. Accepting a context records
+  human review only: model execution, deterministic fixture execution, and
+  background work remain later, separately reviewed phases.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

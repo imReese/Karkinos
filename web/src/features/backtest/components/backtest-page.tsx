@@ -25,6 +25,7 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import { formatStrategyDisplayName as strategyDisplayName } from '../../../shared/strategy-display';
+import { ResearchTaskPanel } from '../../ai-research/components/research-task-panel';
 import { BacktestReportView } from './backtest-report-view';
 import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
@@ -1173,6 +1174,8 @@ export function BacktestPage() {
         loading={validation.isLoading || readiness.isLoading}
         error={validation.isError || readiness.isError}
       />
+
+      <ResearchTaskPanel backtestResultId={latestReport?.id ?? null} />
 
       <BacktestReportView />
     </section>
