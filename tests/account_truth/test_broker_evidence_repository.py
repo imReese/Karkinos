@@ -18,10 +18,10 @@ synthetic-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,SY
 synthetic-cash-001,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0.00,0.00,0.00,0.00,9387.29,,,
 """
 
-OPTIONAL_COMPONENT_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
-synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,SYN001,合成样例股票A,stock,CNY,100,12.00,1200.00,1.80,1.20,1196.40,10196.40,0,8.80,synthetic sell row,0.60,broker_remaining_cost
-synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10196.40,0,8.80,synthetic position snapshot,,broker_remaining_cost
-synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,
+OPTIONAL_COMPONENT_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
+synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,SYN001,合成样例股票A,stock,CNY,100,12.00,1200.00,1.80,1.20,1196.40,10196.40,0,8.80,synthetic sell row,0.60,broker_remaining_cost,BROKER-ORDER-001,KARK-CLIENT-001
+synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10196.40,0,8.80,synthetic position snapshot,,broker_remaining_cost,,
+synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,,,
 """
 
 
@@ -85,6 +85,108 @@ def test_broker_evidence_repository_persists_optional_reconciliation_components(
     assert saved_events[0].cost_basis_method == "broker_remaining_cost"
     assert saved_events[1].transfer_fee == "0"
     assert saved_events[1].cost_basis_method == "broker_remaining_cost"
+
+
+def test_broker_evidence_repository_persists_order_identity_evidence(
+    tmp_path: Path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(OPTIONAL_COMPONENT_STATEMENT)
+    import_run = repository.save_preview(
+        preview,
+        source_name="synthetic-order-identity.csv",
+    )
+
+    saved_events = repository.list_events(import_run.import_run_id)
+
+    assert saved_events[0].broker_order_id == "BROKER-ORDER-001"
+    assert saved_events[0].client_order_id == "KARK-CLIENT-001"
+    assert saved_events[1].broker_order_id == ""
+    assert saved_events[1].client_order_id == ""
+
+
+def test_broker_evidence_repository_migrates_legacy_order_identity_columns(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy-account-truth.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript("""
+            CREATE TABLE broker_evidence_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_run_id TEXT NOT NULL,
+                row_number INTEGER NOT NULL,
+                row_fingerprint TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                settled_at TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                instrument_name TEXT NOT NULL,
+                asset_class TEXT NOT NULL,
+                currency TEXT NOT NULL,
+                quantity TEXT NOT NULL,
+                price TEXT NOT NULL,
+                gross_amount TEXT NOT NULL,
+                fee TEXT NOT NULL,
+                tax TEXT NOT NULL,
+                net_amount TEXT NOT NULL,
+                cash_balance TEXT,
+                position_quantity TEXT,
+                cost_basis TEXT,
+                note TEXT NOT NULL,
+                is_row_duplicate INTEGER NOT NULL,
+                duplicate_of_row_number INTEGER,
+                transfer_fee TEXT NOT NULL DEFAULT '0',
+                cost_basis_method TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+        """)
+        conn.execute(
+            """
+            INSERT INTO broker_evidence_events (
+                import_run_id, row_number, row_fingerprint, event_id, event_type,
+                occurred_at, settled_at, symbol, instrument_name, asset_class,
+                currency, quantity, price, gross_amount, fee, tax, net_amount,
+                note, is_row_duplicate, transfer_fee, cost_basis_method, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-import",
+                1,
+                "legacy-row",
+                "legacy-event",
+                "trade_buy",
+                "2026-01-05T09:35:00+08:00",
+                "2026-01-06",
+                "SYN001",
+                "合成样例股票A",
+                "stock",
+                "CNY",
+                "100",
+                "10.23",
+                "1023.00",
+                "5.00",
+                "0.00",
+                "-1028.00",
+                "legacy evidence",
+                0,
+                "0",
+                "",
+                "2026-01-05T01:35:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    BrokerEvidenceRepository(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("""
+            SELECT broker_order_id, client_order_id
+            FROM broker_evidence_events
+            WHERE event_id = 'legacy-event'
+            """).fetchone()
+
+    assert row == ("", "")
 
 
 def test_broker_evidence_repository_reimports_same_file_idempotently(

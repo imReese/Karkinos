@@ -16,7 +16,7 @@ from account_truth.broker_statement import (
     ValidationStatus,
 )
 
-ACCOUNT_TRUTH_SCHEMA_VERSION = "karkinos.account_truth.broker_evidence.v1"
+ACCOUNT_TRUTH_SCHEMA_VERSION = "karkinos.account_truth.broker_evidence.v2"
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,8 @@ class StoredBrokerEvidenceEvent:
     duplicate_of_row_number: int | None
     transfer_fee: str
     cost_basis_method: str
+    broker_order_id: str
+    client_order_id: str
 
 
 class BrokerEvidenceRepository:
@@ -147,8 +149,9 @@ class BrokerEvidenceRepository:
                         price, gross_amount, fee, tax, net_amount,
                         cash_balance, position_quantity, cost_basis, note,
                         is_row_duplicate, duplicate_of_row_number, transfer_fee,
-                        cost_basis_method, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        cost_basis_method, broker_order_id, client_order_id,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         self._event_insert_values(
@@ -300,6 +303,8 @@ class BrokerEvidenceRepository:
                     duplicate_of_row_number INTEGER,
                     transfer_fee TEXT NOT NULL DEFAULT '0',
                     cost_basis_method TEXT NOT NULL DEFAULT '',
+                    broker_order_id TEXT NOT NULL DEFAULT '',
+                    client_order_id TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(import_run_id)
                         REFERENCES broker_import_runs(import_run_id)
@@ -327,6 +332,16 @@ class BrokerEvidenceRepository:
             conn.execute(
                 "ALTER TABLE broker_evidence_events "
                 "ADD COLUMN cost_basis_method TEXT NOT NULL DEFAULT ''"
+            )
+        if "broker_order_id" not in columns:
+            conn.execute(
+                "ALTER TABLE broker_evidence_events "
+                "ADD COLUMN broker_order_id TEXT NOT NULL DEFAULT ''"
+            )
+        if "client_order_id" not in columns:
+            conn.execute(
+                "ALTER TABLE broker_evidence_events "
+                "ADD COLUMN client_order_id TEXT NOT NULL DEFAULT ''"
             )
 
     def _find_existing_import_run(self, file_fingerprint: str) -> str | None:
@@ -377,6 +392,8 @@ class BrokerEvidenceRepository:
             event.duplicate_of_row_number,
             _decimal_to_text(event.transfer_fee),
             event.cost_basis_method,
+            event.broker_order_id,
+            event.client_order_id,
             created_at,
         )
 
@@ -408,6 +425,8 @@ class BrokerEvidenceRepository:
             duplicate_of_row_number=row["duplicate_of_row_number"],
             transfer_fee=str(row["transfer_fee"]),
             cost_basis_method=str(row["cost_basis_method"] or ""),
+            broker_order_id=str(row["broker_order_id"] or ""),
+            client_order_id=str(row["client_order_id"] or ""),
         )
 
     @staticmethod

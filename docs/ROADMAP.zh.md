@@ -319,8 +319,9 @@ Stage 3.14 已实现该协议中最窄的“精确全量成交”分支。清算
 covered。独立 `clear_controlled_submission_reconciliation` Ed25519 签名后，SQLite 单事务记录
 真实成交、推进 `submitted -> accepted -> filled`、保存 clearance 与终态 no-action 对账，再
 解除 interlock；不会自动写生产账本。部分成交、跨导入聚合、撤单、自动/策略直连提交、扩资
-仍然关闭。由于通用 CSV 不含 broker order id，当前仍是操作员签名确认的人工映射；pilot 前
-必须补齐券商专用的订单号关联 callback/poll 证据。
+仍然关闭。canonical CSV v2 可选保存 broker/client order id，但清算要求两者都与持久化
+submit intent 精确一致；缺失、冲突或不安全的标识一律 fail closed，且这些字段不授予写权限。
+pilot 前仍必须补齐券商专用、独立验证订单号关联的 partial-fill/cancel callback/poll 证据。
 
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态

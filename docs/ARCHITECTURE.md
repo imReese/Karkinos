@@ -655,9 +655,13 @@ and a distinct Ed25519 signature binds the exact full-fill evidence. One
 through `accepted` to `filled`, persists the clearance, and writes a terminal
 no-action reconciliation fact. It deliberately does not apply the production
 ledger. Partial totals and cross-import aggregation remain blocked. Because the
-generic CSV evidence contract does not carry a broker order identifier, the
-operator's signed event selection is still a manual mapping assumption; a real
-adapter must supply broker-order-linked callback/poll evidence before a pilot.
+canonical CSV v2 evidence contract accepts optional `broker_order_id` and
+`client_order_id`, controlled clearance requires both values to match the
+persisted submit intent exactly. Missing or conflicting identity evidence fails
+closed and cannot release the interlock. These identifiers remain imported
+facts, never broker-write authority; a real adapter must still supply
+broker-order-linked callback/poll partial-fill and cancel evidence before a
+pilot.
 
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must

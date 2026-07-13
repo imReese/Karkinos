@@ -225,8 +225,12 @@ def test_reconciliation_requires_review_for_submitted_controlled_broker_evidence
 ) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms)
-    _record_controlled_intent(db, order, status="submitted")
-    _import_matching_broker_trade(Path(db._path))
+    intent = _record_controlled_intent(db, order, status="submitted")
+    _import_matching_broker_trade(
+        Path(db._path),
+        broker_order_id=intent["broker_order_id"],
+        client_order_id=intent["client_order_id"],
+    )
 
     run = ExecutionReconciliationService(db=db).run_reconciliation(
         run_date="2026-07-02"
@@ -242,6 +246,40 @@ def test_reconciliation_requires_review_for_submitted_controlled_broker_evidence
         is True
     )
     assert db.get_oms_order_sync(order["order_id"])["status"] == "submitted"
+    assert db.get_ledger_entries_sync() == []
+
+
+def test_reconciliation_blocks_conflicting_controlled_order_identity(tmp_path) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms)
+    intent = _record_controlled_intent(db, order, status="submitted")
+    _import_broker_trade(
+        Path(db._path),
+        event_id="broker-buy-conflicting-client-id",
+        quantity=100,
+        broker_order_id=intent["broker_order_id"],
+        client_order_id="KARK-conflicting-client-order",
+    )
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    payload = json.loads(item["payload_json"])
+    summary = payload["controlled_submission_evidence_summary"]
+    assert run["status"] == "open_items"
+    assert item["item_status"] == "controlled_submission_broker_identity_conflict"
+    assert item["suggested_action"] == (
+        "enable_kill_switch_and_review_controlled_submission"
+    )
+    assert "controlled_submission_order_identity_conflict" in (
+        payload["mismatch_reasons"]
+    )
+    assert summary["broker_order_identity_match_count"] == 0
+    assert summary["broker_order_identity_conflict_count"] == 1
+    assert summary["new_submissions_blocked"] is True
+    assert db.list_fills_sync(order_id=order["order_id"]) == []
     assert db.get_ledger_entries_sync() == []
 
 
@@ -665,8 +703,19 @@ def test_reconciliation_flags_broker_evidence_quantity_mismatch(tmp_path) -> Non
     )
 
 
-def _import_matching_broker_trade(db_path: Path) -> None:
-    _import_broker_trade(db_path, event_id="broker-buy-600519", quantity=100)
+def _import_matching_broker_trade(
+    db_path: Path,
+    *,
+    broker_order_id: str = "",
+    client_order_id: str = "",
+) -> None:
+    _import_broker_trade(
+        db_path,
+        event_id="broker-buy-600519",
+        quantity=100,
+        broker_order_id=broker_order_id,
+        client_order_id=client_order_id,
+    )
 
 
 def _import_broker_trade(
@@ -680,9 +729,11 @@ def _import_broker_trade(
     tax: str = "0.00",
     transfer_fee: str = "0.00",
     net_amount: str = "-168805.00",
+    broker_order_id: str = "",
+    client_order_id: str = "",
 ) -> None:
-    content = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee
-{event_id},trade_buy,2026-07-02T10:05:00+08:00,2026-07-03,600519,贵州茅台,stock,CNY,{quantity},{price},{gross_amount},{fee},{tax},{net_amount},100000.00,{quantity},1688.05,manual ticket match,{transfer_fee}
+    content = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,broker_order_id,client_order_id
+{event_id},trade_buy,2026-07-02T10:05:00+08:00,2026-07-03,600519,贵州茅台,stock,CNY,{quantity},{price},{gross_amount},{fee},{tax},{net_amount},100000.00,{quantity},1688.05,manual ticket match,{transfer_fee},{broker_order_id},{client_order_id}
 """.format(
         event_id=event_id,
         quantity=quantity,
@@ -692,6 +743,8 @@ def _import_broker_trade(
         tax=tax,
         transfer_fee=transfer_fee,
         net_amount=net_amount,
+        broker_order_id=broker_order_id,
+        client_order_id=client_order_id,
     )
     repository = BrokerEvidenceRepository(db_path)
     repository.save_preview(

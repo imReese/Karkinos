@@ -2103,6 +2103,8 @@ class AppDatabase:
                         )
                     if str(intent["broker_order_id"]) != requested["broker_order_id"]:
                         blockers.append("controlled_submission_broker_order_changed")
+                    if str(intent["client_order_id"]) != requested["client_order_id"]:
+                        blockers.append("controlled_submission_client_order_changed")
                 if order is None or str(order["status"]) != "submitted":
                     blockers.append("controlled_submission_oms_not_submitted")
                 if latest_item is None:
@@ -2214,6 +2216,8 @@ class AppDatabase:
                         "fee": fill.get("fee"),
                         "tax": fill.get("tax"),
                         "transfer_fee": fill.get("transfer_fee"),
+                        "broker_order_id": requested["broker_order_id"],
+                        "client_order_id": requested["client_order_id"],
                     }
                     for field, expected in expected_values.items():
                         if str(broker_event[field] or "") != str(expected or ""):
@@ -2413,7 +2417,7 @@ class AppDatabase:
                     "execution_mode": "controlled_live",
                     "controlled_submission_evidence_summary": {
                         "schema_version": (
-                            "karkinos.controlled_submission_reconciliation.v1"
+                            "karkinos.controlled_submission_reconciliation.v2"
                         ),
                         "submit_intent_id": requested["submit_intent_id"],
                         "clearance_id": requested["clearance_id"],

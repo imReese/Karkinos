@@ -250,10 +250,12 @@ one validated import, fresh clear Account Truth no older than 120 seconds, and
 a separate operator signature. A single transaction records the linked fills,
 advances OMS to `filled`, persists terminal reconciliation, and releases the
 interlock without applying the production ledger. Partial totals and cross-
-import aggregation remain blocked. The generic CSV format has no broker order
-id, so this remains a signed manual evidence mapping; production readiness
-still requires a reviewed broker adapter with order-linked partial-fill/cancel
-callback or poll evidence.
+import aggregation remain blocked. Canonical CSV v2 may retain optional broker
+and client order ids, but clearance requires both to match the persisted submit
+intent exactly; missing, conflicting, or unsafe identity evidence fails closed.
+The identifiers do not grant write authority. Production readiness still
+requires a reviewed broker adapter with independently verified, order-linked
+partial-fill/cancel callback or poll evidence.
 
 ### Stage 3 — Session-Bounded Controlled Execution
 

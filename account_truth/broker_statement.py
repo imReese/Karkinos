@@ -9,13 +9,14 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from io import StringIO
 from typing import Literal
 
-BROKER_STATEMENT_SCHEMA_VERSION = "karkinos.broker_statement.v1"
+BROKER_STATEMENT_SCHEMA_VERSION = "karkinos.broker_statement.v2"
 BROKER_STATEMENT_SOURCE_TYPE = "canonical_broker_statement_csv"
 
 BROKER_STATEMENT_EVENT_TYPES = (
@@ -53,12 +54,17 @@ BROKER_STATEMENT_REQUIRED_COLUMNS = (
 BROKER_STATEMENT_OPTIONAL_COLUMNS = (
     "transfer_fee",
     "cost_basis_method",
+    "broker_order_id",
+    "client_order_id",
 )
 
 BROKER_STATEMENT_LIMITATIONS = [
     "Import preview is broker evidence only; it does not mutate the production ledger.",
+    "Order identifiers are evidence fields only; they do not authorize broker writes.",
     "Synthetic examples are safe for tests and docs, but real broker exports must stay local.",
 ]
+
+_ORDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 _DECIMAL_COLUMNS = {
     "quantity",
@@ -116,6 +122,8 @@ class BrokerEvidenceEvent:
     duplicate_of_row_number: int | None = None
     transfer_fee: Decimal = Decimal("0")
     cost_basis_method: str = ""
+    broker_order_id: str = ""
+    client_order_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -224,6 +232,8 @@ def parse_broker_statement_csv(
                 duplicate_of_row_number=duplicate_of,
                 transfer_fee=_optional_decimal(row["transfer_fee"]) or Decimal("0"),
                 cost_basis_method=row["cost_basis_method"],
+                broker_order_id=row["broker_order_id"],
+                client_order_id=row["client_order_id"],
             )
         )
 
@@ -283,6 +293,18 @@ def _validate_row(
                 message=f"symbol is required for {event_type}",
             )
         )
+
+    for column in ("broker_order_id", "client_order_id"):
+        if row[column] and not _ORDER_ID_PATTERN.fullmatch(row[column]):
+            errors.append(
+                BrokerStatementValidationError(
+                    row_number=row_number,
+                    code="invalid_order_identity",
+                    message=(
+                        f"{column} must be a safe 1-128 character broker identity"
+                    ),
+                )
+            )
 
     for column in _DECIMAL_COLUMNS:
         if row[column] and _optional_decimal(row[column]) is None:
