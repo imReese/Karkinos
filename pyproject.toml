@@ -53,6 +53,7 @@ markers = [
     "unit: fast deterministic unit and service-level tests",
     "api_contract: API, persistence, and route contract tests",
     "acceptance: release-review and goal acceptance tests",
+    "trading_safety: fail-closed trading authority and financial-integrity tests",
     "slow: deterministic tests that intentionally exercise timeout or wait behavior",
 ]
 

@@ -22,6 +22,9 @@ def pytest_collection_modifyitems(config, items) -> None:
         else:
             item.add_marker(pytest.mark.unit)
 
+        if _is_trading_safety_test(path):
+            item.add_marker(pytest.mark.trading_safety)
+
         if _is_slow_test(path, name):
             item.add_marker(pytest.mark.slow)
 
@@ -65,6 +68,22 @@ def _is_slow_test(path: str, name: str) -> bool:
         "test_poll_all_times_out_slow_symbols_without_blocking_fast_quotes",
         "test_tushare_default_realtime_timeout_waits_for_slow_valid_quote",
         "test_scheduler_waits_between_poll_iterations",
+    }
+
+
+def _is_trading_safety_test(path: str) -> bool:
+    filename = path.rsplit("/", 1)[-1]
+    return filename in {
+        "test_account_truth_gate.py",
+        "test_automation_control.py",
+        "test_controlled_broker_submission.py",
+        "test_controlled_session_automatic_pause.py",
+        "test_controlled_submission_reconciliation_clearance.py",
+        "test_execution_batch_reconciliation.py",
+        "test_oms_service.py",
+        "test_paper_shadow_run_service.py",
+        "test_strategy_broker_boundary.py",
+        "test_trading_controls.py",
     }
 
 

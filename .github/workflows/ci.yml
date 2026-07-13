@@ -14,6 +14,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  python-quality:
+    name: Python changed-file quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Install quality dependencies
+        run: uv sync --extra dev --frozen
+
+      - name: Check changed Python files
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          mapfile -t python_files < <(
+            git diff --name-only --diff-filter=ACMR "${BASE_SHA}" "${GITHUB_SHA}" -- '*.py'
+          )
+          if (( ${#python_files[@]} == 0 )); then
+            echo "No changed Python files to check."
+            exit 0
+          fi
+          uv run black --check "${python_files[@]}"
+          uv run isort --check-only "${python_files[@]}"
+
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
@@ -48,6 +87,37 @@ jobs:
         with:
           name: backend-test-evidence
           path: reports/ci/backend-junit.xml
+          if-no-files-found: error
+
+  trading-safety:
+    name: Trading safety invariants
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Install backend dependencies
+        run: uv sync --extra server --extra dev --frozen
+
+      - name: Run fail-closed trading safety tests
+        run: |
+          mkdir -p reports/ci
+          uv run python -m pytest -m trading_safety \
+            --junitxml=reports/ci/trading-safety-junit.xml
+
+      - name: Upload trading safety evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-safety-evidence
+          path: reports/ci/trading-safety-junit.xml
           if-no-files-found: error
 
   frontend:
@@ -87,7 +157,7 @@ jobs:
 
   acceptance-evidence:
     name: Acceptance evidence
-    needs: [backend, frontend]
+    needs: [backend, frontend, trading-safety]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
