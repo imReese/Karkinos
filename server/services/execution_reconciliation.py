@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -73,9 +74,27 @@ class ExecutionReconciliationService:
             )
             else None
         )
+        controlled_clearance = (
+            self._db.get_controlled_submission_reconciliation_clearance_for_intent_sync(
+                str(controlled_intent.get("submit_intent_id") or "")
+            )
+            if controlled_intent
+            and hasattr(
+                self._db,
+                "get_controlled_submission_reconciliation_clearance_for_intent_sync",
+            )
+            else None
+        )
+        controlled_fills = (
+            self._db.list_fills_sync(order_id=str(order["order_id"]), limit=1000)
+            if controlled_clearance is not None
+            else []
+        )
         controlled = _controlled_submission_reconciliation(
             order,
             controlled_intent,
+            clearance=controlled_clearance,
+            fills=controlled_fills,
             matching_broker_events=matching_broker_events,
             mismatched_broker_events=mismatched_broker_events,
         )
@@ -190,31 +209,31 @@ class ExecutionReconciliationService:
 def _matching_broker_events(
     order: dict[str, Any], broker_events: list[Any]
 ) -> list[Any]:
-    expected_type = (
-        "trade_buy" if str(order.get("side")).lower() == "buy" else "trade_sell"
-    )
-    symbol = str(order.get("symbol") or "")
     quantity = _decimal(order.get("quantity"))
     if quantity is None:
         return []
-    matches: list[Any] = []
-    for event in broker_events:
-        if getattr(event, "event_type", "") != expected_type:
-            continue
-        if str(getattr(event, "symbol", "")) != symbol:
-            continue
-        event_quantity = _decimal(getattr(event, "quantity", None))
-        if event_quantity is None:
-            continue
-        if abs(event_quantity) == abs(quantity):
-            matches.append(event)
-    return matches
+    candidates = _candidate_broker_events(order, broker_events)
+    import_run_ids = {
+        str(getattr(event, "import_run_id", "") or "") for event in candidates
+    }
+    candidate_quantity = sum(
+        (
+            abs(_decimal(getattr(event, "quantity", None)) or Decimal("0"))
+            for event in candidates
+        ),
+        Decimal("0"),
+    )
+    if candidates and len(import_run_ids) == 1 and candidate_quantity == abs(quantity):
+        return candidates
+    return []
 
 
 def _controlled_submission_reconciliation(
     order: dict[str, Any],
     intent: dict[str, Any] | None,
     *,
+    clearance: dict[str, Any] | None,
+    fills: list[dict[str, Any]],
     matching_broker_events: list[Any],
     mismatched_broker_events: list[Any],
 ) -> dict[str, Any]:
@@ -229,6 +248,90 @@ def _controlled_submission_reconciliation(
         "rejected": "rejected",
     }.get(intent_status)
     mismatch_reasons: list[str] = []
+    if isinstance(clearance, dict) and clearance:
+        controlled_fills = [
+            fill
+            for fill in fills
+            if str(fill.get("source") or "") == "controlled_submission_clearance"
+            and str(_json_object(fill.get("metadata_json")).get("clearance_id") or "")
+            == str(clearance.get("clearance_id") or "")
+        ]
+        cleared_quantity = sum(
+            (
+                abs(_decimal(fill.get("fill_quantity")) or Decimal("0"))
+                for fill in controlled_fills
+            ),
+            Decimal("0"),
+        )
+        expected_quantity = abs(_decimal(order.get("quantity")) or Decimal("0"))
+        clearance_blockers: list[str] = []
+        if str(clearance.get("status") or "") != "cleared":
+            clearance_blockers.append("controlled_submission_clearance_status_invalid")
+        if str(clearance.get("submit_intent_id") or "") != str(
+            intent.get("submit_intent_id") or ""
+        ):
+            clearance_blockers.append("controlled_submission_clearance_intent_mismatch")
+        if oms_status != "filled":
+            clearance_blockers.append("controlled_submission_clearance_oms_not_filled")
+        if len(controlled_fills) != int(clearance.get("fill_count") or 0):
+            clearance_blockers.append(
+                "controlled_submission_clearance_fill_count_changed"
+            )
+        if cleared_quantity <= 0 or cleared_quantity != expected_quantity:
+            clearance_blockers.append(
+                "controlled_submission_clearance_fill_quantity_changed"
+            )
+        if clearance_blockers:
+            return {
+                "item_status": "controlled_submission_clearance_evidence_mismatch",
+                "suggested_action": (
+                    "enable_kill_switch_and_review_controlled_submission"
+                ),
+                "detail": (
+                    "Persisted controlled-submission clearance no longer matches "
+                    "OMS or real-fill evidence; keep new submissions blocked."
+                ),
+                "reported_broker_events": matching_broker_events
+                or mismatched_broker_events,
+                "mismatch_reasons": clearance_blockers,
+                "evidence_summary": {
+                    "schema_version": (
+                        "karkinos.controlled_submission_reconciliation.v1"
+                    ),
+                    "submit_intent_id": str(intent.get("submit_intent_id") or ""),
+                    "clearance_id": str(clearance.get("clearance_id") or ""),
+                    "intent_status": intent_status,
+                    "oms_status": oms_status,
+                    "new_submissions_blocked": True,
+                    "recovery_resubmission_enabled": False,
+                    "does_not_mutate_production_ledger": True,
+                },
+            }
+        return {
+            "item_status": "controlled_submission_reconciliation_cleared",
+            "suggested_action": "no_action",
+            "detail": (
+                "Signed controlled-submission reconciliation clearance and exact "
+                "real-fill evidence remain current; production ledger is separate."
+            ),
+            "reported_broker_events": matching_broker_events,
+            "mismatch_reasons": [],
+            "evidence_summary": {
+                "schema_version": "karkinos.controlled_submission_reconciliation.v1",
+                "submit_intent_id": str(intent.get("submit_intent_id") or ""),
+                "clearance_id": str(clearance.get("clearance_id") or ""),
+                "clearance_reconciliation_run_id": str(
+                    clearance.get("clearance_reconciliation_run_id") or ""
+                ),
+                "intent_status": intent_status,
+                "oms_status": oms_status,
+                "new_submissions_blocked": False,
+                "recovery_resubmission_enabled": False,
+                "review_required_before_ledger_update": False,
+                "production_ledger_mutated": False,
+                "does_not_mutate_production_ledger": True,
+            },
+        }
     if expected_oms_status != oms_status:
         mismatch_reasons.append("controlled_submission_oms_status_mismatch")
     if str(intent.get("order_id") or "") != str(order.get("order_id") or ""):
@@ -328,6 +431,12 @@ def _controlled_submission_reconciliation(
             "review_required_before_ledger_update": True,
             "does_not_mutate_oms": True,
             "does_not_mutate_production_ledger": True,
+            "broker_event_evidence": [
+                _broker_event_evidence(event) for event in reported_broker_events
+            ],
+            "broker_evidence_fingerprint": _fingerprint(
+                [_broker_event_evidence(event) for event in reported_broker_events]
+            ),
         },
     }
 
@@ -336,25 +445,86 @@ def _mismatched_broker_events(
     order: dict[str, Any],
     broker_events: list[Any],
 ) -> list[Any]:
+    quantity = _decimal(order.get("quantity"))
+    if quantity is None:
+        return []
+    candidates = _candidate_broker_events(order, broker_events)
+    import_run_ids = {
+        str(getattr(event, "import_run_id", "") or "") for event in candidates
+    }
+    candidate_quantity = sum(
+        (
+            abs(_decimal(getattr(event, "quantity", None)) or Decimal("0"))
+            for event in candidates
+        ),
+        Decimal("0"),
+    )
+    if candidates and (len(import_run_ids) != 1 or candidate_quantity != abs(quantity)):
+        return candidates
+    return []
+
+
+def _candidate_broker_events(
+    order: dict[str, Any],
+    broker_events: list[Any],
+) -> list[Any]:
     expected_type = (
         "trade_buy" if str(order.get("side")).lower() == "buy" else "trade_sell"
     )
     symbol = str(order.get("symbol") or "")
-    quantity = _decimal(order.get("quantity"))
-    if quantity is None:
-        return []
-    mismatches: list[Any] = []
+    candidates: list[Any] = []
     for event in broker_events:
         if getattr(event, "event_type", "") != expected_type:
             continue
         if str(getattr(event, "symbol", "")) != symbol:
             continue
         event_quantity = _decimal(getattr(event, "quantity", None))
-        if event_quantity is None:
+        if event_quantity is None or event_quantity == 0:
             continue
-        if abs(event_quantity) != abs(quantity):
-            mismatches.append(event)
-    return mismatches
+        candidates.append(event)
+    return candidates
+
+
+def _broker_event_evidence(event: Any) -> dict[str, Any]:
+    return {
+        "import_run_id": str(getattr(event, "import_run_id", "") or ""),
+        "row_fingerprint": str(getattr(event, "row_fingerprint", "") or ""),
+        "event_id": str(getattr(event, "event_id", "") or ""),
+        "event_type": str(getattr(event, "event_type", "") or ""),
+        "occurred_at": str(getattr(event, "occurred_at", "") or ""),
+        "symbol": str(getattr(event, "symbol", "") or ""),
+        "asset_class": str(getattr(event, "asset_class", "") or ""),
+        "currency": str(getattr(event, "currency", "") or ""),
+        "quantity": str(getattr(event, "quantity", "") or ""),
+        "price": str(getattr(event, "price", "") or ""),
+        "gross_amount": str(getattr(event, "gross_amount", "") or ""),
+        "fee": str(getattr(event, "fee", "") or ""),
+        "tax": str(getattr(event, "tax", "") or ""),
+        "transfer_fee": str(getattr(event, "transfer_fee", "") or ""),
+        "net_amount": str(getattr(event, "net_amount", "") or ""),
+    }
+
+
+def _fingerprint(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _broker_trade_cost_summary(events: list[Any]) -> dict[str, Any]:

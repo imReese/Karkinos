@@ -22,6 +22,7 @@ from analytics.acceptance_audit import (
     build_controlled_broker_bridge_foundation_acceptance_audit,
     build_controlled_broker_submission_acceptance_audit,
     build_controlled_submission_interlock_acceptance_audit,
+    build_controlled_submission_reconciliation_clearance_acceptance_audit,
     build_controlled_session_automatic_pause_acceptance_audit,
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
@@ -160,6 +161,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "controlled_submission_interlock": (
         "Controlled Submission Interlock & Visibility acceptance audit",
         build_controlled_submission_interlock_acceptance_audit,
+    ),
+    "controlled_submission_reconciliation_clearance": (
+        "Signed Full-Fill Reconciliation Clearance acceptance audit",
+        build_controlled_submission_reconciliation_clearance_acceptance_audit,
     ),
     "capital_scaling_review_foundation": (
         "Capital Scaling Review Foundation acceptance audit",

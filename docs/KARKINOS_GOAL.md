@@ -181,6 +181,13 @@ Active planning target:
   alerts, and Operations expose the sanitized recovery task. Only a definitive
   rejection clears the interlock today; broker evidence cannot self-clear it,
   infer a fill, write the ledger, or authorize another order.
+* Stage 3.14 permits only an independently signed exact-full-fill clearance:
+  one validated broker import and fresh clear Account Truth must match the full
+  OMS quantity, then one atomic transaction records linked real fills, advances
+  OMS to `filled`, persists terminal reconciliation, and releases the
+  interlock. Partial totals and production-ledger mutation remain blocked, and
+  generic CSV evidence still requires explicit human mapping until a
+  broker-order-linked adapter exists.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still
