@@ -21,6 +21,14 @@ trading system**. The owner may authorize increasingly large execution
 envelopes only after evidence supports the change, while retaining the ability
 to inspect, pause, reduce, expire, or revoke that authority at any time.
 
+Its long-term research experience is **AI-native but evidence-governed**. AI
+roles may help decompose questions, inspect canonical projections, debate
+claims, draft reports, and preserve reviewed research memory. Provider, model,
+role, workflow, and tool identities remain separate so no single model vendor
+becomes a platform dependency. AI output is a cited research artifact, never
+an account fact, risk decision, capital authorization, OMS transition, or
+broker instruction.
+
 ## Product Boundaries
 
 Karkinos is a personal finance app for research, portfolio evidence, and
@@ -38,6 +46,16 @@ The product boundary is:
   authoritative, one canonical calculation owns each financial concept,
   cross-surface totals must reconcile, and missing or unpublished evidence
   fails closed instead of being replaced by a plausible value.
+* AI research context must bind immutable evidence references, a valuation
+  snapshot, and a ledger cutoff. Runtime provider responses and model memory
+  are not authoritative financial inputs.
+* AI tools are deny-by-default and read-only. They may project persisted
+  portfolio, account-truth, operations, research, and paper/shadow evidence;
+  they may not expose OMS, ledger mutation, risk decisions, kill switch,
+  capital authorization, broker submission, cancellation, or provider refresh.
+* AI trade-plan output is an explicitly non-executable draft. It cannot enter
+  the canonical Daily Trading Plan without a separate, future human-review
+  handoff and all existing evidence, risk, account-truth, and authority gates.
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.
@@ -58,6 +76,8 @@ Karkinos should support the full investment operating loop:
 
 ```text
 research idea
+→ evidence-bound AI research task / multi-role analysis (optional)
+→ cited claim, debate, report, and reviewed memory artifacts
 → reproducible backtest
 → after-cost validation
 → account truth / data reconciliation
@@ -95,6 +115,14 @@ Latest completed milestones:
   production-ledger mutation, or an auto pilot.
 
 Active planning target:
+
+* **AI-native Phase 1 — Architecture and Runtime Foundation** establishes
+  provider/model/agent-role decoupling, stateful evidence-bound workflows,
+  deterministic orchestration, fail-closed tool permissions, append-oriented
+  audit storage, and a local fixture provider. It registers no production AI
+  provider, calls no external model, exposes no Web/API workflow, and grants no
+  trading authority. Later phases may add explicit read-only projection
+  adapters and human-started research tasks only after separate review.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

@@ -52,6 +52,21 @@ market data and account facts
 Each step produces evidence. Later steps consume that evidence; they do not
 overwrite it or silently bypass it.
 
+An optional AI-native research loop may operate alongside the canonical flow:
+
+```text
+human research question
+-> evidence-bound context snapshot
+-> deterministic multi-role workflow
+-> permission-checked read-only tools
+-> cited claims / debate / report / trade-plan draft
+-> explicit review
+-> versioned memory artifact
+```
+
+This loop may explain or propose; it cannot promote its own output into account
+truth, risk decisions, execution authority, OMS state, or broker actions.
+
 ## Layered Architecture
 
 ```text
@@ -80,6 +95,11 @@ The service layer owns workflow authority. Strategy code can propose signals
 and candidate actions, but it cannot submit broker orders. Broker connectors
 can contribute evidence, but they cannot mutate production ledger state without
 review and reconciliation.
+
+The AI research runtime is an isolated application-side boundary. It can later
+receive explicit adapters to the canonical read projections, but it is not
+registered as a strategy runtime, scheduler, OMS service, gateway, or
+application-startup dependency.
 
 ## Financial Data Integrity and Valuation
 
@@ -200,6 +220,67 @@ Trading-related changes cover the relevant cases below:
 * deterministic replay from a frozen snapshot and ledger cutoff.
 
 ## Current Core Flows
+
+### AI-Native Research Runtime Foundation
+
+The Phase 1 runtime lives under `server/ai_runtime` and deliberately has no
+route registration or application-lifecycle hook. Its contract separates:
+
+* `ProviderRegistration`: provider identity, adapter kind, capabilities, and
+  disabled/enabled registration state without credentials;
+* `ModelRegistration`: model identity and purpose bound to one provider;
+* `AgentRole`: research purpose, allowed artifact kinds, and explicit tool
+  allowlist independent of any model;
+* `EvidenceBoundContextSnapshot`: immutable account alias,
+  `valuation_snapshot_id`, ledger cutoff/fingerprint, and typed persisted
+  evidence references;
+* `WorkflowDefinition` / `ResearchWorkflow`: ordered stages, durable status,
+  idempotency key, current checkpoint, partial/failure state, and exact context
+  fingerprint;
+* `AgentRun` and `ToolCall`: provider/model/role identity, request and response
+  fingerprints, permission outcome, and failure evidence;
+* `Claim`, `Debate`, `Report`, `TradePlanDraft`, `Review`, and
+  `MemoryArtifact`: typed, evidence-citing research artifacts with no authority
+  effect.
+
+The deterministic orchestrator, not a provider, owns stage order, resume
+checkpoints, idempotency, terminal status, permission checks, artifact
+validation, and audit events. A model may request a tool; only the local
+permission registry can allow it, and only an injected executor can run it.
+Unknown tools and authority namespaces fail closed. Persisted-read tool results
+must return an evidence id already present in the frozen context and explicitly
+assert `persisted_facts_only=true` before they can enter the next provider turn.
+
+Phase 1 ships only `DeterministicFixtureProvider`. It selects immutable local
+responses by workflow stage and turn, performs no network I/O, accepts no API
+key, and is enabled only by explicit test/runtime registration. No DeepSeek,
+OpenAI, or other vendor is canonical or registered by default.
+
+The `AiAuditStore` creates and writes only namespaced tables:
+
+```text
+ai_provider_registrations / ai_model_registrations / ai_agent_roles
+ai_context_snapshots / ai_workflows / ai_agent_runs
+ai_tool_calls / ai_artifacts / ai_workflow_events
+```
+
+Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,
+and artifacts use content fingerprints and uniqueness constraints so restart,
+duplicate requests, partial stages, and replay are deterministic. Evidence
+identity drift blocks before provider invocation. The store exposes no method
+for production ledger, OMS, risk decision, kill switch, capital authorization,
+broker gateway, submission, or cancellation state.
+
+The planned integration direction remains one-way and read-only:
+
+```text
+canonical persisted projection or evidence
+-> reviewed read adapter
+-> evidence reference in frozen AI context
+-> research artifact
+
+AI artifact -X-> canonical financial fact / risk decision / execution authority
+```
 
 ### Research and Strategy Runtime
 
@@ -322,6 +403,7 @@ mutation remains explicit and auditable.
 | --- | --- | --- |
 | Strategy | Emit signals, candidates, warnings, explanations | Submit broker orders or bypass gates |
 | Backtest/research | Produce reproducible evidence and assumptions | Claim deployability without OOS/after-cost/risk review |
+| AI research runtime | Read explicitly bound persisted evidence; create cited research artifacts and non-executable drafts | Refresh providers, mutate financial/authority state, issue risk decisions, or call OMS/broker actions |
 | Daily plan | Create order-intent previews and blockers | Create broker orders or ledger entries |
 | Risk gate | Pass/block with reasons and policy snapshots | Be optional for actionable candidates |
 | Paper/shadow | Simulate order/fill outcomes and divergence | Mutate production cash, positions, or ledger |
