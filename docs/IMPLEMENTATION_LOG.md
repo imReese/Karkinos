@@ -6,6 +6,21 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: CI now has an independent fail-closed trading-safety gate and
+  incremental Python formatting/import checks. The `trading_safety` marker
+  covers Account Truth gating, manual/default automation controls, paper/shadow
+  isolation, OMS transitions, session automatic pause, strategy/broker
+  separation, prior-batch reconciliation, one-shot controlled submission, and
+  signed reconciliation clearance. Assumption: historical Python formatting
+  debt is not rewritten alongside active main-thread financial changes, so
+  Black/isort enforcement applies to changed Python files and prevents new
+  drift while preserving the existing worktree. Validation: `.venv/bin/python
+  -m pytest -m trading_safety`; `.venv/bin/black --check` and
+  `.venv/bin/isort --check-only` on the phase's changed Python files. Risk
+  impact: tests only tighten verification; no production authority, account
+  fact, risk, OMS, reconciliation, broker, ledger, or kill-switch behavior is
+  changed.
+
 - 2026-07-13: CI acceptance evidence is now verified instead of trusting only
   static completion flags. The strict export checks that all 352 declared
   evidence paths stay inside the repository and exist, rejects validation
