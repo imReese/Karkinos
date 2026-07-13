@@ -6,6 +6,22 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: CI acceptance evidence is now verified instead of trusting only
+  static completion flags. The strict export checks that all 352 declared
+  evidence paths stay inside the repository and exist, rejects validation
+  commands outside the deterministic allowlist, binds passing backend and
+  frontend JUnit reports by SHA-256, and uploads the resulting JSON artifact.
+  Assumption: one full backend suite and one full frontend suite are the
+  authoritative CI executions; individual manifest commands remain human-
+  readable reproduction recipes and are structurally validated rather than
+  redundantly executed hundreds of times. Validation: `.venv/bin/python -m
+  pytest tests/test_acceptance_audit_verification.py
+  tests/test_acceptance_audit_cli.py tests/test_ci_workflow.py`; `npm --prefix
+  web run test -- --reporter=junit`; strict structural export for all audits.
+  Risk impact: LOW for trading authority because this changes only CI/reporting
+  evidence. It does not alter account facts, risk gates, OMS, broker submission,
+  reconciliation, kill switch, ledger state, or manual-confirmation defaults.
+
 - 2026-07-13: Stable control-plane identifiers no longer encode roadmap stage
   numbers. Per-order broker-soak promotion bindings, controlled-session bridge
   blockers, acceptance criterion keys, and the capital-authorization policy

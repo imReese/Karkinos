@@ -32,9 +32,6 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --extra server --extra dev --frozen
 
-      - name: Run acceptance audit report
-        run: uv run python scripts/export_acceptance_audit.py --audit all
-
       - name: Run server route tests
         run: uv run python -m pytest tests/test_server_routes.py
 
@@ -42,7 +39,16 @@ jobs:
         run: uv run python -m pytest tests/test_profit_discipline_smoke.py
 
       - name: Run backend test suite
-        run: uv run python -m pytest
+        run: |
+          mkdir -p reports/ci
+          uv run python -m pytest --junitxml=reports/ci/backend-junit.xml
+
+      - name: Upload backend test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-evidence
+          path: reports/ci/backend-junit.xml
+          if-no-files-found: error
 
   frontend:
     name: Frontend checks
@@ -68,7 +74,63 @@ jobs:
         run: npm --prefix web run build
 
       - name: Run frontend tests
-        run: npm --prefix web run test
+        run: |
+          mkdir -p reports/ci
+          npm --prefix web run test -- --reporter=junit --outputFile=../reports/ci/frontend-junit.xml
+
+      - name: Upload frontend test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-evidence
+          path: reports/ci/frontend-junit.xml
+          if-no-files-found: error
+
+  acceptance-evidence:
+    name: Acceptance evidence
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Install acceptance dependencies
+        run: uv sync --extra server --extra dev --frozen
+
+      - name: Download backend test evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-test-evidence
+          path: reports/ci
+
+      - name: Download frontend test evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-test-evidence
+          path: reports/ci
+
+      - name: Run acceptance audit report
+        run: |
+          uv run python scripts/export_acceptance_audit.py --audit all \
+            --verify-evidence \
+            --backend-junit reports/ci/backend-junit.xml \
+            --frontend-junit reports/ci/frontend-junit.xml \
+            --pretty \
+            --output reports/ci/acceptance-audit.json
+
+      - name: Upload acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-evidence
+          path: reports/ci/acceptance-audit.json
+          if-no-files-found: error
 
   secret-scan:
     name: Secret scan

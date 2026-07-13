@@ -597,7 +597,12 @@ uv run python scripts/export_acceptance_audit.py --audit all --output reports/ac
 ```
 
 The command writes to stdout by default and only creates a file when `--output`
-is provided.
+is provided. Add `--verify-evidence` to fail closed when an evidence path is
+missing, escapes the repository, or declares an unsupported validation command.
+CI additionally passes the completed backend and frontend JUnit reports through
+`--backend-junit` and `--frontend-junit`; the exported verification section
+records their counts and SHA-256 fingerprints instead of treating static
+completion flags as test execution proof.
 
 Backend tests are grouped with pytest markers so local runs can stay focused:
 
