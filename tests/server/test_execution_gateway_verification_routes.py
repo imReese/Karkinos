@@ -12,6 +12,7 @@ from server.services.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     ExecutionGatewayVerificationRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 
 class FakeExecutionGatewayVerificationService:
@@ -200,7 +201,7 @@ def test_execution_gateway_verification_service_uses_runtime_registry(
 
 def test_create_app_registers_execution_gateway_verification_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/execution-gateway-verification/status" in paths
     assert "/api/automation/execution-gateway-verification/preview" in paths

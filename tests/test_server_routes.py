@@ -16,6 +16,7 @@ from fastapi.routing import APIRoute
 
 from core.types import Symbol
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
+from tests.route_assertions import registered_app_routes
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +103,7 @@ def test_app_registers_acceptance_audit_route():
         isinstance(route, APIRoute)
         and route.path == "/api/acceptance-audits/{audit_key}"
         and "GET" in route.methods
-        for route in app.routes
+        for route in registered_app_routes(app)
     )
 
 
@@ -115,7 +116,7 @@ def test_app_registers_execution_reconciliation_route():
         isinstance(route, APIRoute)
         and route.path == "/api/execution-reconciliation/runs"
         and "POST" in route.methods
-        for route in app.routes
+        for route in registered_app_routes(app)
     )
 
 

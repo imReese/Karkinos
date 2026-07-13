@@ -16,6 +16,7 @@ from server.routes.capital_authorization import create_router
 from server.services.capital_authorization_audit import (
     CAPITAL_AUTHORIZATION_EVENT_TYPE,
 )
+from tests.route_assertions import registered_app_routes
 
 
 def _client_for_db(monkeypatch, db: AppDatabase, *, config=None) -> TestClient:
@@ -350,7 +351,7 @@ def test_operator_approval_routes_reject_credentials_and_bad_signature(
 
 def test_create_app_registers_capital_authority_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/capital-authority/status" in paths
     assert "/api/automation/capital-authority/preview" in paths

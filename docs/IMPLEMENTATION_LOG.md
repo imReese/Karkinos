@@ -6,6 +6,40 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: CI now enforces an 85% statement-coverage floor across all
+  production Python packages, uploads `coverage.xml`, and runs independent
+  production dependency audits for the locked Python/server environment and npm
+  runtime dependencies. The measured clean-HEAD baseline is 87% with 1,276
+  passing tests. An unused ECharts dependency with a published moderate XSS
+  advisory was removed so npm audit can fail on moderate-or-higher findings.
+  The Python audit also drove targeted lock upgrades for FastAPI, Starlette,
+  idna, lxml, urllib3, and soupsieve; FastAPI's new nested included-router
+  representation required test-only route introspection compatibility, while
+  the HTTP contracts and production route implementations remained unchanged.
+  Dependabot monitors uv/Python, npm, GitHub Actions, and Docker base images
+  weekly without auto-merge.
+  Assumption: a two-point margin protects against meaningful regression while
+  leaving room for small platform-specific coverage differences; dependency
+  PRs remain subject to manual review and the full safety CI. Validation:
+  `pytest --cov` in a clean `git archive` workspace (`1,276 passed`, 86.68%);
+  `uv run --extra dev pip-audit` (`No known vulnerabilities found`); `npm
+  --prefix web audit --omit=dev --audit-level=moderate` (`0 vulnerabilities`);
+  GitHub `Production dependency audit`. Risk impact: verification and dependency
+  maintenance only. No account fact, risk gate, paper/shadow state, OMS,
+  reconciliation, broker gateway, kill switch, or execution authority changes;
+  no dependency update is automatically merged or deployed.
+
+- 2026-07-13: Two GitHub-hosted protections remain explicitly unavailable for
+  this private personal repository: the branch-protection/rulesets APIs reject
+  required-check configuration with HTTP 403 unless the account is upgraded or
+  the repository is made public, and the code-scanning API rejects CodeQL with
+  HTTP 403 because GitHub Code Security is not enabled. No failing or silently
+  skipped CodeQL workflow was added, and repository visibility was not changed.
+  When the hosting capability becomes available, the current named CI jobs can
+  be selected as required checks and CodeQL can be enabled for Python and
+  JavaScript/TypeScript. This is a hosting limitation, not a claim that static
+  analysis or branch enforcement is already active.
+
 - 2026-07-13: CI now runs a small Playwright browser-safety suite against the
   built React app served by the real FastAPI runtime. It opens Decision,
   Trading, and Account Truth review surfaces, verifies the kill-switch control
