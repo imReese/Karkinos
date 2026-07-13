@@ -91,15 +91,15 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
 | Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, Today's to-dos, and automatic paper/shadow handoff exist. | Continue requiring public explanations for every blocked/manual-ready state and keep order intents non-submitting. | v1.5-v1.6, ongoing |
 | Paper/shadow execution | Persisted daily runs include deterministic inputs, simulated order/fill state, fees/taxes, divergence, retry/idempotency, and review outcomes. | Keep evidence fresh and require divergence review before any later live-like authority. | v1.6.1, ongoing |
-| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Canonical broker evidence may retain broker/client order ids, and controlled clearance requires both to match exactly. | A real adapter still needs broker-order-linked partial-fill/cancel evidence; missing identities and partial totals cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.14, future L4 |
-| Broker execution gateway | Manual-ticket/read-only evidence remains available; one-shot submit/query is injectable, the cross-order interlock is atomic, and a separately signed clearance can consume one identity-linked validated full-fill import. Production registers no write adapter or release provider by default. | Implement and independently review one broker-specific adapter/release source, including callback/poll partial-fill/cancel aggregation and independently verified order identities, before an explicit pilot. | v1.7, Stage 3.12-3.14, future L4 |
+| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported QMT open/partial/cancel/full lifecycle facts without mutating OMS. | A real collector still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.15, future L4 |
+| Broker execution gateway | Manual-ticket/read-only evidence remains available; one-shot submit/query is injectable, the cross-order interlock is atomic, a separately signed clearance can consume one identity-linked validated full-fill import, and a local QMT normalized lifecycle evidence contract now fails closed on sequence/identity/quantity drift. Production registers no collector, write adapter, or release provider by default. | Implement and independently review a real QMT callback/poll collector plus the broker-specific write adapter/release source before an explicit pilot; the local JSON adapter is evidence plumbing, not production connectivity. | v1.7, Stage 3.12-3.15, future L4 |
 | Order ticket export | Copy-safe ticket export, operator forms, manual-execution preview/evidence, and explicit links to broker-statement import and execution reconciliation exist. | Validate operator ergonomics with local workflows before considering any broker-write capability. | v1.7, ongoing |
 | Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
 | Risk controls | Mandatory pre-trade risk gate, batch risk checks, cash buffer, concentration, T+1, data-quality, and kill-switch concepts exist. | Live-like execution must enforce global, strategy, account, and per-symbol controls with policy snapshots, escalation notes, and irreversible audit logs. | v1.5-v1.7 |
 | Scheduler and runbook | Operations summary, persistent scheduler records, deterministic rerun keys, input snapshots, errors, retries, limitations, and operator review state exist. | Continue operational soak and preserve idempotency as scheduled workflows expand. | v1.6, ongoing |
 | Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
 | Strategy promotion pipeline | Research/paper lifecycle, readiness evidence, audit-only pause/retire states, and default rejection of controlled-bridge pilot promotion exist. | A future L4/L5 pilot must add explicit enablement without allowing promotion evidence to authorize execution by itself. | v1.6-v1.7, future L4-L5 |
-| Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic budgets, token-authenticated sessions, live gates, pause/replacement, evidence-based scale review, a one-order submit boundary, a cross-order interlock, and signed full-fill clearance. | Supply a reviewed real adapter/release source, prove partial-fill/cancel/reconciliation and ledger runbooks, then run an explicitly approved bounded pilot. Initial exposure is deliberately constrained; later scale remains evidence-reviewed. | v1.8, Stage 3.12-3.14 |
+| Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic budgets, token-authenticated sessions, live gates, pause/replacement, evidence-based scale review, a one-order submit boundary, a cross-order interlock, signed full-fill clearance, and persisted QMT lifecycle evidence that can only narrow or re-block authority. | Supply a reviewed real collector/adapter/release source, prove partial-fill/cancel/reconciliation and ledger runbooks, then run an explicitly approved bounded pilot. Initial exposure is deliberately constrained; later scale remains evidence-reviewed. | v1.8, Stage 3.12-3.15 |
 | Unattended full-account automation | Not supported. | Keep permanently authorized, unsupervised execution outside the product target. | Non-goal |
 
 ## Controlled Automation Architecture
@@ -1857,6 +1857,49 @@ issue capital authority.
   and expose no strategy-direct or automatic submission, partial-fill
   clearance, broker cancel, automatic ledger sync, session widening, or capital
   increase action.
+
+### Stage 3.15 QMT Exact-Order Lifecycle Evidence Foundation
+
+* [x] A strict normalized `karkinos.qmt_order_lifecycle_export.v1` contract
+  accepts one `exact_order_lifecycle` snapshot for one exact broker/client order
+  identity. It records QMT as the provider but never contacts a QMT client.
+* [x] `scripts/import_qmt_order_lifecycle.py` is preview-only by default.
+  Persistence requires `--record` and the exact acknowledgement
+  `record_qmt_order_lifecycle_evidence_without_execution_authority`; source
+  paths and raw account ids are not persisted.
+* [x] The parser rejects credential/unknown fields, non-UTF-8 or oversized
+  input, stale/future/non-timezone timestamps, unsafe ids, invalid status or
+  fill/cancel arithmetic, duplicate trades, mismatched order identities,
+  inconsistent fill totals, and average-price drift.
+* [x] An independent SQLite repository stores sanitized account hashes,
+  source/file/evidence fingerprints, account/gateway sequence, exact normalized
+  order/fill facts, and explicit blockers. `BEGIN IMMEDIATE` makes retries
+  idempotent and fails closed on sequence regression/reuse, account identity
+  change, broker/client mapping drift, order-contract drift, and post-preview
+  mutation.
+* [x] Read resolution uses only persisted rows and does not create missing
+  tables. Execution reconciliation projects open, partial-fill, partial-fill-
+  cancel, zero-fill cancel, full-fill-awaiting-independent-evidence, blocked,
+  and identity-conflict states without changing OMS, fills, ledger, broker, or
+  capital authority.
+* [x] Lifecycle full-fill alone remains insufficient for clearance. The one-
+  import broker statement, fresh clear Account Truth, exact identities, and
+  separate Stage 3.14 operator signature remain required; partial/cancel rows
+  cannot clear or infer terminal OMS state.
+* [x] One canonical lifecycle-clearance predicate runs in reconciliation, the
+  signed-clearance `BEGIN IMMEDIATE` transaction, interlock preview, and the
+  next-order submit transaction. A pre-clearance contradiction rejects the
+  transaction; a later contradiction reopens reconciliation and makes the old
+  intent unresolved before another external call.
+* [x] Deterministic tests cover preview/record acknowledgement, privacy,
+  idempotency, sequence and identity drift, partial fill, partial cancel, full-
+  fill evidence separation, signed-clearance race rejection, post-clearance
+  re-blocking, next-order transaction rejection, and zero OMS/ledger/cancel
+  side effects.
+* [ ] Before a pilot, implement and independently review the actual QMT
+  callback/poll collector, prove reconnect/restart/duplicate/out-of-order
+  behavior in operational soak, bind its deployment identity and release
+  source, and retain default-unregistered broker-write authority.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

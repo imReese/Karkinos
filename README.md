@@ -421,6 +421,29 @@ fails closed. Those fields remain evidence, not write authority, and a broker-
 specific callback/poll adapter is still required before an explicitly approved
 pilot.
 
+Stage 3.15 adds a QMT-specific **local evidence adapter foundation**, not a live
+broker adapter. `scripts/import_qmt_order_lifecycle.py` previews one normalized
+`exact_order_lifecycle` JSON export by default; persistence requires explicit
+`--record` plus the acknowledgement
+`record_qmt_order_lifecycle_evidence_without_execution_authority`. The command
+never contacts QMT, and the database stores only sanitized account hashes,
+source/file/evidence fingerprints, monotonic source sequence, exact broker and
+client order ids, cumulative fill/cancel quantities, and linked fills. SQLite
+serialization rejects sequence regression, same-sequence conflicts, account or
+order-identity drift, and post-preview mutation. Execution reconciliation now
+surfaces persisted open, partial-fill, partial-fill-cancel, cancel, filled, or
+blocked lifecycle facts. Partial/cancel facts cannot mutate OMS or the ledger
+and cannot clear the interlock; lifecycle full-fill evidence still needs the
+independent broker statement, fresh Account Truth, and Stage 3.14 signature.
+The same canonical check runs inside signed clearance and the next-order submit
+transaction, so a newly persisted contradictory fact rejects clearance or
+re-blocks an older clearance. Production still registers no collector, write
+adapter, release provider, cancel path, or pilot authority. A separately
+reviewed QMT callback/poll collector and operational soak remain required.
+
+Operator contract and normalized JSON example:
+[docs/qmt-order-lifecycle-import.zh.md](docs/qmt-order-lifecycle-import.zh.md).
+
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The
 batch-evidence API binds an exact non-paper terminal OMS order set to one
 persisted reconciliation run, including current order/transition/fill/item/run

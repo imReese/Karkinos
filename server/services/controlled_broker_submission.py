@@ -667,6 +667,10 @@ class ControlledBrokerSubmissionService:
                 "submit_intent_id": str(row.get("submit_intent_id") or ""),
                 "order_id": str(row.get("order_id") or ""),
                 "status": str(row.get("status") or "unknown"),
+                "interlock_reason": str(
+                    row.get("interlock_reason") or "unreconciled_submission"
+                ),
+                "lifecycle_blocker": str(row.get("lifecycle_blocker") or ""),
             }
             for row in rows
             if str(row.get("order_id") or "") != exclude_order_id

@@ -123,6 +123,38 @@ roadmap promises.
   removed or relaxed, renamed blockers remain fail-closed, and no broker/OMS/
   ledger/capital authority is added.
 
+- 2026-07-13: Stage 3.15 adds a QMT exact-order lifecycle evidence foundation
+  without registering a broker connection. Assumptions: an external read-only
+  collector, not Karkinos, normalizes one QMT order into the strict
+  `karkinos.qmt_order_lifecycle_export.v1` contract; `source_sequence` is
+  monotonic across one provider/gateway/account-alias scope; both broker and
+  client order ids are independently observed; persisted lifecycle facts are
+  supporting evidence rather than Account Truth, OMS state, ledger facts, or
+  execution authority. The CLI previews by default and requires `--record`
+  plus an exact non-authority acknowledgement. It hashes raw account ids,
+  omits local paths, rejects credentials, malformed/stale/timezone-free facts,
+  status/quantity/fill inconsistency, sequence/account/identity/contract drift,
+  and preview mutation. One canonical persisted resolver and full-fill
+  predicate feed execution reconciliation, the signed-clearance transaction,
+  interlock preview, and the next-order submit transaction. A partial/cancel/
+  conflicting observation committed before clearance rejects that clearance
+  under the shared SQLite writer lock; one committed after an older clearance
+  reopens reconciliation and makes that intent unresolved before another
+  external call. Full lifecycle evidence still cannot clear without the Stage
+  3.14 broker statement, fresh Account Truth, exact identities, and human
+  signature. Validation: 53 focused lifecycle/reconciliation/clearance/
+  interlock/submission tests passed; 81 acceptance-audit tests passed; the full
+  backend suite passed 1,296 tests. Black, isort, Python compilation, and
+  `git diff --check` cover the changed code and patch surface. Risk impact:
+  GitNexus marks `ExecutionReconciliationService` HIGH (24 direct, 80 total,
+  one lifespan process) and its classifier HIGH; it reports the SQLite submit
+  and clearance methods LOW/zero upstream because database method calls are not
+  resolved, but their semantic risk is CRITICAL because they gate real-fill OMS
+  mutation and the next broker call. The implementation only narrows authority:
+  production still has no QMT collector, default write adapter, release
+  provider, executable cancel, strategy-direct/automatic submit, automatic
+  ledger mutation, session widening, capital expansion, or pilot enablement.
+
 - 2026-07-13: Stage 3.14 order-identity hardening removes the remaining manual
   symbol/side mapping from controlled full-fill clearance. Assumptions:
   `broker_order_id` and `client_order_id` are imported evidence only; both

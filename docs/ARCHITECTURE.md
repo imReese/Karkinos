@@ -663,6 +663,36 @@ facts, never broker-write authority; a real adapter must still supply
 broker-order-linked callback/poll partial-fill and cancel evidence before a
 pilot.
 
+Stage 3.15 introduces a QMT-specific normalized order-lifecycle **evidence
+adapter**, while deliberately leaving broker connectivity outside Karkinos.
+The input is one UTF-8 JSON `exact_order_lifecycle` snapshot for one exact pair
+of broker/client order ids. Preview is pure and default; the only write command
+requires `--record` and the exact non-authority acknowledgement. No query or
+reconciliation path opens the source file, calls QMT, or refreshes facts.
+Instead an explicit ingestion transaction persists a hashed account reference,
+sanitized provenance, file/evidence fingerprints, account-scope source
+sequence, capture time, the normalized order, and exact fill rows. It validates
+timezone-aware timestamps, a 120-second default capture window, strict fields,
+credential absence, status/filled/cancelled arithmetic, fill aggregation,
+average price, and one-to-one order identity. `BEGIN IMMEDIATE` makes exact
+retry idempotent and serializes sequence, account, identity, and order-contract
+drift checks; a read-only resolver never creates its tables.
+
+Execution reconciliation consumes only those persisted rows. It projects open,
+partial-fill, partial-fill-plus-cancel, zero-fill cancel, full-fill-awaiting-
+independent-evidence, identity conflict, or blocked evidence while leaving OMS,
+fills, the production ledger, and the global interlock unchanged. Lifecycle
+full-fill does not replace canonical broker-statement trades or Account Truth.
+One canonical lifecycle-clearance predicate is also evaluated inside the Stage
+3.14 signed-clearance transaction and the next-order submit transaction under
+the same SQLite writer lock. Therefore an observation committed before a
+clearance rejects that clearance when it is partial/cancelled/conflicting; an
+observation committed after a prior clearance turns reconciliation back to an
+open mismatch and makes that old intent unresolved for both preview and the
+serialized next-order gate. This is fail-closed evidence ingestion, not a QMT
+callback/poll collector, broker cancel implementation, production adapter,
+release source, or capital authorization.
+
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
 have exactly one persisted `no_action` item whose OMS status has not drifted.

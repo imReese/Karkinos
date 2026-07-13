@@ -1590,6 +1590,13 @@ class AppDatabase:
                     """,
                     (requested["order_id"],),
                 ).fetchone()
+                lifecycle_invalidated_clearances = (
+                    _controlled_lifecycle_invalidated_clearance_rows(
+                        conn,
+                        exclude_order_id=requested["order_id"],
+                        limit=1,
+                    )
+                )
                 order = conn.execute(
                     "SELECT * FROM oms_orders WHERE order_id = ? LIMIT 1",
                     (requested["order_id"],),
@@ -1598,6 +1605,10 @@ class AppDatabase:
                 if unresolved is not None:
                     blockers.append(
                         "controlled_broker_submit_unreconciled_intent_exists"
+                    )
+                if lifecycle_invalidated_clearances:
+                    blockers.append(
+                        "controlled_broker_submit_lifecycle_clearance_invalidated"
                     )
                 if order is None:
                     blockers.append("controlled_broker_submit_order_not_found")
@@ -1970,7 +1981,21 @@ class AppDatabase:
                 """,
                 (max(1, min(int(limit), 500)),),
             ).fetchall()
-            return [dict(row) for row in rows]
+            unresolved = [dict(row) for row in rows]
+            known_ids = {str(row.get("submit_intent_id") or "") for row in unresolved}
+            for row in _controlled_lifecycle_invalidated_clearance_rows(
+                conn,
+                limit=max(1, min(int(limit), 500)),
+            ):
+                if str(row.get("submit_intent_id") or "") not in known_ids:
+                    unresolved.append(row)
+            unresolved.sort(
+                key=lambda row: (
+                    int(row.get("prepared_at_epoch_ms") or 0),
+                    int(row.get("id") or 0),
+                )
+            )
+            return unresolved[: max(1, min(int(limit), 500))]
 
     def get_controlled_submission_reconciliation_clearance_sync(
         self,
@@ -2107,6 +2132,31 @@ class AppDatabase:
                         blockers.append("controlled_submission_client_order_changed")
                 if order is None or str(order["status"]) != "submitted":
                     blockers.append("controlled_submission_oms_not_submitted")
+                if intent is not None and order is not None:
+                    from account_truth.broker_order_lifecycle import (
+                        broker_order_lifecycle_clearance_blockers,
+                        resolve_broker_order_lifecycle_from_connection,
+                    )
+
+                    account_alias = str(
+                        _json_dict(intent["payload_json"]).get("account_alias") or ""
+                    )
+                    if account_alias:
+                        lifecycle_evidence = (
+                            resolve_broker_order_lifecycle_from_connection(
+                                conn,
+                                gateway_id=str(intent["gateway_id"] or ""),
+                                account_alias=account_alias,
+                                broker_order_id=str(intent["broker_order_id"] or ""),
+                                client_order_id=str(intent["client_order_id"] or ""),
+                            )
+                        )
+                        blockers.extend(
+                            broker_order_lifecycle_clearance_blockers(
+                                dict(order),
+                                lifecycle_evidence,
+                            )
+                        )
                 if latest_item is None:
                     blockers.append("controlled_submission_reconciliation_item_missing")
                 else:
@@ -8588,6 +8638,78 @@ def _event_matches_signal_journal_entry(
         and nested_payload.get("action_id") is not None
         and str(nested_payload["action_id"]) == action_ref
     )
+
+
+def _controlled_lifecycle_invalidated_clearance_rows(
+    conn: sqlite3.Connection,
+    *,
+    exclude_order_id: str = "",
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Find cleared intents contradicted by newer persisted lifecycle facts."""
+
+    from account_truth.broker_order_lifecycle import (
+        broker_order_lifecycle_clearance_blockers,
+        resolve_broker_order_lifecycle_from_connection,
+    )
+
+    rows = conn.execute(
+        """
+        SELECT intent.*, oms.status AS oms_status,
+               oms.symbol AS oms_symbol, oms.side AS oms_side,
+               oms.quantity AS oms_quantity
+        FROM controlled_broker_submit_intents AS intent
+        JOIN controlled_submission_reconciliation_clearances AS clearance
+          ON clearance.submit_intent_id = intent.submit_intent_id
+         AND clearance.status = 'cleared'
+        JOIN oms_orders AS oms ON oms.order_id = intent.order_id
+        WHERE intent.status = 'submitted'
+          AND intent.order_id != ?
+        ORDER BY intent.prepared_at_epoch_ms ASC, intent.id ASC
+        LIMIT ?
+        """,
+        (
+            str(exclude_order_id or ""),
+            max(1, min(int(limit), 500)),
+        ),
+    ).fetchall()
+    invalidated: list[dict[str, Any]] = []
+    for row in rows:
+        intent = dict(row)
+        account_alias = str(
+            _json_dict(intent.get("payload_json")).get("account_alias") or ""
+        )
+        if not account_alias:
+            continue
+        evidence = resolve_broker_order_lifecycle_from_connection(
+            conn,
+            gateway_id=str(intent.get("gateway_id") or ""),
+            account_alias=account_alias,
+            broker_order_id=str(intent.get("broker_order_id") or ""),
+            client_order_id=str(intent.get("client_order_id") or ""),
+        )
+        lifecycle_blockers = broker_order_lifecycle_clearance_blockers(
+            {
+                "symbol": str(intent.get("oms_symbol") or ""),
+                "side": str(intent.get("oms_side") or ""),
+                "quantity": intent.get("oms_quantity"),
+            },
+            evidence,
+        )
+        if str(intent.get("oms_status") or "") != "filled" and evidence.get(
+            "status"
+        ) in {"found", "blocked", "identity_conflict"}:
+            lifecycle_blockers.append("controlled_submission_clearance_oms_not_filled")
+        if lifecycle_blockers:
+            observation = evidence.get("observation")
+            observation = observation if isinstance(observation, dict) else {}
+            intent["interlock_reason"] = "lifecycle_clearance_invalidated"
+            intent["lifecycle_blocker"] = lifecycle_blockers[0]
+            intent["lifecycle_observation_id"] = str(
+                observation.get("observation_id") or ""
+            )
+            invalidated.append(intent)
+    return invalidated
 
 
 def _json_dict(value) -> dict[str, Any]:

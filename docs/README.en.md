@@ -343,6 +343,22 @@ conflicting, cross-import, or partial evidence fails closed. The identifiers
 remain evidence rather than authority, and a broker-specific callback/poll
 adapter is still required before a pilot.
 
+Stage 3.15 adds a QMT-specific local exact-order lifecycle evidence adapter,
+not a live QMT connection. `scripts/import_qmt_order_lifecycle.py` previews by
+default; persistence requires `--record` and the explicit non-authority
+acknowledgement. It stores sanitized account hashes, monotonic source sequence,
+file/evidence fingerprints, exact broker/client order ids, cumulative fill and
+cancel quantities, and linked fills. Credentials, malformed/stale facts,
+quantity inconsistency, sequence/identity/contract drift, and preview mutation
+fail closed. Reconciliation projects persisted open/partial/cancel/full facts
+without broker contact or OMS/ledger mutation. The same canonical predicate is
+rechecked inside signed clearance and the next-order submit transaction, so a
+contradictory observation rejects a racing clearance or re-blocks an older one.
+Lifecycle full-fill still cannot replace the independent broker statement,
+fresh Account Truth, and Stage 3.14 signature. Production registers no
+collector, write adapter, release provider, executable cancel, or pilot
+authority; a reviewed real QMT callback/poll collector and soak remain required.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;
