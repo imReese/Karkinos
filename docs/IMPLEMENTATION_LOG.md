@@ -17,7 +17,9 @@ roadmap promises.
   test:e2e`; GitHub `Browser safety smoke`. Risk impact: read-only browser and
   status checks only. The test starts the scheduler disabled and cannot grant
   authority, create orders, submit to a broker, mutate OMS/ledger state, or
-  bypass manual confirmation.
+  bypass manual confirmation. Vitest is explicitly scoped to `web/src` so the
+  Playwright suite cannot be collected by the unit-test runner, and JUnit
+  evidence uploads even when a test command fails.
 
 - 2026-07-13: CI now builds and starts the actual Docker deployment artifact.
   The runtime image uses Node 24 for the React build, pins uv 0.11.28, installs
