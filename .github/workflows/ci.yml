@@ -168,6 +168,10 @@ jobs:
       - name: Start runtime without live scheduler
         run: |
           mkdir -p "${RUNNER_TEMP}/karkinos-data"
+          runtime_uid="$(docker run --rm --entrypoint id karkinos:ci -u)"
+          runtime_gid="$(docker run --rm --entrypoint id karkinos:ci -g)"
+          sudo chown "${runtime_uid}:${runtime_gid}" "${RUNNER_TEMP}/karkinos-data"
+          chmod 0700 "${RUNNER_TEMP}/karkinos-data"
           printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
           docker run --detach --name karkinos-ci \
             --publish 127.0.0.1:8000:8000 \
