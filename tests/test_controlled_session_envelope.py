@@ -540,7 +540,8 @@ def test_session_envelope_projects_conservative_budget_and_stays_non_executing(
         in envelope["hard_submission_blockers"]
     )
     assert (
-        "stage2_per_order_bridge_not_promoted" in envelope["hard_submission_blockers"]
+        "per_order_controlled_bridge_not_promoted"
+        in envelope["hard_submission_blockers"]
     )
     assert (
         "execution_gateway_runtime_not_verified"

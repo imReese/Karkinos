@@ -45,15 +45,15 @@ def test_acceptance_audit_cli_research_evidence_filter_outputs_one_audit() -> No
     assert audit["criteria"]
 
 
-def test_acceptance_audit_cli_capital_authorization_stage0_filter() -> None:
-    result = _run_cli("--audit", "capital_authorization_stage0")
+def test_acceptance_audit_cli_capital_authorization_policy_filter() -> None:
+    result = _run_cli("--audit", "capital_authorization_policy")
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
 
-    assert payload["selected_audit"] == "capital_authorization_stage0"
+    assert payload["selected_audit"] == "capital_authorization_policy"
     assert [audit["key"] for audit in payload["audits"]] == [
-        "capital_authorization_stage0"
+        "capital_authorization_policy"
     ]
     audit = payload["audits"][0]
     assert audit["required_count"] == 8
@@ -560,7 +560,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "single_instrument_strategy_loop",
         "operations_runbook",
         "controlled_broker_bridge_foundation",
-        "capital_authorization_stage0",
+        "capital_authorization_policy",
         "broker_connector_soak_foundation",
         "broker_connector_soak_promotion",
         "per_order_confirmation_foundation",

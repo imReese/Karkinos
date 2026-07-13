@@ -3486,7 +3486,7 @@ def build_per_order_confirmation_foundation_acceptance_audit() -> AcceptanceAudi
                 ),
             ),
             AcceptanceCriterion(
-                key="per_order_signed_stage1_source_binding",
+                key="per_order_signed_broker_promotion_source_binding",
                 checkbox_text=(
                     "* [x] Every per-order dossier resolves and fingerprints "
                     "the current Stage 1 promotion dossier, operational source, "
@@ -3503,7 +3503,7 @@ def build_per_order_confirmation_foundation_acceptance_audit() -> AcceptanceAudi
                 ),
             ),
             AcceptanceCriterion(
-                key="per_order_stage1_drift_fails_closed",
+                key="per_order_broker_promotion_evidence_drift_fails_closed",
                 checkbox_text=(
                     "* [x] Missing, invalid, mismatched, or failed promotion "
                     "resolution remains blocked without leaking provider "

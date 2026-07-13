@@ -6,6 +6,25 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stable control-plane identifiers no longer encode roadmap stage
+  numbers. Per-order broker-soak promotion bindings, controlled-session bridge
+  blockers, acceptance criterion keys, and the capital-authorization policy
+  audit selector now use durable domain terminology. Contract schema versions
+  advance where public status, dossier, envelope, or attestation identifiers
+  changed, so older signed evidence fails closed instead of being silently
+  reinterpreted. A rule- and path-scoped Gitleaks allowlist covers only the
+  historical false-positive acceptance key that caused full-history CI scans to
+  fail; default secret rules remain enabled. Assumption: roadmap headings and
+  milestone-specific acceptance-builder names may retain Stage labels because
+  they describe historical slices rather than runtime contracts. Validation:
+  `uv run pytest -q tests/test_per_order_confirmation.py
+  tests/test_controlled_session_envelope.py tests/test_acceptance_audit.py
+  tests/test_acceptance_audit_cli.py`; Gitleaks v8.30.1 full-history and working-
+  tree scans. Risk impact: HIGH contract-surface sensitivity because session
+  blocker codes feed runtime-authority, budget, and pause workflows; no gate is
+  removed or relaxed, renamed blockers remain fail-closed, and no broker/OMS/
+  ledger/capital authority is added.
+
 - 2026-07-13: Stage 3.14 adds separately signed exact-full-fill reconciliation
   clearance. Assumptions: selected trade events are an operator-reviewed mapping
   to one controlled broker order because the generic CSV contract has no broker
@@ -911,7 +930,7 @@ roadmap promises.
   (22 passed),
   `uv run pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py tests/test_capital_authorization.py tests/test_capital_authorization_audit.py tests/server/test_capital_authorization_routes.py -q`
   (58 passed),
-  `uv run python scripts/export_acceptance_audit.py --audit capital_authorization_stage0`
+  `uv run python scripts/export_acceptance_audit.py --audit capital_authorization_policy`
   (6/6 complete), `uv run python scripts/export_acceptance_audit.py --audit all`
   (`overall_is_complete=true`), `uv run pytest -q` (883 passed), plus Black and
   isort checks for the changed Python files.
