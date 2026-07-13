@@ -217,6 +217,17 @@ Active planning target:
   other provider adapters remain replaceable edge components that require a
   separate security/capability review and explicit user authorization before
   registration; Karkinos does not claim official support for them.
+* Stage 3.17 binds collector operational evidence to the canonical lifecycle
+  resolver without making collection mandatory for scopes that have never used
+  it. Once a provider/gateway/account scope has recorded a collector run, the
+  resolved lifecycle observation must remain bound to that collector history
+  and the latest effective run must be recorded and cursor-consistent.
+  Prepared restart recovery, a blocked disconnect or partial batch, an unbound
+  direct import, or inconsistent run/state evidence re-blocks signed clearance
+  and the serialized next-order gate. A duplicate retry cannot mask a later
+  blocked run. This binding is a read-only fail-closed projection: it does not
+  contact a provider or modify OMS, fills, ledger, risk, kill switch, capital
+  authority, or broker permissions.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

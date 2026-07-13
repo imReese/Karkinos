@@ -10,6 +10,7 @@ import pytest
 from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRepository,
+    broker_order_lifecycle_clearance_blockers,
     preview_broker_order_lifecycle_export,
 )
 from account_truth.broker_order_lifecycle_collector import (
@@ -519,3 +520,190 @@ def test_only_expected_evidence_tables_are_created(tmp_path) -> None:
         "broker_order_lifecycle_orders",
         "broker_order_lifecycle_fills",
     }.issubset(tables)
+
+
+def test_recorded_collector_observation_resolves_as_healthy_binding(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "collector.db"
+    repository = BrokerOrderLifecycleCollectorRepository(db_path)
+    recorded = _ingest(repository, _preview(_batch()))
+
+    resolved = BrokerOrderLifecycleEvidenceRepository(
+        db_path,
+        ensure_schema=False,
+    ).resolve_order(
+        gateway_id="fixture-gateway-1",
+        account_alias="fixture-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-fixture-client-order-1",
+    )
+
+    collector = resolved["collector_evidence"]
+    assert recorded["run_status"] == "recorded"
+    assert collector["status"] == "healthy"
+    assert collector["required"] is True
+    assert collector["observation_bound"] is True
+    assert collector["matching_run_id"] == "collector-run-1"
+    assert collector["latest_run_id"] == "collector-run-1"
+    assert collector["blockers"] == []
+    assert collector["provider_contacted_by_karkinos"] is False
+    assert collector["broker_submission_enabled"] is False
+
+
+def test_prepared_restart_recovery_reblocks_until_cursor_commit(tmp_path) -> None:
+    db_path = tmp_path / "collector.db"
+    first_process = BrokerOrderLifecycleCollectorRepository(db_path)
+    _ingest(first_process, _preview(_batch()))
+    captured_at = NOW + timedelta(seconds=1)
+    second_payload = _batch(
+        run_id="collector-restart-pending",
+        cursor_previous=1,
+        cursor_current=2,
+        captured_at=captured_at,
+        lifecycle=_lifecycle(cursor=2, captured_at=captured_at),
+    )
+    prepared = first_process.prepare(
+        _preview(second_payload),
+        acknowledgement=BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    )
+
+    before_recovery = BrokerOrderLifecycleEvidenceRepository(
+        db_path,
+        ensure_schema=False,
+    ).resolve_order(
+        gateway_id="fixture-gateway-1",
+        account_alias="fixture-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-fixture-client-order-1",
+    )
+    before_collector = before_recovery["collector_evidence"]
+
+    restarted_process = BrokerOrderLifecycleCollectorRepository(db_path)
+    recovered = restarted_process.commit_prepared("collector-restart-pending")
+    after_recovery = BrokerOrderLifecycleEvidenceRepository(
+        db_path,
+        ensure_schema=False,
+    ).resolve_order(
+        gateway_id="fixture-gateway-1",
+        account_alias="fixture-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-fixture-client-order-1",
+    )
+
+    assert prepared["run_status"] == "prepared"
+    assert before_collector["status"] == "recovery_pending"
+    assert "broker_order_lifecycle_collector_recovery_pending" in (
+        before_collector["blockers"]
+    )
+    assert recovered["run_status"] == "recorded"
+    assert after_recovery["collector_evidence"]["status"] == "healthy"
+    assert after_recovery["collector_evidence"]["state_cursor"] == 2
+
+
+def test_direct_import_cannot_bypass_existing_collector_scope(tmp_path) -> None:
+    db_path = tmp_path / "collector.db"
+    collector_repository = BrokerOrderLifecycleCollectorRepository(db_path)
+    _ingest(collector_repository, _preview(_batch()))
+    captured_at = NOW + timedelta(seconds=1)
+    direct_preview = preview_broker_order_lifecycle_export(
+        json.dumps(_lifecycle(cursor=2, captured_at=captured_at)),
+        source_name="explicit direct fixture import",
+        clock=lambda: captured_at,
+    )
+    BrokerOrderLifecycleEvidenceRepository(db_path).record(
+        direct_preview,
+        acknowledgement=BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
+    )
+
+    resolved = BrokerOrderLifecycleEvidenceRepository(
+        db_path,
+        ensure_schema=False,
+    ).resolve_order(
+        gateway_id="fixture-gateway-1",
+        account_alias="fixture-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-fixture-client-order-1",
+    )
+    blockers = broker_order_lifecycle_clearance_blockers(
+        {
+            "symbol": "600519",
+            "side": "buy",
+            "quantity": "100",
+        },
+        resolved,
+    )
+
+    assert resolved["collector_evidence"]["status"] == "unbound"
+    assert "broker_order_lifecycle_collector_observation_not_bound" in (
+        resolved["collector_evidence"]["blockers"]
+    )
+    assert blockers == ["controlled_submission_clearance_lifecycle_collector_unhealthy"]
+
+
+def test_partial_poll_batch_reblocks_previously_healthy_collector_scope(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "collector.db"
+    repository = BrokerOrderLifecycleCollectorRepository(db_path)
+    _ingest(repository, _preview(_batch()))
+    captured_at = NOW + timedelta(seconds=1)
+    partial_payload = _batch(
+        run_id="collector-partial-poll-2",
+        cursor_previous=1,
+        cursor_current=2,
+        captured_at=captured_at,
+        collection_mode="poll",
+        source_contact_status="read_only_contact",
+        connection_status="connected",
+        release_review_status="reviewed",
+        batch_status="partial",
+        event_count=0,
+    )
+    partial_payload["lifecycle"] = None
+
+    partial = _ingest(repository, _preview(partial_payload))
+    resolved = BrokerOrderLifecycleEvidenceRepository(
+        db_path,
+        ensure_schema=False,
+    ).resolve_order(
+        gateway_id="fixture-gateway-1",
+        account_alias="fixture-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-fixture-client-order-1",
+    )
+
+    assert partial["run_status"] == "blocked"
+    assert "broker_order_lifecycle_collector_partial_batch" in partial["blockers"]
+    assert resolved["collector_evidence"]["status"] == "blocked"
+    assert "broker_order_lifecycle_collector_latest_run_blocked" in (
+        resolved["collector_evidence"]["blockers"]
+    )
+
+
+def test_direct_import_without_collector_history_preserves_optional_boundary(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "direct.db"
+    preview = preview_broker_order_lifecycle_export(
+        json.dumps(_lifecycle()),
+        source_name="explicit direct fixture import",
+        clock=lambda: NOW,
+    )
+    BrokerOrderLifecycleEvidenceRepository(db_path).record(
+        preview,
+        acknowledgement=BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
+    )
+
+    resolved = BrokerOrderLifecycleEvidenceRepository(
+        db_path,
+        ensure_schema=False,
+    ).resolve_order(
+        gateway_id="fixture-gateway-1",
+        account_alias="fixture-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-fixture-client-order-1",
+    )
+
+    assert resolved["collector_evidence"]["status"] == "not_configured"
+    assert resolved["collector_evidence"]["required"] is False

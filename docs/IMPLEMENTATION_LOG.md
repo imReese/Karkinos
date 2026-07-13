@@ -6,6 +6,28 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 3.17 binds broker-neutral collector operational evidence to
+  lifecycle clearance. Assumptions: collector adoption is scoped by provider,
+  gateway, and account alias; scopes with no collector history retain the
+  explicit offline-import path; after adoption, a direct import cannot bypass
+  collector health; different-run duplicate evidence cannot mask the latest
+  effective failure. The canonical resolver now derives a sanitized read-only
+  binding from persisted run/state rows. A prepared restart, blocked disconnect
+  or partial batch, unbound observation, or run/state inconsistency adds one
+  fail-closed blocker consumed by reconciliation, signed clearance, interlock,
+  and the serialized next-order gate. Validation: deterministic unit and
+  transaction tests cover healthy binding, restart prepare/commit, duplicate
+  semantics, direct-import bypass rejection, partial/disconnected re-blocking,
+  clearance race rejection, post-clearance next-order rejection, and the
+  optional no-history path. Validation: 63 focused lifecycle/collector/import/
+  reconciliation/clearance/submission/route tests passed; the full backend
+  suite passed 1,320 tests; Black, isort, Python compilation, and `git diff
+  --check` cover formatting, syntax, and patch integrity. Risk impact: HIGH
+  because the clearance predicate feeds controlled-submission flows. The
+  change only adds conditions that can reject or invalidate eligibility. It
+  adds no SDK, provider contact, default adapter, submit/cancel/live permission,
+  strategy-direct path, or OMS/fill/ledger/risk/kill-switch/capital mutation.
+
 - 2026-07-13: CI now enforces an 85% statement-coverage floor across all
   production Python packages, uploads `coverage.xml`, and runs independent
   production dependency audits for the locked Python/server environment and npm

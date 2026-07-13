@@ -574,6 +574,33 @@ def _order_lifecycle_classification(
     if resolution_status != "found":
         return {}
 
+    collector_evidence = _json_object(evidence.get("collector_evidence"))
+    if (
+        bool(collector_evidence.get("required"))
+        and str(collector_evidence.get("status") or "") != "healthy"
+    ):
+        collector_blockers = [
+            str(item) for item in collector_evidence.get("blockers") or []
+        ]
+        return {
+            "item_status": (
+                "controlled_submission_order_lifecycle_collector_unhealthy"
+            ),
+            "suggested_action": (
+                "review_collector_run_and_restore_read_only_evidence_ingestion"
+            ),
+            "detail": (
+                "The latest broker-neutral collector run is blocked, awaiting "
+                "restart recovery, inconsistent, or does not bind this lifecycle "
+                "observation. Keep every new submission blocked."
+            ),
+            "reported_broker_events": (
+                controlled_matching or controlled_quantity_mismatch
+            ),
+            "mismatch_reasons": collector_blockers
+            or ["controlled_submission_order_lifecycle_collector_unhealthy"],
+        }
+
     lifecycle_order = _json_object(evidence.get("order"))
     mismatch_reasons: list[str] = []
     if str(lifecycle_order.get("symbol") or "") != str(order.get("symbol") or ""):
@@ -701,6 +728,7 @@ def _order_lifecycle_evidence_summary(evidence: dict[str, Any]) -> dict[str, Any
         "captured_at": str(observation.get("captured_at") or ""),
         "validation_status": str(observation.get("validation_status") or ""),
         "blockers": [str(item) for item in evidence.get("blockers") or []],
+        "collector_evidence": _json_object(evidence.get("collector_evidence")),
         "order_status": str(order.get("status") or ""),
         "order_quantity": str(order.get("order_quantity") or ""),
         "cumulative_filled_quantity": str(

@@ -18,6 +18,11 @@ from account_truth.broker_order_lifecycle import (
     BrokerOrderLifecycleEvidenceRepository,
     preview_broker_order_lifecycle_export,
 )
+from account_truth.broker_order_lifecycle_collector import (
+    BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    BrokerOrderLifecycleCollectorRepository,
+    preview_broker_order_lifecycle_collector_batch,
+)
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
@@ -338,6 +343,175 @@ def _record_partial_lifecycle(env: dict) -> dict:
     )
 
 
+def _collector_lifecycle_payload(
+    *,
+    source_sequence: int,
+    captured_at: datetime,
+) -> dict:
+    return {
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "deterministic_fixture",
+        "snapshot_kind": "exact_order_lifecycle",
+        "gateway_id": "fixture-controlled-gateway-1",
+        "account_id": "private-fixture-account-001",
+        "account_alias": "main-cn-account",
+        "captured_at": captured_at.isoformat(),
+        "source_sequence": source_sequence,
+        "orders": [
+            {
+                "broker_order_id": "BROKER-CLEARANCE-1",
+                "client_order_id": "KARK-clearance-client-order-1",
+                "symbol": "600519",
+                "side": "buy",
+                "status": "filled",
+                "order_quantity": "100",
+                "cumulative_filled_quantity": "100",
+                "cancelled_quantity": "0",
+                "average_fill_price": "10",
+                "submitted_at": (captured_at - timedelta(seconds=5)).isoformat(),
+                "updated_at": (captured_at - timedelta(seconds=1)).isoformat(),
+            }
+        ],
+        "fills": [
+            {
+                "broker_trade_id": f"FIXTURE-COLLECTOR-TRADE-{source_sequence}",
+                "broker_order_id": "BROKER-CLEARANCE-1",
+                "client_order_id": "KARK-clearance-client-order-1",
+                "symbol": "600519",
+                "side": "buy",
+                "quantity": "100",
+                "price": "10",
+                "fee": "1",
+                "tax": "0",
+                "transfer_fee": "0",
+                "net_amount": "-1001",
+                "filled_at": (captured_at - timedelta(seconds=2)).isoformat(),
+            }
+        ],
+    }
+
+
+def _record_collector_batch(
+    env: dict,
+    *,
+    run_id: str,
+    cursor_previous: int,
+    cursor_current: int,
+    captured_at: datetime,
+    disconnected_or_partial: bool = False,
+) -> dict:
+    payload = {
+        "schema_version": "karkinos.broker_order_lifecycle_collector_batch.v1",
+        "run_id": run_id,
+        "collector_id": "deterministic-fixture-collector",
+        "deployment_id": "fixture-deployment-1",
+        "collector_version": "fixture-v1",
+        "deployment_fingerprint": "9" * 64,
+        "release_evidence_ref": "fixture-release-review-1",
+        "release_review_status": (
+            "reviewed" if disconnected_or_partial else "unreviewed"
+        ),
+        "adapter_authorization_ref": "test-only-user-authorization",
+        "provider": "deterministic_fixture",
+        "gateway_id": "fixture-controlled-gateway-1",
+        "account_id": "private-fixture-account-001",
+        "account_alias": "main-cn-account",
+        "collection_mode": "callback" if disconnected_or_partial else "fixture",
+        "source_contact_status": (
+            "read_only_contact" if disconnected_or_partial else "not_contacted"
+        ),
+        "connection_status": (
+            "disconnected" if disconnected_or_partial else "not_applicable"
+        ),
+        "batch_status": "partial" if disconnected_or_partial else "complete",
+        "cursor": {"previous": cursor_previous, "current": cursor_current},
+        "captured_at": captured_at.isoformat(),
+        "event_count": 0 if disconnected_or_partial else 1,
+        "callbacks_received": 0,
+        "duplicate_callbacks_dropped": 0,
+        "out_of_order_callbacks_dropped": 0,
+        "lifecycle": (
+            None
+            if disconnected_or_partial
+            else _collector_lifecycle_payload(
+                source_sequence=cursor_current,
+                captured_at=captured_at,
+            )
+        ),
+    }
+    preview = preview_broker_order_lifecycle_collector_batch(
+        json.dumps(payload),
+        source_name="deterministic collector clearance fixture",
+        clock=lambda: captured_at,
+    )
+    return BrokerOrderLifecycleCollectorRepository(Path(env["db"]._path)).ingest(
+        preview,
+        acknowledgement=BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    )
+
+
+def _prepare_next_controlled_intent(env: dict, *, suffix: str) -> dict:
+    next_order = env["oms"].create_order_intent(
+        intent_key=f"collector-gate-next-order-{suffix}",
+        symbol="510300",
+        side="buy",
+        asset_class="etf",
+        quantity=100,
+        order_type="limit",
+        limit_price=4,
+        source="collector_gate_test",
+        source_ref=f"decision-{suffix}",
+    )
+    next_order = env["oms"].transition_order(
+        next_order["order_id"],
+        to_status="manually_confirmed",
+        reason="operator confirmed exact collector-gate order",
+        actor="local-clearance-owner",
+    )
+    next_intent_id = hashlib.sha256(
+        f"collector-gate-next-intent:{suffix}".encode()
+    ).hexdigest()
+    next_submit_fingerprint = hashlib.sha256(
+        f"collector-gate-next-submit:{suffix}".encode()
+    ).hexdigest()
+    prepared = env["db"].prepare_controlled_broker_submit_intent_sync(
+        intent={
+            "submit_intent_id": next_intent_id,
+            "submit_fingerprint": next_submit_fingerprint,
+            "order_id": next_order["order_id"],
+            "order_fingerprint": build_order_fingerprint(next_order),
+            "confirmation_id": "1" * 64,
+            "dossier_fingerprint": "2" * 64,
+            "gateway_id": "fixture-controlled-gateway-1",
+            "gateway_verification_fingerprint": "3" * 64,
+            "release_evidence_id": "4" * 64,
+            "release_evidence_fingerprint": "5" * 64,
+            "client_order_id": f"KARK-collector-gate-{suffix}",
+            "operator_id": "local-clearance-owner",
+            "operator_approval_id": "6" * 64,
+            "order_snapshot": {
+                key: next_order.get(key)
+                for key in (
+                    "symbol",
+                    "side",
+                    "asset_class",
+                    "quantity",
+                    "order_type",
+                    "limit_price",
+                )
+            },
+            "prepared_at_epoch_ms": int(NOW.timestamp() * 1000) + 2000,
+            "prepared_at": (NOW + timedelta(seconds=2)).isoformat(),
+            "payload": {
+                "submit_intent_id": next_intent_id,
+                "account_alias": "main-cn-account",
+            },
+            "created_at": (NOW + timedelta(seconds=2)).isoformat(),
+        }
+    )
+    return {"order": next_order, "prepared": prepared}
+
+
 def test_signed_full_fill_clearance_atomically_records_fills_and_releases_interlock(
     tmp_path,
 ) -> None:
@@ -413,6 +587,121 @@ def test_partial_lifecycle_race_rejects_signed_clearance_inside_transaction(
     )
     assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
     assert env["db"].list_controlled_submission_reconciliation_clearances_sync() == []
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_collector_disconnect_race_rejects_signed_clearance_inside_transaction(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    _bind_controlled_account_alias(env)
+    healthy = _record_collector_batch(
+        env,
+        run_id="collector-clearance-healthy-1",
+        cursor_previous=0,
+        cursor_current=1,
+        captured_at=NOW,
+    )
+    preview = _preview(env)
+    approval = _approval(env, preview["clearance_fingerprint"])
+    disconnected = _record_collector_batch(
+        env,
+        run_id="collector-clearance-disconnected-2",
+        cursor_previous=1,
+        cursor_current=2,
+        captured_at=NOW + timedelta(seconds=1),
+        disconnected_or_partial=True,
+    )
+
+    with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc:
+        _record(env, preview, approval)
+
+    assert healthy["run_status"] == "recorded"
+    assert disconnected["run_status"] == "blocked"
+    assert "controlled_submission_clearance_transaction_rejected" in (
+        exc.value.evidence["rejection_reasons"]
+    )
+    assert "controlled_submission_clearance_lifecycle_collector_unhealthy" in (
+        exc.value.evidence["transaction_blockers"]
+    )
+    reconciliation = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    item = next(
+        row
+        for row in reconciliation["items"]
+        if row["order_id"] == env["order"]["order_id"]
+    )
+    payload = json.loads(item["payload_json"])
+    collector = payload["controlled_submission_evidence_summary"][
+        "broker_order_lifecycle_evidence"
+    ]["collector_evidence"]
+    assert item["item_status"] == (
+        "controlled_submission_order_lifecycle_collector_unhealthy"
+    )
+    assert collector["status"] == "blocked"
+    assert collector["latest_run_id"] == "collector-clearance-disconnected-2"
+    assert collector["provider_contacted_by_karkinos"] is False
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "submitted"
+    )
+    assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_collector_failure_after_clearance_reblocks_next_order_transaction(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    _bind_controlled_account_alias(env)
+    _record_collector_batch(
+        env,
+        run_id="collector-before-clearance-1",
+        cursor_previous=0,
+        cursor_current=1,
+        captured_at=NOW,
+    )
+    clearance_preview = _preview(env)
+    clearance_approval = _approval(
+        env,
+        clearance_preview["clearance_fingerprint"],
+    )
+    cleared = _record(env, clearance_preview, clearance_approval)
+    assert cleared["status"] == "cleared"
+
+    blocked_run = _record_collector_batch(
+        env,
+        run_id="collector-after-clearance-partial-2",
+        cursor_previous=1,
+        cursor_current=2,
+        captured_at=NOW + timedelta(seconds=1),
+        disconnected_or_partial=True,
+    )
+    reconciliation = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    item = next(
+        row
+        for row in reconciliation["items"]
+        if row["order_id"] == env["order"]["order_id"]
+    )
+    next_attempt = _prepare_next_controlled_intent(env, suffix="blocked-collector")
+
+    assert blocked_run["run_status"] == "blocked"
+    assert item["item_status"] == "controlled_submission_clearance_evidence_mismatch"
+    unresolved = env["db"].list_unreconciled_controlled_broker_submit_intents_sync()
+    assert unresolved[0]["interlock_reason"] == "lifecycle_clearance_invalidated"
+    assert unresolved[0]["lifecycle_blocker"] == (
+        "controlled_submission_clearance_lifecycle_collector_unhealthy"
+    )
+    assert next_attempt["prepared"]["status"] == "rejected"
+    assert "controlled_broker_submit_lifecycle_clearance_invalidated" in (
+        next_attempt["prepared"]["blockers"]
+    )
+    assert (
+        env["db"].get_oms_order_sync(next_attempt["order"]["order_id"])["status"]
+        == "manually_confirmed"
+    )
     assert env["db"].get_ledger_entries_sync() == []
 
 

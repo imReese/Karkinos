@@ -706,7 +706,30 @@ disconnects, and partial batches fail closed without cursor advance. Callback
 and poll are evidence labels only: the boundary never opens a socket, imports
 a broker SDK, or polls a provider. Tests use deterministic local fixtures.
 
-Neither Stage 3.15 nor Stage 3.16 registers an edge adapter by default. QMT,
+Stage 3.17 makes collector operation part of the lifecycle resolver's persisted
+evidence projection. The derived
+`karkinos.broker_order_lifecycle_collector_binding.v1` result is scoped by
+provider, gateway, and account alias; it reports whether collection has ever
+been adopted for that scope, whether the selected lifecycle observation came
+from a matching recorded run, and whether the latest effective run and cursor
+state are consistent. Scopes without collector history remain
+`not_configured` and may continue to use the explicit Stage 3.15 offline import.
+After the first collector run, however, a newer direct import is `unbound`
+rather than an implicit escape hatch. A prepared run is `recovery_pending`; a
+disconnect, partial batch, or other blocked run is `blocked`; run/state drift is
+`inconsistent`. Different-run duplicates are excluded when choosing the latest
+effective operational run, so replay cannot hide a later failure.
+
+The collector binding is recomputed only from persisted SQLite facts. A required
+non-healthy binding adds one canonical lifecycle-clearance blocker that is
+evaluated by reconciliation, the Stage 3.14 signed-clearance transaction, and
+the serialized next-order gate. It can therefore reject or invalidate a
+clearance but cannot make incomplete evidence sufficient for clearance. It
+does not refresh a provider, infer account truth, mutate OMS/fills/ledger/risk/
+kill-switch/capital state, release an interlock, or grant submit/cancel/live
+authority.
+
+Stages 3.15-3.17 do not register an edge adapter by default. QMT,
 PTrade, local-file watchers, and other third-party integrations may implement
 the batch contract only after a separate dependency, credential, capability,
 failure-mode, release, and user-authorization review. Their existence does not

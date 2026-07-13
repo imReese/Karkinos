@@ -282,6 +282,16 @@ and poll are descriptive modes supplied by a future edge adapter. It cannot
 submit or cancel, mutate OMS/fills/ledger/risk/kill-switch/capital state, or
 release the interlock.
 
+Stage 3.17 binds the collector's persisted operational evidence into lifecycle
+clearance. Collection remains optional until a provider/gateway/account scope
+records its first run. Thereafter the selected observation must be tied to a
+matching recorded run and the latest effective run must agree with persisted
+cursor state. Prepared recovery, blocked disconnect/partial batches, unbound
+direct imports, and state inconsistency reject or invalidate clearance under
+the same serialized gates; duplicate replay cannot mask a later failure. The
+binding is a read-only restriction and adds no provider contact or execution
+authority.
+
 No broker-specific adapter is registered by default. Any QMT, PTrade, local-
 file watcher, or other third-party adapter remains replaceable and requires a
 separate dependency/capability/failure-mode review plus explicit user

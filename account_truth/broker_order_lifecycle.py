@@ -20,6 +20,9 @@ BROKER_ORDER_LIFECYCLE_PREVIEW_SCHEMA_VERSION = (
 BROKER_ORDER_LIFECYCLE_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.broker_order_lifecycle_evidence.v1"
 )
+BROKER_ORDER_LIFECYCLE_COLLECTOR_BINDING_SCHEMA_VERSION = (
+    "karkinos.broker_order_lifecycle_collector_binding.v1"
+)
 BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT = (
     "record_broker_order_lifecycle_evidence_without_execution_authority"
 )
@@ -282,23 +285,33 @@ def resolve_broker_order_lifecycle_from_connection(
     if row is None:
         return _resolution("not_found", identity=identity)
     observation = _observation_from_row(row, reused=False)
+    collector_evidence = _resolve_broker_order_lifecycle_collector_evidence(
+        conn,
+        observation,
+    )
     if str(row["validation_status"]) != "pass":
-        return _resolution(
-            "blocked",
-            identity=identity,
-            observation=observation,
-            blockers=[str(item) for item in observation.get("blockers") or []],
-        )
+        return {
+            **_resolution(
+                "blocked",
+                identity=identity,
+                observation=observation,
+                blockers=[str(item) for item in observation.get("blockers") or []],
+            ),
+            "collector_evidence": collector_evidence,
+        }
     if (
         str(row["broker_order_id"]) != identity["broker_order_id"]
         or str(row["client_order_id"]) != identity["client_order_id"]
     ):
-        return _resolution(
-            "identity_conflict",
-            identity=identity,
-            observation=observation,
-            blockers=["broker_order_lifecycle_order_identity_conflict"],
-        )
+        return {
+            **_resolution(
+                "identity_conflict",
+                identity=identity,
+                observation=observation,
+                blockers=["broker_order_lifecycle_order_identity_conflict"],
+            ),
+            "collector_evidence": collector_evidence,
+        }
     order_row = conn.execute(
         """
         SELECT * FROM broker_order_lifecycle_orders
@@ -314,12 +327,15 @@ def resolve_broker_order_lifecycle_from_connection(
         (str(row["observation_id"]),),
     ).fetchall()
     if order_row is None:
-        return _resolution(
-            "blocked",
-            identity=identity,
-            observation=observation,
-            blockers=["broker_order_lifecycle_order_fact_missing"],
-        )
+        return {
+            **_resolution(
+                "blocked",
+                identity=identity,
+                observation=observation,
+                blockers=["broker_order_lifecycle_order_fact_missing"],
+            ),
+            "collector_evidence": collector_evidence,
+        }
     return {
         **_resolution(
             "found",
@@ -329,6 +345,7 @@ def resolve_broker_order_lifecycle_from_connection(
         "order": _order_from_row(order_row),
         "fills": [_fill_from_row(fill_row) for fill_row in fill_rows],
         "fill_count": len(fill_rows),
+        "collector_evidence": collector_evidence,
     }
 
 
@@ -343,6 +360,12 @@ def broker_order_lifecycle_clearance_blockers(
         return ["controlled_submission_clearance_lifecycle_evidence_blocked"]
     if resolution_status != "found":
         return []
+    collector_evidence = _dict(evidence.get("collector_evidence"))
+    if (
+        bool(collector_evidence.get("required"))
+        and str(collector_evidence.get("status") or "") != "healthy"
+    ):
+        return ["controlled_submission_clearance_lifecycle_collector_unhealthy"]
     lifecycle_order = _dict(evidence.get("order"))
     expected_quantity = abs(_decimal(order.get("quantity")))
     filled_quantity = abs(_decimal(lifecycle_order.get("cumulative_filled_quantity")))
@@ -357,6 +380,162 @@ def broker_order_lifecycle_clearance_blockers(
     ):
         return ["controlled_submission_clearance_lifecycle_evidence_mismatch"]
     return []
+
+
+def _resolve_broker_order_lifecycle_collector_evidence(
+    conn: sqlite3.Connection,
+    observation: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve optional collector binding without contacting a provider."""
+
+    base = {
+        "schema_version": BROKER_ORDER_LIFECYCLE_COLLECTOR_BINDING_SCHEMA_VERSION,
+        "status": "not_configured",
+        "required": False,
+        "blockers": [],
+        "observation_bound": False,
+        "matching_run_id": "",
+        "latest_run_id": "",
+        "latest_run_status": "",
+        "latest_cursor": 0,
+        "state_cursor": 0,
+        "collector_id": "",
+        "deployment_id": "",
+        "collection_mode": "",
+        "source_contact_status": "",
+        "connection_status": "",
+        "batch_status": "",
+        "release_review_status": "",
+        "provider_contacted_by_karkinos": False,
+        "broker_submission_enabled": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_fills": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_mutate_risk_state": True,
+        "does_not_mutate_kill_switch": True,
+        "does_not_mutate_capital_authority": True,
+    }
+    tables = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    if not {
+        "broker_order_lifecycle_collector_runs",
+        "broker_order_lifecycle_collector_state",
+    }.issubset(tables):
+        return base
+
+    scope = (
+        str(observation.get("provider") or ""),
+        str(observation.get("gateway_id") or ""),
+        str(observation.get("account_alias") or ""),
+    )
+    latest = conn.execute(
+        """
+        SELECT * FROM broker_order_lifecycle_collector_runs
+        WHERE provider = ? AND gateway_id = ? AND account_alias = ?
+          AND run_status != 'duplicate'
+        ORDER BY id DESC LIMIT 1
+        """,
+        scope,
+    ).fetchone()
+    if latest is None:
+        return {**base, "status": "not_bound"}
+
+    matching = conn.execute(
+        """
+        SELECT * FROM broker_order_lifecycle_collector_runs
+        WHERE lifecycle_observation_id = ? AND run_status = 'recorded'
+        ORDER BY id ASC LIMIT 1
+        """,
+        (str(observation.get("observation_id") or ""),),
+    ).fetchone()
+    blockers: list[str] = []
+    if matching is None:
+        blockers.append("broker_order_lifecycle_collector_observation_not_bound")
+    else:
+        for field in ("provider", "gateway_id", "account_alias"):
+            if str(matching[field]) != str(observation.get(field) or ""):
+                blockers.append(
+                    f"broker_order_lifecycle_collector_{field}_binding_mismatch"
+                )
+        if int(matching["cursor_current"]) != int(
+            observation.get("source_sequence") or 0
+        ):
+            blockers.append(
+                "broker_order_lifecycle_collector_source_sequence_binding_mismatch"
+            )
+
+    latest_status = str(latest["run_status"] or "")
+    if latest_status == "prepared":
+        blockers.append("broker_order_lifecycle_collector_recovery_pending")
+    elif latest_status == "blocked":
+        blockers.append("broker_order_lifecycle_collector_latest_run_blocked")
+    elif latest_status != "recorded":
+        blockers.append("broker_order_lifecycle_collector_latest_run_invalid")
+
+    state = conn.execute(
+        """
+        SELECT * FROM broker_order_lifecycle_collector_state
+        WHERE scope_key = ? LIMIT 1
+        """,
+        (str(latest["scope_key"] or ""),),
+    ).fetchone()
+    state_cursor = int(state["last_cursor"]) if state is not None else 0
+    if latest_status == "recorded":
+        if state is None:
+            blockers.append("broker_order_lifecycle_collector_state_missing")
+        else:
+            for field in (
+                "collector_id",
+                "deployment_id",
+                "deployment_fingerprint",
+                "release_evidence_ref",
+                "adapter_authorization_ref",
+                "provider",
+                "gateway_id",
+                "account_alias",
+            ):
+                if str(state[field]) != str(latest[field]):
+                    blockers.append(
+                        f"broker_order_lifecycle_collector_state_{field}_mismatch"
+                    )
+            if state_cursor != int(latest["cursor_current"]):
+                blockers.append(
+                    "broker_order_lifecycle_collector_state_cursor_mismatch"
+                )
+
+    status = "healthy"
+    if blockers:
+        if latest_status == "prepared":
+            status = "recovery_pending"
+        elif latest_status == "blocked":
+            status = "blocked"
+        elif matching is None:
+            status = "unbound"
+        else:
+            status = "inconsistent"
+    return {
+        **base,
+        "status": status,
+        "required": True,
+        "blockers": list(dict.fromkeys(blockers)),
+        "observation_bound": matching is not None,
+        "matching_run_id": str(matching["run_id"] or "") if matching else "",
+        "latest_run_id": str(latest["run_id"] or ""),
+        "latest_run_status": latest_status,
+        "latest_cursor": int(latest["cursor_current"]),
+        "state_cursor": state_cursor,
+        "collector_id": str(latest["collector_id"] or ""),
+        "deployment_id": str(latest["deployment_id"] or ""),
+        "collection_mode": str(latest["collection_mode"] or ""),
+        "source_contact_status": str(latest["source_contact_status"] or ""),
+        "connection_status": str(latest["connection_status"] or ""),
+        "batch_status": str(latest["batch_status"] or ""),
+        "release_review_status": str(latest["release_review_status"] or ""),
+    }
 
 
 class BrokerOrderLifecycleEvidenceRepository:
