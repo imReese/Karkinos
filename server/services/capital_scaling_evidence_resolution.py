@@ -22,7 +22,7 @@ from server.services.capital_scaling_evidence_window import (
 from server.services.capital_scaling_review import CapitalScalingEvidence
 
 CAPITAL_SCALING_EVIDENCE_RESOLUTION_SCHEMA_VERSION = (
-    "karkinos.capital_scaling_evidence_resolution.v1"
+    "karkinos.capital_scaling_evidence_resolution.v2"
 )
 
 REQUIRED_CAPITAL_SCALING_EVIDENCE_KINDS = (
@@ -35,6 +35,7 @@ REQUIRED_CAPITAL_SCALING_EVIDENCE_KINDS = (
     "incident",
     "capacity",
     "operating_sample",
+    "execution_scope",
 )
 
 RESOLVABLE_CAPITAL_SCALING_EVIDENCE_KINDS = (
@@ -47,6 +48,7 @@ RESOLVABLE_CAPITAL_SCALING_EVIDENCE_KINDS = (
     "incident",
     "capacity",
     "operating_sample",
+    "execution_scope",
 )
 
 UNSUPPORTED_CAPITAL_SCALING_EVIDENCE_KINDS = tuple(
@@ -150,6 +152,7 @@ class CapitalScalingEvidenceResolver:
             "incident",
             "capacity",
             "operating_sample",
+            "execution_scope",
         }:
             return self._resolve_evidence_window_fact(
                 base=base,

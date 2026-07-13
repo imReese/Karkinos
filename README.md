@@ -519,6 +519,13 @@ divergence, and cash-flow-unitized maximum drawdown are derived from persisted
 facts and checked exactly against the review request. Missing or truncated
 coverage fails closed. This remains evidence-only and cannot grant authority,
 change runtime limits, mutate OMS/ledger state, or contact a broker.
+Stage 4.4 adds a required exact execution-scope fact. Every reviewed order must
+bind either a persisted controlled-session admission or a current clear exact
+batch that is wholly inside the operating sample. Identity mismatch, competing
+bindings, orphan admissions, batch/source drift, and truncated scans fail
+closed. V1 windows remain historical only; a current review requires an
+append-only v2 recomputation. No scope fact can issue, resume, renew, or widen
+authority or submit/cancel a broker order.
 
 The v1.6 paper/shadow run path is:
 daily trading plan -> pre-trade risk -> local paper/shadow run -> divergence

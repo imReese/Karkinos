@@ -215,6 +215,21 @@ def _record_computed_window(db: AppDatabase) -> None:
                         "max_drawdown_pct": "0.02",
                     },
                 ),
+                "execution_scope": _computed_fact(
+                    "execution_scope",
+                    {
+                        "sampled_order_count": 100,
+                        "runtime_session_bound_order_count": 0,
+                        "exact_batch_bound_order_count": 100,
+                        "dual_bound_order_count": 0,
+                        "unbound_order_count": 0,
+                        "runtime_session_count": 0,
+                        "exact_batch_count": 5,
+                        "invalid_runtime_admission_count": 0,
+                        "orphan_runtime_admission_count": 0,
+                        "invalid_exact_batch_count": 0,
+                    },
+                ),
             },
         },
     )
@@ -231,6 +246,7 @@ def _resolved_refs() -> tuple[str, ...]:
         f"incident:{WINDOW_ID}",
         f"capacity:{WINDOW_ID}",
         f"operating_sample:{WINDOW_ID}",
+        f"execution_scope:{WINDOW_ID}",
     )
 
 
@@ -255,6 +271,9 @@ def test_resolver_links_direct_refs_and_blocks_missing_computed_window_sources(
     assert "persisted_evidence_kind_not_clear:account_truth" in resolution["blockers"]
     assert "persisted_evidence_kind_not_clear:capacity" in resolution["blockers"]
     assert "persisted_evidence_kind_not_clear:operating_sample" in (
+        resolution["blockers"]
+    )
+    assert "persisted_evidence_kind_not_clear:execution_scope" in (
         resolution["blockers"]
     )
     assert resolution["all_required_sources_resolved_clear"] is False
@@ -300,6 +319,42 @@ def test_resolver_fails_closed_for_non_clear_or_out_of_window_source(tmp_path) -
     )
 
 
+def test_legacy_v1_window_cannot_satisfy_execution_scope(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "capital-scaling-resolution.db")
+    db.init_sync()
+    legacy_window_id = "e" * 64
+    db.append_event_sync(
+        event_type=CAPITAL_SCALING_EVIDENCE_WINDOW_EVENT_TYPE,
+        timestamp=NOW.isoformat(),
+        entity_type=CAPITAL_SCALING_EVIDENCE_WINDOW_ENTITY_TYPE,
+        entity_id=legacy_window_id,
+        source=CAPITAL_SCALING_EVIDENCE_SOURCE,
+        source_ref="legacy-v1-window",
+        payload={
+            "schema_version": "karkinos.capital_scaling_evidence_window.v1",
+            "window_id": legacy_window_id,
+            "review_window_start": (NOW - timedelta(days=35)).isoformat(),
+            "review_window_end": NOW.isoformat(),
+            "facts": {
+                "execution_scope": _computed_fact(
+                    "execution_scope",
+                    {"sampled_order_count": 100, "unbound_order_count": 0},
+                )
+            },
+        },
+    )
+
+    resolution = CapitalScalingEvidenceResolver(db=db).resolve(
+        evidence=_evidence(refs=(f"execution_scope:{legacy_window_id}",))
+    )
+
+    assert "persisted_evidence_window_schema_invalid:execution_scope" in (
+        resolution["blockers"]
+    )
+    assert resolution["all_required_sources_resolved_clear"] is False
+    assert resolution["resolution_status"] == "blocked_unresolved_sources"
+
+
 def test_resolver_accepts_computed_window_facts_and_rejects_metric_mismatch(
     tmp_path,
 ) -> None:
@@ -329,6 +384,7 @@ def test_resolver_accepts_computed_window_facts_and_rejects_metric_mismatch(
             "incident",
             "capacity",
             "operating_sample",
+            "execution_scope",
         ]
     )
     assert (

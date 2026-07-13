@@ -6,6 +6,29 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 4.4 closes the capital-scaling execution-provenance gap
+  with a required `execution_scope` fact in evidence-window v2. Assumptions:
+  the computed operating sample owns the canonical reviewed order set; every
+  order must bind either one persisted controlled-session rate admission or one
+  current clear exact-batch reconciliation record; an expired or revoked
+  session may remain valid historical evidence only when immutable identity and
+  the admission-time effective/expiry window still match; a batch must be
+  wholly contained in the review sample and is re-resolved against current OMS,
+  transition, fill, and reconciliation facts. Unbound, competing, orphan,
+  cross-window, drifted, invalid, or truncated sources block the window. V1
+  windows/reviews remain append-only history but cannot satisfy the v2 resolver;
+  migration is an explicit recomputation into a new record, not an in-place
+  rewrite. Validation: the capital-scaling/service/route group passed 222 tests
+  and the complete backend suite passed 1332 tests. Deterministic cases cover
+  exact-batch success, missing binding, later batch-source drift, a matching
+  historical runtime admission, and legacy v1 rejection. Risk impact: HIGH;
+  GitNexus reports 10 direct/67 total dependents for the evidence-window service
+  and 11 direct/59 total for the review-audit service, while the resolver is
+  MEDIUM with 7 direct/13 total dependents. The change is additive fail-closed:
+  it reads persisted facts, adds no QMT/provider adapter or public admission
+  route, and cannot issue/renew/resume/widen authority, mutate Account Truth,
+  OMS, fills, ledger, risk, kill switch, or submit/cancel a broker order.
+
 - 2026-07-13: Refreshed the complete Python, frontend, build-tool, and container
   dependency baseline to current stable releases. Assumptions: application
   installs remain reproducible from `uv.lock` and `web/package-lock.json`;

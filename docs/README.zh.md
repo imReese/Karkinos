@@ -340,6 +340,11 @@ Stage 4.3 又把运行样本纳入同一窗口：健康 connector soak 交易日
 paper/shadow 差异及现金流单位化最大回撤都从持久化事实计算。resolver 会逐项核对九个
 评审指标；缺失、非终态或截断覆盖一律 blocked，且不会签发授权、修改 runtime/OMS/账本
 或联系券商。
+Stage 4.4 又要求 exact execution scope：同一 v2 window 的每笔样本订单必须绑定一条持久化
+controlled-session admission，或一条仍然 current/clear 且完整包含于样本的 exact batch。
+身份不符、重复歧义、孤儿 admission、跨窗 batch、底层事实漂移或扫描截断都会阻断。v1
+window 只保留历史审计，当前评审必须从持久化事实追加式重算 v2；不会因此签发、恢复、续期或
+扩大授权，也不会提交/撤单或修改 OMS、账本、风控和 kill switch。
 
 Operations 告警可以展示配置不完整或运行时降级的只读券商 connector health，包括通过
 broker gateway health contract 读取的 runtime snapshot、capability scope，以及被阻断的

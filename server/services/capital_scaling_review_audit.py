@@ -20,10 +20,10 @@ from server.services.capital_scaling_review import (
 )
 
 CAPITAL_SCALING_EVALUATION_AUDIT_SCHEMA_VERSION = (
-    "karkinos.capital_scaling_evaluation_audit.v1"
+    "karkinos.capital_scaling_evaluation_audit.v2"
 )
 CAPITAL_SCALING_REVIEW_DECISION_SCHEMA_VERSION = (
-    "karkinos.capital_scaling_human_review_decision.v1"
+    "karkinos.capital_scaling_human_review_decision.v2"
 )
 CAPITAL_SCALING_EVALUATION_EVENT_TYPE = "capital_scaling.evaluated"
 CAPITAL_SCALING_EVALUATION_ENTITY_TYPE = "capital_scaling_evaluation"
@@ -77,7 +77,7 @@ class CapitalScalingReviewAuditService:
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.capital_scaling_review_status.v1",
+            "schema_version": "karkinos.capital_scaling_review_status.v2",
             "review_contract_status": "evidence_only",
             "automatic_scale_up_enabled": False,
             "evidence_source_resolution_status": "persisted_fail_closed_resolution",
@@ -99,7 +99,7 @@ class CapitalScalingReviewAuditService:
             "limitations": [
                 "Scale-up can only request a separate new authorization review.",
                 "Scale-up remains blocked unless every required evidence kind resolves to a clear persisted source fact.",
-                "Account Truth, after-cost, incident-window, capacity/liquidity, and operating-sample refs must point to a recorded computed evidence window.",
+                "Account Truth, after-cost, incident-window, capacity/liquidity, operating-sample, and execution-scope refs must point to one recorded computed evidence window.",
                 "Scale-down and disable are recommendations until separately applied.",
                 "No review decision changes runtime authority or broker behavior.",
             ],
