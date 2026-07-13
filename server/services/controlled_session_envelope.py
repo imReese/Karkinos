@@ -30,9 +30,9 @@ from server.services.session_start_account_truth import (
     resolve_session_start_account_truth_binding,
 )
 
-CONTROLLED_SESSION_ENVELOPE_SCHEMA_VERSION = "karkinos.controlled_session_envelope.v4"
+CONTROLLED_SESSION_ENVELOPE_SCHEMA_VERSION = "karkinos.controlled_session_envelope.v5"
 CONTROLLED_SESSION_ATTESTATION_SCHEMA_VERSION = (
-    "karkinos.controlled_session_attestation.v5"
+    "karkinos.controlled_session_attestation.v6"
 )
 CONTROLLED_SESSION_ATTESTATION_EVENT_TYPE = "controlled_session.envelope_attested"
 CONTROLLED_SESSION_ATTESTATION_ENTITY_TYPE = "controlled_session_attestation"
@@ -95,7 +95,7 @@ class ControlledSessionEnvelopeService:
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.controlled_session_status.v4",
+            "schema_version": "karkinos.controlled_session_status.v5",
             "contract_status": "proposal_only_non_executing",
             "runtime_session_authority": "separate_signed_service_required",
             "session_issue_enabled": False,
@@ -282,7 +282,7 @@ class ControlledSessionEnvelopeService:
                 [
                     *soak_hard_blockers,
                     *execution_gateway_hard_blockers,
-                    "stage2_per_order_bridge_not_promoted",
+                    "per_order_controlled_bridge_not_promoted",
                     *(
                         []
                         if session_start_account_truth.get("status") == "pass"
@@ -835,13 +835,13 @@ class ControlledSessionEnvelopeService:
             review.append("connector_soak_evidence_not_fresh")
         hard: list[str] = []
         if not result["operational_soak_complete"]:
-            hard.append("stage1_operational_soak_incomplete")
+            hard.append("broker_soak_operational_evidence_incomplete")
         if not result["account_truth_reconciliation_linked"]:
-            hard.append("stage1_account_truth_reconciliation_not_linked")
+            hard.append("broker_soak_account_truth_reconciliation_not_linked")
         if not result["owner_acceptance_recorded"]:
-            hard.append("stage1_owner_acceptance_missing")
+            hard.append("broker_soak_owner_acceptance_missing")
         if not result["promotion_ready"]:
-            hard.append("stage1_promotion_not_ready")
+            hard.append("broker_soak_promotion_not_ready")
         if can_submit:
             hard.append("evidence_connector_exposes_submit_capability")
         return result, review, hard

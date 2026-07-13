@@ -25,8 +25,8 @@ from server.services.execution_gateway_verification_binding import (
 )
 from server.services.operator_approval import resolve_operator_approval
 
-PER_ORDER_DOSSIER_SCHEMA_VERSION = "karkinos.per_order_confirmation_dossier.v2"
-PER_ORDER_CONFIRMATION_SCHEMA_VERSION = "karkinos.per_order_confirmation.v2"
+PER_ORDER_DOSSIER_SCHEMA_VERSION = "karkinos.per_order_confirmation_dossier.v3"
+PER_ORDER_CONFIRMATION_SCHEMA_VERSION = "karkinos.per_order_confirmation.v3"
 PER_ORDER_CONFIRMATION_EVENT_TYPE = "controlled_bridge.per_order_confirmed"
 PER_ORDER_CONFIRMATION_EVENT_ENTITY_TYPE = "per_order_confirmation"
 PER_ORDER_CONFIRMATION_EVENT_SOURCE = "controlled_bridge_confirmation"
@@ -87,7 +87,7 @@ class PerOrderConfirmationService:
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.per_order_confirmation_status.v2",
+            "schema_version": "karkinos.per_order_confirmation_status.v3",
             "contract_status": "evidence_only_non_submitting",
             "runtime_execution_authority": "disabled",
             "operator_identity_verified": False,
@@ -96,8 +96,8 @@ class PerOrderConfirmationService:
             ),
             "broker_submission_enabled": False,
             "live_gateway_implemented": False,
-            "stage2_promotion_ready": False,
-            "stage1_signed_promotion_binding": "required_per_dossier",
+            "controlled_bridge_promotion_ready": False,
+            "broker_soak_promotion_binding": "required_per_dossier",
             "execution_gateway_verification_binding": "required_per_dossier",
             "acknowledgement": PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
             "safety": _safety_flags(),
@@ -105,7 +105,7 @@ class PerOrderConfirmationService:
                 "A recorded confirmation requires a verified, artifact-bound operator signature.",
                 "It does not change OMS status or grant broker execution authority.",
                 "An exact recorded clear prior-batch reconciliation fingerprint is required.",
-                "Each dossier resolves the current signed Stage 1 promotion evidence.",
+                "Each dossier resolves current signed broker-soak promotion evidence.",
                 "Each dossier resolves an exact, current, non-submitting gateway verification.",
                 "A reviewed submit-capable runtime remains required and unimplemented.",
             ],
@@ -696,13 +696,13 @@ class PerOrderConfirmationService:
             review_blockers.append("connector_soak_evidence_not_fresh")
         hard_blockers: list[str] = []
         if not result["operational_soak_complete"]:
-            hard_blockers.append("stage1_operational_soak_incomplete")
+            hard_blockers.append("broker_soak_operational_evidence_incomplete")
         if not result["account_truth_reconciliation_linked"]:
-            hard_blockers.append("stage1_account_truth_reconciliation_not_linked")
+            hard_blockers.append("broker_soak_account_truth_reconciliation_not_linked")
         if not result["owner_acceptance_recorded"]:
-            hard_blockers.append("stage1_owner_acceptance_missing")
+            hard_blockers.append("broker_soak_owner_acceptance_missing")
         if not result["promotion_ready"]:
-            hard_blockers.append("stage1_promotion_not_ready")
+            hard_blockers.append("broker_soak_promotion_not_ready")
         if can_submit:
             hard_blockers.append("evidence_connector_exposes_submit_capability")
         return result, review_blockers, hard_blockers
@@ -1032,7 +1032,7 @@ def _resolve_signed_soak_promotion(
     unique_blockers = list(dict.fromkeys(blockers))
     ready = not unique_blockers
     return {
-        "schema_version": "karkinos.per_order_stage1_promotion_binding.v1",
+        "schema_version": "karkinos.per_order_broker_soak_promotion_binding.v1",
         "status": "ready" if ready else "blocked",
         "connector_id": connector_id,
         "dossier_fingerprint": dossier_fingerprint,
@@ -1052,7 +1052,7 @@ def _resolve_signed_soak_promotion(
 
 def _missing_signed_soak_promotion(blockers: list[str]) -> dict[str, Any]:
     return {
-        "schema_version": "karkinos.per_order_stage1_promotion_binding.v1",
+        "schema_version": "karkinos.per_order_broker_soak_promotion_binding.v1",
         "status": "blocked",
         "connector_id": "",
         "dossier_fingerprint": "",

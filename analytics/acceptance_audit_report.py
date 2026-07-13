@@ -90,8 +90,8 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
         "Controlled Broker Bridge Foundation acceptance audit",
         build_controlled_broker_bridge_foundation_acceptance_audit,
     ),
-    "capital_authorization_stage0": (
-        "Capital Authorization Stage 0 acceptance audit",
+    "capital_authorization_policy": (
+        "Capital Authorization Policy acceptance audit",
         build_capital_authorization_stage0_acceptance_audit,
     ),
     "broker_connector_soak_foundation": (

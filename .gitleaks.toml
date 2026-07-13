@@ -1,0 +1,12 @@
+title = "Karkinos Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Historical acceptance criterion identifier misclassified as an API key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''key="per_order_stage1_drift_fails_closed"''']
+paths = ['''analytics/acceptance_audit\.py''']

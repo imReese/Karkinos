@@ -467,8 +467,11 @@ def test_dossier_binds_all_review_evidence_but_keeps_submission_blocked(
     assert dossier["prior_execution_reconciliation"]["status"] == "pass"
     assert dossier["kill_switch"]["status"] == "pass"
     assert dossier["submission_status"] == "blocked"
-    assert "stage1_operational_soak_incomplete" in dossier["hard_submission_blockers"]
-    assert "stage1_owner_acceptance_missing" in dossier["hard_submission_blockers"]
+    assert (
+        "broker_soak_operational_evidence_incomplete"
+        in dossier["hard_submission_blockers"]
+    )
+    assert "broker_soak_owner_acceptance_missing" in dossier["hard_submission_blockers"]
     assert (
         "execution_gateway_runtime_not_verified"
         not in dossier["hard_submission_blockers"]
@@ -895,8 +898,8 @@ def test_status_makes_unverified_non_submitting_boundary_explicit(tmp_path) -> N
     assert status["runtime_execution_authority"] == "disabled"
     assert status["operator_identity_verified"] is False
     assert status["broker_submission_enabled"] is False
-    assert status["stage2_promotion_ready"] is False
-    assert status["stage1_signed_promotion_binding"] == "required_per_dossier"
+    assert status["controlled_bridge_promotion_ready"] is False
+    assert status["broker_soak_promotion_binding"] == "required_per_dossier"
     assert status["execution_gateway_verification_binding"] == ("required_per_dossier")
 
 
@@ -931,7 +934,7 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
 
     promotion = dossier["connector_soak"]["signed_promotion"]
     assert promotion == {
-        "schema_version": "karkinos.per_order_stage1_promotion_binding.v1",
+        "schema_version": "karkinos.per_order_broker_soak_promotion_binding.v1",
         "status": "ready",
         "connector_id": "qmt-readonly-confirmation",
         "dossier_fingerprint": "a" * 64,
@@ -948,11 +951,14 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
         "broker_submission_enabled": False,
     }
     assert (
-        "stage1_account_truth_reconciliation_not_linked"
+        "broker_soak_account_truth_reconciliation_not_linked"
         not in dossier["hard_submission_blockers"]
     )
-    assert "stage1_owner_acceptance_missing" not in dossier["hard_submission_blockers"]
-    assert "stage1_promotion_not_ready" not in dossier["hard_submission_blockers"]
+    assert (
+        "broker_soak_owner_acceptance_missing"
+        not in dossier["hard_submission_blockers"]
+    )
+    assert "broker_soak_promotion_not_ready" not in dossier["hard_submission_blockers"]
     assert (
         "execution_gateway_runtime_not_verified"
         not in dossier["hard_submission_blockers"]
@@ -1194,12 +1200,12 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         "signed_promotion_evidence_provider_failed"
     ]
     assert "private broker detail must not leak" not in json.dumps(failed)
-    assert "stage1_promotion_not_ready" in failed["hard_submission_blockers"]
+    assert "broker_soak_promotion_not_ready" in failed["hard_submission_blockers"]
     assert failed["submission_status"] == "blocked"
     assert malformed["connector_soak"]["signed_promotion"]["blockers"] == [
         "signed_promotion_trading_day_count_invalid"
     ]
-    assert "stage1_promotion_not_ready" in malformed["hard_submission_blockers"]
+    assert "broker_soak_promotion_not_ready" in malformed["hard_submission_blockers"]
 
 
 @pytest.mark.parametrize(

@@ -584,7 +584,7 @@ uv run python scripts/export_acceptance_audit.py --audit account_truth
 uv run python scripts/export_acceptance_audit.py --audit broker_fee_cost_basis
 uv run python scripts/export_acceptance_audit.py --audit operations_runbook
 uv run python scripts/export_acceptance_audit.py --audit controlled_broker_bridge_foundation
-uv run python scripts/export_acceptance_audit.py --audit capital_authorization_stage0
+uv run python scripts/export_acceptance_audit.py --audit capital_authorization_policy
 uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_foundation
 uv run python scripts/export_acceptance_audit.py --audit broker_connector_soak_promotion
 uv run python scripts/export_acceptance_audit.py --audit per_order_confirmation_foundation
