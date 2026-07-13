@@ -41,6 +41,7 @@ from server.models import (
     PortfolioCockpitResponse,
     PortfolioConstructionRecommendation,
     PortfolioSnapshot,
+    PositionEvidenceReviewResponse,
     PositionResponse,
     RiskConcentrationItem,
     RiskDrawdownPoint,
@@ -78,6 +79,10 @@ from server.services.manual_trade_fees import (
 )
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.position_presence import (
+    classify_position_presence,
+    is_economically_zero_quantity,
+)
 from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
 from server.services.valuation_snapshot import (
@@ -2061,7 +2066,7 @@ def _build_live_holdings_response(
 
     for sym, pos in portfolio.positions.items():
         quantity = float(pos.quantity)
-        if quantity == 0:
+        if is_economically_zero_quantity(quantity):
             continue
 
         symbol = str(sym)
@@ -2430,7 +2435,7 @@ def _build_intraday_equity_curve_series(
 
     for sym, position in positions.items():
         quantity = float(getattr(position, "quantity", 0.0) or 0.0)
-        if quantity == 0:
+        if is_economically_zero_quantity(quantity):
             continue
 
         symbol = str(sym)
@@ -2614,6 +2619,8 @@ def _current_equity_series_point(
     missing_price_symbols: set[str] = set()
 
     for sym, position in getattr(portfolio, "positions", {}).items():
+        if is_economically_zero_quantity(getattr(position, "quantity", None)):
+            continue
         symbol = str(sym)
         quote = latest_quotes.get(symbol)
         asset_class = _normalize_asset_class_value(
@@ -3180,7 +3187,7 @@ def _daily_equity_series_from_ledger_history(
             active_symbols = {
                 str(symbol)
                 for symbol, position in position_projection.positions.items()
-                if float(position.quantity) != 0.0
+                if not is_economically_zero_quantity(position.quantity)
             }
             historical_quotes: dict[str, dict] = {}
             missing_price_symbols: list[str] = []
@@ -3332,7 +3339,7 @@ def _synthetic_intraday_equity_series_from_current_quotes(
 
     for sym, position in getattr(portfolio, "positions", {}).items():
         quantity = float(getattr(position, "quantity", 0.0) or 0.0)
-        if quantity == 0:
+        if is_economically_zero_quantity(quantity):
             continue
 
         symbol = str(sym)
@@ -3887,6 +3894,7 @@ def create_router() -> APIRouter:
                 positions=[],
                 allocation=[],
                 allocation_grouped=[],
+                realized_pnl_total=0.0,
                 **valuation_identity_fields(valuation_snapshot),
             )
 
@@ -3895,6 +3903,9 @@ def create_router() -> APIRouter:
             {str(symbol) for symbol in portfolio.positions},
         )
         positions: list[PositionResponse] = []
+        closed_positions: list[PositionResponse] = []
+        position_review_items: list[PositionEvidenceReviewResponse] = []
+        realized_pnl_total = 0.0
         for sym, pos in portfolio.positions.items():
             symbol = str(sym)
             quote = latest_quotes.get(symbol)
@@ -3939,37 +3950,48 @@ def create_router() -> APIRouter:
                 quantity=quantity,
                 avg_cost=avg_cost,
             )
-            positions.append(
-                PositionResponse(
-                    symbol=symbol,
-                    name=metadata.display_name,
-                    display_name=metadata.display_name,
-                    asset_class=metadata.asset_class,
-                    quantity=quantity,
-                    available_qty=float(pos.available_qty),
-                    frozen_qty=float(pos.frozen_qty),
-                    avg_cost=avg_cost,
-                    **broker_cost_basis_fields,
-                    latest_price=latest_price_value,
-                    market_value=float(pos.market_value),
-                    unrealized_pnl=float(pos.unrealized_pnl),
-                    realized_pnl=float(pos.realized_pnl),
-                    commission_paid=float(pos.commission_paid),
-                    today_change=today_change,
-                    today_change_pct=today_change_pct,
-                    baseline_price=baseline_price,
-                    baseline_timestamp=baseline_timestamp,
-                    baseline_source=baseline_source,
-                    quote_timestamp=None if quote is None else quote.get("timestamp"),
-                    quote_status=quote_status,
-                    quote_source=_quote_source(state, quote),
-                    quote_age_seconds=_quote_age_seconds(quote),
-                    stale_reason=stale_reason,
-                    refresh_policy=_refresh_policy(),
-                    using_persistent_cache=_using_persistent_cache(quote),
-                    nav_date=None if quote is None else quote.get("nav_date"),
-                )
+            response_position = PositionResponse(
+                symbol=symbol,
+                name=metadata.display_name,
+                display_name=metadata.display_name,
+                asset_class=metadata.asset_class,
+                quantity=quantity,
+                available_qty=float(pos.available_qty),
+                frozen_qty=float(pos.frozen_qty),
+                avg_cost=avg_cost,
+                **broker_cost_basis_fields,
+                latest_price=latest_price_value,
+                market_value=float(pos.market_value),
+                unrealized_pnl=float(pos.unrealized_pnl),
+                realized_pnl=float(pos.realized_pnl),
+                commission_paid=float(pos.commission_paid),
+                today_change=today_change,
+                today_change_pct=today_change_pct,
+                baseline_price=baseline_price,
+                baseline_timestamp=baseline_timestamp,
+                baseline_source=baseline_source,
+                quote_timestamp=None if quote is None else quote.get("timestamp"),
+                quote_status=quote_status,
+                quote_source=_quote_source(state, quote),
+                quote_age_seconds=_quote_age_seconds(quote),
+                stale_reason=stale_reason,
+                refresh_policy=_refresh_policy(),
+                using_persistent_cache=_using_persistent_cache(quote),
+                nav_date=None if quote is None else quote.get("nav_date"),
             )
+            realized_pnl_total += response_position.realized_pnl
+            presence, reason_codes = classify_position_presence(pos)
+            if presence == "current":
+                positions.append(response_position)
+            elif presence == "closed":
+                closed_positions.append(response_position)
+            else:
+                position_review_items.append(
+                    PositionEvidenceReviewResponse(
+                        reason_codes=reason_codes,
+                        position=response_position,
+                    )
+                )
 
         # 计算总权益
         total_equity = float(portfolio.cash)
@@ -4033,6 +4055,9 @@ def create_router() -> APIRouter:
             positions=positions,
             allocation=allocation,
             allocation_grouped=allocation_grouped,
+            closed_positions=closed_positions,
+            position_review_items=position_review_items,
+            realized_pnl_total=realized_pnl_total,
             **valuation_identity_fields(valuation_snapshot),
         )
 

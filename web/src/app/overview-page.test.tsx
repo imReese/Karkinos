@@ -108,6 +108,8 @@ afterEach(() => {
 function installOverviewFetchMock(
   overviewOverrides: Record<string, unknown> = {},
   {
+    snapshot = portfolioSnapshot,
+    activityEntries = ledgerEntries,
     pendingOrders = [],
     marketQuotes = [
       {
@@ -245,6 +247,8 @@ function installOverviewFetchMock(
       ],
     },
   }: {
+    snapshot?: Record<string, unknown>;
+    activityEntries?: unknown[];
     pendingOrders?: unknown[];
     marketQuotes?: unknown[];
     decision?: Record<string, unknown>;
@@ -314,7 +318,7 @@ function installOverviewFetchMock(
       });
     }
     if (url.endsWith('/api/portfolio')) {
-      return jsonResponse(portfolioSnapshot);
+      return jsonResponse(snapshot);
     }
     if (url.includes('/api/portfolio/live-holdings')) {
       return jsonResponse({
@@ -416,7 +420,7 @@ function installOverviewFetchMock(
       });
     }
     if (url.includes('/api/ledger/entries')) {
-      return jsonResponse(ledgerEntries);
+      return jsonResponse(activityEntries);
     }
     if (url.includes('/api/trading/orders')) {
       return jsonResponse(pendingOrders);
@@ -518,6 +522,82 @@ function renderOverviewPage({
     </PreferencesProvider>,
   );
 }
+
+test('keeps a fully closed asset out of current holdings while retaining sell activity', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {
+      positions_count: 0,
+      realized_pnl: 296,
+    },
+    {
+      snapshot: {
+        cash: 10246,
+        total_equity: 10246,
+        total_deposits: 10000,
+        positions: [],
+        allocation: [
+          {
+            symbol: 'CASH',
+            name: '现金',
+            weight: 1,
+            value: 10246,
+            asset_class: 'cash',
+          },
+        ],
+        allocation_grouped: [],
+        closed_positions: [
+          {
+            symbol: '600066',
+            name: '宇通客车',
+            display_name: '宇通客车',
+            asset_class: 'stock',
+            quantity: 0,
+            available_qty: 0,
+            frozen_qty: 0,
+            avg_cost: 0,
+            market_value: 0,
+            unrealized_pnl: 0,
+            realized_pnl: 296,
+            commission_paid: 4,
+          },
+        ],
+        position_review_items: [],
+        realized_pnl_total: 296,
+      },
+      activityEntries: [
+        {
+          id: 66,
+          entry_type: 'trade_sell',
+          timestamp: '2026-07-04T10:00:00+08:00',
+          amount: 1100,
+          symbol: '600066',
+          display_name: '宇通客车',
+          direction: 'sell',
+          quantity: 100,
+          price: 11,
+          commission: 1,
+          gross_amount: 1100,
+          net_cash_impact: 1099,
+          asset_class: 'stock',
+          note: '最终卖出并清仓',
+          source: 'manual',
+          source_ref: 'fixture-yutong-final-sell',
+          created_at: null,
+        },
+      ],
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  await screen.findByText(/卖出.*宇通客车.*600066/);
+  expect(screen.queryByTestId('position-row-600066')).toBeNull();
+  expect(screen.queryByTestId('position-card-600066')).toBeNull();
+  expect(
+    screen.getByText('当前还没有持仓，先去 Activity 录入交易。'),
+  ).toBeTruthy();
+});
 
 test('renders the compact return calendar on the overview page', async () => {
   const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

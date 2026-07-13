@@ -24,13 +24,21 @@ def build_account_state_projection(
     """Build the canonical account state projection from portfolio inputs."""
     total_equity = snapshot.total_equity
     cash_ratio = snapshot.cash / total_equity if total_equity > 0 else 0.0
+    realized_pnl = snapshot.realized_pnl_total
+    if realized_pnl is None:
+        all_position_facts = [
+            *snapshot.positions,
+            *snapshot.closed_positions,
+            *(item.position for item in snapshot.position_review_items),
+        ]
+        realized_pnl = sum(position.realized_pnl for position in all_position_facts)
     summary = AccountOverview(
         total_equity=total_equity,
         available_cash=snapshot.cash,
         total_deposits=snapshot.total_deposits,
         positions_count=len(snapshot.positions),
         unrealized_pnl=sum(position.unrealized_pnl for position in snapshot.positions),
-        realized_pnl=sum(position.realized_pnl for position in snapshot.positions),
+        realized_pnl=realized_pnl,
         cash_ratio=cash_ratio,
         valuation_snapshot_id=snapshot.valuation_snapshot_id,
         valuation_as_of=snapshot.valuation_as_of,

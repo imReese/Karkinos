@@ -9,6 +9,7 @@ from typing import Any
 
 from server.ledger.models import LedgerEntry
 from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
+from server.services.position_presence import is_economically_zero_quantity
 from server.valuation.service import value_position
 
 _CASH_DEPOSIT_TYPES = {"cash_deposit", "deposit"}
@@ -195,7 +196,7 @@ def _bucket_position_values(
         "others": ZERO,
     }
     for symbol, position in projection.positions.items():
-        if position.quantity == ZERO:
+        if is_economically_zero_quantity(position.quantity):
             continue
         bucket = _equity_bucket(asset_classes.get(symbol))
         if bucket is not None:
