@@ -64,6 +64,12 @@ export type AllocationGroup = {
   items: AllocationItem[];
 };
 
+export type PositionEvidenceReview = {
+  status: 'review_required';
+  reason_codes: string[];
+  position: Position;
+};
+
 export type PortfolioActionTask = {
   id?: number | null;
   source_signal_id?: number | null;
@@ -131,6 +137,9 @@ export type PortfolioSnapshot = {
   positions: Position[];
   allocation: AllocationItem[];
   allocation_grouped: AllocationGroup[];
+  closed_positions?: Position[];
+  position_review_items?: PositionEvidenceReview[];
+  realized_pnl_total?: number | null;
   valuation_snapshot_id?: string | null;
   valuation_as_of?: string | null;
   valuation_trade_date?: string | null;

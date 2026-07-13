@@ -6,6 +6,40 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: The canonical portfolio projection now distinguishes current,
+  closed, and evidence-review position facts, so a fully sold asset no longer
+  appears in current holdings, allocation, grouped allocation, Overview counts,
+  Cockpit, live holdings, or current equity-series diagnostics. Assumptions:
+  portfolio quantities use the existing six-decimal fund precision; absolute
+  residuals at or below half a quantity quantum (`0.0000005`) are economically
+  zero, while real positive and negative positions remain current. A zero
+  quantity with non-zero available/frozen quantity or more than half a cent of
+  market-value/unrealized-PnL evidence is excluded from current holdings and
+  exposed under `position_review_items`; clean closures remain available under
+  `closed_positions`. Cumulative realized PnL continues to aggregate every
+  persisted projected position fact, including closures, and ledger entries,
+  fees, valuation snapshot identity, and ledger cutoff remain unchanged.
+  Pending-fund orders and account-truth reconciliation evidence retain their
+  existing separate review surfaces and are not promoted into current holdings.
+  Validation: `uv run pytest -q tests/server/test_position_presence.py
+  tests/server/test_projection_service.py tests/server/test_valuation_snapshot.py`
+  passed 24 tests; the focused Portfolio route selection passed 36 tests; the
+  complete backend suite passed 1,342 tests. Under Node 24.17.0, the Overview
+  test file passed 32 tests, the complete Web suite passed 407 tests across 40
+  files, `npm run format:check` passed, and `npm run build` completed the
+  TypeScript/Vite production build. Black, isort, and `git diff --check` also
+  passed. Deterministic fixtures cover a 200-share buy followed by two
+  100-share sells, retained sell activity/fees/realized PnL, tiny residuals,
+  real long/short quantities, review-required inconsistent evidence, shared
+  Portfolio/Overview/Allocation/Cockpit counts, and unchanged valuation/ledger
+  identity. Risk impact: GitNexus reports CRITICAL for `PortfolioSnapshot`
+  (13 direct, 43 total dependants) and `get_portfolio` (8 direct consumers), and
+  HIGH for account-state and current-equity projections. The implementation is
+  an additive read-model partition over persisted facts only; it does not
+  contact a provider, refresh quotes implicitly, delete history, mutate OMS,
+  ledger, risk, kill switch, or capital authorization, or add submit/cancel or
+  live-broker authority.
+
 - 2026-07-13: Stage 3.19 replaces implicit runtime-connector reads with a
   persisted-fact controlled-execution operator view and broker-neutral
   lifecycle evidence boundary. Assumptions: database rows are the only

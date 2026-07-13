@@ -249,6 +249,14 @@ class PositionResponse(BaseModel):
     nav_date: str | None = None
 
 
+class PositionEvidenceReviewResponse(BaseModel):
+    """Non-current position facts that require explicit evidence review."""
+
+    status: str = "review_required"
+    reason_codes: list[str] = Field(default_factory=list)
+    position: PositionResponse
+
+
 class AllocationItem(BaseModel):
     symbol: str
     name: str
@@ -273,7 +281,12 @@ class PortfolioSnapshot(BaseModel):
     total_deposits: float = 0.0
     positions: list[PositionResponse]
     allocation: list[AllocationItem]
-    allocation_grouped: list[AllocationGroup] = []
+    allocation_grouped: list[AllocationGroup] = Field(default_factory=list)
+    closed_positions: list[PositionResponse] = Field(default_factory=list)
+    position_review_items: list[PositionEvidenceReviewResponse] = Field(
+        default_factory=list
+    )
+    realized_pnl_total: float | None = None
     valuation_snapshot_id: str | None = None
     valuation_as_of: str | None = None
     valuation_trade_date: str | None = None
