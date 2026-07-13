@@ -120,12 +120,16 @@ Active planning target:
   provider/model/agent-role decoupling, stateful evidence-bound workflows,
   deterministic orchestration, fail-closed tool permissions, append-oriented
   audit storage, and a local fixture provider. It registers no production AI
-  provider, calls no external model, exposes no Web/API workflow, and grants no
+  provider, calls no external model, exposes no model workflow, and grants no
   trading authority. Phase 1.1 adds content-addressed canonical-evidence
   captures and context-bound read executors with exact valuation/ledger
-  identity checks; no production capture route or scheduler is registered.
-  Later phases may connect explicit human-started capture and research tasks
-  only after separate review.
+  identity checks. Phase 1.2 adds one explicitly human-started, model-free POST
+  boundary that reuses existing canonical Portfolio, Account State, Operations,
+  Research Evidence, Account Truth, and paper/shadow projections, verifies the
+  identity again after capture, and writes only `ai_*` audit/evidence rows. It
+  registers no scheduler, startup hook, background task, real provider, model
+  call, OMS action, or broker capability. Research tasks and model execution
+  remain later, separately reviewed phases.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

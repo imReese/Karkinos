@@ -3841,6 +3841,216 @@ def _portfolio_construction_rationale(
     return "风控闸门尚未完成检查，该组合构建建议不能作为可执行候选。"
 
 
+async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
+    """Build the canonical Portfolio projection from persisted application facts."""
+    scheduler = state.scheduler
+    valuation_snapshot = _current_valuation_snapshot(state)
+    latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
+    portfolio, instruments = _resolve_projection_sources(
+        state,
+        latest_quotes=latest_quotes,
+    )
+    portfolio, instruments, _ = _hydrate_missing_position_quotes(
+        state,
+        portfolio,
+        instruments,
+    )
+
+    if portfolio is None:
+        return PortfolioSnapshot(
+            cash=0.0,
+            total_equity=0.0,
+            total_deposits=0.0,
+            positions=[],
+            allocation=[],
+            allocation_grouped=[],
+            realized_pnl_total=0.0,
+            **valuation_identity_fields(valuation_snapshot),
+        )
+
+    broker_cost_basis_evidence = _broker_cost_basis_evidence_by_symbol(
+        state,
+        {str(symbol) for symbol in portfolio.positions},
+    )
+    positions: list[PositionResponse] = []
+    closed_positions: list[PositionResponse] = []
+    position_review_items: list[PositionEvidenceReviewResponse] = []
+    realized_pnl_total = 0.0
+    for sym, pos in portfolio.positions.items():
+        symbol = str(sym)
+        quote = latest_quotes.get(symbol)
+        instrument = instruments.get(Symbol(symbol)) if instruments else None
+        asset_class = _normalize_asset_class(
+            (quote or {}).get("asset_class")
+            or getattr(getattr(instrument, "asset_class", None), "value", None)
+        )
+        metadata = resolve_asset_metadata(
+            state,
+            symbol,
+            asset_class=asset_class,
+            quote=quote,
+            fallback_name=getattr(instrument, "name", None) or symbol,
+        )
+        quantity = float(pos.quantity)
+        avg_cost = float(pos.avg_cost)
+        latest_price_value = _quote_latest_price(quote)
+        (
+            today_change,
+            today_change_pct,
+            baseline_price,
+            baseline_timestamp,
+            baseline_source,
+        ) = _resolve_position_today_change(
+            state,
+            symbol=symbol,
+            quantity=quantity,
+            avg_cost=avg_cost,
+            latest_quote=quote,
+            latest_price_value=latest_price_value,
+        )
+        quote_status, stale_reason = _position_quote_presentation(
+            state,
+            symbol=symbol,
+            asset_class=metadata.asset_class,
+            quote=quote,
+        )
+        broker_cost_basis_fields = _broker_cost_basis_fields(
+            pos,
+            broker_cost_basis_evidence.get(symbol),
+            quantity=quantity,
+            avg_cost=avg_cost,
+        )
+        response_position = PositionResponse(
+            symbol=symbol,
+            name=metadata.display_name,
+            display_name=metadata.display_name,
+            asset_class=metadata.asset_class,
+            quantity=quantity,
+            available_qty=float(pos.available_qty),
+            frozen_qty=float(pos.frozen_qty),
+            avg_cost=avg_cost,
+            **broker_cost_basis_fields,
+            latest_price=latest_price_value,
+            market_value=float(pos.market_value),
+            unrealized_pnl=float(pos.unrealized_pnl),
+            realized_pnl=float(pos.realized_pnl),
+            commission_paid=float(pos.commission_paid),
+            today_change=today_change,
+            today_change_pct=today_change_pct,
+            baseline_price=baseline_price,
+            baseline_timestamp=baseline_timestamp,
+            baseline_source=baseline_source,
+            quote_timestamp=None if quote is None else quote.get("timestamp"),
+            quote_status=quote_status,
+            quote_source=_quote_source(state, quote),
+            quote_age_seconds=_quote_age_seconds(quote),
+            stale_reason=stale_reason,
+            refresh_policy=_refresh_policy(),
+            using_persistent_cache=_using_persistent_cache(quote),
+            nav_date=None if quote is None else quote.get("nav_date"),
+        )
+        realized_pnl_total += response_position.realized_pnl
+        presence, reason_codes = classify_position_presence(pos)
+        if presence == "current":
+            positions.append(response_position)
+        elif presence == "closed":
+            closed_positions.append(response_position)
+        else:
+            position_review_items.append(
+                PositionEvidenceReviewResponse(
+                    reason_codes=reason_codes,
+                    position=response_position,
+                )
+            )
+
+    total_equity = float(portfolio.cash)
+    for pos in positions:
+        total_equity += pos.market_value
+
+    allocation: list[AllocationItem] = []
+    if total_equity > 0:
+        allocation.append(
+            AllocationItem(
+                symbol="CASH",
+                name="现金",
+                weight=float(portfolio.cash) / total_equity,
+                value=float(portfolio.cash),
+                asset_class="cash",
+            )
+        )
+        for pos in positions:
+            ac = "stock"
+            if scheduler:
+                for sym, asset_class in scheduler.watchlist:
+                    if str(sym) == pos.symbol:
+                        ac = asset_class.value
+                        break
+            if pos.symbol in {
+                str(symbol)
+                for symbol, instrument in instruments.items()
+                if getattr(instrument, "asset_class", None) is not None
+            }:
+                instrument = instruments.get(Symbol(pos.symbol))
+                if instrument is not None:
+                    ac = instrument.asset_class.value
+            name = pos.display_name or pos.name or pos.symbol
+
+            allocation.append(
+                AllocationItem(
+                    symbol=pos.symbol,
+                    name=name,
+                    weight=pos.market_value / total_equity,
+                    value=pos.market_value,
+                    asset_class=ac,
+                )
+            )
+
+    allocation_grouped = _build_grouped_allocation(allocation, total_equity)
+
+    if hasattr(portfolio, "total_deposits"):
+        total_deposits = float(portfolio.total_deposits)
+    elif state.db is not None:
+        total_deposits = await state.db.get_total_deposits()
+    else:
+        total_deposits = 0.0
+
+    return PortfolioSnapshot(
+        cash=float(portfolio.cash),
+        total_equity=total_equity,
+        total_deposits=total_deposits,
+        positions=positions,
+        allocation=allocation,
+        allocation_grouped=allocation_grouped,
+        closed_positions=closed_positions,
+        position_review_items=position_review_items,
+        realized_pnl_total=realized_pnl_total,
+        **valuation_identity_fields(valuation_snapshot),
+    )
+
+
+async def build_account_state_response(
+    state,
+    *,
+    snapshot: PortfolioSnapshot | None = None,
+) -> AccountStateResponse:
+    """Project canonical Account State from one exact Portfolio snapshot."""
+    resolved_snapshot = snapshot or await build_portfolio_snapshot(state)
+    risks = build_risk_summary(
+        resolved_snapshot,
+        _collect_latest_quote_timestamps(state),
+    )
+    projection = build_account_state_projection(resolved_snapshot, risks)
+    return AccountStateResponse(
+        summary=_with_overview_quote_metadata(
+            projection.summary,
+            resolved_snapshot,
+        ),
+        snapshot=projection.snapshot,
+        risks=projection.risks,
+        next_step=projection.next_step,
+    )
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -3872,194 +4082,7 @@ def create_router() -> APIRouter:
         """获取当前持仓 + 现金 + 总权益 + 资产配置。"""
         from server.app import get_app_state
 
-        state = get_app_state()
-        scheduler = state.scheduler
-        valuation_snapshot = _current_valuation_snapshot(state)
-        latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
-        portfolio, instruments = _resolve_projection_sources(
-            state,
-            latest_quotes=latest_quotes,
-        )
-        portfolio, instruments, _ = _hydrate_missing_position_quotes(
-            state,
-            portfolio,
-            instruments,
-        )
-
-        if portfolio is None:
-            return PortfolioSnapshot(
-                cash=0.0,
-                total_equity=0.0,
-                total_deposits=0.0,
-                positions=[],
-                allocation=[],
-                allocation_grouped=[],
-                realized_pnl_total=0.0,
-                **valuation_identity_fields(valuation_snapshot),
-            )
-
-        broker_cost_basis_evidence = _broker_cost_basis_evidence_by_symbol(
-            state,
-            {str(symbol) for symbol in portfolio.positions},
-        )
-        positions: list[PositionResponse] = []
-        closed_positions: list[PositionResponse] = []
-        position_review_items: list[PositionEvidenceReviewResponse] = []
-        realized_pnl_total = 0.0
-        for sym, pos in portfolio.positions.items():
-            symbol = str(sym)
-            quote = latest_quotes.get(symbol)
-            instrument = instruments.get(Symbol(symbol)) if instruments else None
-            asset_class = _normalize_asset_class(
-                (quote or {}).get("asset_class")
-                or getattr(getattr(instrument, "asset_class", None), "value", None)
-            )
-            metadata = resolve_asset_metadata(
-                state,
-                symbol,
-                asset_class=asset_class,
-                quote=quote,
-                fallback_name=getattr(instrument, "name", None) or symbol,
-            )
-            quantity = float(pos.quantity)
-            avg_cost = float(pos.avg_cost)
-            latest_price_value = _quote_latest_price(quote)
-            (
-                today_change,
-                today_change_pct,
-                baseline_price,
-                baseline_timestamp,
-                baseline_source,
-            ) = _resolve_position_today_change(
-                state,
-                symbol=symbol,
-                quantity=quantity,
-                avg_cost=avg_cost,
-                latest_quote=quote,
-                latest_price_value=latest_price_value,
-            )
-            quote_status, stale_reason = _position_quote_presentation(
-                state,
-                symbol=symbol,
-                asset_class=metadata.asset_class,
-                quote=quote,
-            )
-            broker_cost_basis_fields = _broker_cost_basis_fields(
-                pos,
-                broker_cost_basis_evidence.get(symbol),
-                quantity=quantity,
-                avg_cost=avg_cost,
-            )
-            response_position = PositionResponse(
-                symbol=symbol,
-                name=metadata.display_name,
-                display_name=metadata.display_name,
-                asset_class=metadata.asset_class,
-                quantity=quantity,
-                available_qty=float(pos.available_qty),
-                frozen_qty=float(pos.frozen_qty),
-                avg_cost=avg_cost,
-                **broker_cost_basis_fields,
-                latest_price=latest_price_value,
-                market_value=float(pos.market_value),
-                unrealized_pnl=float(pos.unrealized_pnl),
-                realized_pnl=float(pos.realized_pnl),
-                commission_paid=float(pos.commission_paid),
-                today_change=today_change,
-                today_change_pct=today_change_pct,
-                baseline_price=baseline_price,
-                baseline_timestamp=baseline_timestamp,
-                baseline_source=baseline_source,
-                quote_timestamp=None if quote is None else quote.get("timestamp"),
-                quote_status=quote_status,
-                quote_source=_quote_source(state, quote),
-                quote_age_seconds=_quote_age_seconds(quote),
-                stale_reason=stale_reason,
-                refresh_policy=_refresh_policy(),
-                using_persistent_cache=_using_persistent_cache(quote),
-                nav_date=None if quote is None else quote.get("nav_date"),
-            )
-            realized_pnl_total += response_position.realized_pnl
-            presence, reason_codes = classify_position_presence(pos)
-            if presence == "current":
-                positions.append(response_position)
-            elif presence == "closed":
-                closed_positions.append(response_position)
-            else:
-                position_review_items.append(
-                    PositionEvidenceReviewResponse(
-                        reason_codes=reason_codes,
-                        position=response_position,
-                    )
-                )
-
-        # 计算总权益
-        total_equity = float(portfolio.cash)
-        for pos in positions:
-            total_equity += pos.market_value
-
-        # 计算配置
-        allocation: list[AllocationItem] = []
-        if total_equity > 0:
-            # 现金配置
-            allocation.append(
-                AllocationItem(
-                    symbol="CASH",
-                    name="现金",
-                    weight=float(portfolio.cash) / total_equity,
-                    value=float(portfolio.cash),
-                    asset_class="cash",
-                )
-            )
-            # 持仓配置
-            for pos in positions:
-                ac = "stock"
-                if scheduler:
-                    for sym, asset_class in scheduler.watchlist:
-                        if str(sym) == pos.symbol:
-                            ac = asset_class.value
-                            break
-                if pos.symbol in {
-                    str(symbol)
-                    for symbol, instrument in instruments.items()
-                    if getattr(instrument, "asset_class", None) is not None
-                }:
-                    instrument = instruments.get(Symbol(pos.symbol))
-                    if instrument is not None:
-                        ac = instrument.asset_class.value
-                name = pos.display_name or pos.name or pos.symbol
-
-                allocation.append(
-                    AllocationItem(
-                        symbol=pos.symbol,
-                        name=name,
-                        weight=pos.market_value / total_equity,
-                        value=pos.market_value,
-                        asset_class=ac,
-                    )
-                )
-
-        allocation_grouped = _build_grouped_allocation(allocation, total_equity)
-
-        if hasattr(portfolio, "total_deposits"):
-            total_deposits = float(portfolio.total_deposits)
-        elif state.db is not None:
-            total_deposits = await state.db.get_total_deposits()
-        else:
-            total_deposits = 0.0
-
-        return PortfolioSnapshot(
-            cash=float(portfolio.cash),
-            total_equity=total_equity,
-            total_deposits=total_deposits,
-            positions=positions,
-            allocation=allocation,
-            allocation_grouped=allocation_grouped,
-            closed_positions=closed_positions,
-            position_review_items=position_review_items,
-            realized_pnl_total=realized_pnl_total,
-            **valuation_identity_fields(valuation_snapshot),
-        )
+        return await build_portfolio_snapshot(get_app_state())
 
     @r.get("/live-holdings", response_model=LiveHoldingsResponse)
     async def get_live_holdings() -> LiveHoldingsResponse:
@@ -4150,16 +4173,7 @@ def create_router() -> APIRouter:
         """获取规范化账户状态投影。"""
         from server.app import get_app_state
 
-        state = get_app_state()
-        snapshot = await get_portfolio()
-        risks = build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
-        projection = build_account_state_projection(snapshot, risks)
-        return AccountStateResponse(
-            summary=_with_overview_quote_metadata(projection.summary, snapshot),
-            snapshot=projection.snapshot,
-            risks=projection.risks,
-            next_step=projection.next_step,
-        )
+        return await build_account_state_response(get_app_state())
 
     @r.get("/cockpit", response_model=PortfolioCockpitResponse)
     async def get_portfolio_cockpit() -> PortfolioCockpitResponse:

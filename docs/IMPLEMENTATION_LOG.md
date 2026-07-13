@@ -6,6 +6,36 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: AI-native Phase 1.2 adds one explicitly human-started,
+  model-free canonical context capture command at
+  `POST /api/ai/research-contexts/capture`. Assumptions: the caller supplies a
+  local operator label and exact acknowledgement; this is explicit intent, not
+  cryptographic user authentication. Portfolio and Account State reuse one
+  canonical Portfolio snapshot, Operations reuses its persisted-fact builder,
+  Research Evidence and paper/shadow require exact persisted ids, and Account
+  Truth reuses its canonical persisted-evidence projection. The valuation
+  snapshot must already be persisted and replayable; snapshot id, ledger cutoff,
+  or ledger fingerprint drift fails closed. Content-addressed evidence is
+  checkpointed before context assembly so restart after a later audit-stage
+  failure resumes the original records without re-reading time-varying sources.
+  Completed runs reject changed idempotency input, resist late concurrent
+  failure overwrite, and rebuild their context during replay to detect stored
+  payload drift. Validation: all 47 AI-runtime tests, seven route-contract
+  tests, the complete 1,398-test backend suite, and 84 trading-safety tests
+  passed. Under Node 24.14.0, all 413 Web tests, Prettier format check, and the
+  TypeScript/Vite production build passed. Focused projection/Operations/
+  Account Truth regressions also passed, and Black/isort checks cover every
+  changed Python file. Risk impact: GitNexus reported CRITICAL for the reused
+  `get_portfolio` path (eight direct callers across six execution flows), so its
+  calculation was moved unchanged into a canonical builder and the original
+  route remains a delegating compatibility boundary; Account State, Operations,
+  and `create_app` changes were LOW risk. The POST writes only `ai_*` evidence,
+  context, and capture-lifecycle audit rows. It starts no workflow, invokes no
+  provider/model, refreshes no market/broker facts, and cannot mutate OMS,
+  ledger, risk decisions, reconciliation, kill switch, capital authorization,
+  broker submission, or cancellation state. No research-task UI or authenticated
+  multi-user identity is claimed in this phase.
+
 - 2026-07-13: AI-native Phase 1.1 adds the immutable canonical-evidence read
   boundary without connecting a production AI provider or capture workflow.
   Assumptions: an explicit future capture caller must supply an already-built
