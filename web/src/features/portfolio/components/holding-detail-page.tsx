@@ -129,6 +129,22 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function sameEvidenceIdentity(
+  snapshotId: string | null | undefined,
+  ledgerCutoffId: number | undefined,
+  comparisonSnapshotId: string | null | undefined,
+  comparisonLedgerCutoffId: number | undefined,
+) {
+  return (
+    Boolean(snapshotId) &&
+    Boolean(comparisonSnapshotId) &&
+    Number.isInteger(ledgerCutoffId) &&
+    Number.isInteger(comparisonLedgerCutoffId) &&
+    snapshotId === comparisonSnapshotId &&
+    ledgerCutoffId === comparisonLedgerCutoffId
+  );
+}
+
 function formatCostBasisMethod(
   method: string | null | undefined,
   locale: ReturnType<typeof usePreferences>['locale'],
@@ -249,10 +265,16 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     useHoldingStrategyAttributionQuery(decodedSymbol);
   const refreshQuote = useRefreshMarketQuotesMutation();
 
-  const allPositions = positions.data ?? snapshot.data?.positions ?? [];
-  const position = allPositions.find(
+  const currentPositions = positions.data ?? snapshot.data?.positions ?? [];
+  const currentPosition = currentPositions.find(
     (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
   );
+  const historicalPosition = (snapshot.data?.closed_positions ?? []).find(
+    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
+  );
+  const position = currentPosition ?? historicalPosition;
+  const isHistoricalClosedPosition =
+    !currentPosition && Boolean(historicalPosition);
   const allocation = (snapshot.data?.allocation ?? []).find(
     (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
   );
@@ -263,15 +285,14 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
   );
 
-  const ledgerEntries = useMemo(
+  const symbolLedgerEntries = useMemo(
     () =>
-      (ledger.data ?? [])
-        .filter(
-          (entry) => normalizeSymbol(entry.symbol ?? '') === normalizedSymbol,
-        )
-        .slice(0, 12),
+      (ledger.data ?? []).filter(
+        (entry) => normalizeSymbol(entry.symbol ?? '') === normalizedSymbol,
+      ),
     [ledger.data, normalizedSymbol],
   );
+  const ledgerEntries = symbolLedgerEntries.slice(0, 12);
 
   const coreLoading =
     !position &&
@@ -354,9 +375,12 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     position,
     liveItem?.latest_price ?? null,
   );
-  const todayChange = position.today_change ?? liveItem?.today_change ?? null;
-  const todayChangePct =
-    position.today_change_pct ?? liveItem?.today_change_pct ?? null;
+  const todayChange = isHistoricalClosedPosition
+    ? null
+    : (position.today_change ?? liveItem?.today_change ?? null);
+  const todayChangePct = isHistoricalClosedPosition
+    ? null
+    : (position.today_change_pct ?? liveItem?.today_change_pct ?? null);
   const baselinePrice = position.baseline_price ?? liveItem?.baseline_price;
   const baselineSource =
     position.baseline_source ?? liveItem?.baseline_source ?? 'unavailable';
@@ -495,6 +519,77 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     ? formatPublicCode(holdingAttribution.attribution_status, locale)
     : contributionStatusLabel;
   const portfolioWeight = allocation?.weight ?? null;
+  const lastLedgerEntry = symbolLedgerEntries[0] ?? null;
+  const snapshotIdentityMatchesOverview = sameEvidenceIdentity(
+    snapshot.data?.valuation_snapshot_id,
+    snapshot.data?.ledger_cutoff_id,
+    overview.data?.valuation_snapshot_id,
+    overview.data?.ledger_cutoff_id,
+  );
+  const snapshotIdentityMatchesLive = isHistoricalClosedPosition
+    ? true
+    : sameEvidenceIdentity(
+        snapshot.data?.valuation_snapshot_id,
+        snapshot.data?.ledger_cutoff_id,
+        liveHoldings.data?.valuation_snapshot_id,
+        liveHoldings.data?.ledger_cutoff_id,
+      );
+  const evidenceIdentityConsistent =
+    snapshotIdentityMatchesOverview && snapshotIdentityMatchesLive;
+  const evidenceReviewState = isHistoricalClosedPosition
+    ? labels.evidenceStates.historicalClosed
+    : !evidenceIdentityConsistent
+      ? labels.evidenceStates.identityMismatch
+      : needsCostBasisReview
+        ? labels.evidenceStates.costBasisReview
+        : isStale
+          ? labels.evidenceStates.staleQuote
+          : labels.evidenceStates.complete;
+  const nextManualStep = isHistoricalClosedPosition
+    ? labels.evidenceNextSteps.reviewHistory
+    : !evidenceIdentityConsistent
+      ? labels.evidenceNextSteps.reloadIdentity
+      : needsCostBasisReview
+        ? labels.evidenceNextSteps.reconcileCost
+        : isStale
+          ? labels.evidenceNextSteps.reviewQuote
+          : labels.evidenceNextSteps.none;
+  const tradeMarkers = symbolLedgerEntries.flatMap((entry) => {
+    const direction = entry.direction?.toLowerCase();
+    if (direction !== 'buy' && direction !== 'sell') {
+      return [];
+    }
+    return [
+      {
+        timestamp: entry.timestamp,
+        kind: direction,
+        price: entry.price,
+        label:
+          direction === 'buy' ? labels.chartBuyMarker : labels.chartSellMarker,
+      } as const,
+    ];
+  });
+  const costReferenceLines = [
+    ...(position.avg_cost > 0
+      ? [
+          {
+            value: position.avg_cost,
+            label: labels.chartLocalCostLine,
+            tone: 'local' as const,
+          },
+        ]
+      : []),
+    ...(brokerDisplayedUnitCost !== null &&
+    Math.abs(brokerDisplayedUnitCost - position.avg_cost) >= 0.00005
+      ? [
+          {
+            value: brokerDisplayedUnitCost,
+            label: labels.chartEvidenceCostLine,
+            tone: 'broker' as const,
+          },
+        ]
+      : []),
+  ];
   const marketOpen = marketHealth.data?.market_open;
   const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
   const refreshPolicyLabel = marketHealth.data?.refresh_policy
@@ -513,6 +608,18 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     {
       label: labels.marketValue,
       value: formatCurrency(position.market_value),
+    },
+    {
+      label: labels.availableFrozen,
+      value: `${formatQuantity(position.available_qty)} / ${formatQuantity(
+        position.frozen_qty,
+      )}`,
+    },
+    {
+      label: labels.portfolioWeight,
+      value: isHistoricalClosedPosition
+        ? formatPercent(0)
+        : formatPercent(portfolioWeight),
     },
     {
       label: labels.todayChange,
@@ -595,10 +702,29 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       value: formatCurrency(position.commission_paid),
     },
     {
-      label: labels.availableFrozen,
-      value: `${formatQuantity(position.available_qty)} / ${formatQuantity(
-        position.frozen_qty,
-      )}`,
+      label: labels.lastTradeAt,
+      value: formatTimestamp(lastLedgerEntry?.timestamp),
+    },
+    {
+      label: labels.valuationSnapshotId,
+      value: snapshot.data?.valuation_snapshot_id ?? '--',
+    },
+    {
+      label: labels.ledgerCutoffId,
+      value: snapshot.data?.ledger_cutoff_id?.toString() ?? '--',
+    },
+    {
+      label: labels.evidenceState,
+      value: evidenceReviewState,
+      tone: evidenceIdentityConsistent ? undefined : 'warning',
+    },
+    {
+      label: labels.nextManualStep,
+      value: nextManualStep,
+      tone:
+        evidenceIdentityConsistent && !needsCostBasisReview && !isStale
+          ? undefined
+          : 'warning',
     },
   ];
 
@@ -626,6 +752,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {isHistoricalClosedPosition ? (
+              <StatusBadge label={labels.closedHistoryOnly} tone="warning" />
+            ) : null}
             <StatusBadge
               label={isStale ? labels.quoteStale : labels.quoteLive}
               tone={isStale ? 'warning' : 'success'}
@@ -701,13 +830,24 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 rangeLabels={copy.market.klineRanges}
                 axisLabels={copy.market.klineAxes}
                 rangeAriaLabel={copy.market.showKlineRange}
+                markers={tradeMarkers}
+                referenceLines={costReferenceLines}
               />
             </div>
           </section>
 
           <section className="app-terminal-panel rounded-[28px] p-[1px]">
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-              <div className="app-product-mark">{labels.valuation}</div>
+              <div className="app-product-mark">{labels.resultsEvidence}</div>
+              {!evidenceIdentityConsistent ? (
+                <div
+                  data-testid="holding-evidence-identity-warning"
+                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-4 py-3 text-sm font-semibold text-[var(--app-warning)]"
+                  role="status"
+                >
+                  {labels.evidenceIdentityMismatch}
+                </div>
+              ) : null}
               {needsCostBasisReview ? (
                 <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-4 py-3">
                   <div className="text-sm font-semibold text-[var(--app-warning)]">
@@ -731,6 +871,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                     {labels.ledgerCount(ledgerEntries.length)}
                   </h2>
                 </div>
+                <span className="w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-muted)]">
+                  {labels.productionLedgerOnly}
+                </span>
                 {ledger.isError ? (
                   <div className="app-error-text text-sm">
                     {copy.activity.error}
@@ -788,22 +931,24 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   }
                 />
               </div>
-              <button
-                type="button"
-                className="app-button-primary mt-4 w-full rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
-                disabled={refreshQuote.isPending}
-                onClick={() =>
-                  refreshQuote.mutate({
-                    symbols: [position.symbol],
-                    force: true,
-                  })
-                }
-                aria-label={`${labels.refreshQuote}: ${position.symbol}`}
-              >
-                {refreshQuote.isPending
-                  ? labels.refreshingQuote
-                  : labels.refreshQuote}
-              </button>
+              {!isHistoricalClosedPosition ? (
+                <button
+                  type="button"
+                  className="app-button-primary mt-4 w-full rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
+                  disabled={refreshQuote.isPending}
+                  onClick={() =>
+                    refreshQuote.mutate({
+                      symbols: [position.symbol],
+                      force: true,
+                    })
+                  }
+                  aria-label={`${labels.refreshQuote}: ${position.symbol}`}
+                >
+                  {refreshQuote.isPending
+                    ? labels.refreshingQuote
+                    : labels.refreshQuote}
+                </button>
+              ) : null}
               {refreshStatus ? (
                 <div
                   className={`mt-3 text-sm ${
@@ -826,170 +971,181 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           >
             <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
               <div className="app-product-mark">{labels.riskExposure}</div>
-              <div className="mt-4 grid gap-3">
-                <InfoRow
-                  label={labels.portfolioWeight}
-                  value={formatPercent(portfolioWeight)}
-                />
-                <InfoRow
-                  label={labels.availableFrozen}
-                  value={`${formatQuantity(position.available_qty)} / ${formatQuantity(
-                    position.frozen_qty,
-                  )}`}
-                />
-                <InfoRow
-                  label={labels.unrealizedPnl}
-                  value={formatCurrency(position.unrealized_pnl)}
-                  tone={position.unrealized_pnl >= 0 ? 'success' : 'danger'}
-                />
-              </div>
+              {isHistoricalClosedPosition ? (
+                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-3 text-sm leading-6 text-[var(--app-muted)]">
+                  {labels.closedNoCurrentExposure}
+                </div>
+              ) : (
+                <div className="mt-4 grid gap-3">
+                  <InfoRow
+                    label={labels.portfolioWeight}
+                    value={formatPercent(portfolioWeight)}
+                  />
+                  <InfoRow
+                    label={labels.availableFrozen}
+                    value={`${formatQuantity(position.available_qty)} / ${formatQuantity(
+                      position.frozen_qty,
+                    )}`}
+                  />
+                  <InfoRow
+                    label={labels.unrealizedPnl}
+                    value={formatCurrency(position.unrealized_pnl)}
+                    tone={position.unrealized_pnl >= 0 ? 'success' : 'danger'}
+                  />
+                </div>
+              )}
             </div>
           </section>
 
-          <section
-            data-testid="holding-strategy-attribution-boundary"
-            id="holding-strategy-attribution-boundary"
-            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
-          >
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-              <div className="app-product-mark">
-                {labels.strategyAttributionBoundary}
-              </div>
-              <div className="mt-3 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
-                <span className="truncate">
-                  {hasSymbolStrategyEvidence
-                    ? labels.strategyAttributionLinkedEvidence
-                    : labels.strategyAttributionNoLinkedFills}
-                </span>
-              </div>
-              <p className="app-muted mt-3 text-sm leading-6">
-                {hasSymbolStrategyEvidence
-                  ? labels.strategyAttributionLinkedDetail
-                  : labels.strategyAttributionDetail}
-              </p>
-              {attributionReadinessItems.length > 0 ? (
-                <div
-                  data-testid="holding-strategy-attribution-readiness"
-                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
-                >
-                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                    <div className="app-product-mark">
-                      {labels.strategyAttributionReviewReadiness}
-                    </div>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        attributionReviewReady
-                          ? 'bg-[color-mix(in_srgb,var(--app-success)_14%,transparent)] text-[var(--app-success)]'
-                          : 'bg-[color-mix(in_srgb,var(--app-warning)_14%,transparent)] text-[var(--app-warning)]'
-                      }`}
-                    >
-                      {attributionReviewReady
-                        ? labels.strategyAttributionReviewReady
-                        : labels.strategyAttributionReviewIncomplete}
-                    </span>
-                  </div>
-                  <ul className="mt-3 grid gap-2">
-                    {attributionReadinessItems.map((item) => (
-                      <li
-                        key={item.label}
-                        className="flex min-w-0 items-center gap-2 text-sm text-[var(--app-muted)]"
-                      >
-                        <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${
-                            item.passed
-                              ? 'bg-[var(--app-success)]'
-                              : 'bg-[var(--app-warning)]'
-                          }`}
-                        />
-                        <span className="min-w-0 break-words">
-                          {item.label}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
-                    {labels.strategyAttributionReviewBoundary}
-                  </p>
+          {!isHistoricalClosedPosition ? (
+            <section
+              data-testid="holding-strategy-attribution-boundary"
+              id="holding-strategy-attribution-boundary"
+              className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+            >
+              <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+                <div className="app-product-mark">
+                  {labels.strategyAttributionBoundary}
                 </div>
-              ) : null}
-              {attributionNextAction ? (
-                <div
-                  data-testid="holding-strategy-attribution-next-action"
-                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3"
-                >
-                  <div className="app-product-mark">
-                    {labels.strategyAttributionNextActionTitle}
+                <div className="mt-3 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                  <span className="truncate">
+                    {hasSymbolStrategyEvidence
+                      ? labels.strategyAttributionLinkedEvidence
+                      : labels.strategyAttributionNoLinkedFills}
+                  </span>
+                </div>
+                <p className="app-muted mt-3 text-sm leading-6">
+                  {hasSymbolStrategyEvidence
+                    ? labels.strategyAttributionLinkedDetail
+                    : labels.strategyAttributionDetail}
+                </p>
+                {attributionReadinessItems.length > 0 ? (
+                  <div
+                    data-testid="holding-strategy-attribution-readiness"
+                    className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                      <div className="app-product-mark">
+                        {labels.strategyAttributionReviewReadiness}
+                      </div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          attributionReviewReady
+                            ? 'bg-[color-mix(in_srgb,var(--app-success)_14%,transparent)] text-[var(--app-success)]'
+                            : 'bg-[color-mix(in_srgb,var(--app-warning)_14%,transparent)] text-[var(--app-warning)]'
+                        }`}
+                      >
+                        {attributionReviewReady
+                          ? labels.strategyAttributionReviewReady
+                          : labels.strategyAttributionReviewIncomplete}
+                      </span>
+                    </div>
+                    <ul className="mt-3 grid gap-2">
+                      {attributionReadinessItems.map((item) => (
+                        <li
+                          key={item.label}
+                          className="flex min-w-0 items-center gap-2 text-sm text-[var(--app-muted)]"
+                        >
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              item.passed
+                                ? 'bg-[var(--app-success)]'
+                                : 'bg-[var(--app-warning)]'
+                            }`}
+                          />
+                          <span className="min-w-0 break-words">
+                            {item.label}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
+                      {labels.strategyAttributionReviewBoundary}
+                    </p>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
-                    {attributionNextAction.detail}
-                  </p>
-                  <div className="mt-3">
+                ) : null}
+                {attributionNextAction ? (
+                  <div
+                    data-testid="holding-strategy-attribution-next-action"
+                    className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3"
+                  >
+                    <div className="app-product-mark">
+                      {labels.strategyAttributionNextActionTitle}
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
+                      {attributionNextAction.detail}
+                    </p>
+                    <div className="mt-3">
+                      <ActionLink
+                        href={attributionNextAction.href}
+                        label={attributionNextAction.label}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {hasSymbolStrategyEvidence ? (
+                  <div className="mt-4 grid gap-2">
+                    <InfoRow
+                      label={labels.strategyAttributionStrategy}
+                      value={strategyDisplayName}
+                    />
+                    <InfoRow
+                      label={labels.strategyAttributionEvidenceStatus}
+                      value={attributionStatusLabel}
+                    />
+                    <InfoRow
+                      label={labels.strategyAttributionLinkedFillsLabel}
+                      value={labels.strategyAttributionLinkedFills(
+                        strategyEvidenceFillCount,
+                      )}
+                    />
+                    <InfoRow
+                      label={labels.strategyAttributionEvidenceRefs}
+                      value={String(strategyEvidenceRefCount)}
+                    />
+                    {strategyEvidenceItems.length > 0 ? (
+                      <div
+                        data-testid="holding-strategy-evidence-chain"
+                        className="mt-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
+                      >
+                        <div className="app-product-mark">
+                          {labels.strategyAttributionEvidenceChain}
+                        </div>
+                        <ul className="mt-3 grid gap-2">
+                          {strategyEvidenceItems.map((item, index) => (
+                            <li
+                              key={`${item.kind}-${item.auditRef}-${index}`}
+                              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-3 py-2"
+                            >
+                              <div className="text-sm font-semibold text-[var(--app-text)]">
+                                {item.label}
+                              </div>
+                              <div className="mt-1 break-all font-mono text-xs text-[var(--app-muted)]">
+                                {labels.strategyAttributionEvidenceAuditRef(
+                                  item.auditRef,
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {!attributionNextAction ? (
+                  <div className="mt-4">
                     <ActionLink
-                      href={attributionNextAction.href}
-                      label={attributionNextAction.label}
+                      href={buildBacktestHandoffHref(
+                        position.symbol,
+                        assetClass,
+                      )}
+                      label={labels.actionStrategyEvidence}
                     />
                   </div>
-                </div>
-              ) : null}
-              {hasSymbolStrategyEvidence ? (
-                <div className="mt-4 grid gap-2">
-                  <InfoRow
-                    label={labels.strategyAttributionStrategy}
-                    value={strategyDisplayName}
-                  />
-                  <InfoRow
-                    label={labels.strategyAttributionEvidenceStatus}
-                    value={attributionStatusLabel}
-                  />
-                  <InfoRow
-                    label={labels.strategyAttributionLinkedFillsLabel}
-                    value={labels.strategyAttributionLinkedFills(
-                      strategyEvidenceFillCount,
-                    )}
-                  />
-                  <InfoRow
-                    label={labels.strategyAttributionEvidenceRefs}
-                    value={String(strategyEvidenceRefCount)}
-                  />
-                  {strategyEvidenceItems.length > 0 ? (
-                    <div
-                      data-testid="holding-strategy-evidence-chain"
-                      className="mt-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
-                    >
-                      <div className="app-product-mark">
-                        {labels.strategyAttributionEvidenceChain}
-                      </div>
-                      <ul className="mt-3 grid gap-2">
-                        {strategyEvidenceItems.map((item, index) => (
-                          <li
-                            key={`${item.kind}-${item.auditRef}-${index}`}
-                            className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-3 py-2"
-                          >
-                            <div className="text-sm font-semibold text-[var(--app-text)]">
-                              {item.label}
-                            </div>
-                            <div className="mt-1 break-all font-mono text-xs text-[var(--app-muted)]">
-                              {labels.strategyAttributionEvidenceAuditRef(
-                                item.auditRef,
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {!attributionNextAction ? (
-                <div className="mt-4">
-                  <ActionLink
-                    href={buildBacktestHandoffHref(position.symbol, assetClass)}
-                    label={labels.actionStrategyEvidence}
-                  />
-                </div>
-              ) : null}
-            </div>
-          </section>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           <section
             data-testid="holding-related-actions-panel"
@@ -1004,8 +1160,17 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 />
                 <ActionLink href="/portfolio" label={labels.actionPortfolio} />
                 <ActionLink href="/market" label={labels.actionMarket} />
-                <ActionLink href="/trading" label={labels.actionTrading} />
-                <ActionLink href="/activity" label={labels.actionActivity} />
+                {!isHistoricalClosedPosition ? (
+                  <ActionLink href="/trading" label={labels.actionTrading} />
+                ) : null}
+                <ActionLink
+                  href={`/activity?symbol=${encodeURIComponent(position.symbol)}`}
+                  label={
+                    isHistoricalClosedPosition
+                      ? labels.actionViewActivity
+                      : labels.actionActivity
+                  }
+                />
               </div>
             </div>
           </section>

@@ -21,6 +21,19 @@ export type KlineAxisLabels = {
   date: string;
 };
 
+export type PriceStructureMarker = {
+  timestamp: string;
+  kind: 'buy' | 'sell';
+  price?: number | null;
+  label: string;
+};
+
+export type PriceStructureReferenceLine = {
+  value: number;
+  label: string;
+  tone?: 'local' | 'broker';
+};
+
 const DEFAULT_RANGE_LABELS: KlineRangeLabels = {
   oneMonth: '1M',
   threeMonths: '3M',
@@ -99,6 +112,8 @@ export function PriceStructureChart({
   rangeLabels = DEFAULT_RANGE_LABELS,
   axisLabels = { price: 'Price axis', date: 'Date axis' },
   rangeAriaLabel = (label) => `Show ${label} K-line range`,
+  markers = [],
+  referenceLines = [],
 }: {
   bars: PriceStructureBar[];
   emptyLabel: string;
@@ -107,6 +122,8 @@ export function PriceStructureChart({
   rangeLabels?: KlineRangeLabels;
   axisLabels?: KlineAxisLabels;
   rangeAriaLabel?: (label: string) => string;
+  markers?: PriceStructureMarker[];
+  referenceLines?: PriceStructureReferenceLine[];
 }) {
   const [selectedRange, setSelectedRange] = useState<KlineRangeKey>('all');
   const validBars = useMemo(
@@ -148,8 +165,58 @@ export function PriceStructureChart({
   const closes = plottedBars.map((bar) => bar.close);
   const lows = plottedBars.map((bar) => toFiniteNumber(bar.low) ?? bar.close);
   const highs = plottedBars.map((bar) => toFiniteNumber(bar.high) ?? bar.close);
-  const min = Math.min(...lows);
-  const max = Math.max(...highs);
+  const plottedTimes = plottedBars.map((bar) => parseBarTime(bar));
+  const finitePlottedTimes = plottedTimes.filter(
+    (value): value is number => value !== null,
+  );
+  const plottedStart =
+    finitePlottedTimes.length > 0 ? Math.min(...finitePlottedTimes) : null;
+  const plottedEnd =
+    finitePlottedTimes.length > 0 ? Math.max(...finitePlottedTimes) : null;
+  const plottedMarkers = markers.flatMap((marker) => {
+    const markerTime = Date.parse(marker.timestamp);
+    if (
+      !Number.isFinite(markerTime) ||
+      (plottedStart !== null && markerTime < plottedStart) ||
+      (plottedEnd !== null && markerTime > plottedEnd)
+    ) {
+      return [];
+    }
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    plottedTimes.forEach((barTime, index) => {
+      if (barTime === null) {
+        return;
+      }
+      const distance = Math.abs(barTime - markerTime);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+    const bar = plottedBars[nearestIndex];
+    const price = toFiniteNumber(marker.price) ?? bar?.close;
+    if (!bar || price === undefined) {
+      return [];
+    }
+    return [{ ...marker, price, barIndex: nearestIndex }];
+  });
+  const finiteReferenceValues = referenceLines
+    .map((line) => toFiniteNumber(line.value))
+    .filter((value): value is number => value !== null);
+  const finiteMarkerValues = plottedMarkers
+    .map((marker) => toFiniteNumber(marker.price))
+    .filter((value): value is number => value !== null);
+  const min = Math.min(
+    ...lows,
+    ...finiteReferenceValues,
+    ...finiteMarkerValues,
+  );
+  const max = Math.max(
+    ...highs,
+    ...finiteReferenceValues,
+    ...finiteMarkerValues,
+  );
   const range = max - min || 1;
   const latest = closes[closes.length - 1] ?? 0;
   const first = closes[0] ?? latest;
@@ -183,7 +250,6 @@ export function PriceStructureChart({
       Math.max(0, plottedBars.length - 1),
     ]),
   );
-
   return (
     <div
       className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4"
@@ -290,6 +356,38 @@ export function PriceStructureChart({
                 </text>
               </g>
             ))}
+            {referenceLines.map((line) => {
+              const tone =
+                line.tone === 'broker'
+                  ? 'var(--app-warning)'
+                  : 'var(--app-accent)';
+              return (
+                <g
+                  key={`${line.label}-${line.value}`}
+                  data-testid="kline-reference-line"
+                >
+                  <line
+                    x1={plot.left}
+                    x2={plot.right}
+                    y1={plotY(line.value)}
+                    y2={plotY(line.value)}
+                    stroke={tone}
+                    strokeDasharray={line.tone === 'broker' ? '3 3' : '7 4'}
+                    strokeOpacity="0.8"
+                    strokeWidth="1.2"
+                  />
+                  <text
+                    x={plot.right - 4}
+                    y={plotY(line.value) - 5}
+                    textAnchor="end"
+                    fill={tone}
+                    className="font-mono text-[9px]"
+                  >
+                    {line.label}
+                  </text>
+                </g>
+              );
+            })}
             {xTickIndexes.map((index) => {
               const bar = plottedBars[index];
               const x = plot.left + step * index + step / 2;
@@ -355,6 +453,37 @@ export function PriceStructureChart({
                 </g>
               );
             })}
+            {plottedMarkers.map((marker, index) => {
+              const x = plot.left + step * marker.barIndex + step / 2;
+              const y = plotY(marker.price);
+              const isBuy = marker.kind === 'buy';
+              const tone = isBuy ? 'var(--app-success)' : 'var(--app-danger)';
+              return (
+                <g
+                  key={`${marker.timestamp}-${marker.kind}-${index}`}
+                  data-testid={`kline-trade-marker-${marker.kind}`}
+                >
+                  <title>{marker.label}</title>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r="5.5"
+                    fill="var(--app-panel-strong)"
+                    stroke={tone}
+                    strokeWidth="2"
+                  />
+                  <text
+                    x={x}
+                    y={y + 3}
+                    textAnchor="middle"
+                    fill={tone}
+                    className="text-[8px] font-bold"
+                  >
+                    {isBuy ? 'B' : 'S'}
+                  </text>
+                </g>
+              );
+            })}
           </svg>
           <div className="mt-2 flex flex-col gap-1 font-mono text-[11px] text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
             <span>
@@ -368,6 +497,40 @@ export function PriceStructureChart({
               {formatCurrency(min)} - {formatCurrency(max)}
             </span>
           </div>
+          {plottedMarkers.length > 0 || referenceLines.length > 0 ? (
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-[10px] font-semibold text-[var(--app-muted)]">
+              {plottedMarkers.some((marker) => marker.kind === 'buy') ? (
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] px-2 py-0.5 text-[var(--app-success)]">
+                  B ·{' '}
+                  {
+                    plottedMarkers.find((marker) => marker.kind === 'buy')
+                      ?.label
+                  }
+                </span>
+              ) : null}
+              {plottedMarkers.some((marker) => marker.kind === 'sell') ? (
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-danger)_32%,transparent)] px-2 py-0.5 text-[var(--app-danger)]">
+                  S ·{' '}
+                  {
+                    plottedMarkers.find((marker) => marker.kind === 'sell')
+                      ?.label
+                  }
+                </span>
+              ) : null}
+              {referenceLines.map((line) => (
+                <span
+                  key={`${line.label}-legend`}
+                  className={`rounded-full border px-2 py-0.5 ${
+                    line.tone === 'broker'
+                      ? 'border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] text-[var(--app-warning)]'
+                      : 'border-[color-mix(in_srgb,var(--app-accent)_32%,transparent)] text-[var(--app-accent)]'
+                  }`}
+                >
+                  {line.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

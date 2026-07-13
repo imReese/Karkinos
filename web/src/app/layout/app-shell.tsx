@@ -339,7 +339,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     className="hidden h-4 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_64%,transparent)] sm:block"
                     aria-hidden="true"
                   />
-                  <div className="app-toolbar-section-title truncate">
+                  <div className="app-toolbar-section-title hidden truncate sm:block">
                     {copy.shell.toolbarTitle}
                   </div>
                 </div>
@@ -434,7 +434,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
                 <button
                   type="button"
-                  className="app-button-secondary h-8 rounded-2xl px-3 text-sm lg:hidden"
+                  className="app-button-secondary hidden h-8 rounded-2xl px-3 text-sm sm:inline-flex lg:hidden"
                   aria-label={
                     mobileNavOpen
                       ? copy.shell.closeNavigation
@@ -544,7 +544,9 @@ function LanguageMenu({
         onClick={() => setOpen((current) => !current)}
       >
         <GlobeIcon className="h-3.5 w-3.5" />
-        <span className="min-w-max whitespace-nowrap">{currentLabel}</span>
+        <span className="hidden min-w-max whitespace-nowrap sm:block">
+          {currentLabel}
+        </span>
       </button>
       {open ? (
         <div
@@ -614,7 +616,7 @@ function ThemeSwitcher({
             type="button"
             aria-label={option.label}
             aria-pressed={active}
-            className={`inline-flex items-center justify-center rounded-full px-2.5 py-1.5 text-[var(--app-muted)] transition-[background-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] [&>svg]:h-4 [&>svg]:w-4 ${
+            className={`inline-flex items-center justify-center rounded-full px-1.5 py-1.5 text-[var(--app-muted)] transition-[background-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] sm:px-2.5 [&>svg]:h-4 [&>svg]:w-4 ${
               active
                 ? 'bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] text-[var(--app-accent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_8%,transparent)]'
                 : ''

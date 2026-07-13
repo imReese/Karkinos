@@ -278,9 +278,18 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     </div>
                   </td>
                   <td className="px-5 py-4 align-top">
-                    <div className="font-semibold">
-                      {formatLedgerInstrumentLabel(entry, locale) || '--'}
-                    </div>
+                    {entry.symbol ? (
+                      <a
+                        href={`/portfolio/${encodeURIComponent(entry.symbol)}`}
+                        className="font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                        aria-label={labels.openHoldingDetail(entry.symbol)}
+                      >
+                        {formatLedgerInstrumentLabel(entry, locale) ||
+                          entry.symbol}
+                      </a>
+                    ) : (
+                      <div className="font-semibold">--</div>
+                    )}
                     <div className="app-muted mt-1 flex items-center gap-2 text-xs">
                       <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]">
                         {formatAssetClass(entry.asset_class, copy)}

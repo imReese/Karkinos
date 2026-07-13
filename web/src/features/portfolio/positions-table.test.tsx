@@ -36,6 +36,7 @@ function renderTable(ui: ReactElement) {
 test('renders active positions', () => {
   renderTable(
     <PositionsTable
+      weightBySymbol={{ '600519': 0.42 }}
       positions={[
         {
           symbol: '600519',
@@ -78,6 +79,8 @@ test('renders active positions', () => {
   ).toBeGreaterThan(0);
   expect(screen.getAllByText('60').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Market Value').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Weight').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('42.0%').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Stock').length).toBeGreaterThan(0);
   expect(screen.getAllByText('6.67%').length).toBeGreaterThan(0);
   expect(screen.queryByText('6.7%')).toBeNull();
@@ -361,6 +364,7 @@ test('uses shared numeric cell classes for desktop portfolio columns', () => {
     'position-broker-cost-600003',
     'position-latest-price-600003',
     'position-market-value-600003',
+    'position-weight-600003',
     'position-today-change-600003',
     'position-unrealized-600003',
     'position-return-pct-600003',
@@ -417,6 +421,7 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
     'position-mobile-avg-cost-600003',
     'position-mobile-latest-price-600003',
     'position-mobile-market-value-600003',
+    'position-mobile-weight-600003',
     'position-mobile-today-change-600003',
     'position-mobile-unrealized-600003',
     'position-mobile-return-pct-600003',
@@ -512,7 +517,7 @@ test('contains the desktop positions table in a local horizontal scroller', () =
   expect(scrollRegion.className).toContain('overflow-x-scroll');
   expect(scrollRegion.className).toContain('overscroll-x-contain');
   expect(scrollRegion.className).toContain('pb-2');
-  expect(table.className).toContain('w-[1520px]');
+  expect(table.className).toContain('w-[1580px]');
   expect(table.className).toContain('min-w-max');
 });
 

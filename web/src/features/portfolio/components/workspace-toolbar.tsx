@@ -3,6 +3,14 @@ import { formatAssetClassLabel } from '../../../shared/asset-class';
 
 type WorkspaceMode = 'account' | 'strategy';
 type PnlFilter = 'all' | 'winners' | 'losers';
+export type QuoteFilter = 'all' | 'healthy' | 'review';
+export type EvidenceFilter = 'all' | 'review' | 'clear';
+export type PositionSort =
+  | 'market_value'
+  | 'weight'
+  | 'today_change'
+  | 'unrealized_pnl'
+  | 'realized_pnl';
 
 export function WorkspaceToolbar({
   mode,
@@ -14,6 +22,12 @@ export function WorkspaceToolbar({
   pnlFilter,
   onPnlFilterChange,
   assetClasses,
+  quoteFilter = 'all',
+  onQuoteFilterChange,
+  evidenceFilter = 'all',
+  onEvidenceFilterChange,
+  sortBy = 'market_value',
+  onSortByChange,
 }: {
   mode: WorkspaceMode;
   onModeChange: (mode: WorkspaceMode) => void;
@@ -24,6 +38,12 @@ export function WorkspaceToolbar({
   pnlFilter: PnlFilter;
   onPnlFilterChange: (value: PnlFilter) => void;
   assetClasses: string[];
+  quoteFilter?: QuoteFilter;
+  onQuoteFilterChange?: (value: QuoteFilter) => void;
+  evidenceFilter?: EvidenceFilter;
+  onEvidenceFilterChange?: (value: EvidenceFilter) => void;
+  sortBy?: PositionSort;
+  onSortByChange?: (value: PositionSort) => void;
 }) {
   const copy = useCopy();
   const labels = copy.portfolio.toolbar;
@@ -101,6 +121,60 @@ export function WorkspaceToolbar({
             <option value="all">{labels.allHoldings}</option>
             <option value="winners">{labels.winnersOnly}</option>
             <option value="losers">{labels.losersOnly}</option>
+          </select>
+        </label>
+      </div>
+      <div className="mt-4 grid gap-4 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] pt-4 sm:grid-cols-3">
+        <label className="space-y-2">
+          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {labels.quoteFilter}
+          </div>
+          <select
+            value={quoteFilter}
+            onChange={(event) =>
+              onQuoteFilterChange?.(event.target.value as QuoteFilter)
+            }
+            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
+          >
+            <option value="all">{labels.allQuoteStates}</option>
+            <option value="healthy">{labels.healthyQuotes}</option>
+            <option value="review">{labels.reviewQuotes}</option>
+          </select>
+        </label>
+
+        <label className="space-y-2">
+          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {labels.evidenceFilter}
+          </div>
+          <select
+            value={evidenceFilter}
+            onChange={(event) =>
+              onEvidenceFilterChange?.(event.target.value as EvidenceFilter)
+            }
+            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
+          >
+            <option value="all">{labels.allEvidenceStates}</option>
+            <option value="review">{labels.evidenceReviewOnly}</option>
+            <option value="clear">{labels.evidenceClearOnly}</option>
+          </select>
+        </label>
+
+        <label className="space-y-2">
+          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {labels.sortBy}
+          </div>
+          <select
+            value={sortBy}
+            onChange={(event) =>
+              onSortByChange?.(event.target.value as PositionSort)
+            }
+            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
+          >
+            <option value="market_value">{labels.sortMarketValue}</option>
+            <option value="weight">{labels.sortWeight}</option>
+            <option value="today_change">{labels.sortTodayPnl}</option>
+            <option value="unrealized_pnl">{labels.sortUnrealizedPnl}</option>
+            <option value="realized_pnl">{labels.sortRealizedPnl}</option>
           </select>
         </label>
       </div>

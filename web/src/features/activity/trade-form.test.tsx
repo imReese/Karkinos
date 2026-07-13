@@ -441,6 +441,11 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.queryByText('Fee ¥0.00')).toBeNull();
   expect(screen.getByText('示例材料 600002')).toBeTruthy();
   expect(screen.getByText('示例制造 600003')).toBeTruthy();
+  expect(
+    screen
+      .getByRole('link', { name: 'Open holding history for 600003' })
+      .getAttribute('href'),
+  ).toBe('/portfolio/600003');
   expect(screen.getByText('-¥3,255.16')).toBeTruthy();
   expect(screen.getByText('Gross amount ¥3,250.00')).toBeTruthy();
   expect(screen.getByText('Net cash impact -¥3,255.16')).toBeTruthy();
