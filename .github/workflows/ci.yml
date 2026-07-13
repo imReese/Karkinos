@@ -168,7 +168,7 @@ jobs:
       - name: Start runtime without live scheduler
         run: |
           mkdir -p "${RUNNER_TEMP}/karkinos-data"
-          touch "${RUNNER_TEMP}/karkinos-config.json"
+          printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
           docker run --detach --name karkinos-ci \
             --publish 127.0.0.1:8000:8000 \
             --volume "${RUNNER_TEMP}/karkinos-data:/app/data/store" \
