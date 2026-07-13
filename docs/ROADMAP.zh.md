@@ -353,6 +353,14 @@ provider/gateway/account scope 明确为 `not_configured`，继续允许 Stage 3
 不能遮蔽更晚的失败。该规则只从 SQLite 持久化事实派生，只能缩小执行资格，不联系 provider，
 也不修改 OMS、fills、账本、风控、kill switch、资本授权或任何券商权限。
 
+Stage 3.18 已把内部 session order-rate admission 与最新持久化 live-gate snapshot 精确绑定。
+admission v2 固定 snapshot id、fingerprint、session fingerprint 和 observed time，并独立要求不
+超过 30 秒；SQLite 写事务会在检查 replay/rate 前重新读取最新 snapshot。缺失、陈旧、未来、
+blocked、身份漂移或被更晚事实取代的 snapshot 都会 fail closed，因此 preview 后出现的新 blocked
+事实优先且不会写入 admission。生产只连接已认证 session 与只读 snapshot resolver，API 仍只有
+status/history，没有公开 admit、策略直连、broker submit/cancel，也不修改 OMS、fills、账本、
+资本授权或 kill switch。
+
 Stage 2.1/3.1 已加入精确 prior-batch reconciliation evidence：唯一非 paper 终态 OMS
 订单集合必须绑定指定 reconciliation run，且每笔订单只有一个 `no_action` item、OMS 状态
 未漂移；filled 订单还需真实成交数量与 provider、broker order、Account Truth import、同一

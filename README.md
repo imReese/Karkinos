@@ -338,6 +338,15 @@ last-slot serialization. Stage 3.9 now supplies its authenticated persistent
 session provider, while the API still exposes only read-only status/history:
 there is no public runtime-admit, OMS mutation, or broker action.
 
+Stage 3.18 now requires every such internal admission to bind the exact latest
+persisted clear live-gate snapshot, including its id, fingerprint, session
+identity, and observed time, with a 30-second maximum age. The SQLite writer
+transaction re-reads that snapshot, so a newer blocked or changed fact wins
+over an earlier clear preview. Missing, stale, future, blocked, or identity-
+drifted evidence fails closed. Production still exposes status/history only;
+this does not contact a broker, mutate OMS/fills/ledger/capital/kill-switch
+state, or grant submit/cancel authority.
+
 Stage 3.8 adds an internal durable automatic-pause controller. It evaluates an
 allowlisted snapshot of Account Truth, risk, reconciliation, paper/shadow,
 gateway, market-data, budget, rate, kill-switch, loss/drawdown, rejection,

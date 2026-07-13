@@ -227,6 +227,8 @@ def _environment(tmp_path):
 
 def _record_admission(db: AppDatabase, index: int) -> None:
     observed = NOW - timedelta(milliseconds=2 - index)
+    gate_snapshot = db.latest_controlled_session_gate_snapshot_sync(SESSION_ID)
+    assert gate_snapshot is not None
     result = db.admit_controlled_session_order_sync(
         admission={
             "admission_id": str(index + 7) * 64,
@@ -238,6 +240,10 @@ def _record_admission(db: AppDatabase, index: int) -> None:
             "strategy_id": "strategy-1",
             "order_id": f"OMS-{index + 1}",
             "request_id": str(index + 1) * 64,
+            "gate_snapshot_id": gate_snapshot["snapshot_id"],
+            "gate_snapshot_fingerprint": gate_snapshot["snapshot_fingerprint"],
+            "gate_snapshot_observed_at": gate_snapshot["observed_at"],
+            "gate_snapshot_max_age_seconds": 30,
             "max_order_rate_per_minute": 2,
             "admitted_at_epoch_ms": int(observed.timestamp() * 1000),
             "admitted_at": observed.isoformat(),
@@ -312,6 +318,25 @@ def test_rate_and_order_budget_exhaustion_pause_before_another_admission(
     tmp_path,
 ) -> None:
     env = _environment(tmp_path)
+    gate_observed_at = NOW - timedelta(milliseconds=3)
+    first_gate = env["db"].record_controlled_session_gate_snapshot_sync(
+        snapshot={
+            "snapshot_id": "7" * 64,
+            "snapshot_fingerprint": "8" * 64,
+            "session_id": SESSION_ID,
+            "session_fingerprint": SESSION_FINGERPRINT,
+            "source_fingerprint": "9" * 64,
+            "observed_at_epoch_ms": int(gate_observed_at.timestamp() * 1000),
+            "observed_at": gate_observed_at.isoformat(),
+            "status": "clear",
+            "gate_snapshot": {"fixture_gate_status": "clear"},
+            "source_evidence": {"fixture": True},
+            "blockers": [],
+            "payload": {"status": "clear", "broker_submission_enabled": False},
+            "created_at": gate_observed_at.isoformat(),
+        }
+    )
+    assert first_gate["status"] == "clear"
     _record_admission(env["db"], 0)
     _record_admission(env["db"], 1)
 

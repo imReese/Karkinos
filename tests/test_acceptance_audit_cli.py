@@ -223,7 +223,7 @@ def test_acceptance_audit_cli_controlled_session_runtime_rate_limiter_filter() -
         "controlled_session_runtime_rate_limiter"
     ]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 7
+    assert audit["required_count"] == 13
     assert audit["completed_count"] == audit["required_count"]
 
 

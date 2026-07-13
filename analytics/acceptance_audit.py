@@ -4411,17 +4411,18 @@ def build_controlled_session_symbol_budget_acceptance_audit() -> AcceptanceAudit
 
 
 def build_controlled_session_runtime_rate_limiter_acceptance_audit() -> AcceptanceAudit:
-    """Return evidence for the Stage 3.7 runtime rate-limiter foundation."""
+    """Return evidence for Stage 3.7 and Stage 3.18 admission gates."""
 
     return AcceptanceAudit(
         criteria=(
             AcceptanceCriterion(
                 key="runtime_rate_limiter_default_closed",
                 checkbox_text=(
-                    "* [x] Production configures no authenticated session "
-                    "provider and exposes only read-only status/history routes; "
-                    "there is no public preview, admit, submit, or cancel "
-                    "endpoint."
+                    "* [x] Production exposes only read-only status/history "
+                    "routes; there is no public preview, admit, submit, or "
+                    "cancel endpoint. Stage 3.9 later supplied authenticated "
+                    "sessions and Stage 3.18 requires their fresh live-gate "
+                    "source."
                 ),
                 evidence_paths=(
                     "server/routes/controlled_session_runtime_rate_limiter.py",
@@ -4533,6 +4534,110 @@ def build_controlled_session_runtime_rate_limiter_acceptance_audit() -> Acceptan
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py tests/server/test_controlled_session_runtime_rate_limiter_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_admission_fresh_live_gate_identity",
+                checkbox_text=(
+                    "* [x] Internal admission v2 binds the exact latest "
+                    "persisted live-gate snapshot id, fingerprint, observed "
+                    "time, and session fingerprint into its deterministic "
+                    "evidence identity; a snapshot may be no more than 30 "
+                    "seconds old."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'preview_is_deterministic' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_admission_live_gate_fail_closed_preview",
+                checkbox_text=(
+                    "* [x] Preview fails closed when the snapshot provider is "
+                    "absent or fails, or when the snapshot is missing, stale, "
+                    "future, blocked, or belongs to another session identity. "
+                    "Provider values are reduced to a strict sanitized "
+                    "allowlist."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'live_gate or missing_live_gate' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_admission_live_gate_atomic_recheck",
+                checkbox_text=(
+                    "* [x] The admission `BEGIN IMMEDIATE` transaction re-reads "
+                    "the latest snapshot before checking replay/rate limits. A "
+                    "newer blocked or different snapshot wins over a clear "
+                    "preview and leaves no admission row."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py -k 'newer_blocked_gate_snapshot' -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_admission_prior_gates_preserved",
+                checkbox_text=(
+                    "* [x] Existing session enabled/expiry/revocation/pause, "
+                    "order scope, reservation, shared strictest rate, request "
+                    "idempotency, and concurrency gates remain mandatory; the "
+                    "change removes no prior blocker."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_automatic_pause.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_authority.py tests/test_controlled_session_automatic_pause.py tests/test_controlled_session_runtime_rate_limiter.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_admission_production_read_only_surface",
+                checkbox_text=(
+                    "* [x] Production wires the authenticated session and "
+                    "persisted live-gate readers but still exposes status/"
+                    "history only. There is no public runtime-admit, strategy-"
+                    "direct, broker submit/cancel, or recovery action."
+                ),
+                evidence_paths=(
+                    "server/routes/controlled_session_runtime_rate_limiter.py",
+                    "tests/server/test_controlled_session_runtime_rate_limiter_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/server/test_controlled_session_runtime_rate_limiter_routes.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="runtime_admission_v2_deterministic_safety_tests",
+                checkbox_text=(
+                    "* [x] Deterministic tests cover missing providers, stale/"
+                    "blocked/future/identity drift, preview-to-transaction "
+                    "replacement, revocation race, rate/budget exhaustion, "
+                    "exact retry, concurrency, sanitization, and zero OMS/fill/"
+                    "ledger/broker side effects."
+                ),
+                evidence_paths=(
+                    "tests/test_controlled_session_runtime_rate_limiter.py",
+                    "tests/test_controlled_session_runtime_authority.py",
+                    "tests/test_controlled_session_live_gates.py",
+                    "docs/IMPLEMENTATION_LOG.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_session_runtime_rate_limiter.py tests/test_controlled_session_runtime_authority.py tests/test_controlled_session_live_gates.py -q",
                 ),
             ),
         )

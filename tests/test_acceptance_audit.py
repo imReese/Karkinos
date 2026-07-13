@@ -16,8 +16,6 @@ from analytics.acceptance_audit import (
     build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
     build_controlled_broker_submission_acceptance_audit,
-    build_controlled_submission_interlock_acceptance_audit,
-    build_controlled_submission_reconciliation_clearance_acceptance_audit,
     build_controlled_session_automatic_pause_acceptance_audit,
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
@@ -27,6 +25,8 @@ from analytics.acceptance_audit import (
     build_controlled_session_runtime_rate_limiter_acceptance_audit,
     build_controlled_session_signed_replacement_acceptance_audit,
     build_controlled_session_symbol_budget_acceptance_audit,
+    build_controlled_submission_interlock_acceptance_audit,
+    build_controlled_submission_reconciliation_clearance_acceptance_audit,
     build_execution_batch_reconciliation_acceptance_audit,
     build_execution_gateway_verification_acceptance_audit,
     build_market_data_reliability_acceptance_audit,
@@ -296,7 +296,7 @@ def test_controlled_session_symbol_budget_acceptance_audit_is_complete() -> None
 def test_controlled_session_runtime_rate_limiter_acceptance_audit_is_complete() -> None:
     audit = build_controlled_session_runtime_rate_limiter_acceptance_audit()
 
-    assert audit.required_count == 7
+    assert audit.required_count == 13
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 

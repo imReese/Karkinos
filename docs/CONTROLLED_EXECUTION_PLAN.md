@@ -292,6 +292,14 @@ the same serialized gates; duplicate replay cannot mask a later failure. The
 binding is a read-only restriction and adds no provider contact or execution
 authority.
 
+Stage 3.18 binds each internal bounded-session order admission to the exact
+latest persisted clear live-gate snapshot. The admission identity includes its
+snapshot id/fingerprint/session identity/time, and the SQLite writer transaction
+requires that same snapshot to remain latest, clear, and no more than 30 seconds
+old. A newer blocked snapshot wins over preview. This closes an admission race
+without exposing a public admit endpoint or adding OMS, ledger, gateway, submit,
+cancel, or capital-authority effects.
+
 No broker-specific adapter is registered by default. Any QMT, PTrade, local-
 file watcher, or other third-party adapter remains replaceable and requires a
 separate dependency/capability/failure-mode review plus explicit user

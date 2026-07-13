@@ -5741,17 +5741,25 @@ class AppDatabase:
         *,
         admission: dict[str, Any],
     ) -> dict[str, Any]:
-        """Atomically admit one order under a shared 60-second rate window."""
+        """Atomically admit one order under fresh gates and a shared rate window."""
         requested = dict(admission)
         try:
             now_epoch_ms = int(requested["admitted_at_epoch_ms"])
             requested_rate = int(requested["max_order_rate_per_minute"])
+            gate_snapshot_max_age_ms = (
+                int(requested["gate_snapshot_max_age_seconds"]) * 1000
+            )
         except (KeyError, TypeError, ValueError):
             return _controlled_session_rate_admission_rejection(
                 requested,
                 ["runtime_rate_admission_input_invalid"],
             )
-        if now_epoch_ms < 0 or requested_rate <= 0:
+        if (
+            now_epoch_ms < 0
+            or requested_rate <= 0
+            or gate_snapshot_max_age_ms <= 0
+            or gate_snapshot_max_age_ms > 60_000
+        ):
             return _controlled_session_rate_admission_rejection(
                 requested,
                 ["runtime_rate_admission_limit_invalid"],
@@ -5806,6 +5814,54 @@ class AppDatabase:
                         requested,
                         ["runtime_session_paused"],
                         pause_event_id=str(pause_state["pause_event_id"] or ""),
+                    )
+                latest_gate_snapshot = conn.execute(
+                    """
+                    SELECT * FROM controlled_session_gate_snapshots
+                    WHERE session_id = ?
+                    ORDER BY observed_at_epoch_ms DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (requested["session_id"],),
+                ).fetchone()
+                gate_blockers: list[str] = []
+                if latest_gate_snapshot is None:
+                    gate_blockers.append("runtime_live_gate_snapshot_missing")
+                else:
+                    if latest_gate_snapshot["status"] != "clear":
+                        gate_blockers.append("runtime_live_gate_snapshot_not_clear")
+                    if (
+                        latest_gate_snapshot["session_fingerprint"]
+                        != requested["session_fingerprint"]
+                    ):
+                        gate_blockers.append(
+                            "runtime_live_gate_snapshot_session_identity_changed"
+                        )
+                    if (
+                        latest_gate_snapshot["snapshot_id"]
+                        != requested["gate_snapshot_id"]
+                        or latest_gate_snapshot["snapshot_fingerprint"]
+                        != requested["gate_snapshot_fingerprint"]
+                        or latest_gate_snapshot["observed_at"]
+                        != requested["gate_snapshot_observed_at"]
+                    ):
+                        gate_blockers.append(
+                            "runtime_live_gate_snapshot_changed_before_admission"
+                        )
+                    gate_observed_at_epoch_ms = int(
+                        latest_gate_snapshot["observed_at_epoch_ms"]
+                    )
+                    if gate_observed_at_epoch_ms > now_epoch_ms:
+                        gate_blockers.append("runtime_live_gate_snapshot_in_future")
+                    elif now_epoch_ms - gate_observed_at_epoch_ms > (
+                        gate_snapshot_max_age_ms
+                    ):
+                        gate_blockers.append("runtime_live_gate_snapshot_stale")
+                if gate_blockers:
+                    conn.rollback()
+                    return _controlled_session_rate_admission_rejection(
+                        requested,
+                        gate_blockers,
                     )
                 existing = conn.execute(
                     """

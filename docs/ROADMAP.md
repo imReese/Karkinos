@@ -91,7 +91,7 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
 | Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, Today's to-dos, and automatic paper/shadow handoff exist. | Continue requiring public explanations for every blocked/manual-ready state and keep order intents non-submitting. | v1.5-v1.6, ongoing |
 | Paper/shadow execution | Persisted daily runs include deterministic inputs, simulated order/fill state, fees/taxes, divergence, retry/idempotency, and review outcomes. | Keep evidence fresh and require divergence review before any later live-like authority. | v1.6.1, ongoing |
-| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported broker-neutral open/partial/cancel/full lifecycle facts without mutating OMS. | Any reviewed real adapter still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel or unhealthy collector facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.17, future L4 |
+| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported broker-neutral open/partial/cancel/full lifecycle facts without mutating OMS. | Any reviewed real adapter still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel or unhealthy collector facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.18, future L4 |
 | Broker execution gateway | Manual-ticket/read-only evidence remains available; one-shot submit/query is injectable, the cross-order interlock is atomic, a separately signed clearance can consume one identity-linked validated full-fill import, and the generic lifecycle/collector contracts fail closed on sequence, identity, deployment, and quantity drift. Production registers no collector, provider adapter, write adapter, or release provider by default. | Independently review an explicitly user-authorized provider adapter and its operational soak before any broker-specific write adapter/release source or pilot. Generic local JSON is evidence plumbing, not production connectivity or provider support. | v1.7, Stage 3.12-3.16, future L4 |
 | Order ticket export | Copy-safe ticket export, operator forms, manual-execution preview/evidence, and explicit links to broker-statement import and execution reconciliation exist. | Validate operator ergonomics with local workflows before considering any broker-write capability. | v1.7, ongoing |
 | Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
@@ -1604,9 +1604,9 @@ issue capital authority.
 
 ### Stage 3.7 Runtime Rate Limiter Foundation
 
-* [x] Production configures no authenticated session provider and exposes only
-  read-only status/history routes; there is no public preview, admit, submit, or
-  cancel endpoint.
+* [x] Production exposes only read-only status/history routes; there is no
+  public preview, admit, submit, or cancel endpoint. Stage 3.9 later supplied
+  authenticated sessions and Stage 3.18 requires their fresh live-gate source.
 * [x] Internal admission requires a current enabled and authority-verified
   bounded session, a verified budget reservation, clear upstream/kill-switch
   gates, exact session and reservation fingerprints, authorization/account/
@@ -1946,6 +1946,28 @@ issue capital authority.
 * [x] The binding grants no submit/cancel/live permission and cannot modify OMS,
   fills, production ledger, risk, kill switch, capital authority, or collector
   cursor/state from a read path.
+
+### Stage 3.18 Fresh Live-Gate-Bound Session Order Admission
+
+* [x] Internal admission v2 binds the exact latest persisted live-gate snapshot
+  id, fingerprint, observed time, and session fingerprint into its deterministic
+  evidence identity; a snapshot may be no more than 30 seconds old.
+* [x] Preview fails closed when the snapshot provider is absent or fails, or
+  when the snapshot is missing, stale, future, blocked, or belongs to another
+  session identity. Provider values are reduced to a strict sanitized allowlist.
+* [x] The admission `BEGIN IMMEDIATE` transaction re-reads the latest snapshot
+  before checking replay/rate limits. A newer blocked or different snapshot
+  wins over a clear preview and leaves no admission row.
+* [x] Existing session enabled/expiry/revocation/pause, order scope, reservation,
+  shared strictest rate, request idempotency, and concurrency gates remain
+  mandatory; the change removes no prior blocker.
+* [x] Production wires the authenticated session and persisted live-gate readers
+  but still exposes status/history only. There is no public runtime-admit,
+  strategy-direct, broker submit/cancel, or recovery action.
+* [x] Deterministic tests cover missing providers, stale/blocked/future/identity
+  drift, preview-to-transaction replacement, revocation race, rate/budget
+  exhaustion, exact retry, concurrency, sanitization, and zero OMS/fill/ledger/
+  broker side effects.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

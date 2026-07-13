@@ -6,6 +6,26 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 3.18 binds internal bounded-session order-rate admission to
+  one exact fresh persisted live-gate snapshot. Assumptions: a snapshot is a
+  sanitized derived gate fact rather than Account Truth itself; 30 seconds is
+  the existing live-gate freshness window; admission remains internal evidence
+  and cannot be treated as broker authority. Admission v2 fingerprints the
+  snapshot id, fingerprint, session identity, and observation time. Preview
+  rejects missing/failed, stale, future, blocked, or identity-drifted sources,
+  while the SQLite writer transaction re-reads the latest snapshot so a newer
+  blocked fact wins over a clear preview. Existing session, reservation,
+  expiry/revocation/pause, order-scope, shared-rate, replay, and concurrency
+  gates remain unchanged. Validation: the focused high-risk suite passed 136
+  tests and the complete backend suite passed 1327 tests; deterministic tests
+  cover provider closure, stale/blocked/identity drift, transaction
+  replacement, revocation, rate/budget exhaustion, concurrency, sanitization,
+  and zero OMS/fill/ledger effects. Risk impact: HIGH because the limiter has
+  12 direct and 65 total
+  GitNexus dependents. The change only adds fail-closed requirements and exposes
+  no public admit, broker contact, submit/cancel, strategy-direct path, OMS/
+  ledger mutation, session widening/resume, or capital scaling.
+
 - 2026-07-13: Stage 3.17 binds broker-neutral collector operational evidence to
   lifecycle clearance. Assumptions: collector adoption is scoped by provider,
   gateway, and account alias; scopes with no collector history retain the

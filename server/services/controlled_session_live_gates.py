@@ -12,6 +12,9 @@ from typing import Any, Callable
 from server.services.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
+from server.services.controlled_session_gate_contract import (
+    CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
+)
 from server.services.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
 )
@@ -27,7 +30,6 @@ CONTROLLED_SESSION_LIVE_GATE_REJECTION_EVENT_TYPE = (
 )
 CONTROLLED_SESSION_LIVE_GATE_ENTITY_TYPE = "controlled_session_live_gate_snapshot"
 CONTROLLED_SESSION_LIVE_GATE_EVENT_SOURCE = "controlled_session_live_gates"
-CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS = 30
 CONTROLLED_SESSION_MARKET_DATA_MAX_AGE_SECONDS = 120
 CONTROLLED_SESSION_REJECTION_WINDOW_SECONDS = 60
 CONTROLLED_SESSION_REJECTION_SPIKE_THRESHOLD = 3
