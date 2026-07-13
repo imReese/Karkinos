@@ -1,10 +1,19 @@
 {
-    "host": "127.0.0.1",
-    "port": 8000,
-    "live_auto_start": true,
-    "data_source": "akshare",
-    "tushare_token": "",
-    "broker_fee_schedule": {
+    "server": {
+        "host": "127.0.0.1",
+        "port": 8000,
+        "live_auto_start": true,
+        "cors_allowed_origins": [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173"
+        ]
+    },
+    "data_source": {
+        "provider": "akshare",
+        "tushare_token": "",
+        "live_poll_interval": 60
+    },
+    "broker_fee": {
         "schema_version": "karkinos.broker_fee_schedule.v1",
         "account_profile_id": "primary-broker-account",
         "broker_name": "示例券商",
@@ -72,6 +81,13 @@
             "broker_regulatory_fees_assumed_absorbed"
         ]
     },
+    "ai": {
+        "enabled": false,
+        "provider": "",
+        "model": "",
+        "api_keys": {},
+        "allow_financial_context": false
+    },
     "broker_connectors": [],
     "controlled_bridge_policy": {
         "policy_id": "default-controlled-bridge-disabled",
@@ -86,10 +102,5 @@
     "trusted_operator_identities": [],
     "notification": {
         "type": "console"
-    },
-    "live_poll_interval": 60,
-    "cors_allowed_origins": [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ]
+    }
 }

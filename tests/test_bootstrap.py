@@ -44,6 +44,66 @@ def test_load_runtime_config_prefers_json_file(tmp_path, monkeypatch):
     assert config.strategy == "dual_ma"
 
 
+def test_server_config_loads_grouped_runtime_sections(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "server": {
+                    "host": "127.0.0.1",
+                    "port": 9000,
+                    "live_auto_start": False,
+                },
+                "data_source": {
+                    "provider": "tushare",
+                    "tushare_token": "local-token",
+                    "live_poll_interval": 120,
+                },
+                "broker_fee": {
+                    "schedule_id": "grouped-fee-schedule",
+                    "stock_a_commission_rate": 0.00015,
+                    "stock_a_min_commission": 3,
+                },
+                "ai": {
+                    "enabled": False,
+                    "provider": "",
+                    "model": "",
+                    "api_keys": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.host == "127.0.0.1"
+    assert config.port == 9000
+    assert config.live_auto_start is False
+    assert config.data_source == "tushare"
+    assert config.tushare_token == "local-token"
+    assert config.live_poll_interval == 120
+    assert config.broker_fee_schedule.schedule_id == "grouped-fee-schedule"
+    assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
+    assert config.broker_fee_schedule.stock_a_min_commission == Decimal("3")
+
+
+def test_server_config_rejects_grouped_and_flat_field_conflicts(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "host": "0.0.0.0",
+                "server": {"host": "127.0.0.1"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="both grouped and flat"):
+        ServerConfig.from_json(config_path)
+
+
 def test_build_watchlist_maps_asset_classes():
     config = BacktestConfig(
         assets=[
@@ -697,6 +757,27 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     example = json.loads(Path("config.example.json").read_text(encoding="utf-8"))
 
     assert "config.json" in gitignore
+    assert example["server"] == {
+        "host": "127.0.0.1",
+        "port": 8000,
+        "live_auto_start": True,
+        "cors_allowed_origins": [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
+    }
+    assert example["data_source"] == {
+        "provider": "akshare",
+        "tushare_token": "",
+        "live_poll_interval": 60,
+    }
+    assert example["ai"] == {
+        "enabled": False,
+        "provider": "",
+        "model": "",
+        "api_keys": {},
+        "allow_financial_context": False,
+    }
     assert example["broker_connectors"] == []
     assert example["controlled_bridge_policy"] == {
         "policy_id": "default-controlled-bridge-disabled",
@@ -712,7 +793,8 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     assert not _contains_sensitive_key(example["broker_connectors"])
     assert not _contains_sensitive_key(example["controlled_bridge_policy"])
     assert not _contains_sensitive_key(example["trusted_operator_identities"])
-    assert not _contains_sensitive_key(example["broker_fee_schedule"])
+    assert not _contains_sensitive_key(example["broker_fee"])
+    assert example["ai"]["api_keys"] == {}
 
 
 def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):

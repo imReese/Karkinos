@@ -4082,9 +4082,11 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
     ]
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert persisted == {
-        "data_source": "tushare",
-        "tushare_token": "token-1234",
-        "live_poll_interval": 120,
+        "data_source": {
+            "provider": "tushare",
+            "tushare_token": "token-1234",
+            "live_poll_interval": 120,
+        },
         "assets": [{"symbol": "600519", "asset_class": "stock"}],
         "sentinel": "do-not-overwrite",
     }
@@ -4175,11 +4177,9 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
     assert response.account_commission_rate == pytest.approx(0.00015)
     assert "account_commission_rate" not in persisted
     assert "account_min_commission" not in persisted
-    assert persisted["broker_fee_schedule"]["stock_a_commission_rate"] == 0.00015
-    assert persisted["broker_fee_schedule"]["stock_a_min_commission"] == 5.0
-    assert (
-        persisted["broker_fee_schedule"]["schedule_id"] == "local_broker_fee_schedule"
-    )
+    assert persisted["broker_fee"]["stock_a_commission_rate"] == 0.00015
+    assert persisted["broker_fee"]["stock_a_min_commission"] == 5.0
+    assert persisted["broker_fee"]["schedule_id"] == "local_broker_fee_schedule"
     assert persisted["data_source"] == "akshare"
     assert persisted["tushare_token"] == "secret-token"
     assert persisted["sentinel"] == "preserve-me"
