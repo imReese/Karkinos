@@ -14,7 +14,6 @@
         "live_poll_interval": 60
     },
     "broker_fee": {
-        "schema_version": "karkinos.broker_fee_schedule.v1",
         "account_profile_id": "primary-broker-account",
         "broker_name": "示例券商",
         "schedule_id": "local_broker_fee_schedule",
@@ -87,20 +86,5 @@
         "model": "",
         "api_keys": {},
         "allow_financial_context": false
-    },
-    "broker_connectors": [],
-    "controlled_bridge_policy": {
-        "policy_id": "default-controlled-bridge-disabled",
-        "enabled": false,
-        "allowed_connector_ids": [],
-        "allowed_account_aliases": [],
-        "allowed_strategy_ids": [],
-        "allowed_symbols": [],
-        "per_order_confirmation_required": true,
-        "automation_allowed": false
-    },
-    "trusted_operator_identities": [],
-    "notification": {
-        "type": "console"
     }
 }
