@@ -25,6 +25,10 @@ def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
 
 def test_ci_uses_node24_compatible_github_actions() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text()
+    dockerfile = Path("Dockerfile").read_text()
+    package = json.loads(Path("web/package.json").read_text())
+    nvmrc = Path(".nvmrc").read_text().strip()
+    npmrc = Path("web/.npmrc").read_text().strip()
 
     action_refs = re.findall(r"uses:\s+([^\s#]+)", workflow)
     assert action_refs
@@ -34,7 +38,13 @@ def test_ci_uses_node24_compatible_github_actions() -> None:
     assert "# v6.4.0" in workflow
     assert "# v7.0.1" in workflow
     assert "# v8.0.1" in workflow
-    assert 'node-version: "24"' in workflow
+    assert set(re.findall(r'node-version:\s*"([^"]+)"', workflow)) == {"24"}
+    assert dockerfile.startswith(
+        "# ---- Stage 1: Build React frontend ----\nFROM node:24-alpine"
+    )
+    assert package["engines"]["node"] == ">=24.0.0 <25.0.0"
+    assert nvmrc == "24"
+    assert npmrc == "engine-strict=true"
 
 
 def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:
