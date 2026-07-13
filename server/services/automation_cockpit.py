@@ -7,9 +7,12 @@ from typing import Any
 from server.services.automation_alerts import AutomationAlertService
 from server.services.automation_control import AutomationControlService
 from server.services.broker_gateway import BrokerGatewayService
+from server.services.controlled_execution_operator_view import (
+    ControlledExecutionOperatorViewService,
+)
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
 
-AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v1"
+AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v2"
 
 
 class AutomationCockpitService:
@@ -36,7 +39,9 @@ class AutomationCockpitService:
             broker_connectors=self._broker_connectors,
         )
         gateways = broker_gateway.list_gateways()
-        runtime_connector_snapshots = _runtime_connector_snapshots(broker_gateway)
+        connector_registrations = _registered_connector_contracts(
+            self._broker_connectors
+        )
         open_alerts = AutomationAlertService(
             db=self._db,
             trading_controls=self._trading_controls,
@@ -51,7 +56,10 @@ class AutomationCockpitService:
             "broker_submission_enabled": False,
             "automation_status": automation_status,
             "gateways": gateways,
-            "runtime_connector_snapshots": runtime_connector_snapshots,
+            "connector_registrations": connector_registrations,
+            "controlled_execution": ControlledExecutionOperatorViewService(
+                db=self._db
+            ).summary(),
             "open_alert_count": len(open_alerts),
             "open_alerts": open_alerts,
             "recent_runs": recent_runs,
@@ -59,44 +67,29 @@ class AutomationCockpitService:
             "execution_reconciliation_open_items": reconciliation_items,
             "limitations": [
                 "Cockpit summary is read-only and does not submit broker orders.",
+                "Cockpit GET reads persisted facts only and never queries a provider connector.",
+                "Provider snapshots enter through an explicitly started ingestion boundary.",
             ],
         }
 
 
-def _runtime_connector_snapshots(
-    broker_gateway: BrokerGatewayService,
+def _registered_connector_contracts(
+    connectors: list[Any],
 ) -> list[dict[str, Any]]:
-    snapshots: list[dict[str, Any]] = []
-    for connector_health in broker_gateway.list_connector_health():
-        if (
-            connector_health.get("capability_scope")
-            != "runtime_readonly_connector_snapshot"
-        ):
-            continue
-        connector_id = str(connector_health.get("connector_id") or "").strip()
-        if not connector_id:
-            continue
-        try:
-            snapshots.append(broker_gateway.query_connector_snapshot(connector_id))
-        except Exception as exc:  # pragma: no cover - defensive cockpit boundary
-            snapshots.append(
-                {
-                    "schema_version": "karkinos.broker_gateway.v1",
-                    "gateway_id": "read_only_connector",
-                    "status": "snapshot_unavailable",
-                    "query_scope": "runtime_readonly_connector_snapshot",
-                    "connector_id": connector_id,
-                    "connector_health": connector_health,
-                    "submitted_to_broker": False,
-                    "can_submit_orders": False,
-                    "stores_credentials": False,
-                    "does_not_mutate_oms": True,
-                    "does_not_mutate_production_ledger": True,
-                    "last_error": str(exc),
-                    "limitations": [
-                        "Runtime connector snapshot query failed; review connector health manually.",
-                        "No broker order was submitted or cancelled.",
-                    ],
-                }
-            )
-    return snapshots
+    """Describe explicit registrations without calling an adapter method."""
+    return [
+        {
+            "connector_id": str(
+                getattr(connector, "connector_id", "") or connector.__class__.__name__
+            ),
+            "connector_type": str(
+                getattr(connector, "connector_type", "") or "edge_adapter"
+            ),
+            "registration_status": "registered_unqueried",
+            "provider_contact_performed": False,
+            "explicit_ingestion_required": True,
+            "can_submit_orders": False,
+            "can_cancel_orders": False,
+        }
+        for connector in connectors
+    ]

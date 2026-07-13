@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
+from server.services.broker_lifecycle_evidence_view import (
+    BrokerLifecycleEvidenceViewService,
+)
 from server.services.oms import OmsService
 
 BROKER_GATEWAY_SCHEMA_VERSION = "karkinos.broker_gateway.v1"
@@ -147,11 +150,11 @@ class BrokerGatewayService:
         ]
 
     def list_connector_health(self) -> list[dict[str, Any]]:
-        """Return read-only connector health contracts without touching brokers."""
-        return [
-            _connector_health_payload(connector)
-            for connector in self._broker_connectors
-        ]
+        """Return persisted collector health without touching edge adapters."""
+        return BrokerLifecycleEvidenceViewService(
+            db=self._db,
+            broker_connectors=self._broker_connectors,
+        ).list_health()
 
     def query_staged_account_facts(self) -> dict[str, Any]:
         import_runs, broker_events = self._staged_broker_events(limit=20)
@@ -181,23 +184,43 @@ class BrokerGatewayService:
         }
 
     def query_connector_snapshot(self, connector_id: str) -> dict[str, Any]:
-        normalized_connector_id = str(connector_id or "").strip()
-        if not normalized_connector_id:
-            raise KeyError("Connector id is required")
-        for connector in self._broker_connectors:
-            if not callable(getattr(connector, "read_account_snapshot", None)):
-                continue
-            snapshot = connector.read_account_snapshot()
-            if (
-                str(getattr(snapshot, "connector_id", "") or "")
-                != normalized_connector_id
-            ):
-                continue
-            return _runtime_connector_snapshot_payload(
-                snapshot,
-                capabilities=getattr(connector, "capabilities", None),
-            )
-        raise KeyError(f"Read-only connector snapshot not found: {connector_id}")
+        """Compatibility entry; runtime snapshots are no longer canonical."""
+        lifecycle_evidence = self.query_connector_lifecycle_evidence(connector_id)
+        return {
+            "schema_version": "karkinos.broker_connector_snapshot_migration.v1",
+            "status": "migrated_to_persisted_lifecycle_evidence",
+            "query_scope": "snapshot_compatibility_entry",
+            "connector_id": lifecycle_evidence["connector_id"],
+            "lifecycle_evidence": lifecycle_evidence,
+            "account_facts_included": False,
+            "provider_contact_performed": False,
+            "reads_persisted_facts_only": True,
+            "broker_submission_enabled": False,
+            "can_submit_orders": False,
+            "can_cancel_orders": False,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+            "migration": {
+                "legacy_contract": "runtime_connector_snapshot",
+                "canonical_contract": "broker_order_lifecycle_evidence",
+                "legacy_runtime_snapshot_supported": False,
+                "explicit_ingestion_required": True,
+            },
+            "limitations": [
+                "This path is an explicitly marked compatibility entry only.",
+                "It never calls an adapter and no longer returns runtime cash, position, order, or fill snapshots.",
+            ],
+        }
+
+    def query_connector_lifecycle_evidence(
+        self,
+        connector_id: str,
+    ) -> dict[str, Any]:
+        """Read canonical broker-neutral lifecycle collector evidence."""
+        return BrokerLifecycleEvidenceViewService(
+            db=self._db,
+            broker_connectors=self._broker_connectors,
+        ).query(connector_id)
 
     def query_staged_fills(
         self,
@@ -1474,270 +1497,3 @@ def _decimal_value(value: Any) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return None
-
-
-def _connector_health_payload(connector: Any) -> dict[str, Any]:
-    if callable(getattr(connector, "read_account_snapshot", None)):
-        return _runtime_connector_health_payload(connector)
-
-    connector_id = str(getattr(connector, "connector_id", "") or "")
-    connector_type = str(getattr(connector, "connector_type", "") or "readonly")
-    enabled = bool(getattr(connector, "enabled", False))
-    client_path = str(getattr(connector, "client_path", "") or "").strip()
-    account_alias = str(getattr(connector, "account_alias", "") or "").strip()
-    if not enabled:
-        status = "disabled"
-        message = "Connector is configured but disabled."
-    elif not client_path or not account_alias:
-        status = "configuration_incomplete"
-        message = "Read-only connector requires local client path and account alias."
-    else:
-        status = "configured_readonly_unverified"
-        message = (
-            "Read-only connector is configured; live client health is not checked."
-        )
-    return {
-        "schema_version": "karkinos.broker_connector_health.v1",
-        "connector_id": connector_id,
-        "connector_type": connector_type,
-        "enabled": enabled,
-        "status": status,
-        "message": message,
-        "account_alias": account_alias,
-        "capability_scope": "local_readonly_connector_contract",
-        "capabilities": {
-            "can_read_health": enabled,
-            "can_read_account": enabled,
-            "can_read_cash": enabled,
-            "can_read_positions": enabled,
-            "can_read_orders": enabled,
-            "can_read_fills": enabled,
-            "can_preview_orders": False,
-            "can_export_tickets": False,
-            "can_dry_run_orders": False,
-            "can_submit_orders": False,
-            "can_cancel_orders": False,
-        },
-        "requires_credentials": False,
-        "stores_credentials": False,
-        "submitted_to_broker": False,
-        "limitations": [
-            "Connector health is a local configuration contract only.",
-            "No broker client is contacted and no credentials are stored.",
-            "Broker order submission remains disabled.",
-        ],
-    }
-
-
-def _runtime_connector_health_payload(connector: Any) -> dict[str, Any]:
-    capabilities = getattr(connector, "capabilities", None)
-    try:
-        snapshot = connector.read_account_snapshot()
-    except Exception as exc:  # pragma: no cover - defensive contract boundary
-        connector_id = str(
-            getattr(connector, "connector_id", "")
-            or getattr(connector, "__class__", type(connector)).__name__
-        )
-        return {
-            "schema_version": "karkinos.broker_connector_health.v1",
-            "connector_id": connector_id,
-            "connector_type": "read_only_snapshot",
-            "enabled": True,
-            "status": "runtime_unavailable",
-            "message": "Read-only connector snapshot failed.",
-            "account_alias": "",
-            "capability_scope": "runtime_readonly_connector_snapshot",
-            "last_heartbeat_at": None,
-            "last_error": str(exc),
-            "capabilities": _runtime_connector_capabilities_payload(capabilities),
-            "requires_credentials": False,
-            "stores_credentials": False,
-            "submitted_to_broker": False,
-            "limitations": [
-                "Read-only connector snapshot is runtime evidence only.",
-                "Connector snapshot failed; verify the local broker client manually.",
-                "No broker order was submitted or cancelled.",
-            ],
-        }
-
-    health = getattr(snapshot, "health", None)
-    raw_status = str(getattr(health, "status", "") or "unknown")
-    status = _runtime_connector_status(raw_status)
-    message = str(getattr(health, "message", "") or raw_status)
-    heartbeat = str(
-        getattr(health, "checked_at", "") or getattr(snapshot, "captured_at", "") or ""
-    )
-    limitations = [
-        "Read-only connector snapshot is runtime evidence only.",
-        "It does not submit or cancel broker orders, create gateway events, or mutate ledger entries.",
-    ]
-    limitations.extend(_string_list(getattr(snapshot, "limitations", ())))
-    limitations.extend(_string_list(getattr(health, "limitations", ())))
-    return {
-        "schema_version": "karkinos.broker_connector_health.v1",
-        "connector_id": str(getattr(snapshot, "connector_id", "") or ""),
-        "connector_type": "read_only_snapshot",
-        "enabled": True,
-        "status": status,
-        "message": message,
-        "account_alias": str(getattr(snapshot, "account_alias", "") or ""),
-        "source_name": str(getattr(snapshot, "source_name", "") or ""),
-        "capability_scope": "runtime_readonly_connector_snapshot",
-        "last_heartbeat_at": heartbeat or None,
-        "last_error": message if status != "runtime_healthy" and message else None,
-        "capabilities": _runtime_connector_capabilities_payload(capabilities),
-        "requires_credentials": False,
-        "stores_credentials": False,
-        "submitted_to_broker": False,
-        "limitations": _string_list(limitations),
-    }
-
-
-def _runtime_connector_snapshot_payload(
-    snapshot: Any,
-    *,
-    capabilities: Any,
-) -> dict[str, Any]:
-    health = getattr(snapshot, "health", None)
-    raw_status = str(getattr(health, "status", "") or "unknown")
-    runtime_status = _runtime_connector_status(raw_status)
-    query_status = "snapshot_ready"
-    if runtime_status == "runtime_unavailable":
-        query_status = "snapshot_unavailable"
-    elif runtime_status != "runtime_healthy":
-        query_status = "snapshot_degraded"
-    message = str(getattr(health, "message", "") or raw_status)
-    limitations = [
-        "Read-only connector snapshot query is runtime evidence only.",
-        "It does not contact write APIs, submit or cancel broker orders, mutate OMS, or write ledger entries.",
-    ]
-    limitations.extend(_string_list(getattr(snapshot, "limitations", ())))
-    limitations.extend(_string_list(getattr(health, "limitations", ())))
-    positions = [
-        _runtime_position_payload(position)
-        for position in list(getattr(snapshot, "positions", []) or [])
-    ]
-    orders = [
-        _runtime_order_payload(order)
-        for order in list(getattr(snapshot, "orders", []) or [])
-    ]
-    fills = [
-        _runtime_fill_payload(fill)
-        for fill in list(getattr(snapshot, "fills", []) or [])
-    ]
-    return {
-        "schema_version": BROKER_GATEWAY_SCHEMA_VERSION,
-        "gateway_id": "read_only_connector",
-        "status": query_status,
-        "query_scope": "runtime_readonly_connector_snapshot",
-        "connector_id": str(getattr(snapshot, "connector_id", "") or ""),
-        "connector_type": "read_only_snapshot",
-        "account_alias": str(getattr(snapshot, "account_alias", "") or ""),
-        "source_name": str(getattr(snapshot, "source_name", "") or ""),
-        "captured_at": str(getattr(snapshot, "captured_at", "") or ""),
-        "connector_health": {
-            "status": runtime_status,
-            "raw_status": raw_status,
-            "message": message,
-            "checked_at": str(getattr(health, "checked_at", "") or ""),
-        },
-        "capability_scope": "runtime_readonly_connector_snapshot",
-        "capabilities": _runtime_connector_capabilities_payload(capabilities),
-        "submitted_to_broker": False,
-        "can_submit_orders": False,
-        "stores_credentials": False,
-        "requires_credentials": False,
-        "does_not_mutate_oms": True,
-        "does_not_mutate_production_ledger": True,
-        "cash_balance": _runtime_cash_payload(getattr(snapshot, "cash", None)),
-        "position_count": len(positions),
-        "positions": positions,
-        "order_count": len(orders),
-        "orders": orders,
-        "fill_count": len(fills),
-        "fills": fills,
-        "limitations": _string_list(limitations),
-    }
-
-
-def _runtime_cash_payload(cash: Any) -> dict[str, Any]:
-    if cash is None:
-        return {}
-    return {
-        "currency": str(getattr(cash, "currency", "") or ""),
-        "balance": _decimal_payload(getattr(cash, "balance", None)),
-        "available": _decimal_payload(getattr(cash, "available", None)),
-    }
-
-
-def _runtime_position_payload(position: Any) -> dict[str, Any]:
-    return {
-        "symbol": str(getattr(position, "symbol", "") or ""),
-        "instrument_name": str(getattr(position, "instrument_name", "") or ""),
-        "asset_class": str(getattr(position, "asset_class", "") or ""),
-        "quantity": _decimal_payload(getattr(position, "quantity", None)),
-        "available_quantity": _decimal_payload(
-            getattr(position, "available_quantity", None)
-        ),
-        "cost_basis": _decimal_payload(getattr(position, "cost_basis", None)),
-        "market_price": _decimal_payload(getattr(position, "market_price", None)),
-    }
-
-
-def _runtime_order_payload(order: Any) -> dict[str, Any]:
-    return {
-        "order_id": str(getattr(order, "order_id", "") or ""),
-        "symbol": str(getattr(order, "symbol", "") or ""),
-        "side": str(getattr(order, "side", "") or ""),
-        "status": str(getattr(order, "status", "") or ""),
-        "quantity": _decimal_payload(getattr(order, "quantity", None)),
-        "price": _decimal_payload(getattr(order, "price", None)),
-        "submitted_at": str(getattr(order, "submitted_at", "") or ""),
-    }
-
-
-def _runtime_fill_payload(fill: Any) -> dict[str, Any]:
-    return {
-        "fill_id": str(getattr(fill, "fill_id", "") or ""),
-        "order_id": str(getattr(fill, "order_id", "") or ""),
-        "symbol": str(getattr(fill, "symbol", "") or ""),
-        "side": str(getattr(fill, "side", "") or ""),
-        "quantity": _decimal_payload(getattr(fill, "quantity", None)),
-        "price": _decimal_payload(getattr(fill, "price", None)),
-        "fee": _decimal_payload(getattr(fill, "fee", None)),
-        "tax": _decimal_payload(getattr(fill, "tax", None)),
-        "net_amount": _decimal_payload(getattr(fill, "net_amount", None)),
-        "filled_at": str(getattr(fill, "filled_at", "") or ""),
-    }
-
-
-def _decimal_payload(value: Any) -> str | None:
-    decimal = _decimal_value(value)
-    if decimal is None:
-        return None
-    return str(decimal)
-
-
-def _runtime_connector_status(raw_status: str) -> str:
-    normalized = str(raw_status or "").lower()
-    if normalized == "healthy":
-        return "runtime_healthy"
-    if normalized == "disconnected":
-        return "runtime_unavailable"
-    return "runtime_degraded"
-
-
-def _runtime_connector_capabilities_payload(capabilities: Any) -> dict[str, bool]:
-    return {
-        "can_read_health": bool(getattr(capabilities, "can_read_health", True)),
-        "can_read_account": bool(getattr(capabilities, "can_read_account", True)),
-        "can_read_cash": bool(getattr(capabilities, "can_read_cash", True)),
-        "can_read_positions": bool(getattr(capabilities, "can_read_positions", True)),
-        "can_read_orders": bool(getattr(capabilities, "can_read_orders", True)),
-        "can_read_fills": bool(getattr(capabilities, "can_read_fills", True)),
-        "can_preview_orders": False,
-        "can_export_tickets": False,
-        "can_dry_run_orders": False,
-        "can_submit_orders": False,
-        "can_cancel_orders": False,
-    }

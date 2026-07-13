@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 
-from account_truth.broker_connector import (
-    BrokerCashFact,
-    BrokerConnectorCapabilities,
-    BrokerConnectorHealth,
-    BrokerConnectorSnapshot,
-    BrokerFillFact,
-    BrokerOrderFact,
-    BrokerPositionFact,
-    FakeReadOnlyBrokerConnector,
-)
 from server.db import AppDatabase
 from server.services.automation_alerts import AutomationAlertService
 from server.services.automation_cockpit import AutomationCockpitService
 from server.services.market_session_automation import MarketSessionAutomationService
 from server.services.trading_controls import TradingControlState
+
+
+class _ConnectorWouldFailIfQueried:
+    connector_id = "fixture-readonly-edge"
+    connector_type = "deterministic_fixture"
+
+    def read_account_snapshot(self):
+        raise AssertionError("cockpit GET must not call an edge adapter")
 
 
 def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
@@ -38,6 +35,7 @@ def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
 
     summary = AutomationCockpitService(db=db, trading_controls=controls).summary()
 
+    assert summary["schema_version"] == "karkinos.automation_cockpit.v2"
     assert summary["broker_submission_enabled"] is False
     assert summary["automation_status"]["kill_switch_enabled"] is True
     assert summary["open_alert_count"] >= 1
@@ -48,6 +46,8 @@ def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
     )
     assert gateways["staged_broker_evidence"]["can_read_account_facts"] is True
     assert gateways["staged_broker_evidence"]["can_submit_orders"] is False
+    assert summary["controlled_execution"]["status"] == "no_session_evidence"
+    assert summary["controlled_execution"]["broker_submission_enabled"] is False
 
 
 def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence(
@@ -55,62 +55,7 @@ def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence
 ) -> None:
     db = AppDatabase(tmp_path / "automation-cockpit.db")
     db.init_sync()
-    connector = FakeReadOnlyBrokerConnector(
-        BrokerConnectorSnapshot(
-            connector_id="fake-qmt-runtime",
-            source_name="synthetic qmt readonly runtime",
-            account_id="private-account-id",
-            account_alias="local-review",
-            captured_at="2026-07-02T09:31:00+08:00",
-            health=BrokerConnectorHealth(
-                status="healthy",
-                checked_at="2026-07-02T09:30:00+08:00",
-                message="Read-only connector heartbeat is healthy.",
-            ),
-            cash=BrokerCashFact(
-                currency="CNY",
-                balance=Decimal("100000.00"),
-                available=Decimal("88000.00"),
-            ),
-            positions=[
-                BrokerPositionFact(
-                    symbol="600519",
-                    instrument_name="贵州茅台",
-                    asset_class="stock",
-                    quantity=Decimal("200"),
-                    available_quantity=Decimal("100"),
-                    cost_basis=Decimal("1600.00"),
-                    market_price=Decimal("1688.00"),
-                )
-            ],
-            orders=[
-                BrokerOrderFact(
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    status="filled",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    submitted_at="2026-07-02T09:31:10+08:00",
-                )
-            ],
-            fills=[
-                BrokerFillFact(
-                    fill_id="fill-001",
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    fee=Decimal("5.10"),
-                    tax=Decimal("0"),
-                    net_amount=Decimal("-168805.10"),
-                    filled_at="2026-07-02T09:31:20+08:00",
-                )
-            ],
-        ),
-        capabilities=BrokerConnectorCapabilities(can_submit_orders=True),
-    )
+    connector = _ConnectorWouldFailIfQueried()
 
     summary = AutomationCockpitService(
         db=db,
@@ -118,22 +63,16 @@ def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence
         broker_connectors=[connector],
     ).summary()
 
-    snapshots = summary["runtime_connector_snapshots"]
-    assert len(snapshots) == 1
-    snapshot = snapshots[0]
-    assert snapshot["query_scope"] == "runtime_readonly_connector_snapshot"
-    assert snapshot["connector_id"] == "fake-qmt-runtime"
-    assert snapshot["account_alias"] == "local-review"
-    assert snapshot["connector_health"]["status"] == "runtime_healthy"
-    assert snapshot["cash_balance"]["currency"] == "CNY"
-    assert snapshot["cash_balance"]["balance"] == "100000.00"
-    assert snapshot["position_count"] == 1
-    assert snapshot["order_count"] == 1
-    assert snapshot["fill_count"] == 1
-    assert snapshot["capabilities"]["can_submit_orders"] is False
-    assert snapshot["capabilities"]["can_cancel_orders"] is False
-    assert snapshot["submitted_to_broker"] is False
-    assert snapshot["does_not_mutate_oms"] is True
-    assert snapshot["does_not_mutate_production_ledger"] is True
-    assert "private-account-id" not in json.dumps(summary, ensure_ascii=False)
+    assert summary["schema_version"] == "karkinos.automation_cockpit.v2"
+    assert "runtime_connector_snapshots" not in summary
+    assert "runtime_connector_snapshot_status" not in summary
+    registration = summary["connector_registrations"][0]
+    assert registration["connector_id"] == "fixture-readonly-edge"
+    assert registration["registration_status"] == "registered_unqueried"
+    assert registration["provider_contact_performed"] is False
+    assert registration["explicit_ingestion_required"] is True
+    assert registration["can_submit_orders"] is False
+    assert registration["can_cancel_orders"] is False
+    assert summary["controlled_execution"]["provider_contact_performed"] is False
+    assert "qmt" not in json.dumps(summary, ensure_ascii=False).lower()
     assert db.list_broker_gateway_events_sync() == []

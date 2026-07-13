@@ -1,18 +1,7 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from types import SimpleNamespace
 
-from account_truth.broker_connector import (
-    BrokerCashFact,
-    BrokerConnectorCapabilities,
-    BrokerConnectorHealth,
-    BrokerConnectorSnapshot,
-    BrokerFillFact,
-    BrokerOrderFact,
-    BrokerPositionFact,
-    FakeReadOnlyBrokerConnector,
-)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,6 +10,14 @@ from server.routes.automation import create_router
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+
+
+class _ConnectorWouldFailIfQueried:
+    connector_id = "fixture-readonly-edge"
+    connector_type = "deterministic_fixture"
+
+    def read_account_snapshot(self):
+        raise AssertionError("cockpit GET must not call an edge adapter")
 
 
 def _client_for_db(
@@ -50,6 +47,7 @@ def test_automation_status_route_uses_safe_defaults(tmp_path, monkeypatch) -> No
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["schema_version"] == "karkinos.automation_status.v1"
     assert payload["broker_submission_enabled"] is False
     assert payload["default_execution_mode"] == "manual_confirmation"
     assert payload["manual_confirmation_required"] is True
@@ -62,80 +60,24 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
 ) -> None:
     db = AppDatabase(tmp_path / "automation.db")
     db.init_sync()
-    connector = FakeReadOnlyBrokerConnector(
-        BrokerConnectorSnapshot(
-            connector_id="fake-qmt-runtime",
-            source_name="synthetic qmt readonly runtime",
-            account_id="private-account-id",
-            account_alias="local-review",
-            captured_at="2026-07-02T09:31:00+08:00",
-            health=BrokerConnectorHealth(
-                status="healthy",
-                checked_at="2026-07-02T09:30:00+08:00",
-                message="Read-only connector heartbeat is healthy.",
-            ),
-            cash=BrokerCashFact(
-                currency="CNY",
-                balance=Decimal("100000.00"),
-                available=Decimal("88000.00"),
-            ),
-            positions=[
-                BrokerPositionFact(
-                    symbol="600519",
-                    instrument_name="贵州茅台",
-                    asset_class="stock",
-                    quantity=Decimal("200"),
-                    available_quantity=Decimal("100"),
-                    cost_basis=Decimal("1600.00"),
-                    market_price=Decimal("1688.00"),
-                )
-            ],
-            orders=[
-                BrokerOrderFact(
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    status="filled",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    submitted_at="2026-07-02T09:31:10+08:00",
-                )
-            ],
-            fills=[
-                BrokerFillFact(
-                    fill_id="fill-001",
-                    order_id="broker-order-private",
-                    symbol="600519",
-                    side="buy",
-                    quantity=Decimal("100"),
-                    price=Decimal("1688.00"),
-                    fee=Decimal("5.10"),
-                    tax=Decimal("0"),
-                    net_amount=Decimal("-168805.10"),
-                    filled_at="2026-07-02T09:31:20+08:00",
-                )
-            ],
-        ),
-        capabilities=BrokerConnectorCapabilities(can_submit_orders=True),
-    )
+    connector = _ConnectorWouldFailIfQueried()
     client = _client_for_db(monkeypatch, db, broker_connectors=[connector])
 
     response = client.get("/api/automation/cockpit")
 
     assert response.status_code == 200
     payload = response.json()
-    snapshots = payload["runtime_connector_snapshots"]
-    assert len(snapshots) == 1
-    snapshot = snapshots[0]
-    assert snapshot["connector_id"] == "fake-qmt-runtime"
-    assert snapshot["query_scope"] == "runtime_readonly_connector_snapshot"
-    assert snapshot["position_count"] == 1
-    assert snapshot["order_count"] == 1
-    assert snapshot["fill_count"] == 1
-    assert snapshot["capabilities"]["can_submit_orders"] is False
-    assert snapshot["submitted_to_broker"] is False
-    assert snapshot["does_not_mutate_production_ledger"] is True
-    assert "private-account-id" not in response.text
+    assert payload["schema_version"] == "karkinos.automation_cockpit.v2"
+    assert "runtime_connector_snapshots" not in payload
+    assert "runtime_connector_snapshot_status" not in payload
+    registration = payload["connector_registrations"][0]
+    assert registration["connector_id"] == "fixture-readonly-edge"
+    assert registration["provider_contact_performed"] is False
+    assert registration["explicit_ingestion_required"] is True
+    assert registration["can_submit_orders"] is False
+    assert registration["can_cancel_orders"] is False
+    assert payload["controlled_execution"]["provider_contact_performed"] is False
+    assert "qmt" not in response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
 
 
@@ -254,8 +196,8 @@ def test_automation_alert_scan_route_records_connector_health_alert(
             config=SimpleNamespace(
                 broker_connectors=[
                     SimpleNamespace(
-                        connector_id="local-qmt-readonly",
-                        connector_type="qmt_readonly",
+                        connector_id="fixture-readonly-edge",
+                        connector_type="deterministic_fixture",
                         enabled=True,
                         client_path="",
                         account_alias="",
@@ -277,7 +219,7 @@ def test_automation_alert_scan_route_records_connector_health_alert(
     assert payload["open_alert_count"] == 1
     alert = payload["alerts"][0]
     assert alert["alert_key"] == (
-        "broker_connector:local-qmt-readonly:configuration_incomplete"
+        "broker_connector:fixture-readonly-edge:collector_evidence_missing"
     )
     assert alert["payload"]["can_submit_orders"] is False
     assert alert["payload"]["submitted_to_broker"] is False
@@ -516,6 +458,7 @@ def test_automation_cockpit_route_returns_read_only_summary(
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["schema_version"] == "karkinos.automation_cockpit.v2"
     assert payload["broker_submission_enabled"] is False
     assert payload["automation_status"]["kill_switch_enabled"] is True
     gateways = {item["gateway_id"]: item for item in payload["gateways"]}
@@ -524,3 +467,7 @@ def test_automation_cockpit_route_returns_read_only_summary(
     )
     assert gateways["staged_broker_evidence"]["can_read_account_facts"] is True
     assert gateways["staged_broker_evidence"]["can_submit_orders"] is False
+    assert "runtime_connector_snapshots" not in payload
+    assert "runtime_connector_snapshot_status" not in payload
+    assert payload["controlled_execution"]["reads_persisted_facts_only"] is True
+    assert payload["controlled_execution"]["provider_contact_performed"] is False

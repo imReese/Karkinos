@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from types import SimpleNamespace
 
-from account_truth.broker_connector import (
-    BrokerCashFact,
-    BrokerConnectorCapabilities,
-    BrokerConnectorHealth,
-    BrokerConnectorSnapshot,
-    FakeReadOnlyBrokerConnector,
-)
 from server.db import AppDatabase
 from server.services.automation_alerts import AutomationAlertService
 from server.services.broker_gateway import BrokerGatewayService
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+
+
+class _ConnectorWouldFailIfQueried:
+    connector_id = "fixture-readonly-edge"
+    connector_type = "deterministic_fixture"
+    enabled = True
+
+    def read_account_snapshot(self):
+        raise AssertionError("alert scan must not call an edge adapter")
 
 
 def _required_gateway_evidence() -> dict:
@@ -308,15 +309,13 @@ def test_alert_scan_records_failed_paper_shadow_automation_run(tmp_path) -> None
     assert alert["payload"]["does_not_mutate_production_ledger"] is True
 
 
-def test_alert_scan_records_incomplete_readonly_connector_health(tmp_path) -> None:
+def test_alert_scan_records_missing_persisted_collector_evidence(tmp_path) -> None:
     db = AppDatabase(tmp_path / "alerts.db")
     db.init_sync()
     connector = SimpleNamespace(
-        connector_id="local-qmt-readonly",
-        connector_type="qmt_readonly",
+        connector_id="fixture-readonly-edge",
+        connector_type="deterministic_fixture",
         enabled=True,
-        client_path="",
-        account_alias="",
     )
     service = AutomationAlertService(
         db=db,
@@ -329,17 +328,30 @@ def test_alert_scan_records_incomplete_readonly_connector_health(tmp_path) -> No
     assert result["open_alert_count"] == 1
     alert = result["alerts"][0]
     assert alert["alert_key"] == (
-        "broker_connector:local-qmt-readonly:configuration_incomplete"
+        "broker_connector:fixture-readonly-edge:collector_evidence_missing"
     )
     assert alert["severity"] == "warning"
     assert alert["category"] == "broker_connector_health"
     assert alert["title"] == "Broker connector health requires review"
     assert alert["source"] == "broker_gateway"
-    assert alert["source_ref"] == "local-qmt-readonly"
-    assert "requires local client path and account alias" in alert["detail"]
-    assert alert["payload"]["connector_id"] == "local-qmt-readonly"
-    assert alert["payload"]["connector_status"] == "configuration_incomplete"
-    assert alert["payload"]["capability_scope"] == ("local_readonly_connector_contract")
+    assert alert["source_ref"] == "fixture-readonly-edge"
+    assert "explicit ingestion" in alert["detail"]
+    assert alert["payload"]["connector_id"] == "fixture-readonly-edge"
+    assert alert["payload"]["connector_status"] == "collector_evidence_missing"
+    assert alert["payload"]["capability_scope"] == (
+        "persisted_broker_order_lifecycle_evidence"
+    )
+    assert alert["payload"]["evidence_source"] == (
+        "persisted_broker_order_lifecycle_collector_runs"
+    )
+    assert alert["payload"]["evidence_store_status"] == "empty"
+    assert alert["payload"]["evidence_blockers"] == [
+        "broker_lifecycle_collector_evidence_missing"
+    ]
+    assert alert["payload"]["provider_contact_performed"] is False
+    assert alert["payload"]["reads_persisted_facts_only"] is True
+    assert alert["payload"]["explicit_ingestion_required"] is True
+    assert alert["payload"]["third_party_adapter_review_required"] is True
     assert alert["payload"]["can_preview_orders"] is False
     assert alert["payload"]["can_export_tickets"] is False
     assert alert["payload"]["can_dry_run_orders"] is False
@@ -357,8 +369,8 @@ def test_alert_scan_records_runtime_connector_degradation(tmp_path) -> None:
         trading_controls=None,
         connector_health=[
             {
-                "connector_id": "local-qmt-readonly",
-                "connector_type": "qmt_readonly",
+                "connector_id": "fixture-readonly-edge",
+                "connector_type": "deterministic_fixture",
                 "status": "runtime_degraded",
                 "enabled": True,
                 "message": "Read-only connector heartbeat is stale.",
@@ -391,14 +403,16 @@ def test_alert_scan_records_runtime_connector_degradation(tmp_path) -> None:
 
     assert result["open_alert_count"] == 1
     alert = result["alerts"][0]
-    assert alert["alert_key"] == "broker_connector:local-qmt-readonly:runtime_degraded"
+    assert alert["alert_key"] == (
+        "broker_connector:fixture-readonly-edge:runtime_degraded"
+    )
     assert alert["severity"] == "warning"
     assert alert["category"] == "broker_connector_health"
     assert alert["title"] == "Broker connector health requires review"
     assert alert["source"] == "broker_gateway"
-    assert alert["source_ref"] == "local-qmt-readonly"
+    assert alert["source_ref"] == "fixture-readonly-edge"
     assert "heartbeat is stale" in alert["detail"]
-    assert alert["payload"]["connector_id"] == "local-qmt-readonly"
+    assert alert["payload"]["connector_id"] == "fixture-readonly-edge"
     assert alert["payload"]["connector_status"] == "runtime_degraded"
     assert alert["payload"]["last_heartbeat_at"] == "2026-07-02T09:20:00+08:00"
     assert alert["payload"]["last_error"] == "heartbeat timeout"
@@ -415,31 +429,10 @@ def test_alert_scan_records_runtime_connector_degradation(tmp_path) -> None:
     assert alert["payload"]["does_not_submit_broker_order"] is True
 
 
-def test_alert_scan_polls_runtime_readonly_connector_snapshot(tmp_path) -> None:
+def test_alert_scan_does_not_poll_registered_edge_adapter(tmp_path) -> None:
     db = AppDatabase(tmp_path / "alerts.db")
     db.init_sync()
-    connector = FakeReadOnlyBrokerConnector(
-        BrokerConnectorSnapshot(
-            connector_id="fake-qmt-runtime",
-            source_name="synthetic qmt readonly runtime",
-            account_id="private-account-id",
-            account_alias="local-review",
-            captured_at="2026-07-02T09:31:00+08:00",
-            health=BrokerConnectorHealth(
-                status="stale",
-                checked_at="2026-07-02T09:30:00+08:00",
-                message="Read-only connector heartbeat is stale.",
-                limitations=["Runtime connector fixture is stale."],
-            ),
-            cash=BrokerCashFact(
-                currency="CNY",
-                balance=Decimal("100000.00"),
-                available=Decimal("88000.00"),
-            ),
-            limitations=["Synthetic runtime snapshot; no broker client submitted."],
-        ),
-        capabilities=BrokerConnectorCapabilities(can_submit_orders=True),
-    )
+    connector = _ConnectorWouldFailIfQueried()
     service = AutomationAlertService(
         db=db,
         trading_controls=None,
@@ -450,20 +443,25 @@ def test_alert_scan_polls_runtime_readonly_connector_snapshot(tmp_path) -> None:
 
     assert result["open_alert_count"] == 1
     alert = result["alerts"][0]
-    assert alert["alert_key"] == "broker_connector:fake-qmt-runtime:runtime_degraded"
+    assert alert["alert_key"] == (
+        "broker_connector:fixture-readonly-edge:collector_evidence_missing"
+    )
     assert alert["category"] == "broker_connector_health"
     assert alert["source"] == "broker_gateway"
-    assert alert["source_ref"] == "fake-qmt-runtime"
-    assert "heartbeat is stale" in alert["detail"]
-    assert alert["payload"]["connector_id"] == "fake-qmt-runtime"
-    assert alert["payload"]["connector_status"] == "runtime_degraded"
+    assert alert["source_ref"] == "fixture-readonly-edge"
+    assert "explicit ingestion" in alert["detail"]
+    assert alert["payload"]["connector_id"] == "fixture-readonly-edge"
+    assert alert["payload"]["connector_status"] == "collector_evidence_missing"
     assert alert["payload"]["capability_scope"] == (
-        "runtime_readonly_connector_snapshot"
+        "persisted_broker_order_lifecycle_evidence"
     )
-    assert alert["payload"]["last_heartbeat_at"] == "2026-07-02T09:30:00+08:00"
-    assert alert["payload"]["last_error"] == "Read-only connector heartbeat is stale."
-    assert alert["payload"]["can_read_account"] is True
-    assert alert["payload"]["can_read_cash"] is True
+    assert alert["payload"]["provider_contact_performed"] is False
+    assert alert["payload"]["reads_persisted_facts_only"] is True
+    assert alert["payload"]["explicit_ingestion_required"] is True
+    assert alert["payload"]["third_party_adapter_review_required"] is True
+    assert alert["payload"]["last_heartbeat_at"] is None
+    assert alert["payload"]["can_read_account"] is False
+    assert alert["payload"]["can_read_cash"] is False
     assert alert["payload"]["can_preview_orders"] is False
     assert alert["payload"]["can_export_tickets"] is False
     assert alert["payload"]["can_dry_run_orders"] is False
@@ -472,7 +470,7 @@ def test_alert_scan_polls_runtime_readonly_connector_snapshot(tmp_path) -> None:
     assert alert["payload"]["stores_credentials"] is False
     assert alert["payload"]["submitted_to_broker"] is False
     assert alert["payload"]["does_not_submit_broker_order"] is True
-    assert "private-account-id" not in alert["payload_json"]
+    assert "qmt" not in alert["payload_json"].lower()
 
 
 def test_alert_scan_records_daily_plan_risk_blockers(tmp_path) -> None:

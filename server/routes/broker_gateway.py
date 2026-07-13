@@ -41,8 +41,10 @@ def create_router() -> APIRouter:
     async def get_broker_connector_health() -> dict[str, Any]:
         service = _service()
         return {
-            "schema_version": "karkinos.broker_connector_health_list.v1",
+            "schema_version": "karkinos.broker_connector_health_list.v2",
             "broker_submission_enabled": False,
+            "provider_contact_performed": False,
+            "reads_persisted_facts_only": True,
             "connectors": service.list_connector_health(),
         }
 
@@ -51,8 +53,10 @@ def create_router() -> APIRouter:
         service = _service()
         try:
             return {
-                "schema_version": "karkinos.broker_connector_snapshot_query.v1",
+                "schema_version": "karkinos.broker_connector_snapshot_query.v2",
                 "broker_submission_enabled": False,
+                "provider_contact_performed": False,
+                "deprecated_compatibility_entry": True,
                 "snapshot": service.query_connector_snapshot(connector_id),
             }
         except KeyError as exc:

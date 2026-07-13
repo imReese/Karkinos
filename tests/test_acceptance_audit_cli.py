@@ -542,6 +542,29 @@ def test_acceptance_audit_cli_controlled_broker_bridge_foundation_filter_outputs
     }
 
 
+def test_acceptance_audit_cli_persisted_operator_view_filter_outputs_one_audit() -> (
+    None
+):
+    result = _run_cli("--audit", "persisted_controlled_execution_operator_view")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "persisted_controlled_execution_operator_view"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "persisted_controlled_execution_operator_view"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 6
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "persisted_controlled_execution_operator_projection",
+        "persisted_broker_lifecycle_health_boundary",
+        "broker_adapter_and_legacy_snapshot_migration_boundary",
+        "operator_and_alert_read_only_surfaces",
+    }
+
+
 def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     result = _run_cli("--audit", "all")
 
@@ -579,6 +602,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "controlled_broker_submission",
         "controlled_submission_interlock",
         "controlled_submission_reconciliation_clearance",
+        "persisted_controlled_execution_operator_view",
         "capital_scaling_review_foundation",
         "capital_scaling_evidence_resolution",
         "capital_scaling_evidence_window",

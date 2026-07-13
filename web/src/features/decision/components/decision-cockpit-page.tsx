@@ -1945,15 +1945,65 @@ function controlledBridgeTokenLabel(value: string, locale: Locale) {
 }
 
 function brokerConnectorStatusLabel(status: string, locale: Locale) {
-  if (status === 'configured_readonly_unverified') {
-    return locale === 'zh'
-      ? '只读配置完成，未连接验证'
-      : 'Configured readonly unverified';
-  }
-  if (status === 'configuration_incomplete') {
-    return locale === 'zh' ? '配置不完整' : 'Configuration incomplete';
+  const labels: Record<string, { en: string; zh: string }> = {
+    collector_evidence_clear: {
+      en: 'Persisted evidence clear',
+      zh: '持久化证据清晰',
+    },
+    collector_evidence_missing: {
+      en: 'Explicit ingestion required',
+      zh: '需要显式采集',
+    },
+    collector_evidence_pending: {
+      en: 'Collector evidence pending',
+      zh: '采集证据待提交',
+    },
+    collector_evidence_blocked: {
+      en: 'Collector evidence blocked',
+      zh: '采集证据阻断',
+    },
+    collector_evidence_unavailable: {
+      en: 'Evidence store unavailable',
+      zh: '证据库不可用',
+    },
+    disabled: { en: 'Registration disabled', zh: '注册已停用' },
+  };
+  if (labels[status]) {
+    return labels[status][locale];
   }
   return formatPublicStatus(status, locale);
+}
+
+function controlledExecutionStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    no_session_evidence: {
+      en: 'No session evidence · default off',
+      zh: '无会话证据 · 默认关闭',
+    },
+    clear_read_only_evidence: {
+      en: 'Read-only evidence clear',
+      zh: '只读证据清晰',
+    },
+    blocked: { en: 'Blocked', zh: '已阻断' },
+    historical_sessions_only: {
+      en: 'Historical sessions only',
+      zh: '仅历史会话',
+    },
+    current_clear_evidence: {
+      en: 'Current evidence clear',
+      zh: '当前证据清晰',
+    },
+    paused: { en: 'Paused', zh: '已暂停' },
+    expired: { en: 'Expired', zh: '已过期' },
+    revoked: { en: 'Revoked', zh: '已撤销' },
+    scheduled: { en: 'Scheduled', zh: '待生效' },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function controlledExecutionCurrency(value: string | null | undefined) {
+  const numeric = numericCostSummaryValue(value);
+  return numeric === null ? '—' : formatCurrency(numeric);
 }
 
 function brokerGatewayCapabilityLabel(
@@ -2079,15 +2129,6 @@ function brokerConnectorCapabilityLabel(
       ? '阻断'
       : 'blocked';
   return `${action} ${state}`;
-}
-
-function runtimeConnectorSnapshotStatusLabel(status: string, locale: Locale) {
-  const labels: Record<string, { en: string; zh: string }> = {
-    snapshot_ready: { en: 'Snapshot ready', zh: '快照可复核' },
-    snapshot_degraded: { en: 'Snapshot degraded', zh: '快照降级' },
-    snapshot_unavailable: { en: 'Snapshot unavailable', zh: '快照不可用' },
-  };
-  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
 }
 
 function executionReconciliationStatusLabel(status: string, locale: Locale) {
@@ -2723,10 +2764,11 @@ function AutomationCockpitPanel({
     brokerConnectorHealthLoading ||
     brokerConnectorHealthError ||
     Boolean(brokerConnectorHealth?.connectors.length);
-  const runtimeConnectorSnapshots = cockpit.runtime_connector_snapshots ?? [];
-  const showRuntimeConnectorSnapshots = Boolean(
-    runtimeConnectorSnapshots.length,
-  );
+  const controlledExecution = cockpit.controlled_execution;
+  const controlledExecutionSession =
+    controlledExecution?.sessions.find(
+      (session) => session.is_current_window,
+    ) ?? controlledExecution?.sessions[0];
   const showAccountFacts =
     brokerAccountFactsLoading ||
     brokerAccountFactsError ||
@@ -2853,6 +2895,182 @@ function AutomationCockpitPanel({
             </div>
           </div>
         </div>
+
+        {controlledExecution ? (
+          <div
+            data-testid="controlled-execution-operator-view"
+            className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-3"
+          >
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                  {locale === 'zh'
+                    ? '受控执行操作视图'
+                    : 'Controlled execution operator view'}
+                </div>
+                <div className="app-muted mt-1 break-words text-xs leading-5">
+                  {locale === 'zh'
+                    ? '仅显示已持久化的资本边界、门禁与对账证据，不授予执行权限。'
+                    : 'Persisted capital, gate, and reconciliation evidence only; no execution authority is granted.'}
+                </div>
+              </div>
+              <span className="app-chip">
+                {controlledExecutionStatusLabel(
+                  controlledExecutionSession?.status ??
+                    controlledExecution.status,
+                  locale,
+                )}
+              </span>
+            </div>
+
+            {controlledExecutionSession ? (
+              <>
+                <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    {
+                      label:
+                        locale === 'zh' ? '账户 / 策略' : 'Account / strategy',
+                      value: `${controlledExecutionSession.account_alias || '—'} / ${controlledExecutionSession.strategy_id || '—'}`,
+                    },
+                    {
+                      label:
+                        locale === 'zh' ? '授权资本' : 'Authorized capital',
+                      value: controlledExecutionCurrency(
+                        controlledExecutionSession.authorized_capital,
+                      ),
+                    },
+                    {
+                      label:
+                        locale === 'zh'
+                          ? '当前风险资本'
+                          : 'Effective capital at risk',
+                      value: controlledExecutionCurrency(
+                        controlledExecutionSession.effective_capital_at_risk,
+                      ),
+                    },
+                    {
+                      label: locale === 'zh' ? '资本余量' : 'Capital headroom',
+                      value: controlledExecutionCurrency(
+                        controlledExecutionSession.remaining_budget
+                          .capital_headroom,
+                      ),
+                    },
+                    {
+                      label: locale === 'zh' ? '现金余量' : 'Cash headroom',
+                      value: controlledExecutionCurrency(
+                        controlledExecutionSession.remaining_budget
+                          .cash_headroom,
+                      ),
+                    },
+                    {
+                      label: locale === 'zh' ? '换手余量' : 'Turnover headroom',
+                      value: controlledExecutionCurrency(
+                        controlledExecutionSession.remaining_budget
+                          .turnover_headroom,
+                      ),
+                    },
+                    {
+                      label:
+                        locale === 'zh'
+                          ? '剩余订单槽位'
+                          : 'Remaining order slots',
+                      value: String(
+                        controlledExecutionSession.remaining_budget
+                          .remaining_order_slots,
+                      ),
+                    },
+                    {
+                      label: locale === 'zh' ? '授权到期' : 'Authority expires',
+                      value: controlledExecutionSession.expires_at || '—',
+                    },
+                  ].map((item) => (
+                    <div
+                      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5"
+                      key={item.label}
+                    >
+                      <div className="app-muted text-xs">{item.label}</div>
+                      <div className="mt-1 break-words font-semibold text-[var(--app-text)]">
+                        {item.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid min-w-0 gap-2 text-xs text-[var(--app-soft)] sm:grid-cols-2">
+                  <div className="min-w-0 break-words">
+                    {locale === 'zh' ? '最近订单' : 'Last order'}:{' '}
+                    {controlledExecutionSession.last_order.order_id || '—'} ·{' '}
+                    {controlledExecutionSession.last_order.submission_status ||
+                      (locale === 'zh' ? '无提交事实' : 'no submission fact')}
+                  </div>
+                  <div className="min-w-0 break-words">
+                    {locale === 'zh' ? '最近对账' : 'Last reconciliation'}:{' '}
+                    {controlledExecutionSession.last_reconciliation.run_id ||
+                      '—'}{' '}
+                    ·{' '}
+                    {controlledExecutionSession.last_reconciliation
+                      .suggested_action ||
+                      controlledExecutionSession.last_reconciliation
+                        .item_status ||
+                      (locale === 'zh'
+                        ? '无对账事实'
+                        : 'no reconciliation fact')}
+                  </div>
+                  <div className="min-w-0 break-words">
+                    {locale === 'zh' ? '允许标的' : 'Allowed symbols'}:{' '}
+                    {controlledExecutionSession.allowed_symbols.join(', ') ||
+                      '—'}
+                  </div>
+                  <div className="min-w-0 break-words">
+                    {locale === 'zh' ? '门禁快照' : 'Gate snapshot'}:{' '}
+                    {controlledExecutionSession.latest_gate_snapshot.status ||
+                      '—'}
+                  </div>
+                </div>
+
+                {controlledExecutionSession.pause.reasons.length ? (
+                  <div className="mt-2 break-words text-xs font-semibold text-[var(--app-warning)]">
+                    {locale === 'zh' ? '暂停原因' : 'Pause reason'}:{' '}
+                    {controlledExecutionSession.pause.reasons.join(' · ')}
+                  </div>
+                ) : null}
+                {controlledExecutionSession.blockers.length ||
+                controlledExecution.source_blockers.length ? (
+                  <div className="app-muted mt-2 break-words text-xs leading-5">
+                    {locale === 'zh' ? '阻断项' : 'Blockers'}:{' '}
+                    {[
+                      ...controlledExecutionSession.blockers,
+                      ...controlledExecution.source_blockers,
+                    ]
+                      .map((item) => formatPublicCode(item, locale))
+                      .join(' · ')}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="app-muted mt-3 text-sm">
+                {locale === 'zh'
+                  ? '没有已持久化的受控执行会话；实盘提交保持关闭。'
+                  : 'No persisted controlled-execution session; live submission remains off.'}
+              </div>
+            )}
+
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+              {[
+                locale === 'zh' ? '仅持久化事实' : 'Persisted facts only',
+                locale === 'zh' ? '未联系 provider' : 'No provider contact',
+                locale === 'zh' ? '提交关闭' : 'Submission off',
+                locale === 'zh' ? '撤单关闭' : 'Cancellation off',
+                locale === 'zh' ? '无恢复操作' : 'No resume action',
+                locale === 'zh' ? '禁止自动扩容' : 'No automatic scale-up',
+              ].map((label) => (
+                <span className="app-chip" key={label}>
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {primaryOpenAlert ? (
           <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
@@ -3197,8 +3415,8 @@ function AutomationCockpitPanel({
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
               {locale === 'zh'
-                ? '只读连接器健康'
-                : 'Read-only connector health'}
+                ? '持久化券商生命周期证据'
+                : 'Persisted broker lifecycle evidence'}
             </div>
             {brokerConnectorHealthLoading && !brokerConnectorHealth ? (
               <div className="app-muted mt-2 text-sm">
@@ -3224,9 +3442,9 @@ function AutomationCockpitPanel({
                         <div className="text-sm font-semibold text-[var(--app-text)]">
                           {connector.connector_id}
                         </div>
-                        {connector.account_alias ? (
+                        {connector.account_aliases?.length ? (
                           <div className="app-muted mt-0.5 break-words text-xs">
-                            {connector.account_alias}
+                            {connector.account_aliases.join(', ')}
                           </div>
                         ) : null}
                       </div>
@@ -3311,123 +3529,27 @@ function AutomationCockpitPanel({
                         {connector.message}
                       </div>
                     ) : null}
+                    <div className="app-muted mt-2 break-words text-xs leading-5">
+                      {connector.provider_contact_performed
+                        ? locale === 'zh'
+                          ? '阻断：读取期间联系了 provider'
+                          : 'Blocked: provider contact occurred during read'
+                        : locale === 'zh'
+                          ? '仅持久化事实 · 未联系 provider · 无提交/撤单权限'
+                          : 'Persisted facts only · no provider contact · no submit/cancel authority'}
+                    </div>
+                    {connector.blockers?.length ? (
+                      <div className="app-muted mt-1 break-words text-xs leading-5">
+                        {locale === 'zh' ? '阻断项' : 'Blockers'}:{' '}
+                        {connector.blockers
+                          .map((item) => formatPublicCode(item, locale))
+                          .join(' · ')}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
             ) : null}
-          </div>
-        ) : null}
-
-        {showRuntimeConnectorSnapshots ? (
-          <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-            <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
-              {locale === 'zh'
-                ? '运行态连接器快照'
-                : 'Runtime connector snapshot'}
-            </div>
-            <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
-              {runtimeConnectorSnapshots.slice(0, 4).map((snapshot) => {
-                const cashBalance = snapshot.cash_balance;
-                const cashLabel =
-                  cashBalance?.currency || cashBalance?.balance != null
-                    ? `${locale === 'zh' ? '资金' : 'Cash'} ${
-                        cashBalance?.currency ?? ''
-                      } ${cashBalance?.balance ?? ''}`.trim()
-                    : locale === 'zh'
-                      ? '资金未返回'
-                      : 'Cash unavailable';
-                return (
-                  <div
-                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
-                    key={snapshot.connector_id}
-                  >
-                    <div className="flex min-w-0 items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="break-words text-sm font-semibold text-[var(--app-text)]">
-                          {snapshot.connector_id}
-                        </div>
-                        {snapshot.account_alias ? (
-                          <div className="app-muted mt-0.5 break-words text-xs">
-                            {snapshot.account_alias}
-                          </div>
-                        ) : null}
-                      </div>
-                      <span className="app-chip">
-                        {runtimeConnectorSnapshotStatusLabel(
-                          snapshot.status,
-                          locale,
-                        )}
-                      </span>
-                    </div>
-                    <div className="mt-2 grid min-w-0 gap-1 text-xs text-[var(--app-soft)] sm:grid-cols-2">
-                      <span>{cashLabel}</span>
-                      <span>
-                        {countLabel(
-                          snapshot.position_count ??
-                            snapshot.positions?.length ??
-                            0,
-                          locale === 'zh' ? '个持仓' : 'position',
-                          'positions',
-                          locale,
-                        )}
-                      </span>
-                      <span>
-                        {countLabel(
-                          snapshot.order_count ?? snapshot.orders?.length ?? 0,
-                          locale === 'zh' ? '个订单' : 'order',
-                          'orders',
-                          locale,
-                        )}
-                      </span>
-                      <span>
-                        {countLabel(
-                          snapshot.fill_count ?? snapshot.fills?.length ?? 0,
-                          locale === 'zh' ? '笔成交' : 'fill',
-                          'fills',
-                          locale,
-                        )}
-                      </span>
-                      <span>
-                        {brokerConnectorCapabilityLabel(
-                          'submit',
-                          snapshot.capabilities?.can_submit_orders,
-                          locale,
-                        )}
-                      </span>
-                      <span>
-                        {brokerConnectorCapabilityLabel(
-                          'cancel',
-                          snapshot.capabilities?.can_cancel_orders,
-                          locale,
-                        )}
-                      </span>
-                    </div>
-                    <div className="app-muted mt-2 break-words text-xs leading-5">
-                      {snapshot.submitted_to_broker
-                        ? locale === 'zh'
-                          ? '需要复核：快照声明已提交券商'
-                          : 'Review required: snapshot claims broker submission'
-                        : locale === 'zh'
-                          ? '不会提交券商订单'
-                          : 'No broker submission'}
-                      {' · '}
-                      {snapshot.does_not_mutate_production_ledger
-                        ? locale === 'zh'
-                          ? '不写生产账本'
-                          : 'No ledger mutation'
-                        : locale === 'zh'
-                          ? '需要账本变更复核'
-                          : 'Ledger mutation requires review'}
-                    </div>
-                    {snapshot.connector_health?.message ? (
-                      <div className="app-muted mt-1 break-words text-xs leading-5">
-                        {snapshot.connector_health.message}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
           </div>
         ) : null}
 

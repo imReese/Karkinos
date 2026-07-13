@@ -300,6 +300,17 @@ old. A newer blocked snapshot wins over preview. This closes an admission race
 without exposing a public admit endpoint or adding OMS, ledger, gateway, submit,
 cancel, or capital-authority effects.
 
+Stage 3.19 makes the operator surface a persisted-fact projection rather than a
+runtime connector view. It shows the exact bounded capital envelope, effective
+capital at risk, remaining capital/cash/turnover/order capacity, allowed
+symbols, expiry, latest order/submission, reconciliation, live-gate, pause, and
+blocker evidence. Broker lifecycle health and alerts read recorded generic
+collector runs only; no GET path polls an adapter or refreshes account facts.
+Missing/blocked evidence requires explicit ingestion, while the legacy runtime
+snapshot path is migration-only and returns no live account facts. The view has
+no issue, renew, resume, widen, submit, cancel, OMS/ledger mutation, or automatic
+capital-scale action.
+
 No broker-specific adapter is registered by default. Any QMT, PTrade, local-
 file watcher, or other third-party adapter remains replaceable and requires a
 separate dependency/capability/failure-mode review plus explicit user

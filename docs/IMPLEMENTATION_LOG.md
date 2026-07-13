@@ -6,6 +6,32 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-13: Stage 3.19 replaces implicit runtime-connector reads with a
+  persisted-fact controlled-execution operator view and broker-neutral
+  lifecycle evidence boundary. Assumptions: database rows are the only
+  authoritative inputs for bounded-session capital, headroom, expiry,
+  admissions, submissions, reconciliation, gate, and pause visibility;
+  broker lifecycle health comes only from explicitly ingested generic
+  collector runs; `provider` is provenance rather than adapter selection; a
+  third-party adapter remains default-unregistered until separately reviewed
+  and explicitly authorized. Missing, stale, expired, paused, unreconciled,
+  blocked, unavailable, or truncated evidence fails closed. The legacy runtime
+  snapshot endpoint is a labelled migration entry returning canonical lifecycle
+  evidence and no live cash, position, order, or fill facts. Validation: 117
+  focused backend and acceptance-audit tests, the complete 1,339-test backend
+  suite, 406 frontend tests, Decision Cockpit's 54 focused tests, Prettier, and
+  the TypeScript/Vite production build passed. Deterministic fakes prove empty
+  defaults, pause/reconciliation visibility, collector restart and blocked
+  evidence, adapter-call rejection, and zero broker/financial-state side
+  effects. Risk impact: CRITICAL at the broker-health/alert orchestration
+  boundary (`list_connector_health` has five direct callers across two
+  processes; connector alert scanning feeds `scan_alerts`), HIGH for the
+  compatibility query path, and MEDIUM for Automation Cockpit. The change
+  removes provider contact from reads and adds only fail-closed projections: it
+  cannot issue/renew/resume/widen authority, submit/cancel, mutate Account
+  Truth, OMS, fills, ledger, risk, kill switch, or scale capital automatically;
+  no QMT SDK/runtime or official provider-support claim is added.
+
 - 2026-07-13: Stage 4.4 closes the capital-scaling execution-provenance gap
   with a required `execution_scope` fact in evidence-window v2. Assumptions:
   the computed operating sample owns the canonical reviewed order set; every

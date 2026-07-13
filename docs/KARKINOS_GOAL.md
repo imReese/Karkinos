@@ -238,6 +238,16 @@ Active planning target:
   preview and admission. This remains an internal evidence ledger: there is no
   public admit endpoint, broker contact, OMS/ledger mutation, or submit/cancel
   authority.
+* Stage 3.19 exposes a persisted-fact controlled-execution operator projection
+  and makes broker lifecycle health/query an explicit-ingestion read boundary.
+  Capital at risk, remaining bounded headroom, expiry, latest order/submission,
+  reconciliation, live-gate, pause, and blocker evidence are derived from the
+  database only. Generic collector-run evidence is the canonical broker
+  lifecycle health source; provider-specific adapters remain default-
+  unregistered and separately reviewed. The retired runtime snapshot path is a
+  labelled migration entry and returns no live account facts. These surfaces
+  cannot contact a provider, issue/renew/resume/widen authority, submit/cancel,
+  mutate OMS/ledger/risk/kill-switch state, or scale capital automatically.
 * Stage 4.4 makes exact execution scope a required capital-scaling source. The
   canonical v2 evidence window takes its order set from the computed operating
   sample and requires every order to bind either one current clear exact-batch

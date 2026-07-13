@@ -33,6 +33,10 @@ _PAPER_SHADOW_DIVERGENCE_STATUSES = {
     "review_required",
 }
 _RUNTIME_CONNECTOR_DEGRADED_STATUSES = {
+    "collector_evidence_blocked",
+    "collector_evidence_missing",
+    "collector_evidence_pending",
+    "collector_evidence_unavailable",
     "connection_failed",
     "degraded",
     "disconnected",
@@ -299,15 +303,14 @@ class AutomationAlertService:
 
     def _scan_connector_health(self) -> list[dict[str, Any]]:
         health_rows = list(self._connector_health)
-        if self._broker_connectors:
-            from server.services.broker_gateway import BrokerGatewayService
+        from server.services.broker_gateway import BrokerGatewayService
 
-            health_rows.extend(
-                BrokerGatewayService(
-                    db=self._db,
-                    broker_connectors=self._broker_connectors,
-                ).list_connector_health()
-            )
+        health_rows.extend(
+            BrokerGatewayService(
+                db=self._db,
+                broker_connectors=self._broker_connectors,
+            ).list_connector_health()
+        )
         alerts: list[dict[str, Any]] = []
         for health in health_rows:
             connector_id = str(health.get("connector_id") or "")
@@ -330,9 +333,26 @@ class AutomationAlertService:
                     "schema_version": AUTOMATION_ALERT_SCHEMA_VERSION,
                     "connector_id": connector_id,
                     "connector_type": health.get("connector_type"),
+                    "provider": health.get("provider"),
+                    "gateway_id": health.get("gateway_id"),
                     "connector_status": status,
                     "enabled": bool(health.get("enabled")),
                     "capability_scope": health.get("capability_scope"),
+                    "evidence_source": health.get("evidence_source"),
+                    "evidence_store_status": health.get("evidence_store_status"),
+                    "evidence_blockers": _json_list(health.get("blockers")),
+                    "provider_contact_performed": bool(
+                        health.get("provider_contact_performed")
+                    ),
+                    "reads_persisted_facts_only": bool(
+                        health.get("reads_persisted_facts_only")
+                    ),
+                    "explicit_ingestion_required": bool(
+                        health.get("explicit_ingestion_required")
+                    ),
+                    "third_party_adapter_review_required": bool(
+                        health.get("third_party_adapter_review_required")
+                    ),
                     "can_read_health": bool(capabilities.get("can_read_health")),
                     "can_read_account": bool(capabilities.get("can_read_account")),
                     "can_read_cash": bool(capabilities.get("can_read_cash")),
