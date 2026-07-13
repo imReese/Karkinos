@@ -451,6 +451,17 @@ interlock. QMT, PTrade, local-file, and other edge adapters require a separate
 review and explicit user authorization; Karkinos does not claim official
 support for them.
 
+Stage 3.17 binds persisted collector run/state evidence back into the canonical
+lifecycle resolver. A scope with no collector history remains explicitly
+optional. Once collection has been adopted for a provider/gateway/account
+scope, the selected observation must be tied to a matching recorded run and
+the latest effective run must be cursor-consistent. Pending restart recovery,
+blocked disconnect/partial batches, unbound direct imports, or inconsistent
+state re-block signed clearance and the serialized next-order gate; duplicate
+replay cannot hide a later failure. This read-only binding only removes
+eligibility and still cannot contact a provider, mutate OMS/fills/ledger/risk/
+kill-switch/capital state, or grant submit/cancel/live permission.
+
 Operator contract and normalized JSON example:
 [docs/broker-order-lifecycle-ingestion.zh.md](docs/broker-order-lifecycle-ingestion.zh.md).
 The retired QMT v1 schema has only an explicit offline compatibility migration:

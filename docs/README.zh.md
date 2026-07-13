@@ -292,6 +292,13 @@ callback/poll 只是元数据，不加载 SDK、不连接 provider、不注册 s
 OMS、fills、账本、风控、kill switch、资本授权或 interlock。QMT、PTrade、本地文件等边缘
 适配器都需单独审查和用户显式授权，Karkinos 不据此宣称官方支持。
 
+Stage 3.17 把持久化 collector run/state 证据绑定回 canonical lifecycle resolver。没有 collector
+历史的 provider/gateway/account scope 仍明确保持可选；一旦采用 collector，当前 observation
+必须绑定匹配的 recorded run，最新有效 run 也必须与 cursor state 一致。待重启恢复、断连/部分
+批次等 blocked run、未绑定直导入或状态不一致都会重新阻断签名清算和下一单串行门禁，重复重放
+不能遮蔽更晚的失败。该绑定只读且只能缩小资格，不联系 provider，不修改 OMS、fills、账本、
+风控、kill switch、资本状态，也不授予 submit/cancel/live 权限。
+
 Stage 2.1/3.1 已把模糊的“最新对账”替换为精确 prior-batch 指纹：batch manifest 绑定
 非 paper 终态 OMS 订单、transition、真实成交、逐订单对账项和指定 run；filled 订单还必须
 带券商订单、Account Truth import 与同一 run 链接。每单 dossier 和 session proposal 必须与

@@ -91,7 +91,7 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
 | Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, Today's to-dos, and automatic paper/shadow handoff exist. | Continue requiring public explanations for every blocked/manual-ready state and keep order intents non-submitting. | v1.5-v1.6, ongoing |
 | Paper/shadow execution | Persisted daily runs include deterministic inputs, simulated order/fill state, fees/taxes, divergence, retry/idempotency, and review outcomes. | Keep evidence fresh and require divergence review before any later live-like authority. | v1.6.1, ongoing |
-| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported broker-neutral open/partial/cancel/full lifecycle facts without mutating OMS. | Any reviewed real adapter still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.16, future L4 |
+| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported broker-neutral open/partial/cancel/full lifecycle facts without mutating OMS. | Any reviewed real adapter still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel or unhealthy collector facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.17, future L4 |
 | Broker execution gateway | Manual-ticket/read-only evidence remains available; one-shot submit/query is injectable, the cross-order interlock is atomic, a separately signed clearance can consume one identity-linked validated full-fill import, and the generic lifecycle/collector contracts fail closed on sequence, identity, deployment, and quantity drift. Production registers no collector, provider adapter, write adapter, or release provider by default. | Independently review an explicitly user-authorized provider adapter and its operational soak before any broker-specific write adapter/release source or pilot. Generic local JSON is evidence plumbing, not production connectivity or provider support. | v1.7, Stage 3.12-3.16, future L4 |
 | Order ticket export | Copy-safe ticket export, operator forms, manual-execution preview/evidence, and explicit links to broker-statement import and execution reconciliation exist. | Validate operator ergonomics with local workflows before considering any broker-write capability. | v1.7, ongoing |
 | Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
@@ -1922,6 +1922,30 @@ issue capital authority.
   recovery semantics, and user authorization. QMT, PTrade, local-file watchers,
   and other adapters remain replaceable and default-unregistered; none is an
   official support claim.
+
+### Stage 3.17 Collector Operational Evidence Binding
+
+* [x] The canonical lifecycle resolver derives a broker-neutral collector
+  binding from persisted run/state rows only; it never contacts a provider or
+  creates missing collector tables.
+* [x] Scopes with no collector history remain explicitly `not_configured` and
+  preserve the Stage 3.15 offline-import boundary. Once a scope records a
+  collector run, later lifecycle facts must remain bound to that collector
+  history rather than bypassing it through a direct import.
+* [x] Recorded, observation-bound, cursor-consistent evidence resolves healthy.
+  Prepared restart recovery, blocked disconnect/partial batches, unbound facts,
+  and run/state drift resolve non-healthy; duplicate runs cannot mask a later
+  effective failure.
+* [x] One additive fail-closed blocker is consumed by execution reconciliation,
+  the signed-clearance writer transaction, interlock resolution, and the next-
+  order writer transaction. A race can only reject or invalidate clearance.
+* [x] Deterministic fixtures cover healthy binding, restart prepare/commit,
+  direct-import bypass rejection after scope adoption, partial/disconnected
+  re-blocking, signed-clearance race rejection, post-clearance next-order
+  rejection, and the optional no-history path.
+* [x] The binding grants no submit/cancel/live permission and cannot modify OMS,
+  fills, production ledger, risk, kill switch, capital authority, or collector
+  cursor/state from a read path.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

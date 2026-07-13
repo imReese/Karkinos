@@ -369,6 +369,17 @@ fills, ledger, risk, kill switch, capital authority, or interlock state. QMT,
 PTrade, local-file, and other adapters require separate review and explicit user
 authorization; Karkinos does not claim official support for them.
 
+Stage 3.17 binds persisted collector operation evidence into the canonical
+lifecycle resolver. Collection remains optional for scopes with no collector
+history. After a provider/gateway/account scope adopts it, the lifecycle fact
+must be observation-bound to a matching recorded run and the latest effective
+run must agree with cursor state. Pending restart recovery, blocked disconnect
+or partial batches, unbound direct imports, and inconsistent state re-block
+signed clearance and the serialized next-order gate. Duplicate replay cannot
+mask a later failure. The binding is read-only and can only narrow eligibility;
+it adds no provider contact, OMS/fill/ledger/risk/kill-switch/capital mutation,
+or submit/cancel/live permission.
+
 Stage 2.1/3.1 replaces the generic latest-reconciliation check with an exact
 prior-batch fingerprint. The batch manifest binds terminal non-paper OMS
 orders, transitions, real fills, reconciliation items, and the selected run;
