@@ -425,6 +425,14 @@ reconciliation coverage and p95 latency, paper/shadow divergence, and cash-flow-
 unitized maximum drawdown are derived from persisted facts. The resolver checks
 all nine review metrics exactly; missing or truncated coverage fails closed and
 never changes authority or execution state.
+Stage 4.4 adds a required exact execution-scope fact. Every sampled order must
+bind either a persisted controlled-session admission or a current clear exact
+batch wholly contained in the review sample. Identity mismatch, competing
+bindings, orphan admissions, cross-window batches, source drift, and truncated
+scans fail closed. V1 windows remain historical audit records; current reviews
+require an append-only v2 recomputation. The fact cannot issue, resume, renew,
+or widen authority, mutate OMS/ledger/risk/kill-switch state, or submit/cancel a
+broker order.
 
 Operations alerts can surface incomplete or runtime-degraded read-only broker
 connector health, including runtime snapshots polled through the broker-gateway

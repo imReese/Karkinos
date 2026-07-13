@@ -15,12 +15,21 @@ from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
 )
+from server.services.controlled_session_runtime_rate_limiter import (
+    CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION,
+)
+from server.services.execution_batch_reconciliation import (
+    EXECUTION_BATCH_RECONCILIATION_EVENT_ENTITY_TYPE,
+    EXECUTION_BATCH_RECONCILIATION_EVENT_SOURCE,
+    EXECUTION_BATCH_RECONCILIATION_EVENT_TYPE,
+    ExecutionBatchReconciliationService,
+)
 
 CAPITAL_SCALING_ACCOUNT_TRUTH_SNAPSHOT_SCHEMA_VERSION = (
     "karkinos.capital_scaling_account_truth_snapshot.v1"
 )
 CAPITAL_SCALING_EVIDENCE_WINDOW_SCHEMA_VERSION = (
-    "karkinos.capital_scaling_evidence_window.v1"
+    "karkinos.capital_scaling_evidence_window.v2"
 )
 CAPITAL_SCALING_ACCOUNT_TRUTH_SNAPSHOT_EVENT_TYPE = (
     "capital_scaling.account_truth_snapshot_recorded"
@@ -35,6 +44,7 @@ CAPITAL_SCALING_EVIDENCE_SOURCE = "capital_scaling_evidence_window"
 DEFAULT_BOUNDARY_GAP_HOURS = 72
 MAX_ACCOUNT_TRUTH_CAPTURE_LAG_SECONDS = 900
 MAX_SOURCE_ROWS = 5000
+MAX_RUNTIME_ADMISSION_ROWS = 500
 
 _REAL_EXECUTION_MODES = frozenset({"manual", "controlled_live", "live"})
 _POLICY_VIOLATION_GATEWAY_EVENTS = frozenset(
@@ -66,7 +76,7 @@ class CapitalScalingEvidenceWindowService:
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.capital_scaling_evidence_status.v1",
+            "schema_version": "karkinos.capital_scaling_evidence_status.v2",
             "evidence_contract_status": "read_only_append_only",
             "account_truth_snapshot_recording_enabled": True,
             "evidence_window_recording_enabled": True,
@@ -81,6 +91,7 @@ class CapitalScalingEvidenceWindowService:
                 "incident",
                 "capacity",
                 "operating_sample",
+                "execution_scope",
             ],
             "automatic_scale_up_enabled": False,
             "authority_change_enabled": False,
@@ -91,6 +102,7 @@ class CapitalScalingEvidenceWindowService:
                 "Account Truth point snapshots must be recorded near both review-window boundaries.",
                 "After-cost return uses Modified Dietz over persisted portfolio snapshots and external cash flows.",
                 "Capacity evidence requires non-simulated reconciled fills with explicit capacity and liquidity source metadata.",
+                "Every operating-sample order must bind one exact clear broker batch or one persisted controlled-session admission.",
                 "Evidence completeness does not imply favorable performance or authorize scale-up.",
             ],
         }
@@ -224,12 +236,18 @@ class CapitalScalingEvidenceWindowService:
             end=end,
             account_truth=account_truth,
         )
+        execution_scope = self._execution_scope_fact(
+            start=start,
+            end=end,
+            operating_sample=operating_sample,
+        )
         facts = {
             "account_truth": account_truth,
             "after_cost": after_cost,
             "incident": incident,
             "capacity": capacity,
             "operating_sample": operating_sample,
+            "execution_scope": execution_scope,
         }
         identity = {
             "schema_version": CAPITAL_SCALING_EVIDENCE_WINDOW_SCHEMA_VERSION,
@@ -987,6 +1005,7 @@ class CapitalScalingEvidenceWindowService:
                 "paper_shadow_divergence_count": paper_shadow_divergence_count,
                 "max_drawdown_pct": _decimal_string_or_none(drawdown),
                 "incomplete_real_fill_count": incomplete_real_fill_count,
+                "sample_order_ids": sorted(order_ids),
             },
             blockers=blockers,
             source_refs=source_refs,
@@ -998,10 +1017,219 @@ class CapitalScalingEvidenceWindowService:
                 "Drawdown uses cash-flow-unitized portfolio equity rather than raw equity changes.",
             ],
             limitations=[
-                "Current reconciliation runs are order-covered, not yet runtime-session or broker-batch identified.",
+                "Runtime-session and exact-batch binding is evaluated by the separate execution-scope fact in the same window.",
                 "Paper/shadow divergence is counted from persisted paper/shadow order facts.",
                 "Cash flows between portfolio snapshots are unitized at the next persisted equity point because no valuation exists at the exact flow time.",
                 "Cancelled and expired orders are disclosed separately and are not silently relabeled as broker rejections.",
+            ],
+        )
+
+    def _execution_scope_fact(
+        self,
+        *,
+        start: datetime,
+        end: datetime,
+        operating_sample: dict[str, Any],
+    ) -> dict[str, Any]:
+        blockers: list[str] = []
+        source_refs: list[str] = []
+        metrics = operating_sample.get("metrics")
+        metrics = metrics if isinstance(metrics, dict) else {}
+        sample_order_ids = sorted(
+            {
+                str(item).strip()
+                for item in metrics.get("sample_order_ids") or []
+                if str(item).strip()
+            }
+        )
+        sample_order_set = set(sample_order_ids)
+        if operating_sample.get("status") != "clear":
+            blockers.append("operating_sample_not_clear")
+        if not sample_order_ids:
+            blockers.append("execution_scope_order_sample_missing")
+
+        admissions_by_order: dict[str, list[str]] = {}
+        valid_session_ids: set[str] = set()
+        invalid_admission_count = 0
+        orphan_admission_count = 0
+        admission_rows = self._db.list_controlled_session_rate_admissions_sync(
+            limit=MAX_RUNTIME_ADMISSION_ROWS
+        )
+        if len(admission_rows) >= MAX_RUNTIME_ADMISSION_ROWS:
+            blockers.append("runtime_admission_scan_truncated")
+        for row in admission_rows:
+            order_id = str(row.get("order_id") or "")
+            admitted_at = _parse_datetime(str(row.get("admitted_at") or ""))
+            if admitted_at is None:
+                blockers.append("runtime_admission_timestamp_invalid")
+                invalid_admission_count += 1
+                continue
+            in_window = start <= admitted_at <= end
+            if order_id not in sample_order_set and not in_window:
+                continue
+            admission_id = str(row.get("admission_id") or "")
+            source_refs.append(f"controlled_session_rate_admission:{admission_id}")
+            if order_id not in sample_order_set:
+                orphan_admission_count += 1
+                blockers.append(
+                    f"runtime_admission_order_missing_from_sample:{order_id}"
+                )
+                continue
+
+            payload = _json_object(row.get("payload_json"))
+            admission_blockers: list[str] = []
+            if str(row.get("status") or "") != "admitted":
+                admission_blockers.append("status_not_admitted")
+            if payload.get("schema_version") != (
+                CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION
+            ):
+                admission_blockers.append("schema_invalid")
+            for field in (
+                "admission_id",
+                "session_id",
+                "session_fingerprint",
+                "reservation_id",
+                "authorization_id",
+                "account_alias",
+                "strategy_id",
+                "order_id",
+                "request_id",
+            ):
+                if str(payload.get(field) or "") != str(row.get(field) or ""):
+                    admission_blockers.append(f"payload_mismatch:{field}")
+            if payload.get("runtime_admission_granted") is not True:
+                admission_blockers.append("runtime_admission_not_granted")
+            if payload.get("runtime_live_gates_verified") is not True:
+                admission_blockers.append("runtime_live_gates_not_verified")
+            if payload.get("authorizes_broker_submission") is not False:
+                admission_blockers.append("broker_submission_boundary_invalid")
+
+            session_id = str(row.get("session_id") or "")
+            session = self._db.get_controlled_session_runtime_session_sync(session_id)
+            if not session:
+                admission_blockers.append("runtime_session_missing")
+            else:
+                for field in (
+                    "session_fingerprint",
+                    "reservation_id",
+                    "authorization_id",
+                    "account_alias",
+                    "strategy_id",
+                ):
+                    if str(session.get(field) or "") != str(row.get(field) or ""):
+                        admission_blockers.append(f"runtime_session_mismatch:{field}")
+                admitted_at_epoch_ms = int(row.get("admitted_at_epoch_ms") or -1)
+                try:
+                    effective_at_epoch_ms = int(session["effective_at_epoch_ms"])
+                    expires_at_epoch_ms = int(session["expires_at_epoch_ms"])
+                except (KeyError, TypeError, ValueError):
+                    admission_blockers.append("runtime_session_window_invalid")
+                else:
+                    if not (
+                        effective_at_epoch_ms
+                        <= admitted_at_epoch_ms
+                        < expires_at_epoch_ms
+                    ):
+                        admission_blockers.append(
+                            "runtime_admission_outside_session_window"
+                        )
+            if admission_blockers:
+                invalid_admission_count += 1
+                blockers.extend(
+                    f"runtime_admission_invalid:{order_id}:{reason}"
+                    for reason in admission_blockers
+                )
+                continue
+            admissions_by_order.setdefault(order_id, []).append(admission_id)
+            valid_session_ids.add(session_id)
+            source_refs.append(f"controlled_session_runtime_session:{session_id}")
+
+        batches_by_order: dict[str, list[str]] = {}
+        valid_batch_ids: set[str] = set()
+        invalid_batch_count = 0
+        batch_rows = self._db.list_events_sync(
+            event_type=EXECUTION_BATCH_RECONCILIATION_EVENT_TYPE,
+            entity_type=EXECUTION_BATCH_RECONCILIATION_EVENT_ENTITY_TYPE,
+            source=EXECUTION_BATCH_RECONCILIATION_EVENT_SOURCE,
+            limit=MAX_SOURCE_ROWS,
+        )
+        if len(batch_rows) >= MAX_SOURCE_ROWS:
+            blockers.append("execution_batch_scan_truncated")
+        batch_service = ExecutionBatchReconciliationService(db=self._db)
+        for row in batch_rows:
+            payload = _json_object(row.get("payload_json"))
+            if str(payload.get("record_status") or "") != "recorded_clear":
+                continue
+            batch_order_ids = sorted(
+                {
+                    str(item).strip()
+                    for item in payload.get("order_ids") or []
+                    if str(item).strip()
+                }
+            )
+            batch_order_set = set(batch_order_ids)
+            if not batch_order_set.intersection(sample_order_set):
+                continue
+            fingerprint = str(
+                payload.get("batch_reconciliation_fingerprint")
+                or row.get("entity_id")
+                or ""
+            )
+            source_refs.append(f"execution_batch_reconciliation:{fingerprint}")
+            if not batch_order_set.issubset(sample_order_set):
+                invalid_batch_count += 1
+                blockers.append(f"execution_batch_crosses_review_sample:{fingerprint}")
+                continue
+            resolved = batch_service.resolve_recorded(fingerprint)
+            if resolved.get("status") != "pass":
+                invalid_batch_count += 1
+                blockers.append(f"execution_batch_not_current_clear:{fingerprint}")
+                continue
+            valid_batch_ids.add(fingerprint)
+            for order_id in batch_order_ids:
+                batches_by_order.setdefault(order_id, []).append(fingerprint)
+
+        unbound_order_ids: list[str] = []
+        for order_id in sample_order_ids:
+            admission_ids = sorted(set(admissions_by_order.get(order_id) or []))
+            batch_ids = sorted(set(batches_by_order.get(order_id) or []))
+            if len(admission_ids) > 1:
+                blockers.append(f"runtime_admission_order_scope_ambiguous:{order_id}")
+            if len(batch_ids) > 1:
+                blockers.append(f"execution_batch_order_scope_ambiguous:{order_id}")
+            if not admission_ids and not batch_ids:
+                unbound_order_ids.append(order_id)
+                blockers.append(f"execution_scope_order_unbound:{order_id}")
+
+        runtime_bound = {
+            order_id for order_id, rows in admissions_by_order.items() if rows
+        }
+        batch_bound = {order_id for order_id, rows in batches_by_order.items() if rows}
+        return _fact(
+            kind="execution_scope",
+            metrics={
+                "sampled_order_count": len(sample_order_ids),
+                "runtime_session_bound_order_count": len(runtime_bound),
+                "exact_batch_bound_order_count": len(batch_bound),
+                "dual_bound_order_count": len(runtime_bound.intersection(batch_bound)),
+                "unbound_order_count": len(unbound_order_ids),
+                "runtime_session_count": len(valid_session_ids),
+                "exact_batch_count": len(valid_batch_ids),
+                "invalid_runtime_admission_count": invalid_admission_count,
+                "orphan_runtime_admission_count": orphan_admission_count,
+                "invalid_exact_batch_count": invalid_batch_count,
+            },
+            blockers=blockers,
+            source_refs=source_refs,
+            assumptions=[
+                "Every sampled real order must bind either one persisted controlled-session admission or one exact current clear batch-reconciliation record.",
+                "Historical runtime sessions may be expired or revoked now, but their identity and admission-time window must still match immutable admission evidence.",
+                "A batch used for scaling evidence must be wholly contained in the reviewed order sample.",
+            ],
+            limitations=[
+                "A clear execution-scope fact is evidence provenance only and does not issue, renew, resume, or widen runtime authority.",
+                "Runtime admissions remain internal and do not authorize broker submission.",
+                "Rejected or blocked batch attempts cannot satisfy an order binding.",
             ],
         )
 

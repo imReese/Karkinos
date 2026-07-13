@@ -492,10 +492,18 @@ recorded fact. Rejected, partial, cancelled, expired, and nonterminal outcomes
 remain separate rather than being normalized into a favorable fill rate.
 Missing broker-day, real-fill linkage, latest reconciliation coverage,
 paper/shadow comparison, drawdown history, or a complete source scan blocks the
-window. Reconciliation is currently order-covered, not yet runtime-session or
-broker-batch bound. This read-only evidence tightens review eligibility but does
-not reserve capital, issue/expand authority, mutate OMS/runtime/ledger state, or
-contact a broker.
+window.
+
+Exact execution-scope status (2026-07-13): Stage 4.4 advances evidence-window,
+resolution, review, decision, and audit contracts to v2. The computed operating
+sample supplies the only accepted order set. Each sampled order must bind one
+persisted controlled-session admission or one current clear exact batch wholly
+contained in that set. Session identity/admission window and batch OMS/fill/
+reconciliation fingerprints are rechecked; missing, ambiguous, orphan,
+cross-window, drifted, or truncated sources block the window. V1 records remain
+append-only history and require explicit v2 recomputation to participate in a
+current review. This evidence does not reserve capital, issue/expand/resume
+authority, mutate OMS/runtime/ledger/risk/kill-switch state, or contact a broker.
 
 ## First Implementation Slice
 

@@ -238,6 +238,16 @@ Active planning target:
   preview and admission. This remains an internal evidence ledger: there is no
   public admit endpoint, broker contact, OMS/ledger mutation, or submit/cancel
   authority.
+* Stage 4.4 makes exact execution scope a required capital-scaling source. The
+  canonical v2 evidence window takes its order set from the computed operating
+  sample and requires every order to bind either one current clear exact-batch
+  reconciliation record or one persisted controlled-session admission whose
+  session identity and admission-time window still match. Missing, ambiguous,
+  cross-window, stale, source-drifted, orphan, or truncated scope evidence fails
+  closed. Historical v1 windows remain append-only audit records but cannot
+  satisfy a current scaling review; a new v2 window must be recomputed from
+  persisted facts. This evidence cannot issue, renew, resume, or widen capital
+  authority and cannot submit or cancel a broker order.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

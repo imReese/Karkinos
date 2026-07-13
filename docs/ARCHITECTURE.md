@@ -813,9 +813,23 @@ persisted no-action reconciliation; counts paper/shadow divergence; and computes
 maximum drawdown on cash-flow-unitized portfolio equity. The resolver requires
 this fact and compares its nine review inputs exactly. Missing coverage,
 nonterminal state, invalid quantity, or a capped 5,000-row scan fails closed.
-The present reconciliation evidence is order-covered rather than cryptographically
-bound to a runtime session or broker batch; that stronger binding remains a
-future execution gate, not an assumption hidden by the aggregate.
+
+Stage 4.4 closes the remaining provenance gap with a separate required
+`execution_scope` fact. Its order ids come from the same computed operating
+sample, never from caller input. Each order must bind either one persisted
+controlled-session rate admission or one recorded exact batch-reconciliation
+fact that is still current and clear. Session bindings recheck immutable
+admission payload fields, runtime-session identity, and the historical
+effective/expiry window; exact batches must be wholly contained in the review
+sample and are resolved again so later OMS/fill/reconciliation drift wins.
+Unbound orders, multiple competing session/batch bindings, in-window admissions
+without an OMS sample order, invalid identities, source drift, or capped scans
+block the whole window. Evidence-window, resolution, review, decision, and audit
+contracts advance to v2. V1 records remain listable history but are not current
+scaling evidence; migration means append-only recomputation, never rewriting an
+old record. This layer reads persisted facts only and cannot mutate Account
+Truth, OMS, fills, ledger, risk, kill switch, runtime sessions, capital limits,
+or broker state.
 
 ## Design Implications
 

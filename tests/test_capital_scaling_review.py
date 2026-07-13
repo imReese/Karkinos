@@ -78,6 +78,7 @@ def _evidence() -> CapitalScalingEvidence:
             "incident:operations-review",
             "capacity:liquidity-review",
             "operating_sample:review-window",
+            "execution_scope:review-window",
         ),
     )
 
@@ -203,6 +204,17 @@ def test_invalid_evidence_fails_closed_to_hold() -> None:
     assert "review_window_timezone_missing" in decision.input_errors
     assert "filled_order_count_exceeds_orders" in decision.input_errors
     assert "p95_slippage_below_average" in decision.input_errors
+
+
+def test_legacy_v1_review_contract_is_not_canonical() -> None:
+    legacy = replace(_review(), schema_version="karkinos.capital_scaling_review.v1")
+
+    decision = evaluate_capital_scaling_review(legacy)
+
+    assert decision.review_status == "blocked_invalid_evidence"
+    assert decision.recommended_action == "hold"
+    assert "unsupported_schema_version" in decision.input_errors
+    assert decision.does_not_issue_capital_authorization is True
 
 
 def test_same_tier_cannot_be_scale_up_candidate_and_fingerprint_is_sensitive() -> None:
@@ -370,6 +382,7 @@ def test_status_exposes_review_only_no_auto_scale_boundary(tmp_path) -> None:
         "incident",
         "capacity",
         "operating_sample",
+        "execution_scope",
     ]
     assert status["unsupported_evidence_kinds"] == []
     assert status["authority_change_enabled"] is False

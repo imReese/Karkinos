@@ -18,6 +18,13 @@ from server.services.capital_scaling_evidence_window import (
     MAX_SOURCE_ROWS,
     CapitalScalingEvidenceWindowService,
 )
+from server.services.controlled_session_runtime_rate_limiter import (
+    CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION,
+)
+from server.services.execution_batch_reconciliation import (
+    EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
+    ExecutionBatchReconciliationService,
+)
 
 START = datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
 END = datetime(2026, 8, 1, 0, 0, tzinfo=timezone.utc)
@@ -142,6 +149,7 @@ def _seed_operating_sample(
     db: AppDatabase,
     *,
     include_reconciliation: bool = True,
+    include_batch: bool = True,
 ) -> None:
     observed_at = START + timedelta(days=9, hours=9)
     db.append_event_sync(
@@ -192,9 +200,33 @@ def _seed_operating_sample(
                     "gateway_event_count": 1,
                     "broker_event_count": 1,
                     "detail": "deterministic reconciled test order",
+                    "payload": {
+                        "oms_status": "filled",
+                        "execution_mode": "manual",
+                    },
                 }
             ],
         )
+        if include_batch:
+            batch_service = ExecutionBatchReconciliationService(
+                db=db,
+                clock=lambda: observed_at,
+            )
+            batch_preview = batch_service.preview(
+                batch_id="capital-scaling-batch-2026-07-10",
+                order_ids=["real-order-1"],
+                reconciliation_run_id="execution-reconciliation:2026-07-10",
+            )
+            batch_service.record(
+                batch_id="capital-scaling-batch-2026-07-10",
+                order_ids=["real-order-1"],
+                reconciliation_run_id="execution-reconciliation:2026-07-10",
+                batch_reconciliation_fingerprint=batch_preview[
+                    "batch_reconciliation_fingerprint"
+                ],
+                operator_label="deterministic-test-owner",
+                acknowledgement=EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
+            )
     db.record_order_sync(
         order_id="paper-shadow-order-1",
         timestamp=observed_at.isoformat(),
@@ -297,6 +329,11 @@ def test_clear_evidence_window_computes_after_cost_incident_and_capacity_facts(
     assert operating_sample["unresolved_reconciliation_count"] == 0
     assert operating_sample["paper_shadow_divergence_count"] == 0
     assert operating_sample["max_drawdown_pct"] == "0"
+    execution_scope = preview["facts"]["execution_scope"]
+    assert execution_scope["status"] == "clear"
+    assert execution_scope["metrics"]["sampled_order_count"] == 1
+    assert execution_scope["metrics"]["exact_batch_bound_order_count"] == 1
+    assert execution_scope["metrics"]["unbound_order_count"] == 0
     assert recorded["persisted"] is True
     assert rerun["event_id"] == recorded["event_id"]
     assert rerun["reused"] is True
@@ -306,6 +343,148 @@ def test_clear_evidence_window_computes_after_cost_incident_and_capacity_facts(
     )
     assert recorded["authority_change_applied"] is False
     assert recorded["does_not_submit_or_cancel_broker_order"] is True
+
+
+def test_execution_scope_blocks_unbound_operating_sample_order(tmp_path) -> None:
+    db, service, state = _service_with_mutable_source(tmp_path)
+    _record_boundary_account_truth(service, state)
+    _seed_portfolio_boundaries(db)
+    _seed_reconciled_real_fill(db)
+    _seed_operating_sample(db, include_batch=False)
+
+    result = service.preview_window(
+        review_window_start=START,
+        review_window_end=END,
+    )
+
+    execution_scope = result["facts"]["execution_scope"]
+    assert execution_scope["status"] == "blocked"
+    assert "execution_scope_order_unbound:real-order-1" in execution_scope["blockers"]
+    assert execution_scope["metrics"]["unbound_order_count"] == 1
+    assert result["automatic_scale_up_enabled"] is False
+    assert result["authority_change_applied"] is False
+
+
+def test_execution_scope_rechecks_exact_batch_source_drift(tmp_path) -> None:
+    db, service, state = _service_with_mutable_source(tmp_path)
+    _record_boundary_account_truth(service, state)
+    _seed_portfolio_boundaries(db)
+    _seed_reconciled_real_fill(db)
+    _seed_operating_sample(db)
+    db.upsert_oms_order_sync(
+        {
+            "order_id": "real-order-1",
+            "intent_key": "capital-scaling-real-order-1",
+            "symbol": "510300",
+            "side": "buy",
+            "asset_class": "etf",
+            "quantity": 100.0,
+            "order_type": "limit",
+            "limit_price": 6.0,
+            "status": "filled",
+            "broker_submission_enabled": False,
+            "source": "capital_scaling_test_evidence",
+            "source_ref": "changed-after-batch-recording",
+            "payload": {"execution_mode": "manual"},
+        }
+    )
+
+    result = service.preview_window(
+        review_window_start=START,
+        review_window_end=END,
+    )
+
+    execution_scope = result["facts"]["execution_scope"]
+    assert execution_scope["status"] == "blocked"
+    assert any(
+        blocker.startswith("execution_batch_not_current_clear:")
+        for blocker in execution_scope["blockers"]
+    )
+    assert "execution_scope_order_unbound:real-order-1" in execution_scope["blockers"]
+    assert result["automatic_scale_up_enabled"] is False
+
+
+def test_execution_scope_accepts_exact_persisted_runtime_admission(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db, service, state = _service_with_mutable_source(tmp_path)
+    _record_boundary_account_truth(service, state)
+    _seed_portfolio_boundaries(db)
+    _seed_reconciled_real_fill(db)
+    _seed_operating_sample(db, include_batch=False)
+    admitted_at = START + timedelta(days=9, hours=7, minutes=59)
+    admitted_at_epoch_ms = int(admitted_at.timestamp() * 1000)
+    admission = {
+        "schema_version": CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION,
+        "admission_id": "a" * 64,
+        "session_id": "session-1",
+        "session_fingerprint": "b" * 64,
+        "reservation_id": "reservation-1",
+        "authorization_id": "authorization-1",
+        "account_alias": "review-account",
+        "strategy_id": "review-strategy",
+        "order_id": "real-order-1",
+        "request_id": "c" * 64,
+        "status": "admitted",
+        "runtime_admission_granted": True,
+        "runtime_live_gates_verified": True,
+        "authorizes_broker_submission": False,
+    }
+    admission_row = {
+        **{
+            key: admission[key]
+            for key in (
+                "admission_id",
+                "session_id",
+                "session_fingerprint",
+                "reservation_id",
+                "authorization_id",
+                "account_alias",
+                "strategy_id",
+                "order_id",
+                "request_id",
+                "status",
+            )
+        },
+        "admitted_at": admitted_at.isoformat(),
+        "admitted_at_epoch_ms": admitted_at_epoch_ms,
+        "payload_json": json.dumps(admission, sort_keys=True),
+    }
+    runtime_session = {
+        "session_id": "session-1",
+        "session_fingerprint": "b" * 64,
+        "reservation_id": "reservation-1",
+        "authorization_id": "authorization-1",
+        "account_alias": "review-account",
+        "strategy_id": "review-strategy",
+        "effective_at_epoch_ms": admitted_at_epoch_ms - 60_000,
+        "expires_at_epoch_ms": admitted_at_epoch_ms + 60_000,
+        "status": "revoked",
+    }
+    monkeypatch.setattr(
+        db,
+        "list_controlled_session_rate_admissions_sync",
+        lambda **_: [admission_row],
+    )
+    monkeypatch.setattr(
+        db,
+        "get_controlled_session_runtime_session_sync",
+        lambda session_id: runtime_session if session_id == "session-1" else None,
+    )
+
+    result = service.preview_window(
+        review_window_start=START,
+        review_window_end=END,
+    )
+
+    execution_scope = result["facts"]["execution_scope"]
+    assert execution_scope["status"] == "clear"
+    assert execution_scope["metrics"]["runtime_session_bound_order_count"] == 1
+    assert execution_scope["metrics"]["exact_batch_bound_order_count"] == 0
+    assert execution_scope["metrics"]["runtime_session_count"] == 1
+    assert result["authority_change_applied"] is False
+    assert result["does_not_submit_or_cancel_broker_order"] is True
 
 
 def test_window_blocks_missing_boundaries_and_incomplete_real_fill_metadata(

@@ -9,8 +9,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-CAPITAL_SCALING_REVIEW_SCHEMA_VERSION = "karkinos.capital_scaling_review.v1"
-CAPITAL_SCALING_DECISION_SCHEMA_VERSION = "karkinos.capital_scaling_review_decision.v1"
+CAPITAL_SCALING_REVIEW_SCHEMA_VERSION = "karkinos.capital_scaling_review.v2"
+CAPITAL_SCALING_DECISION_SCHEMA_VERSION = "karkinos.capital_scaling_review_decision.v2"
 
 MIN_REVIEWED_TRADING_DAYS = 20
 MIN_REVIEWED_ORDERS = 50
@@ -34,6 +34,7 @@ _REQUIRED_EVIDENCE_PREFIXES = (
     "incident:",
     "capacity:",
     "operating_sample:",
+    "execution_scope:",
 )
 
 

@@ -2081,6 +2081,35 @@ issue capital authority.
   Account Truth, OMS, runtime limits, production ledger, and broker gateway;
   they never issue authority or submit/cancel an order.
 
+### Stage 4.4 Exact Execution-Scope Binding
+
+* [x] Evidence-window v2 derives the reviewed order ids once in the computed
+  operating sample and adds a required `execution_scope:<window_id>` fact; the
+  caller cannot supply or replace that order set.
+* [x] Every sampled order must bind either one persisted controlled-session
+  rate admission or one recorded exact batch-reconciliation fact that remains
+  current and clear.
+* [x] Runtime bindings recheck admission schema, immutable row/payload identity,
+  live-gate verification evidence, non-authority flags, matching persisted
+  session identity, and the admission-time effective/expiry window. A session
+  may be expired or revoked now without erasing valid historical evidence.
+* [x] Exact-batch bindings are re-resolved against current OMS, transition,
+  fill, and reconciliation facts and must be wholly contained in the review
+  sample; later source drift or a cross-window batch blocks the fact.
+* [x] Missing, duplicate/ambiguous, invalid, orphan, or truncated session/batch
+  evidence fails closed and reports deterministic counts without inferring a
+  favorable scope.
+* [x] Capital-scaling review, decision, audit, evidence-window, and resolution
+  contracts use v2 semantics and require execution-scope provenance before a
+  scale-up request can be recorded.
+* [x] Historical v1 windows remain append-only/listable but cannot satisfy the
+  current resolver. Migration is an explicit recomputation into a new v2
+  record; existing evidence is never rewritten or silently upgraded.
+* [x] Deterministic tests cover exact-batch success, missing binding, batch
+  source drift, valid historical session admission, and legacy v1 rejection.
+  The feature cannot issue/renew/resume/widen authority, mutate OMS/ledger/risk/
+  kill switch, or submit/cancel a broker order.
+
 ### Stage 2.1 / 3.1 Exact Prior-Batch Reconciliation Evidence
 
 * [x] A batch manifest binds a non-empty unique set of at most 100 non-paper OMS
