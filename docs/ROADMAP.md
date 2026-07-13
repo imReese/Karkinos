@@ -28,6 +28,7 @@ user manual; current usage guidance belongs in the README files.
 | v1.8 | Planning active | Capital-Bounded Controlled Execution |
 | AI-native Phase 1 | Foundation implemented | Provider-neutral, evidence-bound research workflow runtime |
 | AI-native Phase 1.1 | Read boundary implemented | Immutable canonical-evidence captures and context-bound read executors |
+| AI-native Phase 1.2 | Capture boundary implemented | Explicit human-started, model-free canonical context capture |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -93,18 +94,37 @@ Phase 1.1 implements the storage and read side of the first migration step:
   restart reads the same SQLite evidence row;
 * incomplete, stale, estimated, or unreconciled records remain explicit and
   non-authoritative;
-* no production capture route, scheduler hook, real provider, or external
-  model call is registered yet.
+* no scheduler hook, real provider, or external model call is registered.
+
+Phase 1.2 connects that storage boundary to production canonical reads without
+starting an AI workflow:
+
+* `POST /api/ai/research-contexts/capture` requires an explicit acknowledgement,
+  operator label, research question, idempotency key, account alias, and exact
+  evidence selection;
+* Portfolio and Account State share one canonical Portfolio snapshot;
+  Operations reuses its existing persisted-fact builder, while Research
+  Evidence and paper/shadow require exact persisted record ids;
+* the selected valuation snapshot must already be persisted and replayable;
+  valuation snapshot, ledger cutoff, or ledger fingerprint drift during the
+  command blocks the capture;
+* restart and duplicate requests restore the same content-addressed evidence
+  and context; a changed request cannot reuse an idempotency key, and a failed
+  audit stage can retry without duplicating evidence;
+* the command writes only `ai_canonical_evidence`, `ai_context_snapshots`, and
+  `ai_context_capture_runs` plus existing AI schema initialization. It does not
+  call a provider or model, start a workflow, refresh market/broker data, or
+  mutate account, execution, risk, reconciliation, or authority state.
 
 Planned migration, each behind a separate review:
 
-1. **In progress:** immutable storage, identity validation, and context-bound
-   read executors exist; next connect an explicitly human-started capture caller
-   to existing canonical Portfolio, Account State, Operations, Research
-   Evidence, Account Truth, and paper/shadow projection services without
-   recomputation or GET-side refresh;
-2. add human-started task records and review UI without background model calls;
-3. add debate/report/memory lifecycle and invalidation when evidence drifts;
+1. **Completed foundation:** immutable storage, identity validation,
+   context-bound read executors, and explicitly human-started canonical capture
+   exist without recomputation, GET-side refresh, or model invocation;
+2. **Next review:** add human-started research-task records and review UI while
+   keeping model execution and background work disabled;
+3. connect the deterministic fixture provider to an explicitly started task and
+   add debate/report/memory lifecycle plus invalidation when evidence drifts;
 4. review and explicitly authorize one or more real provider adapters without
    making any vendor canonical;
 5. consider a one-way, human-reviewed handoff from a trade-plan draft into the

@@ -318,6 +318,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.acceptance_audit import create_router as acceptance_audit_router
     from server.routes.account_strategy import create_router as account_strategy_router
     from server.routes.account_truth import create_router as account_truth_router
+    from server.routes.ai_research import create_router as ai_research_router
     from server.routes.automation import create_router as automation_router
     from server.routes.backtest import create_router as backtest_router
     from server.routes.broker_connector_soak import (
@@ -377,6 +378,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(acceptance_audit_router())
     app.include_router(account_strategy_router())
     app.include_router(account_truth_router())
+    app.include_router(ai_research_router())
     app.include_router(automation_router())
     app.include_router(broker_gateway_router())
     app.include_router(broker_connector_soak_router())

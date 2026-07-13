@@ -26,6 +26,80 @@ class PaperShadowRunReviewRequest(BaseModel):
     reviewer: str | None = None
 
 
+async def build_today_operations_payload(state: Any) -> dict[str, Any]:
+    """Build the canonical persisted-fact Operations projection."""
+    if state.db is None:
+        raise HTTPException(status_code=503, detail="Database is not initialized")
+
+    decision_payload, trading_plan = await _current_decision_and_trading_plan(state)
+    pending_manual_orders = _call_list(
+        state.db,
+        "list_manual_orders_sync",
+        status="pending_confirm",
+        limit=50,
+        offset=0,
+    )
+    order_facts = _call_list(
+        state.db,
+        "list_orders_sync",
+        limit=100,
+        offset=0,
+    )
+    fill_facts = _call_list(
+        state.db,
+        "list_fills_sync",
+        limit=100,
+        offset=0,
+    )
+    automation_runs = _call_list(
+        state.db,
+        "list_automation_runs_sync",
+        limit=20,
+        offset=0,
+    )
+    execution_reconciliation_open_items = _call_list(
+        state.db,
+        "list_execution_reconciliation_open_items_sync",
+        limit=20,
+        offset=0,
+    )
+    ledger_review_count = len(
+        _call_list(
+            state.db,
+            "get_ledger_entries_sync",
+            limit=50,
+            offset=0,
+        )
+    )
+    daily_operations = build_daily_operations_summary(
+        decision_summary=decision_payload.get("summary"),
+        candidates=decision_payload.get("candidates", []),
+        pending_manual_orders=pending_manual_orders,
+        order_facts=order_facts,
+        fill_facts=fill_facts,
+        ledger_review_count=ledger_review_count,
+    )
+    paper_shadow_run = _latest_paper_shadow_run(
+        state.db,
+        plan_date=str(
+            trading_plan.get("plan_date") or decision_payload.get("decision_date") or ""
+        ),
+    )
+    return build_operations_today_summary(
+        decision_payload=decision_payload,
+        trading_plan=trading_plan,
+        daily_operations=daily_operations,
+        order_facts=order_facts,
+        fill_facts=fill_facts,
+        paper_shadow_run=paper_shadow_run,
+        automation_runs=automation_runs,
+        execution_reconciliation_open_items=execution_reconciliation_open_items,
+        acceptance_audit_export=build_acceptance_audit_export(
+            selected_audit="operations_runbook",
+        ),
+    )
+
+
 def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/operations", tags=["operations"])
 
@@ -33,79 +107,7 @@ def create_router() -> APIRouter:
     async def today_operations() -> dict[str, Any]:
         from server.app import get_app_state
 
-        state = get_app_state()
-        if state.db is None:
-            raise HTTPException(status_code=503, detail="Database is not initialized")
-
-        decision_payload, trading_plan = await _current_decision_and_trading_plan(state)
-        pending_manual_orders = _call_list(
-            state.db,
-            "list_manual_orders_sync",
-            status="pending_confirm",
-            limit=50,
-            offset=0,
-        )
-        order_facts = _call_list(
-            state.db,
-            "list_orders_sync",
-            limit=100,
-            offset=0,
-        )
-        fill_facts = _call_list(
-            state.db,
-            "list_fills_sync",
-            limit=100,
-            offset=0,
-        )
-        automation_runs = _call_list(
-            state.db,
-            "list_automation_runs_sync",
-            limit=20,
-            offset=0,
-        )
-        execution_reconciliation_open_items = _call_list(
-            state.db,
-            "list_execution_reconciliation_open_items_sync",
-            limit=20,
-            offset=0,
-        )
-        ledger_review_count = len(
-            _call_list(
-                state.db,
-                "get_ledger_entries_sync",
-                limit=50,
-                offset=0,
-            )
-        )
-        daily_operations = build_daily_operations_summary(
-            decision_summary=decision_payload.get("summary"),
-            candidates=decision_payload.get("candidates", []),
-            pending_manual_orders=pending_manual_orders,
-            order_facts=order_facts,
-            fill_facts=fill_facts,
-            ledger_review_count=ledger_review_count,
-        )
-        paper_shadow_run = _latest_paper_shadow_run(
-            state.db,
-            plan_date=str(
-                trading_plan.get("plan_date")
-                or decision_payload.get("decision_date")
-                or ""
-            ),
-        )
-        return build_operations_today_summary(
-            decision_payload=decision_payload,
-            trading_plan=trading_plan,
-            daily_operations=daily_operations,
-            order_facts=order_facts,
-            fill_facts=fill_facts,
-            paper_shadow_run=paper_shadow_run,
-            automation_runs=automation_runs,
-            execution_reconciliation_open_items=execution_reconciliation_open_items,
-            acceptance_audit_export=build_acceptance_audit_export(
-                selected_audit="operations_runbook",
-            ),
-        )
+        return await build_today_operations_payload(get_app_state())
 
     @router.post("/paper-shadow/run")
     async def run_paper_shadow_daily() -> dict[str, Any]:

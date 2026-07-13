@@ -96,10 +96,46 @@ and candidate actions, but it cannot submit broker orders. Broker connectors
 can contribute evidence, but they cannot mutate production ledger state without
 review and reconciliation.
 
-The AI research runtime is an isolated application-side boundary. It can later
-receive explicit adapters to the canonical read projections, but it is not
-registered as a strategy runtime, scheduler, OMS service, gateway, or
-application-startup dependency.
+The AI research runtime is an isolated application-side boundary. Its first
+production integration is an explicit, human-started context-capture command;
+it is not registered as a strategy runtime, scheduler, OMS service, gateway,
+background worker, model endpoint, or application-startup dependency.
+
+### Explicit AI Context Capture Boundary
+
+`POST /api/ai/research-contexts/capture` is a command, not a financial GET and
+not an AI task. It requires an exact acknowledgement, operator label, research
+question, account alias, idempotency key, and evidence selection. Research
+Evidence and paper/shadow selections additionally require exact persisted ids;
+the capture source never substitutes a latest row.
+
+```text
+explicit human capture request
+-> canonical Portfolio snapshot
+-> Account State from that same Portfolio object
+-> existing persisted-fact Operations builder / exact research rows
+-> verify the valuation snapshot is persisted and replayable
+-> re-read valuation snapshot + ledger identity and reject drift
+-> immutable ai_canonical_evidence records
+-> one ai_context_snapshot
+-> ai_context_capture_runs lifecycle audit
+```
+
+The capture source reuses existing canonical builders; it does not calculate a
+second portfolio, allocation, PnL, account truth, operations summary, research
+bundle, or paper/shadow result. It may preserve incomplete evidence for
+diagnosis, but `partial`, `blocked`, `missing`, `stale`, `estimated`, and
+`unreconciled` records remain non-authoritative. A completed duplicate restores
+the original content-addressed context without re-reading sources. The same
+idempotency key with changed intent is rejected; an interrupted or failed run
+may replay the exact command without duplicating immutable evidence.
+
+This POST may initialize and write only the `ai_*` audit boundary, including
+`ai_canonical_evidence`, `ai_context_snapshots`, and
+`ai_context_capture_runs`. It must not contact a market-data or broker provider,
+refresh facts, invoke a model, start a research workflow, create an OMS intent,
+write the production ledger, issue a risk decision, change reconciliation or
+kill-switch state, create/widen capital authority, or submit/cancel an order.
 
 ## Financial Data Integrity and Valuation
 

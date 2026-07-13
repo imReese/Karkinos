@@ -19,8 +19,10 @@ truth, risk control, signals, reconciliation, and review.
 AI 原生化遵循同一原则：AI 可以围绕冻结的持久化证据进行多角色分析、工具读取、争论、
 报告和研究记忆，但 provider、model 与 agent role 相互解耦，模型输出不是账户事实、
 风控结论或交易权限。当前架构与运行基础只有 deterministic local fixture provider；
-canonical evidence 只读边界可保存并重读显式捕获的不可变投影，但尚未注册生产捕获
-入口。没有真实模型调用、API Key、厂商绑定、后台 AI 任务或实盘入口。
+canonical evidence 只读边界可保存并重读显式捕获的不可变投影，并提供一个必须由人
+明确启动的 model-free context capture POST 入口。该入口只复用持久化 canonical
+projection、校验 valuation/ledger identity 并写 AI 审计事实；它不启动 workflow。
+没有真实模型调用、API Key、厂商绑定、后台 AI 任务或实盘入口。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -55,9 +57,11 @@ public demos and development.
   deny-by-default read-only tools, typed cited artifacts, and hash-chained audit
   replay. The first canonical-evidence read boundary stores content-addressed
   immutable captures and rejects snapshot/ledger drift; incomplete evidence is
-  explicitly non-authoritative. It still uses only a deterministic local
-  fixture provider and exposes no model API, production capture route, OMS
-  action, or broker authority.
+  explicitly non-authoritative. An explicit human-started POST can now capture
+  selected canonical Portfolio, Account State, Operations, Research Evidence,
+  Account Truth, and paper/shadow facts into one replayable context without
+  starting a workflow. It still uses only a deterministic local fixture
+  provider and exposes no model API, OMS action, or broker authority.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers
