@@ -1,10 +1,7 @@
 export const MARKET_CALENDAR_SCHEMA_VERSION = 'karkinos.market_calendar.v1';
 
 export type MarketCalendarDayType =
-  | 'trading_day'
-  | 'weekend'
-  | 'holiday'
-  | 'closed';
+  'trading_day' | 'weekend' | 'holiday' | 'closed';
 
 export type MarketCalendarDay = {
   schemaVersion: typeof MARKET_CALENDAR_SCHEMA_VERSION;

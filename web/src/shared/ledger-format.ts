@@ -47,10 +47,7 @@ export type LedgerEntrySummary = {
 };
 
 export type LedgerActivitySummaryTone =
-  | 'credit'
-  | 'debit'
-  | 'adjustment'
-  | 'neutral';
+  'credit' | 'debit' | 'adjustment' | 'neutral';
 
 export type LedgerActivitySummary = {
   label: string;

@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import {
@@ -32,7 +33,7 @@ function vendorChunk(id: string): ChunkName {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   build: {
     rollupOptions: {
       output: {

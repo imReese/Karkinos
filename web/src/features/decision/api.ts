@@ -15,12 +15,7 @@ function liveRefetchInterval() {
 }
 
 export type DecisionAction =
-  | 'buy'
-  | 'sell'
-  | 'hold'
-  | 'rebalance'
-  | 'no_action'
-  | 'review_required';
+  'buy' | 'sell' | 'hold' | 'rebalance' | 'no_action' | 'review_required';
 
 export type DecisionLane = 'daily' | 'intraday';
 

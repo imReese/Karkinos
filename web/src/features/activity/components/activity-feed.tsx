@@ -15,12 +15,7 @@ import {
 } from '../ledger-format';
 
 type LedgerEntryCategory =
-  | 'all'
-  | 'trade'
-  | 'cash'
-  | 'dividend'
-  | 'adjustment'
-  | 'other';
+  'all' | 'trade' | 'cash' | 'dividend' | 'adjustment' | 'other';
 
 type LedgerSubcategory =
   | 'all'
