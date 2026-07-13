@@ -7,23 +7,23 @@ from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRepository,
 )
-from scripts.import_qmt_order_lifecycle import main
+from scripts.import_broker_order_lifecycle import main
 
 
 def _payload() -> dict:
     captured_at = datetime.now(UTC)
     return {
-        "schema_version": "karkinos.qmt_order_lifecycle_export.v1",
-        "provider": "qmt",
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "deterministic_fixture",
         "snapshot_kind": "exact_order_lifecycle",
-        "gateway_id": "qmt-controlled-write-1",
-        "account_id": "private-qmt-account-001",
+        "gateway_id": "fixture-controlled-gateway-1",
+        "account_id": "private-fixture-account-001",
         "account_alias": "main-cn-account",
         "captured_at": captured_at.isoformat(),
         "source_sequence": 1,
         "orders": [
             {
-                "broker_order_id": "QMT-ORDER-1",
+                "broker_order_id": "FIXTURE-ORDER-1",
                 "client_order_id": "KARK-client-order-1",
                 "symbol": "600519",
                 "side": "buy",
@@ -41,7 +41,7 @@ def _payload() -> dict:
 
 
 def test_cli_defaults_to_preview_without_creating_database(tmp_path, capsys) -> None:
-    source = tmp_path / "qmt-lifecycle.json"
+    source = tmp_path / "broker-lifecycle.json"
     source.write_text(json.dumps(_payload()), encoding="utf-8")
     db_path = tmp_path / "lifecycle.db"
 
@@ -51,13 +51,14 @@ def test_cli_defaults_to_preview_without_creating_database(tmp_path, capsys) -> 
     assert exit_code == 0
     assert output["validation_status"] == "pass"
     assert output["ready_to_record"] is True
+    assert output["provider"] == "deterministic_fixture"
     assert output["provider_contacted"] is False
     assert output["broker_submission_enabled"] is False
     assert db_path.exists() is False
 
 
 def test_cli_requires_exact_acknowledgement_before_recording(tmp_path, capsys) -> None:
-    source = tmp_path / "qmt-lifecycle.json"
+    source = tmp_path / "broker-lifecycle.json"
     source.write_text(json.dumps(_payload()), encoding="utf-8")
     db_path = tmp_path / "lifecycle.db"
 
@@ -78,7 +79,7 @@ def test_cli_requires_exact_acknowledgement_before_recording(tmp_path, capsys) -
 
     assert rejected_code == 2
     assert rejected["status"] == "rejected"
-    assert "qmt_order_lifecycle_acknowledgement_mismatch" in rejected["blockers"]
+    assert "broker_order_lifecycle_acknowledgement_mismatch" in rejected["blockers"]
     assert recorded_code == 0
     assert recorded["validation_status"] == "pass"
     assert (
@@ -87,3 +88,17 @@ def test_cli_requires_exact_acknowledgement_before_recording(tmp_path, capsys) -
         ).list_observations(limit=10)[0]["observation_id"]
         == recorded["observation_id"]
     )
+
+
+def test_canonical_cli_rejects_legacy_qmt_schema(tmp_path, capsys) -> None:
+    payload = _payload()
+    payload["schema_version"] = "karkinos.qmt_order_lifecycle_export.v1"
+    source = tmp_path / "legacy-lifecycle.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+
+    exit_code = main(["--file", str(source)])
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert output["ready_to_record"] is False
+    assert "broker_order_lifecycle_schema_unsupported" in output["blockers"]

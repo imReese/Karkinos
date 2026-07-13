@@ -235,7 +235,7 @@ authorize or contact a broker.
 
 Stage 1 now has a broker-neutral read-only soak foundation. The
 `/api/automation/broker-soak/capture`, `/status`, and `/observations` endpoints
-can consume configured local QMT/PTrade/read-only exports, persist sanitized
+can consume an explicitly configured generic local read-only export, persist sanitized
 snapshot evidence, track freshness and provider-calendar trading-day coverage,
 and emit Operations alerts for degraded or blocked observations. Raw account
 ids are not returned or stored in snapshot facts, any submit capability is
@@ -421,12 +421,12 @@ fails closed. Those fields remain evidence, not write authority, and a broker-
 specific callback/poll adapter is still required before an explicitly approved
 pilot.
 
-Stage 3.15 adds a QMT-specific **local evidence adapter foundation**, not a live
-broker adapter. `scripts/import_qmt_order_lifecycle.py` previews one normalized
+Stage 3.15 adds a broker-neutral **order-lifecycle evidence contract**, not a live
+broker adapter. `scripts/import_broker_order_lifecycle.py` previews one normalized
 `exact_order_lifecycle` JSON export by default; persistence requires explicit
 `--record` plus the acknowledgement
-`record_qmt_order_lifecycle_evidence_without_execution_authority`. The command
-never contacts QMT, and the database stores only sanitized account hashes,
+`record_broker_order_lifecycle_evidence_without_execution_authority`. The command
+never contacts a broker, and the database stores only sanitized account hashes,
 source/file/evidence fingerprints, monotonic source sequence, exact broker and
 client order ids, cumulative fill/cancel quantities, and linked fills. SQLite
 serialization rejects sequence regression, same-sequence conflicts, account or
@@ -437,11 +437,23 @@ and cannot clear the interlock; lifecycle full-fill evidence still needs the
 independent broker statement, fresh Account Truth, and Stage 3.14 signature.
 The same canonical check runs inside signed clearance and the next-order submit
 transaction, so a newly persisted contradictory fact rejects clearance or
-re-blocks an older clearance. Production still registers no collector, write
-adapter, release provider, cancel path, or pilot authority. A separately
-reviewed QMT callback/poll collector and operational soak remain required.
+re-blocks an older clearance.
+
+Stage 3.16 adds an explicitly started, local-only collector-ingestion boundary.
+It binds deployment/release/user-authorization evidence, provider/account scope,
+connection and batch status, cursor transitions, callback telemetry, and the
+canonical lifecycle fact. Deterministic fixtures cover restart replay,
+idempotency, duplicates, cursor conflicts/gaps, out-of-order input, disconnect,
+and partial batches. Callback/poll are metadata only; no broker SDK, provider
+connection, scheduler, or default registration is added. Collector evidence
+cannot modify OMS, fills, ledger, risk, kill switch, capital authority, or the
+interlock. QMT, PTrade, local-file, and other edge adapters require a separate
+review and explicit user authorization; Karkinos does not claim official
+support for them.
 
 Operator contract and normalized JSON example:
+[docs/broker-order-lifecycle-ingestion.zh.md](docs/broker-order-lifecycle-ingestion.zh.md).
+The retired QMT v1 schema has only an explicit offline compatibility migration:
 [docs/qmt-order-lifecycle-import.zh.md](docs/qmt-order-lifecycle-import.zh.md).
 
 Stage 2.1/3.1 now removes the ambiguous "latest reconciliation" shortcut. The

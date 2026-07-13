@@ -508,7 +508,7 @@ def test_broker_gateway_local_export_invalid_snapshot_degrades_without_leaking_a
     assert db.list_broker_gateway_events_sync() == []
 
 
-def test_broker_gateway_qmt_export_unsupported_schema_degrades_query_only(
+def test_broker_gateway_retired_qmt_export_type_is_not_registered(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -557,23 +557,10 @@ def test_broker_gateway_qmt_export_unsupported_schema_degrades_query_only(
 
     assert health_response.status_code == 200
     health = health_response.json()["connectors"][0]
-    assert health["status"] == "runtime_degraded"
+    assert health["status"] == "configured_readonly_unverified"
     assert health["capabilities"]["can_submit_orders"] is False
     assert "private-account-id" not in health_response.text
-    assert snapshot_response.status_code == 200
-    snapshot = snapshot_response.json()["snapshot"]
-    assert snapshot["status"] == "snapshot_degraded"
-    assert snapshot["connector_health"]["raw_status"] == "incomplete"
-    assert snapshot["cash_balance"] == {}
-    assert snapshot["position_count"] == 0
-    assert snapshot["submitted_to_broker"] is False
-    assert snapshot["does_not_mutate_oms"] is True
-    assert snapshot["does_not_mutate_production_ledger"] is True
-    assert any(
-        item == "parse_error:UnsupportedLocalJsonSnapshotSchema"
-        for item in snapshot["limitations"]
-    )
-    assert "account_id" not in snapshot
+    assert snapshot_response.status_code == 404
     assert "private-account-id" not in snapshot_response.text
     assert db.list_broker_gateway_events_sync() == []
 

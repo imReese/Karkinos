@@ -1,4 +1,4 @@
-"""Persist normalized QMT order-lifecycle evidence without broker authority."""
+"""Persist normalized broker order-lifecycle evidence without broker authority."""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
 
-QMT_ORDER_LIFECYCLE_EXPORT_SCHEMA_VERSION = "karkinos.qmt_order_lifecycle_export.v1"
+BROKER_ORDER_LIFECYCLE_EXPORT_SCHEMA_VERSION = (
+    "karkinos.broker_order_lifecycle_export.v1"
+)
 BROKER_ORDER_LIFECYCLE_PREVIEW_SCHEMA_VERSION = (
     "karkinos.broker_order_lifecycle_preview.v1"
 )
@@ -19,7 +21,7 @@ BROKER_ORDER_LIFECYCLE_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.broker_order_lifecycle_evidence.v1"
 )
 BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT = (
-    "record_qmt_order_lifecycle_evidence_without_execution_authority"
+    "record_broker_order_lifecycle_evidence_without_execution_authority"
 )
 DEFAULT_MAX_SNAPSHOT_AGE_SECONDS = 120
 MAX_EXPORT_BYTES = 2 * 1024 * 1024
@@ -99,14 +101,14 @@ class BrokerOrderLifecycleEvidenceRejected(ValueError):
         self.evidence = evidence
 
 
-def preview_qmt_order_lifecycle_export(
+def preview_broker_order_lifecycle_export(
     content: str | bytes,
     *,
     source_name: str = "",
     max_snapshot_age_seconds: int = DEFAULT_MAX_SNAPSHOT_AGE_SECONDS,
     clock: Callable[[], datetime] | None = None,
 ) -> dict[str, Any]:
-    """Normalize one exact-order QMT export without persisting any fact."""
+    """Normalize one exact-order broker export without persisting any fact."""
 
     observed_at = _aware_utc((clock or (lambda: datetime.now(UTC)))())
     max_age = max(30, min(int(max_snapshot_age_seconds), 3600))
@@ -118,15 +120,15 @@ def preview_qmt_order_lifecycle_export(
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            blockers.append("qmt_order_lifecycle_json_invalid")
+            blockers.append("broker_order_lifecycle_json_invalid")
         else:
             if isinstance(parsed, dict):
                 data = parsed
             else:
-                blockers.append("qmt_order_lifecycle_payload_not_object")
+                blockers.append("broker_order_lifecycle_payload_not_object")
 
     if _contains_sensitive_key(data):
-        blockers.append("qmt_order_lifecycle_credentials_not_allowed")
+        blockers.append("broker_order_lifecycle_credentials_not_allowed")
     _reject_unknown_fields(data, _TOP_LEVEL_FIELDS, "payload", blockers)
 
     schema_version = str(data.get("schema_version") or "")
@@ -137,50 +139,50 @@ def preview_qmt_order_lifecycle_export(
     account_id = str(data.get("account_id") or "").strip()
     captured_at = _timestamp(
         data.get("captured_at"),
-        blocker="qmt_order_lifecycle_captured_at_invalid",
+        blocker="broker_order_lifecycle_captured_at_invalid",
         blockers=blockers,
     )
     source_sequence = _source_sequence(data.get("source_sequence"), blockers)
 
-    if schema_version != QMT_ORDER_LIFECYCLE_EXPORT_SCHEMA_VERSION:
-        blockers.append("qmt_order_lifecycle_schema_unsupported")
-    if provider != "qmt":
-        blockers.append("qmt_order_lifecycle_provider_invalid")
+    if schema_version != BROKER_ORDER_LIFECYCLE_EXPORT_SCHEMA_VERSION:
+        blockers.append("broker_order_lifecycle_schema_unsupported")
+    if not _ID_PATTERN.fullmatch(provider):
+        blockers.append("broker_order_lifecycle_provider_invalid")
     if snapshot_kind != "exact_order_lifecycle":
-        blockers.append("qmt_order_lifecycle_snapshot_kind_invalid")
+        blockers.append("broker_order_lifecycle_snapshot_kind_invalid")
     if not _ID_PATTERN.fullmatch(gateway_id):
-        blockers.append("qmt_order_lifecycle_gateway_id_invalid")
+        blockers.append("broker_order_lifecycle_gateway_id_invalid")
     if not _ID_PATTERN.fullmatch(account_alias):
-        blockers.append("qmt_order_lifecycle_account_alias_invalid")
+        blockers.append("broker_order_lifecycle_account_alias_invalid")
     if not account_id:
-        blockers.append("qmt_order_lifecycle_account_id_missing")
+        blockers.append("broker_order_lifecycle_account_id_missing")
 
     if captured_at:
         captured = datetime.fromisoformat(captured_at)
         age_seconds = (observed_at - captured).total_seconds()
         if age_seconds < -5:
-            blockers.append("qmt_order_lifecycle_snapshot_in_future")
+            blockers.append("broker_order_lifecycle_snapshot_in_future")
         elif age_seconds > max_age:
-            blockers.append("qmt_order_lifecycle_snapshot_stale")
+            blockers.append("broker_order_lifecycle_snapshot_stale")
 
     raw_orders = data.get("orders")
     if not isinstance(raw_orders, list) or len(raw_orders) != 1:
-        blockers.append("qmt_order_lifecycle_exactly_one_order_required")
+        blockers.append("broker_order_lifecycle_exactly_one_order_required")
         raw_order: dict[str, Any] = {}
     else:
         raw_order = raw_orders[0] if isinstance(raw_orders[0], dict) else {}
         if not raw_order:
-            blockers.append("qmt_order_lifecycle_order_invalid")
+            blockers.append("broker_order_lifecycle_order_invalid")
     order = _normalize_order(raw_order, blockers)
 
     raw_fills = data.get("fills")
     if not isinstance(raw_fills, list):
-        blockers.append("qmt_order_lifecycle_fills_invalid")
+        blockers.append("broker_order_lifecycle_fills_invalid")
         raw_fills = []
     fills: list[dict[str, Any]] = []
     for index, raw_fill in enumerate(raw_fills, start=1):
         if not isinstance(raw_fill, dict):
-            blockers.append(f"qmt_order_lifecycle_fill_{index}_invalid")
+            blockers.append(f"broker_order_lifecycle_fill_{index}_invalid")
             continue
         fills.append(_normalize_fill(raw_fill, index=index, blockers=blockers))
     _validate_order_and_fills(order, fills, captured_at, blockers)
@@ -191,7 +193,7 @@ def preview_qmt_order_lifecycle_export(
         "snapshot_kind": snapshot_kind,
         "gateway_id": gateway_id,
         "account_alias": account_alias,
-        "account_ref_hash": _account_ref_hash(account_id),
+        "account_ref_hash": _account_ref_hash(account_id, provider=provider),
         "captured_at": captured_at,
         "source_sequence": source_sequence,
         "order": order,
@@ -215,7 +217,7 @@ def preview_qmt_order_lifecycle_export(
         "snapshot_kind": snapshot_kind,
         "gateway_id": gateway_id,
         "account_alias": account_alias,
-        "account_ref_hash": _account_ref_hash(account_id),
+        "account_ref_hash": _account_ref_hash(account_id, provider=provider),
         "source_name": _sanitized_source_name(source_name),
         "captured_at": captured_at,
         "observed_at": observed_at.isoformat(),
@@ -264,11 +266,10 @@ def resolve_broker_order_lifecycle_from_connection(
     row = conn.execute(
         """
         SELECT * FROM broker_order_lifecycle_observations
-        WHERE provider = 'qmt'
-          AND gateway_id = ?
+        WHERE gateway_id = ?
           AND account_alias = ?
           AND (broker_order_id = ? OR client_order_id = ?)
-        ORDER BY source_sequence DESC, id DESC
+        ORDER BY captured_at DESC, id DESC
         LIMIT 1
         """,
         (
@@ -296,7 +297,7 @@ def resolve_broker_order_lifecycle_from_connection(
             "identity_conflict",
             identity=identity,
             observation=observation,
-            blockers=["qmt_order_lifecycle_order_identity_conflict"],
+            blockers=["broker_order_lifecycle_order_identity_conflict"],
         )
     order_row = conn.execute(
         """
@@ -317,7 +318,7 @@ def resolve_broker_order_lifecycle_from_connection(
             "blocked",
             identity=identity,
             observation=observation,
-            blockers=["qmt_order_lifecycle_order_fact_missing"],
+            blockers=["broker_order_lifecycle_order_fact_missing"],
         )
     return {
         **_resolution(
@@ -359,7 +360,7 @@ def broker_order_lifecycle_clearance_blockers(
 
 
 class BrokerOrderLifecycleEvidenceRepository:
-    """Atomic staging store for sanitized QMT lifecycle observations."""
+    """Atomic staging store for sanitized broker lifecycle observations."""
 
     def __init__(
         self,
@@ -382,10 +383,10 @@ class BrokerOrderLifecycleEvidenceRepository:
 
         if acknowledgement != BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT:
             raise BrokerOrderLifecycleEvidenceRejected(
-                "QMT lifecycle evidence acknowledgement mismatch",
+                "broker lifecycle evidence acknowledgement mismatch",
                 evidence=_rejection(
                     preview,
-                    ["qmt_order_lifecycle_acknowledgement_mismatch"],
+                    ["broker_order_lifecycle_acknowledgement_mismatch"],
                 ),
             )
         if (
@@ -393,16 +394,16 @@ class BrokerOrderLifecycleEvidenceRepository:
             != BROKER_ORDER_LIFECYCLE_PREVIEW_SCHEMA_VERSION
         ):
             raise BrokerOrderLifecycleEvidenceRejected(
-                "QMT lifecycle evidence preview schema invalid",
+                "broker lifecycle evidence preview schema invalid",
                 evidence=_rejection(
                     preview,
-                    ["qmt_order_lifecycle_preview_schema_invalid"],
+                    ["broker_order_lifecycle_preview_schema_invalid"],
                 ),
             )
         integrity_blockers = _preview_integrity_blockers(preview)
         if integrity_blockers:
             raise BrokerOrderLifecycleEvidenceRejected(
-                "QMT lifecycle evidence preview integrity invalid",
+                "broker lifecycle evidence preview integrity invalid",
                 evidence=_rejection(preview, integrity_blockers),
             )
 
@@ -483,7 +484,7 @@ class BrokerOrderLifecycleEvidenceRepository:
             ).fetchone()
             conn.commit()
             if saved is None:
-                raise RuntimeError("QMT lifecycle evidence was not persisted")
+                raise RuntimeError("broker lifecycle evidence was not persisted")
             return self._observation_response(conn, saved, reused=False)
 
     def list_observations(self, *, limit: int = 100) -> list[dict[str, Any]]:
@@ -541,30 +542,33 @@ class BrokerOrderLifecycleEvidenceRepository:
         latest = conn.execute(
             """
             SELECT * FROM broker_order_lifecycle_observations
-            WHERE provider = ? AND gateway_id = ? AND account_alias = ?
+            WHERE gateway_id = ? AND account_alias = ?
               AND validation_status = 'pass'
-            ORDER BY source_sequence DESC, id DESC
+            ORDER BY captured_at DESC, id DESC
             LIMIT 1
             """,
             (
-                str(preview.get("provider") or ""),
                 str(preview.get("gateway_id") or ""),
                 str(preview.get("account_alias") or ""),
             ),
         ).fetchone()
         if latest is not None:
+            if str(latest["provider"]) != str(preview.get("provider") or ""):
+                blockers.append("broker_order_lifecycle_provider_changed")
             if str(latest["account_ref_hash"]) != str(
                 preview.get("account_ref_hash") or ""
             ):
-                blockers.append("qmt_order_lifecycle_account_identity_changed")
+                blockers.append("broker_order_lifecycle_account_identity_changed")
             current_sequence = int(preview.get("source_sequence") or 0)
             latest_sequence = int(latest["source_sequence"])
             if current_sequence < latest_sequence:
-                blockers.append("qmt_order_lifecycle_source_sequence_regressed")
+                blockers.append("broker_order_lifecycle_source_sequence_regressed")
             elif current_sequence == latest_sequence:
-                blockers.append("qmt_order_lifecycle_source_sequence_evidence_conflict")
+                blockers.append(
+                    "broker_order_lifecycle_source_sequence_evidence_conflict"
+                )
             if str(preview.get("captured_at") or "") <= str(latest["captured_at"]):
-                blockers.append("qmt_order_lifecycle_captured_at_not_monotonic")
+                blockers.append("broker_order_lifecycle_captured_at_not_monotonic")
 
         order = _dict(preview.get("order"))
         conflicting = conn.execute(
@@ -599,14 +603,14 @@ class BrokerOrderLifecycleEvidenceRepository:
             or str(conflicting["client_order_id"])
             != str(order.get("client_order_id") or "")
         ):
-            blockers.append("qmt_order_lifecycle_order_identity_drift")
+            blockers.append("broker_order_lifecycle_order_identity_drift")
         if conflicting is not None and (
             str(conflicting["symbol"]) != str(order.get("symbol") or "")
             or str(conflicting["side"]) != str(order.get("side") or "")
             or str(conflicting["order_quantity"])
             != str(order.get("order_quantity") or "")
         ):
-            blockers.append("qmt_order_lifecycle_order_contract_drift")
+            blockers.append("broker_order_lifecycle_order_contract_drift")
         return blockers
 
     def _insert_order(
@@ -815,21 +819,21 @@ def _normalize_order(
         ),
         "submitted_at": _timestamp(
             data.get("submitted_at"),
-            blocker="qmt_order_lifecycle_order_submitted_at_invalid",
+            blocker="broker_order_lifecycle_order_submitted_at_invalid",
             blockers=blockers,
         ),
         "updated_at": _timestamp(
             data.get("updated_at"),
-            blocker="qmt_order_lifecycle_order_updated_at_invalid",
+            blocker="broker_order_lifecycle_order_updated_at_invalid",
             blockers=blockers,
         ),
     }
     if not _SYMBOL_PATTERN.fullmatch(order["symbol"]):
-        blockers.append("qmt_order_lifecycle_order_symbol_invalid")
+        blockers.append("broker_order_lifecycle_order_symbol_invalid")
     if order["side"] not in {"buy", "sell"}:
-        blockers.append("qmt_order_lifecycle_order_side_invalid")
+        blockers.append("broker_order_lifecycle_order_side_invalid")
     if order["status"] not in _ORDER_STATUSES:
-        blockers.append("qmt_order_lifecycle_order_status_invalid")
+        blockers.append("broker_order_lifecycle_order_status_invalid")
     return order
 
 
@@ -861,14 +865,14 @@ def _normalize_fill(
         ),
         "filled_at": _timestamp(
             data.get("filled_at"),
-            blocker=f"qmt_order_lifecycle_{prefix}_filled_at_invalid",
+            blocker=f"broker_order_lifecycle_{prefix}_filled_at_invalid",
             blockers=blockers,
         ),
     }
     if not _SYMBOL_PATTERN.fullmatch(fill["symbol"]):
-        blockers.append(f"qmt_order_lifecycle_{prefix}_symbol_invalid")
+        blockers.append(f"broker_order_lifecycle_{prefix}_symbol_invalid")
     if fill["side"] not in {"buy", "sell"}:
-        blockers.append(f"qmt_order_lifecycle_{prefix}_side_invalid")
+        blockers.append(f"broker_order_lifecycle_{prefix}_side_invalid")
     return fill
 
 
@@ -882,36 +886,36 @@ def _validate_order_and_fills(
     filled_quantity = _decimal(order.get("cumulative_filled_quantity"))
     cancelled_quantity = _decimal(order.get("cancelled_quantity"))
     if quantity <= 0:
-        blockers.append("qmt_order_lifecycle_order_quantity_not_positive")
+        blockers.append("broker_order_lifecycle_order_quantity_not_positive")
     if filled_quantity < 0 or cancelled_quantity < 0:
-        blockers.append("qmt_order_lifecycle_order_quantities_negative")
+        blockers.append("broker_order_lifecycle_order_quantities_negative")
     if filled_quantity + cancelled_quantity > quantity:
-        blockers.append("qmt_order_lifecycle_order_quantity_components_exceed_total")
+        blockers.append("broker_order_lifecycle_order_quantity_components_exceed_total")
 
     status = str(order.get("status") or "")
     if status in {"submitted", "open", "rejected"} and (
         filled_quantity != 0 or cancelled_quantity != 0
     ):
-        blockers.append("qmt_order_lifecycle_nonfill_status_has_quantity")
+        blockers.append("broker_order_lifecycle_nonfill_status_has_quantity")
     if status == "partially_filled" and not (
         0 < filled_quantity < quantity and cancelled_quantity == 0
     ):
-        blockers.append("qmt_order_lifecycle_partial_fill_quantities_invalid")
+        blockers.append("broker_order_lifecycle_partial_fill_quantities_invalid")
     if status == "filled" and not (
         filled_quantity == quantity and cancelled_quantity == 0
     ):
-        blockers.append("qmt_order_lifecycle_filled_quantities_invalid")
+        blockers.append("broker_order_lifecycle_filled_quantities_invalid")
     if status == "cancelled" and not (
         cancelled_quantity > 0 and filled_quantity + cancelled_quantity == quantity
     ):
-        blockers.append("qmt_order_lifecycle_cancelled_quantities_invalid")
+        blockers.append("broker_order_lifecycle_cancelled_quantities_invalid")
 
     submitted_at = str(order.get("submitted_at") or "")
     updated_at = str(order.get("updated_at") or "")
     if submitted_at and updated_at and submitted_at > updated_at:
-        blockers.append("qmt_order_lifecycle_order_time_regressed")
+        blockers.append("broker_order_lifecycle_order_time_regressed")
     if updated_at and captured_at and updated_at > captured_at:
-        blockers.append("qmt_order_lifecycle_order_updated_after_capture")
+        blockers.append("broker_order_lifecycle_order_updated_after_capture")
 
     seen_trade_ids: set[str] = set()
     fill_total = Decimal("0")
@@ -919,7 +923,7 @@ def _validate_order_and_fills(
     for fill in fills:
         trade_id = str(fill.get("broker_trade_id") or "")
         if trade_id in seen_trade_ids:
-            blockers.append("qmt_order_lifecycle_broker_trade_id_duplicate")
+            blockers.append("broker_order_lifecycle_broker_trade_id_duplicate")
         seen_trade_ids.add(trade_id)
         for field in (
             "broker_order_id",
@@ -928,43 +932,43 @@ def _validate_order_and_fills(
             "side",
         ):
             if str(fill.get(field) or "") != str(order.get(field) or ""):
-                blockers.append(f"qmt_order_lifecycle_fill_{field}_mismatch")
+                blockers.append(f"broker_order_lifecycle_fill_{field}_mismatch")
         fill_quantity = _decimal(fill.get("quantity"))
         fill_price = _decimal(fill.get("price"))
         if fill_quantity <= 0:
-            blockers.append("qmt_order_lifecycle_fill_quantity_not_positive")
+            blockers.append("broker_order_lifecycle_fill_quantity_not_positive")
         if fill_price <= 0:
-            blockers.append("qmt_order_lifecycle_fill_price_not_positive")
+            blockers.append("broker_order_lifecycle_fill_price_not_positive")
         if str(fill.get("filled_at") or "") < submitted_at:
-            blockers.append("qmt_order_lifecycle_fill_before_submission")
+            blockers.append("broker_order_lifecycle_fill_before_submission")
         if str(fill.get("filled_at") or "") > updated_at:
-            blockers.append("qmt_order_lifecycle_fill_after_order_update")
+            blockers.append("broker_order_lifecycle_fill_after_order_update")
         fill_total += fill_quantity
         weighted_total += fill_quantity * fill_price
     if fill_total != filled_quantity:
-        blockers.append("qmt_order_lifecycle_fill_sum_mismatch")
+        blockers.append("broker_order_lifecycle_fill_sum_mismatch")
     average = order.get("average_fill_price")
     if filled_quantity > 0:
         if average is None or _decimal(average) <= 0:
-            blockers.append("qmt_order_lifecycle_average_fill_price_missing")
+            blockers.append("broker_order_lifecycle_average_fill_price_missing")
         elif fill_total > 0:
             calculated_average = weighted_total / fill_total
             if abs(calculated_average - _decimal(average)) > Decimal("0.0001"):
-                blockers.append("qmt_order_lifecycle_average_fill_price_mismatch")
+                blockers.append("broker_order_lifecycle_average_fill_price_mismatch")
     elif average is not None:
-        blockers.append("qmt_order_lifecycle_average_fill_price_without_fill")
+        blockers.append("broker_order_lifecycle_average_fill_price_without_fill")
 
 
 def _decode_content(content: str | bytes) -> tuple[bytes, str, list[str]]:
     raw = content if isinstance(content, bytes) else str(content).encode("utf-8")
     blockers: list[str] = []
     if len(raw) > MAX_EXPORT_BYTES:
-        blockers.append("qmt_order_lifecycle_export_too_large")
+        blockers.append("broker_order_lifecycle_export_too_large")
         return raw, "", blockers
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
-        blockers.append("qmt_order_lifecycle_export_not_utf8")
+        blockers.append("broker_order_lifecycle_export_not_utf8")
         text = ""
     return raw, text, blockers
 
@@ -989,7 +993,7 @@ def _reject_unknown_fields(
     blockers: list[str],
 ) -> None:
     for key in sorted(set(data) - allowed):
-        blockers.append(f"qmt_order_lifecycle_{prefix}_field_unsupported:{key}")
+        blockers.append(f"broker_order_lifecycle_{prefix}_field_unsupported:{key}")
 
 
 def _id_field(
@@ -1000,7 +1004,7 @@ def _id_field(
 ) -> str:
     value = str(data.get(field) or "").strip()
     if not _ID_PATTERN.fullmatch(value):
-        blockers.append(f"qmt_order_lifecycle_{prefix}_{field}_invalid")
+        blockers.append(f"broker_order_lifecycle_{prefix}_{field}_invalid")
     return value
 
 
@@ -1015,10 +1019,10 @@ def _decimal_field(
     try:
         value = Decimal(str(data[field]))
     except (KeyError, InvalidOperation, TypeError, ValueError):
-        blockers.append(f"qmt_order_lifecycle_{prefix}_{field}_invalid")
+        blockers.append(f"broker_order_lifecycle_{prefix}_{field}_invalid")
         return "0"
     if not value.is_finite() or (value < 0 and not allow_negative):
-        blockers.append(f"qmt_order_lifecycle_{prefix}_{field}_invalid")
+        blockers.append(f"broker_order_lifecycle_{prefix}_{field}_invalid")
         return "0"
     return _format_decimal(value)
 
@@ -1036,15 +1040,15 @@ def _optional_decimal_field(
 
 def _source_sequence(value: Any, blockers: list[str]) -> int:
     if isinstance(value, bool):
-        blockers.append("qmt_order_lifecycle_source_sequence_invalid")
+        blockers.append("broker_order_lifecycle_source_sequence_invalid")
         return 0
     try:
         sequence = int(value)
     except (TypeError, ValueError):
-        blockers.append("qmt_order_lifecycle_source_sequence_invalid")
+        blockers.append("broker_order_lifecycle_source_sequence_invalid")
         return 0
     if sequence < 0 or str(value).strip() != str(sequence):
-        blockers.append("qmt_order_lifecycle_source_sequence_invalid")
+        blockers.append("broker_order_lifecycle_source_sequence_invalid")
         return 0
     return sequence
 
@@ -1073,12 +1077,18 @@ def _aware_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _account_ref_hash(account_id: str) -> str:
+def _account_ref_hash(account_id: str, *, provider: str) -> str:
+    return broker_order_lifecycle_account_ref_hash(account_id, provider=provider)
+
+
+def broker_order_lifecycle_account_ref_hash(account_id: str, *, provider: str) -> str:
+    """Build the canonical provider-scoped opaque account reference."""
     if not account_id:
         return ""
     return _fingerprint(
         {
-            "domain": "karkinos.qmt_order_lifecycle.account_ref.v1",
+            "domain": "karkinos.broker_order_lifecycle.account_ref.v1",
+            "provider": provider,
             "account_id": account_id,
         }
     )
@@ -1192,7 +1202,7 @@ def _preview_integrity_blockers(preview: dict[str, Any]) -> list[str]:
     }
     expected_fingerprint = _fingerprint(core)
     if str(preview.get("evidence_fingerprint") or "") != expected_fingerprint:
-        blockers.append("qmt_order_lifecycle_preview_fingerprint_drift")
+        blockers.append("broker_order_lifecycle_preview_fingerprint_drift")
     expected_observation_id = _fingerprint(
         {
             "domain": "karkinos.broker_order_lifecycle.observation_id.v1",
@@ -1200,21 +1210,21 @@ def _preview_integrity_blockers(preview: dict[str, Any]) -> list[str]:
         }
     )
     if str(preview.get("observation_id") or "") != expected_observation_id:
-        blockers.append("qmt_order_lifecycle_preview_observation_id_drift")
+        blockers.append("broker_order_lifecycle_preview_observation_id_drift")
     preview_blockers = [str(item) for item in preview.get("blockers") or []]
     expected_status = "pass" if not preview_blockers else "blocked"
     if str(preview.get("validation_status") or "") != expected_status:
-        blockers.append("qmt_order_lifecycle_preview_validation_status_drift")
+        blockers.append("broker_order_lifecycle_preview_validation_status_drift")
     if bool(preview.get("ready_to_record")) != (not preview_blockers):
-        blockers.append("qmt_order_lifecycle_preview_readiness_drift")
+        blockers.append("broker_order_lifecycle_preview_readiness_drift")
     if (
         str(preview.get("evidence_schema_version") or "")
         != BROKER_ORDER_LIFECYCLE_EVIDENCE_SCHEMA_VERSION
     ):
-        blockers.append("qmt_order_lifecycle_preview_evidence_schema_drift")
+        blockers.append("broker_order_lifecycle_preview_evidence_schema_drift")
     for field, expected in _safety_flags().items():
         if preview.get(field) is not expected:
-            blockers.append(f"qmt_order_lifecycle_preview_safety_drift:{field}")
+            blockers.append(f"broker_order_lifecycle_preview_safety_drift:{field}")
     return blockers
 
 
@@ -1261,7 +1271,7 @@ def _format_decimal(value: Decimal) -> str:
 def _sanitized_source_name(value: Any) -> str:
     source_name = str(value or "").strip()
     if not source_name or "/" in source_name or "\\" in source_name:
-        return "qmt local exact-order lifecycle export"
+        return "broker local exact-order lifecycle export"
     return source_name[:128]
 
 

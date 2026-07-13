@@ -1,14 +1,14 @@
 # Read-Only Broker Connector Soak Runbook
 
-This runbook operates the v1.8 Stage 1 broker-connector soak. It reads only
-user-managed local QMT, PTrade, or generic JSON exports. It does not accept
+This runbook operates the v1.8 Stage 1 broker-connector soak. It reads only an
+explicitly configured broker-neutral local JSON export. It does not accept
 broker credentials and cannot submit or cancel orders, mutate OMS or the
 production ledger, or grant capital authority.
 
 ## Preconditions
 
-1. Configure an enabled `qmt_readonly_export`, `ptrade_readonly_export`, or
-   `local_json_readonly` connector with an account alias and local export path.
+1. Configure an enabled `local_export_readonly` connector with an account alias
+   and local export path. No connector is registered by default.
 2. Refresh the local export before each run. The export must contain a supported
    schema version, source timestamp, connector health, cash, positions, orders,
    and fills.
@@ -20,6 +20,9 @@ production ledger, or grant capital authority.
 
 Never place broker passwords, session tokens, private keys, or raw account ids
 in API requests, configuration notes, screenshots, or drill annotations.
+QMT, PTrade, local-file watchers, and other provider-specific adapters are not
+part of this runbook. They require a separate review and explicit user
+authorization; their names do not imply Karkinos support.
 
 ## Daily operating sequence
 

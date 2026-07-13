@@ -11,7 +11,7 @@ from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRejected,
     BrokerOrderLifecycleEvidenceRepository,
-    preview_qmt_order_lifecycle_export,
+    preview_broker_order_lifecycle_export,
 )
 
 NOW = datetime(2026, 7, 13, 4, 0, 0, tzinfo=UTC)
@@ -24,15 +24,15 @@ def _export(
     status: str = "partially_filled",
     filled_quantity: str = "40",
     cancelled_quantity: str = "0",
-    broker_order_id: str = "QMT-ORDER-1",
+    broker_order_id: str = "FIXTURE-ORDER-1",
     client_order_id: str = "KARK-client-order-1",
-    account_id: str = "private-qmt-account-001",
+    account_id: str = "private-fixture-account-001",
 ) -> dict:
     fills = []
     if filled_quantity != "0":
         fills.append(
             {
-                "broker_trade_id": "QMT-TRADE-1",
+                "broker_trade_id": "FIXTURE-TRADE-1",
                 "broker_order_id": broker_order_id,
                 "client_order_id": client_order_id,
                 "symbol": "600519",
@@ -47,10 +47,10 @@ def _export(
             }
         )
     return {
-        "schema_version": "karkinos.qmt_order_lifecycle_export.v1",
-        "provider": "qmt",
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "fixture_broker",
         "snapshot_kind": "exact_order_lifecycle",
-        "gateway_id": "qmt-controlled-write-1",
+        "gateway_id": "fixture-controlled-gateway-1",
         "account_id": account_id,
         "account_alias": "main-cn-account",
         "captured_at": captured_at.isoformat(),
@@ -75,9 +75,9 @@ def _export(
 
 
 def _preview(payload: dict) -> dict:
-    return preview_qmt_order_lifecycle_export(
+    return preview_broker_order_lifecycle_export(
         json.dumps(payload),
-        source_name="sanitized qmt lifecycle export",
+        source_name="sanitized fixture lifecycle export",
         clock=lambda: NOW,
     )
 
@@ -96,9 +96,9 @@ def test_partial_fill_is_persisted_and_resolved_by_both_order_ids(tmp_path) -> N
 
     recorded = _record(repository, preview)
     resolved = repository.resolve_order(
-        gateway_id="qmt-controlled-write-1",
+        gateway_id="fixture-controlled-gateway-1",
         account_alias="main-cn-account",
-        broker_order_id="QMT-ORDER-1",
+        broker_order_id="FIXTURE-ORDER-1",
         client_order_id="KARK-client-order-1",
     )
 
@@ -118,8 +118,8 @@ def test_partial_fill_is_persisted_and_resolved_by_both_order_ids(tmp_path) -> N
         account_ref_hash = conn.execute(
             "SELECT account_ref_hash FROM broker_order_lifecycle_observations"
         ).fetchone()[0]
-    assert account_ref_hash != "private-qmt-account-001"
-    assert "private-qmt-account-001" not in db_path.read_bytes().decode(
+    assert account_ref_hash != "private-fixture-account-001"
+    assert "private-fixture-account-001" not in db_path.read_bytes().decode(
         "utf-8", errors="ignore"
     )
 
@@ -142,9 +142,9 @@ def test_exact_retry_reuses_and_partial_cancel_remains_non_authoritative(
     )
     cancelled = _record(repository, cancelled_preview)
     resolved = repository.resolve_order(
-        gateway_id="qmt-controlled-write-1",
+        gateway_id="fixture-controlled-gateway-1",
         account_alias="main-cn-account",
-        broker_order_id="QMT-ORDER-1",
+        broker_order_id="FIXTURE-ORDER-1",
         client_order_id="KARK-client-order-1",
     )
 
@@ -185,20 +185,20 @@ def test_transaction_blocks_sequence_conflict_and_order_identity_drift(
         ),
     )
     resolved = repository.resolve_order(
-        gateway_id="qmt-controlled-write-1",
+        gateway_id="fixture-controlled-gateway-1",
         account_alias="main-cn-account",
-        broker_order_id="QMT-ORDER-1",
+        broker_order_id="FIXTURE-ORDER-1",
         client_order_id="KARK-client-order-1",
     )
 
     assert sequence_conflict["validation_status"] == "blocked"
-    assert "qmt_order_lifecycle_source_sequence_evidence_conflict" in (
+    assert "broker_order_lifecycle_source_sequence_evidence_conflict" in (
         sequence_conflict["blockers"]
     )
     assert identity_drift["validation_status"] == "blocked"
-    assert "qmt_order_lifecycle_order_identity_drift" in identity_drift["blockers"]
+    assert "broker_order_lifecycle_order_identity_drift" in identity_drift["blockers"]
     assert resolved["status"] == "blocked"
-    assert "qmt_order_lifecycle_order_identity_drift" in resolved["blockers"]
+    assert "broker_order_lifecycle_order_identity_drift" in resolved["blockers"]
 
 
 def test_transaction_blocks_order_contract_drift_for_same_identities(tmp_path) -> None:
@@ -214,8 +214,31 @@ def test_transaction_blocks_order_contract_drift_for_same_identities(tmp_path) -
     recorded = _record(repository, _preview(changed))
 
     assert recorded["validation_status"] == "blocked"
-    assert "qmt_order_lifecycle_order_contract_drift" in recorded["blockers"]
+    assert "broker_order_lifecycle_order_contract_drift" in recorded["blockers"]
     assert recorded["does_not_release_submission_interlock"] is True
+
+
+def test_transaction_blocks_provider_change_for_same_gateway_scope(tmp_path) -> None:
+    repository = BrokerOrderLifecycleEvidenceRepository(tmp_path / "lifecycle.db")
+    _record(repository, _preview(_export()))
+    changed = _export(
+        source_sequence=11,
+        captured_at=NOW + timedelta(seconds=1),
+    )
+    changed["provider"] = "different_fixture_provider"
+
+    recorded = _record(repository, _preview(changed))
+    resolved = repository.resolve_order(
+        gateway_id="fixture-controlled-gateway-1",
+        account_alias="main-cn-account",
+        broker_order_id="FIXTURE-ORDER-1",
+        client_order_id="KARK-client-order-1",
+    )
+
+    assert recorded["validation_status"] == "blocked"
+    assert "broker_order_lifecycle_provider_changed" in recorded["blockers"]
+    assert resolved["status"] == "blocked"
+    assert resolved["provider_contacted"] is False
 
 
 def test_preview_blocks_credentials_and_inconsistent_fill_totals() -> None:
@@ -227,11 +250,11 @@ def test_preview_blocks_credentials_and_inconsistent_fill_totals() -> None:
     mismatch_preview = _preview(mismatch_payload)
 
     assert credential_preview["validation_status"] == "blocked"
-    assert "qmt_order_lifecycle_credentials_not_allowed" in (
+    assert "broker_order_lifecycle_credentials_not_allowed" in (
         credential_preview["blockers"]
     )
     assert mismatch_preview["validation_status"] == "blocked"
-    assert "qmt_order_lifecycle_fill_sum_mismatch" in mismatch_preview["blockers"]
+    assert "broker_order_lifecycle_fill_sum_mismatch" in mismatch_preview["blockers"]
     assert mismatch_preview["provider_contacted"] is False
     assert mismatch_preview["broker_submission_enabled"] is False
 
@@ -241,9 +264,9 @@ def test_read_only_resolution_does_not_create_unconfigured_database(tmp_path) ->
     repository = BrokerOrderLifecycleEvidenceRepository(db_path, ensure_schema=False)
 
     resolved = repository.resolve_order(
-        gateway_id="qmt-controlled-write-1",
+        gateway_id="fixture-controlled-gateway-1",
         account_alias="main-cn-account",
-        broker_order_id="QMT-ORDER-1",
+        broker_order_id="FIXTURE-ORDER-1",
         client_order_id="KARK-client-order-1",
     )
 
@@ -255,9 +278,9 @@ def test_read_only_resolution_does_not_create_unconfigured_database(tmp_path) ->
 def test_record_rejects_in_memory_preview_drift_and_sanitizes_local_path(
     tmp_path,
 ) -> None:
-    preview = preview_qmt_order_lifecycle_export(
+    preview = preview_broker_order_lifecycle_export(
         json.dumps(_export()),
-        source_name="/private/operator/qmt-export.json",
+        source_name="/private/operator/broker-export.json",
         clock=lambda: NOW,
     )
     drifted = deepcopy(preview)
@@ -267,8 +290,8 @@ def test_record_rejects_in_memory_preview_drift_and_sanitizes_local_path(
     with pytest.raises(BrokerOrderLifecycleEvidenceRejected) as exc_info:
         _record(repository, drifted)
 
-    assert "qmt_order_lifecycle_preview_fingerprint_drift" in (
+    assert "broker_order_lifecycle_preview_fingerprint_drift" in (
         exc_info.value.evidence["blockers"]
     )
-    assert preview["source_name"] == "qmt local exact-order lifecycle export"
+    assert preview["source_name"] == "broker local exact-order lifecycle export"
     assert repository.list_observations() == []

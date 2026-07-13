@@ -72,29 +72,7 @@
             "broker_regulatory_fees_assumed_absorbed"
         ]
     },
-    "broker_connectors": [
-        {
-            "connector_id": "local-qmt-readonly",
-            "connector_type": "qmt_readonly",
-            "enabled": false,
-            "client_path": "",
-            "account_alias": ""
-        },
-        {
-            "connector_id": "local-qmt-export-readonly",
-            "connector_type": "qmt_readonly_export",
-            "enabled": false,
-            "client_path": "data/private/qmt-broker-snapshot.example.json",
-            "account_alias": "qmt-local-review"
-        },
-        {
-            "connector_id": "local-ptrade-export-readonly",
-            "connector_type": "ptrade_readonly_export",
-            "enabled": false,
-            "client_path": "data/private/ptrade-broker-snapshot.example.json",
-            "account_alias": "ptrade-local-review"
-        }
-    ],
+    "broker_connectors": [],
     "controlled_bridge_policy": {
         "policy_id": "default-controlled-bridge-disabled",
         "enabled": false,

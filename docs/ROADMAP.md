@@ -91,15 +91,15 @@ account truth, paper/shadow, monitoring, and audit all agree.
 | Strategy research and validation | Backtests, sweeps, research evidence bundles, after-cost/OOS evidence, and promotion readiness exist. | Promotion decisions must continue to consume account truth, risk, attribution, and paper/shadow evidence before strategy candidates are treated as operational. | v0.4-v1.0, ongoing |
 | Daily decision and trading plan | Decision APIs, candidate pool, blockers, batch pre-trade risk, daily trading plan, order intents, Today's to-dos, and automatic paper/shadow handoff exist. | Continue requiring public explanations for every blocked/manual-ready state and keep order intents non-submitting. | v1.5-v1.6, ongoing |
 | Paper/shadow execution | Persisted daily runs include deterministic inputs, simulated order/fill state, fees/taxes, divergence, retry/idempotency, and review outcomes. | Keep evidence fresh and require divergence review before any later live-like authority. | v1.6.1, ongoing |
-| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported QMT open/partial/cancel/full lifecycle facts without mutating OMS. | A real collector still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.15, future L4 |
-| Broker execution gateway | Manual-ticket/read-only evidence remains available; one-shot submit/query is injectable, the cross-order interlock is atomic, a separately signed clearance can consume one identity-linked validated full-fill import, and a local QMT normalized lifecycle evidence contract now fails closed on sequence/identity/quantity drift. Production registers no collector, write adapter, or release provider by default. | Implement and independently review a real QMT callback/poll collector plus the broker-specific write adapter/release source before an explicit pilot; the local JSON adapter is evidence plumbing, not production connectivity. | v1.7, Stage 3.12-3.15, future L4 |
+| OMS state machine | Paper/shadow lifecycle states plus one-shot submission evidence, deterministic client order ids, atomic intent persistence, controlled-intent reconciliation, and signed exact-full-fill `submitted -> accepted -> filled` clearance now exist. Stage 3.15 also projects explicitly imported broker-neutral open/partial/cancel/full lifecycle facts without mutating OMS. | Any reviewed real adapter still needs broker-order-linked callback/poll evidence and operational soak; partial/cancel facts cannot clear, and ledger application remains separate. | v1.6.1, Stage 3.12-3.16, future L4 |
+| Broker execution gateway | Manual-ticket/read-only evidence remains available; one-shot submit/query is injectable, the cross-order interlock is atomic, a separately signed clearance can consume one identity-linked validated full-fill import, and the generic lifecycle/collector contracts fail closed on sequence, identity, deployment, and quantity drift. Production registers no collector, provider adapter, write adapter, or release provider by default. | Independently review an explicitly user-authorized provider adapter and its operational soak before any broker-specific write adapter/release source or pilot. Generic local JSON is evidence plumbing, not production connectivity or provider support. | v1.7, Stage 3.12-3.16, future L4 |
 | Order ticket export | Copy-safe ticket export, operator forms, manual-execution preview/evidence, and explicit links to broker-statement import and execution reconciliation exist. | Validate operator ergonomics with local workflows before considering any broker-write capability. | v1.7, ongoing |
 | Account truth and broker reconciliation | CSV import, staged broker evidence, account reconciliation, execution reconciliation, and manual-versus-broker price/cost/net comparison exist without automatic ledger mutation. | Future automation must require fresh account truth and block stale, mismatched, or unresolved execution evidence. | v0.6-v0.7, v1.7, ongoing |
 | Risk controls | Mandatory pre-trade risk gate, batch risk checks, cash buffer, concentration, T+1, data-quality, and kill-switch concepts exist. | Live-like execution must enforce global, strategy, account, and per-symbol controls with policy snapshots, escalation notes, and irreversible audit logs. | v1.5-v1.7 |
 | Scheduler and runbook | Operations summary, persistent scheduler records, deterministic rerun keys, input snapshots, errors, retries, limitations, and operator review state exist. | Continue operational soak and preserve idempotency as scheduled workflows expand. | v1.6, ongoing |
 | Monitoring and alerting | Risk/operations surfaces show status and next actions; automation alerts cover kill switch, execution-reconciliation gaps, failed paper/shadow automation runs with retry/limitation context, incomplete read-only broker connector health, runtime-degraded connector snapshots, daily-plan risk blockers, stale market-data snapshots, Account Truth mismatch snapshots, and paper/shadow order divergence; paper/shadow divergence summaries now compare expected strategy behavior, simulated execution, account truth, market context, and cost evidence. | Wire future real read-only connector polling into the same alert contract and keep refining operator-facing divergence review surfaces. | v1.6-v1.7 |
 | Strategy promotion pipeline | Research/paper lifecycle, readiness evidence, audit-only pause/retire states, and default rejection of controlled-bridge pilot promotion exist. | A future L4/L5 pilot must add explicit enablement without allowing promotion evidence to authorize execution by itself. | v1.6-v1.7, future L4-L5 |
-| Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic budgets, token-authenticated sessions, live gates, pause/replacement, evidence-based scale review, a one-order submit boundary, a cross-order interlock, signed full-fill clearance, and persisted QMT lifecycle evidence that can only narrow or re-block authority. | Supply a reviewed real collector/adapter/release source, prove partial-fill/cancel/reconciliation and ledger runbooks, then run an explicitly approved bounded pilot. Initial exposure is deliberately constrained; later scale remains evidence-reviewed. | v1.8, Stage 3.12-3.15 |
+| Capital-bounded controlled execution | The control plane includes signed expiring authority, atomic budgets, token-authenticated sessions, live gates, pause/replacement, evidence-based scale review, a one-order submit boundary, a cross-order interlock, signed full-fill clearance, and persisted broker-neutral lifecycle evidence that can only narrow or re-block authority. | Supply a reviewed real adapter/release source, prove partial-fill/cancel/reconciliation and ledger runbooks, then run an explicitly approved bounded pilot. Initial exposure is deliberately constrained; later scale remains evidence-reviewed. | v1.8, Stage 3.12-3.16 |
 | Unattended full-account automation | Not supported. | Keep permanently authorized, unsupervised execution outside the product target. | Non-goal |
 
 ## Controlled Automation Architecture
@@ -557,11 +557,10 @@ v0.8 answers:
 
 ## Professional Quant Platform Track
 
-The post-v0.8 roadmap moves Karkinos toward a QMT/PTrade-class personal
-quant platform while preserving the Karkinos safety boundary. QMT is a useful
-reference for broker facts, account snapshots, order/fill state, and local
-client integration. PTrade is a useful reference for strategy lifecycle,
-strategy context, and backtest/simulation/live-like API ergonomics.
+The post-v0.8 roadmap moves Karkinos toward a professional personal quant
+platform while preserving the Karkinos safety boundary. External broker and
+strategy platforms may inform requirements, but none is a core dependency,
+default route, registered adapter, or support claim.
 
 Karkinos should not copy either product. It should combine those professional
 platform patterns with local account truth, reproducible research evidence,
@@ -724,8 +723,9 @@ import or read without introducing broker order submission.
 
 * A broker connector interface for read-only account snapshots, cash,
   positions, orders, fills, and connector health.
-* QMT read-only connector exploration as the first China-market broker client
-  reference.
+* A broker-neutral read-only connector contract exercised with deterministic
+  local fixtures; any real broker adapter requires separate review and user
+  authorization.
 * Local ignored configuration for connector paths and account aliases, with no
   broker password storage.
 * Broker evidence persistence and reconciliation against Karkinos ledger,
@@ -1324,7 +1324,7 @@ issue capital authority.
 
 ### Stage 1 Read-Only Broker Soak Foundation
 
-* [x] QMT, PTrade, and generic local read-only exports can be captured as
+* [x] Explicitly configured generic local read-only exports can be captured as
   sanitized cash, position, order, fill, health, capability, and source-time
   evidence without storing or returning raw account ids.
 * [x] Each observation has deterministic snapshot and observation fingerprints,
@@ -1858,14 +1858,14 @@ issue capital authority.
   clearance, broker cancel, automatic ledger sync, session widening, or capital
   increase action.
 
-### Stage 3.15 QMT Exact-Order Lifecycle Evidence Foundation
+### Stage 3.15 Broker-Neutral Exact-Order Lifecycle Evidence Foundation
 
-* [x] A strict normalized `karkinos.qmt_order_lifecycle_export.v1` contract
+* [x] A strict normalized `karkinos.broker_order_lifecycle_export.v1` contract
   accepts one `exact_order_lifecycle` snapshot for one exact broker/client order
-  identity. It records QMT as the provider but never contacts a QMT client.
-* [x] `scripts/import_qmt_order_lifecycle.py` is preview-only by default.
+  identity. `provider` records provenance but never selects or contacts an adapter.
+* [x] `scripts/import_broker_order_lifecycle.py` is preview-only by default.
   Persistence requires `--record` and the exact acknowledgement
-  `record_qmt_order_lifecycle_evidence_without_execution_authority`; source
+  `record_broker_order_lifecycle_evidence_without_execution_authority`; source
   paths and raw account ids are not persisted.
 * [x] The parser rejects credential/unknown fields, non-UTF-8 or oversized
   input, stale/future/non-timezone timestamps, unsafe ids, invalid status or
@@ -1896,10 +1896,32 @@ issue capital authority.
   fill evidence separation, signed-clearance race rejection, post-clearance
   re-blocking, next-order transaction rejection, and zero OMS/ledger/cancel
   side effects.
-* [ ] Before a pilot, implement and independently review the actual QMT
-  callback/poll collector, prove reconnect/restart/duplicate/out-of-order
-  behavior in operational soak, bind its deployment identity and release
-  source, and retain default-unregistered broker-write authority.
+* [x] The retired `karkinos.qmt_order_lifecycle_export.v1` schema is isolated
+  behind `scripts/migrate_legacy_qmt_order_lifecycle.py`; the canonical importer
+  rejects it and no existing historical row is silently rewritten.
+
+### Stage 3.16 Broker-Neutral Collector Ingestion Boundary
+
+* [x] A strict `karkinos.broker_order_lifecycle_collector_batch.v1` contract
+  binds run/deployment/version/release/user-authorization evidence, provider and
+  account scope, connection/batch state, cursor transition, callback telemetry,
+  and exactly one canonical lifecycle fact for a complete batch.
+* [x] The local CLI is preview-only by default and explicitly started by the
+  operator. Callback/poll/replay/fixture are evidence labels only; no broker SDK,
+  provider connection, scheduler, or auto-start registration exists.
+* [x] Two-phase prepare/commit persists the sanitized lifecycle observation
+  before cursor advance. Deterministic fixtures cover restart replay, exact
+  idempotency, different-run duplicates, cursor conflicts/regression/gaps,
+  deployment drift, duplicate/out-of-order callback telemetry, disconnect, and
+  partial batches.
+* [x] Collector evidence cannot submit/cancel, call strategy code, modify OMS,
+  fills, production ledger, risk, kill switch, capital authority, or interlock
+  release. Read paths do not create absent databases.
+* [ ] Before any real-provider soak, separately review the chosen edge adapter's
+  dependencies, credentials, read-only capabilities, deployment/release/rollback,
+  recovery semantics, and user authorization. QMT, PTrade, local-file watchers,
+  and other adapters remain replaceable and default-unregistered; none is an
+  official support claim.
 
 ### Stage 4 Evidence-Based Capital Scaling Review Foundation
 

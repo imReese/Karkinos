@@ -102,7 +102,7 @@ class BrokerConnectorConfig:
     """Read-only broker connector runtime config stored only in local config."""
 
     connector_id: str
-    connector_type: str = "qmt_readonly"
+    connector_type: str = "local_export_readonly"
     enabled: bool = False
     client_path: str = ""
     account_alias: str = ""
@@ -304,9 +304,9 @@ def _parse_broker_connector_configs(value: object) -> list[BrokerConnectorConfig
             BrokerConnectorConfig(
                 connector_id=connector_id,
                 connector_type=str(
-                    raw_entry.get("connector_type", "qmt_readonly")
+                    raw_entry.get("connector_type", "local_export_readonly")
                 ).strip()
-                or "qmt_readonly",
+                or "local_export_readonly",
                 enabled=enabled,
                 client_path=str(raw_entry.get("client_path", "")).strip(),
                 account_alias=str(raw_entry.get("account_alias", "")).strip(),

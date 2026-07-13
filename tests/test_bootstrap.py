@@ -212,10 +212,10 @@ def test_server_config_loads_local_read_only_broker_connector_config(tmp_path):
             {
                 "broker_connectors": [
                     {
-                        "connector_id": "local-qmt-readonly",
-                        "connector_type": "qmt_readonly",
+                        "connector_id": "local-fixture-readonly",
+                        "connector_type": "local_export_readonly",
                         "enabled": True,
-                        "client_path": "/Applications/QMT",
+                        "client_path": "data/private/broker-snapshot.json",
                         "account_alias": "local-review",
                     }
                 ]
@@ -227,10 +227,10 @@ def test_server_config_loads_local_read_only_broker_connector_config(tmp_path):
 
     assert config.broker_connectors == [
         BrokerConnectorConfig(
-            connector_id="local-qmt-readonly",
-            connector_type="qmt_readonly",
+            connector_id="local-fixture-readonly",
+            connector_type="local_export_readonly",
             enabled=True,
-            client_path="/Applications/QMT",
+            client_path="data/private/broker-snapshot.json",
             account_alias="local-review",
         )
     ]
@@ -243,9 +243,9 @@ def test_server_config_rejects_broker_connector_credential_fields(tmp_path):
             {
                 "broker_connectors": [
                     {
-                        "connector_id": "local-qmt-readonly",
-                        "connector_type": "qmt_readonly",
-                        "client_path": "/Applications/QMT",
+                        "connector_id": "local-fixture-readonly",
+                        "connector_type": "local_export_readonly",
+                        "client_path": "data/private/broker-snapshot.json",
                         "account_alias": "local-review",
                         "broker_password": "do-not-store",
                     }
@@ -265,7 +265,7 @@ def test_server_config_rejects_non_boolean_broker_connector_enabled(tmp_path):
             {
                 "broker_connectors": [
                     {
-                        "connector_id": "local-qmt-readonly",
+                        "connector_id": "local-fixture-readonly",
                         "enabled": "false",
                     }
                 ]
@@ -697,29 +697,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     example = json.loads(Path("config.example.json").read_text(encoding="utf-8"))
 
     assert "config.json" in gitignore
-    assert example["broker_connectors"] == [
-        {
-            "connector_id": "local-qmt-readonly",
-            "connector_type": "qmt_readonly",
-            "enabled": False,
-            "client_path": "",
-            "account_alias": "",
-        },
-        {
-            "connector_id": "local-qmt-export-readonly",
-            "connector_type": "qmt_readonly_export",
-            "enabled": False,
-            "client_path": "data/private/qmt-broker-snapshot.example.json",
-            "account_alias": "qmt-local-review",
-        },
-        {
-            "connector_id": "local-ptrade-export-readonly",
-            "connector_type": "ptrade_readonly_export",
-            "enabled": False,
-            "client_path": "data/private/ptrade-broker-snapshot.example.json",
-            "account_alias": "ptrade-local-review",
-        },
-    ]
+    assert example["broker_connectors"] == []
     assert example["controlled_bridge_policy"] == {
         "policy_id": "default-controlled-bridge-disabled",
         "enabled": False,

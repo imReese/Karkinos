@@ -3232,8 +3232,8 @@ def build_broker_connector_soak_foundation_acceptance_audit() -> AcceptanceAudit
             AcceptanceCriterion(
                 key="sanitized_local_broker_export_capture",
                 checkbox_text=(
-                    "* [x] QMT, PTrade, and generic local read-only exports can "
-                    "be captured as sanitized cash, position, order, fill, "
+                    "* [x] Explicitly configured generic local read-only exports "
+                    "can be captured as sanitized cash, position, order, fill, "
                     "health, capability, and source-time evidence without "
                     "storing or returning raw account ids."
                 ),
@@ -3245,7 +3245,7 @@ def build_broker_connector_soak_foundation_acceptance_audit() -> AcceptanceAudit
                     "docs/config-reference.zh.md",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/server/test_broker_connector_soak_routes.py -k local_broker_exports -q",
+                    "uv run pytest tests/server/test_broker_connector_soak_routes.py -k local_broker_export -q",
                 ),
             ),
             AcceptanceCriterion(

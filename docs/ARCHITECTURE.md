@@ -203,7 +203,7 @@ Trading-related changes cover the relevant cases below:
 
 ### Research and Strategy Runtime
 
-Karkinos learns from PTrade-style strategy ergonomics through lifecycle hooks,
+Karkinos learns from external strategy-platform ergonomics through lifecycle hooks,
 strategy context, parameter schemas, and one strategy API that can be reused
 across backtest, replay, paper, and shadow modes.
 
@@ -663,12 +663,13 @@ facts, never broker-write authority; a real adapter must still supply
 broker-order-linked callback/poll partial-fill and cancel evidence before a
 pilot.
 
-Stage 3.15 introduces a QMT-specific normalized order-lifecycle **evidence
-adapter**, while deliberately leaving broker connectivity outside Karkinos.
+Stage 3.15 introduces the canonical broker-neutral order-lifecycle **evidence
+contract**, while deliberately leaving broker connectivity outside Karkinos.
 The input is one UTF-8 JSON `exact_order_lifecycle` snapshot for one exact pair
-of broker/client order ids. Preview is pure and default; the only write command
-requires `--record` and the exact non-authority acknowledgement. No query or
-reconciliation path opens the source file, calls QMT, or refreshes facts.
+of broker/client order ids. `provider` identifies provenance; it does not select
+or load an adapter. Preview is pure and default; the only write command requires
+`--record` and the exact non-authority acknowledgement. No query or
+reconciliation path opens the source file, calls a broker, or refreshes facts.
 Instead an explicit ingestion transaction persists a hashed account reference,
 sanitized provenance, file/evidence fingerprints, account-scope source
 sequence, capture time, the normalized order, and exact fill rows. It validates
@@ -689,9 +690,32 @@ the same SQLite writer lock. Therefore an observation committed before a
 clearance rejects that clearance when it is partial/cancelled/conflicting; an
 observation committed after a prior clearance turns reconciliation back to an
 open mismatch and makes that old intent unresolved for both preview and the
-serialized next-order gate. This is fail-closed evidence ingestion, not a QMT
-callback/poll collector, broker cancel implementation, production adapter,
-release source, or capital authorization.
+serialized next-order gate.
+
+Stage 3.16 adds a separate broker-neutral collector-ingestion boundary around
+that contract. A collector run is accepted only through an explicit local
+command and binds a deployment fingerprint, reviewed release reference,
+user-authorization reference, provider/account scope, connection and batch
+status, cursor transition, callback counters, and exactly one normalized
+lifecycle fact for a complete batch. Preparing a run persists the sanitized
+lifecycle observation first; committing the run then advances the cursor in a
+serialized transaction. A restart repeats the same prepared observation and
+run id, an exact retry is idempotent, a different run with the same evidence is
+marked duplicate, and cursor reuse, gaps, regressions, deployment drift,
+disconnects, and partial batches fail closed without cursor advance. Callback
+and poll are evidence labels only: the boundary never opens a socket, imports
+a broker SDK, or polls a provider. Tests use deterministic local fixtures.
+
+Neither Stage 3.15 nor Stage 3.16 registers an edge adapter by default. QMT,
+PTrade, local-file watchers, and other third-party integrations may implement
+the batch contract only after a separate dependency, credential, capability,
+failure-mode, release, and user-authorization review. Their existence does not
+mean Karkinos depends on or officially supports them. Collector ingestion is
+read-only evidence: it cannot submit/cancel, call strategy code, modify OMS or
+fills, write the production ledger, change risk/kill-switch state, issue
+capital authority, or release the interlock. The retired QMT v1 JSON schema is
+accepted only by the explicit offline migration command; it is not canonical
+and is rejected by the normal importer.
 
 The Stage 2.1/3.1 batch manifest accepts only a unique non-paper terminal OMS
 order set bound to one explicit reconciliation run. Every selected order must
