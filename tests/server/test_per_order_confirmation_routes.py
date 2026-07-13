@@ -12,6 +12,7 @@ from server.services.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PerOrderConfirmationRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 
 class FakePerOrderConfirmationService:
@@ -275,7 +276,7 @@ def test_per_order_confirmation_preview_missing_order_returns_not_found(
 
 def test_create_app_registers_per_order_confirmation_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/controlled-bridge/status" in paths
     assert (

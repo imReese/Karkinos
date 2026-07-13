@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import server.routes.controlled_broker_submission as route_module
 from server.app import create_app
 from server.routes.controlled_broker_submission import create_router
+from tests.route_assertions import registered_app_routes
 
 
 class FakeControlledBrokerSubmissionService:
@@ -256,7 +257,7 @@ def test_route_service_is_default_closed_without_injected_release_provider(
 def test_create_app_registers_controlled_submission_without_strategy_endpoint() -> None:
     app = create_app({"live_auto_start": False})
     methods_by_path: dict[str, set[str]] = {}
-    for route in app.routes:
+    for route in registered_app_routes(app):
         if route.path.startswith("/api/automation/controlled-broker-submission"):
             methods_by_path.setdefault(route.path, set()).update(route.methods or set())
 

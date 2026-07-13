@@ -21,6 +21,7 @@ from server.routes.broker_connector_soak import create_router
 from server.services.broker_connector_soak_runbook import (
     BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
 )
+from tests.route_assertions import registered_app_routes
 
 
 def _connector(now: datetime) -> FakeReadOnlyBrokerConnector:
@@ -139,7 +140,7 @@ def test_runbook_routes_reject_credentials_and_invalid_scenarios(
 
 def test_create_app_registers_broker_soak_runbook_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/broker-soak/runs" in paths
     assert "/api/automation/broker-soak/drills" in paths

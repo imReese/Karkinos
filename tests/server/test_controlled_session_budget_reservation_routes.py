@@ -12,6 +12,7 @@ from server.services.controlled_session_budget_reservation import (
     CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
     ControlledSessionBudgetReservationRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 
 class FakeControlledSessionBudgetReservationService:
@@ -158,7 +159,7 @@ def test_route_service_wires_current_controlled_session_resolver(monkeypatch) ->
 
 def test_create_app_registers_controlled_session_budget_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/controlled-sessions/budget-reservations/status" in paths
     assert "/api/automation/controlled-sessions/budget-reservations/preview" in paths

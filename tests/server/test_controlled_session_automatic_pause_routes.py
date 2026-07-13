@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import server.routes.controlled_session_automatic_pause as route_module
 from server.app import create_app
 from server.routes.controlled_session_automatic_pause import create_router
+from tests.route_assertions import registered_app_routes
 
 
 class FakeAutomaticPauseService:
@@ -119,7 +120,7 @@ def test_create_app_registers_pause_visibility_and_authenticated_evaluation() ->
     app = create_app({"live_auto_start": False})
     methods_by_path = {
         route.path: set(route.methods or set())
-        for route in app.routes
+        for route in registered_app_routes(app)
         if route.path.startswith("/api/automation/controlled-sessions/automatic-pause")
     }
 

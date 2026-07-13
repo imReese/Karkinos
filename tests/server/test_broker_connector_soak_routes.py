@@ -26,6 +26,7 @@ from server.services.broker_connector_soak_promotion import (
     BROKER_SOAK_PROMOTION_ACKNOWLEDGEMENT,
     BrokerConnectorSoakPromotionRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 
 class FakeBrokerConnectorSoakPromotionService:
@@ -318,7 +319,7 @@ def test_broker_soak_promotion_routes_fail_closed_on_stale_or_credential_input(
 
 def test_create_app_registers_broker_soak_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/broker-soak/status" in paths
     assert "/api/automation/broker-soak/observations" in paths

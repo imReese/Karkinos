@@ -11,6 +11,7 @@ from server.services.capital_scaling_review_audit import (
     CAPITAL_SCALING_REVIEW_ACKNOWLEDGEMENT,
     CapitalScalingReviewDecisionRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 
@@ -386,7 +387,7 @@ def test_capital_scaling_evidence_route_maps_invalid_window_to_validation_error(
 
 def test_create_app_registers_capital_scaling_review_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/capital-scaling/status" in paths
     assert "/api/automation/capital-scaling/reviews/preview" in paths

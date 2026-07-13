@@ -13,6 +13,7 @@ from server.services.controlled_session_envelope import (
     CONTROLLED_SESSION_ACKNOWLEDGEMENT,
     ControlledSessionAttestationRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 
@@ -267,7 +268,7 @@ def test_controlled_session_preview_request_rejects_empty_order_set(
 
 def test_create_app_registers_controlled_session_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/controlled-sessions/status" in paths
     assert "/api/automation/controlled-sessions/envelopes/preview" in paths

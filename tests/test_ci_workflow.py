@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -25,13 +26,15 @@ def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
 def test_ci_uses_node24_compatible_github_actions() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text()
 
-    assert "actions/checkout@v6" in workflow
-    assert "actions/setup-python@v6" in workflow
-    assert "actions/setup-node@v6" in workflow
+    action_refs = re.findall(r"uses:\s+([^\s#]+)", workflow)
+    assert action_refs
+    assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in action_refs)
+    assert "# v7.0.0" in workflow
+    assert "# v6.3.0" in workflow
+    assert "# v6.4.0" in workflow
+    assert "# v7.0.1" in workflow
+    assert "# v8.0.1" in workflow
     assert 'node-version: "24"' in workflow
-    assert "actions/checkout@v4" not in workflow
-    assert "actions/setup-python@v5" not in workflow
-    assert "actions/setup-node@v4" not in workflow
 
 
 def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:

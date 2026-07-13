@@ -19,6 +19,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
+    "pip-audit==2.10.1",
     "pre-commit>=4.0",
     "isort>=6.0",
     "black>=25.1",
@@ -61,6 +62,7 @@ markers = [
 dev-dependencies = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
+    "pip-audit==2.10.1",
     "pre-commit>=4.0",
     "isort>=6.0",
     "black>=25.1",
@@ -77,3 +79,26 @@ known_first_party = ["core", "domain", "data", "strategy", "execution", "risk", 
 [tool.black]
 line-length = 88
 target-version = ["py312"]
+
+[tool.coverage.run]
+source = [
+    "core",
+    "domain",
+    "data",
+    "strategy",
+    "execution",
+    "risk",
+    "backtest",
+    "analytics",
+    "account_truth",
+    "notification",
+    "server",
+]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[tool.coverage.xml]
+output = "reports/ci/coverage.xml"

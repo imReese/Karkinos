@@ -12,6 +12,7 @@ from server.services.session_start_account_truth import (
     SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     SessionStartAccountTruthRejected,
 )
+from tests.route_assertions import registered_app_routes
 
 
 class FakeSessionStartAccountTruthService:
@@ -201,7 +202,7 @@ def test_session_start_account_truth_route_service_wires_current_source(
 
 def test_create_app_registers_session_start_account_truth_routes() -> None:
     app = create_app({"live_auto_start": False})
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in registered_app_routes(app)}
 
     assert "/api/automation/session-start-account-truth/status" in paths
     assert "/api/automation/session-start-account-truth/preview" in paths
