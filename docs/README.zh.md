@@ -1105,8 +1105,11 @@ review 证据。它不会自动晋级策略，也不会改变执行默认值。
 
 ### Dockerfile（多阶段构建）
 
-- **Stage 1**（`node:20-alpine`）：构建 React 前端，`npm ci && npm run build`，输出到 `web/dist/`
-- **Stage 2**（`python:3.12-slim`）：复制源码与前端产物，安装服务端依赖，设置 `KARKINOS_CONFIG_PATH=/app/config.json` 和 `KARKINOS_DATA_DIR=/app/data/store`，并以 `python -m server` 启动
+- 项目的 canonical Node.js 运行时为 **Node 24 LTS**；`.nvmrc`、严格 npm
+  engine、CI 和 Docker 构建阶段均以 24.x 为准。
+- **Stage 1**（`node:24-alpine`）：构建 React 前端，运行
+  `npm ci && npm run build`，输出到 `web/dist/`
+- **Stage 2**（`python:3.14-slim`）：复制源码与前端产物，安装服务端依赖，设置 `KARKINOS_CONFIG_PATH=/app/config.json` 和 `KARKINOS_DATA_DIR=/app/data/store`，并以 `python -m server` 启动
 
 ### docker-compose.yml
 

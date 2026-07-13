@@ -1121,8 +1121,11 @@ Streams EventBus events in real-time after connection. Each message includes an 
 
 ### Dockerfile (Multi-Stage Build)
 
-- **Stage 1** (`node:20-alpine`): Builds React frontend with `npm ci && npm run build`, output to `web/dist/`
-- **Stage 2** (`python:3.12-slim`): Copies source + frontend dist, installs server dependencies, sets `KARKINOS_CONFIG_PATH=/app/config.json` and `KARKINOS_DATA_DIR=/app/data/store`, then starts with `python -m server`
+- The project's canonical Node.js runtime is **Node 24 LTS**; `.nvmrc`, the
+  strict npm engine, CI, and the Docker build stage all target 24.x.
+- **Stage 1** (`node:24-alpine`): Builds the React frontend with
+  `npm ci && npm run build`, output to `web/dist/`
+- **Stage 2** (`python:3.14-slim`): Copies source + frontend dist, installs server dependencies, sets `KARKINOS_CONFIG_PATH=/app/config.json` and `KARKINOS_DATA_DIR=/app/data/store`, then starts with `python -m server`
 
 ### docker-compose.yml
 
