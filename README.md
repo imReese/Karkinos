@@ -16,6 +16,11 @@ truth, risk control, signals, reconciliation, and review.
 策略不得直连券商；默认没有实盘提交权限，账户事实、风控、对账和 kill switch 始终先于
 任何执行能力。
 
+AI 原生化遵循同一原则：AI 可以围绕冻结的持久化证据进行多角色分析、工具读取、争论、
+报告和研究记忆，但 provider、model 与 agent role 相互解耦，模型输出不是账户事实、
+风控结论或交易权限。当前第一阶段只有 deterministic local fixture provider，没有真实
+模型调用、API Key、厂商绑定、后台 AI 任务或实盘入口。
+
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
 Strategic goal, architecture, roadmap, and implementation history live in
@@ -44,6 +49,11 @@ public demos and development.
 **Highlights**
 
 - Event-driven architecture with deterministic backtesting
+- AI-native research runtime foundation with provider/model/agent-role
+  separation, valuation-and-ledger-bound context, restartable workflows,
+  deny-by-default read-only tools, typed cited artifacts, and hash-chained audit
+  replay. Phase 1 uses only a deterministic local fixture provider and exposes
+  no model API, Web route, OMS action, or broker authority.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

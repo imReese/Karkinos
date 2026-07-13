@@ -35,6 +35,38 @@ paper/shadow、人工确认、对账和复盘。
 | v1.6 | 已完成 | Operations Center & Paper/Shadow Runbook |
 | v1.7 | 已完成 | Controlled Broker Bridge Foundation（非提交式） |
 | v1.8 | 规划进行中 | Capital-Bounded Controlled Execution（受控资本执行） |
+| AI 原生第一阶段 | 基础已实现 | 厂商中立、证据绑定的投研 workflow 运行基础 |
+
+## AI 原生投研主线
+
+这条主线用于增强问题拆解、证据收集、多角色争论、报告、人工复核和长期研究记忆，
+不替代 canonical 财务计算，也不建立第二条交易权限链。
+
+第一阶段“架构与运行基础”包括：
+
+* provider、model、agent role 分离注册，模型厂商不成为核心领域身份；
+* 有状态 workflow 绑定一个不可变 context，其中必须包含 valuation snapshot、
+  ledger cutoff/fingerprint 和持久化 evidence references；
+* claim、debate、report、不可执行的 trade-plan draft、review 和 memory artifact
+  使用带证据引用的领域契约；
+* 确定性 orchestrator 负责阶段顺序、重启检查点、幂等、重复运行、部分/失败状态、
+  证据漂移阻断和审计回放；
+* tool permission registry 默认拒绝，只允许已注册的持久化只读工具和纯计算工具，
+  OMS、账本、风险决策、kill switch、资本授权、券商和 provider 权限命名空间不可注册；
+* SQLite 审计存储只写 `ai_*` 注册、上下文、workflow、run、tool call、artifact
+  和哈希链事件表；
+* 唯一 provider 实现是本地 deterministic fixture，不调用真实模型、不联网、
+  不读取 API Key，也不绑定 DeepSeek 或其他厂商。
+
+本阶段的确定性验收覆盖重启、幂等、重复运行、阶段失败、部分结果、证据漂移、
+越权工具请求与审计重放，并验证 AI trade-plan draft 不会修改 OMS、账本、风控、
+kill switch、资本授权或券商 submit/cancel 状态。
+
+后续按独立审查逐步迁移：先接 canonical projection 的显式只读 adapter，再加入
+人工启动的任务与复核 UI，然后加入记忆失效/更新机制；真实 provider adapter 必须
+单独审查和用户授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
+既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill
+switch 门禁继续拥有唯一权威。
 
 ## 自动化成熟度
 

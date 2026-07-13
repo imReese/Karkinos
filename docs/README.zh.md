@@ -10,9 +10,18 @@ Karkinos 是一个面向中国市场的个人量化投研与交易平台。
 
 它是一个集回测、策略实验、账户事实、风控、信号、对账与复盘于一体的个人金融应用，采用事件驱动架构，以回测优先、日线为主的设计理念，支持 A 股、ETF、黄金现货、交易所债券等资产类型。
 
+Karkinos 的 AI 原生方向是建立“人提出问题、AI 围绕冻结证据协作、系统确定性审计、
+人复核结论”的投研闭环。provider、model 与 agent role 相互解耦；AI 上下文必须绑定
+持久化事实、valuation snapshot 和 ledger cutoff。AI 产物不是账户事实、风控决策、
+资本授权或券商指令。第一阶段只提供本地 deterministic fixture provider，不调用真实
+外部模型、不读取 API Key，也不默认绑定 DeepSeek 或其他厂商。
+
 核心特性：
 
 - **事件驱动架构** — 所有组件通过 EventBus 解耦通信，保证回测确定性
+- **AI 原生投研运行基础** — 提供 provider/model/agent-role 分离注册、证据绑定的
+  有状态 workflow、默认拒绝的只读工具权限、claim/debate/report/trade-plan draft/
+  review/memory artifact 和哈希链审计回放；当前不注册真实 provider、不提供交易权限
 - **多资产支持** — A 股、ETF、黄金现货、交易所债券，Instrument 字段值承载差异
 - **目标权重信号** — 策略输出目标权重（0~1），Portfolio 自动转换为具体股数
 - **T+1 支持** — Position 内置冻结/解冻机制，每日结算自动推进
@@ -461,6 +470,9 @@ EventBus handler 不能消费或阻止后续 handler 传播。
 - **Instrument 承载资产差异**：所有资产差异通过字段值表达，下游无 isinstance 判断
 - **回测优先**：同步事件总线，SimulatedClock 保证可复现
 - **T+1 支持**：Position 内置冻结/解冻机制，每日结算自动推进
+- **AI 只产出研究证据**：AI runtime 只接收显式绑定的 canonical 只读事实，
+  trade-plan draft 必须标记为不可执行且需要人工复核，不能触达 OMS、账本写入、
+  风控决策、kill switch、资本授权或 broker submit/cancel
 
 受控自动化、OMS、券商桥接、paper/shadow、对账和受控资本执行的完整分层设计见
 [Karkinos 架构](ARCHITECTURE.md)。
@@ -524,6 +536,12 @@ Karkinos/
 │   ├── scheduler.py        # TradingScheduler（实时交易循环）
 │   ├── config.py           # 类型化配置加载（BacktestConfig + ServerConfig）
 │   ├── dependencies.py     # FastAPI 依赖注入
+│   ├── ai_runtime/         # 厂商中立、证据绑定、不可执行的 AI 投研运行基础
+│   │   ├── contracts.py    # context/workflow/run/tool/artifact 领域契约
+│   │   ├── provider.py     # provider 协议 + deterministic fixture
+│   │   ├── permissions.py  # 默认拒绝的只读工具权限
+│   │   ├── orchestrator.py # 确定性阶段编排、重启与漂移阻断
+│   │   └── store.py        # 仅 ai_* 表的审计存储与哈希链回放
 │   ├── routes/             # REST 路由
 │   │   ├── market.py       #   /api/market — 行情/关注列表/K 线
 │   │   ├── portfolio.py    #   /api/portfolio — 组合/配置/权益曲线

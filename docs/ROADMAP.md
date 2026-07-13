@@ -26,6 +26,7 @@ user manual; current usage guidance belongs in the README files.
 | v1.6 | Completed | Operations Center & Paper/Shadow Runbook |
 | v1.7 | Completed | Controlled Broker Bridge Foundation (Non-Submitting) |
 | v1.8 | Planning active | Capital-Bounded Controlled Execution |
+| AI-native Phase 1 | Foundation implemented | Provider-neutral, evidence-bound research workflow runtime |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -46,6 +47,51 @@ quote contamination. Final validation passed 1,131 backend tests, 36 affected
 Web tests, the production Web build, real-account cross-surface invariants, and
 snapshot-id replay. This improves evidence reliability only and grants no broker
 submission or execution authority.
+
+## AI-Native Research Track
+
+This track improves how a serious investor frames questions, gathers evidence,
+tests competing explanations, writes conclusions, and recalls reviewed work. It
+does not replace canonical financial calculations or create a parallel trading
+authority path.
+
+### Phase 1 — Architecture and Runtime Foundation
+
+Implemented scope:
+
+* provider, model, and agent-role registrations are separate contracts;
+* stateful workflows bind one immutable evidence context containing a valuation
+  snapshot, ledger cutoff/fingerprint, and persisted evidence references;
+* claims, debates, reports, non-executable trade-plan drafts, reviews, and
+  memory artifacts are typed and evidence-citing;
+* the deterministic orchestrator owns stage order, restart checkpoints,
+  idempotency, duplicate handling, partial/failure status, evidence-drift
+  blocking, and audit replay;
+* the tool permission registry is deny-by-default and permits only registered
+  persisted reads or pure computation; authority namespaces are unregistrable;
+* the SQLite audit store writes only `ai_*` registry, context, workflow, run,
+  tool-call, artifact, and hash-chained event tables;
+* the only provider implementation is a deterministic local fixture. No real
+  model, network request, API key, or vendor-specific dependency is present.
+
+Phase 1 acceptance requires deterministic coverage for restart, duplicate
+execution, stage failure, partial results, evidence drift, unauthorized tool
+requests, and audit replay. It also verifies that an AI trade-plan draft cannot
+mutate OMS, ledger, risk, kill switch, capital-authority, broker submission, or
+cancellation state.
+
+Planned migration, each behind a separate review:
+
+1. add explicit read-only adapters for existing canonical Portfolio, Account
+   State, Operations, Research Evidence, Account Truth, and paper/shadow facts;
+2. add human-started task records and review UI without background model calls;
+3. add debate/report/memory lifecycle and invalidation when evidence drifts;
+4. review and explicitly authorize one or more real provider adapters without
+   making any vendor canonical;
+5. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+   existing Decision workflow. Existing account-truth, risk, paper/shadow,
+   manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
+   gates remain authoritative.
 
 ## Automation Maturity Track
 
