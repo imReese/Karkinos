@@ -170,8 +170,8 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/karkinos-data"
           runtime_uid="$(docker run --rm --entrypoint id karkinos:ci -u)"
           runtime_gid="$(docker run --rm --entrypoint id karkinos:ci -g)"
-          sudo chown "${runtime_uid}:${runtime_gid}" "${RUNNER_TEMP}/karkinos-data"
           chmod 0700 "${RUNNER_TEMP}/karkinos-data"
+          sudo chown "${runtime_uid}:${runtime_gid}" "${RUNNER_TEMP}/karkinos-data"
           printf '{}\n' > "${RUNNER_TEMP}/karkinos-config.json"
           docker run --detach --name karkinos-ci \
             --publish 127.0.0.1:8000:8000 \
@@ -186,7 +186,10 @@ jobs:
 
       - name: Capture runtime logs
         if: always()
-        run: docker logs karkinos-ci
+        run: |
+          if docker container inspect karkinos-ci >/dev/null 2>&1; then
+            docker logs karkinos-ci
+          fi
 
       - name: Stop runtime
         if: always()
