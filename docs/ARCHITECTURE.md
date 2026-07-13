@@ -605,6 +605,20 @@ sessions; the only mutation route requires that session's token and can only
 evaluate/pause. There is still no automatic resume or broker, OMS,
 production-ledger, or capital mutation capability.
 
+Stage 3.18 closes the remaining time-of-check/time-of-use gap between that
+snapshot and internal order-rate admission. Admission v2 requires the exact
+latest live-gate snapshot id, fingerprint, session fingerprint, and observed
+time, independently enforces a 30-second maximum age, and includes those fields
+in its deterministic admission identity. The same `BEGIN IMMEDIATE` transaction
+that rechecks session enabled/expiry/pause and the shared rate window now
+re-reads the latest persisted snapshot. Missing, blocked, stale, future,
+identity-drifted, or superseded evidence rejects before an admission row is
+written. A newer blocked snapshot therefore wins over an older clear preview.
+The snapshot is evidence, not Account Truth itself, and an admitted row is not
+broker authority: production still exposes no runtime-admit endpoint and the
+path cannot contact a gateway or mutate OMS, fills, the production ledger,
+capital limits, or the kill switch.
+
 Stage 3.11 implements recovery as a new signed authority, never as a mutable
 `paused -> enabled` transition. Normal issuance queries durable paused state and
 blocks an unexpired matching authorization/account/strategy scope. A

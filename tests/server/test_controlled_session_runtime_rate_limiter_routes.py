@@ -75,16 +75,24 @@ def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
     fake_authority = SimpleNamespace(
         authenticate=lambda session_id, session_token: {"session_id": session_id}
     )
+    fake_live_gates = SimpleNamespace(
+        latest=lambda session_id: {"session_id": session_id}
+    )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.controlled_session_runtime_authority._service",
         lambda: fake_authority,
+    )
+    monkeypatch.setattr(
+        "server.routes.controlled_session_automatic_pause._live_gate_service",
+        lambda: fake_live_gates,
     )
 
     service = route_module._service()
 
     assert service._db is fake_state.db
     assert service._session_provider == fake_authority.authenticate
+    assert service._gate_snapshot_provider == fake_live_gates.latest
     assert service.get_status()["runtime_admission_enabled"] is True
     assert service.get_status()["public_admission_endpoint_exposed"] is False
 

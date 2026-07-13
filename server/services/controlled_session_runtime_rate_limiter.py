@@ -8,11 +8,15 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from server.services.controlled_session_gate_contract import (
+    CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
+)
+
 CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION = (
-    "karkinos.controlled_session_rate_admission.v1"
+    "karkinos.controlled_session_rate_admission.v2"
 )
 CONTROLLED_SESSION_RATE_LIMITER_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_session_rate_limiter_status.v1"
+    "karkinos.controlled_session_rate_limiter_status.v2"
 )
 CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE = (
     "controlled_session.runtime_rate_admission_rejected"
@@ -45,30 +49,41 @@ class ControlledSessionRuntimeRateLimiterService:
         *,
         db: Any,
         session_provider: Callable[[str, str], dict[str, Any]] | None = None,
+        gate_snapshot_provider: Callable[[str], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
         self._session_provider = session_provider
+        self._gate_snapshot_provider = gate_snapshot_provider
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def get_status(self) -> dict[str, Any]:
-        provider_configured = callable(self._session_provider)
+        session_provider_configured = callable(self._session_provider)
+        gate_snapshot_provider_configured = callable(self._gate_snapshot_provider)
+        providers_configured = (
+            session_provider_configured and gate_snapshot_provider_configured
+        )
         return {
             "schema_version": CONTROLLED_SESSION_RATE_LIMITER_STATUS_SCHEMA_VERSION,
             "contract_status": (
-                "runtime_admission_ready_internal_only"
-                if provider_configured
-                else "disabled_waiting_for_authenticated_session_issuance"
+                "runtime_admission_ready_with_fresh_live_gate_binding_internal_only"
+                if providers_configured
+                else "disabled_waiting_for_authenticated_session_and_live_gate_sources"
             ),
-            "session_provider_configured": provider_configured,
-            "runtime_admission_enabled": provider_configured,
+            "session_provider_configured": session_provider_configured,
+            "gate_snapshot_provider_configured": gate_snapshot_provider_configured,
+            "runtime_admission_enabled": providers_configured,
             "public_admission_endpoint_exposed": False,
             "window_seconds": CONTROLLED_SESSION_RATE_WINDOW_SECONDS,
+            "gate_snapshot_max_age_seconds": (
+                CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS
+            ),
             "maximum_supported_rate_per_minute": (
                 CONTROLLED_SESSION_MAX_RATE_PER_MINUTE
             ),
-            "runtime_session_issuance_enabled": provider_configured,
+            "runtime_session_issuance_enabled": session_provider_configured,
             "runtime_session_token_required": True,
+            "fresh_clear_live_gate_snapshot_required": True,
             "broker_submission_enabled": False,
             "safety": _safety_flags(),
         }
@@ -185,6 +200,44 @@ class ControlledSessionRuntimeRateLimiterService:
         if max_rate <= 0 or max_rate > CONTROLLED_SESSION_MAX_RATE_PER_MINUTE:
             blockers.append("runtime_session_rate_limit_invalid")
 
+        gate_snapshot: dict[str, Any] = {}
+        if not callable(self._gate_snapshot_provider):
+            blockers.append("runtime_live_gate_snapshot_provider_unavailable")
+        elif _ID_PATTERN.fullmatch(normalized_session_id):
+            try:
+                raw_gate_snapshot = (
+                    self._gate_snapshot_provider(normalized_session_id) or {}
+                )
+            except Exception:
+                raw_gate_snapshot = {}
+                blockers.append("runtime_live_gate_snapshot_provider_failed")
+            gate_snapshot = _sanitize_gate_snapshot(
+                raw_gate_snapshot if isinstance(raw_gate_snapshot, dict) else {}
+            )
+        if gate_snapshot.get("resolution_status") != "current":
+            blockers.append("runtime_live_gate_snapshot_not_current")
+        if gate_snapshot.get("status") != "clear":
+            blockers.append("runtime_live_gate_snapshot_not_clear")
+        if gate_snapshot.get("session_id") != normalized_session_id:
+            blockers.append("runtime_live_gate_snapshot_session_mismatch")
+        if gate_snapshot.get("session_fingerprint") != session_fingerprint:
+            blockers.append("runtime_live_gate_snapshot_fingerprint_mismatch")
+        gate_snapshot_id = str(gate_snapshot.get("snapshot_id") or "")
+        gate_snapshot_fingerprint = str(gate_snapshot.get("snapshot_fingerprint") or "")
+        if not _FINGERPRINT_PATTERN.fullmatch(gate_snapshot_id):
+            blockers.append("runtime_live_gate_snapshot_id_invalid")
+        if not _FINGERPRINT_PATTERN.fullmatch(gate_snapshot_fingerprint):
+            blockers.append("runtime_live_gate_snapshot_evidence_fingerprint_invalid")
+        gate_snapshot_observed_at = _parse_timestamp(gate_snapshot.get("observed_at"))
+        if gate_snapshot_observed_at is None:
+            blockers.append("runtime_live_gate_snapshot_observed_at_invalid")
+        elif gate_snapshot_observed_at > now:
+            blockers.append("runtime_live_gate_snapshot_in_future")
+        elif (now - gate_snapshot_observed_at).total_seconds() > (
+            CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS
+        ):
+            blockers.append("runtime_live_gate_snapshot_stale")
+
         admission_core = {
             "schema_version": CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION,
             "session_id": normalized_session_id,
@@ -195,6 +248,16 @@ class ControlledSessionRuntimeRateLimiterService:
             "strategy_id": strategy_id,
             "order_id": normalized_order_id,
             "request_id": normalized_request_id,
+            "gate_snapshot_id": gate_snapshot_id,
+            "gate_snapshot_fingerprint": gate_snapshot_fingerprint,
+            "gate_snapshot_observed_at": (
+                gate_snapshot_observed_at.isoformat()
+                if gate_snapshot_observed_at
+                else ""
+            ),
+            "gate_snapshot_max_age_seconds": (
+                CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS
+            ),
             "max_order_rate_per_minute": max_rate,
             "effective_at": start_at.isoformat() if start_at else "",
             "expires_at": expires_at.isoformat() if expires_at else "",
@@ -212,6 +275,7 @@ class ControlledSessionRuntimeRateLimiterService:
             "blockers": unique_blockers,
             "pause_event_id": pause_event_id,
             "runtime_admission_granted": False,
+            "runtime_live_gates_verified": False,
             "authorizes_broker_submission": False,
             "safety": _safety_flags(),
         }
@@ -254,6 +318,10 @@ class ControlledSessionRuntimeRateLimiterService:
                     "strategy_id",
                     "order_id",
                     "request_id",
+                    "gate_snapshot_id",
+                    "gate_snapshot_fingerprint",
+                    "gate_snapshot_observed_at",
+                    "gate_snapshot_max_age_seconds",
                     "max_order_rate_per_minute",
                     "effective_at",
                     "expires_at",
@@ -262,6 +330,7 @@ class ControlledSessionRuntimeRateLimiterService:
             },
             "status": "admitted",
             "runtime_admission_granted": True,
+            "runtime_live_gates_verified": True,
             "runtime_session_issued": True,
             "authorizes_broker_submission": False,
             "safety": _safety_flags(),
@@ -280,6 +349,10 @@ class ControlledSessionRuntimeRateLimiterService:
                         "strategy_id",
                         "order_id",
                         "request_id",
+                        "gate_snapshot_id",
+                        "gate_snapshot_fingerprint",
+                        "gate_snapshot_observed_at",
+                        "gate_snapshot_max_age_seconds",
                         "max_order_rate_per_minute",
                     )
                 },
@@ -330,6 +403,10 @@ class ControlledSessionRuntimeRateLimiterService:
             "session_id": str(preview.get("session_id") or ""),
             "order_id": str(preview.get("order_id") or ""),
             "request_id": str(preview.get("request_id") or ""),
+            "gate_snapshot_id": str(preview.get("gate_snapshot_id") or ""),
+            "gate_snapshot_fingerprint": str(
+                preview.get("gate_snapshot_fingerprint") or ""
+            ),
             "review_blockers": [str(item) for item in preview.get("blockers") or []],
             "transaction_blockers": list(dict.fromkeys(transaction_blockers)),
             "admitted_before": int((transaction or {}).get("admitted_before") or 0),
@@ -340,6 +417,7 @@ class ControlledSessionRuntimeRateLimiterService:
                 or ""
             ),
             "runtime_admission_granted": False,
+            "runtime_live_gates_verified": False,
             "runtime_session_issued": False,
             "authorizes_broker_submission": False,
             "safety": _safety_flags(),
@@ -388,6 +466,18 @@ def _sanitize_session(value: dict[str, Any]) -> dict[str, Any]:
         "kill_switch_clear": value.get("kill_switch_clear") is True,
         "runtime_rate_limiter_enabled": value.get("runtime_rate_limiter_enabled")
         is True,
+    }
+
+
+def _sanitize_gate_snapshot(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "resolution_status": str(value.get("resolution_status") or ""),
+        "status": str(value.get("status") or ""),
+        "snapshot_id": str(value.get("snapshot_id") or ""),
+        "snapshot_fingerprint": str(value.get("snapshot_fingerprint") or ""),
+        "session_id": str(value.get("session_id") or ""),
+        "session_fingerprint": str(value.get("session_fingerprint") or ""),
+        "observed_at": str(value.get("observed_at") or ""),
     }
 
 

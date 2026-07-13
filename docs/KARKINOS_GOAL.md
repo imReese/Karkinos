@@ -228,6 +228,16 @@ Active planning target:
   blocked run. This binding is a read-only fail-closed projection: it does not
   contact a provider or modify OMS, fills, ledger, risk, kill switch, capital
   authority, or broker permissions.
+* Stage 3.18 binds every internal bounded-session order-rate admission to one
+  exact, persisted, no-more-than-30-second-old clear live-gate snapshot. The
+  snapshot covers Account Truth, risk, paper/shadow, prior reconciliation,
+  gateway, market data, reserved budget/rate, kill switch, loss/drawdown,
+  rejection, account-change, and error evidence. The admission's SQLite writer
+  transaction re-reads the latest snapshot and rejects stale, blocked,
+  superseded, or session-identity-drifted evidence, closing the gap between
+  preview and admission. This remains an internal evidence ledger: there is no
+  public admit endpoint, broker contact, OMS/ledger mutation, or submit/cancel
+  authority.
 * Per-order and session attestations now also require short-lived,
   artifact-bound Ed25519 approval evidence from a configured operator public
   key. Private keys are not stored by Karkinos, and a verified identity still

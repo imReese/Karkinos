@@ -607,6 +607,28 @@ def test_atomic_admission_rechecks_revocation_against_stale_authenticated_provid
     issued = _issue(env)
     stale_authenticated = env["authority"].authenticate(issued["session_id"], TOKEN)
     assert stale_authenticated["status"] == "current_enabled_bounded_session"
+    gate_transaction = env["db"].record_controlled_session_gate_snapshot_sync(
+        snapshot={
+            "snapshot_id": "7" * 64,
+            "snapshot_fingerprint": "8" * 64,
+            "session_id": issued["session_id"],
+            "session_fingerprint": issued["session_fingerprint"],
+            "source_fingerprint": "9" * 64,
+            "observed_at_epoch_ms": int(NOW.timestamp() * 1000),
+            "observed_at": NOW.isoformat(),
+            "status": "clear",
+            "gate_snapshot": {"fixture_gate_status": "clear"},
+            "source_evidence": {"fixture": True},
+            "blockers": [],
+            "payload": {"status": "clear", "broker_submission_enabled": False},
+            "created_at": NOW.isoformat(),
+        }
+    )
+    assert gate_transaction["status"] == "clear"
+    stale_gate_snapshot = {
+        **gate_transaction["snapshot"],
+        "resolution_status": "current",
+    }
 
     preview = env["authority"].preview_revocation(
         session_id=issued["session_id"],
@@ -630,6 +652,7 @@ def test_atomic_admission_rechecks_revocation_against_stale_authenticated_provid
     limiter = ControlledSessionRuntimeRateLimiterService(
         db=env["db"],
         session_provider=lambda session_id, session_token: stale_authenticated,
+        gate_snapshot_provider=lambda session_id: stale_gate_snapshot,
         clock=lambda: NOW,
     )
     with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:

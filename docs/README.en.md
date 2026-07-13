@@ -267,10 +267,18 @@ subject to the shared account budget. No runtime or broker authority is added.
 
 Stage 3.7 implements the internal atomic 60-second runtime rate-admission
 ledger. It binds an enabled authenticated session, reservation, scoped order,
-request id, active window, and strictest shared account rate. Production has no
-Stage 3.9 now supplies its persistent token-authenticated session provider, but
+request id, active window, and strictest shared account rate. Stage 3.9 supplies
+its persistent token-authenticated session provider, but
 only read-only status/history APIs are exposed; no public admit, OMS, submit,
 or cancel action exists.
+
+Stage 3.18 requires each internal admission to bind the exact latest persisted
+clear live-gate snapshot id, fingerprint, session identity, and observed time,
+with a 30-second maximum age. The SQLite writer transaction re-reads the latest
+snapshot, so newer blocked or changed evidence wins over a clear preview.
+Missing, stale, future, blocked, or identity-drifted evidence fails closed.
+Production remains status/history-only: no broker contact, OMS/fill/ledger/
+capital/kill-switch mutation, submit, or cancel authority is added.
 
 Stage 3.8 implements the internal durable automatic-pause primitive. It checks
 an allowlisted set of Account Truth, risk, reconciliation, paper/shadow,

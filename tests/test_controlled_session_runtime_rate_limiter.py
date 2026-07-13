@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import Barrier
@@ -65,12 +66,18 @@ def _service(tmp_path, sessions: dict[str, dict], current_time=None):
     for session in sessions.values():
         _persist_runtime_session(db, session)
     clock = current_time or [NOW]
+    for session in sessions.values():
+        _persist_gate_snapshot(db, session, observed_at=clock[0])
     service = ControlledSessionRuntimeRateLimiterService(
         db=db,
         session_provider=lambda session_id, session_token: (
             sessions.get(session_id, {"status": "missing"})
             if session_token == SESSION_TOKEN
             else {"status": "blocked"}
+        ),
+        gate_snapshot_provider=lambda session_id: _current_gate_snapshot(
+            db,
+            session_id,
         ),
         clock=lambda: clock[0],
     )
@@ -141,6 +148,59 @@ def _persist_runtime_session(db: AppDatabase, session: dict) -> None:
     assert issued["status"] == "enabled"
 
 
+def _persist_gate_snapshot(
+    db: AppDatabase,
+    session: dict,
+    *,
+    observed_at: datetime,
+    status: str = "clear",
+) -> dict:
+    fingerprint = hashlib.sha256(
+        (
+            f"{session['session_id']}:{session['session_fingerprint']}:"
+            f"{observed_at.isoformat()}:{status}"
+        ).encode()
+    ).hexdigest()
+    snapshot_id = hashlib.sha256(
+        f"controlled-session-rate-gate:{fingerprint}".encode()
+    ).hexdigest()
+    transaction = db.record_controlled_session_gate_snapshot_sync(
+        snapshot={
+            "snapshot_id": snapshot_id,
+            "snapshot_fingerprint": fingerprint,
+            "session_id": session["session_id"],
+            "session_fingerprint": session["session_fingerprint"],
+            "source_fingerprint": hashlib.sha256(
+                f"source:{fingerprint}".encode()
+            ).hexdigest(),
+            "observed_at_epoch_ms": int(observed_at.timestamp() * 1000),
+            "observed_at": observed_at.isoformat(),
+            "status": status,
+            "gate_snapshot": {"fixture_gate_status": status},
+            "source_evidence": {"fixture": True},
+            "blockers": [] if status == "clear" else ["fixture_gate_blocked"],
+            "payload": {
+                "schema_version": "karkinos.controlled_session_live_gate_snapshot.v1",
+                "snapshot_id": snapshot_id,
+                "snapshot_fingerprint": fingerprint,
+                "session_id": session["session_id"],
+                "session_fingerprint": session["session_fingerprint"],
+                "observed_at": observed_at.isoformat(),
+                "status": status,
+                "broker_submission_enabled": False,
+            },
+            "created_at": observed_at.isoformat(),
+        }
+    )
+    assert transaction["status"] == status
+    return dict(transaction["snapshot"])
+
+
+def _current_gate_snapshot(db: AppDatabase, session_id: str) -> dict:
+    row = db.latest_controlled_session_gate_snapshot_sync(session_id) or {}
+    return {**row, "resolution_status": "current" if row else "missing"}
+
+
 def _admit(
     service: ControlledSessionRuntimeRateLimiterService,
     *,
@@ -172,7 +232,7 @@ def test_rate_limiter_is_closed_without_authenticated_session_provider(
     )
 
     assert status["contract_status"] == (
-        "disabled_waiting_for_authenticated_session_issuance"
+        "disabled_waiting_for_authenticated_session_and_live_gate_sources"
     )
     assert status["runtime_admission_enabled"] is False
     assert status["public_admission_endpoint_exposed"] is False
@@ -203,9 +263,159 @@ def test_preview_is_deterministic_sanitized_and_side_effect_free(tmp_path) -> No
     assert first["admission_id"] == second["admission_id"]
     assert first["status"] == "ready_for_atomic_admission"
     assert first["max_order_rate_per_minute"] == 2
+    assert len(first["gate_snapshot_id"]) == 64
+    assert len(first["gate_snapshot_fingerprint"]) == 64
     assert first["runtime_admission_granted"] is False
+    assert first["runtime_live_gates_verified"] is False
     assert "must-not-leak" not in str(first)
     assert db.list_controlled_session_rate_admissions_sync() == []
+
+
+@pytest.mark.parametrize(
+    ("gate_update", "expected_blocker"),
+    [
+        (
+            {"resolution_status": "stale"},
+            "runtime_live_gate_snapshot_not_current",
+        ),
+        ({"status": "blocked"}, "runtime_live_gate_snapshot_not_clear"),
+        (
+            {"session_fingerprint": "f" * 64},
+            "runtime_live_gate_snapshot_fingerprint_mismatch",
+        ),
+        (
+            {"observed_at": (NOW - timedelta(seconds=31)).isoformat()},
+            "runtime_live_gate_snapshot_stale",
+        ),
+        (
+            {"observed_at": (NOW + timedelta(seconds=1)).isoformat()},
+            "runtime_live_gate_snapshot_in_future",
+        ),
+    ],
+)
+def test_live_gate_stale_blocked_and_identity_drift_fail_closed(
+    tmp_path,
+    gate_update: dict,
+    expected_blocker: str,
+) -> None:
+    session = _session("session-a")
+    db, _ = _service(tmp_path, {"session-a": session})
+    gate_snapshot = _current_gate_snapshot(db, "session-a")
+    gate_snapshot.update(gate_update)
+    service = ControlledSessionRuntimeRateLimiterService(
+        db=db,
+        session_provider=lambda session_id, session_token: (
+            session
+            if session_id == "session-a" and session_token == SESSION_TOKEN
+            else {"status": "blocked"}
+        ),
+        gate_snapshot_provider=lambda _session_id: {
+            **gate_snapshot,
+            "broker_password": "must-not-leak",
+        },
+        clock=lambda: NOW,
+    )
+
+    preview = service.preview(
+        session_id="session-a",
+        session_token=SESSION_TOKEN,
+        order_id="OMS-1",
+        request_id="1" * 64,
+    )
+
+    assert preview["status"] == "blocked"
+    assert expected_blocker in preview["blockers"]
+    assert "must-not-leak" not in str(preview)
+    assert preview["runtime_live_gates_verified"] is False
+    assert preview["authorizes_broker_submission"] is False
+    assert db.list_controlled_session_rate_admissions_sync() == []
+
+
+def test_missing_live_gate_provider_disables_internal_admission(tmp_path) -> None:
+    session = _session("session-a")
+    db = AppDatabase(tmp_path / "missing-live-gate-provider.db")
+    db.init_sync()
+    _persist_runtime_session(db, session)
+
+    def failed_gate_provider(_session_id: str) -> dict:
+        raise RuntimeError("private broker credential must not leak")
+
+    service = ControlledSessionRuntimeRateLimiterService(
+        db=db,
+        session_provider=lambda _session_id, _session_token: session,
+        clock=lambda: NOW,
+    )
+    failed_service = ControlledSessionRuntimeRateLimiterService(
+        db=db,
+        session_provider=lambda _session_id, _session_token: session,
+        gate_snapshot_provider=failed_gate_provider,
+        clock=lambda: NOW,
+    )
+
+    status = service.get_status()
+    preview = service.preview(
+        session_id="session-a",
+        session_token=SESSION_TOKEN,
+        order_id="OMS-1",
+        request_id="1" * 64,
+    )
+    failed = failed_service.preview(
+        session_id="session-a",
+        session_token=SESSION_TOKEN,
+        order_id="OMS-1",
+        request_id="2" * 64,
+    )
+
+    assert status["session_provider_configured"] is True
+    assert status["gate_snapshot_provider_configured"] is False
+    assert status["runtime_admission_enabled"] is False
+    assert "runtime_live_gate_snapshot_provider_unavailable" in preview["blockers"]
+    assert "runtime_live_gate_snapshot_provider_failed" in failed["blockers"]
+    assert "private broker credential" not in str(failed)
+    assert preview["authorizes_broker_submission"] is False
+
+
+def test_newer_blocked_gate_snapshot_wins_inside_admission_transaction(
+    tmp_path,
+) -> None:
+    session = _session("session-a")
+    db, _ = _service(tmp_path, {"session-a": session})
+    clear_snapshot = _current_gate_snapshot(db, "session-a")
+    provider_calls = [0]
+
+    def racing_gate_provider(_session_id: str) -> dict:
+        provider_calls[0] += 1
+        if provider_calls[0] == 1:
+            _persist_gate_snapshot(
+                db,
+                session,
+                observed_at=NOW,
+                status="blocked",
+            )
+        return clear_snapshot
+
+    service = ControlledSessionRuntimeRateLimiterService(
+        db=db,
+        session_provider=lambda _session_id, _session_token: session,
+        gate_snapshot_provider=racing_gate_provider,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:
+        _admit(service)
+
+    assert "runtime_live_gate_snapshot_not_clear" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert "runtime_live_gate_snapshot_changed_before_admission" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
+    assert exc_info.value.evidence["runtime_live_gates_verified"] is False
+    assert exc_info.value.evidence["authorizes_broker_submission"] is False
+    assert db.list_controlled_session_rate_admissions_sync() == []
+    assert db.list_oms_orders_sync() == []
+    assert db.list_fills_sync() == []
+    assert db.get_ledger_entries_sync() == []
 
 
 def test_atomic_admission_is_persisted_and_exact_retry_is_idempotent(tmp_path) -> None:
@@ -217,6 +427,7 @@ def test_atomic_admission_is_persisted_and_exact_retry_is_idempotent(tmp_path) -
 
     assert first["status"] == "admitted"
     assert first["runtime_admission_granted"] is True
+    assert first["runtime_live_gates_verified"] is True
     assert first["runtime_session_issued"] is True
     assert first["authorizes_broker_submission"] is False
     assert first["admitted_before"] == 0
@@ -245,6 +456,11 @@ def test_sliding_window_limit_and_exact_boundary(tmp_path) -> None:
         "session-a",
         rate=2,
         order_ids=("OMS-1", "OMS-2", "OMS-3", "OMS-4"),
+    )
+    _persist_gate_snapshot(
+        db,
+        sessions["session-a"],
+        observed_at=current_time[0],
     )
     boundary = _admit(service, order_id="OMS-4", request_id="4" * 64)
     assert boundary["status"] == "admitted"
