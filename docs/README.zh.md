@@ -392,6 +392,11 @@ uv run python -m pytest -m "not slow"
 
 完整验证仍使用 `uv run python -m pytest`。
 
+验收清单的普通导出保留声明性视图；加入 `--verify-evidence` 后会逐项检查证据路径
+是否存在且未越出仓库，并拒绝不属于确定性验证白名单的命令。CI 还会把完整后端与
+前端测试生成的 JUnit 报告传给 `--backend-junit` 和 `--frontend-junit`，在验收 JSON
+中记录测试数量与 SHA-256 指纹；静态完成标记本身不再被当作 CI 测试已经执行的证明。
+
 ## 架构
 
 ```

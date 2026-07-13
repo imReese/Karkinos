@@ -16,6 +16,7 @@ from analytics.acceptance_audit_report import (
     AUDIT_REGISTRY,
     build_acceptance_audit_export,
 )
+from analytics.acceptance_audit_verification import verify_acceptance_audit_export
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -23,6 +24,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     payload = build_acceptance_audit_export(selected_audit=args.audit)
+    if args.verify_evidence:
+        payload = verify_acceptance_audit_export(
+            payload,
+            repo_root=REPO_ROOT,
+            backend_junit=args.backend_junit,
+            frontend_junit=args.frontend_junit,
+        )
     text = json.dumps(
         payload,
         ensure_ascii=False,
@@ -62,6 +70,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help="Optional file path. Defaults to stdout and writes no artifact.",
+    )
+    parser.add_argument(
+        "--verify-evidence",
+        action="store_true",
+        help="Verify evidence paths, command declarations, and supplied test reports.",
+    )
+    parser.add_argument(
+        "--backend-junit",
+        type=Path,
+        help="Optional successful backend JUnit XML report to bind to verification.",
+    )
+    parser.add_argument(
+        "--frontend-junit",
+        type=Path,
+        help="Optional successful frontend JUnit XML report to bind to verification.",
     )
     return parser
 
