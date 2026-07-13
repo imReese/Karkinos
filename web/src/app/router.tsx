@@ -58,6 +58,7 @@ import {
   OverviewCards,
   OverviewCardsSkeleton,
 } from '../features/account/components/overview-cards';
+import { PortfolioExposureSummary } from '../features/account/components/portfolio-exposure-summary';
 import { PerformanceBreakdownCard } from '../features/account/components/performance-breakdown-card';
 import { RiskSummaryCard } from '../features/account/components/risk-summary-card';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
@@ -115,6 +116,7 @@ import {
 import {
   type AllocationGroup,
   type AllocationItem,
+  type PositionEvidenceReview,
   useLiveHoldingsQuery,
   usePortfolioCockpitQuery,
   usePortfolioSnapshotQuery,
@@ -124,9 +126,15 @@ import { AllocationCard } from '../features/portfolio/components/allocation-card
 import { AllocationGroupsCard } from '../features/portfolio/components/allocation-groups-card';
 import { LiveHoldingsBoard } from '../features/portfolio/components/live-holdings-board';
 import { PortfolioConstructionRecommendationsCard } from '../features/portfolio/components/portfolio-construction-recommendations-card';
+import { filterAndSortPortfolioPositions } from '../features/portfolio/position-observation';
 import { HoldingDetailPage } from '../features/portfolio/components/holding-detail-page';
 import { PositionsTable } from '../features/portfolio/components/positions-table';
-import { WorkspaceToolbar } from '../features/portfolio/components/workspace-toolbar';
+import {
+  WorkspaceToolbar,
+  type EvidenceFilter,
+  type PositionSort,
+  type QuoteFilter,
+} from '../features/portfolio/components/workspace-toolbar';
 import {
   useAddWatchlistItemMutation,
   useCreateResearchNoteMutation,
@@ -480,6 +488,7 @@ export function OverviewPage() {
                 todayPnlLabel={todayPnlLabel}
                 todayPnlContext={todayPnlContext}
               />
+              <PortfolioExposureSummary snapshot={snapshot.data} />
               <DashboardMarketPulse
                 marketHealth={marketHealth.data}
                 isLoading={marketHealth.isLoading}
@@ -2618,6 +2627,8 @@ function DashboardMarketPulse({
               {indexQuotes.map((quote) => {
                 const changeValue = marketPulseSignalValue(quote);
                 const changeMissing = changeValue === null;
+                const changeAmount = marketPulseChangeAmount(quote);
+                const changePct = marketPulseChangePct(quote);
                 const displayName = marketIndexDisplayName(quote, locale);
                 const quoteStatus = formatPublicStatus(
                   quote.quote_status,
@@ -2645,16 +2656,43 @@ function DashboardMarketPulse({
                         {formatPrice(quote.price)}
                       </span>
                       <span
+                        data-testid={`market-pulse-change-amount-${quote.symbol}`}
                         className={`font-mono text-xs font-semibold tabular-nums ${marketPulseToneClass(
                           changeValue,
                         )} ${changeMissing ? 'text-[var(--app-warning)]' : ''}`}
                       >
-                        {marketPulseMoveLabel(quote, labels, locale)}
+                        {changeAmount === null
+                          ? marketPulseMoveLabel(quote, labels, locale)
+                          : formatMarketPulseSignedValue(changeAmount, locale)}
                       </span>
+                      {changePct !== null && changeAmount !== null ? (
+                        <span
+                          data-testid={`market-pulse-change-pct-${quote.symbol}`}
+                          className={`font-mono text-[10px] font-semibold tabular-nums ${marketPulseToneClass(
+                            changePct,
+                          )}`}
+                        >
+                          {formatPercentValue(changePct, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      ) : null}
                     </div>
                   </a>
                 );
               })}
+            </div>
+            <div
+              className="rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] px-4 py-3"
+              data-testid="market-breadth-heatmap-unavailable"
+            >
+              <div className="text-xs font-semibold text-[var(--app-warning)]">
+                {labels.marketHeatmapUnavailable}
+              </div>
+              <div className="app-muted mt-1 text-[11px] leading-5">
+                {labels.marketHeatmapUnavailableDetail}
+              </div>
             </div>
           </div>
         )}
@@ -2851,11 +2889,75 @@ function MetricLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PortfolioEvidenceReviewPanel({
+  items,
+}: {
+  items: PositionEvidenceReview[];
+}) {
+  const copy = useCopy();
+  const { locale } = usePreferences();
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <section
+      data-testid="portfolio-position-evidence-review"
+      className="app-panel rounded-3xl border-[color-mix(in_srgb,var(--app-warning)_36%,var(--app-border))] p-4 sm:p-5"
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="app-product-mark">
+            {copy.portfolio.evidenceReview.title}
+          </div>
+          <p className="app-muted mt-2 text-sm leading-6">
+            {copy.portfolio.evidenceReview.detail}
+          </p>
+        </div>
+        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-warning)]">
+          {copy.portfolio.evidenceReview.count(items.length)}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {items.map((item) => (
+          <div
+            key={item.position.symbol}
+            className="grid min-w-0 gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+          >
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-[var(--app-text)]">
+                {item.position.display_name ??
+                  item.position.name ??
+                  item.position.symbol}
+              </div>
+              <div className="mt-1 font-mono text-xs text-[var(--app-muted)]">
+                {item.position.symbol}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 sm:justify-end">
+              {item.reason_codes.map((reason) => (
+                <span
+                  key={reason}
+                  className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]"
+                >
+                  {formatPublicCode(reason, locale)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function PortfolioPage() {
   const copy = useCopy();
   const navigate = useNavigate();
   const searchState = portfolioRoute.useSearch();
   const [mode, setMode] = useState<'account' | 'strategy'>('account');
+  const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
+  const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>('all');
+  const [sortBy, setSortBy] = useState<PositionSort>('market_value');
   const overview = useAccountOverviewQuery();
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
@@ -2869,26 +2971,30 @@ export function PortfolioPage() {
   const allocationBySymbol = new Map(
     (snapshot.data?.allocation ?? []).map((item) => [item.symbol, item]),
   );
+  const evidenceReviewItems = snapshot.data?.position_review_items ?? [];
+  const evidenceReviewSymbols = new Set(
+    evidenceReviewItems.map((item) => item.position.symbol),
+  );
   const assetClasses = Array.from(
     new Set((snapshot.data?.allocation ?? []).map((item) => item.asset_class)),
   );
-  const filteredPositions = (positions.data ?? []).filter((position) => {
-    const assetClass =
-      allocationBySymbol.get(position.symbol)?.asset_class ?? 'unknown';
-    const matchesSearch =
-      search.trim().length === 0 ||
-      position.symbol.toLowerCase().includes(search.trim().toLowerCase());
-    const matchesAssetClass =
-      assetClassFilter === 'all' || assetClass === assetClassFilter;
-    const matchesPnl =
-      pnlFilter === 'all' ||
-      (pnlFilter === 'winners' && position.unrealized_pnl >= 0) ||
-      (pnlFilter === 'losers' && position.unrealized_pnl < 0);
-    return matchesSearch && matchesAssetClass && matchesPnl;
+  const filteredPositions = filterAndSortPortfolioPositions({
+    positions: positions.data ?? [],
+    allocation: snapshot.data?.allocation ?? [],
+    search,
+    assetClassFilter,
+    pnlFilter,
+    quoteFilter,
+    evidenceFilter,
+    evidenceReviewSymbols,
+    sortBy,
   });
 
   const filteredSymbols = new Set(
     filteredPositions.map((position) => position.symbol),
+  );
+  const positionOrder = new Map(
+    filteredPositions.map((position, index) => [position.symbol, index]),
   );
   const filteredAllocation = (snapshot.data?.allocation ?? []).filter((item) =>
     filteredSymbols.has(item.symbol),
@@ -2897,19 +3003,13 @@ export function PortfolioPage() {
   const filteredLiveGroups = (liveHoldings.data?.groups ?? [])
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => {
-        const matchesSearch =
-          search.trim().length === 0 ||
-          item.symbol.toLowerCase().includes(search.trim().toLowerCase()) ||
-          item.name.toLowerCase().includes(search.trim().toLowerCase());
-        const matchesAssetClass =
-          assetClassFilter === 'all' || group.asset_class === assetClassFilter;
-        const matchesPnl =
-          pnlFilter === 'all' ||
-          (pnlFilter === 'winners' && item.since_buy_pnl >= 0) ||
-          (pnlFilter === 'losers' && item.since_buy_pnl < 0);
-        return matchesSearch && matchesAssetClass && matchesPnl;
-      }),
+      items: group.items
+        .filter((item) => filteredSymbols.has(item.symbol))
+        .sort(
+          (left, right) =>
+            (positionOrder.get(left.symbol) ?? Number.MAX_SAFE_INTEGER) -
+            (positionOrder.get(right.symbol) ?? Number.MAX_SAFE_INTEGER),
+        ),
     }))
     .filter((group) => group.items.length > 0)
     .map((group) => ({
@@ -2970,10 +3070,19 @@ export function PortfolioPage() {
           });
         }}
         assetClasses={assetClasses}
+        quoteFilter={quoteFilter}
+        onQuoteFilterChange={setQuoteFilter}
+        evidenceFilter={evidenceFilter}
+        onEvidenceFilterChange={setEvidenceFilter}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
       />
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.95fr)]">
         <div className="min-w-0 space-y-5 sm:space-y-6">
+          {evidenceFilter !== 'clear' ? (
+            <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
+          ) : null}
           {liveHoldings.isLoading ? (
             <StatusCard
               title={copy.states.loading}
@@ -2990,6 +3099,19 @@ export function PortfolioPage() {
           ) : (
             <LiveHoldingsBoard groups={filteredLiveGroups} />
           )}
+          <div
+            data-testid="portfolio-current-holdings-count"
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_7%,transparent)] px-4 py-2.5 text-xs font-semibold text-[var(--app-muted)]"
+          >
+            <span>
+              {copy.portfolio.currentHoldingsCount(
+                (positions.data ?? []).length,
+              )}
+            </span>
+            <span>
+              {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
+            </span>
+          </div>
           {positions.isLoading ? (
             <StatusCard
               title={copy.states.loading}
@@ -3018,6 +3140,11 @@ export function PortfolioPage() {
               assetClassBySymbol={Object.fromEntries(
                 Array.from(allocationBySymbol.entries()).map(
                   ([symbol, item]) => [symbol, item.asset_class],
+                ),
+              )}
+              weightBySymbol={Object.fromEntries(
+                Array.from(allocationBySymbol.entries()).map(
+                  ([symbol, item]) => [symbol, item.weight],
                 ),
               )}
             />

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -93,4 +93,41 @@ test('localizes portfolio asset filter options and allocation groups in chinese'
   expect(screen.getAllByText('基金').length).toBeGreaterThan(0);
   expect(screen.queryByText('stock')).toBeNull();
   expect(screen.queryByText('fund')).toBeNull();
+});
+
+test('exposes local quote, evidence, and sort controls without mutations', () => {
+  const onQuoteFilterChange = vi.fn();
+  const onEvidenceFilterChange = vi.fn();
+  const onSortByChange = vi.fn();
+  renderWithLocale(
+    <WorkspaceToolbar
+      mode="account"
+      onModeChange={() => undefined}
+      search=""
+      onSearchChange={() => undefined}
+      assetClassFilter="all"
+      onAssetClassFilterChange={() => undefined}
+      pnlFilter="all"
+      onPnlFilterChange={() => undefined}
+      assetClasses={['fund', 'stock']}
+      onQuoteFilterChange={onQuoteFilterChange}
+      onEvidenceFilterChange={onEvidenceFilterChange}
+      onSortByChange={onSortByChange}
+    />,
+    'en',
+  );
+
+  fireEvent.change(screen.getByRole('combobox', { name: 'Quote state' }), {
+    target: { value: 'review' },
+  });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Reconciliation' }), {
+    target: { value: 'review' },
+  });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort by' }), {
+    target: { value: 'realized_pnl' },
+  });
+
+  expect(onQuoteFilterChange).toHaveBeenCalledWith('review');
+  expect(onEvidenceFilterChange).toHaveBeenCalledWith('review');
+  expect(onSortByChange).toHaveBeenCalledWith('realized_pnl');
 });

@@ -3,6 +3,7 @@ import { usePreferences } from '../../../app/preferences';
 import type { KeyboardEvent, MouseEvent } from 'react';
 import {
   formatCurrency,
+  formatPercent,
   formatPrice,
   formatQuantity,
   formatReturnPercent,
@@ -62,6 +63,10 @@ function resolveTone(value: number | null | undefined): NumericCellTone {
     return 'text';
   }
   return value > 0 ? 'success' : 'danger';
+}
+
+function quoteNeedsReview(status: string | null | undefined) {
+  return !['live', 'confirmed', 'cache'].includes(status ?? 'unknown');
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -235,11 +240,13 @@ export function PositionsTable({
   positions,
   assetClassBySymbol = {},
   latestPriceBySymbol = {},
+  weightBySymbol = {},
   variant = 'full',
 }: {
   positions: Position[];
   assetClassBySymbol?: Record<string, string>;
   latestPriceBySymbol?: Record<string, number | null | undefined>;
+  weightBySymbol?: Record<string, number | null | undefined>;
   variant?: 'full' | 'dashboard';
 }) {
   const copy = useCopy();
@@ -249,8 +256,8 @@ export function PositionsTable({
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const showFullColumns = variant === 'full';
   const showDashboardColumns = variant === 'dashboard';
-  const hasStaleQuotes = positions.some(
-    (position) => position.quote_status === 'stale',
+  const hasStaleQuotes = positions.some((position) =>
+    quoteNeedsReview(position.quote_status),
   );
 
   const resolveLatestPrice = (position: Position) => {
@@ -281,7 +288,7 @@ export function PositionsTable({
       <div className="grid gap-4 md:hidden">
         {positions.map((position) => {
           const pnlPositive = position.unrealized_pnl >= 0;
-          const isStale = position.quote_status === 'stale';
+          const isStale = quoteNeedsReview(position.quote_status);
           const displayName = resolvePositionName(position);
           const assetClass =
             position.asset_class ?? assetClassBySymbol[position.symbol] ?? '--';
@@ -359,6 +366,18 @@ export function PositionsTable({
               tone: 'text',
               emphasis: true,
             },
+            ...(showFullColumns
+              ? [
+                  {
+                    key: 'weight',
+                    label: labels.weight,
+                    value: formatPercent(weightBySymbol[position.symbol]),
+                    kind: 'percent' as const,
+                    tone: 'text' as const,
+                    emphasis: true,
+                  },
+                ]
+              : []),
             {
               key: 'today-change',
               label: labels.todayChange,
@@ -432,6 +451,7 @@ export function PositionsTable({
                     href={detailHref}
                     className="text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
                     aria-label={detailLabel}
+                    title={`${displayName} · ${position.symbol}`}
                     onClick={stopEntryNavigation}
                   >
                     {displayName}
@@ -547,7 +567,7 @@ export function PositionsTable({
       >
         <table
           data-testid="positions-table-desktop"
-          className="app-data-table w-[1520px] min-w-max text-left text-xs"
+          className="app-data-table w-[1580px] min-w-max text-left text-xs"
         >
           <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
             <tr>
@@ -570,6 +590,11 @@ export function PositionsTable({
               <th className={numericHeaderClassName('amount')}>
                 {labels.marketValue}
               </th>
+              {showFullColumns ? (
+                <th className={numericHeaderClassName('percent')}>
+                  {labels.weight}
+                </th>
+              ) : null}
               <th className={numericHeaderClassName('amount')}>
                 {labels.todayChange}
               </th>
@@ -596,7 +621,7 @@ export function PositionsTable({
           <tbody>
             {positions.map((position) => {
               const pnlPositive = position.unrealized_pnl >= 0;
-              const isStale = position.quote_status === 'stale';
+              const isStale = quoteNeedsReview(position.quote_status);
               const displayName = resolvePositionName(position);
               const assetClass =
                 position.asset_class ??
@@ -650,6 +675,7 @@ export function PositionsTable({
                           href={detailHref}
                           className="block truncate font-semibold underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
                           aria-label={detailLabel}
+                          title={`${displayName} · ${position.symbol}`}
                           onClick={stopEntryNavigation}
                         >
                           {displayName}
@@ -720,6 +746,18 @@ export function PositionsTable({
                   >
                     {formatCurrency(position.market_value)}
                   </td>
+                  {showFullColumns ? (
+                    <td
+                      data-testid={`position-weight-${position.symbol}`}
+                      className={numericCellClassName({
+                        kind: 'percent',
+                        tone: 'text',
+                        emphasis: true,
+                      })}
+                    >
+                      {formatPercent(weightBySymbol[position.symbol])}
+                    </td>
+                  ) : null}
                   <td
                     data-testid={`position-today-change-${position.symbol}`}
                     className={numericCellClassName({

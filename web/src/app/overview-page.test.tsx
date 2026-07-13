@@ -720,6 +720,11 @@ test('renders the daily workbench before chart and detail panels', async () => {
   expect(within(marketPulse).getByText('Market pulse')).toBeTruthy();
   expect(within(marketPulse).getByText('Shanghai Composite')).toBeTruthy();
   expect(within(marketPulse).getByText('Shenzhen Component')).toBeTruthy();
+  expect(
+    within(marketPulse).getByTestId('market-breadth-heatmap-unavailable')
+      .textContent,
+  ).toContain('Market heatmap awaiting evidence');
+  expect(screen.queryByTestId('today-pnl-heatmap')).toBeNull();
   expect(screen.queryByTestId('overview-holding-movers')).toBeNull();
   expect(
     workbench.compareDocumentPosition(performanceCard) &

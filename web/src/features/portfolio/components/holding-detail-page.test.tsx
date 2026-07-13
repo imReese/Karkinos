@@ -79,6 +79,8 @@ function installHoldingFetchMock({
   liveItemOverride = {},
   healthQuoteOverride = {},
   marketHealthOverride = {},
+  closedPosition,
+  ledgerEntriesOverride,
   accountStrategy = {
     strategy_id: 'dual_ma',
     strategy_name: 'dual_ma',
@@ -162,6 +164,8 @@ function installHoldingFetchMock({
   liveItemOverride?: Record<string, unknown>;
   healthQuoteOverride?: Record<string, unknown>;
   marketHealthOverride?: Record<string, unknown>;
+  closedPosition?: Record<string, unknown>;
+  ledgerEntriesOverride?: Array<Record<string, unknown>>;
   accountStrategy?: Record<string, unknown>;
   accountStrategyAttribution?: Record<string, unknown>;
   accountStrategyContribution?: Record<string, unknown>;
@@ -220,6 +224,8 @@ function installHoldingFetchMock({
               : [],
           },
         ],
+        valuation_snapshot_id: 'valuation-1',
+        ledger_cutoff_id: 21,
       });
     }
     if (url.endsWith('/api/portfolio')) {
@@ -242,6 +248,10 @@ function installHoldingFetchMock({
                 ]
               : [],
             allocation_grouped: [],
+            closed_positions: closedPosition ? [closedPosition] : [],
+            position_review_items: [],
+            valuation_snapshot_id: 'valuation-1',
+            ledger_cutoff_id: 21,
           });
     }
     if (url.includes('/api/portfolio/overview')) {
@@ -258,10 +268,14 @@ function installHoldingFetchMock({
         quote_age_seconds: 2_246_400,
         stale_reason: 'market_closed_cache_only',
         refresh_policy: 'cache_only',
+        valuation_snapshot_id: 'valuation-1',
+        ledger_cutoff_id: 21,
       });
     }
     if (url.includes('/api/ledger/entries')) {
-      return jsonResponse(includeLedger ? [ledgerEntry] : []);
+      return jsonResponse(
+        ledgerEntriesOverride ?? (includeLedger ? [ledgerEntry] : []),
+      );
     }
     if (url.includes('/api/market/data-health')) {
       return jsonResponse({
@@ -301,7 +315,7 @@ function installHoldingFetchMock({
         ...marketHealthOverride,
       });
     }
-    if (url.includes('/api/market/kline/600519')) {
+    if (url.includes('/api/market/kline/')) {
       return jsonResponse([
         {
           timestamp: '2026-04-19T15:00:00+08:00',
@@ -321,8 +335,10 @@ function installHoldingFetchMock({
         },
       ]);
     }
-    if (url.includes('/api/account-strategy/holdings/600519/attribution')) {
-      return jsonResponse(holdingStrategyAttribution);
+    if (url.includes('/api/account-strategy/holdings/')) {
+      return jsonResponse(
+        url.includes('/holdings/600519/') ? holdingStrategyAttribution : null,
+      );
     }
     if (url.includes('/api/account-strategy/attribution')) {
       return jsonResponse(accountStrategyAttribution);
@@ -341,6 +357,7 @@ function installHoldingFetchMock({
 
 function renderHoldingDetail(
   options?: Parameters<typeof installHoldingFetchMock>[0],
+  symbol = '600519',
 ) {
   window.localStorage.clear();
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -360,7 +377,7 @@ function renderHoldingDetail(
   return render(
     <PreferencesProvider>
       <QueryClientProvider client={queryClient}>
-        <HoldingDetailPage symbol="600519" />
+        <HoldingDetailPage symbol={symbol} />
       </QueryClientProvider>
     </PreferencesProvider>,
   );
@@ -404,6 +421,11 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
   expect(await screen.findByText('¥1,640.00')).toBeTruthy();
+  expect(await screen.findByText('Holding results & evidence')).toBeTruthy();
+  expect(await screen.findByText('valuation-1')).toBeTruthy();
+  expect(await screen.findByText('Persisted account ledger only')).toBeTruthy();
+  expect(await screen.findByTestId('kline-trade-marker-buy')).toBeTruthy();
+  expect((await screen.findAllByTestId('kline-reference-line')).length).toBe(1);
   expect(screen.queryByText('6.7%')).toBeNull();
   expect(
     await screen.findByText('Market closed; using cached quote'),
@@ -418,6 +440,114 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(ledgerScroll.className).toContain('pb-2');
   expect(ledgerTable?.className).toContain('w-[880px]');
   expect(ledgerTable?.className).toContain('min-w-max');
+});
+
+test('keeps a closed asset available as historical evidence without current exposure', async () => {
+  const closedPosition = {
+    symbol: '600066',
+    name: 'Yutong Bus',
+    display_name: 'Yutong Bus',
+    asset_class: 'stock',
+    quantity: 0,
+    available_qty: 0,
+    frozen_qty: 0,
+    avg_cost: 0,
+    latest_price: 28.75,
+    market_value: 0,
+    unrealized_pnl: 0,
+    realized_pnl: 384.05,
+    commission_paid: 17.95,
+    today_change: 0,
+    today_change_pct: null,
+    baseline_price: 28.4,
+    baseline_timestamp: '2026-04-19',
+    baseline_source: 'market_bar_close',
+    quote_timestamp: '2026-04-20T15:00:00+08:00',
+    quote_status: 'live',
+    quote_source: 'market_bar_close',
+    quote_age_seconds: 0,
+    stale_reason: null,
+    refresh_policy: 'cache_only',
+  };
+  const closedLedgerEntries = [
+    {
+      ...ledgerEntry,
+      id: 21,
+      symbol: '600066',
+      timestamp: '2026-04-20T15:00:00+08:00',
+      entry_type: 'trade_sell',
+      direction: 'sell',
+      quantity: 100,
+      price: 28.75,
+      amount: 2870,
+      gross_amount: 2875,
+      net_cash_impact: 2870,
+      note: 'second closing sale',
+    },
+    {
+      ...ledgerEntry,
+      id: 20,
+      symbol: '600066',
+      timestamp: '2026-04-20T15:00:00+08:00',
+      entry_type: 'trade_sell',
+      direction: 'sell',
+      quantity: 100,
+      price: 28.75,
+      amount: 2870,
+      gross_amount: 2875,
+      net_cash_impact: 2870,
+      note: 'first closing sale',
+    },
+    {
+      ...ledgerEntry,
+      id: 19,
+      symbol: '600066',
+      timestamp: '2026-04-19T15:00:00+08:00',
+      quantity: 200,
+      price: 26.7,
+      amount: 5340,
+      gross_amount: 5340,
+      net_cash_impact: -5345,
+      note: 'opening buy',
+    },
+  ];
+
+  renderHoldingDetail(
+    {
+      includePosition: false,
+      closedPosition,
+      ledgerEntriesOverride: closedLedgerEntries,
+    },
+    '600066',
+  );
+
+  expect(await screen.findByText('Yutong Bus')).toBeTruthy();
+  expect(await screen.findByText('Closed · history only')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'This asset is closed and has no current portfolio exposure. Historical trades, fees, and realized PnL remain available for review.',
+    ),
+  ).toBeTruthy();
+  expect((await screen.findAllByText('Security sell')).length).toBe(2);
+  expect(await screen.findByText('Security buy')).toBeTruthy();
+  expect((await screen.findAllByText('¥384.05')).length).toBeGreaterThan(0);
+  expect((await screen.findAllByTestId('kline-trade-marker-sell')).length).toBe(
+    2,
+  );
+  expect(
+    screen.queryByTestId('holding-strategy-attribution-boundary'),
+  ).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: /Refresh this quote/i }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole('link', { name: 'Open Trading approvals' }),
+  ).toBeNull();
+  expect(
+    screen
+      .getByRole('link', { name: 'View historical activity' })
+      .getAttribute('href'),
+  ).toBe('/activity?symbol=600066');
 });
 
 test('explains local average cost and broker displayed cost basis when evidence exists', async () => {

@@ -89,3 +89,53 @@ test('renders an empty state when no bars are available', () => {
   expect(screen.getByText('No chart')).toBeTruthy();
   expect(screen.getByText('Price range / K-line')).toBeTruthy();
 });
+
+test('excludes out-of-range trade markers from the selected range axis', () => {
+  render(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No chart"
+      rangeLabels={{
+        oneMonth: '1M',
+        threeMonths: '3M',
+        sixMonths: '6M',
+        oneYear: '1Y',
+        all: 'All',
+      }}
+      bars={[
+        {
+          timestamp: '2025-04-19',
+          open: 1000,
+          high: 1100,
+          low: 900,
+          close: 1050,
+          volume: 120000,
+        },
+        {
+          timestamp: '2026-04-20',
+          open: 10,
+          high: 11,
+          low: 9,
+          close: 10.5,
+          volume: 130000,
+        },
+      ]}
+      markers={[
+        {
+          timestamp: '2025-04-19',
+          kind: 'buy',
+          price: 2000,
+          label: 'Buy',
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.getByTestId('kline-trade-marker-buy')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Show 1M K-line range' }));
+
+  expect(screen.queryByTestId('kline-trade-marker-buy')).toBeNull();
+  expect(screen.getByText('¥9.00 - ¥11.00')).toBeTruthy();
+});
