@@ -38,6 +38,7 @@ paper/shadow、人工确认、对账和复盘。
 | AI 原生第一阶段 | 基础已实现 | 厂商中立、证据绑定的投研 workflow 运行基础 |
 | AI 原生 1.1 | 只读边界已实现 | 不可变 canonical evidence 捕获与 context 绑定读取 |
 | AI 原生 1.2 | 捕获边界已实现 | 人工显式启动、无模型调用的 canonical context 捕获 |
+| AI 原生 1.3 | 任务/复核边界已实现 | 人工证据绑定任务、复核 UI 与哈希链回放，模型执行关闭 |
 
 ## AI 原生投研主线
 
@@ -83,9 +84,19 @@ Account Truth 与 paper/shadow canonical builder/reader，要求 valuation snaps
 该入口只写 `ai_canonical_evidence`、`ai_context_snapshots` 和
 `ai_context_capture_runs` 等 AI 审计事实，不启动 workflow，不调用 provider/model，
 不刷新行情或券商数据，也不修改账户、OMS、账本、风控、对账、kill switch 或资本授权。
-scheduler/startup hook、后台 AI 任务和真实 provider 仍未注册。后续按独立审查逐步迁移：
-先加入人工启动的 research task 记录与复核 UI，再让 deterministic fixture provider
-参与显式任务并加入记忆失效/更新机制；真实 provider adapter 必须
+scheduler/startup hook、后台 AI 任务和真实 provider 仍未注册。
+
+1.3 增量在 capture 之后加入人工 research task 与 review 边界。任务只能引用已完成的
+capture，并再次重放 context/evidence fingerprint、valuation snapshot、ledger cutoff 与
+ledger fingerprint。非完整证据保留用于诊断，但任务标记为 `blocked_by_evidence`，不能
+接受为可分析上下文。人工可以接受完整上下文、要求修订或不分析并关闭；这些决定只写
+`ai_research_tasks`、`ai_research_task_reviews` 和逐任务哈希链
+`ai_research_task_events`。Strategy Lab 面板默认关闭且不发请求，显式打开后才读取，
+记录时先 capture 再创建 task；可选回测证据必须绑定精确 result id。人工接受上下文也
+不会启动 workflow/model，不会产生任何交易权限。
+
+后续按独立审查逐步迁移：下一步才让 deterministic fixture provider
+参与显式任务并加入 debate/report/memory 和证据漂移失效机制；真实 provider adapter 必须
 单独审查和用户授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
 既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill
 switch 门禁继续拥有唯一权威。

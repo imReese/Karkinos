@@ -137,6 +137,46 @@ refresh facts, invoke a model, start a research workflow, create an OMS intent,
 write the production ledger, issue a risk decision, change reconciliation or
 kill-switch state, create/widen capital authority, or submit/cancel an order.
 
+### Human Research Task and Review Boundary
+
+Phase 1.3 adds a second explicit command boundary after capture. It records
+human intent and review; it is still not model execution:
+
+```text
+completed ai_context_capture_run
+-> replay exact context and evidence fingerprints
+-> POST /api/ai/research-tasks
+-> awaiting_human_review | blocked_by_evidence
+-> POST /api/ai/research-tasks/{task_id}/reviews
+-> context_accepted | context_revision_requested | closed_without_analysis
+```
+
+`ai_research_tasks` binds the capture id, context fingerprint, valuation
+snapshot, ledger cutoff/fingerprint, and immutable evidence summaries.
+`ai_research_task_reviews` records an explicit human decision, while
+`ai_research_task_events` forms a per-task SHA-256 hash chain for deterministic
+replay. Create and review commands use separate idempotency keys; retries return
+the same fact, and changed input under an existing key is rejected.
+
+The service replays the completed capture before task creation and again before
+review. Missing/tampered evidence, context drift, or a non-completed capture
+fails closed. `partial`, `blocked`, `missing`, `stale`, `estimated`, and
+`unreconciled` evidence creates a visibly blocked task and cannot receive
+`context_accepted`. Requesting revision or closing without analysis remains
+available so humans can record the disposition of incomplete evidence.
+
+The Strategy Lab UI keeps this boundary closed and performs no request until a
+human explicitly opens it. Recording a task first calls the existing context
+capture command and then binds the returned capture id. An exact saved
+backtest result may be selected; no UI substitutes a latest research row. Task
+GET routes never initialize schema or write audit rows; schema creation is
+limited to explicit POST commands.
+There is no polling, scheduler, startup task, provider/model selector, API key,
+model invocation, workflow start, or background agent in Phase 1.3. Human
+`context_accepted` means only “this frozen context is suitable for a future,
+separately authorized analysis”; it has no accounting, risk, capital, OMS,
+gateway, submission, or cancellation effect.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
@@ -259,8 +299,10 @@ Trading-related changes cover the relevant cases below:
 
 ### AI-Native Research Runtime and Canonical Evidence Boundary
 
-The Phase 1 runtime lives under `server/ai_runtime` and deliberately has no
-route registration or application-lifecycle hook. Its contract separates:
+The Phase 1 runtime lives under `server/ai_runtime`. Only its explicit
+human-started context-capture and task/review audit routes are registered; it
+has no scheduler, startup worker, model endpoint, or application-lifecycle
+execution hook. Its contract separates:
 
 * `ProviderRegistration`: provider identity, adapter kind, capabilities, and
   disabled/enabled registration state without credentials;
@@ -339,10 +381,10 @@ calculation.
 
 Statuses such as `partial`, `stale`, `estimated`, and `unreconciled` remain
 readable for diagnosis but return `authoritative=false` with an explicit
-blocker. They are never silently promoted to complete. The production capture
-caller is intentionally not registered with a route, scheduler, startup hook,
-or background task in this increment; connecting existing projection services
-requires a separate review of the exact capture lifecycle.
+blocker. They are never silently promoted to complete. Phase 1.2 registers only
+the explicit capture route, and Phase 1.3 registers only human task/review audit
+routes. Neither route connects a provider, model, scheduler, startup hook, or
+background task.
 
 ### Research and Strategy Runtime
 
