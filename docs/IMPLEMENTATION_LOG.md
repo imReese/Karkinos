@@ -6,6 +6,33 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.7 hardens the external saved-backtest report
+  contract after the first bounded provider trial exposed timeout, JSON-wrapper,
+  and `claims` shape failures. Assumptions: the configured model's reasoning
+  mode remains enabled according to its edge configuration; OpenAI-compatible
+  JSON mode guarantees syntax more reliably than the application-specific
+  report schema; and provider-side tools are unnecessary because the local
+  orchestrator already performs the single permission-checked
+  `research_evidence.read`. Prompt v3 adds an exact structural example,
+  quantitative evidence-review rubric, prompt-injection boundary, required
+  input-path/value citations, an 8,192-token bounded output budget, and a
+  60-second human-started call timeout. Local parsing now accepts a reviewed,
+  bounded set of wrapper, nested, common, and Chinese field variants while
+  marking missing item evidence as `reference_only` instead of inventing a
+  summary. Truncation and missing final content after reasoning have distinct
+  fail-closed codes. Raw `reasoning_content` is never stored; only presence,
+  character count, and finish metadata may enter provenance. Validation: 20
+  focused external-report tests, 108 AI/route tests, 89 trading-safety tests,
+  and the complete 1,473-test backend suite passed; Black and isort checks
+  passed. Deterministic coverage verifies the prompt/output contract, unchanged
+  no-tools boundary, reasoning-body exclusion, nested Chinese/common alias
+  normalization, evidence warnings, unchanged protected financial tables, and
+  idempotent restart/concurrency behavior. No real provider call or financial
+  evidence export was made during this hardening run. Risk impact: GitNexus
+  rated the request method and decoder LOW; the service class was MEDIUM due to
+  route/application imports, with only its route builder and test helper as
+  direct callers. No HIGH/CRITICAL impact or execution process was reported.
+
 - 2026-07-14: AI-native Phase 1.7 adds one human-started,
   provider-neutral saved-backtest external-report boundary at
   `POST /api/ai/external-research/backtest-reports`. Assumptions: selecting a
