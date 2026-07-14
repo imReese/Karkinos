@@ -223,6 +223,11 @@ broader task, memory, Decision, or trading graph:
 * the model receives no provider-side tools. Its output is locally normalized,
   schema validated, bound to the exact context/evidence fingerprints, and
   stored only as a cited, non-authoritative `REPORT` requiring human review;
+* the configured model keeps its reasoning mode. A versioned JSON-only prompt
+  supplies an exact structural example and evidence-review rubric; raw
+  reasoning is not stored, while bounded deterministic normalization makes
+  common wrapper/nesting/field-shape variants explicit rather than silently
+  changing financial facts;
 * an atomic model-run claim prevents concurrent duplicate charges. Exact
   terminal retries reuse the audit result, changed input fails closed, and a
   failed run requires a new deliberate request rather than automatic retry;

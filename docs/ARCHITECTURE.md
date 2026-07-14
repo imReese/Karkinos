@@ -319,8 +319,9 @@ explicit human request + selected saved backtest
 -> require complete + analysis_ready
 -> exact context/evidence binding
 -> permission-checked research_evidence.read
--> one OpenAI-compatible JSON request (no provider-side tools)
--> local schema normalization and validation
+-> one OpenAI-compatible JSON request with the configured reasoning mode,
+   an exact structural example, and no provider-side tools
+-> bounded deterministic schema normalization and validation
 -> cited non-authoritative REPORT artifact
 -> workflow hash-chain replay
 ```
@@ -336,6 +337,16 @@ request. There is no automatic retry, scheduler, startup hook, background
 model task, memory creation, Decision handoff, trade-plan draft, or authority
 effect. Provider timeout/error text is sanitized; malformed raw provider output
 is not stored.
+
+The external edge does not disable a model's configured reasoning mode. Its
+versioned prompt separates evidence-review requirements from final
+serialization, includes an exact JSON example, and gives the final response a
+bounded output budget suitable for reasoning-oriented models. Raw
+`reasoning_content` is never persisted; only sanitized presence/length and
+finish metadata may enter report provenance. Local normalization accepts a
+small reviewed set of wrapper, nesting, and Chinese/common field aliases but
+cannot invent missing claims or counterarguments. Missing per-item evidence
+summaries remain explicitly `reference_only` and require human review.
 
 ## Financial Data Integrity and Valuation
 

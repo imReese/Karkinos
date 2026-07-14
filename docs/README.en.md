@@ -21,7 +21,10 @@ Key Features:
   complete canonical research-evidence payload to the configured
   OpenAI-compatible model after exact data-export consent. Account holdings and
   execution-authority facts are excluded; the result remains a
-  non-authoritative report requiring human review.
+  non-authoritative report requiring human review. The configured reasoning
+  mode remains available, while a versioned JSON-only prompt supplies an exact
+  structural example and evidence-review rubric. Raw reasoning is never stored,
+  and provider-side tools remain disabled.
 - **Event-Driven Architecture** — All components communicate through EventBus, ensuring deterministic backtesting
 - **Multi-Asset Support** — A-shares, ETFs, gold spot, exchange-traded bonds; Instrument field values carry asset differences
 - **Target Weight Signals** — Strategies output target weights (0~1), Portfolio auto-converts to share counts
