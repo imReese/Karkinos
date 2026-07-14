@@ -96,6 +96,43 @@ const completedFixtureAnalysis = {
   does_not_mutate_financial_state: true,
 } as const;
 
+const completedAnalysisReview = {
+  schema_version: 'karkinos.ai.fixture_analysis_review.v1',
+  review_id: 'ai-analysis-review-001',
+  analysis_id: completedFixtureAnalysis.analysis_id,
+  task_id: completedFixtureAnalysis.task_id,
+  workflow_id: completedFixtureAnalysis.workflow_id,
+  decision: 'accept_as_reviewed_memory',
+  effective_status: 'reviewed_memory',
+  note: 'Reviewed exact fixture evidence and limitations.',
+  reviewed_by: 'human:owner',
+  created_at: '2026-07-13T15:00:00+00:00',
+  memory_artifact_id: 'ai-artifact-4',
+  stored_analysis_target_fingerprint: 'analysis-target-001',
+  current_analysis_target_fingerprint: 'analysis-target-001',
+  analysis_target_binding_valid: true,
+  analysis_acceptance_eligible: true,
+  memory_recall_eligible: true,
+  invalidation_reasons: [],
+  audit_replay: {
+    valid: true,
+    event_count: 1,
+    last_event_hash: 'review-event-hash-001',
+    errors: [],
+  },
+  reused: false,
+  fixture_only: true,
+  research_memory_only: true,
+  persisted_facts_only: true,
+  network_io_used: false,
+  external_model_invocation_count: 0,
+  research_output_is_account_fact: false,
+  decision_handoff_enabled: false,
+  trade_plan_created: false,
+  authority_effect: 'none',
+  does_not_mutate_financial_state: true,
+} as const;
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -106,10 +143,12 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 function renderPanel({
   analyses = [],
+  analysisReviews = [],
   backtestResultId = 7,
   tasks = [],
 }: {
   analyses?: Array<Record<string, unknown>>;
+  analysisReviews?: Array<Record<string, unknown>>;
   backtestResultId?: number | null;
   tasks?: Array<Record<string, unknown>>;
 } = {}) {
@@ -140,6 +179,13 @@ function renderPanel({
           workflow_started: false,
           authority_effect: 'none',
         });
+      }
+      if (
+        url.includes('/api/ai/research-task-analyses/') &&
+        url.endsWith('/reviews') &&
+        method === 'POST'
+      ) {
+        return jsonResponse(completedAnalysisReview);
       }
       if (url.endsWith('/reviews')) {
         const reviewed = {
@@ -174,6 +220,18 @@ function renderPanel({
           fixture_only: true,
           network_io_used: false,
           external_model_invocation_count: 0,
+          authority_effect: 'none',
+        });
+      }
+      if (url.includes('/api/ai/research-task-analysis-reviews?')) {
+        return jsonResponse({
+          schema_version: 'karkinos.ai.fixture_analysis_review_list.v1',
+          reviews: analysisReviews,
+          fixture_only: true,
+          research_memory_only: true,
+          network_io_used: false,
+          external_model_invocation_count: 0,
+          decision_handoff_enabled: false,
           authority_effect: 'none',
         });
       }
@@ -380,5 +438,87 @@ test('invalidates fixture report and memory when exact evidence binding drifts',
   ).toBeTruthy();
   expect(
     screen.queryByRole('button', { name: 'Run offline fixture analysis' }),
+  ).toBeNull();
+  fireEvent.change(await screen.findByLabelText('Analysis review note'), {
+    target: { value: 'Recapture evidence before accepting memory.' },
+  });
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Accept as reviewed memory',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Request analysis revision',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+});
+
+test('records exact human acceptance only as reviewed research memory', async () => {
+  const { requests } = renderPanel({
+    tasks: [{ ...authoritativeTask, status: 'context_accepted' }],
+    analyses: [completedFixtureAnalysis],
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+  expect(await screen.findByText('Human analysis review')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'This decision only controls research-memory recall. It cannot enter Decision or grant trading authority.',
+    ),
+  ).toBeTruthy();
+  fireEvent.change(await screen.findByLabelText('Analysis review note'), {
+    target: { value: 'Reviewed exact fixture evidence and limitations.' },
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Accept as reviewed memory' }),
+  );
+
+  expect(await screen.findByText('Reviewed memory')).toBeTruthy();
+  expect(
+    screen.getByText('Eligible for reviewed research recall'),
+  ).toBeTruthy();
+  const reviewRequest = requests.find(
+    (request) => request.method === 'POST' && request.url.endsWith('/reviews'),
+  );
+  expect(reviewRequest?.body).toMatchObject({
+    reviewed_by: 'human:owner',
+    decision: 'accept_as_reviewed_memory',
+    note: 'Reviewed exact fixture evidence and limitations.',
+    confirmation:
+      'record_fixture_analysis_review_without_decision_or_execution_authority',
+  });
+  expect(JSON.stringify(reviewRequest)).not.toContain('model_id');
+  expect(JSON.stringify(reviewRequest)).not.toContain('provider_id');
+  expect(
+    screen.queryByRole('button', { name: /trade|order|submit|cancel|resume/i }),
+  ).toBeNull();
+});
+
+test('shows persisted invalidation and removes memory recall eligibility', async () => {
+  const invalidatedReview = {
+    ...completedAnalysisReview,
+    effective_status: 'invalidated_by_evidence_drift',
+    current_analysis_target_fingerprint: 'analysis-target-drifted',
+    analysis_target_binding_valid: false,
+    analysis_acceptance_eligible: false,
+    memory_recall_eligible: false,
+    invalidation_reasons: ['analysis_target_fingerprint_drift'],
+  };
+  renderPanel({
+    tasks: [{ ...authoritativeTask, status: 'context_accepted' }],
+    analyses: [completedFixtureAnalysis],
+    analysisReviews: [invalidatedReview],
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+
+  expect(await screen.findByText('Invalidated by evidence drift')).toBeTruthy();
+  expect(screen.getByText('Not eligible for research recall')).toBeTruthy();
+  expect(screen.getByText('analysis_target_fingerprint_drift')).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: 'Accept as reviewed memory' }),
   ).toBeNull();
 });

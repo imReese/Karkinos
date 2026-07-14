@@ -31,6 +31,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.2 | Capture boundary implemented | Explicit human-started, model-free canonical context capture |
 | AI-native Phase 1.3 | Task/review boundary implemented | Human-created evidence-bound tasks, review UI, and hash-chain replay with model execution off |
 | AI-native Phase 1.4 | Offline fixture lifecycle implemented | Explicit accepted-task claim/debate/report/memory workflow with drift invalidation and no external model |
+| AI-native Phase 1.5 | Human memory disposition implemented | Exact analysis review, recall eligibility, append-only replay, and automatic drift invalidation |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -160,16 +161,41 @@ fixture lifecycle without presenting it as model intelligence:
   selector, Decision handoff, account-fact status, or OMS/ledger/risk/kill-
   switch/capital/broker authority.
 
+Phase 1.5 adds human disposition and research-memory eligibility without a
+Decision or execution handoff:
+
+* `POST /api/ai/research-task-analyses/{analysis_id}/reviews` requires an exact
+  acknowledgement, human reviewer, note, and one final decision: accept as
+  reviewed memory, request revision, or reject;
+* acceptance requires a completed, non-partial, replay-valid workflow with the
+  exact claim/debate/report/memory lifecycle, completed evidence tool calls,
+  one memory artifact, and matching stored/recomputed artifact fingerprints;
+* the immutable review binds an analysis-target fingerprint covering workflow,
+  context, valuation/ledger-bound evidence status, artifact identities, tool
+  calls, memory sources, and workflow audit evidence. Its own event is stored
+  in a SHA-256 chain;
+* exact restart and concurrent duplicate commands reuse one review/event.
+  Changed input under the same key and a second final decision fail closed;
+* every GET and replay rebuilds the target. Later evidence, artifact, context,
+  or audit drift preserves the historical decision but changes accepted memory
+  to `invalidated_by_evidence_drift` and removes recall eligibility;
+* revision and rejection remain recordable for invalid evidence. GET routes do
+  not initialize schema, and no automatic memory retrieval, provider/model
+  call, Decision input, trade-plan creation, account-fact promotion, financial
+  write, or execution authority is introduced.
+
 Planned migration, each behind a separate review:
 
-1. **Completed foundation and offline fixture boundary:** immutable storage, identity
+1. **Completed foundation and reviewed-memory boundary:** immutable storage, identity
    validation, context-bound read executors, explicitly human-started canonical
    capture, human task/review records, and the accepted-task deterministic
-   claim/debate/report/memory lifecycle exist without recomputation, GET-side
-   provider refresh, external model invocation, or authority;
-2. **Next review:** add an explicit human review/disposition contract for
-   fixture reports and memory promotion without making research memory an
-   account fact or Decision input;
+   claim/debate/report/memory lifecycle plus exact human disposition and
+   drift-sensitive research recall eligibility exist without recomputation,
+   GET-side provider refresh, external model invocation, or authority;
+2. **Next review:** add an explicit, read-only retrieval policy that can select
+   only current `reviewed_memory` artifacts for a future evidence-bound context;
+   retrieval must remain off until separately started and must rebind current
+   evidence rather than treating memory as fact;
 3. separately review and explicitly authorize one or more real provider adapters without
    making any vendor canonical;
 4. consider a one-way, human-reviewed handoff from a trade-plan draft into the

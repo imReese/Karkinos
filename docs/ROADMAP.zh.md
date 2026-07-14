@@ -40,6 +40,7 @@ paper/shadow、人工确认、对账和复盘。
 | AI 原生 1.2 | 捕获边界已实现 | 人工显式启动、无模型调用的 canonical context 捕获 |
 | AI 原生 1.3 | 任务/复核边界已实现 | 人工证据绑定任务、复核 UI 与哈希链回放，模型执行关闭 |
 | AI 原生 1.4 | 离线 fixture 生命周期已实现 | 已接受任务的 claim/debate/report/memory、漂移失效，无外部模型 |
+| AI 原生 1.5 | 人工记忆处置已实现 | 精确分析复核、回忆资格、追加式回放与漂移自动失效 |
 
 ## AI 原生投研主线
 
@@ -105,9 +106,18 @@ GET 不初始化 schema、不轮询、不刷新 provider，也不启动后台任
 API Key、不调用真实模型，不把输出当作账户事实，也不修改 OMS、账本、风控、kill switch、
 资本授权或券商 submit/cancel。
 
-后续按独立审查逐步迁移：下一步是为 fixture report 和 memory 增加人工处置/晋级契约，
-但仍不能把它们变成账户事实或 Decision 输入；真实 provider adapter 必须单独审查和用户
-授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
+1.5 增量加入最终人工 analysis review：复核人必须填写备注，并在“接受为已复核研究记忆、
+要求修订、驳回”中选择一次最终处置。接受要求 workflow 完成且非 partial、分析回放有效、
+精确 claim/debate/report/memory 生命周期完整、所有工具调用完成、memory 来源绑定正确，
+并重新计算每个 artifact fingerprint。review 把这些事实以及 context、valuation/ledger 与
+evidence 状态绑定为 analysis-target fingerprint，并写入独立哈希链。重启和并发精确重复
+只保留一条 review/event；同键换输入或第二次最终决定 fail closed。每次 GET/replay 都重新
+构造 target，后续 evidence、artifact 或审计漂移不会删除历史决定，但会把已接受记忆改为
+`invalidated_by_evidence_drift` 并撤销回忆资格。无效分析仍可记录修订或驳回。
+
+后续按独立审查逐步迁移：下一步只考虑只读检索策略，并且只能选择当前仍为
+`reviewed_memory` 的 artifact，重新绑定当前证据，不能把 memory 当作事实；真实 provider
+adapter 必须单独审查和用户授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
 既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill
 switch 门禁继续拥有唯一权威。
 

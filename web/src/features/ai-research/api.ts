@@ -343,3 +343,118 @@ export function useStartFixtureAnalysisMutation() {
     },
   });
 }
+
+export type AnalysisReviewDecision =
+  'accept_as_reviewed_memory' | 'request_revision' | 'reject';
+
+export type ResearchTaskAnalysisReview = {
+  schema_version: string;
+  review_id: string;
+  analysis_id: string;
+  task_id: string;
+  workflow_id: string;
+  decision: AnalysisReviewDecision;
+  effective_status:
+    | 'reviewed_memory'
+    | 'revision_requested'
+    | 'rejected'
+    | 'invalidated_by_evidence_drift';
+  note: string;
+  reviewed_by: string;
+  created_at: string;
+  memory_artifact_id: string | null;
+  stored_analysis_target_fingerprint: string;
+  current_analysis_target_fingerprint: string;
+  analysis_target_binding_valid: boolean;
+  analysis_acceptance_eligible: boolean;
+  memory_recall_eligible: boolean;
+  invalidation_reasons: string[];
+  audit_replay: {
+    valid: boolean;
+    event_count: number;
+    last_event_hash: string | null;
+    errors: string[];
+  };
+  reused: boolean;
+  fixture_only: true;
+  research_memory_only: true;
+  persisted_facts_only: true;
+  network_io_used: false;
+  external_model_invocation_count: 0;
+  research_output_is_account_fact: false;
+  decision_handoff_enabled: false;
+  trade_plan_created: false;
+  authority_effect: 'none';
+  does_not_mutate_financial_state: true;
+};
+
+type ResearchTaskAnalysisReviewList = {
+  schema_version: string;
+  reviews: ResearchTaskAnalysisReview[];
+  fixture_only: true;
+  research_memory_only: true;
+  network_io_used: false;
+  external_model_invocation_count: 0;
+  decision_handoff_enabled: false;
+  authority_effect: 'none';
+};
+
+export type ReviewFixtureAnalysisInput = {
+  analysis_id: string;
+  idempotency_key: string;
+  reviewed_by: string;
+  decision: AnalysisReviewDecision;
+  note: string;
+};
+
+export function useResearchTaskAnalysisReviewsQuery(analysisId: string) {
+  return useQuery({
+    queryKey: ['ai-research-task-analysis-reviews', analysisId],
+    queryFn: () =>
+      apiClient<ResearchTaskAnalysisReviewList>(
+        `/api/ai/research-task-analysis-reviews?analysis_id=${encodeURIComponent(analysisId)}&limit=20`,
+      ),
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+  });
+}
+
+export function useReviewFixtureAnalysisMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReviewFixtureAnalysisInput) =>
+      postJson<ResearchTaskAnalysisReview>(
+        `/api/ai/research-task-analyses/${encodeURIComponent(input.analysis_id)}/reviews`,
+        {
+          idempotency_key: input.idempotency_key,
+          reviewed_by: input.reviewed_by,
+          decision: input.decision,
+          note: input.note,
+          confirmation:
+            'record_fixture_analysis_review_without_decision_or_execution_authority',
+        },
+      ),
+    onSuccess: (review) => {
+      queryClient.setQueryData<ResearchTaskAnalysisReviewList>(
+        ['ai-research-task-analysis-reviews', review.analysis_id],
+        (current) => ({
+          schema_version:
+            current?.schema_version ??
+            'karkinos.ai.fixture_analysis_review_list.v1',
+          reviews: [
+            review,
+            ...(current?.reviews ?? []).filter(
+              (item) => item.review_id !== review.review_id,
+            ),
+          ],
+          fixture_only: true,
+          research_memory_only: true,
+          network_io_used: false,
+          external_model_invocation_count: 0,
+          decision_handoff_enabled: false,
+          authority_effect: 'none',
+        }),
+      );
+    },
+  });
+}
