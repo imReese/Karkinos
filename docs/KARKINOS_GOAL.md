@@ -181,6 +181,15 @@ Active planning target:
   current evidence. Drift invalidates replay and hides memory content without
   deleting history. There is still no automatic recall, semantic search,
   provider/model invocation, Decision handoff, financial write, or authority.
+  Phase 1.9 adds that future consumption boundary first as an explicit offline
+  deterministic fixture: it revalidates the exact retrieval and requires the
+  claim role to read every bound current canonical evidence record through the
+  deny-by-default tools before producing cited claim, debate, and report
+  artifacts. Historical memory remains labelled non-current, no new memory or
+  trade-plan draft is created, and failure, partial output, restart, duplicate
+  execution, evidence drift, and audit replay remain deterministic. This phase
+  calls no external model and grants no Decision, financial, broker, capital,
+  or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

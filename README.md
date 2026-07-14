@@ -41,7 +41,11 @@ OMS、风控、资本和券商事实不会外发，也不会生成 memory、Deci
 重放原分析与审计链，把原证据按 canonical tool 映射到当前持久化 context 的完整证据，
 并把 memory 标记为历史研究输入而非当前事实。漂移后不再返回 memory 内容。该入口不做
 语义搜索、自动 prompt 注入或模型调用；仍没有自动记忆检索、后台 AI 任务或实盘入口，
-真实 provider 也不会成为默认依赖。
+真实 provider 也不会成为默认依赖。Phase 1.9 再提供一个人工显式的离线消费入口：本地
+fixture 必须先通过只读工具逐条重读 retrieval 所绑定的当前 canonical evidence，才生成
+带引用的 claim、debate 和 report。历史 memory 始终标为非当前事实；重启、重复、失败、
+partial 和证据漂移可确定性回放。该入口不调用 DeepSeek 或其他真实模型，不生成新 memory、
+Decision 输入、交易计划或任何财务/执行权限。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -104,7 +108,13 @@ public demos and development.
   ids and an existing current context, replays all source bindings, and maps
   each source canonical tool to one current complete evidence record. It does
   not perform semantic search, automatic prompt injection, or any model call;
-  recalled content remains non-factual historical research input.
+  recalled content remains non-factual historical research input. A further
+  explicit offline fixture boundary consumes only that exact retrieval,
+  independently rereads every current canonical evidence record through local
+  read-only tools, and emits cited claim/debate/report artifacts. Restart,
+  duplicate execution, stage failure, partial output, and later evidence drift
+  are replayable; no real model, new memory, Decision input, trade-plan draft,
+  financial mutation, or authority is involved.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers
