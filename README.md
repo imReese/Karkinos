@@ -18,7 +18,7 @@ truth, risk control, signals, reconciliation, and review.
 
 AI 原生化遵循同一原则：AI 可以围绕冻结的持久化证据进行多角色分析、工具读取、争论、
 报告和研究记忆，但 provider、model 与 agent role 相互解耦，模型输出不是账户事实、
-风控结论或交易权限。当前架构与运行基础只有 deterministic local fixture provider；
+风控结论或交易权限。研究 workflow 仍只使用 deterministic local fixture provider；
 canonical evidence 只读边界可保存并重读显式捕获的不可变投影，并提供一个必须由人
 明确启动的 model-free context capture POST 入口。该入口只复用持久化 canonical
 projection、校验 valuation/ledger identity 并写 AI 审计事实；它不启动 workflow。
@@ -28,8 +28,10 @@ projection、校验 valuation/ledger identity 并写 AI 审计事实；它不启
 确定性的 fixture workflow，生成带引用的 claim、debate、report 和待人工复核 memory；
 证据漂移会使其绑定与 memory 失效。人工还可对精确完成的分析选择接受为已复核研究记忆、
 要求修订或驳回；接受只赋予 AI 研究域内的回忆资格，且证据或 artifact 漂移会自动撤销该
-资格。没有自动记忆检索、Decision 交接、真实模型调用、API Key、网络请求、厂商绑定、
-后台 AI 任务或实盘入口。
+资格。Phase 1.6 另设一个显式、固定且不含财务数据的 OpenAI-compatible 连通性探针，
+只验证已授权 provider/model 的鉴权和响应协议，并保存脱敏审计元数据；它不进入研究
+workflow。没有自动记忆检索、Decision 交接、后台 AI 任务或实盘入口，真实 provider
+也不会成为默认依赖。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -76,8 +78,10 @@ public demos and development.
   output. A final explicit human disposition may accept exact output only as
   reviewed research memory, request revision, or reject it. Recall eligibility
   is revalidated on every read and disappears on evidence or artifact drift;
-  no automatic retrieval or Decision handoff exists. The runtime exposes no
-  real model API, network call, OMS action, or broker authority.
+  no automatic retrieval or Decision handoff exists. A separate explicit
+  connectivity POST may send one fixed non-financial prompt through a reviewed
+  OpenAI-compatible HTTPS adapter. It stores no key, prompt, or response body,
+  starts no workflow, and grants no OMS or broker authority.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

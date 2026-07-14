@@ -266,6 +266,38 @@ account fact, Portfolio input, Decision input, risk decision, trade-plan draft,
 capital authorization, OMS transition, broker instruction, or permission. It
 does not contact a provider/model or modify any financial state.
 
+### Explicit External-Provider Connectivity Verification
+
+Phase 1.6 adds a deliberately separate connectivity boundary. It does not put
+a production provider inside the research orchestrator. A human must send the
+exact confirmation to `POST /api/ai/provider-connectivity/checks`; only then may
+the reviewed `openai_compatible_https` adapter send one versioned, fixed prompt
+that contains no account, portfolio, valuation, ledger, strategy, research, or
+broker data. There are no provider tools, retries, workflow stages, artifacts,
+or background invocations.
+
+Configuration remains provider/model neutral. Provider id, model name, HTTPS
+base URL, adapter kind, timeout, and credential source are resolved separately;
+generic environment variables take precedence over the ignored local-config
+compatibility entry. The API key exists only in request memory and the
+Authorization header. It is never returned or stored. An optional edge-profile
+default may supply a public endpoint, but no vendor is canonical.
+
+The request is idempotent before network I/O. Exact retries reuse the existing
+check and cannot incur a second provider call; reuse with different immutable
+input fails closed. `ai_provider_connectivity_checks` stores only provider,
+model, endpoint origin, timestamps, sanitized status/error, token counts, and
+request/response fingerprints. It stores neither prompt nor response body.
+Provider and model identity reuse the existing registration contracts. The
+result always declares `financial_context_sent=false`, no context/snapshot/
+ledger identity, no tools/workflow/artifact, and `authority_effect=none`.
+
+This probe proves authentication and protocol compatibility only. It is not a
+model-quality evaluation, research result, memory source, Decision handoff,
+risk input, capital authorization, OMS action, or broker capability. Connecting
+an external model to an evidence-bound workflow remains a later independent
+review.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
@@ -389,9 +421,9 @@ Trading-related changes cover the relevant cases below:
 ### AI-Native Research Runtime and Canonical Evidence Boundary
 
 The Phase 1 runtime lives under `server/ai_runtime`. Only its explicit
-human-started context-capture and task/review audit routes are registered; it
-has no scheduler, startup worker, model endpoint, or application-lifecycle
-execution hook. Its contract separates:
+human-started context-capture, task/review audit, and fixed connectivity routes
+are registered; it has no scheduler, startup worker, automatic model endpoint,
+or application-lifecycle execution hook. Its contract separates:
 
 * `ProviderRegistration`: provider identity, adapter kind, capabilities, and
   disabled/enabled registration state without credentials;
@@ -418,17 +450,21 @@ Unknown tools and authority namespaces fail closed. Persisted-read tool results
 must return an evidence id already present in the frozen context and explicitly
 assert `persisted_facts_only=true` before they can enter the next provider turn.
 
-Phase 1 ships only `DeterministicFixtureProvider`. It selects immutable local
-responses by workflow stage and turn, performs no network I/O, accepts no API
-key, and is enabled only by explicit test/runtime registration. No DeepSeek,
-OpenAI, or other vendor is canonical or registered by default.
+Research workflows still ship only `DeterministicFixtureProvider`. It selects
+immutable local responses by workflow stage and turn, performs no network I/O,
+accepts no API key, and is enabled only by explicit test/runtime registration.
+The separate Phase 1.6 OpenAI-compatible probe registers one configured
+provider/model only after explicit human invocation and does not expose that
+adapter to the orchestrator. No DeepSeek, OpenAI, or other vendor is canonical
+or registered by default.
 
-The `AiAuditStore` creates and writes only namespaced tables:
+The AI runtime audit stores create and write only namespaced tables:
 
 ```text
 ai_provider_registrations / ai_model_registrations / ai_agent_roles
 ai_context_snapshots / ai_workflows / ai_agent_runs
 ai_tool_calls / ai_artifacts / ai_workflow_events
+ai_provider_connectivity_checks
 ```
 
 Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,

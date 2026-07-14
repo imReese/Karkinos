@@ -32,6 +32,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.3 | Task/review boundary implemented | Human-created evidence-bound tasks, review UI, and hash-chain replay with model execution off |
 | AI-native Phase 1.4 | Offline fixture lifecycle implemented | Explicit accepted-task claim/debate/report/memory workflow with drift invalidation and no external model |
 | AI-native Phase 1.5 | Human memory disposition implemented | Exact analysis review, recall eligibility, append-only replay, and automatic drift invalidation |
+| AI-native Phase 1.6 | External connectivity boundary implemented | Explicit non-financial OpenAI-compatible probe with redacted idempotent audit |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -156,7 +157,8 @@ fixture lifecycle without presenting it as model intelligence:
 * task-to-workflow mapping and workflow audit facts make restart and exact
   duplicate commands idempotent. GET routes are read-only and do not initialize
   schema, poll, refresh providers, or start background work;
-* only the local deterministic fixture provider/model registration is created.
+* only the local deterministic fixture provider/model registration is created
+  for a research workflow.
   There is no network request, API key, external-model invocation, provider
   selector, Decision handoff, account-fact status, or OMS/ledger/risk/kill-
   switch/capital/broker authority.
@@ -184,6 +186,25 @@ Decision or execution handoff:
   call, Decision input, trade-plan creation, account-fact promotion, financial
   write, or execution authority is introduced.
 
+Phase 1.6 verifies one explicitly configured external model without connecting
+it to research or trading workflows:
+
+* `POST /api/ai/provider-connectivity/checks` requires a human identity,
+  idempotency key, and the exact non-financial confirmation phrase;
+* the provider-neutral `openai_compatible_https` adapter sends one fixed probe
+  with no account, portfolio, valuation, ledger, strategy, research, broker, or
+  tool context. There are no retries, background calls, or startup hooks;
+* generic environment configuration takes precedence, while the existing
+  ignored local `ai.api_keys` shape remains a migration input. Credentials are
+  held only in request memory and never returned or stored;
+* exact retries are deduplicated before network I/O. The audit row stores only
+  identities, endpoint origin, sanitized result, latency, token counts, and
+  content fingerprints, never prompt or response body;
+* the check registers provider/model identity only for the connectivity
+  capability. It is not bound into the deterministic orchestrator and cannot
+  create a task, claim, memory, Decision input, financial write, permission, or
+  execution authority.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed-memory boundary:** immutable storage, identity
@@ -191,13 +212,15 @@ Planned migration, each behind a separate review:
    capture, human task/review records, and the accepted-task deterministic
    claim/debate/report/memory lifecycle plus exact human disposition and
    drift-sensitive research recall eligibility exist without recomputation,
-   GET-side provider refresh, external model invocation, or authority;
+   GET-side provider refresh, automatic external model invocation, or authority.
+   A separate fixed connectivity probe can verify explicitly configured API
+   authentication without entering that workflow;
 2. **Next review:** add an explicit, read-only retrieval policy that can select
    only current `reviewed_memory` artifacts for a future evidence-bound context;
    retrieval must remain off until separately started and must rebind current
    evidence rather than treating memory as fact;
-3. separately review and explicitly authorize one or more real provider adapters without
-   making any vendor canonical;
+3. separately review any use of a real provider inside an evidence-bound
+   research workflow without making any vendor canonical;
 4. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
