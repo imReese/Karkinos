@@ -229,6 +229,15 @@ Active planning target:
   load credentials or call a model. Even an accepted result is not recallable
   memory, does not promote a provider, and grants no Decision, financial,
   broker, capital, or execution authority.
+  Phase 1.12 adds a separate human-confirmed promotion from a currently valid
+  accepted Phase 1.11 review into a new historical-research memory artifact.
+  The artifact binds the exact review, normalized report, context, retrieval,
+  evidence, provider, model, and prompt fingerprints. Source drift hides its
+  content and removes recall eligibility; explicit revocation appends audit
+  evidence without deleting history. Promotion and revocation call no model,
+  do not alter reviewed-memory retrieval v1, do not enable automatic recall,
+  and create no current fact, Decision input, provider promotion, financial
+  mutation, broker action, capital change, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

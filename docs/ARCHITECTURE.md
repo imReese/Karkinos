@@ -575,6 +575,45 @@ trade-plan creation, financial writes, broker actions, capital changes, and
 execution authority all remain false. A future memory promotion requires a
 separate reviewed contract and cannot reinterpret this review as permission.
 
+### Reviewed External Research Memory Promotion
+
+Phase 1.12 implements that separate contract without changing the Phase 1.8
+retrieval-v1 request, fingerprints, or replay:
+
+```text
+currently eligible Phase 1.11 review + explicit human promotion confirmation
+-> replay exact review and Phase 1.10 source analysis
+-> select exactly one normalized REPORT artifact
+-> bind review/report/context/retrieval/evidence/provider/model/prompt identities
+-> copy normalized report + safe provenance into a new historical MEMORY artifact
+-> persist immutable promotion + hash-chained event
+-> revalidate source and artifact on every GET/replay
+-> optional explicit terminal revocation appends one event and hides content
+```
+
+The memory artifact is a namespaced promotion-domain record rather than a new
+stage appended to the already completed external workflow. This preserves the
+original claim/debate/report lifecycle and audit replay. Its content contains
+the normalized report fields, human review note/rubric, source fingerprints,
+and sanitized provider provenance. Raw reasoning, raw provider responses,
+credentials, account identity, and authority state are absent.
+
+`ai_external_reviewed_memory_promotions` stores the immutable human request,
+source target, artifact content/fingerprint, evidence ids, and all source
+identities. `ai_external_reviewed_memory_revocations` stores at most one
+terminal revocation. `ai_external_reviewed_memory_events` forms a two-event
+maximum hash chain: promotion, then optional revocation. Source or audit drift
+preserves every row but hides artifact content and removes recall eligibility.
+Revocation never deletes history and cannot be undone in place; a fresh
+analysis and review are required.
+
+Phase 1.12 deliberately does not add the new artifact to retrieval v1 or an
+external-model prompt. It enables no semantic search, background recall,
+provider call, current-fact promotion, Decision handoff, trade plan, financial
+write, broker action, risk override, kill-switch change, capital change, or
+execution authority. A later retrieval integration requires its own versioned
+contract and migration review.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
@@ -752,6 +791,9 @@ ai_external_memory_informed_analyses
 ai_external_memory_model_calls
 ai_external_analysis_reviews
 ai_external_analysis_review_events
+ai_external_reviewed_memory_promotions
+ai_external_reviewed_memory_revocations
+ai_external_reviewed_memory_events
 ```
 
 Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,

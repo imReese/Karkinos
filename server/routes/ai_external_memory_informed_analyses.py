@@ -30,6 +30,9 @@ from server.bootstrap import resolve_config_path
 from server.routes.ai_external_analysis_reviews import (
     create_router as create_external_analysis_review_router,
 )
+from server.routes.ai_external_reviewed_memory import (
+    create_router as create_external_reviewed_memory_router,
+)
 from server.routes.ai_reviewed_memory_retrievals import (
     build_human_reviewed_memory_retrieval_service,
 )
@@ -50,6 +53,7 @@ class HumanExternalMemoryAnalysisPayload(BaseModel):
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
     router.include_router(create_external_analysis_review_router())
+    router.include_router(create_external_reviewed_memory_router())
 
     @router.post("/api/ai/reviewed-memory-retrievals/{retrieval_id}/external-analyses")
     async def start_external_memory_analysis(
