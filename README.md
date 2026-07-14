@@ -66,6 +66,11 @@ artifact 绑定 source review/report/context/retrieval/provider/model/prompt/evi
 隐藏内容并撤销召回资格。人工撤销只追加审计事件，不删除源分析、复核或 memory 历史。该边界
 不调用模型，不改写既有 retrieval v1，不自动召回，也不产生当前事实、Decision、trade plan、
 provider 晋级或任何财务/券商/资本/执行权限。
+Phase 1.13 以独立版本契约增加对这些 promotion 的人工显式检索：请求必须列出精确 promotion id
+和一个既有 current context，系统会重放源链并把每个 canonical tool 重新绑定到唯一的当前
+`complete` 证据。撤销或源/当前/审计漂移会隐藏内容；Phase 1.8 v1 的请求指纹、schema、表和
+历史 replay 不变。该检索没有语义搜索、自动 prompt 注入或模型调用，也不产生 Decision、
+财务写入或任何交易权限；后续模型消费仍需单独的数据外发确认与审查。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -164,7 +169,13 @@ public demos and development.
   appends an audit event without deleting history. It does not modify retrieval
   v1, invoke a model, enable automatic recall, create current facts or Decision
   inputs, promote a provider, or grant financial, broker, capital, or execution
-  authority.
+  authority. Phase 1.13 adds a separate versioned retrieval for exact promoted
+  memory ids plus an existing current context. It replays every source and
+  rebinds each canonical tool to one current complete evidence record; source,
+  revocation, current-evidence, or audit drift hides content. Phase 1.8 request
+  fingerprints, tables, and replay remain unchanged. The new retrieval has no
+  semantic search, automatic prompt injection, model call, Decision handoff,
+  financial mutation, or authority effect.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

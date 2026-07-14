@@ -614,6 +614,37 @@ write, broker action, risk override, kill-switch change, capital change, or
 execution authority. A later retrieval integration requires its own versioned
 contract and migration review.
 
+### Versioned Retrieval of Promoted External Research Memory
+
+Phase 1.13 adds that integration as a new contract instead of widening Phase
+1.8 retrieval v1:
+
+```text
+exact Phase 1.12 promotion ids + explicit human confirmation
++ existing persisted current context
+-> replay every promotion, source review, analysis, artifact, and audit chain
+-> reuse the canonical current-context financial-identity validator
+-> map every source canonical tool to exactly one current complete record
+-> persist immutable retrieval target + one hash-chained start event
+-> revalidate promotion/current evidence/audit on every GET/list/replay
+-> hide memory content whenever any binding becomes invalid
+```
+
+`ai_external_reviewed_memory_retrievals` stores the versioned request and exact
+target fingerprint. `ai_external_reviewed_memory_retrieval_events` stores one
+append-only start event. The request explicitly selects 1–20 promotion ids;
+there is no semantic search, scheduler, background recall, or automatic prompt
+injection. Current context validation remains single-sourced by adapting the
+existing Phase 1.8 validator without changing its request, fingerprint, table,
+or replay contract.
+
+This retrieval is historical non-factual research input plus current-evidence
+bindings, not a current fact or model instruction. Phase 1.13 registers no
+provider tool and performs no provider/model call. Consumption by an offline
+or external workflow requires another separately reviewed, explicit contract.
+The boundary cannot write OMS, ledger, risk, reconciliation, kill switch,
+capital authorization, broker submit/cancel, Decision, or trade-plan state.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
