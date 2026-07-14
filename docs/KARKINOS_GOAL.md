@@ -66,6 +66,14 @@ The product boundary is:
   cost, and evidence-gap fields. Account holdings, account truth, OMS, risk,
   capital, broker, and permission facts remain outside that request. The output
   is a cited, non-authoritative report requiring human review.
+* Sending reviewed research memory together with current account evidence is a
+  still narrower, separately confirmed export. Only an explicitly selected
+  reviewed-memory retrieval and its bound, complete canonical evidence may
+  enter a human-started claim/debate/report workflow. Every stage must reread
+  all current evidence through local read-only tools; account alias, account
+  number, credentials, OMS, risk, capital, broker, and permission state are
+  excluded. The configured model keeps its reasoning mode, but raw reasoning
+  is not stored and provider-side tools remain unavailable.
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.
@@ -189,7 +197,19 @@ Active planning target:
   trade-plan draft is created, and failure, partial output, restart, duplicate
   execution, evidence drift, and audit replay remain deterministic. This phase
   calls no external model and grants no Decision, financial, broker, capital,
-  or execution authority.
+  or execution authority. Phase 1.10 adds a separate, explicitly confirmed
+  external edge for that same retrieval. The deterministic orchestrator runs
+  claim, debate, and report in order; each stage independently rereads every
+  bound current evidence record before a purpose-limited OpenAI-compatible
+  request receives selected reviewed memory, sanitized current evidence, and
+  prior normalized artifacts. Provider/model/role identities remain separate,
+  no vendor is canonical, reasoning is not disabled, and no raw response,
+  reasoning text, API key, account identity, or provider-side tool is stored or
+  exported as content. One permanent run claim and one call claim per stage
+  prevent automatic rebilling after ambiguous failure. Malformed or uncited
+  output fails closed, GET never loads credentials or resumes work, and the
+  result creates no memory, Decision handoff, trade plan, financial mutation,
+  broker action, capital change, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
