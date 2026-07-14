@@ -34,6 +34,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.5 | Human memory disposition implemented | Exact analysis review, recall eligibility, append-only replay, and automatic drift invalidation |
 | AI-native Phase 1.6 | External connectivity boundary implemented | Explicit non-financial OpenAI-compatible probe with redacted idempotent audit |
 | AI-native Phase 1.7 | Saved-backtest external report boundary implemented | Explicit consent, one canonical evidence record, one schema-validated non-authoritative report, and no trade authority |
+| AI-native Phase 1.8 | Reviewed-memory retrieval boundary implemented | Explicit ID allowlist, current-evidence rebinding, drift-sensitive replay, and no automatic recall or provider call |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -235,6 +236,30 @@ broader task, memory, Decision, or trading graph:
   creates no memory, claim/debate lifecycle, Decision input, trade-plan draft,
   financial write, authority, submission, cancellation, or broker action.
 
+Phase 1.8 adds an explicit reviewed-memory retrieval policy without turning
+memory into an autonomous prompt source:
+
+* `POST /api/ai/reviewed-memory-retrievals` requires a human identity, purpose,
+  idempotency key, exact confirmation, one already-persisted current context,
+  and an explicit allowlist of 1-20 analysis-review ids;
+* every candidate must still derive `reviewed_memory` and
+  `memory_recall_eligible=true` after replaying the source analysis, exact
+  artifact fingerprints, evidence, context, and review event chain;
+* each source evidence reference is mapped by its canonical tool identity to
+  exactly one `complete` record in the current context. Missing, partial,
+  stale, estimated, duplicate-tool, fingerprint-drifted, or financially
+  mismatched evidence fails closed;
+* the result labels memory as historical reviewed research input, binds the
+  current valuation snapshot and ledger cutoff locally, and requires a future
+  workflow to read current evidence independently. It never treats recalled
+  prose as a current financial fact;
+* the request and a one-event hash chain are stored only in dedicated `ai_*`
+  audit tables. GET/list/replay rederive eligibility and hide memory content
+  after drift; GET does not initialize schema;
+* there is no embedding or semantic search, scheduler, automatic prompt
+  injection, provider-side tool, registered retrieval tool, external model
+  call, Decision input, trade-plan draft, financial mutation, or authority.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed-memory boundary:** immutable storage, identity
@@ -246,11 +271,12 @@ Planned migration, each behind a separate review:
    A separate fixed connectivity probe can verify explicitly configured API
    authentication without entering that workflow. One explicit saved-backtest
    report boundary now exercises the orchestrator and external model under the
-   narrower export and no-authority contract above;
-2. **Next review:** add an explicit, read-only retrieval policy that can select
-   only current `reviewed_memory` artifacts for a future evidence-bound context;
-   retrieval must remain off until separately started and must rebind current
-   evidence rather than treating memory as fact;
+   narrower export and no-authority contract above. Phase 1.8 now adds only an
+   explicit id-allowlisted retrieval record that rebinds current evidence;
+   automatic recall and provider/model consumption remain off;
+2. **Next review:** separately review any use of the Phase 1.8 retrieval bundle
+   inside a future evidence-bound workflow. The workflow must independently
+   read current canonical evidence and must not promote memory to fact;
 3. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;

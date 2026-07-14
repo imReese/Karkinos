@@ -348,6 +348,48 @@ small reviewed set of wrapper, nesting, and Chinese/common field aliases but
 cannot invent missing claims or counterarguments. Missing per-item evidence
 summaries remain explicitly `reference_only` and require human review.
 
+### Explicit Reviewed-Memory Retrieval and Current-Evidence Rebinding
+
+Phase 1.8 consumes only the recall eligibility produced by Phase 1.5; it does
+not add an autonomous memory engine. A human must name the exact review ids and
+one already-persisted current context:
+
+```text
+explicit human request + exact review-id allowlist
+-> replay each review, source analysis, artifact, and source evidence
+-> read one existing current EvidenceBoundContextSnapshot
+-> verify every current canonical evidence row and financial identity
+-> map each source evidence tool to exactly one current complete record
+-> persist retrieval request + one-event hash chain
+-> return historical reviewed input + current-evidence bindings
+```
+
+The source and current evidence identities may differ. Rebinding means the
+result records which current canonical record a future research workflow must
+read for each source tool; it does not assert that old prose remains true under
+the new data. The retrieval result therefore declares
+`memory_is_current_fact=false` and `current_evidence_must_be_read=true`, while
+binding the current valuation snapshot, ledger cutoff, and ledger fingerprint.
+
+Current-context validation checks the content-addressed context id, every
+evidence-reference fingerprint, exact valuation/ledger identity, `complete`
+status, and a unique canonical tool mapping. Source eligibility independently
+replays Phase 1.5. Any source or current drift changes the recomputed retrieval
+target, invalidates replay, and removes memory content from the response while
+preserving the append-only request and audit event.
+
+`ai_reviewed_memory_retrievals` and
+`ai_reviewed_memory_retrieval_events` are isolated AI audit tables. POST is the
+only initializer; GET/list/replay do not initialize or refresh anything. Exact
+restart/concurrent duplicates reuse one retrieval and one event; changed input
+under the same idempotency key fails closed.
+
+Phase 1.8 deliberately has no semantic/vector search, embedding, scheduler,
+automatic recall, prompt injection, provider/model call, provider-side tool, or
+registered orchestrator retrieval tool. It cannot write Account Truth,
+Portfolio, Decision, risk, OMS, ledger, reconciliation, kill switch, capital
+authorization, broker submission/cancellation, or execution permissions.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
