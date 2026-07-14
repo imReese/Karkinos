@@ -6,6 +6,31 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.13 adds an isolated, versioned retrieval for
+  exact Phase 1.12 promoted external-research memory ids plus one existing
+  persisted current context. Assumptions: promotion is not automatic-recall or
+  data-export permission; historical conclusions remain non-current; and every
+  source canonical tool must map to exactly one current `complete` evidence
+  record under a replay-valid valuation/ledger identity. The boundary reuses
+  the established current-context validator without changing Phase 1.8 request
+  fields, fingerprints, tables, or replay. It stores only a new immutable
+  retrieval row and one hash-chained event. Revocation or source/current/audit
+  drift preserves history but hides selected memory content. Validation: 205
+  AI-runtime/route tests, 95 trading-safety tests, and the complete 1,549-test
+  backend suite passed with 86.46% coverage. Under Node 24.14.0, all 420 Web
+  tests, Prettier format check, and the production build passed; Black and
+  isort checks passed. Deterministic cases cover explicit confirmation,
+  current evidence rebinding, partial evidence, restart,
+  concurrent duplicate commands, request/source/current/audit drift, terminal
+  revocation, v1 fingerprint compatibility, and unchanged protected OMS/
+  ledger/risk/kill-switch/capital/Decision tables. Risk impact: the existing
+  Phase 1.8 service was rated HIGH and `create_app` CRITICAL by GitNexus, so
+  neither was edited. One medium-risk route aggregator with two direct callers
+  and no execution process includes the new sub-router. Phase 1.13 performs no
+  provider/model call, semantic search, automatic prompt injection, Decision
+  handoff, financial mutation, broker action, capital change, or authority
+  grant.
+
 - 2026-07-14: AI-native Phase 1.12 adds an explicit, revocable promotion from
   one currently eligible Phase 1.11 external-analysis review into a new
   historical-research memory artifact. Assumptions: research acceptance is not

@@ -39,6 +39,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.10 | External memory-informed analysis boundary implemented | Explicit evidence export, three current-evidence-bound model stages, reasoning-preserving schema validation, and no trade authority |
 | AI-native Phase 1.11 | External-analysis human review boundary implemented | Exact disposition, quality/latency/token/cost evidence, drift invalidation, and no memory or trade authority |
 | AI-native Phase 1.12 | Reviewed external-research memory promotion implemented | Explicit revocable promotion, source-bound historical artifact, drift invalidation, and no automatic recall or trade authority |
+| AI-native Phase 1.13 | Promoted external-memory retrieval implemented | Versioned exact-ID retrieval, current complete-evidence rebinding, v1 compatibility, and no automatic/model consumption |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -379,12 +380,31 @@ Phase 1.12 keeps acceptance and memory promotion as two separate human acts:
   reactivation requires a new analysis/review rather than mutating history;
 * the promotion tables are isolated from reviewed-memory retrieval v1. This
   phase enables neither automatic nor external-model consumption of the new
-  artifact; a later integration must be reviewed without invalidating v1
-  request fingerprints or replay;
+  artifact; the Phase 1.13 integration below remains separately versioned and
+  does not invalidate v1 request fingerprints or replay;
 * POST is human explicit and model-free. GET/list/replay initialize no schema,
   load no credentials, call no provider, and refresh no facts. No current fact,
   provider promotion, Decision, trade-plan, financial, broker, permission,
   capital, or execution authority is created.
+
+Phase 1.13 adds only the versioned retrieval boundary for those promoted
+artifacts:
+
+* `POST /api/ai/external-reviewed-memory-retrievals` requires an exact human
+  identity, purpose, idempotency key, confirmation, existing persisted current
+  context, and 1–20 explicit Phase 1.12 promotion ids;
+* every promotion and its source chain is replayed. Each source canonical tool
+  must map to exactly one current `complete` evidence record under the current
+  valuation snapshot and ledger cutoff/fingerprint;
+* the isolated retrieval and single-event audit tables are append-only.
+  GET/list/replay revalidate all bindings; revocation or source/current/audit
+  drift hides content without deleting promotion or retrieval history;
+* Phase 1.8 request fields, fingerprints, tables, and replay are protected by
+  regression tests and remain unchanged;
+* there is no semantic search, scheduler, automatic prompt injection,
+  provider-side tool, provider/model call, Decision handoff, trade plan,
+  financial write, broker action, permission, capital, or execution effect.
+  Offline or external consumption requires another explicit review.
 
 Planned migration, each behind a separate review:
 
@@ -410,13 +430,18 @@ Planned migration, each behind a separate review:
    Phase 1.11 reviewed research into a new source-bound historical memory
    artifact now exists without modifying retrieval v1, automatic recall,
    current-fact status, Decision input, provider promotion, or trade authority;
-3. **Next review:** separately evaluate explicit retrieval consumption of the
-   new Phase 1.12 artifact through a versioned contract that preserves all v1
-   request fingerprints and historical replay;
-4. separately review any broader use of a real provider inside the task,
+3. **Completed Phase 1.13 review:** a separate versioned retrieval accepts only
+   exact Phase 1.12 promotion ids and an existing current context, replays each
+   promotion, and rebinds source tools to unique current complete evidence.
+   Phase 1.8 request fingerprints, tables, and replay remain unchanged; there
+   is no semantic search, automatic prompt injection, or provider/model call;
+4. **Next review:** separately evaluate explicit consumption of the new Phase
+   1.13 retrieval by a bounded research workflow, without making it automatic
+   or interpreting retrieval as permission to export data;
+5. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
-5. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+6. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.

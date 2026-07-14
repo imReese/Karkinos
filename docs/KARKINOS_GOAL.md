@@ -238,6 +238,15 @@ Active planning target:
   do not alter reviewed-memory retrieval v1, do not enable automatic recall,
   and create no current fact, Decision input, provider promotion, financial
   mutation, broker action, capital change, or execution authority.
+  Phase 1.13 adds a separate versioned retrieval for those promoted artifacts.
+  A human must name exact promotion ids and one already-persisted current
+  context; every promotion is replayed, then each source canonical tool is
+  rebound to exactly one current `complete` evidence record under the same
+  valuation/ledger identity. Revocation or source/current/audit drift hides the
+  selected content without deleting history. The Phase 1.8 request schema,
+  fingerprints, tables, and replay remain unchanged. This new retrieval is not
+  automatically injected into a prompt and does not call a model, create a
+  Decision input, mutate financial state, or grant any authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

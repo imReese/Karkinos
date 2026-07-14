@@ -50,6 +50,14 @@ class ExternalReviewedMemoryRevocationPayload(BaseModel):
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
 
+    # Keep the versioned Phase 1.13 retrieval contract at the reviewed-memory
+    # boundary without changing the legacy retrieval v1 service or app wiring.
+    from server.routes.ai_external_reviewed_memory_retrievals import (
+        create_router as create_external_reviewed_memory_retrieval_router,
+    )
+
+    router.include_router(create_external_reviewed_memory_retrieval_router())
+
     @router.post("/api/ai/external-analysis-reviews/{review_id}/memory-promotions")
     def promote_external_reviewed_memory(
         review_id: str,
