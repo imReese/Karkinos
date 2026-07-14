@@ -14,6 +14,14 @@ A-shares, ETFs, gold spot, and exchange-traded bonds.
 
 Key Features:
 
+- **Evidence-governed AI research** — provider/model/role registration,
+  immutable valuation-and-ledger-bound contexts, deny-by-default read tools,
+  deterministic fixture workflows, cited artifacts, and hash-chain replay.
+  A separate explicit saved-backtest report command may send only one selected,
+  complete canonical research-evidence payload to the configured
+  OpenAI-compatible model after exact data-export consent. Account holdings and
+  execution-authority facts are excluded; the result remains a
+  non-authoritative report requiring human review.
 - **Event-Driven Architecture** — All components communicate through EventBus, ensuring deterministic backtesting
 - **Multi-Asset Support** — A-shares, ETFs, gold spot, exchange-traded bonds; Instrument field values carry asset differences
 - **Target Weight Signals** — Strategies output target weights (0~1), Portfolio auto-converts to share counts

@@ -231,8 +231,12 @@ async def _research_evidence_projection(
     if not isinstance(row, dict):
         raise LookupError(f"backtest result not found: {result_id}")
     metrics, metrics_valid = _json_object(row.get("metrics_json"))
+    config, config_valid = _json_object(row.get("config_json"))
+    cost_summary, cost_summary_valid = _json_object(row.get("cost_summary_json"))
     bundle = metrics.get("research_evidence_bundle")
     bundle_payload = dict(bundle) if isinstance(bundle, dict) else {}
+    after_cost = metrics.get("evidence_bundle")
+    after_cost_payload = dict(after_cost) if isinstance(after_cost, dict) else {}
     bundle_gate = str(bundle_payload.get("gate_status") or "missing")
     status = {
         "pass": "complete",
@@ -242,19 +246,69 @@ async def _research_evidence_projection(
     complete = metrics_valid and bool(bundle_payload)
     if not complete:
         status = "missing"
+    performance_summary = {
+        key: row.get(key) if row.get(key) is not None else metrics.get(key)
+        for key in (
+            "initial_cash",
+            "final_equity",
+            "total_return",
+            "sharpe",
+            "sortino",
+            "max_drawdown",
+            "win_rate",
+            "duration_days",
+        )
+    }
+    required_performance_fields = (
+        "initial_cash",
+        "final_equity",
+        "total_return",
+        "max_drawdown",
+        "duration_days",
+    )
+    analysis_blocking_reasons = []
+    if not complete:
+        analysis_blocking_reasons.append("research_evidence_bundle_missing")
+    if bundle_gate != "pass":
+        analysis_blocking_reasons.append(
+            f"research_evidence_gate_not_pass:{bundle_gate}"
+        )
+    missing_performance = [
+        key for key in required_performance_fields if performance_summary[key] is None
+    ]
+    if missing_performance:
+        analysis_blocking_reasons.append(
+            "persisted_performance_fields_missing:" + ",".join(missing_performance)
+        )
+    if not after_cost_payload:
+        analysis_blocking_reasons.append("after_cost_evidence_missing")
     payload = {
-        "schema_version": "karkinos.ai.research_evidence_capture.v1",
+        "schema_version": "karkinos.ai.research_evidence_capture.v2",
         "backtest_result_id": result_id,
         "backtest_created_at": row.get("created_at"),
+        "performance_summary": performance_summary,
+        "test_window": {
+            "start_date": config.get("start_date") if config_valid else None,
+            "end_date": config.get("end_date") if config_valid else None,
+            "assets": config.get("assets") if config_valid else None,
+            "benchmark_return": (
+                config.get("benchmark_return") if config_valid else None
+            ),
+        },
+        "after_cost_evidence": after_cost_payload,
+        "cost_summary": cost_summary if cost_summary_valid else {},
         "research_evidence_bundle": bundle_payload,
         "bundle_status": "available" if complete else "missing",
         "blocking_reasons": [] if complete else ["research_evidence_bundle_missing"],
+        "analysis_ready": not analysis_blocking_reasons,
+        "analysis_blocking_reasons": analysis_blocking_reasons,
+        "persisted_backtest_facts_only": True,
     }
     return CapturedProjection(
         tool_name=tool_name,
         status=status,
         as_of=str(row.get("created_at") or "1970-01-01T00:00:00+00:00"),
-        source_schema_version="karkinos.ai.research_evidence_capture.v1",
+        source_schema_version="karkinos.ai.research_evidence_capture.v2",
         payload=payload,
     )
 

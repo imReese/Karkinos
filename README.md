@@ -30,8 +30,12 @@ projection、校验 valuation/ledger identity 并写 AI 审计事实；它不启
 要求修订或驳回；接受只赋予 AI 研究域内的回忆资格，且证据或 artifact 漂移会自动撤销该
 资格。Phase 1.6 另设一个显式、固定且不含财务数据的 OpenAI-compatible 连通性探针，
 只验证已授权 provider/model 的鉴权和响应协议，并保存脱敏审计元数据；它不进入研究
-workflow。没有自动记忆检索、Decision 交接、后台 AI 任务或实盘入口，真实 provider
-也不会成为默认依赖。
+workflow。Phase 1.7 再增加一个受限例外：人必须选择一条已保存回测并明确同意把其
+策略/区间、收益回撤、成本和证据缺口发送给已配置外部模型；系统只允许 complete 且
+analysis-ready 的 canonical evidence，先经本地只读工具取证，再生成一份绑定精确
+evidence/context fingerprint 的非权威 report。账户持仓、valuation/ledger identity、
+OMS、风控、资本和券商事实不会外发，也不会生成 memory、Decision 输入或交易计划。
+没有自动记忆检索、后台 AI 任务或实盘入口，真实 provider 也不会成为默认依赖。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -81,7 +85,12 @@ public demos and development.
   no automatic retrieval or Decision handoff exists. A separate explicit
   connectivity POST may send one fixed non-financial prompt through a reviewed
   OpenAI-compatible HTTPS adapter. It stores no key, prompt, or response body,
-  starts no workflow, and grants no OMS or broker authority.
+  starts no workflow, and grants no OMS or broker authority. A separate
+  explicit saved-backtest report POST may send only the selected canonical
+  backtest evidence after an exact data-export confirmation. It permits one
+  local `research_evidence.read` and one schema-validated, cited,
+  non-authoritative report; account holdings and execution/authority facts stay
+  outside the provider request.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

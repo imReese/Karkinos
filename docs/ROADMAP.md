@@ -33,6 +33,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.4 | Offline fixture lifecycle implemented | Explicit accepted-task claim/debate/report/memory workflow with drift invalidation and no external model |
 | AI-native Phase 1.5 | Human memory disposition implemented | Exact analysis review, recall eligibility, append-only replay, and automatic drift invalidation |
 | AI-native Phase 1.6 | External connectivity boundary implemented | Explicit non-financial OpenAI-compatible probe with redacted idempotent audit |
+| AI-native Phase 1.7 | Saved-backtest external report boundary implemented | Explicit consent, one canonical evidence record, one schema-validated non-authoritative report, and no trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -205,6 +206,30 @@ it to research or trading workflows:
   create a task, claim, memory, Decision input, financial write, permission, or
   execution authority.
 
+Phase 1.7 adds one purpose-limited external-model workflow without opening the
+broader task, memory, Decision, or trading graph:
+
+* `POST /api/ai/external-research/backtest-reports` requires a selected saved
+  result, human identity, idempotency key, research question, and an exact
+  confirmation that explicitly consents to sending that result's evidence to
+  the configured external model;
+* canonical research capture v2 projects persisted performance, test-window,
+  after-cost/cost, evidence-gate, and limitation facts without recalculation.
+  Only `complete` and `analysis_ready` evidence may cross the boundary;
+* the local orchestrator authorizes exactly one `research_evidence.read` tool.
+  The external request receives that research payload but no account holdings,
+  account alias, valuation/ledger identity, Account Truth, Operations,
+  paper/shadow, risk, OMS, capital, broker, or permission facts;
+* the model receives no provider-side tools. Its output is locally normalized,
+  schema validated, bound to the exact context/evidence fingerprints, and
+  stored only as a cited, non-authoritative `REPORT` requiring human review;
+* an atomic model-run claim prevents concurrent duplicate charges. Exact
+  terminal retries reuse the audit result, changed input fails closed, and a
+  failed run requires a new deliberate request rather than automatic retry;
+* malformed raw output and provider error bodies are not stored. The report
+  creates no memory, claim/debate lifecycle, Decision input, trade-plan draft,
+  financial write, authority, submission, cancellation, or broker action.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed-memory boundary:** immutable storage, identity
@@ -214,13 +239,16 @@ Planned migration, each behind a separate review:
    drift-sensitive research recall eligibility exist without recomputation,
    GET-side provider refresh, automatic external model invocation, or authority.
    A separate fixed connectivity probe can verify explicitly configured API
-   authentication without entering that workflow;
+   authentication without entering that workflow. One explicit saved-backtest
+   report boundary now exercises the orchestrator and external model under the
+   narrower export and no-authority contract above;
 2. **Next review:** add an explicit, read-only retrieval policy that can select
    only current `reviewed_memory` artifacts for a future evidence-bound context;
    retrieval must remain off until separately started and must rebind current
    evidence rather than treating memory as fact;
-3. separately review any use of a real provider inside an evidence-bound
-   research workflow without making any vendor canonical;
+3. separately review any broader use of a real provider inside the task,
+   debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
+   without making any vendor canonical;
 4. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch

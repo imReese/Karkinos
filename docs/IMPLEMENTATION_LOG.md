@@ -6,6 +6,42 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.7 adds one human-started,
+  provider-neutral saved-backtest external-report boundary at
+  `POST /api/ai/external-research/backtest-reports`. Assumptions: selecting a
+  result does not itself authorize export; the caller must use an exact phrase
+  that explicitly consents to sending that saved result's strategy/window,
+  persisted performance, after-cost/cost evidence, research gate, and recorded
+  limitations to the configured external model. Account alias/holdings,
+  valuation/ledger identity, Account Truth, Operations, paper/shadow, OMS,
+  risk, capital, broker, and permission facts are excluded from the external
+  payload. Canonical research capture v2 projects the saved metrics without
+  recalculation and derives `analysis_ready`; incomplete evidence blocks before
+  network I/O. The deterministic orchestrator authorizes exactly one
+  `research_evidence.read`, while the provider receives no tools. Valid output
+  becomes one locally identity-bound, cited, non-authoritative `REPORT`; it is
+  not memory, an account fact, Decision input, trade-plan draft, or authority.
+  An atomic run claim prevents concurrent duplicate charges, terminal retries
+  are read-only, changed idempotency input fails closed, and malformed raw
+  provider bodies are not stored. Validation: 126 focused AI/route tests,
+  88 trading-safety tests, and the complete 1,470-test backend suite passed;
+  Black and isort checks passed.
+  Under Node 24.14.0, all 420 Web tests, Prettier format check, and the
+  TypeScript/Vite production build passed. Deterministic cases cover exact
+  restart, concurrent duplicate, evidence incompleteness, provider output
+  wrapping/normalization, malformed output, secret/raw-body exclusion, audit
+  replay, and unchanged OMS/ledger/risk/capital tables. A bounded live trial on
+  saved backtest result 5 produced no accepted report: successive explicit
+  requests ended as provider timeout, non-JSON output, and schema-invalid
+  claims. Each failure is terminal and audited, no raw response body or report
+  artifact was stored, and further external evidence export was paused pending
+  renewed owner consent under the clearer Phase 1.7 phrase. Risk impact:
+  GitNexus rated `_research_evidence_projection` LOW with no indexed upstream
+  callers and `create_app` LOW with `server.__main__.main` as its sole direct
+  production caller. The route has no scheduler/startup invocation and cannot
+  mutate financial state, execution state, kill switch, capital authority, or
+  broker submit/cancel capability.
+
 - 2026-07-13: AI-native Phase 1.2 adds one explicitly human-started,
   model-free canonical context capture command at
   `POST /api/ai/research-contexts/capture`. Assumptions: the caller supplies a

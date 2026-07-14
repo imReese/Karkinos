@@ -60,6 +60,12 @@ The product boundary is:
   fixed, non-financial probe. A successful API call proves authentication and
   protocol compatibility, not research quality, financial truth, permission,
   or readiness for an evidence-bound workflow.
+* Sending financial research evidence to an external model is a separate data-
+  export decision. The operator must select one saved result and explicitly
+  consent to sending its strategy, instrument/window, persisted performance,
+  cost, and evidence-gap fields. Account holdings, account truth, OMS, risk,
+  capital, broker, and permission facts remain outside that request. The output
+  is a cited, non-authoritative report requiring human review.
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.
@@ -155,6 +161,17 @@ Active planning target:
   prompt, deduplicates before network I/O, and stores only redacted metadata
   and fingerprints. It does not connect the external model to the research
   orchestrator, context, artifacts, memory, Decision, or any trading boundary.
+  Phase 1.7 adds one narrower exception: a human may explicitly export one
+  complete, analysis-ready saved-backtest evidence record to the configured
+  provider-neutral OpenAI-compatible edge and receive one schema-validated
+  `REPORT`. The local orchestrator first reads the exact canonical evidence
+  through `research_evidence.read`; the external request receives no account
+  holdings or valuation/ledger identity, while the stored artifact is bound
+  locally to those identities and the evidence fingerprint. Exact duplicates
+  receive one atomic model-run claim, incomplete evidence blocks before
+  network I/O, and malformed output fails closed without storing the raw body.
+  There is no scheduler, provider-side tool, memory, Decision handoff,
+  trade-plan draft, OMS/ledger/risk/capital write, or broker action.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
