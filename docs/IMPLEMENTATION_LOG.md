@@ -6,6 +6,36 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.14 adds the first explicit external consumer
+  of the versioned Phase 1.13 promoted-memory retrieval. Assumptions: retrieval
+  is neither automatic recall nor data-export permission; historical memory is
+  a hypothesis source rather than a current fact; and a model report remains
+  non-authoritative until a separate human review. The new POST requires the
+  exact reviewed-memory/current-evidence export confirmation. Every
+  claim/debate/report stage rereads every bound current canonical evidence row
+  through local deny-by-default tools before a provider-neutral edge receives
+  sanitized evidence, selected memory, and prior normalized artifacts. It
+  reuses prompt v2, closed-world citation validation, the deterministic
+  orchestrator, and provider/model/role separation. DeepSeek-compatible
+  requests keep thinking/high effort; provider-side tools, raw reasoning/body
+  persistence, automatic recall, and automatic retry remain disabled. New
+  analysis/model-call tables reference the Phase 1.13 retrieval directly;
+  Phase 1.8 retrieval-v1 and Phase 1.10 analysis tables are unchanged.
+  Deterministic validation: 215 AI-runtime/route tests, 96 trading-safety
+  tests, and the complete 1,559-test backend suite passed at 86.43% coverage.
+  Under Node 24.14.0, all 420 Web tests, Prettier format check, and the
+  production build passed; Black and isort checks passed. A real three-stage
+  DeepSeek smoke used only a sanitized synthetic portfolio and completed all
+  calls with reasoning present but not persisted. Its normalized report
+  reconciled holding contributions to account P&L, verified zero account-truth
+  residuals, and explicitly flagged ambiguous weight semantics plus weak
+  historical-memory specificity instead of inventing certainty. GitNexus's
+  name-only CLI could not disambiguate the modified `create_router`; an exact
+  graph query found two direct callers and no execution process, giving medium
+  route-registration risk. No HIGH/CRITICAL symbol was edited. The boundary
+  cannot create memory, Decision input, trade plan, financial mutation, broker
+  action, capital change, submit/cancel ability, or execution authority.
+
 - 2026-07-14: AI-native Phase 1.13 adds an isolated, versioned retrieval for
   exact Phase 1.12 promoted external-research memory ids plus one existing
   persisted current context. Assumptions: promotion is not automatic-recall or

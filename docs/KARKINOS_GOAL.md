@@ -247,6 +247,16 @@ Active planning target:
   fingerprints, tables, and replay remain unchanged. This new retrieval is not
   automatically injected into a prompt and does not call a model, create a
   Decision input, mutate financial state, or grant any authority.
+  Phase 1.14 adds the first explicit consumer of that versioned retrieval. A
+  human must separately confirm export of the selected promoted memory and its
+  bound current canonical evidence before the provider-neutral three-stage
+  claim/debate/report workflow may run. Every stage rereads every current
+  evidence record through local permission-checked tools; the configured model
+  keeps its reasoning mode, while provider-side tools, raw reasoning storage,
+  automatic recall, and automatic retry remain disabled. The result is a
+  cited, non-authoritative research artifact requiring a new human review. It
+  cannot create memory, Decision input, trade plan, financial mutation, broker
+  action, capital change, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
