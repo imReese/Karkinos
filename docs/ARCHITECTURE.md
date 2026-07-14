@@ -390,6 +390,48 @@ registered orchestrator retrieval tool. It cannot write Account Truth,
 Portfolio, Decision, risk, OMS, ledger, reconciliation, kill switch, capital
 authorization, broker submission/cancellation, or execution permissions.
 
+### Offline Memory-Informed Analysis Boundary
+
+Phase 1.9 connects a Phase 1.8 retrieval to the deterministic orchestrator only
+after another explicit human command. This proves the evidence, prompt-input,
+tool, artifact, restart, and replay contracts without claiming that a real
+model has produced intelligence:
+
+```text
+explicit human command + exact retrieval id
+-> revalidate retrieval/review/context/evidence binding
+-> claim role reads every current canonical evidence reference via local tools
+-> bind reviewed memory as historical non-fact input
+-> deterministic claim -> debate -> report
+-> persist artifacts, tool calls, workflow audit, and run mapping
+-> recompute binding and replay validity on every GET
+```
+
+The retrieval itself is deliberately not a registered tool. Its exact target
+fingerprint and historical memory payload are bound by the local service, while
+the orchestrator tool registry contains only the existing canonical persisted-
+evidence readers. The claim stage must complete the exact current evidence read
+set before the fixture can emit output. Debate and report receive no tools.
+
+Every artifact cites the current evidence references and carries the retrieval
+id/target fingerprint, current context fingerprint, historical-memory labels,
+`memory_input_is_current_fact=false`, `current_evidence_must_be_read=true`, and
+`authority_effect=none`. The lifecycle contains exactly claim, debate, and
+report; it does not create a new memory or trade-plan draft.
+
+`ai_memory_informed_fixture_analyses` maps the request to one workflow and uses
+a short database lease to prevent duplicate execution across threads or
+restarts. Workflow idempotency also binds the full request fingerprint. Failed
+and intentionally partial stages are terminal audit facts, not automatic retry
+signals. Detail/list/replay GETs do not initialize schema or resume workflows.
+
+Every read replays the current Phase 1.8 target, canonical records, tool-call
+set, artifact fingerprints, stage lifecycle, and workflow hash chain. Later
+drift preserves historical artifacts but derives an invalid current binding.
+There is no external model, network, API key, semantic retrieval, automatic
+recall, provider-side tool, Decision input, financial mutation, permission
+change, broker action, or execution/capital authority in Phase 1.9.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across

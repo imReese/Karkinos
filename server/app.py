@@ -321,6 +321,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.ai_external_research import (
         create_router as ai_external_research_router,
     )
+    from server.routes.ai_memory_informed_analyses import (
+        create_router as ai_memory_informed_analyses_router,
+    )
     from server.routes.ai_provider_connectivity import (
         create_router as ai_provider_connectivity_router,
     )
@@ -397,6 +400,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(account_strategy_router())
     app.include_router(account_truth_router())
     app.include_router(ai_external_research_router())
+    app.include_router(ai_memory_informed_analyses_router())
     app.include_router(ai_provider_connectivity_router())
     app.include_router(ai_research_router())
     app.include_router(ai_reviewed_memory_retrievals_router())

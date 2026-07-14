@@ -44,6 +44,7 @@ paper/shadow、人工确认、对账和复盘。
 | AI 原生 1.6 | 外部连通性边界已实现 | 人工显式、固定非财务 OpenAI-compatible 探针与脱敏幂等审计 |
 | AI 原生 1.7 | 保存回测外部报告边界已实现 | 明确外发同意、单条 canonical 证据、单份结构化非权威报告且无交易权限 |
 | AI 原生 1.8 | 已复核记忆检索边界已实现 | 显式 ID 白名单、当前证据重绑定、漂移回放，且无自动回忆或 provider 调用 |
+| AI 原生 1.9 | 离线记忆辅助分析边界已实现 | 显式消费 retrieval、强制重读当前证据、确定性 claim/debate/report，且无模型或交易权限 |
 
 ## AI 原生投研主线
 
@@ -164,9 +165,25 @@ ledger cutoff/fingerprint，并要求未来 workflow 重新读取当前证据，
 自动 prompt 注入、provider-side tool、注册的 retrieval tool、外部模型调用、Decision 输入、
 trade-plan draft、财务写入或权限效果。
 
-后续按独立审查逐步迁移：下一步只考虑是否允许未来 evidence-bound workflow 消费 1.8
-检索 bundle；该 workflow 必须独立读取当前 canonical evidence，不能把 memory 当作事实。
-真实 provider 进入更广泛的 task/debate/memory/Portfolio/Account Truth/Operations/
+1.9 增量实现独立消费边界，但不把 fixture 宣称为生产 AI 智能。只有人工携带身份、研究问题、
+幂等键和精确的“离线且无交易权限”确认语句，才可调用
+`POST /api/ai/reviewed-memory-retrievals/{retrieval_id}/fixture-analyses`；输入必须是当次仍有效
+的 1.8 retrieval 及其精确持久化 context。retrieval bundle 只在本地作为历史已复核研究
+输入绑定，不注册为 provider-side 或 orchestrator retrieval tool。claim role 必须先通过
+既有默认拒绝的 canonical tools 独立读取当前 context 中每一条证据，随后本地 deterministic
+fixture 才固定生成带引用的 claim、debate 和 report；三者都记录当前证据、retrieval target、
+历史 memory 非事实标签和 `authority_effect=none`，且不生成新 memory。
+
+数据库 run lease 与 workflow 幂等键保证重启和并发重复只运行一次；阶段失败和显式 partial
+保持终态并可回放，GET 不续跑、不初始化 schema。后续 review、retrieval、context、evidence、
+artifact、tool-call 或审计漂移会保留历史结果，但撤销其当前绑定与有效回放资格。该边界没有
+外部模型、网络、API Key、语义检索、自动回忆、Decision 输入、trade-plan draft、财务写入、
+权限变更、券商动作或执行/资本授权。
+
+后续按独立审查逐步迁移：1.9 已证明 deterministic workflow 只能在独立重读当前 canonical
+evidence 后消费精确 retrieval bundle。下一步只审查是否允许真实 provider 在相同工具、
+证据、输出和无权限契约内替换 fixture；prompt 与 schema 修复不得把 memory 升格为事实、
+忽略失败工具读取或弱化漂移门禁。真实 provider 进入更广泛的 task/debate/memory/Portfolio/Account Truth/Operations/
 paper-shadow workflow 必须再次单独审查和用户授权。任何 trade-plan draft 进入
 Decision 都必须经过独立人工交接，
 既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill

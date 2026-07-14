@@ -35,6 +35,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.6 | External connectivity boundary implemented | Explicit non-financial OpenAI-compatible probe with redacted idempotent audit |
 | AI-native Phase 1.7 | Saved-backtest external report boundary implemented | Explicit consent, one canonical evidence record, one schema-validated non-authoritative report, and no trade authority |
 | AI-native Phase 1.8 | Reviewed-memory retrieval boundary implemented | Explicit ID allowlist, current-evidence rebinding, drift-sensitive replay, and no automatic recall or provider call |
+| AI-native Phase 1.9 | Offline memory-informed analysis boundary implemented | Explicit retrieval consumption, mandatory current-evidence tool reads, deterministic claim/debate/report, and no model or trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -260,9 +261,34 @@ memory into an autonomous prompt source:
   injection, provider-side tool, registered retrieval tool, external model
   call, Decision input, trade-plan draft, financial mutation, or authority.
 
+Phase 1.9 lets a human explicitly exercise the missing consumption boundary
+without treating the fixture as production intelligence:
+
+* `POST /api/ai/reviewed-memory-retrievals/{retrieval_id}/fixture-analyses`
+  requires the exact offline/no-authority confirmation, operator identity,
+  research question, and idempotency key. Only a currently eligible Phase 1.8
+  retrieval with its exact persisted context may enter;
+* the retrieval bundle is bound locally as historical reviewed research input,
+  not registered as a provider-side or orchestrator retrieval tool. Before any
+  artifact is accepted, the claim role must independently read every current
+  canonical evidence reference through the existing deny-by-default tools;
+* the deterministic local fixture emits exactly one cited claim, debate, and
+  report. Every artifact records the retrieval target, current context,
+  historical-memory non-fact label, exact current evidence references, and
+  `authority_effect=none`; it creates no new memory;
+* a database run lease plus workflow idempotency makes restart and concurrent
+  duplicates single-run. Stage failure and deliberate partial output remain
+  terminal and explicit; GET/replay never resume work or initialize schema;
+* later source review, retrieval, context, evidence, artifact, tool-call, or
+  audit drift preserves the historical result but invalidates its current
+  binding and replay qualification;
+* no external model, network, API key, semantic retrieval, automatic recall,
+  Decision input, trade-plan draft, financial write, permission change, broker
+  action, or execution/capital authority is introduced.
+
 Planned migration, each behind a separate review:
 
-1. **Completed foundation and reviewed-memory boundary:** immutable storage, identity
+1. **Completed foundation and memory-informed fixture boundary:** immutable storage, identity
    validation, context-bound read executors, explicitly human-started canonical
    capture, human task/review records, and the accepted-task deterministic
    claim/debate/report/memory lifecycle plus exact human disposition and
@@ -272,11 +298,14 @@ Planned migration, each behind a separate review:
    authentication without entering that workflow. One explicit saved-backtest
    report boundary now exercises the orchestrator and external model under the
    narrower export and no-authority contract above. Phase 1.8 now adds only an
-   explicit id-allowlisted retrieval record that rebinds current evidence;
-   automatic recall and provider/model consumption remain off;
-2. **Next review:** separately review any use of the Phase 1.8 retrieval bundle
-   inside a future evidence-bound workflow. The workflow must independently
-   read current canonical evidence and must not promote memory to fact;
+   explicit id-allowlisted retrieval record that rebinds current evidence.
+   Phase 1.9 now proves that a deterministic claim/debate/report workflow can
+   consume that exact bundle only after independently reading all current
+   evidence, without creating memory or authority;
+2. **Next review:** separately review whether a real provider may replace the
+   Phase 1.9 fixture within this same evidence/tool/output envelope. Provider
+   prompts and schema repair must not promote historical memory to fact, omit
+   failed tool reads, or weaken drift and no-authority checks;
 3. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
