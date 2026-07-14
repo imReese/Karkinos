@@ -39,6 +39,7 @@ paper/shadow、人工确认、对账和复盘。
 | AI 原生 1.1 | 只读边界已实现 | 不可变 canonical evidence 捕获与 context 绑定读取 |
 | AI 原生 1.2 | 捕获边界已实现 | 人工显式启动、无模型调用的 canonical context 捕获 |
 | AI 原生 1.3 | 任务/复核边界已实现 | 人工证据绑定任务、复核 UI 与哈希链回放，模型执行关闭 |
+| AI 原生 1.4 | 离线 fixture 生命周期已实现 | 已接受任务的 claim/debate/report/memory、漂移失效，无外部模型 |
 
 ## AI 原生投研主线
 
@@ -95,9 +96,18 @@ ledger fingerprint。非完整证据保留用于诊断，但任务标记为 `blo
 记录时先 capture 再创建 task；可选回测证据必须绑定精确 result id。人工接受上下文也
 不会启动 workflow/model，不会产生任何交易权限。
 
-后续按独立审查逐步迁移：下一步才让 deterministic fixture provider
-参与显式任务并加入 debate/report/memory 和证据漂移失效机制；真实 provider adapter 必须
-单独审查和用户授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
+1.4 增量加入第二次人工显式命令：只有 `context_accepted` 且证据完整权威的任务，才能在
+确认“无外部模型”的前提下运行离线 deterministic fixture。固定阶段会通过默认拒绝的
+canonical tool 边界逐条读取证据，并保存带引用的 claim、debate、report 和待人工复核
+memory。精确重试和重启复用同一 workflow；task/context/valuation/ledger 或 evidence
+fingerprint 漂移会阻断启动，完成后发生漂移则使绑定、审计回放和 memory 明确失效。
+GET 不初始化 schema、不轮询、不刷新 provider，也不启动后台任务。该能力不联网、不读取
+API Key、不调用真实模型，不把输出当作账户事实，也不修改 OMS、账本、风控、kill switch、
+资本授权或券商 submit/cancel。
+
+后续按独立审查逐步迁移：下一步是为 fixture report 和 memory 增加人工处置/晋级契约，
+但仍不能把它们变成账户事实或 Decision 输入；真实 provider adapter 必须单独审查和用户
+授权。任何 trade-plan draft 进入 Decision 都必须经过独立人工交接，
 既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill
 switch 门禁继续拥有唯一权威。
 

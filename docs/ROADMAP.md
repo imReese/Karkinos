@@ -30,6 +30,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.1 | Read boundary implemented | Immutable canonical-evidence captures and context-bound read executors |
 | AI-native Phase 1.2 | Capture boundary implemented | Explicit human-started, model-free canonical context capture |
 | AI-native Phase 1.3 | Task/review boundary implemented | Human-created evidence-bound tasks, review UI, and hash-chain replay with model execution off |
+| AI-native Phase 1.4 | Offline fixture lifecycle implemented | Explicit accepted-task claim/debate/report/memory workflow with drift invalidation and no external model |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -139,15 +140,37 @@ analysis execution:
   call, scheduler, background task, OMS/ledger/risk/capital write, broker
   submit, or cancel capability is introduced.
 
+Phase 1.4 exercises the provider-neutral runtime through an explicit offline
+fixture lifecycle without presenting it as model intelligence:
+
+* only a task in `context_accepted` with complete authoritative evidence may
+  cross `POST /api/ai/research-tasks/{task_id}/fixture-analyses`, and an exact
+  acknowledgement plus human operator label is required;
+* the deterministic fixture reads every bound evidence reference through the
+  deny-by-default canonical tool boundary, then persists cited claim, debate,
+  report, and human-review-required memory artifacts in fixed stage order;
+* the task/context/valuation/ledger identities are rechecked before execution;
+  completed results and memory become explicitly invalid if immutable evidence
+  later drifts, and combined task/workflow replay fails closed;
+* task-to-workflow mapping and workflow audit facts make restart and exact
+  duplicate commands idempotent. GET routes are read-only and do not initialize
+  schema, poll, refresh providers, or start background work;
+* only the local deterministic fixture provider/model registration is created.
+  There is no network request, API key, external-model invocation, provider
+  selector, Decision handoff, account-fact status, or OMS/ledger/risk/kill-
+  switch/capital/broker authority.
+
 Planned migration, each behind a separate review:
 
-1. **Completed foundation and human boundary:** immutable storage, identity
+1. **Completed foundation and offline fixture boundary:** immutable storage, identity
    validation, context-bound read executors, explicitly human-started canonical
-   capture, human task records, and review UI exist without recomputation,
-   GET-side provider refresh, or model invocation;
-2. **Next review:** connect the deterministic fixture provider to an explicitly started task and
-   add debate/report/memory lifecycle plus invalidation when evidence drifts;
-3. review and explicitly authorize one or more real provider adapters without
+   capture, human task/review records, and the accepted-task deterministic
+   claim/debate/report/memory lifecycle exist without recomputation, GET-side
+   provider refresh, external model invocation, or authority;
+2. **Next review:** add an explicit human review/disposition contract for
+   fixture reports and memory promotion without making research memory an
+   account fact or Decision input;
+3. separately review and explicitly authorize one or more real provider adapters without
    making any vendor canonical;
 4. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,

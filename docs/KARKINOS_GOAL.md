@@ -132,8 +132,13 @@ Active planning target:
   task records, human context review, and per-task hash-chain replay. A task may
   bind only a completed capture; incomplete evidence remains blocked, and the
   Web boundary stays idle until explicitly opened. Accepting a context records
-  human review only: model execution, deterministic fixture execution, and
-  background work remain later, separately reviewed phases.
+  human review only and starts no work. Phase 1.4 adds a separate explicit
+  human command for accepted tasks that runs only the offline deterministic
+  fixture through claim, debate, report, and review-required memory stages.
+  Exact retries reuse the persisted workflow, every evidence reference is read
+  through the permission-checked canonical boundary, and later evidence drift
+  invalidates the binding and memory. It still performs no real model call,
+  network I/O, background work, financial-state mutation, or authority grant.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
