@@ -6,6 +6,32 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.12 adds an explicit, revocable promotion from
+  one currently eligible Phase 1.11 external-analysis review into a new
+  historical-research memory artifact. Assumptions: research acceptance is not
+  memory permission; a promotion needs its own human identity, rationale, exact
+  no-current-fact/no-Decision/no-trade confirmation, and idempotency key. The
+  artifact copies only the normalized report and safe provenance metadata and
+  binds source review/report/context/retrieval/evidence plus provider/model/
+  prompt fingerprints. Raw reasoning and provider responses remain absent.
+  Source or audit drift hides content and removes recall eligibility; a
+  terminal human revocation appends a second hash-chained event without
+  deleting history. Reviewed-memory retrieval v1 is unchanged, and Phase 1.12
+  adds no automatic recall or external-model consumption. Validation: 52
+  focused Phase 1.8–1.12 regression tests, 94 trading-safety tests, and the
+  complete 1,537-test backend suite passed with 86.48% coverage. Under Node
+  24.14.0, all 420 Web tests, Prettier format check, and the production build
+  passed; Black and isort checks passed. Deterministic cases cover restart,
+  concurrent duplicate commands, source/report/audit/artifact/revocation drift,
+  terminal revocation, content hiding, unchanged source workflow artifacts,
+  and unchanged protected OMS/ledger/risk/kill-switch/capital/Decision tables.
+  Risk impact: extending retrieval v1 was rejected after GitNexus rated its
+  request contract HIGH (eight direct callers, 105 upstream symbols). The
+  isolated route aggregator has two direct callers and no execution process;
+  the delivered boundary calls no model or provider and cannot create current
+  facts, provider promotion, financial mutation, broker action, capital change,
+  or execution authority.
+
 - 2026-07-14: AI-native Phase 1.7 hardens the external saved-backtest report
   contract after the first bounded provider trial exposed timeout, JSON-wrapper,
   and `claims` shape failures. Assumptions: the configured model's reasoning

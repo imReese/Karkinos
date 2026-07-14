@@ -38,6 +38,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.9 | Offline memory-informed analysis boundary implemented | Explicit retrieval consumption, mandatory current-evidence tool reads, deterministic claim/debate/report, and no model or trade authority |
 | AI-native Phase 1.10 | External memory-informed analysis boundary implemented | Explicit evidence export, three current-evidence-bound model stages, reasoning-preserving schema validation, and no trade authority |
 | AI-native Phase 1.11 | External-analysis human review boundary implemented | Exact disposition, quality/latency/token/cost evidence, drift invalidation, and no memory or trade authority |
+| AI-native Phase 1.12 | Reviewed external-research memory promotion implemented | Explicit revocable promotion, source-bound historical artifact, drift invalidation, and no automatic recall or trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -362,6 +363,29 @@ be called reviewed research:
   Decision, trade-plan, financial, broker, permission, capital, or execution
   effect.
 
+Phase 1.12 keeps acceptance and memory promotion as two separate human acts:
+
+* `POST /api/ai/external-analysis-reviews/{review_id}/memory-promotions`
+  requires an exact no-current-fact/no-Decision/no-trade confirmation and
+  accepts only a Phase 1.11 review that is still replay-valid and eligible;
+* the new historical memory artifact copies only the exact normalized report
+  and safe provenance metadata. It binds review/report/context/retrieval,
+  evidence, provider/model/prompt, and audit identities and never stores raw
+  reasoning or a provider response body;
+* every GET/replay revalidates the source review and report. Drift preserves
+  history but hides memory content and removes recall eligibility;
+* `POST /api/ai/external-reviewed-memory-promotions/{promotion_id}/revocations`
+  appends one terminal revocation and hash-chained event. It deletes nothing;
+  reactivation requires a new analysis/review rather than mutating history;
+* the promotion tables are isolated from reviewed-memory retrieval v1. This
+  phase enables neither automatic nor external-model consumption of the new
+  artifact; a later integration must be reviewed without invalidating v1
+  request fingerprints or replay;
+* POST is human explicit and model-free. GET/list/replay initialize no schema,
+  load no credentials, call no provider, and refresh no facts. No current fact,
+  provider promotion, Decision, trade-plan, financial, broker, permission,
+  capital, or execution authority is created.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed external analysis boundary:** immutable storage, identity
@@ -382,14 +406,17 @@ Planned migration, each behind a separate review:
    with all three stages rereading evidence and no automatic retry. Phase 1.11
    adds exact human disposition and replayable quality/latency/token/cost
    evidence without promoting output into memory or provider authority;
-2. **Next review:** separately evaluate an explicit, reversible promotion from
-   eligible Phase 1.11 reviewed research into a new historical memory artifact.
-   It must preserve source/report/review fingerprints, never become current
-   fact, and remain ineligible for Decision or trading authority;
-3. separately review any broader use of a real provider inside the task,
+2. **Completed Phase 1.12 review:** explicit, reversible promotion from eligible
+   Phase 1.11 reviewed research into a new source-bound historical memory
+   artifact now exists without modifying retrieval v1, automatic recall,
+   current-fact status, Decision input, provider promotion, or trade authority;
+3. **Next review:** separately evaluate explicit retrieval consumption of the
+   new Phase 1.12 artifact through a versioned contract that preserves all v1
+   request fingerprints and historical replay;
+4. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
-4. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+5. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.
