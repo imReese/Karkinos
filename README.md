@@ -26,7 +26,9 @@ projection、校验 valuation/ledger identity 并写 AI 审计事实；它不启
 证据绑定任务，并对完整性进行人工接受、要求修订或关闭复核。任务和复核各自幂等，
 事件可哈希链回放。只有人工接受完整 context 后，操作者才可再次显式启动一个离线、
 确定性的 fixture workflow，生成带引用的 claim、debate、report 和待人工复核 memory；
-证据漂移会使其绑定与 memory 失效。没有真实模型调用、API Key、网络请求、厂商绑定、
+证据漂移会使其绑定与 memory 失效。人工还可对精确完成的分析选择接受为已复核研究记忆、
+要求修订或驳回；接受只赋予 AI 研究域内的回忆资格，且证据或 artifact 漂移会自动撤销该
+资格。没有自动记忆检索、Decision 交接、真实模型调用、API Key、网络请求、厂商绑定、
 后台 AI 任务或实盘入口。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
@@ -71,8 +73,11 @@ public demos and development.
   starts nothing. A second explicit human command may run the deterministic
   offline fixture through claim, debate, report, and review-required memory
   stages; exact retries reuse the run and evidence drift invalidates the
-  output. The runtime exposes no real model API, network call, OMS action, or
-  broker authority.
+  output. A final explicit human disposition may accept exact output only as
+  reviewed research memory, request revision, or reject it. Recall eligibility
+  is revalidated on every read and disappears on evidence or artifact drift;
+  no automatic retrieval or Decision handoff exists. The runtime exposes no
+  real model API, network call, OMS action, or broker authority.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

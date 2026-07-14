@@ -3,12 +3,16 @@ import { useState, type FormEvent } from 'react';
 import { usePreferences } from '../../../app/preferences';
 import {
   useCreateHumanResearchTaskMutation,
+  useResearchTaskAnalysisReviewsQuery,
   useResearchTaskFixtureAnalysesQuery,
   useResearchTasksQuery,
+  useReviewFixtureAnalysisMutation,
   useReviewResearchTaskMutation,
   useStartFixtureAnalysisMutation,
+  type AnalysisReviewDecision,
   type HumanResearchTask,
   type ResearchEvidenceType,
+  type ResearchTaskAnalysisReview,
   type ResearchTaskFixtureAnalysis,
 } from '../api';
 
@@ -81,6 +85,27 @@ const COPY = {
     memoryInvalid: 'Invalidated by evidence drift',
     report: 'Fixture report',
     artifacts: 'Artifacts',
+    analysisReview: 'Human analysis review',
+    analysisReviewBoundary:
+      'This decision only controls research-memory recall. It cannot enter Decision or grant trading authority.',
+    reviewer: 'Reviewer',
+    analysisReviewNote: 'Analysis review note',
+    acceptMemory: 'Accept as reviewed memory',
+    requestAnalysisRevision: 'Request analysis revision',
+    rejectAnalysis: 'Reject fixture output',
+    recordingAnalysisReview: 'Recording analysis review…',
+    analysisReviewLoadError: 'Analysis review could not be loaded.',
+    analysisReviewRequired: 'A reviewer and note are required.',
+    acceptAnalysisBlocked:
+      'Acceptance requires a completed, exact, replay-valid analysis and memory artifact.',
+    memoryRecallEligible: 'Eligible for reviewed research recall',
+    memoryRecallIneligible: 'Not eligible for research recall',
+    analysisReviewStatuses: {
+      reviewed_memory: 'Reviewed memory',
+      revision_requested: 'Revision requested',
+      rejected: 'Rejected',
+      invalidated_by_evidence_drift: 'Invalidated by evidence drift',
+    },
     statuses: {
       awaiting_human_review: 'Awaiting human review',
       blocked_by_evidence: 'Blocked by evidence',
@@ -140,6 +165,27 @@ const COPY = {
     memoryInvalid: '已因证据漂移失效',
     report: 'Fixture 报告',
     artifacts: '产物',
+    analysisReview: '人工分析复核',
+    analysisReviewBoundary:
+      '该决定只控制研究记忆的回忆资格，不能进入 Decision，也不授予任何交易权限。',
+    reviewer: '复核人',
+    analysisReviewNote: '分析复核备注',
+    acceptMemory: '接受为已复核研究记忆',
+    requestAnalysisRevision: '要求修订分析',
+    rejectAnalysis: '驳回 fixture 产物',
+    recordingAnalysisReview: '正在记录分析复核…',
+    analysisReviewLoadError: '无法读取分析复核记录。',
+    analysisReviewRequired: '必须填写复核人和备注。',
+    acceptAnalysisBlocked:
+      '只有已完成、精确绑定、回放有效且包含 memory 的分析才能接受。',
+    memoryRecallEligible: '可用于已复核研究回忆',
+    memoryRecallIneligible: '不可用于研究回忆',
+    analysisReviewStatuses: {
+      reviewed_memory: '已复核研究记忆',
+      revision_requested: '已要求修订',
+      rejected: '已驳回',
+      invalidated_by_evidence_drift: '已因证据漂移失效',
+    },
     statuses: {
       awaiting_human_review: '等待人工复核',
       blocked_by_evidence: '证据阻断',
@@ -655,7 +701,177 @@ function FixtureAnalysisSummary({
           ))}
         </ul>
       ) : null}
+      <FixtureAnalysisReviewControl analysis={analysis} copy={copy} />
     </section>
+  );
+}
+
+function FixtureAnalysisReviewControl({
+  analysis,
+  copy,
+}: {
+  analysis: ResearchTaskFixtureAnalysis;
+  copy: (typeof COPY)['en'] | (typeof COPY)['zh'];
+}) {
+  const reviews = useResearchTaskAnalysisReviewsQuery(analysis.analysis_id);
+  const recordReview = useReviewFixtureAnalysisMutation();
+  const [reviewedBy, setReviewedBy] = useState(analysis.requested_by);
+  const [note, setNote] = useState('');
+  const [idempotencyKeys, setIdempotencyKeys] = useState<
+    Partial<Record<AnalysisReviewDecision, string>>
+  >({});
+  const review = reviews.data?.reviews[0];
+  const acceptanceEligible =
+    analysis.workflow_status === 'completed' &&
+    !analysis.partial_result &&
+    analysis.binding_validity === 'valid' &&
+    analysis.audit_replay.valid &&
+    analysis.memory_validity === 'human_review_required_exact_context_only';
+  const formReady = Boolean(reviewedBy.trim() && note.trim());
+
+  const submitReview = async (decision: AnalysisReviewDecision) => {
+    const idempotencyKey =
+      idempotencyKeys[decision] ?? newAuditKey('ai-analysis-review');
+    if (!idempotencyKeys[decision]) {
+      setIdempotencyKeys((current) => ({
+        ...current,
+        [decision]: idempotencyKey,
+      }));
+    }
+    try {
+      await recordReview.mutateAsync({
+        analysis_id: analysis.analysis_id,
+        idempotency_key: idempotencyKey,
+        reviewed_by: reviewedBy.trim(),
+        decision,
+        note: note.trim(),
+      });
+    } catch {
+      // The mutation state renders the fail-closed response and keeps the key.
+    }
+  };
+
+  return (
+    <section
+      aria-label={copy.analysisReview}
+      className="mt-4 rounded-xl border border-[var(--app-border)] p-3"
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+        {copy.analysisReview}
+      </div>
+      <p className="app-muted mt-1 text-xs leading-5">
+        {copy.analysisReviewBoundary}
+      </p>
+      {reviews.isLoading ? (
+        <p className="app-muted mt-3 text-xs" role="status">
+          {copy.analysisLoading}
+        </p>
+      ) : reviews.isError ? (
+        <p className="mt-3 text-xs text-[var(--app-negative)]" role="alert">
+          {copy.analysisReviewLoadError}
+        </p>
+      ) : review ? (
+        <RecordedAnalysisReview copy={copy} review={review} />
+      ) : (
+        <div className="mt-3 space-y-3">
+          <LabeledInput
+            label={copy.reviewer}
+            onChange={setReviewedBy}
+            required
+            value={reviewedBy}
+          />
+          <label className="block text-xs font-semibold text-[var(--app-muted)]">
+            {copy.analysisReviewNote}
+            <textarea
+              className="app-input mt-1 min-h-20 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
+              onChange={(event) => setNote(event.target.value)}
+              required
+              value={note}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="app-button-primary px-3 py-1.5 text-xs font-semibold"
+              disabled={
+                recordReview.isPending || !formReady || !acceptanceEligible
+              }
+              onClick={() => void submitReview('accept_as_reviewed_memory')}
+              title={
+                acceptanceEligible ? undefined : copy.acceptAnalysisBlocked
+              }
+              type="button"
+            >
+              {copy.acceptMemory}
+            </button>
+            <button
+              className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+              disabled={recordReview.isPending || !formReady}
+              onClick={() => void submitReview('request_revision')}
+              type="button"
+            >
+              {copy.requestAnalysisRevision}
+            </button>
+            <button
+              className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+              disabled={recordReview.isPending || !formReady}
+              onClick={() => void submitReview('reject')}
+              type="button"
+            >
+              {copy.rejectAnalysis}
+            </button>
+          </div>
+          {!formReady ? (
+            <p className="app-muted text-xs">{copy.analysisReviewRequired}</p>
+          ) : null}
+        </div>
+      )}
+      {recordReview.isPending ? (
+        <p className="app-muted mt-3 text-xs" role="status">
+          {copy.recordingAnalysisReview}
+        </p>
+      ) : null}
+      {recordReview.isError ? (
+        <p className="mt-3 text-xs text-[var(--app-negative)]" role="alert">
+          {recordReview.error.message}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function RecordedAnalysisReview({
+  copy,
+  review,
+}: {
+  copy: (typeof COPY)['en'] | (typeof COPY)['zh'];
+  review: ResearchTaskAnalysisReview;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-text)]">
+          {copy.analysisReviewStatuses[review.effective_status]}
+        </span>
+        <span className="text-xs text-[var(--app-muted)]">
+          {review.memory_recall_eligible
+            ? copy.memoryRecallEligible
+            : copy.memoryRecallIneligible}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[var(--app-text)]">
+        {review.note}
+      </p>
+      <p className="app-muted mt-1 text-[10px]">
+        {review.reviewed_by} · {review.created_at}
+      </p>
+      {review.invalidation_reasons.length ? (
+        <ul className="mt-2 space-y-1 text-xs text-[var(--app-negative)]">
+          {review.invalidation_reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

@@ -322,6 +322,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.ai_research_task_analyses import (
         create_router as ai_research_task_analyses_router,
     )
+    from server.routes.ai_research_task_analysis_reviews import (
+        create_router as ai_research_task_analysis_reviews_router,
+    )
     from server.routes.ai_research_tasks import (
         create_router as ai_research_tasks_router,
     )
@@ -385,6 +388,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(account_strategy_router())
     app.include_router(account_truth_router())
     app.include_router(ai_research_router())
+    app.include_router(ai_research_task_analysis_reviews_router())
     app.include_router(ai_research_task_analyses_router())
     app.include_router(ai_research_tasks_router())
     app.include_router(automation_router())

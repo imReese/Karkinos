@@ -222,6 +222,50 @@ write Account Truth, Portfolio, OMS, ledger, risk, reconciliation, kill switch,
 capital authorization, broker submission/cancellation, or Decision handoff
 state. It does not create a trade-plan draft in this increment.
 
+### Human Fixture-Analysis Review and Recall Eligibility
+
+Phase 1.5 adds a fourth explicit command boundary. A completed fixture memory
+is not reviewed merely because the workflow finished; a human must record one
+final disposition:
+
+```text
+completed fixture analysis
+-> rebuild exact analysis target
+-> POST /api/ai/research-task-analyses/{analysis_id}/reviews
+-> accept_as_reviewed_memory | request_revision | reject
+-> append-only review + one-event SHA-256 chain
+-> revalidate target on every GET/replay
+-> reviewed_memory | invalidated_by_evidence_drift
+```
+
+The analysis target fingerprint binds workflow status/failure/partial state,
+context identity, evidence-binding status, every stored and recomputed artifact
+fingerprint, evidence references, tool-call completion, memory source artifact
+ids, and the workflow audit chain. Acceptance requires `completed`, non-
+partial, exact binding, valid workflow replay, the complete claim/debate/report/
+memory lifecycle, exactly one memory artifact, matching memory sources, and no
+incomplete tool call. Invalid output may still receive `request_revision` or
+`reject` so the human disposition is not lost.
+
+`ai_research_task_analysis_reviews` stores one final review per analysis, while
+`ai_research_task_analysis_review_events` stores its hash-chained event. The
+write uses `BEGIN IMMEDIATE`: exact concurrent or restarted duplicates reuse
+one row and one event, changed input under an idempotency key is rejected, and
+a second final decision is rejected. List/detail/replay GET routes do not
+initialize schema.
+
+An accepted record grants only `memory_recall_eligible` inside the isolated AI
+research domain. Every read reconstructs the current target. Evidence,
+artifact, context, or audit drift preserves the append-only historical review
+but derives `invalidated_by_evidence_drift`, makes combined replay invalid, and
+removes recall eligibility. Review-event-chain validity remains separately
+visible from current target validity.
+
+No retrieval engine consumes reviewed memory in Phase 1.5. The review is not an
+account fact, Portfolio input, Decision input, risk decision, trade-plan draft,
+capital authorization, OMS transition, broker instruction, or permission. It
+does not contact a provider/model or modify any financial state.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across

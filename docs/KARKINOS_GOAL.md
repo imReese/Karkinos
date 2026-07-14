@@ -139,6 +139,14 @@ Active planning target:
   through the permission-checked canonical boundary, and later evidence drift
   invalidates the binding and memory. It still performs no real model call,
   network I/O, background work, financial-state mutation, or authority grant.
+  Phase 1.5 adds a separate append-only human disposition for completed fixture
+  output: accept as reviewed research memory, request revision, or reject.
+  Acceptance binds the exact analysis, artifact fingerprints, workflow replay,
+  context, valuation, ledger, and evidence identity; every read revalidates that
+  target, so later drift removes recall eligibility without erasing history.
+  Reviewed memory remains inside the AI research audit domain: there is no
+  automatic retrieval, account-fact promotion, Decision handoff, trade-plan
+  creation, model call, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
