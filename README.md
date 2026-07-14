@@ -45,7 +45,13 @@ OMS、风控、资本和券商事实不会外发，也不会生成 memory、Deci
 fixture 必须先通过只读工具逐条重读 retrieval 所绑定的当前 canonical evidence，才生成
 带引用的 claim、debate 和 report。历史 memory 始终标为非当前事实；重启、重复、失败、
 partial 和证据漂移可确定性回放。该入口不调用 DeepSeek 或其他真实模型，不生成新 memory、
-Decision 输入、交易计划或任何财务/执行权限。
+Decision 输入、交易计划或任何财务/执行权限。Phase 1.10 再增加一个单独人工确认的真实模型
+边缘入口：每个 claim/debate/report 阶段都先用本地只读工具重读全部当前证据，随后只把脱敏
+canonical evidence、明确选择的历史 memory 和前序归一化 artifact 发给已配置的通用
+OpenAI-compatible provider。它不会关闭模型自身的推理模式，也不向 provider 提供 tools；
+原始 reasoning、响应、密钥、账户身份和权限事实不落库。未知证据引用或畸形输出 fail closed，
+终态重放和 GET 不加载凭据、不重试调用。该入口同样不创建 memory、Decision、trade plan、
+财务写入、券商动作或任何资本/执行权限，也不让 DeepSeek 或其他厂商成为默认依赖。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -114,7 +120,17 @@ public demos and development.
   read-only tools, and emits cited claim/debate/report artifacts. Restart,
   duplicate execution, stage failure, partial output, and later evidence drift
   are replayable; no real model, new memory, Decision input, trade-plan draft,
-  financial mutation, or authority is involved.
+  financial mutation, or authority is involved. A separately confirmed
+  external-memory boundary may now run the same three-stage lifecycle through
+  an explicitly configured provider-neutral OpenAI-compatible edge. Every
+  stage rereads all current evidence locally; the provider receives sanitized
+  evidence, selected historical memory, and prior normalized artifacts but no
+  tools, account identity, credentials, or authority state. Model reasoning is
+  not disabled, raw reasoning/response bodies are not stored, schema or citation
+  failures stop the workflow, and exact terminal reads never reload credentials
+  or automatically retry a billable call. The result remains a non-authoritative
+  research artifact with no memory, Decision, trade, broker, capital, or
+  execution effect.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

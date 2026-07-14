@@ -507,6 +507,101 @@ class _AnalysisInputs:
     records: tuple[CanonicalEvidenceRecord, ...]
 
 
+MemoryInformedInputs = _AnalysisInputs
+
+
+def load_memory_informed_inputs(
+    *,
+    retrieval_service: HumanReviewedMemoryRetrievalService,
+    ai_store: AiAuditStore,
+    evidence_repository: CanonicalEvidenceRepository,
+    retrieval_id: str,
+) -> MemoryInformedInputs:
+    """Resolve one eligible retrieval and its exact current canonical records."""
+    retrieval = retrieval_service.get(retrieval_id)
+    if not retrieval.retrieval_eligible:
+        raise MemoryInformedAnalysisRejected(
+            "memory-informed analysis requires a currently eligible "
+            "reviewed-memory retrieval: " + "; ".join(retrieval.invalidation_reasons)
+        )
+    context = ai_store.get_context(retrieval.current_target.current_context_snapshot_id)
+    if context.fingerprint != retrieval.current_target.current_context_fingerprint:
+        raise EvidenceIdentityMismatch("retrieval current context drifted")
+    records = load_memory_informed_current_records(
+        evidence_repository=evidence_repository,
+        context=context,
+    )
+    return MemoryInformedInputs(
+        retrieval=retrieval,
+        context=context,
+        records=records,
+    )
+
+
+def load_memory_informed_current_binding(
+    *,
+    retrieval_service: HumanReviewedMemoryRetrievalService,
+    ai_store: AiAuditStore,
+    evidence_repository: CanonicalEvidenceRepository,
+    retrieval_id: str,
+    context_snapshot_id: str,
+) -> tuple[
+    ReviewedMemoryRetrievalResult | None,
+    tuple[CanonicalEvidenceRecord, ...],
+]:
+    """Rebuild a stored analysis binding without refreshing any source."""
+    try:
+        retrieval = retrieval_service.get(retrieval_id)
+        context = ai_store.get_context(context_snapshot_id)
+        records = load_memory_informed_current_records(
+            evidence_repository=evidence_repository,
+            context=context,
+        )
+    except (LookupError, EvidenceIdentityMismatch, ValueError):
+        return None, ()
+    return retrieval, records
+
+
+def load_memory_informed_current_records(
+    *,
+    evidence_repository: CanonicalEvidenceRepository,
+    context: EvidenceBoundContextSnapshot,
+) -> tuple[CanonicalEvidenceRecord, ...]:
+    """Read and validate every record in an immutable evidence context."""
+    expected_snapshot_id = f"ai-context-{context.fingerprint[:24]}"
+    if context.snapshot_id != expected_snapshot_id:
+        raise EvidenceIdentityMismatch("current context fingerprint drifted")
+    records: list[CanonicalEvidenceRecord] = []
+    for reference in context.evidence_references:
+        record = evidence_repository.get(reference.reference_id)
+        if record is None:
+            raise EvidenceIdentityMismatch(
+                f"current evidence missing:{reference.reference_id}"
+            )
+        if record.to_reference() != reference:
+            raise EvidenceIdentityMismatch(
+                f"current evidence reference drifted:{reference.reference_id}"
+            )
+        if (
+            record.valuation_snapshot_id != context.valuation_snapshot_id
+            or record.ledger_cutoff_id != context.ledger_cutoff_id
+            or record.ledger_fingerprint != context.ledger_fingerprint
+        ):
+            raise EvidenceIdentityMismatch(
+                f"current evidence financial identity drifted:"
+                f"{reference.reference_id}"
+            )
+        if not record.authoritative:
+            raise EvidenceIdentityMismatch(
+                f"current evidence is not complete:{reference.reference_id}:"
+                f"{record.status}"
+            )
+        records.append(record)
+    if not records:
+        raise EvidenceIdentityMismatch("current context has no evidence")
+    return tuple(sorted(records, key=lambda item: item.reference_id))
+
+
 class HumanMemoryInformedFixtureAnalysisService:
     """Run reviewed memory through a current-evidence-only fixture workflow."""
 
@@ -616,23 +711,11 @@ class HumanMemoryInformedFixtureAnalysisService:
         return self.get(analysis_id).replay()
 
     def _inputs(self, retrieval_id: str) -> _AnalysisInputs:
-        retrieval = self._retrieval_service.get(retrieval_id)
-        if not retrieval.retrieval_eligible:
-            raise MemoryInformedAnalysisRejected(
-                "memory-informed analysis requires a currently eligible "
-                "reviewed-memory retrieval: "
-                + "; ".join(retrieval.invalidation_reasons)
-            )
-        context = self._ai_store.get_context(
-            retrieval.current_target.current_context_snapshot_id
-        )
-        if context.fingerprint != retrieval.current_target.current_context_fingerprint:
-            raise EvidenceIdentityMismatch("retrieval current context drifted")
-        records = self._current_records(context)
-        return _AnalysisInputs(
-            retrieval=retrieval,
-            context=context,
-            records=records,
+        return load_memory_informed_inputs(
+            retrieval_service=self._retrieval_service,
+            ai_store=self._ai_store,
+            evidence_repository=self._evidence_repository,
+            retrieval_id=retrieval_id,
         )
 
     def _current_binding(
@@ -642,50 +725,22 @@ class HumanMemoryInformedFixtureAnalysisService:
         ReviewedMemoryRetrievalResult | None,
         tuple[CanonicalEvidenceRecord, ...],
     ]:
-        try:
-            retrieval = self._retrieval_service.get(record.request.retrieval_id)
-            context = self._ai_store.get_context(record.context_snapshot_id)
-            records = self._current_records(context)
-        except (LookupError, EvidenceIdentityMismatch, ValueError):
-            return None, ()
-        return retrieval, records
+        return load_memory_informed_current_binding(
+            retrieval_service=self._retrieval_service,
+            ai_store=self._ai_store,
+            evidence_repository=self._evidence_repository,
+            retrieval_id=record.request.retrieval_id,
+            context_snapshot_id=record.context_snapshot_id,
+        )
 
     def _current_records(
         self,
         context: EvidenceBoundContextSnapshot,
     ) -> tuple[CanonicalEvidenceRecord, ...]:
-        expected_snapshot_id = f"ai-context-{context.fingerprint[:24]}"
-        if context.snapshot_id != expected_snapshot_id:
-            raise EvidenceIdentityMismatch("current context fingerprint drifted")
-        records: list[CanonicalEvidenceRecord] = []
-        for reference in context.evidence_references:
-            record = self._evidence_repository.get(reference.reference_id)
-            if record is None:
-                raise EvidenceIdentityMismatch(
-                    f"current evidence missing:{reference.reference_id}"
-                )
-            if record.to_reference() != reference:
-                raise EvidenceIdentityMismatch(
-                    f"current evidence reference drifted:{reference.reference_id}"
-                )
-            if (
-                record.valuation_snapshot_id != context.valuation_snapshot_id
-                or record.ledger_cutoff_id != context.ledger_cutoff_id
-                or record.ledger_fingerprint != context.ledger_fingerprint
-            ):
-                raise EvidenceIdentityMismatch(
-                    f"current evidence financial identity drifted:"
-                    f"{reference.reference_id}"
-                )
-            if not record.authoritative:
-                raise EvidenceIdentityMismatch(
-                    f"current evidence is not complete:{reference.reference_id}:"
-                    f"{record.status}"
-                )
-            records.append(record)
-        if not records:
-            raise EvidenceIdentityMismatch("current context has no evidence")
-        return tuple(sorted(records, key=lambda item: item.reference_id))
+        return load_memory_informed_current_records(
+            evidence_repository=self._evidence_repository,
+            context=context,
+        )
 
     def _orchestrator(
         self,

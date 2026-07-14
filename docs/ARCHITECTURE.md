@@ -432,6 +432,63 @@ There is no external model, network, API key, semantic retrieval, automatic
 recall, provider-side tool, Decision input, financial mutation, permission
 change, broker action, or execution/capital authority in Phase 1.9.
 
+### External Memory-Informed Analysis Boundary
+
+Phase 1.10 adds a separately confirmed external edge around the Phase 1.8/1.9
+contracts. It does not replace the offline fixture or register a default
+provider:
+
+```text
+explicit human evidence-export confirmation + exact retrieval id
+-> replay retrieval/review/context/evidence eligibility
+-> claim stage rereads every current evidence record via local tools
+-> send sanitized current evidence + selected historical memory
+-> validate and persist normalized cited claim
+-> debate stage rereads every current evidence record via local tools
+-> send current evidence + memory + normalized claim
+-> validate and persist normalized cited debate
+-> report stage rereads every current evidence record via local tools
+-> send current evidence + memory + normalized claim/debate
+-> validate and persist normalized cited report
+-> replay tool/model/artifact/audit bindings on every read
+```
+
+The deterministic orchestrator owns stage order and the local permission
+registry owns tool access. The external model receives no tools and cannot ask
+the provider to refresh facts. Every stage must observe the complete exact
+current read set; memory remains `historical_reviewed_research_input` with
+`is_current_fact=false`. Outbound recursive filtering removes account aliases,
+account/broker numbers, client identity, credentials, secrets, and tokens. OMS,
+risk, kill-switch, capital, broker, permission, and execution state are outside
+the provider input contract.
+
+The versioned prompt leaves the configured model's normal reasoning mode
+available while requiring a single JSON object. It declares embedded evidence
+and memory strings untrusted, publishes the only allowed evidence and memory
+ids, and prohibits trading or authority output. Local normalization is bounded:
+it accepts reviewed JSON fences, content parts, common field aliases, and
+Chinese confidence labels, but never fabricates a citation or financial value.
+Unknown/missing evidence ids, invalid structure, a length-truncated response,
+or incomplete evidence fails closed. Raw reasoning and raw provider responses
+are not persisted; only normalized artifacts, fingerprints, status, bounded
+usage, finish reason, and reasoning-presence/length metadata enter audit state.
+
+`ai_external_memory_informed_analyses` binds the request, retrieval target,
+current context, provider/model identity, prompt version, and one permanent run
+claim. `ai_external_memory_model_calls` holds one insert-once call claim per
+workflow stage. These claims deliberately prefer no duplicate external charge
+over automatic recovery from an ambiguous interruption: a claimed or terminal
+exact retry reads stored state and never calls the provider again. A changed
+request under the same idempotency key fails closed. GET/list/replay do not
+initialize schema, load credentials, contact the provider, or resume work.
+
+Replay revalidates current retrieval eligibility, every evidence fingerprint,
+all three exact tool-read sets, artifact fingerprints and citations, provider
+provenance, model-call lifecycle, and the workflow hash chain. Drift preserves
+historical audit facts but invalidates the current result. Phase 1.10 creates no
+new memory, Decision input, trade-plan draft, Account Fact, financial write,
+permission change, broker action, or execution/capital authority.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
@@ -591,6 +648,10 @@ enabled only by explicit test/runtime registration. The Phase 1.6 connectivity
 probe remains outside the orchestrator. Phase 1.7 separately registers a
 purpose-limited external-report provider/model/role only after an explicit
 request for one selected saved backtest; it cannot run another stage or tool.
+Phase 1.10 separately registers content-addressed provider/model identities and
+three purpose-limited roles only after the exact reviewed-memory evidence-export
+confirmation. That edge may execute only the three-stage read-only lifecycle
+above; it is not a general provider binding and is never registered at startup.
 No DeepSeek, OpenAI, or other vendor is canonical or registered by default.
 
 The AI runtime audit stores create and write only namespaced tables:
@@ -601,6 +662,8 @@ ai_context_snapshots / ai_workflows / ai_agent_runs
 ai_tool_calls / ai_artifacts / ai_workflow_events
 ai_provider_connectivity_checks
 ai_external_backtest_report_requests
+ai_external_memory_informed_analyses
+ai_external_memory_model_calls
 ```
 
 Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,

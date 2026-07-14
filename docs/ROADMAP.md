@@ -36,6 +36,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.7 | Saved-backtest external report boundary implemented | Explicit consent, one canonical evidence record, one schema-validated non-authoritative report, and no trade authority |
 | AI-native Phase 1.8 | Reviewed-memory retrieval boundary implemented | Explicit ID allowlist, current-evidence rebinding, drift-sensitive replay, and no automatic recall or provider call |
 | AI-native Phase 1.9 | Offline memory-informed analysis boundary implemented | Explicit retrieval consumption, mandatory current-evidence tool reads, deterministic claim/debate/report, and no model or trade authority |
+| AI-native Phase 1.10 | External memory-informed analysis boundary implemented | Explicit evidence export, three current-evidence-bound model stages, reasoning-preserving schema validation, and no trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -286,9 +287,41 @@ without treating the fixture as production intelligence:
   Decision input, trade-plan draft, financial write, permission change, broker
   action, or execution/capital authority is introduced.
 
+Phase 1.10 adds one reviewed external edge without making a provider or its
+reasoning authoritative:
+
+* `POST /api/ai/reviewed-memory-retrievals/{retrieval_id}/external-analyses`
+  requires an operator identity, research question, idempotency key, and the
+  exact confirmation that selected reviewed memory and bound current evidence
+  may be sent to the configured external model without trade authority;
+* the deterministic local orchestrator owns claim, debate, and report order.
+  Every stage independently rereads every current canonical evidence record
+  through existing deny-by-default tools before making one purpose-limited
+  OpenAI-compatible request. The retrieval is never a provider-side tool;
+* the request contains only sanitized complete current evidence, the explicitly
+  selected historical reviewed memory, and prior normalized artifacts. Account
+  alias/number, credentials, OMS, risk, capital, broker, permission, and
+  execution state are excluded; provider-side tools remain disabled;
+* the versioned prompt preserves the configured model's normal reasoning mode,
+  supplies an exact JSON contract and allowed evidence ids, and treats all
+  embedded strings as untrusted data. Local bounded normalization accepts
+  common JSON wrappers and aliases, while missing/unknown citations, truncated
+  output, malformed JSON, or incomplete evidence fail closed;
+* only normalized cited artifacts, content fingerprints, token counts, finish
+  reason, and reasoning-presence/length metadata are persisted. API keys, raw
+  responses, provider envelope ids, and raw reasoning are never stored;
+* one permanent analysis run claim plus one insert-once call claim per stage
+  prevents concurrent duplicates and automatic rebilling after an ambiguous
+  interruption. Exact terminal retries and all GET/list/replay reads use the
+  stored result without loading credentials or contacting the provider;
+* later retrieval, review, context, evidence, artifact, tool-read, model-call,
+  or audit drift preserves historical artifacts but invalidates replay. The
+  workflow creates no memory, Decision input, trade-plan draft, financial
+  write, permission change, broker action, or execution/capital authority.
+
 Planned migration, each behind a separate review:
 
-1. **Completed foundation and memory-informed fixture boundary:** immutable storage, identity
+1. **Completed foundation and reviewed external memory boundary:** immutable storage, identity
    validation, context-bound read executors, explicitly human-started canonical
    capture, human task/review records, and the accepted-task deterministic
    claim/debate/report/memory lifecycle plus exact human disposition and
@@ -299,13 +332,14 @@ Planned migration, each behind a separate review:
    report boundary now exercises the orchestrator and external model under the
    narrower export and no-authority contract above. Phase 1.8 now adds only an
    explicit id-allowlisted retrieval record that rebinds current evidence.
-   Phase 1.9 now proves that a deterministic claim/debate/report workflow can
+   Phase 1.9 proves that a deterministic claim/debate/report workflow can
    consume that exact bundle only after independently reading all current
-   evidence, without creating memory or authority;
-2. **Next review:** separately review whether a real provider may replace the
-   Phase 1.9 fixture within this same evidence/tool/output envelope. Provider
-   prompts and schema repair must not promote historical memory to fact, omit
-   failed tool reads, or weaken drift and no-authority checks;
+   evidence, without creating memory or authority. Phase 1.10 now permits an
+   explicitly configured real provider only inside that reviewed envelope,
+   with all three stages rereading evidence and no automatic retry;
+2. **Next review:** evaluate bounded human review and disposition of Phase 1.10
+   reports, plus provider quality/latency/cost evidence. Do not automatically
+   promote external output into memory, Decision, or another workflow;
 3. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
