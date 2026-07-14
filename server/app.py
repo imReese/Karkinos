@@ -334,6 +334,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     from server.routes.ai_research_tasks import (
         create_router as ai_research_tasks_router,
     )
+    from server.routes.ai_reviewed_memory_retrievals import (
+        create_router as ai_reviewed_memory_retrievals_router,
+    )
     from server.routes.automation import create_router as automation_router
     from server.routes.backtest import create_router as backtest_router
     from server.routes.broker_connector_soak import (
@@ -396,6 +399,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     app.include_router(ai_external_research_router())
     app.include_router(ai_provider_connectivity_router())
     app.include_router(ai_research_router())
+    app.include_router(ai_reviewed_memory_retrievals_router())
     app.include_router(ai_research_task_analysis_reviews_router())
     app.include_router(ai_research_task_analyses_router())
     app.include_router(ai_research_tasks_router())

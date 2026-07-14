@@ -172,6 +172,15 @@ Active planning target:
   network I/O, and malformed output fails closed without storing the raw body.
   There is no scheduler, provider-side tool, memory, Decision handoff,
   trade-plan draft, OMS/ledger/risk/capital write, or broker action.
+  Phase 1.8 adds a separately human-started retrieval boundary for the fixture
+  memories already accepted in Phase 1.5. It accepts only an explicit review-id
+  allowlist and an existing persisted current context, replays source review
+  and artifact evidence, and maps every source canonical tool to one current
+  `complete` evidence record. Memory remains historical reviewed research
+  input, not current fact; a future workflow must independently read the bound
+  current evidence. Drift invalidates replay and hides memory content without
+  deleting history. There is still no automatic recall, semantic search,
+  provider/model invocation, Decision handoff, financial write, or authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

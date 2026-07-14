@@ -37,7 +37,11 @@ evidence/context fingerprint 的非权威 report。账户持仓、valuation/ledg
 OMS、风控、资本和券商事实不会外发，也不会生成 memory、Decision 输入或交易计划。
 该边界保留已配置模型自身的推理模式，但最终内容使用带精确结构示例和量化证据审阅
 清单的版本化 JSON contract；本地只做有界、确定性的字段归一化，模型 reasoning 原文
-不落库。没有自动记忆检索、后台 AI 任务或实盘入口，真实 provider 也不会成为默认依赖。
+不落库。Phase 1.8 另增一个人工显式、精确 review-id 白名单的已复核记忆检索入口：它
+重放原分析与审计链，把原证据按 canonical tool 映射到当前持久化 context 的完整证据，
+并把 memory 标记为历史研究输入而非当前事实。漂移后不再返回 memory 内容。该入口不做
+语义搜索、自动 prompt 注入或模型调用；仍没有自动记忆检索、后台 AI 任务或实盘入口，
+真实 provider 也不会成为默认依赖。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -95,7 +99,12 @@ public demos and development.
   outside the provider request. The configured model may keep its reasoning
   mode, while a versioned JSON-only prompt supplies an exact structural example,
   an evidence-review rubric, and a bounded output budget. Only sanitized
-  reasoning-presence metadata is audited; raw reasoning is never persisted.
+  reasoning-presence metadata is audited; raw reasoning is never persisted. An
+  additional explicit reviewed-memory retrieval POST accepts only exact review
+  ids and an existing current context, replays all source bindings, and maps
+  each source canonical tool to one current complete evidence record. It does
+  not perform semantic search, automatic prompt injection, or any model call;
+  recalled content remains non-factual historical research input.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers
