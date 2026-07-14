@@ -56,6 +56,10 @@ The product boundary is:
 * AI trade-plan output is an explicitly non-executable draft. It cannot enter
   the canonical Daily Trading Plan without a separate, future human-review
   handoff and all existing evidence, risk, account-truth, and authority gates.
+* External-model connectivity may be verified only through an explicit,
+  fixed, non-financial probe. A successful API call proves authentication and
+  protocol compatibility, not research quality, financial truth, permission,
+  or readiness for an evidence-bound workflow.
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.
@@ -146,7 +150,11 @@ Active planning target:
   target, so later drift removes recall eligibility without erasing history.
   Reviewed memory remains inside the AI research audit domain: there is no
   automatic retrieval, account-fact promotion, Decision handoff, trade-plan
-  creation, model call, or execution authority.
+  creation, or execution authority. Phase 1.6 adds a separate explicit
+  OpenAI-compatible connectivity check that sends one fixed non-financial
+  prompt, deduplicates before network I/O, and stores only redacted metadata
+  and fingerprints. It does not connect the external model to the research
+  orchestrator, context, artifacts, memory, Decision, or any trading boundary.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
