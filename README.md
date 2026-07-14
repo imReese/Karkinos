@@ -82,6 +82,10 @@ Phase 1.15 增加这一独立人工复核：复核人必须对精确 Phase 1.14 
 绑定 promotion 来源、当前 retrieval、report/artifact、citation、provider/model/prompt、token、
 latency 和审计回放；任一来源或证据漂移都会撤销当前资格但保留历史。接受仍不创建新 memory、
 不自动召回、不进入 Decision，也不产生任何财务、券商、资本或执行权限。
+Phase 1.16 再增加独立、显式、可撤销的提升：只有当前仍有效的 Phase 1.15 已接受复核才能复制
+精确规范化 report，形成绑定 review/retrieval/source promotions/context/evidence/provider/model/
+prompt/quality/cost/audit 的新历史 memory。撤销只追加事件，漂移会隐藏内容；Phase 1.12 schema
+保持不变。本阶段没有检索、自动召回、Decision、trade plan、财务写入、券商动作、资本或执行权限。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -204,6 +208,13 @@ public demos and development.
   drift removes eligibility without deleting history. Acceptance creates no
   memory artifact, automatic recall, Decision input, trade plan, financial
   mutation, provider promotion, broker action, capital change, or authority.
+  Phase 1.16 adds the required separate, explicit, revocable promotion. Only a
+  currently eligible Phase 1.15 review can copy the exact normalized report
+  into a new historical memory bound to the review, retrieval, source
+  promotions, context, evidence, provider/model/prompt, quality/cost, and audit
+  fingerprints. Revocation appends history and drift hides content. The Phase
+  1.12 schema remains unchanged; no retrieval, automatic recall, Decision,
+  trade-plan, financial, broker, capital, or execution capability is added.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

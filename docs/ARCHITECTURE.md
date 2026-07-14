@@ -728,8 +728,46 @@ removes eligibility without deleting the historical decision.
 Acceptance is still not memory promotion. It creates no artifact, automatic
 recall, semantic search, provider promotion, Decision handoff, trade plan,
 account fact, financial mutation, broker action, capital change, or execution
-authority. A future memory candidate requires a separate explicit, revocable,
-versioned promotion review.
+authority.
+
+### Revocable Memory from Reviewed Promoted-Memory Analysis
+
+Phase 1.16 implements the separate promotion required by Phase 1.15:
+
+```text
+currently eligible Phase 1.15 accepted review + exact human confirmation
+-> replay review and Phase 1.14 report/artifact/audit target
+-> replay Phase 1.13 retrieval and exact source-promotion lineage
+-> bind context/evidence/provider/model/prompt/quality/cost fingerprints
+-> copy only the normalized report and sanitized provenance
+-> persist a new historical MEMORY artifact in isolated Phase 1.16 storage
+-> append one promotion event
+-> optionally append one terminal revocation event
+-> revalidate every binding on GET/list/replay
+-> provide no retrieval, model call, Decision input, financial write, or authority
+```
+
+`ai_external_promoted_analysis_memory_promotions` owns the new immutable
+promotion request, target, historical content, evidence references, source
+promotion selections, and report/review identities.
+`ai_external_promoted_analysis_memory_revocations` stores at most one terminal
+revocation, and `ai_external_promoted_analysis_memory_events` records the
+promotion/revocation hash chain. These are new canonical Phase 1.16 tables;
+Phase 1.12 rows, fingerprints, and schema remain unchanged.
+
+The artifact says `is_current_fact=false`, `automatic_recall_allowed=false`,
+and `requires_current_evidence_rebinding=true`. Promotion is restart- and
+concurrency-idempotent; a second final promotion fails closed. Revocation is
+append-only and deletes nothing. Every read recomputes the Phase 1.15 review,
+report, Phase 1.13 retrieval, source-memory lineage, evidence, and audit target.
+Any drift hides content and removes recall eligibility. Even a valid artifact
+has no retrieval contract in this phase; consuming it requires a future,
+separately versioned explicit retrieval and current-evidence rebinding review.
+
+Promotion/revocation load no provider credentials, invoke no model, and cannot
+create a current fact, semantic search result, automatic prompt injection,
+provider promotion, Decision handoff, trade plan, OMS/ledger/risk write, broker
+submit/cancel, permission, capital change, or execution authority.
 
 ## Financial Data Integrity and Valuation
 

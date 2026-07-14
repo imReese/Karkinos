@@ -51,6 +51,7 @@ paper/shadow、人工确认、对账和复盘。
 | AI 原生 1.13 | 外部已复核 memory 检索已实现 | 独立版本契约、精确 promotion id、当前完整证据重绑定，且不改 v1 或调用模型 |
 | AI 原生 1.14 | promoted memory 外部分析已实现 | 单独外发确认、逐阶段本地取证、保留模型推理且无自动召回或交易权限 |
 | AI 原生 1.15 | promoted memory 分析人工复核已实现 | 精确来源/report 处置、质量/token/延迟/成本回放、漂移失效且无 memory 或交易权限 |
+| AI 原生 1.16 | 已复核 promoted analysis 记忆提升已实现 | 独立显式提升、来源绑定历史 artifact、追加式撤销、漂移失效且无自动召回或交易权限 |
 
 ## AI 原生投研主线
 
@@ -278,6 +279,21 @@ retrieval、promotion 与 selection 指纹、当前 context、report/artifact、
 审计链。并发、重启和重复请求幂等；撤销或任一来源/证据/usage/审计漂移会撤销当前资格但保留
 历史。接受仍不创建 memory、不自动召回、不进入 Decision，也没有财务、券商、资本或执行效果。
 未来若要形成新 memory，必须另建显式、可撤销、版本化的 promotion 边界。
+
+1.16 已实现该独立提升。只有当前回放仍有效的 1.15 `reviewed_research` 才能通过精确人工确认、
+身份、理由和幂等键调用
+`POST /api/ai/external-promoted-memory-analysis-reviews/{review_id}/memory-promotions`。
+新历史 memory 绑定精确 review/analysis/report、1.13 retrieval 与源 promotion selections、当前
+context、证据引用、provider/model/prompt、人工质量/成本指纹和审计链，并明确要求未来使用前
+重新绑定当前证据。它使用独立表，不修改 1.12 schema，也不向源 workflow 增写 artifact。
+
+`POST /api/ai/external-promoted-analysis-memory-promotions/{promotion_id}/revocations`
+只追加一次终态撤销与第二个哈希链事件，不删除来源或历史。GET/list/replay 不初始化 schema、
+不加载凭据、不调用模型，并逐次重算完整来源；任一撤销或漂移都会隐藏内容、移除召回资格。
+当前 `recall_eligible` 只表示可供未来独立版本检索评审，本阶段没有 retrieval、语义搜索、自动
+prompt 注入、provider 晋级、Decision、trade plan、财务写入、券商动作、资本或执行权限。
+下一步若消费这类 memory，必须新建显式 current-evidence rebinding retrieval，不能扩展 1.13
+或静默注入 prompt。
 
 ## 自动化成熟度
 

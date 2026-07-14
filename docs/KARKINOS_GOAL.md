@@ -268,6 +268,15 @@ Active planning target:
   deleting history. Acceptance remains research evidence only: it creates no
   new memory, automatic recall, Decision input, trade plan, financial write,
   provider promotion, broker action, capital change, or execution authority.
+  Phase 1.16 adds the separately authorized memory promotion required by that
+  boundary. Only a currently valid accepted Phase 1.15 review may be copied
+  into a new historical-research artifact bound to the exact report, review,
+  retrieval, source promotions, current context, evidence, provider/model/
+  prompt, quality/cost, and audit fingerprints. Source drift hides the content;
+  explicit revocation removes recall eligibility without deleting history.
+  Phase 1.12 remains unchanged, and the new artifact has no retrieval contract,
+  automatic recall, current-fact status, Decision input, provider promotion,
+  financial mutation, broker action, capital change, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

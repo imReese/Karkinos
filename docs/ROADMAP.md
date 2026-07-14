@@ -42,6 +42,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.13 | Promoted external-memory retrieval implemented | Versioned exact-ID retrieval, current complete-evidence rebinding, v1 compatibility, and no automatic/model consumption |
 | AI-native Phase 1.14 | Promoted-memory external analysis implemented | Explicit export, local evidence rereads, reasoning-preserving claim/debate/report, and no automatic recall or trade authority |
 | AI-native Phase 1.15 | Promoted-memory analysis human review implemented | Exact source/report disposition, quality/token/latency/cost replay, drift invalidation, and no memory or trade authority |
+| AI-native Phase 1.16 | Reviewed promoted-analysis memory promotion implemented | Explicit versioned promotion, source-bound historical artifact, append-only revocation, drift invalidation, and no automatic recall or trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -458,6 +459,33 @@ Phase 1.15 adds that human review without turning acceptance into memory:
   permission, capital, or execution effect. Any future memory promotion needs
   another explicit, revocable, versioned boundary.
 
+Phase 1.16 adds that separate promotion boundary without widening Phase 1.12:
+
+* `POST /api/ai/external-promoted-memory-analysis-reviews/{review_id}/memory-promotions`
+  accepts only a currently replay-valid Phase 1.15 `reviewed_research` result
+  and requires an exact human confirmation, identity, rationale, and
+  idempotency key;
+* the new historical memory artifact binds the exact review/analysis/report,
+  Phase 1.13 retrieval and source-promotion selections, current context,
+  evidence references, provider/model/prompt, human quality/cost fingerprints,
+  and source audit chains. It labels the report historical and requires
+  current-evidence rebinding before any future use;
+* Phase 1.16 uses isolated promotion, revocation, and event tables. It neither
+  changes the Phase 1.12 promotion schema nor inserts an artifact into the
+  source workflow. Exact restart/concurrent duplicates reuse one record;
+* `POST /api/ai/external-promoted-analysis-memory-promotions/{promotion_id}/revocations`
+  appends a terminal revocation and second hash-chained event. It deletes no
+  source analysis, review, report, memory, lineage, or audit fact;
+* GET/list/replay initialize no schema, load no credentials, call no model, and
+  recompute the full target. Source revocation or evidence/artifact/review/audit
+  drift hides memory content and removes recall eligibility without deleting
+  history;
+* `recall_eligible` is only eligibility for a future separately versioned,
+  explicit retrieval contract. Phase 1.16 provides no retrieval, semantic
+  search, automatic prompt injection, provider promotion, Decision handoff,
+  trade plan, financial write, broker action, permission, capital, or execution
+  effect.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed external analysis boundary:** immutable storage, identity
@@ -496,13 +524,17 @@ Planned migration, each behind a separate review:
    separate immutable human disposition with source/report/quality/cost/audit
    binding. Acceptance remains non-memory reviewed research and source drift
    invalidates eligibility without deleting history;
-6. **Next review:** if accepted Phase 1.15 research should become a new memory,
-   add a separate explicit, revocable promotion contract rather than extending
-   this review or the older Phase 1.12 schema;
-7. separately review any broader use of a real provider inside the task,
+6. **Completed Phase 1.16 review:** a currently eligible Phase 1.15 result may
+   become a new historical memory only through a separate explicit, revocable,
+   versioned promotion. The Phase 1.12 schema remains unchanged and no
+   retrieval or automatic recall is enabled;
+7. **Next review:** if Phase 1.16 memory should be consumed, add a new explicit
+   retrieval/current-evidence rebinding contract rather than extending Phase
+   1.13 or silently injecting it into prompts;
+8. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
-8. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+9. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.
