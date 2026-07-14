@@ -60,6 +60,15 @@ class HumanExternalPromotedMemoryAnalysisReviewPayload(BaseModel):
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
 
+    # Phase 1.16 keeps memory promotion separate from human acceptance.  The
+    # nested router owns a new schema; it does not widen the Phase 1.12 memory
+    # contract or make accepted research automatically recallable.
+    from server.routes.ai_external_promoted_analysis_memory import (
+        create_router as create_external_promoted_analysis_memory_router,
+    )
+
+    router.include_router(create_external_promoted_analysis_memory_router())
+
     @router.post("/api/ai/external-promoted-memory-analyses/{analysis_id}/reviews")
     def review_external_promoted_memory_analysis(
         analysis_id: str,

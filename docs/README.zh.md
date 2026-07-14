@@ -77,6 +77,11 @@ Phase 1.15 增加这项独立人工复核：复核人必须对精确 Phase 1.14 
 复核绑定 promotion 来源、当前 retrieval、report/artifact、citation、provider/model/prompt、
 token、latency 与审计回放；后续来源、证据、usage 或审计漂移会撤销当前资格但不删除历史。
 接受仍不创建新 memory、不自动召回、不进入 Decision，也不产生财务、券商、资本或执行权限。
+Phase 1.16 增加独立、显式、可撤销的提升：只有当前仍有效的 Phase 1.15 已接受复核才能复制
+精确规范化 report，生成绑定 review/retrieval/source promotions/context/evidence/provider/model/
+prompt/quality/cost/audit 的新历史 memory。撤销只追加事件，任一来源漂移都会隐藏内容并移除
+召回资格；Phase 1.12 schema 不变。本阶段没有检索、自动召回、Decision、trade plan、财务写入、
+券商动作、资本或执行权限。
 
 核心特性：
 

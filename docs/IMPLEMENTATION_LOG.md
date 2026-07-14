@@ -6,6 +6,31 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.16 adds the separate, explicit, revocable
+  historical-memory promotion required after Phase 1.15. Assumptions: human
+  acceptance is not memory permission; historical conclusions are not current
+  facts; and recall eligibility is not automatic retrieval or prompt injection.
+  Only a currently replay-valid Phase 1.15 accepted review can be promoted. The
+  new target binds the exact review/analysis/report, Phase 1.13 retrieval and
+  source-promotion selections, current context and evidence references,
+  provider/model/prompt, quality/cost fingerprints, and audit hashes. The
+  normalized report is copied into isolated Phase 1.16 storage and explicitly
+  requires current-evidence rebinding. Exact restart/concurrent duplicates
+  reuse one promotion; a second final promotion fails closed. Revocation adds
+  one terminal event and deletes nothing. Source, report, review, evidence, or
+  audit drift hides content and removes recall eligibility. Phase 1.12 schema
+  and rows remain unchanged, and no source workflow artifact is inserted.
+  Deterministic validation covers promotion, restart/concurrency, rejected
+  review, source revocation, explicit revocation, artifact/audit drift, lazy
+  reads, protected financial tables, exact confirmations, route error mapping,
+  and main-app registration: 69 Phase 1.11–1.16 chain tests, all 238 AI runtime/
+  route tests, all 1,582 backend tests at 86.48% coverage, and 98 trading-safety
+  tests pass. Under Node 24.14.0, all 420 Web tests, Prettier format check, and
+  production build pass; changed Python files pass Black and isort.
+  Promotion/revocation invoke no model and cannot affect current facts,
+  automatic recall, Decision, trade plans, OMS, ledger, risk, broker actions,
+  permissions, capital, or execution authority.
+
 - 2026-07-14: AI-native Phase 1.15 separates human acceptance of a Phase 1.14
   promoted-memory external report from both schema success and memory
   promotion. Assumptions: the Phase 1.13 retrieval remains historical research
