@@ -52,6 +52,15 @@ OpenAI-compatible provider。它不会关闭模型自身的推理模式，也不
 原始 reasoning、响应、密钥、账户身份和权限事实不落库。未知证据引用或畸形输出 fail closed，
 终态重放和 GET 不加载凭据、不重试调用。该入口同样不创建 memory、Decision、trade plan、
 财务写入、券商动作或任何资本/执行权限，也不让 DeepSeek 或其他厂商成为默认依赖。
+prompt v2 把精确 JSON schema、结构示例、证据 ID 目录和输出自检提升到系统 contract；
+DeepSeek 边缘显式保留 thinking/high effort，并使用有界 180 秒、16K 输出预算，仍无 provider
+tools 或自动重试。旧 prompt-v1 结果只保留为历史，不会被静默改写或重跑。
+Phase 1.11 再把“schema 合格”与“人工认可”分开：人必须针对精确 external analysis 记录接受为
+已复核研究、要求修订或拒绝，并填写证据落地、反方处理、不确定性和有用性 rubric，以及事实
+错误/无证据主张数量。系统同时冻结 citation、token、latency、provider/model/prompt 和 replay
+证据；成本只依据人工提供的定价快照与 provider token 确定性估算，缺价格或 usage 会明确标为
+unpriced/partial。复核不再调用模型，接受也不创建 memory、不晋级 provider、不进入 Decision
+或交易权限。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -128,9 +137,21 @@ public demos and development.
   tools, account identity, credentials, or authority state. Model reasoning is
   not disabled, raw reasoning/response bodies are not stored, schema or citation
   failures stop the workflow, and exact terminal reads never reload credentials
-  or automatically retry a billable call. The result remains a non-authoritative
-  research artifact with no memory, Decision, trade, broker, capital, or
-  execution effect.
+  or automatically retry a billable call. Prompt v2 elevates the exact schema,
+  structural example, evidence-id catalog, and final self-check into a Karkinos
+  system contract. The DeepSeek edge explicitly requests thinking/high effort
+  with bounded 180-second/16K output limits while provider tools remain absent.
+  Prompt-v1 terminal runs remain immutable history rather than being rewritten
+  or retried. The result remains a non-authoritative research artifact with no
+  memory, Decision, trade, broker, capital, or execution effect. A further
+  human-only review boundary separates JSON/schema
+  success from research acceptance. It binds the exact analysis/report,
+  citations, provider/model/prompt, tool and audit replay, token usage, latency,
+  a four-part human rubric, and known factual/unsupported-claim counts. Optional
+  reviewed pricing produces a deterministic token-cost estimate; absent pricing
+  or usage remains explicitly unpriced/partial. Review performs no model call,
+  and acceptance still creates no memory, provider promotion, Decision input,
+  trade plan, financial mutation, or authority.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers

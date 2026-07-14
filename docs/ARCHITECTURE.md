@@ -463,15 +463,41 @@ risk, kill-switch, capital, broker, permission, and execution state are outside
 the provider input contract.
 
 The versioned prompt leaves the configured model's normal reasoning mode
-available while requiring a single JSON object. It declares embedded evidence
-and memory strings untrusted, publishes the only allowed evidence and memory
-ids, and prohibits trading or authority output. Local normalization is bounded:
-it accepts reviewed JSON fences, content parts, common field aliases, and
-Chinese confidence labels, but never fabricates a citation or financial value.
-Unknown/missing evidence ids, invalid structure, a length-truncated response,
-or incomplete evidence fails closed. Raw reasoning and raw provider responses
-are not persisted; only normalized artifacts, fingerprints, status, bounded
-usage, finish reason, and reasoning-presence/length metadata enter audit state.
+available while requiring a single JSON object. Prompt v2 places the exact
+schema, structural example, allowed citation ids, and final self-check in a
+Karkinos-generated system contract instead of relying on instructions buried
+inside the evidence payload. A compact evidence catalog maps each exact id to
+its local tool, kind, as-of, schema, and available top-level fields; it is
+metadata over the same exported persisted record, not a new fact source. The
+prompt declares embedded evidence and memory strings untrusted and prohibits
+trading or authority output. Its closed-world rule also forbids expanding a
+symbol into an unprovided name, importing market conventions/correlations or
+unstated thresholds, and proposing provider refresh, broker export, kill-switch
+release, submission enablement, position changes, or authority expansion.
+Interpretations must be labelled as inference with the missing evidence named;
+follow-up checks are limited to local read-only ingestion, reconciliation, and
+human review.
+
+Provider-specific reasoning controls stay at the replaceable HTTPS edge. For a
+configured DeepSeek adapter, Karkinos explicitly requests thinking mode with
+high reasoning effort and omits the ignored temperature parameter; other
+OpenAI-compatible providers retain deterministic temperature zero unless their
+edge profile says otherwise. Provider-side tools remain absent. Each explicit
+stage has a bounded 180-second timeout and 16,384-token output budget so
+reasoning does not silently consume the entire final-JSON allowance. There is
+still no automatic retry after a claimed call.
+
+Local normalization remains bounded: it accepts reviewed JSON fences, content
+parts, common field aliases, Chinese confidence labels, and a single cited
+object where an array was requested, but never fabricates a citation or
+financial value. Unknown/missing evidence ids, invalid structure, a length-
+truncated response, or incomplete evidence fails closed. Raw reasoning and raw
+provider responses are not persisted; only normalized artifacts,
+fingerprints, status, bounded usage, finish reason, and reasoning-presence/
+length metadata enter audit state. Existing prompt-v1 runs remain immutable
+history and become visibly invalid under the v2 current-binding check; they are
+not silently retried or rewritten, and a new explicit run needs a new
+idempotency key.
 
 `ai_external_memory_informed_analyses` binds the request, retrieval target,
 current context, provider/model identity, prompt version, and one permanent run
@@ -488,6 +514,66 @@ provenance, model-call lifecycle, and the workflow hash chain. Drift preserves
 historical audit facts but invalidates the current result. Phase 1.10 creates no
 new memory, Decision input, trade-plan draft, Account Fact, financial write,
 permission change, broker action, or execution/capital authority.
+
+### External Analysis Human Review and Quality Evidence
+
+Phase 1.11 separates model-output validation from human research acceptance.
+Schema-valid external output remains `requires_human_review=true` until a
+separate command records one final disposition:
+
+```text
+exact Phase 1.10 analysis id + human rubric + explicit confirmation
+-> replay retrieval/context/evidence and workflow audit
+-> re-fingerprint claim/debate/report, citations, tools, and model calls
+-> aggregate provider-reported token and observed latency evidence
+-> bind reviewed pricing snapshot or explicit unpriced reason
+-> accept as reviewed research | request revision | reject
+-> persist one review + one hash-chained event
+-> rederive eligibility on every GET/replay
+```
+
+The objective target fingerprint covers workflow/context identity, retrieval
+target, all artifact stored/actual fingerprints, evidence citations, every
+local tool call, provider/model/prompt identity, model-call metadata and usage,
+quality evidence, and the AI workflow audit. Acceptance requires a completed,
+valid Phase 1.10 replay with exactly claim/debate/report, complete citations,
+three completed model calls, and no known human-recorded factual errors or
+unsupported claims. Revision and rejection remain recordable when the target
+is invalid so failure evidence is not erased.
+
+The human rubric records evidence grounding, contradiction handling,
+uncertainty calibration, and decision usefulness on a bounded 1–5 scale. The
+system exposes each score and the total but applies no hidden threshold and
+does not promote the provider. Objective observations include citation counts,
+prompt/completion/total tokens, per-stage/total latency, reasoning-presence
+count, and evidence-read completion. They are quality evidence, not financial
+facts, and raw reasoning/raw provider responses remain absent.
+
+Pricing is never fetched during review. The request must provide either a
+human-reviewed, effective-dated currency and prompt/completion price per
+million tokens, or an explicit reason that pricing is unavailable. A priced
+estimate uses exact decimal arithmetic over provider-reported token usage and
+is labelled `provider_invoice=false`. Missing usage yields `partial_usage` and
+no estimate; missing pricing yields `unpriced`. Neither status is silently
+replaced by current web pricing or a vendor-specific default.
+
+`ai_external_analysis_reviews` stores the immutable request, exact target,
+provider/model/prompt binding, report artifact, review-time quality snapshot,
+review-time cost snapshot, and disposition. Current quality is recomputed only
+as a separately labelled drift comparison; it cannot rewrite the historical
+review basis.
+`ai_external_analysis_review_events` stores one hash-chained review fact. The
+unique analysis and idempotency constraints make concurrent duplicates single-
+fact and each analysis final only once. GET/list/replay do not initialize the
+schema, load credentials, call a model, or refresh evidence. Drift in evidence,
+artifacts, usage, provider identity, prompt, tool calls, or audit state preserves
+history but invalidates current reviewed-research eligibility.
+
+Acceptance intentionally ends at `reviewed_research_eligible=true`.
+`memory_recall_eligible`, `provider_promotion_eligible`, Decision handoff,
+trade-plan creation, financial writes, broker actions, capital changes, and
+execution authority all remain false. A future memory promotion requires a
+separate reviewed contract and cannot reinterpret this review as permission.
 
 ## Financial Data Integrity and Valuation
 
@@ -664,6 +750,8 @@ ai_provider_connectivity_checks
 ai_external_backtest_report_requests
 ai_external_memory_informed_analyses
 ai_external_memory_model_calls
+ai_external_analysis_reviews
+ai_external_analysis_review_events
 ```
 
 Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,
