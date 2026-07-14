@@ -3,10 +3,13 @@ import { useState, type FormEvent } from 'react';
 import { usePreferences } from '../../../app/preferences';
 import {
   useCreateHumanResearchTaskMutation,
+  useResearchTaskFixtureAnalysesQuery,
   useResearchTasksQuery,
   useReviewResearchTaskMutation,
+  useStartFixtureAnalysisMutation,
   type HumanResearchTask,
   type ResearchEvidenceType,
+  type ResearchTaskFixtureAnalysis,
 } from '../api';
 
 const BASE_EVIDENCE: ResearchEvidenceType[] = [
@@ -29,12 +32,12 @@ const COPY = {
     kicker: 'AI research boundary',
     title: 'Human research tasks',
     detail:
-      'Freeze canonical evidence, record a task, then review the context. No model or workflow is started.',
+      'Freeze canonical evidence, review the context, then explicitly run an offline deterministic fixture. External models remain off.',
     closedDetail:
       'This boundary is idle until you open it. It never polls a model or provider.',
     open: 'Open research tasks',
     close: 'Close',
-    noModel: 'Model execution off',
+    noModel: 'External models off',
     noAuthority: 'No trading authority',
     operator: 'Human operator',
     account: 'Account alias',
@@ -61,6 +64,23 @@ const COPY = {
     reviewing: 'Recording review…',
     acceptBlocked: 'Acceptance requires complete authoritative evidence.',
     persistedOnly: 'Persisted facts only',
+    analysisLoading: 'Loading persisted fixture analyses…',
+    analysisLoadError: 'Fixture analysis records could not be loaded.',
+    runFixture: 'Run offline fixture analysis',
+    runningFixture: 'Running local fixture…',
+    fixtureOnly: 'Deterministic fixture only',
+    noNetwork: 'No network or external model',
+    analysisStatus: 'Fixture workflow',
+    bindingStatus: 'Evidence binding',
+    memoryStatus: 'Memory draft',
+    auditValid: 'Audit replay valid',
+    auditInvalid: 'Audit replay blocked',
+    bindingValid: 'Exact context valid',
+    bindingDrift: 'Evidence drift — output invalidated',
+    memoryPending: 'Human review required; exact context only',
+    memoryInvalid: 'Invalidated by evidence drift',
+    report: 'Fixture report',
+    artifacts: 'Artifacts',
     statuses: {
       awaiting_human_review: 'Awaiting human review',
       blocked_by_evidence: 'Blocked by evidence',
@@ -73,11 +93,11 @@ const COPY = {
     kicker: 'AI 投研边界',
     title: '人工研究任务',
     detail:
-      '先冻结 canonical 证据，再记录任务并人工复核上下文；本阶段不会启动模型或 workflow。',
+      '先冻结 canonical 证据并人工复核，再由人显式运行离线 deterministic fixture；外部模型继续关闭。',
     closedDetail: '显式打开前保持空闲；不会轮询模型或 provider。',
     open: '打开研究任务',
     close: '收起',
-    noModel: '模型执行关闭',
+    noModel: '外部模型关闭',
     noAuthority: '无交易权限',
     operator: '人工操作人',
     account: '账户别名',
@@ -103,6 +123,23 @@ const COPY = {
     reviewing: '正在记录复核…',
     acceptBlocked: '只有完整、权威的证据上下文才可接受。',
     persistedOnly: '仅持久化事实',
+    analysisLoading: '正在读取持久化 fixture analysis…',
+    analysisLoadError: '无法读取 fixture analysis 记录。',
+    runFixture: '运行离线 fixture analysis',
+    runningFixture: '本地 fixture 运行中…',
+    fixtureOnly: '仅 deterministic fixture',
+    noNetwork: '无网络、无外部模型',
+    analysisStatus: 'Fixture workflow',
+    bindingStatus: '证据绑定',
+    memoryStatus: '记忆草稿',
+    auditValid: '审计回放有效',
+    auditInvalid: '审计回放阻断',
+    bindingValid: '精确上下文有效',
+    bindingDrift: '证据漂移——产物已失效',
+    memoryPending: '等待人工复核；仅对精确上下文有效',
+    memoryInvalid: '已因证据漂移失效',
+    report: 'Fixture 报告',
+    artifacts: '产物',
     statuses: {
       awaiting_human_review: '等待人工复核',
       blocked_by_evidence: '证据阻断',
@@ -122,8 +159,10 @@ export function ResearchTaskPanel({
   const copy = COPY[locale];
   const [open, setOpen] = useState(false);
   const tasks = useResearchTasksQuery(open);
+  const analyses = useResearchTaskFixtureAnalysesQuery(open);
   const createTask = useCreateHumanResearchTaskMutation();
   const reviewTask = useReviewResearchTaskMutation();
+  const startFixture = useStartFixtureAnalysisMutation();
   const [operator, setOperator] = useState('human:owner');
   const [accountAlias, setAccountAlias] = useState('primary');
   const [title, setTitle] = useState('Review frozen investment evidence');
@@ -135,6 +174,7 @@ export function ResearchTaskPanel({
   );
   const [taskKey, setTaskKey] = useState(() => newAuditKey('ai-research-task'));
   const [reviewKeys, setReviewKeys] = useState<Record<string, string>>({});
+  const [analysisKeys, setAnalysisKeys] = useState<Record<string, string>>({});
   const [successMessage, setSuccessMessage] = useState('');
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -186,6 +226,26 @@ export function ResearchTaskPanel({
         reviewed_by: operator.trim(),
         decision,
         note: reviewNote.trim(),
+      });
+    } catch {
+      // Mutation state renders the error while the idempotency key is retained.
+    }
+  };
+
+  const startAnalysis = async (task: HumanResearchTask) => {
+    const idempotencyKey =
+      analysisKeys[task.task_id] ?? newAuditKey('ai-fixture-analysis');
+    if (!analysisKeys[task.task_id]) {
+      setAnalysisKeys((current) => ({
+        ...current,
+        [task.task_id]: idempotencyKey,
+      }));
+    }
+    try {
+      await startFixture.mutateAsync({
+        task_id: task.task_id,
+        idempotency_key: idempotencyKey,
+        requested_by: operator.trim(),
       });
     } catch {
       // Mutation state renders the error while the idempotency key is retained.
@@ -338,9 +398,14 @@ export function ResearchTaskPanel({
               <div className="mt-3 space-y-3">
                 {tasks.data.tasks.map((task) => (
                   <ResearchTaskCard
+                    analysis={analyses.data?.analyses.find(
+                      (item) => item.task_id === task.task_id,
+                    )}
+                    analysisPending={startFixture.isPending}
                     copy={copy}
                     key={task.task_id}
                     onReview={(decision) => void review(task, decision)}
+                    onStartAnalysis={() => void startAnalysis(task)}
                     reviewDisabled={reviewTask.isPending || !reviewNote.trim()}
                     task={task}
                   />
@@ -362,6 +427,27 @@ export function ResearchTaskPanel({
                 {reviewTask.error.message}
               </p>
             ) : null}
+            {analyses.isLoading ? (
+              <p className="app-muted mt-3 text-xs" role="status">
+                {copy.analysisLoading}
+              </p>
+            ) : null}
+            {analyses.isError ? (
+              <p
+                className="mt-3 text-sm text-[var(--app-negative)]"
+                role="alert"
+              >
+                {copy.analysisLoadError}
+              </p>
+            ) : null}
+            {startFixture.isError ? (
+              <p
+                className="mt-3 text-sm text-[var(--app-negative)]"
+                role="alert"
+              >
+                {startFixture.error.message}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -370,11 +456,16 @@ export function ResearchTaskPanel({
 }
 
 function ResearchTaskCard({
+  analysis,
+  analysisPending,
   copy,
   onReview,
+  onStartAnalysis,
   reviewDisabled,
   task,
 }: {
+  analysis?: ResearchTaskFixtureAnalysis;
+  analysisPending: boolean;
   copy: (typeof COPY)['en'] | (typeof COPY)['zh'];
   onReview: (
     decision:
@@ -382,6 +473,7 @@ function ResearchTaskCard({
       | 'context_revision_requested'
       | 'closed_without_analysis',
   ) => void;
+  onStartAnalysis: () => void;
   reviewDisabled: boolean;
   task: HumanResearchTask;
 }) {
@@ -463,7 +555,107 @@ function ResearchTaskCard({
           </button>
         </div>
       ) : null}
+      {task.status === 'context_accepted' && !analysis ? (
+        <div className="mt-4 border-t border-[var(--app-border)] pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              <BoundaryBadge label={copy.fixtureOnly} />
+              <BoundaryBadge label={copy.noNetwork} />
+            </div>
+            <button
+              className="app-button-primary px-3 py-1.5 text-xs font-semibold"
+              disabled={analysisPending}
+              onClick={onStartAnalysis}
+              type="button"
+            >
+              {analysisPending ? copy.runningFixture : copy.runFixture}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {analysis ? (
+        <FixtureAnalysisSummary analysis={analysis} copy={copy} />
+      ) : null}
     </article>
+  );
+}
+
+function FixtureAnalysisSummary({
+  analysis,
+  copy,
+}: {
+  analysis: ResearchTaskFixtureAnalysis;
+  copy: (typeof COPY)['en'] | (typeof COPY)['zh'];
+}) {
+  const reportArtifact = analysis.artifacts.find(
+    (artifact) => artifact.kind === 'report',
+  );
+  const reportSummary =
+    typeof reportArtifact?.content.summary === 'string'
+      ? reportArtifact.content.summary
+      : null;
+  const bindingValid = analysis.binding_validity === 'valid';
+  const memoryValid =
+    analysis.memory_validity === 'human_review_required_exact_context_only';
+
+  return (
+    <section
+      aria-label={copy.report}
+      className="mt-4 border-t border-[var(--app-border)] pt-3"
+    >
+      <div className="flex flex-wrap gap-1.5">
+        <BoundaryBadge label={copy.fixtureOnly} />
+        <BoundaryBadge label={copy.noNetwork} />
+      </div>
+      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+        <EvidenceIdentity
+          label={copy.analysisStatus}
+          value={analysis.workflow_status}
+        />
+        <EvidenceIdentity
+          label={copy.bindingStatus}
+          value={bindingValid ? copy.bindingValid : copy.bindingDrift}
+        />
+        <EvidenceIdentity
+          label={copy.memoryStatus}
+          value={memoryValid ? copy.memoryPending : copy.memoryInvalid}
+        />
+        <EvidenceIdentity
+          label="Audit"
+          value={
+            analysis.audit_replay.valid ? copy.auditValid : copy.auditInvalid
+          }
+        />
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-1.5" aria-label={copy.artifacts}>
+        {analysis.artifacts.map((artifact) => (
+          <span
+            className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[10px] text-[var(--app-muted)]"
+            key={artifact.artifact_id}
+            title={artifact.artifact_id}
+          >
+            {artifact.kind} · {artifact.evidence_reference_ids.length}
+          </span>
+        ))}
+      </div>
+      {reportSummary ? (
+        <div className="mt-3 rounded-xl border border-[var(--app-border)] p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+            {copy.report}
+          </div>
+          <p className="mt-1 text-xs leading-5 text-[var(--app-text)]">
+            {reportSummary}
+          </p>
+        </div>
+      ) : null}
+      {!bindingValid && analysis.binding_errors.length ? (
+        <ul className="mt-3 space-y-1 text-xs text-[var(--app-negative)]">
+          {analysis.binding_errors.map((error) => (
+            <li key={error}>{error}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

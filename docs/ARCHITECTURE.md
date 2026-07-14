@@ -97,9 +97,10 @@ can contribute evidence, but they cannot mutate production ledger state without
 review and reconciliation.
 
 The AI research runtime is an isolated application-side boundary. Its first
-production integration is an explicit, human-started context-capture command;
-it is not registered as a strategy runtime, scheduler, OMS service, gateway,
-background worker, model endpoint, or application-startup dependency.
+production integrations are explicit human-started context capture, task
+review, and accepted-task offline fixture commands. It is not registered as a
+strategy runtime, scheduler, OMS service, gateway, background worker, external
+model endpoint, or application-startup dependency.
 
 ### Explicit AI Context Capture Boundary
 
@@ -176,6 +177,50 @@ model invocation, workflow start, or background agent in Phase 1.3. Human
 `context_accepted` means only “this frozen context is suitable for a future,
 separately authorized analysis”; it has no accounting, risk, capital, OMS,
 gateway, submission, or cancellation effect.
+
+### Explicit Accepted-Task Offline Fixture Boundary
+
+Phase 1.4 adds a third command boundary. Context acceptance alone still starts
+nothing; the human must explicitly acknowledge an offline deterministic run:
+
+```text
+context_accepted human research task
+-> replay task hash chain and exact context/evidence identity
+-> POST /api/ai/research-tasks/{task_id}/fixture-analyses
+-> claim stage reads every bound canonical evidence reference
+-> deterministic debate
+-> deterministic report
+-> context-bound memory draft requiring later human review
+-> workflow hash-chain replay + evidence-binding validity
+```
+
+The runtime registers only `karkinos.fixture.offline.v1` and its local fixture
+model identity for that explicit run. These identities exercise the
+provider/model/role contracts; they are not production AI registrations and do
+not perform network I/O or read an API key. Stage order is fixed by the
+deterministic orchestrator. Every claim/debate/report/memory artifact cites the
+task evidence, and the claim stage must successfully read every exact reference
+through the permission registry before later stages proceed.
+
+`ai_research_task_analyses` maps one idempotent human command to one existing
+workflow. Restarting the service or repeating the exact command reuses the
+mapping, workflow, runs, tool calls, and artifacts rather than executing a
+duplicate. GET/list/replay routes tolerate an absent schema as an empty/not-
+found read and never initialize tables. There is no polling, scheduler, startup
+hook, background execution, or implicit retry loop.
+
+Before start, the task status, task event replay, context fingerprint,
+valuation snapshot, ledger cutoff/fingerprint, and immutable evidence records
+must all match. The same checks run when an analysis is read or replayed. If
+evidence drifts after completion, historical artifacts remain in the audit log
+but the binding becomes `evidence_drift`, replay is invalid, and memory becomes
+`invalidated_by_evidence_drift`; the system never silently carries that memory
+forward.
+
+Fixture artifacts are non-authoritative research output. This boundary cannot
+write Account Truth, Portfolio, OMS, ledger, risk, reconciliation, kill switch,
+capital authorization, broker submission/cancellation, or Decision handoff
+state. It does not create a trade-plan draft in this increment.
 
 ## Financial Data Integrity and Valuation
 

@@ -96,6 +96,84 @@ export type ReviewResearchTaskInput = {
   note: string;
 };
 
+export type FixtureAnalysisArtifact = {
+  artifact_id: string;
+  stage_id: string;
+  role_id: string;
+  kind: 'claim' | 'debate' | 'report' | 'memory';
+  content: Record<string, unknown>;
+  evidence_reference_ids: string[];
+  fingerprint: string;
+  created_at: string;
+  authority_effect: 'none';
+};
+
+export type ResearchTaskFixtureAnalysis = {
+  schema_version: string;
+  analysis_id: string;
+  task_id: string;
+  workflow_id: string;
+  workflow_status:
+    'pending' | 'running' | 'partial' | 'failed' | 'blocked' | 'completed';
+  workflow_failure_code: string | null;
+  partial_result: boolean;
+  context_snapshot_id: string;
+  context_fingerprint: string;
+  binding_validity: 'valid' | 'evidence_drift';
+  binding_errors: string[];
+  memory_validity:
+    | 'not_created'
+    | 'human_review_required_exact_context_only'
+    | 'invalidated_by_evidence_drift';
+  artifacts: FixtureAnalysisArtifact[];
+  tool_calls: Array<{
+    call_id: string;
+    run_id: string;
+    stage_id: string;
+    role_id: string;
+    tool_name: string;
+    status: string;
+    evidence_reference_id: string | null;
+    denial_reason: string | null;
+  }>;
+  audit_replay: {
+    valid: boolean;
+    event_count: number;
+    last_event_hash: string | null;
+    errors: string[];
+  };
+  requested_by: string;
+  created_at: string;
+  reused: boolean;
+  provider_id: string;
+  model_id: string;
+  fixture_only: true;
+  fixture_stage_run_count: number;
+  network_io_used: false;
+  external_model_invocation_count: 0;
+  real_provider_registered: false;
+  background_execution_used: false;
+  persisted_facts_only: true;
+  research_output_is_account_fact: false;
+  authority_effect: 'none';
+  does_not_mutate_financial_state: true;
+};
+
+type ResearchTaskFixtureAnalysisList = {
+  schema_version: string;
+  analyses: ResearchTaskFixtureAnalysis[];
+  fixture_only: true;
+  network_io_used: false;
+  external_model_invocation_count: 0;
+  authority_effect: 'none';
+};
+
+export type StartFixtureAnalysisInput = {
+  task_id: string;
+  idempotency_key: string;
+  requested_by: string;
+};
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -212,6 +290,55 @@ export function useReviewResearchTaskMutation() {
                 ),
               }
             : current,
+      );
+    },
+  });
+}
+
+export function useResearchTaskFixtureAnalysesQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['ai-research-task-fixture-analyses'],
+    queryFn: () =>
+      apiClient<ResearchTaskFixtureAnalysisList>(
+        '/api/ai/research-task-analyses?limit=20',
+      ),
+    enabled,
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+  });
+}
+
+export function useStartFixtureAnalysisMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StartFixtureAnalysisInput) =>
+      postJson<ResearchTaskFixtureAnalysis>(
+        `/api/ai/research-tasks/${encodeURIComponent(input.task_id)}/fixture-analyses`,
+        {
+          idempotency_key: input.idempotency_key,
+          requested_by: input.requested_by,
+          confirmation:
+            'run_deterministic_fixture_analysis_without_external_model',
+        },
+      ),
+    onSuccess: (analysis) => {
+      queryClient.setQueryData<ResearchTaskFixtureAnalysisList>(
+        ['ai-research-task-fixture-analyses'],
+        (current) => ({
+          schema_version:
+            current?.schema_version ??
+            'karkinos.ai.task_fixture_analysis_list.v1',
+          analyses: [
+            analysis,
+            ...(current?.analyses ?? []).filter(
+              (item) => item.analysis_id !== analysis.analysis_id,
+            ),
+          ],
+          fixture_only: true,
+          network_io_used: false,
+          external_model_invocation_count: 0,
+          authority_effect: 'none',
+        }),
       );
     },
   });

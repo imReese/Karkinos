@@ -42,6 +42,60 @@ const authoritativeTask = {
   does_not_mutate_financial_state: true,
 } as const;
 
+const completedFixtureAnalysis = {
+  schema_version: 'karkinos.ai.task_fixture_analysis.v1',
+  analysis_id: 'ai-task-analysis-001',
+  task_id: authoritativeTask.task_id,
+  workflow_id: 'ai-workflow-001',
+  workflow_status: 'completed',
+  workflow_failure_code: null,
+  partial_result: false,
+  context_snapshot_id: authoritativeTask.context_snapshot_id,
+  context_fingerprint: authoritativeTask.context_fingerprint,
+  binding_validity: 'valid',
+  binding_errors: [],
+  memory_validity: 'human_review_required_exact_context_only',
+  artifacts: ['claim', 'debate', 'report', 'memory'].map((kind, index) => ({
+    artifact_id: `ai-artifact-${index + 1}`,
+    stage_id: kind,
+    role_id: `fixture.${kind}`,
+    kind,
+    content:
+      kind === 'report'
+        ? {
+            summary:
+              'A deterministic fixture reviewed exact persisted evidence without external model execution.',
+          }
+        : {},
+    evidence_reference_ids: ['evidence-portfolio-001'],
+    fingerprint: `artifact-fingerprint-${index + 1}`,
+    created_at: '2026-07-13T14:00:00+00:00',
+    authority_effect: 'none',
+  })),
+  tool_calls: [],
+  audit_replay: {
+    valid: true,
+    event_count: 12,
+    last_event_hash: 'event-hash-001',
+    errors: [],
+  },
+  requested_by: 'human:owner',
+  created_at: '2026-07-13T14:00:00+00:00',
+  reused: false,
+  provider_id: 'karkinos.fixture.offline.v1',
+  model_id: 'karkinos.fixture.research.v1',
+  fixture_only: true,
+  fixture_stage_run_count: 4,
+  network_io_used: false,
+  external_model_invocation_count: 0,
+  real_provider_registered: false,
+  background_execution_used: false,
+  persisted_facts_only: true,
+  research_output_is_account_fact: false,
+  authority_effect: 'none',
+  does_not_mutate_financial_state: true,
+} as const;
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -51,9 +105,11 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 function renderPanel({
+  analyses = [],
   backtestResultId = 7,
   tasks = [],
 }: {
+  analyses?: Array<Record<string, unknown>>;
   backtestResultId?: number | null;
   tasks?: Array<Record<string, unknown>>;
 } = {}) {
@@ -92,6 +148,9 @@ function renderPanel({
         };
         return jsonResponse({ task: reviewed, review: {}, reused: false });
       }
+      if (url.endsWith('/fixture-analyses') && method === 'POST') {
+        return jsonResponse(completedFixtureAnalysis);
+      }
       if (url.endsWith('/api/ai/research-tasks') && method === 'POST') {
         return jsonResponse({
           ...authoritativeTask,
@@ -105,6 +164,16 @@ function renderPanel({
           tasks,
           model_execution_enabled: false,
           workflow_started: false,
+          authority_effect: 'none',
+        });
+      }
+      if (url.includes('/api/ai/research-task-analyses?limit=20')) {
+        return jsonResponse({
+          schema_version: 'karkinos.ai.task_fixture_analysis_list.v1',
+          analyses,
+          fixture_only: true,
+          network_io_used: false,
+          external_model_invocation_count: 0,
           authority_effect: 'none',
         });
       }
@@ -136,7 +205,7 @@ afterEach(() => {
 test('stays idle until explicitly opened', async () => {
   const { fetchMock } = renderPanel();
 
-  expect(screen.getByText('Model execution off')).toBeTruthy();
+  expect(screen.getByText('External models off')).toBeTruthy();
   expect(screen.getByText('No trading authority')).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 
@@ -144,7 +213,7 @@ test('stays idle until explicitly opened', async () => {
   expect(
     await screen.findByText('No human research task has been recorded yet.'),
   ).toBeTruthy();
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
 test('captures exact persisted context before recording a task', async () => {
@@ -235,5 +304,81 @@ test('blocks acceptance for incomplete evidence and records revision only', asyn
   });
   expect(
     screen.queryByRole('button', { name: /submit|cancel|resume/i }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole('button', { name: 'Run offline fixture analysis' }),
+  ).toBeNull();
+});
+
+test('starts the offline fixture only after accepted context and renders artifacts', async () => {
+  const acceptedTask = {
+    ...authoritativeTask,
+    status: 'context_accepted',
+  };
+  const { requests } = renderPanel({ tasks: [acceptedTask] });
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+  expect(await screen.findByText('Context accepted')).toBeTruthy();
+
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Run offline fixture analysis' }),
+  );
+
+  expect(await screen.findByText('Fixture workflow')).toBeTruthy();
+  expect(screen.getByText('Exact context valid')).toBeTruthy();
+  expect(
+    screen.getByText('Human review required; exact context only'),
+  ).toBeTruthy();
+  expect(screen.getByText('Audit replay valid')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'A deterministic fixture reviewed exact persisted evidence without external model execution.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText(/claim · 1/)).toBeTruthy();
+  expect(screen.getByText(/debate · 1/)).toBeTruthy();
+  expect(screen.getByText(/report · 1/)).toBeTruthy();
+  expect(screen.getByText(/memory · 1/)).toBeTruthy();
+
+  const fixtureRequest = requests.find((request) =>
+    request.url.endsWith('/fixture-analyses'),
+  );
+  expect(fixtureRequest?.body).toMatchObject({
+    requested_by: 'human:owner',
+    confirmation: 'run_deterministic_fixture_analysis_without_external_model',
+  });
+  expect(JSON.stringify(requests)).not.toContain('broker');
+  expect(
+    screen.queryByRole('button', { name: /submit|cancel|resume|trade|order/i }),
+  ).toBeNull();
+});
+
+test('invalidates fixture report and memory when exact evidence binding drifts', async () => {
+  const drifted = {
+    ...completedFixtureAnalysis,
+    binding_validity: 'evidence_drift',
+    binding_errors: ['canonical evidence payload fingerprint drift'],
+    memory_validity: 'invalidated_by_evidence_drift',
+    audit_replay: {
+      ...completedFixtureAnalysis.audit_replay,
+      valid: false,
+      errors: ['canonical evidence payload fingerprint drift'],
+    },
+  };
+  renderPanel({
+    tasks: [{ ...authoritativeTask, status: 'context_accepted' }],
+    analyses: [drifted],
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+
+  expect(
+    await screen.findByText('Evidence drift — output invalidated'),
+  ).toBeTruthy();
+  expect(screen.getByText('Invalidated by evidence drift')).toBeTruthy();
+  expect(screen.getByText('Audit replay blocked')).toBeTruthy();
+  expect(
+    screen.getByText('canonical evidence payload fingerprint drift'),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: 'Run offline fixture analysis' }),
   ).toBeNull();
 });
