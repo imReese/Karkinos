@@ -295,8 +295,47 @@ ledger identity, no tools/workflow/artifact, and `authority_effect=none`.
 This probe proves authentication and protocol compatibility only. It is not a
 model-quality evaluation, research result, memory source, Decision handoff,
 risk input, capital authorization, OMS action, or broker capability. Connecting
-an external model to an evidence-bound workflow remains a later independent
-review.
+an external model to any broader evidence-bound workflow remains a later
+independent review.
+
+### Explicit Saved-Backtest External Report
+
+Phase 1.7 introduces one reviewed, human-started external-model use case; it
+does not make an external provider the default research runtime. The only
+write entry is `POST /api/ai/external-research/backtest-reports`. Its exact
+confirmation states that the selected saved-backtest evidence will be sent to
+the configured external model. The exported payload is limited to the
+persisted backtest result id/time, strategy and test window, saved performance
+metrics, after-cost/cost evidence, research-evidence gate, and recorded
+limitations. It excludes account aliases, holdings, valuation/ledger identity,
+Account Truth, Operations, paper/shadow, OMS, risk, capital, broker, and
+permission facts.
+
+The local sequence is:
+
+```text
+explicit human request + selected saved backtest
+-> canonical research-evidence capture v2
+-> require complete + analysis_ready
+-> exact context/evidence binding
+-> permission-checked research_evidence.read
+-> one OpenAI-compatible JSON request (no provider-side tools)
+-> local schema normalization and validation
+-> cited non-authoritative REPORT artifact
+-> workflow hash-chain replay
+```
+
+The external model never receives the valuation snapshot or ledger cutoff.
+Those identities, the context fingerprint, and evidence fingerprint are added
+locally to the stored report so replay remains exact without exporting account
+identity. `ai_external_backtest_report_requests` obtains an atomic run claim
+before the billable turn: concurrent exact duplicates observe the in-flight or
+terminal workflow instead of calling the model twice. A failed workflow is
+terminal under that idempotency key; a deliberate retry requires a new human
+request. There is no automatic retry, scheduler, startup hook, background
+model task, memory creation, Decision handoff, trade-plan draft, or authority
+effect. Provider timeout/error text is sanitized; malformed raw provider output
+is not stored.
 
 ## Financial Data Integrity and Valuation
 
@@ -450,13 +489,14 @@ Unknown tools and authority namespaces fail closed. Persisted-read tool results
 must return an evidence id already present in the frozen context and explicitly
 assert `persisted_facts_only=true` before they can enter the next provider turn.
 
-Research workflows still ship only `DeterministicFixtureProvider`. It selects
-immutable local responses by workflow stage and turn, performs no network I/O,
-accepts no API key, and is enabled only by explicit test/runtime registration.
-The separate Phase 1.6 OpenAI-compatible probe registers one configured
-provider/model only after explicit human invocation and does not expose that
-adapter to the orchestrator. No DeepSeek, OpenAI, or other vendor is canonical
-or registered by default.
+The general research-task lifecycle still ships only
+`DeterministicFixtureProvider`. It selects immutable local responses by
+workflow stage and turn, performs no network I/O, accepts no API key, and is
+enabled only by explicit test/runtime registration. The Phase 1.6 connectivity
+probe remains outside the orchestrator. Phase 1.7 separately registers a
+purpose-limited external-report provider/model/role only after an explicit
+request for one selected saved backtest; it cannot run another stage or tool.
+No DeepSeek, OpenAI, or other vendor is canonical or registered by default.
 
 The AI runtime audit stores create and write only namespaced tables:
 
@@ -465,6 +505,7 @@ ai_provider_registrations / ai_model_registrations / ai_agent_roles
 ai_context_snapshots / ai_workflows / ai_agent_runs
 ai_tool_calls / ai_artifacts / ai_workflow_events
 ai_provider_connectivity_checks
+ai_external_backtest_report_requests
 ```
 
 Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,
@@ -474,7 +515,7 @@ identity drift blocks before provider invocation. The store exposes no method
 for production ledger, OMS, risk decision, kill switch, capital authorization,
 broker gateway, submission, or cancellation state.
 
-The planned integration direction remains one-way and read-only:
+The implemented integration direction remains one-way and read-only:
 
 ```text
 canonical persisted projection or evidence

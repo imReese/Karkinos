@@ -42,6 +42,7 @@ paper/shadow、人工确认、对账和复盘。
 | AI 原生 1.4 | 离线 fixture 生命周期已实现 | 已接受任务的 claim/debate/report/memory、漂移失效，无外部模型 |
 | AI 原生 1.5 | 人工记忆处置已实现 | 精确分析复核、回忆资格、追加式回放与漂移自动失效 |
 | AI 原生 1.6 | 外部连通性边界已实现 | 人工显式、固定非财务 OpenAI-compatible 探针与脱敏幂等审计 |
+| AI 原生 1.7 | 保存回测外部报告边界已实现 | 明确外发同意、单条 canonical 证据、单份结构化非权威报告且无交易权限 |
 
 ## AI 原生投研主线
 
@@ -129,9 +130,25 @@ fail closed。`ai_provider_connectivity_checks` 只保存 provider/model、endpo
 证明鉴权和协议可用，不启动 research workflow、不生成 artifact/memory、不进入 Decision，
 也不修改 OMS、账本、风控、kill switch、资本授权或券商状态。
 
+1.7 增量只开放一个受限真实分析入口：
+`POST /api/ai/external-research/backtest-reports`。操作者必须选择一条已保存
+回测、提供身份/幂等键/研究问题，并使用明确表示“把所选保存回测证据发送到已配置
+外部模型”的精确确认语句。canonical research capture v2 只投影数据库中已保存的
+收益、回撤、测试区间、扣费后证据、成本、研究 gate 和限制，不重新计算；只有
+`complete` 且 `analysis_ready` 的记录才能继续。
+
+本地 orchestrator 只授权一次 `research_evidence.read`。外部请求不会包含账户别名、
+持仓、valuation/ledger identity、Account Truth、Operations、paper/shadow、风控、OMS、
+资本、券商或权限事实，也不给 provider 任何工具。模型输出必须在本地归一化并通过
+schema 校验，随后才会作为引用精确 evidence/context fingerprint 的非权威 `REPORT`
+保存并要求人工复核。原子 run claim 阻止并发重复计费；终态重复只读原结果，同键换
+输入 fail closed，失败不会自动重试。原始畸形响应和 provider error body 不落库；该
+边界不生成 memory、Decision 输入、trade-plan draft，不修改任何财务事实或执行权限。
+
 后续按独立审查逐步迁移：下一步只考虑只读检索策略，并且只能选择当前仍为
 `reviewed_memory` 的 artifact，重新绑定当前证据，不能把 memory 当作事实；真实 provider
-进入证据绑定 research workflow 必须再次单独审查和用户授权。任何 trade-plan draft 进入
+进入更广泛的 task/debate/memory/Portfolio/Account Truth/Operations/paper-shadow
+workflow 必须再次单独审查和用户授权。任何 trade-plan draft 进入
 Decision 都必须经过独立人工交接，
 既有账户事实、风控、paper/shadow、人工确认、资本、OMS、gateway、对账和 kill
 switch 门禁继续拥有唯一权威。
