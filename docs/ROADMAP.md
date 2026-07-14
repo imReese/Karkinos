@@ -37,6 +37,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.8 | Reviewed-memory retrieval boundary implemented | Explicit ID allowlist, current-evidence rebinding, drift-sensitive replay, and no automatic recall or provider call |
 | AI-native Phase 1.9 | Offline memory-informed analysis boundary implemented | Explicit retrieval consumption, mandatory current-evidence tool reads, deterministic claim/debate/report, and no model or trade authority |
 | AI-native Phase 1.10 | External memory-informed analysis boundary implemented | Explicit evidence export, three current-evidence-bound model stages, reasoning-preserving schema validation, and no trade authority |
+| AI-native Phase 1.11 | External-analysis human review boundary implemented | Exact disposition, quality/latency/token/cost evidence, drift invalidation, and no memory or trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -303,10 +304,17 @@ reasoning authoritative:
   alias/number, credentials, OMS, risk, capital, broker, permission, and
   execution state are excluded; provider-side tools remain disabled;
 * the versioned prompt preserves the configured model's normal reasoning mode,
-  supplies an exact JSON contract and allowed evidence ids, and treats all
-  embedded strings as untrusted data. Local bounded normalization accepts
-  common JSON wrappers and aliases, while missing/unknown citations, truncated
-  output, malformed JSON, or incomplete evidence fail closed;
+  and prompt v2 moves the exact JSON schema, example, allowed evidence catalog,
+  and final self-check into a Karkinos system contract while treating all
+  embedded evidence strings as untrusted data. The closed-world prompt forbids
+  unprovided symbol names, market conventions, correlations, thresholds,
+  provider/broker refresh, kill-switch release, and authority expansion; any
+  inference must name missing evidence. The DeepSeek edge explicitly
+  requests thinking/high effort with bounded 180-second/16K output limits;
+  provider-side tools and automatic retries remain disabled. Local bounded
+  normalization accepts equivalent JSON wrappers, aliases, and single cited
+  objects, while missing/unknown citations, truncated output, malformed JSON,
+  or incomplete evidence fail closed;
 * only normalized cited artifacts, content fingerprints, token counts, finish
   reason, and reasoning-presence/length metadata are persisted. API keys, raw
   responses, provider envelope ids, and raw reasoning are never stored;
@@ -318,10 +326,45 @@ reasoning authoritative:
   or audit drift preserves historical artifacts but invalidates replay. The
   workflow creates no memory, Decision input, trade-plan draft, financial
   write, permission change, broker action, or execution/capital authority.
+* prompt-v1 terminal runs remain immutable historical evidence and are not
+  silently retried or rewritten after prompt v2. A fresh call requires a new
+  explicit request and idempotency key.
+
+Phase 1.11 requires a separate human disposition before a Phase 1.10 result may
+be called reviewed research:
+
+* `POST /api/ai/external-memory-informed-analyses/{analysis_id}/reviews`
+  requires reviewer identity, idempotency key, note, exact no-memory/no-
+  authority confirmation, and one final decision: accept as reviewed research,
+  request revision, or reject;
+* the review target independently replays the exact external analysis,
+  retrieval/context/evidence binding, claim/debate/report fingerprints,
+  citation sets, three model calls, local tool reads, provider/model/prompt
+  identity, and workflow audit chain. Invalid or incomplete targets cannot be
+  accepted, but revision/rejection remain auditable;
+* the human records four bounded rubric scores plus factual-error and
+  unsupported-claim counts. Either nonzero error count blocks acceptance; no
+  opaque aggregate score automatically promotes a model or conclusion;
+* objective quality evidence aggregates schema/citation completeness,
+  provider-reported prompt/completion tokens, per-stage/total latency, and
+  reasoning-presence metadata. Raw reasoning and provider responses remain
+  absent;
+* cost evidence requires either an effective-dated, human-reviewed pricing
+  snapshot or an explicit reason why pricing is unavailable. Estimated cost is
+  deterministic `pricing × provider-reported tokens`, never a provider invoice;
+  missing token usage yields `partial_usage` instead of a guessed cost;
+* one final review and one hash-chained event are concurrency/idempotency safe.
+  GET/list/replay do not initialize schema, load credentials, contact a model,
+  or refresh facts. Later evidence, artifact, usage, provider, prompt, or audit
+  drift preserves the historical review but removes current eligibility;
+* `accept_as_reviewed_research` still has
+  `memory_recall_eligible=false`, `provider_promotion_eligible=false`, and no
+  Decision, trade-plan, financial, broker, permission, capital, or execution
+  effect.
 
 Planned migration, each behind a separate review:
 
-1. **Completed foundation and reviewed external memory boundary:** immutable storage, identity
+1. **Completed foundation and reviewed external analysis boundary:** immutable storage, identity
    validation, context-bound read executors, explicitly human-started canonical
    capture, human task/review records, and the accepted-task deterministic
    claim/debate/report/memory lifecycle plus exact human disposition and
@@ -336,10 +379,13 @@ Planned migration, each behind a separate review:
    consume that exact bundle only after independently reading all current
    evidence, without creating memory or authority. Phase 1.10 now permits an
    explicitly configured real provider only inside that reviewed envelope,
-   with all three stages rereading evidence and no automatic retry;
-2. **Next review:** evaluate bounded human review and disposition of Phase 1.10
-   reports, plus provider quality/latency/cost evidence. Do not automatically
-   promote external output into memory, Decision, or another workflow;
+   with all three stages rereading evidence and no automatic retry. Phase 1.11
+   adds exact human disposition and replayable quality/latency/token/cost
+   evidence without promoting output into memory or provider authority;
+2. **Next review:** separately evaluate an explicit, reversible promotion from
+   eligible Phase 1.11 reviewed research into a new historical memory artifact.
+   It must preserve source/report/review fingerprints, never become current
+   fact, and remain ineligible for Decision or trading authority;
 3. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;

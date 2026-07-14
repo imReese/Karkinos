@@ -118,6 +118,17 @@ def _settings() -> ProviderConnectivitySettings:
     )
 
 
+def _deepseek_settings() -> ProviderConnectivitySettings:
+    return ProviderConnectivitySettings(
+        provider_id="deepseek",
+        model_name="deepseek-v4-pro",
+        base_url="https://api.deepseek.com",
+        api_key="RAW_FIXTURE_API_KEY",
+        credential_source="test-only",
+        enabled=True,
+    )
+
+
 def _request(retrieval_id: str, **overrides) -> HumanExternalMemoryAnalysisRequest:
     values = {
         "retrieval_id": retrieval_id,
@@ -211,15 +222,28 @@ async def test_external_memory_analysis_rereads_every_evidence_stage_without_aut
 
     assert len(transport.calls) == 3
     for index, call in enumerate(transport.calls):
-        assert call["timeout_seconds"] == 60.0
+        assert call["timeout_seconds"] == 180.0
         external_payload = call["payload"]
         assert "tools" not in external_payload
-        assert external_payload.get("thinking") != {"type": "disabled"}
+        assert external_payload["temperature"] == 0
         assert external_payload["response_format"] == {"type": "json_object"}
-        assert external_payload["max_tokens"] == 8192
+        assert external_payload["max_tokens"] == 16_384
+        system_prompt = external_payload["messages"][0]["content"]
+        assert "KARKINOS_FINAL_JSON_OUTPUT_CONTRACT" in system_prompt
+        assert "example_json_shape_only_replace_every_value" in system_prompt
+        assert "every finding and counterpoint" in system_prompt
+        assert "closed-world evidence policy" in system_prompt
+        assert "Do not decode a symbol" in system_prompt
+        assert "never clear a kill switch" in system_prompt
         provider_input = json.loads(external_payload["messages"][1]["content"])
         assert len(provider_input["current_canonical_evidence"]) == len(current_records)
+        assert len(provider_input["current_evidence_catalog"]) == len(current_records)
+        assert {
+            item["evidence_reference_id"]
+            for item in provider_input["current_evidence_catalog"]
+        } == {record.reference_id for record in current_records}
         assert provider_input["input_contract"]["provider_side_tools"] is False
+        assert provider_input["input_contract"]["external_knowledge_allowed"] is False
         assert (
             provider_input["input_contract"]["historical_memory_is_current_fact"]
             is False
@@ -238,6 +262,32 @@ async def test_external_memory_analysis_rereads_every_evidence_stage_without_aut
     assert "RAW_FIXTURE_API_KEY" not in dump
     assert "RAW_PROVIDER_ENVELOPE_ID" not in dump
     assert "RAW_PRIVATE_REASONING_MUST_NOT_PERSIST" not in dump
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_deepseek_edge_explicitly_preserves_thinking_without_provider_tools(
+    tmp_path,
+):
+    db_path = tmp_path / "external-memory-deepseek-options.db"
+    retrieval, _, _ = await _prepared_retrieval(db_path)
+    transport = EvidenceAwareTransport()
+
+    completed = _service(
+        db_path,
+        transport,
+        settings_loader=_deepseek_settings,
+    ).start(_request(retrieval.stored.retrieval_id))
+
+    assert completed.workflow.status.value == "completed"
+    assert len(transport.calls) == 3
+    for call in transport.calls:
+        payload = call["payload"]
+        assert payload["thinking"] == {"type": "enabled"}
+        assert payload["reasoning_effort"] == "high"
+        assert "temperature" not in payload
+        assert "tools" not in payload
+        assert payload["response_format"] == {"type": "json_object"}
 
 
 @pytest.mark.unit
@@ -469,6 +519,39 @@ def test_response_normalizer_accepts_common_json_aliases_but_rejects_unknown_evi
 
 
 @pytest.mark.unit
+def test_response_normalizer_accepts_one_cited_object_without_weakening_citations():
+    decoded = _decode_stage_output(
+        json.dumps(
+            {
+                "title": "证据审阅",
+                "summary": "当前证据只支持继续研究。",
+                "findings": {
+                    "statement": "单项判断仍须被视作研究假设。",
+                    "confidence": "low",
+                    "evidence_reference_ids": "evidence-1",
+                    "memory_artifact_ids": [],
+                },
+                "counterpoints": {
+                    "statement": "当前证据窗口无法排除替代解释。",
+                    "confidence": "中",
+                    "evidence_reference_ids": ["evidence-1"],
+                    "memory_artifact_ids": [],
+                },
+                "limitations": "样本有限。",
+                "follow_up_checks": "以相同证据身份执行只读复核。",
+                "conclusion": "需人工复核，不形成交易结论。",
+            },
+            ensure_ascii=False,
+        ),
+        allowed_reference_ids=("evidence-1",),
+        allowed_memory_ids=(),
+    )
+
+    assert decoded["findings"][0]["evidence_reference_ids"] == ["evidence-1"]
+    assert decoded["counterpoints"][0]["confidence"] == "medium"
+
+
+@pytest.mark.unit
 def test_request_and_read_store_fail_closed_without_schema(tmp_path):
     with pytest.raises(PermissionError, match="explicit financial evidence export"):
         _request("retrieval-1", confirmation="wrong")
@@ -480,7 +563,7 @@ def test_request_and_read_store_fail_closed_without_schema(tmp_path):
             evidence_repository=object(),
             analysis_store=object(),
             transport=EvidenceAwareTransport(),
-            model_timeout_seconds=61,
+            model_timeout_seconds=301,
         )
 
     db_path = tmp_path / "external-memory-read.db"

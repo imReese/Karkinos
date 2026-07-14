@@ -74,6 +74,14 @@ The product boundary is:
   number, credentials, OMS, risk, capital, broker, and permission state are
   excluded. The configured model keeps its reasoning mode, but raw reasoning
   is not stored and provider-side tools remain unavailable.
+* External-model output cannot become reviewed research merely because its
+  schema passed. A separate human disposition must bind the exact analysis,
+  report, evidence replay, provider/model/prompt identity, token usage,
+  latency, citations, and audit chain. Known factual errors or unsupported
+  claims block acceptance. Provider pricing is reviewer-supplied evidence, not
+  a guessed live price or invoice; missing pricing or usage remains explicit.
+  Acceptance still creates no memory, Decision input, provider promotion, or
+  trading authority.
 * Live-like workflows must default to manual confirmation.
 * Broker submission is a future controlled-bridge capability, not the default
   product mode and not something strategy code may call directly.
@@ -210,6 +218,17 @@ Active planning target:
   output fails closed, GET never loads credentials or resumes work, and the
   result creates no memory, Decision handoff, trade plan, financial mutation,
   broker action, capital change, or execution authority.
+  Phase 1.11 adds the required human disposition after Phase 1.10. It records
+  accept-as-reviewed-research, revision, or rejection against the exact
+  analysis target; aggregates deterministic citation, token, latency, and
+  reasoning-presence evidence; and optionally combines provider-reported token
+  usage with a reviewer-supplied effective-dated pricing snapshot. Known
+  factual errors or unsupported claims block acceptance, missing cost evidence
+  remains `unpriced` or `partial_usage`, and later analysis/evidence/usage/audit
+  drift invalidates eligibility without deleting history. Review reads never
+  load credentials or call a model. Even an accepted result is not recallable
+  memory, does not promote a provider, and grants no Decision, financial,
+  broker, capital, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a
