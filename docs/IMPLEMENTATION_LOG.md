@@ -6,6 +6,34 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-14: AI-native Phase 1.15 separates human acceptance of a Phase 1.14
+  promoted-memory external report from both schema success and memory
+  promotion. Assumptions: the Phase 1.13 retrieval remains historical research
+  input rather than a current fact or export grant; a structurally valid model
+  report is not reviewed research; and accepting reviewed research is not
+  permission to create or recall memory. The new explicit POST records one
+  final accept/revision/reject disposition with a four-part human quality
+  rubric, factual/unsupported-claim counts, and reviewer-supplied pricing or an
+  explicit unpriced reason. It reuses the Phase 1.11 canonical report,
+  citation, token, latency, reasoning-presence, and deterministic cost evidence
+  while composing a new target over the Phase 1.13 retrieval/promotion/
+  selection fingerprints and Phase 1.14 report/provider/model/prompt/tool/audit
+  bindings. Exact restart and concurrent duplicates reuse one review and one
+  hash-chained event; a second final decision fails closed. Revocation,
+  evidence, artifact, usage, source, or audit drift preserves history but
+  removes eligibility. Isolated Phase 1.15 tables reference the Phase 1.14
+  analysis without modifying Phase 1.11, 1.13, or 1.14 schemas. Deterministic
+  validation: 58 Phase 1.11–1.15 chain tests, the complete 1,571-test backend
+  suite at 86.44% coverage, and 97 trading-safety tests passed. Under Node
+  24.14.0, all 420 Web tests, Prettier format check, and the production build
+  passed; changed Python files pass Black and isort. GitNexus's name-only CLI
+  could not disambiguate `create_router`; the exact file-scoped graph query
+  found two direct callers, no execution process, and MEDIUM route-registration
+  risk. No HIGH/CRITICAL symbol was edited. Review performs no model call,
+  creates no memory or automatic recall, and cannot affect Decision, trade
+  plans, financial state, provider promotion, broker actions, capital, submit/
+  cancel capability, or execution authority.
+
 - 2026-07-14: AI-native Phase 1.14 adds the first explicit external consumer
   of the versioned Phase 1.13 promoted-memory retrieval. Assumptions: retrieval
   is neither automatic recall nor data-export permission; historical memory is

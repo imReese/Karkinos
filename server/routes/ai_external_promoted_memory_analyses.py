@@ -51,6 +51,15 @@ class HumanExternalPromotedMemoryAnalysisPayload(BaseModel):
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
 
+    # Phase 1.15 records a separate human disposition of the exact Phase 1.14
+    # result. Import locally so read-only analysis routes remain usable without
+    # initializing the review schema or loading provider credentials.
+    from server.routes.ai_external_promoted_memory_analysis_reviews import (
+        create_router as create_external_promoted_memory_analysis_review_router,
+    )
+
+    router.include_router(create_external_promoted_memory_analysis_review_router())
+
     @router.post(
         "/api/ai/external-reviewed-memory-retrievals/{retrieval_id}/"
         "external-analyses"

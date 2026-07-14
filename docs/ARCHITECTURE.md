@@ -688,6 +688,49 @@ invalidates replay. A completed report is still non-authoritative research: it
 creates no new memory, automatic recall, Decision handoff, trade-plan draft,
 financial write, broker action, capital change, or execution authority.
 
+### Human Review of Promoted-Memory External Analysis
+
+Phase 1.15 keeps schema success, human acceptance, and memory promotion as
+three different authority boundaries:
+
+```text
+exact Phase 1.14 analysis + explicit human review confirmation
+-> rebuild canonical report/citation/token/latency quality target
+-> replay Phase 1.13 retrieval and exact promotion selections
+-> bind current context + report + provider/model/prompt + audit identities
+-> record accept / request revision / reject plus human rubric
+-> freeze reviewer pricing evidence or explicit unpriced reason
+-> append one hash-chained review event
+-> revalidate every source and target on GET/list/replay
+-> create no memory, Decision input, financial write, or authority
+```
+
+The implementation reuses the Phase 1.11 `_review_target` and deterministic
+cost calculation, so citation completeness, provider-reported usage, latency,
+and artifact lifecycle have one canonical definition. A second composed target
+adds the Phase 1.13 retrieval request/target/audit identity, exact promotion and
+selection fingerprints, and Phase 1.14 source contract. The reviewer must
+record evidence grounding, contradiction handling, uncertainty calibration,
+decision usefulness, factual-error count, and unsupported-claim count. Known
+errors block acceptance; pricing remains reviewer-supplied evidence rather than
+a live provider lookup or invoice.
+
+`ai_external_promoted_memory_analysis_reviews` stores the immutable request,
+composed target, source/report/provider identities, frozen quality/cost
+evidence, and decision. `ai_external_promoted_memory_analysis_review_events`
+stores exactly one append-only hash-chained event. They reference, but do not
+modify, the Phase 1.14 analysis and Phase 1.13 retrieval contracts. Exact
+duplicates are idempotent; a second final disposition fails closed. Read paths
+initialize no schema, load no provider credentials, perform no model call, and
+recompute the target so revocation or evidence/artifact/usage/audit drift
+removes eligibility without deleting the historical decision.
+
+Acceptance is still not memory promotion. It creates no artifact, automatic
+recall, semantic search, provider promotion, Decision handoff, trade plan,
+account fact, financial mutation, broker action, capital change, or execution
+authority. A future memory candidate requires a separate explicit, revocable,
+versioned promotion review.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across
@@ -868,6 +911,12 @@ ai_external_analysis_review_events
 ai_external_reviewed_memory_promotions
 ai_external_reviewed_memory_revocations
 ai_external_reviewed_memory_events
+ai_external_reviewed_memory_retrievals
+ai_external_reviewed_memory_retrieval_events
+ai_external_promoted_memory_analyses
+ai_external_promoted_memory_model_calls
+ai_external_promoted_memory_analysis_reviews
+ai_external_promoted_memory_analysis_review_events
 ```
 
 Workflow events form a per-workflow SHA-256 hash chain. Agent runs, tool calls,

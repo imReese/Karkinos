@@ -41,6 +41,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.12 | Reviewed external-research memory promotion implemented | Explicit revocable promotion, source-bound historical artifact, drift invalidation, and no automatic recall or trade authority |
 | AI-native Phase 1.13 | Promoted external-memory retrieval implemented | Versioned exact-ID retrieval, current complete-evidence rebinding, v1 compatibility, and no automatic/model consumption |
 | AI-native Phase 1.14 | Promoted-memory external analysis implemented | Explicit export, local evidence rereads, reasoning-preserving claim/debate/report, and no automatic recall or trade authority |
+| AI-native Phase 1.15 | Promoted-memory analysis human review implemented | Exact source/report disposition, quality/token/latency/cost replay, drift invalidation, and no memory or trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -431,6 +432,32 @@ automatic:
   automatic recall, Decision handoff, trade plan, financial write, broker
   action, permission, capital, or execution authority.
 
+Phase 1.15 adds that human review without turning acceptance into memory:
+
+* `POST /api/ai/external-promoted-memory-analyses/{analysis_id}/reviews`
+  requires the exact no-memory/no-Decision/no-trade confirmation, a reviewer,
+  one final accept/revision/reject decision, a four-part quality rubric,
+  factual and unsupported-claim counts, and either reviewer-supplied pricing
+  evidence or an explicit unpriced reason;
+* the immutable target composes the canonical Phase 1.11 artifact/citation/
+  token/latency quality target with the Phase 1.13 retrieval target, exact
+  promotion ids and selection fingerprints, and the Phase 1.14 analysis,
+  report, provider, model, prompt, current context, tools, and audit replay;
+* known factual errors or unsupported claims block acceptance. Missing pricing
+  or usage remains `unpriced`/`partial_usage`; pricing is a deterministic
+  reviewer-evidence estimate, never a guessed live price or provider invoice;
+* exact restart and concurrent duplicates reuse one review/event. GET/list/
+  replay initialize no schema, load no credentials, call no provider, and
+  revalidate source, current evidence, artifacts, usage, and audit state;
+* source revocation or any bound drift preserves the historical decision but
+  removes current reviewed-research eligibility. The isolated Phase 1.15
+  tables do not modify Phase 1.11 review, Phase 1.13 retrieval, or Phase 1.14
+  analysis contracts;
+* even an accepted review creates no memory artifact or automatic recall and
+  has no provider promotion, Decision, trade-plan, financial, broker,
+  permission, capital, or execution effect. Any future memory promotion needs
+  another explicit, revocable, versioned boundary.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed external analysis boundary:** immutable storage, identity
@@ -465,12 +492,17 @@ Planned migration, each behind a separate review:
    stage rereads current canonical evidence locally, preserves configured model
    reasoning, and stores no raw reasoning; retrieval itself remains neither
    automatic recall nor export permission, and output has no authority;
-5. **Next review:** add a separate human disposition for Phase 1.14 output
-   before it may become a new reviewed-memory candidate;
-6. separately review any broader use of a real provider inside the task,
+5. **Completed Phase 1.15 review:** the exact Phase 1.14 output now requires a
+   separate immutable human disposition with source/report/quality/cost/audit
+   binding. Acceptance remains non-memory reviewed research and source drift
+   invalidates eligibility without deleting history;
+6. **Next review:** if accepted Phase 1.15 research should become a new memory,
+   add a separate explicit, revocable promotion contract rather than extending
+   this review or the older Phase 1.12 schema;
+7. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
-7. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+8. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.

@@ -257,6 +257,17 @@ Active planning target:
   cited, non-authoritative research artifact requiring a new human review. It
   cannot create memory, Decision input, trade plan, financial mutation, broker
   action, capital change, or execution authority.
+  Phase 1.15 adds that review as a separate immutable command. The reviewer
+  must accept, request revision, or reject the exact Phase 1.14 analysis while
+  recording a four-part quality rubric, known factual/unsupported-claim
+  counts, and either an effective-dated pricing snapshot or an explicit
+  unpriced reason. The review binds the Phase 1.13 promotion selections,
+  current retrieval target, report/artifact fingerprints, citations,
+  provider/model/prompt, token usage, latency, and audit replay. Source,
+  evidence, usage, artifact, or audit drift removes current eligibility without
+  deleting history. Acceptance remains research evidence only: it creates no
+  new memory, automatic recall, Decision input, trade plan, financial write,
+  provider promotion, broker action, capital change, or execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

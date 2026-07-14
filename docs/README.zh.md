@@ -72,6 +72,11 @@ canonical evidence；claim/debate/report 每个阶段都先通过本地只读 to
 再调用显式配置的 provider-neutral OpenAI-compatible 边缘。DeepSeek 的 thinking/high effort
 保持启用，provider tools、原始 reasoning/响应持久化、自动召回和自动重试保持关闭。输出仍需
 独立人工复核，不产生新 memory、Decision、trade plan、财务写入、券商动作、资本或执行权限。
+Phase 1.15 增加这项独立人工复核：复核人必须对精确 Phase 1.14 输出选择接受为已复核研究、
+要求修订或拒绝，并记录四项质量 rubric、事实错误/无证据主张数量及人工确认的定价证据。
+复核绑定 promotion 来源、当前 retrieval、report/artifact、citation、provider/model/prompt、
+token、latency 与审计回放；后续来源、证据、usage 或审计漂移会撤销当前资格但不删除历史。
+接受仍不创建新 memory、不自动召回、不进入 Decision，也不产生财务、券商、资本或执行权限。
 
 核心特性：
 
