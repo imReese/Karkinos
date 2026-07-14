@@ -645,6 +645,49 @@ or external workflow requires another separately reviewed, explicit contract.
 The boundary cannot write OMS, ledger, risk, reconciliation, kill switch,
 capital authorization, broker submit/cancel, Decision, or trade-plan state.
 
+### External Analysis of Promoted Reviewed Memory
+
+Phase 1.14 consumes only the Phase 1.13 versioned retrieval through another
+explicit contract; it does not widen Phase 1.8 retrieval v1 or treat retrieval
+as permission to export data:
+
+```text
+eligible Phase 1.13 retrieval + exact human export confirmation
+-> reload the bound context and every current canonical evidence record
+-> claim stage rereads all evidence through local permission-checked tools
+-> send sanitized evidence + selected promoted memory to the configured edge
+-> debate stage repeats all local evidence reads, then receives prior claim
+-> report stage repeats all local evidence reads, then receives claim + debate
+-> validate exact JSON fields and current evidence citations
+-> persist normalized artifacts and redacted call metadata
+-> require a separate future human disposition before any memory use
+```
+
+The workflow deliberately reuses the Phase 1.10 prompt v2, deterministic
+orchestrator, provider/model/role registry, canonical evidence executors, and
+closed-world response validator. DeepSeek-compatible configuration explicitly
+keeps `thinking` enabled and requests high reasoning effort; other providers
+remain interchangeable edge adapters. No provider-side tool is registered.
+The model receives neither account alias nor credentials, permission state,
+OMS, risk, kill-switch, capital, broker, submit, or cancel capabilities. Raw
+reasoning and raw provider envelopes are never persisted.
+
+`ai_external_promoted_memory_analyses` binds the request, Phase 1.13 retrieval
+target, context, provider/model/prompt identity, and one permanent run claim.
+`ai_external_promoted_memory_model_calls` permits at most one attempt per
+claim/debate/report stage and stores only fingerprints, status, normalized
+usage, latency-adjacent timestamps, completion metadata, and sanitized error
+codes. The older Phase 1.10 analysis tables and Phase 1.8 retrieval-v1 tables
+remain unchanged and are not canonical for this new source contract.
+
+POST is the only billable boundary. Exact terminal retries and every
+GET/list/replay path are read-only, load no credentials, call no provider,
+refresh no facts, and never resume a failed stage. Source revocation or
+promotion/current-evidence/audit drift preserves the historical artifacts but
+invalidates replay. A completed report is still non-authoritative research: it
+creates no new memory, automatic recall, Decision handoff, trade-plan draft,
+financial write, broker action, capital change, or execution authority.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across

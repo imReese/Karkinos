@@ -40,6 +40,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.11 | External-analysis human review boundary implemented | Exact disposition, quality/latency/token/cost evidence, drift invalidation, and no memory or trade authority |
 | AI-native Phase 1.12 | Reviewed external-research memory promotion implemented | Explicit revocable promotion, source-bound historical artifact, drift invalidation, and no automatic recall or trade authority |
 | AI-native Phase 1.13 | Promoted external-memory retrieval implemented | Versioned exact-ID retrieval, current complete-evidence rebinding, v1 compatibility, and no automatic/model consumption |
+| AI-native Phase 1.14 | Promoted-memory external analysis implemented | Explicit export, local evidence rereads, reasoning-preserving claim/debate/report, and no automatic recall or trade authority |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -406,6 +407,30 @@ artifacts:
   financial write, broker action, permission, capital, or execution effect.
   Offline or external consumption requires another explicit review.
 
+Phase 1.14 adds one explicit external consumer without making recall or export
+automatic:
+
+* `POST /api/ai/external-reviewed-memory-retrievals/{retrieval_id}/external-analyses`
+  requires a separate exact financial-evidence export confirmation, human
+  identity, research question, and idempotency key. A Phase 1.13 retrieval is
+  eligible input, not export permission;
+* each claim/debate/report stage independently rereads every bound current
+  evidence record through the existing local permission-checked tools before
+  sending sanitized current evidence, selected promoted memory, and prior
+  normalized artifacts to the configured provider-neutral edge;
+* prompt v2 retains the closed-world evidence policy, exact JSON structure,
+  evidence-id citation checks, bounded output, and deterministic normalization.
+  DeepSeek-compatible settings preserve thinking/high effort; provider-side
+  tools, raw reasoning persistence, and automatic retry remain disabled;
+* Phase 1.14 uses isolated analysis/model-call tables with a permanent run
+  claim and one attempt per stage. GET/list/replay are credential-lazy and
+  never call a provider or resume work. Revocation or source/current/audit
+  drift invalidates replay without deleting history;
+* the Phase 1.8 retrieval-v1 and Phase 1.10 analysis tables remain unchanged.
+  Output requires a separate future human review and creates no memory,
+  automatic recall, Decision handoff, trade plan, financial write, broker
+  action, permission, capital, or execution authority.
+
 Planned migration, each behind a separate review:
 
 1. **Completed foundation and reviewed external analysis boundary:** immutable storage, identity
@@ -435,13 +460,17 @@ Planned migration, each behind a separate review:
    promotion, and rebinds source tools to unique current complete evidence.
    Phase 1.8 request fingerprints, tables, and replay remain unchanged; there
    is no semantic search, automatic prompt injection, or provider/model call;
-4. **Next review:** separately evaluate explicit consumption of the new Phase
-   1.13 retrieval by a bounded research workflow, without making it automatic
-   or interpreting retrieval as permission to export data;
-5. separately review any broader use of a real provider inside the task,
+4. **Completed Phase 1.14 review:** the new retrieval may be consumed only by a
+   separately confirmed, provider-neutral claim/debate/report workflow. Every
+   stage rereads current canonical evidence locally, preserves configured model
+   reasoning, and stores no raw reasoning; retrieval itself remains neither
+   automatic recall nor export permission, and output has no authority;
+5. **Next review:** add a separate human disposition for Phase 1.14 output
+   before it may become a new reviewed-memory candidate;
+6. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
-6. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+7. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.

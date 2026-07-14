@@ -42,6 +42,15 @@ class HumanExternalReviewedMemoryRetrievalPayload(BaseModel):
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
 
+    # Phase 1.14 consumes this versioned retrieval through a separate,
+    # explicit external-analysis boundary. Import locally to keep the source
+    # retrieval usable without loading provider configuration or credentials.
+    from server.routes.ai_external_promoted_memory_analyses import (
+        create_router as create_external_promoted_memory_analysis_router,
+    )
+
+    router.include_router(create_external_promoted_memory_analysis_router())
+
     @router.post("/api/ai/external-reviewed-memory-retrievals")
     def start_external_reviewed_memory_retrieval(
         payload: HumanExternalReviewedMemoryRetrievalPayload,
