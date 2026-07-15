@@ -211,6 +211,58 @@ export type OperationsExecutionReconciliationSummary = {
   limitations?: string[];
 };
 
+export type BrokerAdapterReadinessRelease = {
+  release_evidence_ref: string;
+  manifest_fingerprint: string;
+  manifest_status: string;
+  provider: string;
+  gateway_id: string;
+  account_alias: string;
+  collector_id: string;
+  collection_modes: string[];
+  review_status: string;
+  review_id: string;
+  reviewed_at?: string | null;
+  conformance_status: string;
+  conformance_run_id: string;
+  conformance_report_fingerprint: string;
+  collector_status: string;
+  collector_run_id: string;
+  collector_updated_at?: string | null;
+  status: string;
+  next_manual_action: string;
+  blockers: string[];
+  does_not_authorize_provider_activation: boolean;
+};
+
+export type BrokerAdapterReadiness = {
+  schema_version: 'karkinos.broker_adapter_readiness.v1';
+  status: string;
+  subsystem_status: OperationsStatus;
+  evidence_store_status: string;
+  configured_release_count: number;
+  accepted_release_count: number;
+  blocked_release_count: number;
+  next_manual_action: string;
+  latest_release: BrokerAdapterReadinessRelease | null;
+  releases: BrokerAdapterReadinessRelease[];
+  blockers: string[];
+  limitations: string[];
+  persisted_facts_only: boolean;
+  provider_contacted: boolean;
+  adapter_registered: boolean;
+  default_registered: boolean;
+  broker_submission_enabled: boolean;
+  does_not_submit_broker_order: boolean;
+  does_not_cancel_broker_order: boolean;
+  does_not_mutate_oms: boolean;
+  does_not_mutate_production_ledger: boolean;
+  does_not_mutate_risk_state: boolean;
+  does_not_mutate_kill_switch: boolean;
+  does_not_mutate_capital_authority: boolean;
+  authorizes_execution: boolean;
+};
+
 export type OperationsTodayResponse = {
   schema_version: 'karkinos.operations_today.v1';
   operations_date: string;
@@ -226,6 +278,7 @@ export type OperationsTodayResponse = {
     skipped: number;
   };
   subsystems: OperationsSubsystem[];
+  broker_adapter_readiness?: BrokerAdapterReadiness;
   daily_plan: {
     candidate_pool_count: number;
     manual_ready_count: number;

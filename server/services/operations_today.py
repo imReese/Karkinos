@@ -27,6 +27,7 @@ def build_operations_today_summary(
     automation_runs: Iterable[dict[str, Any]] | None = None,
     execution_reconciliation_open_items: Iterable[dict[str, Any]] | None = None,
     acceptance_audit_export: dict[str, Any] | None = None,
+    broker_adapter_readiness: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a UI-facing operations summary without mutating trading state."""
@@ -71,6 +72,7 @@ def build_operations_today_summary(
             daily_operations,
             acceptance_audit_export=acceptance_audit_export,
         ),
+        _broker_adapter_readiness_subsystem(broker_adapter_readiness),
     ]
     health = _health_summary(subsystems)
     conclusion_status, primary_target = _conclusion(subsystems)
@@ -96,10 +98,61 @@ def build_operations_today_summary(
         "paper_shadow": shadow,
         "scheduler": scheduler,
         "execution_reconciliation": execution_reconciliation,
+        "broker_adapter_readiness": broker_adapter_readiness
+        or _broker_adapter_readiness_unavailable(),
         "limitations": [
             "Operations summary is read-only and does not submit broker orders.",
             "Broker integration remains disabled; live-like workflows require manual confirmation.",
         ],
+    }
+
+
+def _broker_adapter_readiness_subsystem(
+    readiness: dict[str, Any] | None,
+) -> dict[str, Any]:
+    projection = readiness or _broker_adapter_readiness_unavailable()
+    return _subsystem(
+        "broker_adapter_evidence",
+        str(projection.get("subsystem_status") or "skipped"),
+        target="account-truth",
+        last_run_at=(projection.get("latest_release") or {}).get(
+            "collector_updated_at"
+        ),
+        next_action=projection.get("next_manual_action") or "none",
+        limitations=_list(projection.get("limitations")),
+        detail_status=str(projection.get("status") or "not_configured"),
+    )
+
+
+def _broker_adapter_readiness_unavailable() -> dict[str, Any]:
+    return {
+        "schema_version": "karkinos.broker_adapter_readiness.v1",
+        "status": "not_configured",
+        "subsystem_status": "skipped",
+        "evidence_store_status": "unavailable",
+        "configured_release_count": 0,
+        "accepted_release_count": 0,
+        "blocked_release_count": 0,
+        "next_manual_action": "await_explicit_real_broker_environment_confirmation",
+        "latest_release": None,
+        "releases": [],
+        "blockers": [],
+        "limitations": [
+            "Broker adapter evidence was not supplied to this read-only projection."
+        ],
+        "persisted_facts_only": True,
+        "provider_contacted": False,
+        "adapter_registered": False,
+        "default_registered": False,
+        "broker_submission_enabled": False,
+        "does_not_submit_broker_order": True,
+        "does_not_cancel_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_mutate_risk_state": True,
+        "does_not_mutate_kill_switch": True,
+        "does_not_mutate_capital_authority": True,
+        "authorizes_execution": False,
     }
 
 

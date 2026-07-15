@@ -757,6 +757,76 @@ test('renders the trading approvals workspace', async () => {
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 
+test('shows persisted broker adapter evidence without activation controls', async () => {
+  renderTradingPage({
+    operationsToday: {
+      ...defaultOperationsToday,
+      broker_adapter_readiness: {
+        schema_version: 'karkinos.broker_adapter_readiness.v1',
+        status: 'evidence_ready_not_activated',
+        subsystem_status: 'skipped',
+        evidence_store_status: 'available',
+        configured_release_count: 1,
+        accepted_release_count: 1,
+        blocked_release_count: 0,
+        next_manual_action:
+          'obtain_explicit_owner_authorization_before_adapter_activation',
+        latest_release: {
+          release_evidence_ref: 'fixture-readiness-release-v1',
+          manifest_fingerprint: 'a'.repeat(64),
+          manifest_status: 'clear',
+          provider: 'deterministic_fixture',
+          gateway_id: 'fixture-gateway',
+          account_alias: 'fixture-account',
+          collector_id: 'fixture-collector',
+          collection_modes: ['callback', 'poll'],
+          review_status: 'accepted',
+          review_id: 'review-v1',
+          reviewed_at: '2026-07-15T08:00:00+00:00',
+          conformance_status: 'clear',
+          conformance_run_id: 'conformance-v1',
+          conformance_report_fingerprint: 'b'.repeat(64),
+          collector_status: 'not_started',
+          collector_run_id: '',
+          collector_updated_at: null,
+          status: 'evidence_ready_not_activated',
+          next_manual_action:
+            'obtain_explicit_owner_authorization_before_adapter_activation',
+          blockers: [],
+          does_not_authorize_provider_activation: true,
+        },
+        releases: [],
+        blockers: [],
+        limitations: ['Persisted evidence only.'],
+        persisted_facts_only: true,
+        provider_contacted: false,
+        adapter_registered: false,
+        default_registered: false,
+        broker_submission_enabled: false,
+        does_not_submit_broker_order: true,
+        does_not_cancel_broker_order: true,
+        does_not_mutate_oms: true,
+        does_not_mutate_production_ledger: true,
+        does_not_mutate_risk_state: true,
+        does_not_mutate_kill_switch: true,
+        does_not_mutate_capital_authority: true,
+        authorizes_execution: false,
+      },
+    },
+  });
+
+  expect(await screen.findByText('Broker adapter evidence')).toBeTruthy();
+  expect(await screen.findByText('Evidence clear, not activated')).toBeTruthy();
+  expect(screen.getByText('deterministic_fixture')).toBeTruthy();
+  expect(screen.getByText('Accepted')).toBeTruthy();
+  expect(screen.getByText('Clear')).toBeTruthy();
+  expect(screen.getByText('Not started')).toBeTruthy();
+  expect(screen.getByText('No collector run')).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: /activate|register|submit|cancel/i }),
+  ).toBeNull();
+});
+
 test('shows trading operating mode safety labels in Chinese', async () => {
   renderTradingPage({ locale: 'zh' });
 

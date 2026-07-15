@@ -28,6 +28,7 @@ import { KillSwitchPanel } from './kill-switch-panel';
 import {
   useOperationsTodayQuery,
   useReviewPaperShadowRunMutation,
+  type BrokerAdapterReadiness,
   type OperationsTodayResponse,
   type PaperShadowRunReviewResponse,
 } from '../../operations/api';
@@ -847,6 +848,8 @@ export function TradingPage() {
   );
   const busy = confirmOrder.isPending || rejectOrder.isPending;
   const paperShadowRun = operationsToday.data?.paper_shadow ?? null;
+  const brokerAdapterReadiness =
+    operationsToday.data?.broker_adapter_readiness ?? null;
 
   const handleConfirm = async (orderId: string) => {
     setRowError('');
@@ -987,6 +990,12 @@ export function TradingPage() {
       </div>
 
       <KillSwitchPanel />
+
+      <BrokerAdapterReadinessPanel
+        readiness={brokerAdapterReadiness}
+        loading={operationsToday.isLoading}
+        error={operationsToday.isError}
+      />
 
       <ExecutionAuditPanel
         orders={orderFacts.data ?? []}
@@ -1152,6 +1161,218 @@ export function TradingPage() {
       </section>
     </section>
   );
+}
+
+function BrokerAdapterReadinessPanel({
+  readiness,
+  loading,
+  error,
+}: {
+  readiness: BrokerAdapterReadiness | null;
+  loading: boolean;
+  error: boolean;
+}) {
+  const { locale } = usePreferences();
+  const latest = readiness?.latest_release ?? null;
+  const status = readiness?.status ?? 'not_configured';
+  const copy = brokerAdapterReadinessCopy(locale);
+  const statusLabel = copy.status[status] ?? formatPublicStatus(status, locale);
+  const statusClass =
+    readiness?.subsystem_status === 'blocked'
+      ? 'border-[color-mix(in_srgb,var(--app-danger)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] text-[var(--app-danger)]'
+      : readiness?.subsystem_status === 'manual_action_required' ||
+          readiness?.subsystem_status === 'degraded'
+        ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
+        : 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-soft)]';
+
+  return (
+    <section
+      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      data-testid="broker-adapter-readiness"
+    >
+      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="app-product-mark">{copy.kicker}</div>
+            <h2 className="app-card-title mt-1.5">{copy.title}</h2>
+            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+              {copy.detail}
+            </p>
+          </div>
+          <span
+            className={`w-fit shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${statusClass}`}
+          >
+            {loading ? copy.loading : error ? copy.unavailable : statusLabel}
+          </span>
+        </div>
+
+        {error ? (
+          <div className="app-error-text mt-4 text-sm" role="alert">
+            {copy.loadFailed}
+          </div>
+        ) : loading ? (
+          <div className="app-muted mt-4 text-sm">{copy.loading}</div>
+        ) : !readiness || status === 'not_configured' ? (
+          <div className="mt-4 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-4 text-sm text-[var(--app-soft)]">
+            {copy.notConfigured}
+          </div>
+        ) : (
+          <div className="mt-4 min-w-0">
+            {latest?.release_evidence_ref ? (
+              <div className="app-muted mb-3 min-w-0 truncate text-xs">
+                {copy.releaseEvidence}{' '}
+                <span title={latest.release_evidence_ref}>
+                  {formatPublicEvidenceReference(
+                    latest.release_evidence_ref,
+                    locale,
+                  )}
+                </span>
+              </div>
+            ) : null}
+            <div className="grid min-w-0 gap-3 lg:grid-cols-4">
+              <BrokerReadinessMetric
+                label={copy.provider}
+                value={latest?.provider || '--'}
+              />
+              <BrokerReadinessMetric
+                label={copy.releaseReview}
+                value={formatPublicStatus(latest?.review_status, locale)}
+              />
+              <BrokerReadinessMetric
+                label={copy.conformance}
+                value={formatPublicStatus(latest?.conformance_status, locale)}
+              />
+              <BrokerReadinessMetric
+                label={copy.collector}
+                value={formatPublicStatus(latest?.collector_status, locale)}
+              />
+            </div>
+          </div>
+        )}
+
+        {!loading && !error && readiness?.blockers.length ? (
+          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-4 py-3 text-sm text-[var(--app-soft)]">
+            <div className="font-semibold text-[var(--app-text)]">
+              {copy.blockers(readiness.blockers.length)}
+            </div>
+            <ul className="mt-2 grid gap-1 pl-5">
+              {readiness.blockers.slice(0, 3).map((blocker) => (
+                <li className="list-disc break-words" key={blocker}>
+                  {formatPublicOperationalNote(blocker, locale)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {!loading && !error && readiness && status !== 'not_configured' ? (
+          <div className="mt-3 grid min-w-0 gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_9%,transparent)] px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="min-w-0 break-words text-[var(--app-soft)]">
+              <span className="font-semibold text-[var(--app-text)]">
+                {copy.nextAction}
+              </span>{' '}
+              {formatPublicOperationalNote(
+                readiness.next_manual_action,
+                locale,
+              )}
+            </div>
+            <div className="shrink-0 text-xs text-[var(--app-muted)]">
+              {latest?.collector_updated_at
+                ? `${copy.lastEvidence} ${formatTimestamp(latest.collector_updated_at)}`
+                : copy.noCollectorRun}
+            </div>
+          </div>
+        ) : null}
+
+        <p className="app-muted mt-3 text-xs leading-5">{copy.boundary}</p>
+      </div>
+    </section>
+  );
+}
+
+function BrokerReadinessMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3">
+      <div className="app-muted text-xs">{label}</div>
+      <div
+        className="mt-1 truncate text-sm font-semibold text-[var(--app-text)]"
+        title={value}
+      >
+        {value || '--'}
+      </div>
+    </div>
+  );
+}
+
+function brokerAdapterReadinessCopy(locale: Locale) {
+  if (locale === 'zh') {
+    return {
+      kicker: '只读账户事实',
+      title: '券商适配器证据',
+      detail:
+        '统一查看 release、确定性一致性验证与 collector 运行证据；这里不会注册或连接券商。',
+      loading: '读取中',
+      unavailable: '不可用',
+      loadFailed: '券商适配器证据读取失败；未改变任何交易或资本权限。',
+      notConfigured:
+        '尚未选择或授权真实券商环境。Karkinos 保持无默认适配器、无提交与撤单权限。',
+      provider: '来源标识',
+      releaseEvidence: 'Release 证据：',
+      releaseReview: 'Release 审查',
+      conformance: '一致性验证',
+      collector: 'Collector 证据',
+      nextAction: '下一步：',
+      lastEvidence: '最近证据',
+      noCollectorRun: '尚无 collector 运行',
+      blockers: (count: number) => `${count} 项证据阻断`,
+      boundary:
+        '第三方适配器仍需单独审查和用户显式授权；本视图只读持久化证据，不联系 provider，不修改 OMS、账本、风控、kill switch 或资本授权。',
+      status: {
+        not_configured: '未配置',
+        review_required: '等待人工审查',
+        evidence_attention_required: '证据需复核',
+        evidence_ready_not_activated: '证据已通过，未启用',
+        observing_readonly: '只读证据采集中',
+      } as Record<string, string>,
+    };
+  }
+  return {
+    kicker: 'Read-only account truth',
+    title: 'Broker adapter evidence',
+    detail:
+      'Review release, deterministic conformance, and collector-run evidence in one place; this surface never registers or contacts a broker.',
+    loading: 'Loading',
+    unavailable: 'Unavailable',
+    loadFailed:
+      'Broker adapter evidence could not be read; no trading or capital authority changed.',
+    notConfigured:
+      'No real broker environment has been selected or authorized. Karkinos retains no default adapter and no submit or cancel permission.',
+    provider: 'Source label',
+    releaseEvidence: 'Release evidence:',
+    releaseReview: 'Release review',
+    conformance: 'Conformance',
+    collector: 'Collector evidence',
+    nextAction: 'Next: ',
+    lastEvidence: 'Latest evidence',
+    noCollectorRun: 'No collector run',
+    blockers: (count: number) =>
+      `${count} evidence blocker${count === 1 ? '' : 's'}`,
+    boundary:
+      'A third-party adapter still requires separate review and explicit owner authorization. This view reads persisted evidence only and does not mutate OMS, ledger, risk, kill switch, or capital authority.',
+    status: {
+      not_configured: 'Not configured',
+      review_required: 'Human review required',
+      evidence_attention_required: 'Evidence needs review',
+      evidence_ready_not_activated: 'Evidence clear, not activated',
+      observing_readonly: 'Observing read-only evidence',
+    } as Record<string, string>,
+  };
 }
 
 function ExecutionAuditPanel({

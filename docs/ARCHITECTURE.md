@@ -162,6 +162,13 @@ The local suite validates Karkinos contracts and does not claim a real adapter
 works. Acceptance neither registers an adapter nor grants broker-write or
 capital authority.
 
+Operations exposes the same persisted release, conformance, and collector
+bindings through `karkinos.broker_adapter_readiness.v1`. The projection opens
+the database read-only, never creates missing schema, never contacts a provider,
+and treats "no real provider selected" as neutral rather than unhealthy. It can
+surface drift or collector failure, but it cannot record a review, register an
+adapter, or grant execution or capital authority.
+
 Read-only soak promotion also binds recovery evidence to one exact connector.
 Unscoped, unrelated, or mixed-connector drills cannot satisfy another
 connector's dossier. For each drill type, the newest matching scoped result is

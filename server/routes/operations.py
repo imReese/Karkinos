@@ -13,6 +13,9 @@ from server.routes.decision import (
     _today_decision_payload,
     _trading_plan_positions,
 )
+from server.services.broker_adapter_readiness import (
+    build_broker_adapter_readiness,
+)
 from server.services.daily_operations import build_daily_operations_summary
 from server.services.daily_trading_plan import build_daily_trading_plan
 from server.services.operations_today import build_operations_today_summary
@@ -97,6 +100,7 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
         acceptance_audit_export=build_acceptance_audit_export(
             selected_audit="operations_runbook",
         ),
+        broker_adapter_readiness=build_broker_adapter_readiness(state.db),
     )
 
 
