@@ -369,8 +369,7 @@ def _validate_runtime_config_fields(data: dict) -> None:
     unknown = sorted(set(data) - allowed_fields)
     if unknown:
         raise ValueError(
-            "config.json contains unsupported top-level fields: "
-            + ", ".join(unknown)
+            "config.json contains unsupported top-level fields: " + ", ".join(unknown)
         )
 
 

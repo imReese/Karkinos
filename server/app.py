@@ -156,8 +156,9 @@ async def lifespan(app: FastAPI):
     state = get_app_state()
 
     # ---- Startup ----
-    from core.event_bus import EventBus
     from notification.notifier import build_notifier
+
+    from core.event_bus import EventBus
     from server.bootstrap import load_runtime_config
     from server.config import ServerConfig
 
