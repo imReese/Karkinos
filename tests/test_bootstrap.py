@@ -145,6 +145,28 @@ def test_server_config_rejects_removed_global_ai_authority_switch(tmp_path):
             {"ai": {"enabled": False, "api_keys": {"provider": "secret"}}},
             "ai.api_keys is not accepted",
         ),
+        (
+            {
+                "server": {
+                    "notification": {
+                        "type": "telegram",
+                        "telegram_bot_token": "secret",
+                    }
+                }
+            },
+            "notification contains unsupported or credential-bearing fields",
+        ),
+        (
+            {
+                "server": {
+                    "notification": {
+                        "type": "wechat",
+                        "wechat_sendkey": "secret",
+                    }
+                }
+            },
+            "notification contains unsupported or credential-bearing fields",
+        ),
     ],
 )
 def test_server_config_rejects_credentials_in_json(tmp_path, payload, message):
@@ -163,7 +185,7 @@ def test_server_config_rejects_credentials_in_json(tmp_path, payload, message):
         ({"server": {"cors_allowed_origins": []}}, "cors_allowed_origins"),
         ({"data_source": {"provider": "unknown"}}, "data_source.provider"),
         (
-            {"data_source": {"provider": "akshare", "live_poll_interval": 0}},
+            {"data_source": {"provider": "akshare", "live_poll_interval": 14}},
             "live_poll_interval",
         ),
         (
@@ -255,6 +277,29 @@ def test_dotenv_loader_preserves_process_precedence_and_can_require_file(tmp_pat
             environ=environment,
             required=True,
         )
+
+
+def test_dotenv_loader_fills_allowlisted_empty_process_credentials(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "TUSHARE_TOKEN=dotenv-token\n"
+        "KARKINOS_AI_API_KEY=dotenv-ai-key\n"
+        "KARKINOS_TELEGRAM_BOT_TOKEN=dotenv-telegram-token\n",
+        encoding="utf-8",
+    )
+    environment = {
+        "TUSHARE_TOKEN": "",
+        "KARKINOS_AI_API_KEY": "  ",
+        "KARKINOS_TELEGRAM_BOT_TOKEN": "",
+    }
+
+    load_runtime_environment_file(env_file, environ=environment)
+
+    assert environment == {
+        "TUSHARE_TOKEN": "dotenv-token",
+        "KARKINOS_AI_API_KEY": "dotenv-ai-key",
+        "KARKINOS_TELEGRAM_BOT_TOKEN": "dotenv-telegram-token",
+    }
 
 
 def test_selected_runtime_environment_loader_uses_process_path(
@@ -1035,6 +1080,9 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "KARKINOS_DATA_DIR",
         "KARKINOS_DATA_SOURCE",
         "KARKINOS_LIVE_POLL_INTERVAL",
+        "KARKINOS_TELEGRAM_BOT_TOKEN",
+        "KARKINOS_TELEGRAM_CHAT_ID",
+        "KARKINOS_WECHAT_SENDKEY",
         "KARKINOS_AI_ENABLED",
         "KARKINOS_AI_PROVIDER",
         "KARKINOS_AI_MODEL",
@@ -1054,6 +1102,9 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "KARKINOS_CORS_ALLOWED_ORIGINS",
         "KARKINOS_DATA_SOURCE",
         "KARKINOS_LIVE_POLL_INTERVAL",
+        "KARKINOS_TELEGRAM_BOT_TOKEN",
+        "KARKINOS_TELEGRAM_CHAT_ID",
+        "KARKINOS_WECHAT_SENDKEY",
         "KARKINOS_AI_ENABLED",
         "KARKINOS_AI_PROVIDER",
         "KARKINOS_AI_MODEL",

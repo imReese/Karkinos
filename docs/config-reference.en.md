@@ -59,14 +59,14 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 | `port` | integer | `8000` | API bind port. |
 | `live_auto_start` | boolean | `true` | Starts the built-in market scheduler with the Web service; grants no order authority. |
 | `cors_allowed_origins` | string[] | local frontend origins | Browser origins allowed to call the API. |
-| `notification` | object | `{"type":"console"}` | Notifier configuration. |
+| `notification` | object | `{"type":"console"}` | Notification channel type only: `console`, `telegram`, or `wechat`. Credential and destination fields are rejected. |
 
 ### data_source
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `provider` | string | `akshare` | `akshare` or `tushare`. |
-| `live_poll_interval` | integer | `60` | Market and scheduler polling interval in seconds. |
+| `live_poll_interval` | integer | `60` | Market and scheduler polling interval in seconds; minimum `15`. |
 
 The interactive setup script preserves the grouped shape:
 
@@ -75,7 +75,7 @@ uv run python scripts/configure_data_source.py --provider akshare
 uv run python scripts/configure_data_source.py --provider tushare
 ```
 
-The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script writes only provider/polling settings to the Git-ignored `config.json`, and writes the token to a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
+The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script writes only provider/polling settings to the Git-ignored `config.json`, and writes the token to a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). Switching to AkShare preserves an existing environment credential; credential removal must be explicit. The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
 
 ### broker_fee
 
@@ -147,8 +147,11 @@ AI credentials resolve in this order:
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
 | `TUSHARE_TOKEN` | TuShare edge credential; never enters `config.json` or the Settings API |
+| `KARKINOS_TELEGRAM_BOT_TOKEN` | Telegram bot credential; environment-only |
+| `KARKINOS_TELEGRAM_CHAT_ID` | Telegram destination; environment-only |
+| `KARKINOS_WECHAT_SENDKEY` | ServerChan credential; environment-only |
 
-Runtime and AI overrides are handled by the same startup loader. Booleans accept `true/false`, `1/0`, `yes/no`, and `on/off`. Misspellings stop startup. Ports, polling intervals, AI timeout, HTTPS base URLs, and empty CORS lists are also validated.
+Runtime and AI overrides are handled by the same startup loader. Existing non-empty process values take precedence over `.env`; allowlisted empty credential values permit the selected `.env` value to fill the gap. Booleans accept `true/false`, `1/0`, `yes/no`, and `on/off`. Misspellings stop startup. Ports, polling intervals (minimum 15 seconds), AI timeout, HTTPS base URLs, and empty CORS lists are also validated.
 
 ### AI
 

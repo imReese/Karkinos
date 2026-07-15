@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from server.config_contract import (
+    MIN_LIVE_POLL_INTERVAL_SECONDS,
+    SUPPORTED_DATA_SOURCES,
+    SUPPORTED_NOTIFICATION_TYPES,
+)
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -1159,6 +1165,20 @@ class HoldingStrategyAttributionReport(BaseModel):
 # ---------- Settings ----------
 
 
+class NotificationSettingsStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: str = "console"
+    configured: bool = False
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        if value not in SUPPORTED_NOTIFICATION_TYPES:
+            raise ValueError("unsupported notification type")
+        return value
+
+
 class SettingsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1174,17 +1194,39 @@ class SettingsResponse(BaseModel):
     long_period: int = 20
     data_source: str = "akshare"
     tushare_token_configured: bool = False
-    notification: dict = Field(default_factory=lambda: {"type": "console"})
-    live_poll_interval: int = 60
+    notification: NotificationSettingsStatus = Field(
+        default_factory=NotificationSettingsStatus
+    )
+    live_poll_interval: int = Field(
+        default=60,
+        ge=MIN_LIVE_POLL_INTERVAL_SECONDS,
+    )
     account_commission_rate: float = 0.0001
     account_min_commission: float = 5.0
+
+    @field_validator("data_source")
+    @classmethod
+    def validate_data_source(cls, value: str) -> str:
+        if value not in SUPPORTED_DATA_SOURCES:
+            raise ValueError("unsupported data source")
+        return value
 
 
 class DataSourceSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data_source: str = "akshare"
-    live_poll_interval: int = 60
+    live_poll_interval: int = Field(
+        default=60,
+        ge=MIN_LIVE_POLL_INTERVAL_SECONDS,
+    )
+
+    @field_validator("data_source")
+    @classmethod
+    def validate_data_source(cls, value: str) -> str:
+        if value not in SUPPORTED_DATA_SOURCES:
+            raise ValueError("unsupported data source")
+        return value
 
 
 class DataSourceStatusResponse(BaseModel):

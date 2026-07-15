@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
+from notification.notifier import notification_configuration_status
 from server.bootstrap import resolve_config_path
 from server.models import (
     AssetMetadataStatusResponse,
@@ -106,7 +107,7 @@ def _settings_response(state) -> SettingsResponse:
         long_period=config.long_period,
         data_source=config.data_source,
         tushare_token_configured=bool(config.tushare_token),
-        notification=config.notification,
+        notification=notification_configuration_status(config.notification),
         live_poll_interval=config.live_poll_interval,
         account_commission_rate=float(account_rate),
         account_min_commission=float(account_minimum),
@@ -316,7 +317,6 @@ def create_router() -> APIRouter:
         config.short_period = settings.short_period
         config.long_period = settings.long_period
         config.data_source = settings.data_source
-        config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
         _set_account_cost_settings(
             config,
@@ -410,6 +410,14 @@ def create_router() -> APIRouter:
         notifier = state.notifier
         if notifier is None:
             return {"status": "error", "message": "No notifier configured"}
+        notification_status = notification_configuration_status(
+            state.config.notification
+        )
+        if not notification_status["configured"]:
+            return {
+                "status": "error",
+                "message": "Notification environment credentials are missing",
+            }
 
         try:
             notifier.send(

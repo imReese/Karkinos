@@ -12,6 +12,12 @@ from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse
 
+from server.config_contract import (
+    MIN_LIVE_POLL_INTERVAL_SECONDS,
+    SUPPORTED_DATA_SOURCES,
+    SUPPORTED_NOTIFICATION_TYPES,
+)
+
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 _BROKER_CONNECTOR_ALLOWED_FIELDS = frozenset(
     {
@@ -500,16 +506,35 @@ def _validate_core_runtime_values(data: dict) -> None:
             raise ValueError(
                 "server.cors_allowed_origins must be a non-empty string list"
             )
-    if "notification" in data and not isinstance(data["notification"], dict):
-        raise ValueError("server.notification must be an object")
-    if "data_source" in data and data["data_source"] not in {"akshare", "tushare"}:
+    if "notification" in data:
+        _validate_notification_config(data["notification"])
+    if "data_source" in data and data["data_source"] not in SUPPORTED_DATA_SOURCES:
         raise ValueError("data_source.provider must be akshare or tushare")
     if "live_poll_interval" in data and (
         isinstance(data["live_poll_interval"], bool)
         or not isinstance(data["live_poll_interval"], int)
-        or data["live_poll_interval"] <= 0
+        or data["live_poll_interval"] < MIN_LIVE_POLL_INTERVAL_SECONDS
     ):
-        raise ValueError("data_source.live_poll_interval must be a positive integer")
+        raise ValueError(
+            "data_source.live_poll_interval must be an integer greater than or "
+            f"equal to {MIN_LIVE_POLL_INTERVAL_SECONDS}"
+        )
+
+
+def _validate_notification_config(value: object) -> None:
+    if not isinstance(value, dict):
+        raise ValueError("server.notification must be an object")
+    unknown = sorted(set(value) - {"type"})
+    if unknown:
+        raise ValueError(
+            "server.notification contains unsupported or credential-bearing fields: "
+            + ", ".join(unknown)
+        )
+    notification_type = value.get("type", "console")
+    if notification_type not in SUPPORTED_NOTIFICATION_TYPES:
+        raise ValueError(
+            "server.notification.type must be console, telegram, or wechat"
+        )
 
 
 def _parse_broker_connector_configs(value: object) -> list[BrokerConnectorConfig]:

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+
+from server.config_contract import SUPPORTED_NOTIFICATION_TYPES
 
 
 class Notifier(ABC):
@@ -13,21 +17,55 @@ class Notifier(ABC):
         """发送通知。"""
 
 
-def build_notifier(config: dict) -> Notifier:
+def _notification_type(config: Mapping[str, object]) -> str:
+    notification_type = str(config.get("type") or "console").strip().lower()
+    if notification_type not in SUPPORTED_NOTIFICATION_TYPES:
+        raise ValueError(f"Unsupported notification type: {notification_type}")
+    return notification_type
+
+
+def notification_configuration_status(
+    config: Mapping[str, object],
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str | bool]:
+    """Return public notification metadata without exposing edge credentials."""
+    environment = os.environ if environ is None else environ
+    notification_type = _notification_type(config)
+    if notification_type == "telegram":
+        configured = bool(
+            str(environment.get("KARKINOS_TELEGRAM_BOT_TOKEN") or "").strip()
+            and str(environment.get("KARKINOS_TELEGRAM_CHAT_ID") or "").strip()
+        )
+    elif notification_type == "wechat":
+        configured = bool(str(environment.get("KARKINOS_WECHAT_SENDKEY") or "").strip())
+    else:
+        configured = True
+    return {"type": notification_type, "configured": configured}
+
+
+def build_notifier(
+    config: Mapping[str, object],
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> Notifier:
     """根据配置创建通知器。"""
-    notif_type = config.get("type", "console")
+    environment = os.environ if environ is None else environ
+    notif_type = _notification_type(config)
 
     if notif_type == "telegram":
         from notification.telegram import TelegramNotifier
 
         return TelegramNotifier(
-            bot_token=config.get("telegram_bot_token", ""),
-            chat_id=config.get("telegram_chat_id", ""),
+            bot_token=str(environment.get("KARKINOS_TELEGRAM_BOT_TOKEN") or "").strip(),
+            chat_id=str(environment.get("KARKINOS_TELEGRAM_CHAT_ID") or "").strip(),
         )
     elif notif_type == "wechat":
         from notification.wechat import WeChatNotifier
 
-        return WeChatNotifier(sendkey=config.get("wechat_sendkey", ""))
+        return WeChatNotifier(
+            sendkey=str(environment.get("KARKINOS_WECHAT_SENDKEY") or "").strip()
+        )
     else:
         from notification.console import ConsoleNotifier
 
