@@ -186,6 +186,10 @@ Active planning target:
   locally to those identities and the evidence fingerprint. Exact duplicates
   receive one atomic model-run claim, incomplete evidence blocks before
   network I/O, and malformed output fails closed without storing the raw body.
+  Reasoning-capable DeepSeek-compatible edges explicitly keep thinking/high
+  effort under a 4K completion budget and a cancellable 180-second end-to-end
+  deadline; the exact JSON schema and self-check are trusted system
+  instructions, and no failed call is retried automatically.
   There is no scheduler, provider-side tool, memory, Decision handoff,
   trade-plan draft, OMS/ledger/risk/capital write, or broker action.
   Phase 1.8 adds a separately human-started retrieval boundary for the fixture

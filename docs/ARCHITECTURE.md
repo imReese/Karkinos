@@ -320,7 +320,8 @@ explicit human request + selected saved backtest
 -> exact context/evidence binding
 -> permission-checked research_evidence.read
 -> one OpenAI-compatible JSON request with the configured reasoning mode,
-   an exact structural example, and no provider-side tools
+   an exact trusted system contract, bounded output, a cancellable wall-clock
+   deadline, and no provider-side tools
 -> bounded deterministic schema normalization and validation
 -> cited non-authoritative REPORT artifact
 -> workflow hash-chain replay
@@ -340,8 +341,12 @@ is not stored.
 
 The external edge does not disable a model's configured reasoning mode. Its
 versioned prompt separates evidence-review requirements from final
-serialization, includes an exact JSON example, and gives the final response a
-bounded output budget suitable for reasoning-oriented models. Raw
+serialization, includes an exact JSON example and self-check in the trusted
+system message, and gives the final response a bounded output budget suitable
+for reasoning-oriented models. DeepSeek-compatible requests explicitly use
+thinking/high effort, a 4,096-token completion budget, and a cancellable
+180-second end-to-end deadline; other compatible providers retain
+deterministic temperature zero. Raw
 `reasoning_content` is never persisted; only sanitized presence/length and
 finish metadata may enter report provenance. Local normalization accepts a
 small reviewed set of wrapper, nesting, and Chinese/common field aliases but

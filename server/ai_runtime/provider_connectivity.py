@@ -7,6 +7,7 @@ persists only redacted metadata in ``ai_*`` tables.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -22,6 +23,8 @@ from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+import httpx
 
 from .contracts import (
     ModelRegistration,
@@ -195,6 +198,88 @@ class UrllibJsonTransport:
                 else "network_error"
             )
             raise ProviderProbeError(code) from exc
+        try:
+            decoded: object = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            decoded = None
+        return HttpJsonResponse(status_code=status_code, payload=decoded)
+
+
+class HttpxDeadlineJsonTransport:
+    """HTTPS JSON transport with a real end-to-end wall-clock deadline.
+
+    The AI orchestrators invoke provider adapters in a worker thread, so this
+    synchronous protocol method can own a short-lived async loop.  Cancelling
+    the async request closes the connection instead of leaving a blocking
+    urllib read alive after the workflow has failed closed.
+    """
+
+    _MAX_RESPONSE_BYTES = 1_048_576
+
+    def __init__(
+        self,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._transport = transport
+
+    def post_json(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: dict[str, Any],
+        timeout_seconds: float,
+    ) -> HttpJsonResponse:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise ProviderProbeError("provider_transport_requires_worker_thread")
+        return asyncio.run(
+            self._post_json(
+                url=url,
+                headers=headers,
+                payload=payload,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+
+    async def _post_json(
+        self,
+        *,
+        url: str,
+        headers: Mapping[str, str],
+        payload: dict[str, Any],
+        timeout_seconds: float,
+    ) -> HttpJsonResponse:
+        body = bytearray()
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                async with httpx.AsyncClient(
+                    follow_redirects=False,
+                    timeout=None,
+                    transport=self._transport,
+                ) as client:
+                    async with client.stream(
+                        "POST",
+                        url,
+                        headers=dict(headers),
+                        content=canonical_json(payload).encode("utf-8"),
+                    ) as response:
+                        status_code = int(response.status_code)
+                        async for chunk in response.aiter_bytes():
+                            if len(body) + len(chunk) > self._MAX_RESPONSE_BYTES:
+                                body.clear()
+                                break
+                            body.extend(chunk)
+        except TimeoutError as exc:
+            raise ProviderProbeError("provider_timeout") from exc
+        except httpx.TimeoutException as exc:
+            raise ProviderProbeError("provider_timeout") from exc
+        except httpx.RequestError as exc:
+            raise ProviderProbeError("network_error") from exc
         try:
             decoded: object = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
