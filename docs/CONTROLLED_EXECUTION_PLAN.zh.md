@@ -144,6 +144,8 @@ pause 或 disable；绝不会自动 scale up。
 - Query 与 callback evidence 使用同一 broker/client order identity。
 - Lifecycle sequence 与累计数量单调且守恒。
 - Full 或 partial fill 在 reconciliation clearance 前需要独立券商证据与 Account Truth。
+- 签名的精确终态 clearance 覆盖完整成交、零成交撤单和部分成交后撤单；仍开放的 partial fill
+  继续阻断，终态撤单只记录实际 fills，绝不签发券商撤单。
 - Reconciliation clearance 与 ledger posting 是两个独立事务和批准。
 - GET、告警、报告与 UI rendering 不会隐式联系 gateway。
 - 在写事务中，较新的 blocked fact 优先于较旧的 clear preview。

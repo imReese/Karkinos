@@ -38,7 +38,7 @@ authority, bypass risk, or call a broker directly.
 | v0.6-v0.9 | Completed | Account Truth, review workflow, strategy attribution, reliable market-data plane |
 | v1.0-v1.3 | Completed | Strategy runtime, Paper Broker/OMS, broker evidence, professional Decision workflow |
 | v1.4-v1.7 | Completed | Attribution/cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
-| v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, lifecycle evidence, capital-scaling review |
+| v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, broker-neutral lifecycle evidence, exact-terminal full/partial-cancel/no-fill-cancel clearance, capital-scaling review |
 | v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, exact live collector binding, and persisted-only operator readiness visibility; no real provider selected or registered |
 | AI-native Phase 1-1.18 | Formula research vertical implemented | Provider-neutral, evidence-bound, human-reviewed research, memory, allowlisted Formula DSL, canonical after-cost backtest, and critique workflows without trading authority |
 
@@ -132,6 +132,13 @@ reordering, partial fill, cancel race, disconnect, rejection, and broker
 not-found tests cannot create duplicate submissions, fills, cancels, or false
 terminal states. Any unresolved order continues to block a different order.
 
+**Implemented foundation:** deterministic evidence can now reach a separately
+signed exact-terminal clearance for full fill, no-fill cancel, and
+partial-fill-then-cancel. It records only actual fills and never mutates the
+production ledger. Open partial fills remain blocked. Real provider
+conformance, an explicit cancel command, and real-environment recovery evidence
+remain release work.
+
 ### M3 — Reconciled Ledger Posting
 
 Add a versioned preview-confirm-apply command bound to OMS, controlled intent,
@@ -180,7 +187,9 @@ incident returns the system to `disabled`.
 1. **Implemented foundation:** adapter ADR/capability/threat/deployment manifest contract.
 2. **Implemented foundation:** provider-neutral deterministic conformance fixtures and release binding.
 3. **Next after explicit provider approval:** provider read-only adapter, collector integration, health, and soak.
-4. Query/callback lifecycle and partial/cancel/unknown recovery.
+4. **Foundation partially implemented:** query/callback lifecycle and signed
+   exact-terminal full/partial-cancel/no-fill-cancel reconciliation; real
+   cancel/unknown recovery remains.
 5. Default-closed write adapter and per-order submit/cancel gates.
 6. Reconciled ledger posting and financial invariants.
 7. Operations/Trading end-to-end UX and alerts.

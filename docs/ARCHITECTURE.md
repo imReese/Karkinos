@@ -192,6 +192,19 @@ Strategy code cannot reach the gateway. A prepared, accepted-but-unreconciled,
 or unknown intent blocks a different order. Unknown outcomes are query-only and
 are never automatically resubmitted.
 
+Reconciliation clearance uses
+`karkinos.controlled_submission_reconciliation_clearance.v3` as the canonical
+exact-terminal contract. A signed command may record a full fill, a no-fill
+cancel, or a partial-fill-then-cancel outcome. An open partial fill remains
+blocked. Filled quantity comes from independently persisted broker-statement
+and Account Truth evidence; cancelled quantity and terminal state bind the
+broker-neutral lifecycle observation. Partial-cancel cost totals must agree
+across both evidence sets. The clearance transaction records only actual fills,
+advances OMS through the matching terminal states, and releases the cross-order
+interlock. It never posts the production ledger, contacts a provider, issues a
+cancel, or grants submission/capital authority. A later lifecycle or collector
+drift invalidates the clearance and re-blocks the interlock.
+
 ### AI research
 
 ```text

@@ -12,13 +12,13 @@ from typing import Any
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_order_lifecycle import (
     BrokerOrderLifecycleEvidenceRepository,
-    broker_order_lifecycle_clearance_blockers,
+    broker_order_lifecycle_terminal_outcome,
 )
 from server.services.per_order_confirmation import build_order_fingerprint
 
 EXECUTION_RECONCILIATION_SCHEMA_VERSION = "karkinos.execution_reconciliation.v1"
 CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION = (
-    "karkinos.controlled_submission_reconciliation.v2"
+    "karkinos.controlled_submission_reconciliation.v3"
 )
 
 
@@ -307,6 +307,22 @@ def _controlled_submission_reconciliation(
             Decimal("0"),
         )
         expected_quantity = abs(_decimal(order.get("quantity")) or Decimal("0"))
+        clearance_payload = _json_object(clearance.get("payload_json"))
+        terminal_status = str(
+            clearance.get("terminal_status")
+            or clearance_payload.get("terminal_status")
+            or "filled"
+        )
+        persisted_fill_quantity = abs(
+            _decimal(clearance.get("fill_quantity")) or Decimal("0")
+        )
+        cancelled_quantity = abs(
+            _decimal(
+                clearance.get("cancelled_quantity")
+                or clearance_payload.get("cancelled_quantity")
+            )
+            or Decimal("0")
+        )
         clearance_blockers: list[str] = []
         if str(clearance.get("status") or "") != "cleared":
             clearance_blockers.append("controlled_submission_clearance_status_invalid")
@@ -314,22 +330,73 @@ def _controlled_submission_reconciliation(
             intent.get("submit_intent_id") or ""
         ):
             clearance_blockers.append("controlled_submission_clearance_intent_mismatch")
-        if oms_status != "filled":
-            clearance_blockers.append("controlled_submission_clearance_oms_not_filled")
+        if oms_status != terminal_status:
+            clearance_blockers.append(
+                "controlled_submission_clearance_oms_terminal_status_changed"
+            )
         if len(controlled_fills) != int(clearance.get("fill_count") or 0):
             clearance_blockers.append(
                 "controlled_submission_clearance_fill_count_changed"
             )
-        if cleared_quantity <= 0 or cleared_quantity != expected_quantity:
+        if cleared_quantity != persisted_fill_quantity:
             clearance_blockers.append(
                 "controlled_submission_clearance_fill_quantity_changed"
             )
-        clearance_blockers.extend(
-            broker_order_lifecycle_clearance_blockers(
-                order,
-                order_lifecycle_evidence,
+        if terminal_status == "filled" and (
+            cleared_quantity <= 0
+            or cleared_quantity != expected_quantity
+            or cancelled_quantity != 0
+        ):
+            clearance_blockers.append(
+                "controlled_submission_clearance_full_fill_quantity_invalid"
             )
+        elif terminal_status == "cancelled" and (
+            cancelled_quantity <= 0
+            or cleared_quantity + cancelled_quantity != expected_quantity
+        ):
+            clearance_blockers.append(
+                "controlled_submission_clearance_cancel_quantity_invalid"
+            )
+        elif terminal_status not in {"filled", "cancelled"}:
+            clearance_blockers.append(
+                "controlled_submission_clearance_terminal_status_invalid"
+            )
+        terminal_lifecycle = broker_order_lifecycle_terminal_outcome(
+            order,
+            order_lifecycle_evidence,
         )
+        clearance_blockers.extend(terminal_lifecycle.get("blockers") or [])
+        if terminal_lifecycle.get("status") == "non_terminal":
+            clearance_blockers.append(
+                "controlled_submission_clearance_lifecycle_not_terminal"
+            )
+        elif terminal_lifecycle.get("status") == "terminal":
+            lifecycle_comparisons = {
+                "terminal_status": terminal_status,
+                "filled_quantity": str(persisted_fill_quantity),
+                "cancelled_quantity": str(cancelled_quantity),
+            }
+            for field, expected in lifecycle_comparisons.items():
+                if str(terminal_lifecycle.get(field) or "") != expected:
+                    clearance_blockers.append(
+                        f"controlled_submission_clearance_lifecycle_{field}_changed"
+                    )
+            persisted_lifecycle_fingerprint = str(
+                clearance.get("lifecycle_evidence_fingerprint")
+                or clearance_payload.get("lifecycle_evidence_fingerprint")
+                or ""
+            )
+            if persisted_lifecycle_fingerprint and (
+                str(terminal_lifecycle.get("evidence_fingerprint") or "")
+                != persisted_lifecycle_fingerprint
+            ):
+                clearance_blockers.append(
+                    "controlled_submission_clearance_lifecycle_evidence_changed"
+                )
+        elif terminal_status == "cancelled":
+            clearance_blockers.append(
+                "controlled_submission_clearance_lifecycle_evidence_missing"
+            )
         if clearance_blockers:
             return {
                 "item_status": "controlled_submission_clearance_evidence_mismatch",
@@ -362,8 +429,8 @@ def _controlled_submission_reconciliation(
             "item_status": "controlled_submission_reconciliation_cleared",
             "suggested_action": "no_action",
             "detail": (
-                "Signed controlled-submission reconciliation clearance and exact "
-                "real-fill evidence remain current; production ledger is separate."
+                "Signed controlled-submission terminal clearance and exact fill/cancel "
+                "evidence remain current; production ledger is separate."
             ),
             "reported_broker_events": controlled_matching,
             "mismatch_reasons": [],
@@ -376,9 +443,13 @@ def _controlled_submission_reconciliation(
                 ),
                 "intent_status": intent_status,
                 "oms_status": oms_status,
+                "terminal_status": terminal_status,
+                "filled_quantity": str(persisted_fill_quantity),
+                "cancelled_quantity": str(cancelled_quantity),
                 "new_submissions_blocked": False,
                 "recovery_resubmission_enabled": False,
-                "review_required_before_ledger_update": False,
+                "review_required_before_ledger_update": True,
+                "ledger_posting_status": "not_started",
                 "production_ledger_mutated": False,
                 "does_not_mutate_production_ledger": True,
                 "broker_order_lifecycle_evidence": lifecycle_summary,

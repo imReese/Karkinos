@@ -1540,3 +1540,97 @@ def test_app_database_persists_backtest_metrics_and_cost_summary_json(tmp_path):
     assert row is not None
     assert row["metrics_json"] == '{"calmar": 1.5}'
     assert row["cost_summary_json"] == '{"total_commission": 12.3}'
+
+
+def test_app_database_migrates_full_fill_clearance_to_terminal_outcome_schema(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "legacy-clearance.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE controlled_submission_reconciliation_clearances (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clearance_id TEXT NOT NULL UNIQUE,
+                clearance_fingerprint TEXT NOT NULL UNIQUE,
+                submit_intent_id TEXT NOT NULL UNIQUE,
+                submit_fingerprint TEXT NOT NULL,
+                order_id TEXT NOT NULL UNIQUE,
+                broker_order_id TEXT NOT NULL,
+                review_reconciliation_run_id TEXT NOT NULL,
+                review_reconciliation_item_id INTEGER NOT NULL,
+                broker_evidence_fingerprint TEXT NOT NULL,
+                account_truth_import_run_id TEXT NOT NULL,
+                account_truth_file_fingerprint TEXT NOT NULL,
+                account_truth_source_fingerprint TEXT NOT NULL,
+                clearance_reconciliation_run_id TEXT NOT NULL UNIQUE,
+                operator_id TEXT NOT NULL,
+                operator_approval_id TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status = 'cleared'),
+                fill_count INTEGER NOT NULL CHECK(fill_count > 0),
+                fill_quantity TEXT NOT NULL,
+                cleared_at_epoch_ms INTEGER NOT NULL,
+                cleared_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """)
+        conn.execute(
+            """
+            INSERT INTO controlled_submission_reconciliation_clearances (
+                clearance_id, clearance_fingerprint, submit_intent_id,
+                submit_fingerprint, order_id, broker_order_id,
+                review_reconciliation_run_id, review_reconciliation_item_id,
+                broker_evidence_fingerprint, account_truth_import_run_id,
+                account_truth_file_fingerprint,
+                account_truth_source_fingerprint,
+                clearance_reconciliation_run_id, operator_id,
+                operator_approval_id, status, fill_count, fill_quantity,
+                cleared_at_epoch_ms, cleared_at, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-clearance-1",
+                "a" * 64,
+                "b" * 64,
+                "c" * 64,
+                "OMS-legacy-clearance",
+                "BROKER-legacy-clearance",
+                "legacy-review-run",
+                1,
+                "d" * 64,
+                "legacy-import-run",
+                "e" * 64,
+                "f" * 64,
+                "legacy-clearance-run",
+                "legacy-operator",
+                "1" * 64,
+                "cleared",
+                1,
+                "100",
+                1,
+                "2026-07-13T00:00:00+00:00",
+                "{}",
+                "2026-07-13T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    AppDatabase(db_path).init_sync()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        migrated = conn.execute(
+            "SELECT * FROM controlled_submission_reconciliation_clearances"
+        ).fetchone()
+        schema_sql = conn.execute("""
+            SELECT sql FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'controlled_submission_reconciliation_clearances'
+            """).fetchone()[0]
+
+    assert migrated is not None
+    assert migrated["clearance_id"] == "legacy-clearance-1"
+    assert migrated["terminal_status"] == "filled"
+    assert migrated["cancelled_quantity"] == "0"
+    assert migrated["lifecycle_observation_id"] == ""
+    assert "CHECK(fill_count >= 0)" in schema_sql

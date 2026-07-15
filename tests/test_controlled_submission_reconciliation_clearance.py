@@ -290,7 +290,12 @@ def _bind_controlled_account_alias(env: dict) -> None:
         conn.commit()
 
 
-def _record_partial_lifecycle(env: dict) -> dict:
+def _record_partial_lifecycle(
+    env: dict,
+    *,
+    source_sequence: int = 1,
+    captured_at: datetime = NOW,
+) -> dict:
     lifecycle_payload = {
         "schema_version": "karkinos.broker_order_lifecycle_export.v1",
         "provider": "fixture_broker",
@@ -298,8 +303,8 @@ def _record_partial_lifecycle(env: dict) -> dict:
         "gateway_id": "fixture-controlled-gateway-1",
         "account_id": "private-fixture-account-001",
         "account_alias": "main-cn-account",
-        "captured_at": NOW.isoformat(),
-        "source_sequence": 1,
+        "captured_at": captured_at.isoformat(),
+        "source_sequence": source_sequence,
         "orders": [
             {
                 "broker_order_id": "BROKER-CLEARANCE-1",
@@ -311,13 +316,13 @@ def _record_partial_lifecycle(env: dict) -> dict:
                 "cumulative_filled_quantity": "40",
                 "cancelled_quantity": "0",
                 "average_fill_price": "10",
-                "submitted_at": (NOW - timedelta(seconds=5)).isoformat(),
-                "updated_at": (NOW - timedelta(seconds=1)).isoformat(),
+                "submitted_at": (captured_at - timedelta(seconds=5)).isoformat(),
+                "updated_at": (captured_at - timedelta(seconds=1)).isoformat(),
             }
         ],
         "fills": [
             {
-                "broker_trade_id": "FIXTURE-LATE-PARTIAL-1",
+                "broker_trade_id": f"FIXTURE-LATE-PARTIAL-{source_sequence}",
                 "broker_order_id": "BROKER-CLEARANCE-1",
                 "client_order_id": "KARK-clearance-client-order-1",
                 "symbol": "600519",
@@ -328,17 +333,80 @@ def _record_partial_lifecycle(env: dict) -> dict:
                 "tax": "0",
                 "transfer_fee": "0",
                 "net_amount": "-401",
-                "filled_at": (NOW - timedelta(seconds=2)).isoformat(),
+                "filled_at": (captured_at - timedelta(seconds=2)).isoformat(),
             }
         ],
     }
     lifecycle_preview = preview_broker_order_lifecycle_export(
         json.dumps(lifecycle_payload),
         source_name="deterministic fixture lifecycle export",
-        clock=lambda: NOW,
+        clock=lambda: captured_at,
     )
     return BrokerOrderLifecycleEvidenceRepository(Path(env["db"]._path)).record(
         lifecycle_preview,
+        acknowledgement=BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
+    )
+
+
+def _record_cancelled_lifecycle(
+    env: dict,
+    *,
+    filled_quantity: int,
+    cancelled_quantity: int,
+    source_sequence: int = 1,
+) -> dict:
+    fills = []
+    if filled_quantity:
+        fills.append(
+            {
+                "broker_trade_id": f"FIXTURE-CANCELLED-FILL-{source_sequence}",
+                "broker_order_id": "BROKER-CLEARANCE-1",
+                "client_order_id": "KARK-clearance-client-order-1",
+                "symbol": "600519",
+                "side": "buy",
+                "quantity": str(filled_quantity),
+                "price": "10",
+                "fee": "1",
+                "tax": "0",
+                "transfer_fee": "0",
+                "net_amount": str(-(filled_quantity * 10 + 1)),
+                "filled_at": (NOW - timedelta(seconds=2)).isoformat(),
+            }
+        )
+    payload = {
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "fixture_broker",
+        "snapshot_kind": "exact_order_lifecycle",
+        "gateway_id": "fixture-controlled-gateway-1",
+        "account_id": "private-fixture-account-001",
+        "account_alias": "main-cn-account",
+        "captured_at": NOW.isoformat(),
+        "source_sequence": source_sequence,
+        "orders": [
+            {
+                "broker_order_id": "BROKER-CLEARANCE-1",
+                "client_order_id": "KARK-clearance-client-order-1",
+                "symbol": "600519",
+                "side": "buy",
+                "status": "cancelled",
+                "order_quantity": "100",
+                "cumulative_filled_quantity": str(filled_quantity),
+                "cancelled_quantity": str(cancelled_quantity),
+                "average_fill_price": "10" if filled_quantity else None,
+                "submitted_at": (NOW - timedelta(seconds=5)).isoformat(),
+                "updated_at": (NOW - timedelta(seconds=1)).isoformat(),
+            }
+        ],
+        "fills": fills,
+    }
+    preview = preview_broker_order_lifecycle_export(
+        json.dumps(payload),
+        source_name="deterministic terminal cancel fixture",
+        clock=lambda: NOW,
+    )
+    assert preview["validation_status"] == "pass", preview["blockers"]
+    return BrokerOrderLifecycleEvidenceRepository(Path(env["db"]._path)).record(
+        preview,
         acknowledgement=BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     )
 
@@ -516,6 +584,7 @@ def test_signed_full_fill_clearance_atomically_records_fills_and_releases_interl
     tmp_path,
 ) -> None:
     env = _environment(tmp_path)
+    status = env["service"].get_status()
     preview = _preview(env)
     approval = _approval(env, preview["clearance_fingerprint"])
 
@@ -523,6 +592,10 @@ def test_signed_full_fill_clearance_atomically_records_fills_and_releases_interl
     retry = _record(env, preview, approval)
 
     assert preview["review_status"] == "ready_for_final_signature", preview["blockers"]
+    assert status["partial_fill_terminal_cancel_clearance_enabled"] is True
+    assert status["open_partial_fill_clearance_enabled"] is False
+    assert status["safety"]["exact_terminal_outcome_required"] is True
+    assert status["safety"]["broker_cancel_disabled"] is True
     assert preview["fill_count"] == 2
     assert preview["fill_quantity"] == "100"
     assert cleared["status"] == "cleared"
@@ -576,11 +649,11 @@ def test_partial_lifecycle_race_rejects_signed_clearance_inside_transaction(
     with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc:
         _record(env, preview, approval)
 
-    assert "controlled_submission_clearance_transaction_rejected" in (
+    assert "controlled_submission_clearance_review_blocked" in (
         exc.value.evidence["rejection_reasons"]
     )
-    assert "controlled_submission_clearance_lifecycle_evidence_mismatch" in (
-        exc.value.evidence["transaction_blockers"]
+    assert "controlled_submission_clearance_terminal_outcome_required" in (
+        exc.value.evidence["review_blockers"]
     )
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
         "submitted"
@@ -618,11 +691,11 @@ def test_collector_disconnect_race_rejects_signed_clearance_inside_transaction(
 
     assert healthy["run_status"] == "recorded"
     assert disconnected["run_status"] == "blocked"
-    assert "controlled_submission_clearance_transaction_rejected" in (
+    assert "controlled_submission_clearance_review_blocked" in (
         exc.value.evidence["rejection_reasons"]
     )
-    assert "controlled_submission_clearance_lifecycle_collector_unhealthy" in (
-        exc.value.evidence["transaction_blockers"]
+    assert "controlled_submission_terminal_clearance_lifecycle_collector_unhealthy" in (
+        exc.value.evidence["review_blockers"]
     )
     reconciliation = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
         run_date="2026-07-14"
@@ -692,7 +765,7 @@ def test_collector_failure_after_clearance_reblocks_next_order_transaction(
     unresolved = env["db"].list_unreconciled_controlled_broker_submit_intents_sync()
     assert unresolved[0]["interlock_reason"] == "lifecycle_clearance_invalidated"
     assert unresolved[0]["lifecycle_blocker"] == (
-        "controlled_submission_clearance_lifecycle_collector_unhealthy"
+        "controlled_submission_terminal_clearance_lifecycle_collector_unhealthy"
     )
     assert next_attempt["prepared"]["status"] == "rejected"
     assert "controlled_broker_submit_lifecycle_clearance_invalidated" in (
@@ -809,13 +882,199 @@ def test_partial_fill_cannot_clear_or_mutate_any_terminal_state(tmp_path) -> Non
 
     assert preview["review_ready"] is False
     assert "controlled_submission_clearance_item_not_clearable" in preview["blockers"]
-    assert "controlled_submission_clearance_full_fill_required" in preview["blockers"]
+    assert (
+        "controlled_submission_clearance_terminal_outcome_required"
+        in preview["blockers"]
+    )
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
         "submitted"
     )
     assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
     assert len(env["db"].list_unreconciled_controlled_broker_submit_intents_sync()) == 1
     assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_signed_partial_fill_cancel_records_only_actual_fills_and_terminal_cancel(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path, quantities=(40,))
+    _bind_controlled_account_alias(env)
+    _record_cancelled_lifecycle(
+        env,
+        filled_quantity=40,
+        cancelled_quantity=60,
+    )
+    run = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    run_id = run["run_id"]
+    item = next(
+        row for row in run["items"] if row["order_id"] == env["order"]["order_id"]
+    )
+    assert item["item_status"] == (
+        "controlled_submission_partial_fill_cancel_evidence_available"
+    )
+
+    preview = env["service"].preview(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run_id,
+    )
+    approval = _approval(env, preview["clearance_fingerprint"])
+    cleared = env["service"].record(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run_id,
+        clearance_fingerprint=preview["clearance_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+    )
+    retry = env["service"].record(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run_id,
+        clearance_fingerprint=preview["clearance_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+    )
+
+    assert preview["review_ready"] is True, preview["blockers"]
+    assert preview["terminal_status"] == "cancelled"
+    assert preview["fill_quantity"] == "40"
+    assert preview["cancelled_quantity"] == "60"
+    assert preview["terminal_lifecycle"]["status"] == "terminal"
+    assert cleared["status"] == "cleared"
+    assert retry["reused"] is True
+    assert cleared["oms_terminal_status"] == "cancelled"
+    assert cleared["real_fills_recorded"] is True
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "cancelled"
+    )
+    transitions = env["db"].list_oms_transitions_sync(env["order"]["order_id"])
+    assert [row["to_status"] for row in transitions][-3:] == [
+        "accepted",
+        "partially_filled",
+        "cancelled",
+    ]
+    fills = env["db"].list_fills_sync(order_id=env["order"]["order_id"])
+    assert len(fills) == 1
+    assert fills[0]["fill_quantity"] == 40
+    assert fills[0]["commission"] == 1
+    assert env["db"].get_ledger_entries_sync() == []
+    assert env["db"].list_unreconciled_controlled_broker_submit_intents_sync() == []
+
+
+def test_terminal_lifecycle_drift_is_rechecked_inside_clearance_transaction(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    env = _environment(tmp_path, quantities=(40,))
+    _bind_controlled_account_alias(env)
+    _record_cancelled_lifecycle(
+        env,
+        filled_quantity=40,
+        cancelled_quantity=60,
+    )
+    run = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    preview = env["service"].preview(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run["run_id"],
+    )
+    approval = _approval(env, preview["clearance_fingerprint"])
+    original_record = env[
+        "db"
+    ].record_controlled_submission_reconciliation_clearance_sync
+
+    def record_after_lifecycle_drift(*, clearance: dict) -> dict:
+        _record_partial_lifecycle(
+            env,
+            source_sequence=2,
+            captured_at=NOW + timedelta(seconds=1),
+        )
+        return original_record(clearance=clearance)
+
+    monkeypatch.setattr(
+        env["db"],
+        "record_controlled_submission_reconciliation_clearance_sync",
+        record_after_lifecycle_drift,
+    )
+
+    with pytest.raises(ControlledSubmissionReconciliationClearanceRejected) as exc:
+        env["service"].record(
+            submit_intent_id=env["submit_intent_id"],
+            reconciliation_run_id=run["run_id"],
+            clearance_fingerprint=preview["clearance_fingerprint"],
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+        )
+
+    assert "controlled_submission_clearance_transaction_rejected" in (
+        exc.value.evidence["rejection_reasons"]
+    )
+    assert "controlled_submission_terminal_outcome_changed" in (
+        exc.value.evidence["transaction_blockers"]
+    )
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "submitted"
+    )
+    assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_signed_no_fill_cancel_records_terminal_fact_without_synthetic_fill(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path, quantities=())
+    _bind_controlled_account_alias(env)
+    _record_cancelled_lifecycle(
+        env,
+        filled_quantity=0,
+        cancelled_quantity=100,
+    )
+    run = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    run_id = run["run_id"]
+    preview = env["service"].preview(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run_id,
+    )
+    approval = _approval(env, preview["clearance_fingerprint"])
+    cleared = env["service"].record(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run_id,
+        clearance_fingerprint=preview["clearance_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+    )
+
+    assert preview["review_ready"] is True, preview["blockers"]
+    assert preview["terminal_status"] == "cancelled"
+    assert preview["fill_count"] == 0
+    assert preview["fill_quantity"] == "0"
+    assert preview["cancelled_quantity"] == "100"
+    assert cleared["real_fills_recorded"] is False
+    assert cleared["terminal_outcome_recorded"] is True
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "cancelled"
+    )
+    transitions = env["db"].list_oms_transitions_sync(env["order"]["order_id"])
+    assert transitions[-1]["from_status"] == "submitted"
+    assert transitions[-1]["to_status"] == "cancelled"
+    assert env["db"].list_fills_sync(order_id=env["order"]["order_id"]) == []
+    assert env["db"].get_ledger_entries_sync() == []
+
+    with sqlite3.connect(env["db"]._path) as conn:
+        conn.execute("DELETE FROM broker_order_lifecycle_observations")
+        conn.commit()
+    unresolved = env["db"].list_unreconciled_controlled_broker_submit_intents_sync()
+    assert unresolved[0]["interlock_reason"] == "lifecycle_clearance_invalidated"
+    assert unresolved[0]["lifecycle_blocker"] == (
+        "controlled_submission_terminal_clearance_lifecycle_missing"
+    )
 
 
 def test_partial_events_from_different_imports_cannot_be_aggregated(tmp_path) -> None:

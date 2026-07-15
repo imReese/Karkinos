@@ -41,6 +41,140 @@ def _ensure_column(
     conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
+_CONTROLLED_SUBMISSION_CLEARANCE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS controlled_submission_reconciliation_clearances (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clearance_id TEXT NOT NULL UNIQUE,
+    clearance_fingerprint TEXT NOT NULL UNIQUE,
+    submit_intent_id TEXT NOT NULL UNIQUE,
+    submit_fingerprint TEXT NOT NULL,
+    order_id TEXT NOT NULL UNIQUE,
+    broker_order_id TEXT NOT NULL,
+    review_reconciliation_run_id TEXT NOT NULL,
+    review_reconciliation_item_id INTEGER NOT NULL,
+    broker_evidence_fingerprint TEXT NOT NULL,
+    account_truth_import_run_id TEXT NOT NULL,
+    account_truth_file_fingerprint TEXT NOT NULL,
+    account_truth_source_fingerprint TEXT NOT NULL,
+    clearance_reconciliation_run_id TEXT NOT NULL UNIQUE,
+    operator_id TEXT NOT NULL,
+    operator_approval_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status = 'cleared'),
+    terminal_status TEXT NOT NULL CHECK(terminal_status IN ('filled', 'cancelled')),
+    fill_count INTEGER NOT NULL CHECK(fill_count >= 0),
+    fill_quantity TEXT NOT NULL,
+    cancelled_quantity TEXT NOT NULL,
+    lifecycle_observation_id TEXT NOT NULL DEFAULT '',
+    lifecycle_evidence_fingerprint TEXT NOT NULL DEFAULT '',
+    lifecycle_source_sequence INTEGER NOT NULL DEFAULT 0,
+    cleared_at_epoch_ms INTEGER NOT NULL CHECK(cleared_at_epoch_ms >= 0),
+    cleared_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(submit_intent_id)
+        REFERENCES controlled_broker_submit_intents(submit_intent_id),
+    FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
+);
+"""
+
+
+def _ensure_controlled_submission_clearance_terminal_schema(
+    conn: sqlite3.Connection,
+) -> None:
+    """Create or atomically migrate the exact-terminal clearance store."""
+
+    row = conn.execute("""
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'controlled_submission_reconciliation_clearances'
+        """).fetchone()
+    if row is None:
+        conn.execute(_CONTROLLED_SUBMISSION_CLEARANCE_TABLE_SQL)
+    else:
+        columns = {
+            str(item[1])
+            for item in conn.execute(
+                "PRAGMA table_info(controlled_submission_reconciliation_clearances)"
+            ).fetchall()
+        }
+        required_columns = {
+            "terminal_status",
+            "cancelled_quantity",
+            "lifecycle_observation_id",
+            "lifecycle_evidence_fingerprint",
+            "lifecycle_source_sequence",
+        }
+        normalized_sql = "".join(str(row[0] or "").lower().split())
+        requires_rebuild = not required_columns.issubset(columns) or (
+            "check(fill_count>0)" in normalized_sql
+        )
+        if requires_rebuild:
+            legacy_table = "controlled_submission_reconciliation_clearances_v2"
+            conn.execute(
+                "DROP INDEX IF EXISTS idx_controlled_submission_clearance_time"
+            )
+            legacy_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (legacy_table,),
+            ).fetchone()
+            if legacy_exists is not None:
+                raise RuntimeError(
+                    "controlled submission clearance migration recovery required"
+                )
+            conn.execute(
+                "ALTER TABLE controlled_submission_reconciliation_clearances "
+                f"RENAME TO {legacy_table}"
+            )
+            conn.execute(_CONTROLLED_SUBMISSION_CLEARANCE_TABLE_SQL)
+            legacy_columns = {
+                str(item[1])
+                for item in conn.execute(
+                    f"PRAGMA table_info({legacy_table})"
+                ).fetchall()
+            }
+
+            def legacy(field: str, fallback: str) -> str:
+                return field if field in legacy_columns else fallback
+
+            conn.execute(f"""
+                INSERT INTO controlled_submission_reconciliation_clearances (
+                    id, clearance_id, clearance_fingerprint, submit_intent_id,
+                    submit_fingerprint, order_id, broker_order_id,
+                    review_reconciliation_run_id, review_reconciliation_item_id,
+                    broker_evidence_fingerprint, account_truth_import_run_id,
+                    account_truth_file_fingerprint,
+                    account_truth_source_fingerprint,
+                    clearance_reconciliation_run_id, operator_id,
+                    operator_approval_id, status, terminal_status, fill_count,
+                    fill_quantity, cancelled_quantity,
+                    lifecycle_observation_id, lifecycle_evidence_fingerprint,
+                    lifecycle_source_sequence, cleared_at_epoch_ms, cleared_at,
+                    payload_json, created_at
+                )
+                SELECT
+                    id, clearance_id, clearance_fingerprint, submit_intent_id,
+                    submit_fingerprint, order_id, broker_order_id,
+                    review_reconciliation_run_id, review_reconciliation_item_id,
+                    broker_evidence_fingerprint, account_truth_import_run_id,
+                    account_truth_file_fingerprint,
+                    account_truth_source_fingerprint,
+                    clearance_reconciliation_run_id, operator_id,
+                    operator_approval_id, status,
+                    {legacy('terminal_status', "'filled'")}, fill_count,
+                    fill_quantity, {legacy('cancelled_quantity', "'0'")},
+                    {legacy('lifecycle_observation_id', "''")},
+                    {legacy('lifecycle_evidence_fingerprint', "''")},
+                    {legacy('lifecycle_source_sequence', '0')},
+                    cleared_at_epoch_ms, cleared_at, payload_json, created_at
+                FROM {legacy_table}
+                """)
+            conn.execute(f"DROP TABLE {legacy_table}")
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_controlled_submission_clearance_time
+        ON controlled_submission_reconciliation_clearances(cleared_at_epoch_ms DESC)
+        """)
+
+
 def _merge_market_calendar_snapshot_payload(
     payload: dict[str, Any],
     existing: dict[str, Any],
@@ -145,6 +279,7 @@ class AppDatabase:
             if journal_mode and str(journal_mode[0]).lower() != "wal":
                 conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
+            _ensure_controlled_submission_clearance_terminal_schema(conn)
             _ensure_column(conn, "backtest_results", "metrics_json", "TEXT")
             _ensure_column(conn, "backtest_results", "cost_summary_json", "TEXT")
             _ensure_column(conn, "quote_snapshots", "quote_source", "TEXT")
@@ -2134,7 +2269,7 @@ class AppDatabase:
                     blockers.append("controlled_submission_oms_not_submitted")
                 if intent is not None and order is not None:
                     from account_truth.broker_order_lifecycle import (
-                        broker_order_lifecycle_clearance_blockers,
+                        broker_order_lifecycle_terminal_outcome,
                         resolve_broker_order_lifecycle_from_connection,
                     )
 
@@ -2151,12 +2286,43 @@ class AppDatabase:
                                 client_order_id=str(intent["client_order_id"] or ""),
                             )
                         )
-                        blockers.extend(
-                            broker_order_lifecycle_clearance_blockers(
-                                dict(order),
-                                lifecycle_evidence,
-                            )
+                        terminal_lifecycle = broker_order_lifecycle_terminal_outcome(
+                            dict(order),
+                            lifecycle_evidence,
                         )
+                        if terminal_lifecycle["status"] in {
+                            "blocked",
+                            "non_terminal",
+                        }:
+                            blockers.extend(terminal_lifecycle["blockers"])
+                            blockers.append(
+                                "controlled_submission_terminal_outcome_changed"
+                            )
+                        elif terminal_lifecycle["status"] == "terminal":
+                            expected_terminal_fields = {
+                                "terminal_status": requested["terminal_status"],
+                                "filled_quantity": requested["fill_quantity"],
+                                "cancelled_quantity": requested["cancelled_quantity"],
+                                "observation_id": requested["lifecycle_observation_id"],
+                                "evidence_fingerprint": requested[
+                                    "lifecycle_evidence_fingerprint"
+                                ],
+                                "source_sequence": requested[
+                                    "lifecycle_source_sequence"
+                                ],
+                            }
+                            for field, expected in expected_terminal_fields.items():
+                                if str(terminal_lifecycle.get(field) or "") != str(
+                                    expected or ""
+                                ):
+                                    blockers.append(
+                                        "controlled_submission_terminal_"
+                                        f"lifecycle_{field}_changed"
+                                    )
+                        elif requested["terminal_status"] == "cancelled":
+                            blockers.append(
+                                "controlled_submission_terminal_lifecycle_missing"
+                            )
                 if latest_item is None:
                     blockers.append("controlled_submission_reconciliation_item_missing")
                 else:
@@ -2173,8 +2339,18 @@ class AppDatabase:
                         blockers.append(
                             "controlled_submission_reconciliation_run_changed"
                         )
-                    if str(latest_item["item_status"]) != (
-                        "controlled_submission_broker_evidence_available"
+                    clearable_item_statuses = {
+                        "filled": {"controlled_submission_broker_evidence_available"},
+                        "cancelled": {
+                            "controlled_submission_partial_fill_cancel_evidence_available",
+                            "controlled_submission_cancel_evidence_available",
+                        },
+                    }
+                    if str(
+                        latest_item["item_status"]
+                    ) not in clearable_item_statuses.get(
+                        str(requested.get("terminal_status") or ""),
+                        set(),
                     ):
                         blockers.append(
                             "controlled_submission_reconciliation_item_not_clearable"
@@ -2225,7 +2401,8 @@ class AppDatabase:
                         )
 
                 fill_rows = list(requested.get("fills") or [])
-                if not fill_rows:
+                terminal_status = str(requested.get("terminal_status") or "")
+                if not fill_rows and terminal_status != "cancelled":
                     blockers.append("controlled_submission_fill_evidence_missing")
                 fill_quantity = sum(
                     (
@@ -2239,8 +2416,24 @@ class AppDatabase:
                     if order is not None
                     else Decimal("0")
                 )
-                if fill_quantity <= 0 or fill_quantity != abs(order_quantity):
-                    blockers.append("controlled_submission_fill_quantity_incomplete")
+                cancelled_quantity = Decimal(
+                    str(requested.get("cancelled_quantity") or "0")
+                )
+                if str(requested.get("fill_quantity") or "0") != str(fill_quantity):
+                    blockers.append("controlled_submission_fill_quantity_changed")
+                if terminal_status == "filled" and (
+                    fill_quantity <= 0
+                    or fill_quantity != abs(order_quantity)
+                    or cancelled_quantity != 0
+                ):
+                    blockers.append("controlled_submission_full_fill_incomplete")
+                elif terminal_status == "cancelled" and (
+                    cancelled_quantity <= 0
+                    or fill_quantity + cancelled_quantity != abs(order_quantity)
+                ):
+                    blockers.append("controlled_submission_cancel_quantity_incomplete")
+                elif terminal_status not in {"filled", "cancelled"}:
+                    blockers.append("controlled_submission_terminal_status_invalid")
                 for fill in fill_rows:
                     broker_event = conn.execute(
                         """
@@ -2351,32 +2544,57 @@ class AppDatabase:
                     "submit_intent_id": requested["submit_intent_id"],
                     "broker_order_id": requested["broker_order_id"],
                     "filled_quantity": str(fill_quantity),
+                    "cancelled_quantity": str(cancelled_quantity),
+                    "terminal_status": terminal_status,
                     "account_truth_import_run_id": requested[
                         "account_truth_import_run_id"
                     ],
                     "production_ledger_mutated": False,
                 }
-                conn.execute(
-                    "UPDATE oms_orders SET status = 'accepted', updated_at = ? WHERE order_id = ?",
-                    (requested["cleared_at"], requested["order_id"]),
-                )
-                for from_status, to_status, reason in (
-                    (
-                        "submitted",
-                        "accepted",
-                        "broker acceptance confirmed by signed reconciliation clearance",
-                    ),
-                    (
-                        "accepted",
-                        "filled",
-                        "full broker fill confirmed by signed reconciliation clearance",
-                    ),
-                ):
-                    if to_status == "filled":
-                        conn.execute(
-                            "UPDATE oms_orders SET status = 'filled', updated_at = ? WHERE order_id = ?",
-                            (requested["cleared_at"], requested["order_id"]),
-                        )
+                if terminal_status == "filled":
+                    transition_steps = (
+                        (
+                            "submitted",
+                            "accepted",
+                            "broker acceptance confirmed by signed reconciliation clearance",
+                        ),
+                        (
+                            "accepted",
+                            "filled",
+                            "full broker fill confirmed by signed reconciliation clearance",
+                        ),
+                    )
+                elif fill_quantity > 0:
+                    transition_steps = (
+                        (
+                            "submitted",
+                            "accepted",
+                            "broker acceptance confirmed by signed reconciliation clearance",
+                        ),
+                        (
+                            "accepted",
+                            "partially_filled",
+                            "partial broker fills confirmed by signed reconciliation clearance",
+                        ),
+                        (
+                            "partially_filled",
+                            "cancelled",
+                            "remaining quantity cancelled in exact terminal broker evidence",
+                        ),
+                    )
+                else:
+                    transition_steps = (
+                        (
+                            "submitted",
+                            "cancelled",
+                            "no-fill cancellation confirmed by signed reconciliation clearance",
+                        ),
+                    )
+                for from_status, to_status, reason in transition_steps:
+                    conn.execute(
+                        "UPDATE oms_orders SET status = ?, updated_at = ? WHERE order_id = ?",
+                        (to_status, requested["cleared_at"], requested["order_id"]),
+                    )
                     conn.execute(
                         """
                         INSERT INTO oms_transitions (
@@ -2408,10 +2626,13 @@ class AppDatabase:
                         account_truth_file_fingerprint,
                         account_truth_source_fingerprint,
                         clearance_reconciliation_run_id,
-                        operator_id, operator_approval_id, status, fill_count,
-                        fill_quantity, cleared_at_epoch_ms, cleared_at,
-                        payload_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        operator_id, operator_approval_id, status,
+                        terminal_status, fill_count, fill_quantity,
+                        cancelled_quantity, lifecycle_observation_id,
+                        lifecycle_evidence_fingerprint,
+                        lifecycle_source_sequence, cleared_at_epoch_ms,
+                        cleared_at, payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         requested["clearance_id"],
@@ -2430,8 +2651,13 @@ class AppDatabase:
                         requested["operator_id"],
                         requested["operator_approval_id"],
                         "cleared",
+                        terminal_status,
                         len(fill_rows),
                         str(fill_quantity),
+                        str(cancelled_quantity),
+                        requested["lifecycle_observation_id"],
+                        requested["lifecycle_evidence_fingerprint"],
+                        int(requested["lifecycle_source_sequence"]),
                         int(requested["cleared_at_epoch_ms"]),
                         requested["cleared_at"],
                         _serialize_event_payload_json(requested["payload"]),
@@ -2463,16 +2689,19 @@ class AppDatabase:
                     ),
                 )
                 clearance_item_payload = {
-                    "oms_status": "filled",
+                    "oms_status": terminal_status,
                     "execution_mode": "controlled_live",
                     "controlled_submission_evidence_summary": {
                         "schema_version": (
-                            "karkinos.controlled_submission_reconciliation.v2"
+                            "karkinos.controlled_submission_reconciliation.v3"
                         ),
                         "submit_intent_id": requested["submit_intent_id"],
                         "clearance_id": requested["clearance_id"],
                         "intent_status": "submitted",
-                        "oms_status": "filled",
+                        "oms_status": terminal_status,
+                        "terminal_status": terminal_status,
+                        "filled_quantity": str(fill_quantity),
+                        "cancelled_quantity": str(cancelled_quantity),
                         "new_submissions_blocked": False,
                         "recovery_resubmission_enabled": False,
                         "production_ledger_mutated": False,
@@ -2493,7 +2722,8 @@ class AppDatabase:
                         len(fill_rows),
                         (
                             "Signed controlled-submission reconciliation clearance "
-                            "recorded full fills without production-ledger mutation."
+                            f"recorded exact {terminal_status} outcome without "
+                            "production-ledger mutation."
                         ),
                         _serialize_event_payload_json(clearance_item_payload),
                         requested["cleared_at"],
@@ -8114,38 +8344,6 @@ CREATE TABLE IF NOT EXISTS controlled_broker_submit_intents (
 CREATE INDEX IF NOT EXISTS idx_controlled_broker_submit_status_time
 ON controlled_broker_submit_intents(status, prepared_at_epoch_ms DESC);
 
-CREATE TABLE IF NOT EXISTS controlled_submission_reconciliation_clearances (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    clearance_id TEXT NOT NULL UNIQUE,
-    clearance_fingerprint TEXT NOT NULL UNIQUE,
-    submit_intent_id TEXT NOT NULL UNIQUE,
-    submit_fingerprint TEXT NOT NULL,
-    order_id TEXT NOT NULL UNIQUE,
-    broker_order_id TEXT NOT NULL,
-    review_reconciliation_run_id TEXT NOT NULL,
-    review_reconciliation_item_id INTEGER NOT NULL,
-    broker_evidence_fingerprint TEXT NOT NULL,
-    account_truth_import_run_id TEXT NOT NULL,
-    account_truth_file_fingerprint TEXT NOT NULL,
-    account_truth_source_fingerprint TEXT NOT NULL,
-    clearance_reconciliation_run_id TEXT NOT NULL UNIQUE,
-    operator_id TEXT NOT NULL,
-    operator_approval_id TEXT NOT NULL,
-    status TEXT NOT NULL CHECK(status = 'cleared'),
-    fill_count INTEGER NOT NULL CHECK(fill_count > 0),
-    fill_quantity TEXT NOT NULL,
-    cleared_at_epoch_ms INTEGER NOT NULL CHECK(cleared_at_epoch_ms >= 0),
-    cleared_at TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(submit_intent_id)
-        REFERENCES controlled_broker_submit_intents(submit_intent_id),
-    FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_controlled_submission_clearance_time
-ON controlled_submission_reconciliation_clearances(cleared_at_epoch_ms DESC);
-
 CREATE TABLE IF NOT EXISTS broker_gateway_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     gateway_id TEXT NOT NULL,
@@ -8705,7 +8903,7 @@ def _controlled_lifecycle_invalidated_clearance_rows(
     """Find cleared intents contradicted by newer persisted lifecycle facts."""
 
     from account_truth.broker_order_lifecycle import (
-        broker_order_lifecycle_clearance_blockers,
+        broker_order_lifecycle_terminal_outcome,
         resolve_broker_order_lifecycle_from_connection,
     )
 
@@ -8713,7 +8911,12 @@ def _controlled_lifecycle_invalidated_clearance_rows(
         """
         SELECT intent.*, oms.status AS oms_status,
                oms.symbol AS oms_symbol, oms.side AS oms_side,
-               oms.quantity AS oms_quantity
+               oms.quantity AS oms_quantity,
+               clearance.terminal_status AS clearance_terminal_status,
+               clearance.fill_quantity AS clearance_fill_quantity,
+               clearance.cancelled_quantity AS clearance_cancelled_quantity,
+               clearance.lifecycle_observation_id AS clearance_lifecycle_observation_id,
+               clearance.lifecycle_evidence_fingerprint AS clearance_lifecycle_evidence_fingerprint
         FROM controlled_broker_submit_intents AS intent
         JOIN controlled_submission_reconciliation_clearances AS clearance
           ON clearance.submit_intent_id = intent.submit_intent_id
@@ -8744,7 +8947,7 @@ def _controlled_lifecycle_invalidated_clearance_rows(
             broker_order_id=str(intent.get("broker_order_id") or ""),
             client_order_id=str(intent.get("client_order_id") or ""),
         )
-        lifecycle_blockers = broker_order_lifecycle_clearance_blockers(
+        terminal = broker_order_lifecycle_terminal_outcome(
             {
                 "symbol": str(intent.get("oms_symbol") or ""),
                 "side": str(intent.get("oms_side") or ""),
@@ -8752,10 +8955,53 @@ def _controlled_lifecycle_invalidated_clearance_rows(
             },
             evidence,
         )
-        if str(intent.get("oms_status") or "") != "filled" and evidence.get(
+        lifecycle_blockers = list(terminal.get("blockers") or [])
+        persisted_observation_id = str(
+            intent.get("clearance_lifecycle_observation_id") or ""
+        )
+        persisted_evidence_fingerprint = str(
+            intent.get("clearance_lifecycle_evidence_fingerprint") or ""
+        )
+        if terminal.get("status") == "non_terminal":
+            lifecycle_blockers.append(
+                "controlled_submission_terminal_clearance_lifecycle_not_terminal"
+            )
+        elif terminal.get("status") == "not_available" and persisted_observation_id:
+            lifecycle_blockers.append(
+                "controlled_submission_terminal_clearance_lifecycle_missing"
+            )
+        elif terminal.get("status") == "terminal":
+            comparisons = {
+                "terminal_status": intent.get("clearance_terminal_status"),
+                "filled_quantity": intent.get("clearance_fill_quantity"),
+                "cancelled_quantity": intent.get("clearance_cancelled_quantity"),
+            }
+            for field, expected in comparisons.items():
+                if str(terminal.get(field) or "") != str(expected or ""):
+                    lifecycle_blockers.append(
+                        f"controlled_submission_terminal_clearance_{field}_changed"
+                    )
+            if persisted_observation_id and persisted_observation_id != str(
+                terminal.get("observation_id") or ""
+            ):
+                lifecycle_blockers.append(
+                    "controlled_submission_terminal_clearance_observation_changed"
+                )
+            if (
+                persisted_evidence_fingerprint
+                and persisted_evidence_fingerprint
+                != str(terminal.get("evidence_fingerprint") or "")
+            ):
+                lifecycle_blockers.append(
+                    "controlled_submission_terminal_clearance_evidence_changed"
+                )
+        expected_oms_status = str(intent.get("clearance_terminal_status") or "")
+        if str(intent.get("oms_status") or "") != expected_oms_status and evidence.get(
             "status"
         ) in {"found", "blocked", "identity_conflict"}:
-            lifecycle_blockers.append("controlled_submission_clearance_oms_not_filled")
+            lifecycle_blockers.append(
+                "controlled_submission_terminal_clearance_oms_status_changed"
+            )
         if lifecycle_blockers:
             observation = evidence.get("observation")
             observation = observation if isinstance(observation, dict) else {}

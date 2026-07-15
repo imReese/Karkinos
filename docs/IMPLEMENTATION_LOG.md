@@ -60,7 +60,9 @@ Implemented foundation:
   equal-or-narrower replacement;
 - default-closed one-shot submission, unknown recovery, and cross-order
   interlock;
-- signed exact-full-fill clearance and broker-neutral lifecycle ingestion;
+- signed exact-terminal clearance for full fill, no-fill cancel, and
+  partial-fill-then-cancel, plus broker-neutral lifecycle ingestion; open
+  partial fills remain blocked and clearance still cannot post the ledger;
 - versioned adapter capability/boundary manifests and revocable release review
   gates for live collector ingestion;
 - deterministic local adapter conformance evidence bound to release review and
@@ -69,8 +71,8 @@ Implemented foundation:
 - persisted operator projection and evidence-based scale review.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, full partial/cancel/unknown recovery, reconciled ledger posting, operator
-journey, and controlled per-order pilot.
+soak, real cancel/unknown recovery, reconciled ledger posting, operator journey,
+and controlled per-order pilot.
 
 ### v1.7 — Controlled Broker Bridge Foundation
 

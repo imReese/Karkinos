@@ -75,7 +75,7 @@ class ControlledSubmissionClearanceRequest(ControlledSubmissionClearancePreviewR
     )
     operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
     acknowledgement: Literal[
-        "clear_exact_full_fill_without_automatic_ledger_mutation"
+        "clear_exact_terminal_outcome_without_automatic_ledger_mutation"
     ] = CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT
 
 
