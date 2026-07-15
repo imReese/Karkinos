@@ -50,6 +50,9 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
   today's, unrealized, and realized results.
 - [Broker-order lifecycle](broker-order-lifecycle-ingestion.en.md) — read-only
   lifecycle evidence and collector ingestion.
+- [Broker adapter release review](broker-adapter-release-review.en.md) —
+  provider-neutral capability, threat, deployment, rollback, privacy, and
+  explicit human acceptance evidence.
 - [Controlled execution](CONTROLLED_EXECUTION_PLAN.md) — human authority,
   runtime gates, recovery, and capital-scaling rules.
 

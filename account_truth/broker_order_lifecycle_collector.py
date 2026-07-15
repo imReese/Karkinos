@@ -10,6 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from account_truth.broker_adapter_release import (
+    BrokerAdapterReleaseReviewRepository,
+)
 from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_EXPORT_SCHEMA_VERSION,
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
@@ -506,6 +509,11 @@ class BrokerOrderLifecycleCollectorRepository:
                 evidence=_rejection(preview, integrity_blockers),
             )
 
+        release_review = BrokerAdapterReleaseReviewRepository(
+            self._path,
+            ensure_schema=False,
+        ).verify_collector_binding(preview)
+
         now = datetime.now(UTC).isoformat()
         run_id = str(preview["run_id"])
         with sqlite3.connect(self._path, timeout=2) as conn:
@@ -534,7 +542,10 @@ class BrokerOrderLifecycleCollectorRepository:
                 conn.commit()
                 return self._run_response(existing, reused=True)
 
-            blockers = [str(item) for item in preview.get("blockers") or []]
+            blockers = [
+                *[str(item) for item in preview.get("blockers") or []],
+                *[str(item) for item in release_review.get("blockers") or []],
+            ]
             scope_key = _scope_key(preview)
             state = conn.execute(
                 """
@@ -721,6 +732,19 @@ class BrokerOrderLifecycleCollectorRepository:
             )
         if str(row["run_status"]) != "prepared":
             return self._run_response(row, reused=True)
+
+        release_review = BrokerAdapterReleaseReviewRepository(
+            self._path,
+            ensure_schema=False,
+        ).verify_collector_binding(_collector_release_binding(row))
+        if release_review.get("blockers"):
+            return self._finalize_blocked(
+                str(row["run_id"]),
+                [
+                    "broker_order_lifecycle_collector_adapter_release_review_blocked",
+                    *[str(item) for item in release_review.get("blockers") or []],
+                ],
+            )
 
         lifecycle_preview = _json_object(row["prepared_preview_json"])
         try:
@@ -1230,6 +1254,24 @@ def _scope_key(value: dict[str, Any]) -> str:
             "account_alias": str(value.get("account_alias") or ""),
         }
     )
+
+
+def _collector_release_binding(value: sqlite3.Row) -> dict[str, Any]:
+    return {
+        field: value[field]
+        for field in (
+            "release_evidence_ref",
+            "collector_id",
+            "deployment_id",
+            "collector_version",
+            "deployment_fingerprint",
+            "provider",
+            "gateway_id",
+            "account_alias",
+            "adapter_authorization_ref",
+            "collection_mode",
+        )
+    }
 
 
 def _safety_flags() -> dict[str, bool]:

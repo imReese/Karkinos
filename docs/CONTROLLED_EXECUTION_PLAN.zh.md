@@ -75,6 +75,9 @@ kill switch 与运营健康
 
 所需证据：
 
+- 一个通过 append-only 人工复核接受的 canonical adapter release manifest，精确绑定
+  provider、gateway、deployment、version、fingerprint、account alias、mode、capability 与
+  process boundary；拒绝、撤销或漂移会阻断新增摄取；
 - 一个经过复核、覆盖现金、持仓、订单、成交、session status、heartbeat 与 source timestamp
   的适配器；
 - 不可变 snapshot、cursor、schema、deployment、capability health 与 freshness；
