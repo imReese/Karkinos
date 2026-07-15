@@ -1,6 +1,6 @@
 # Karkinos Architecture
 
-[Goal](KARKINOS_GOAL.md) | [Roadmap](ROADMAP.md) | [Controlled execution](CONTROLLED_EXECUTION_PLAN.md)
+[中文](ARCHITECTURE.zh.md) | [Goal](KARKINOS_GOAL.md) | [Roadmap](ROADMAP.md) | [Controlled execution](CONTROLLED_EXECUTION_PLAN.md)
 
 ## Architectural Principles
 
