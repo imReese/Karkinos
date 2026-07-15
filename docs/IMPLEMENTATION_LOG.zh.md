@@ -48,15 +48,17 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - session-start Account Truth、原子 account/symbol budget 与 rate limit；
 - 已签名且会过期的 runtime session、live gate、pause、revocation 与 equal-or-narrower replacement；
 - 默认关闭的 one-shot submission、unknown recovery 与 cross-order interlock；
-- 已签名的 exact-full-fill clearance 与 broker-neutral lifecycle ingestion；
+- 已签名的 exact-terminal clearance，覆盖 full fill、no-fill cancel 与
+  partial-fill-then-cancel，并包含 broker-neutral lifecycle ingestion；open partial fill 仍保持
+  阻断，clearance 仍不能写入 ledger；
 - 版本化 adapter capability/boundary manifest 与可撤销的 live collector release review gate；
 - 与 release review 绑定并在 live collector prepare/commit 前复核的 deterministic local adapter
   conformance 证据；
 - connector-scoped、latest-result-wins 的 soak promotion recovery-drill gate；
 - 已持久化 operator projection 与 evidence-based scale review。
 
-剩余发布工作由路线图负责：一个真实 adapter、只读 soak、完整 partial/cancel/unknown recovery、
-对账后 ledger posting、operator journey 与受控逐单 pilot。
+剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、对账后
+ledger posting、operator journey 与受控逐单 pilot。
 
 ### v1.7 — 受控券商 Bridge 基础
 

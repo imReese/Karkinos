@@ -52,9 +52,11 @@ Research, daily planning, paper/shadow operations, OMS, Account Truth,
 reconciliation, and the non-submitting controlled-execution foundation are
 implemented. The active milestone is v1.8. Provider-neutral release and local
 conformance foundations and their persisted-only Operations readiness view are
-in place; selecting or implementing one real broker edge still requires
-explicit owner confirmation before any read-only soak or human-confirmed
-per-order pilot.
+in place. Signed exact-terminal reconciliation now covers full fill, no-fill
+cancel, and partial-fill-then-cancel from persisted evidence while keeping
+ledger posting separate and disabled. Selecting or implementing one real broker
+edge still requires explicit owner confirmation before any read-only soak or
+human-confirmed per-order pilot.
 
 See [the roadmap](docs/ROADMAP.md) for priorities and release gates. Completed
 implementation evidence lives in

@@ -53,8 +53,9 @@ class FakeControlledBrokerSubmissionService:
 class FakeControlledSubmissionClearanceService:
     def get_status(self):
         return {
-            "contract_status": "signed_full_fill_clearance_available",
-            "partial_fill_clearance_enabled": False,
+            "contract_status": "signed_terminal_outcome_clearance_available",
+            "partial_fill_terminal_cancel_clearance_enabled": True,
+            "open_partial_fill_clearance_enabled": False,
         }
 
     def preview(self, **kwargs):
@@ -167,7 +168,8 @@ def test_clearance_routes_require_separate_signature_and_forbid_credentials(
 
     status = client.get(f"{prefix}/reconciliation-clearance/status")
     assert status.status_code == 200
-    assert status.json()["partial_fill_clearance_enabled"] is False
+    assert status.json()["partial_fill_terminal_cancel_clearance_enabled"] is True
+    assert status.json()["open_partial_fill_clearance_enabled"] is False
     preview = client.post(
         f"{prefix}/intents/{intent_id}/reconciliation-clearance/preview",
         json={"reconciliation_run_id": run_id},
@@ -182,7 +184,7 @@ def test_clearance_routes_require_separate_signature_and_forbid_credentials(
             "operator_approval_id": "3" * 64,
             "operator_proof_signature_base64": "A" * 88,
             "acknowledgement": (
-                "clear_exact_full_fill_without_automatic_ledger_mutation"
+                "clear_exact_terminal_outcome_without_automatic_ledger_mutation"
             ),
         },
     )
@@ -206,7 +208,7 @@ def test_clearance_routes_require_separate_signature_and_forbid_credentials(
             "clearance_fingerprint": "4" * 64,
             "operator_approval_id": "3" * 64,
             "acknowledgement": (
-                "clear_exact_full_fill_without_automatic_ledger_mutation"
+                "clear_exact_terminal_outcome_without_automatic_ledger_mutation"
             ),
         },
     )
@@ -219,7 +221,7 @@ def test_clearance_routes_require_separate_signature_and_forbid_credentials(
             "operator_approval_id": "3" * 64,
             "operator_proof_signature_base64": "A" * 88,
             "acknowledgement": (
-                "clear_exact_full_fill_without_automatic_ledger_mutation"
+                "clear_exact_terminal_outcome_without_automatic_ledger_mutation"
             ),
             "broker_password": "must-not-be-accepted",
         },

@@ -165,6 +165,9 @@ disable; it never scales up automatically.
 - Lifecycle sequence and cumulative quantities are monotonic and conserved.
 - Full or partial fills require independent broker evidence and Account Truth
   before reconciliation clearance.
+- Signed exact-terminal clearance covers full fill, no-fill cancel, and
+  partial-fill-then-cancel. Open partial fills remain blocked; terminal cancel
+  records only actual fills and never issues a broker cancel.
 - Reconciliation clearance and ledger posting are separate transactions and
   approvals.
 - GET, alerts, reports, and UI rendering never contact the gateway implicitly.

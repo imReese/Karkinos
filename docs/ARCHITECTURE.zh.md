@@ -172,6 +172,15 @@ acceptance 不再匹配。
 策略代码不能接触 gateway。Prepared、accepted-but-unreconciled 或 unknown intent 会阻断不同
 订单。Unknown 结果只能查询，绝不自动重提。
 
+Reconciliation clearance 以
+`karkinos.controlled_submission_reconciliation_clearance.v3` 作为 canonical 精确终态契约。
+签名命令可以记录完整成交、零成交撤单或部分成交后撤单；仍处于开放状态的 partial fill 继续
+阻断。成交数量来自独立持久化的券商 statement 与 Account Truth，撤销数量和终态绑定
+broker-neutral lifecycle observation；partial-cancel 的成本合计必须在两组证据间一致。Clearance
+事务只记录实际 fills、按对应状态推进 OMS 并释放跨订单 interlock；它绝不写生产账本、联系
+provider、签发撤单或授予提交/资本权限。后续 lifecycle 或 collector drift 会使 clearance 失效并
+重新阻断 interlock。
+
 ### AI 研究
 
 ```text

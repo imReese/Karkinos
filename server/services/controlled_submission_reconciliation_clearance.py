@@ -1,4 +1,4 @@
-"""Signed full-fill reconciliation clearance for one controlled submission."""
+"""Signed exact-terminal reconciliation clearance for one controlled submission."""
 
 from __future__ import annotations
 
@@ -11,17 +11,21 @@ from pathlib import Path
 from typing import Any, Callable
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
+from account_truth.broker_order_lifecycle import (
+    BrokerOrderLifecycleEvidenceRepository,
+    broker_order_lifecycle_terminal_outcome,
+)
 from server.services.operator_approval import resolve_operator_approval_with_proof
 from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_SUBMISSION_CLEARANCE_SCHEMA_VERSION = (
-    "karkinos.controlled_submission_reconciliation_clearance.v2"
+    "karkinos.controlled_submission_reconciliation_clearance.v3"
 )
 CONTROLLED_SUBMISSION_CLEARANCE_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_submission_reconciliation_clearance_status.v2"
+    "karkinos.controlled_submission_reconciliation_clearance_status.v3"
 )
 CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT = (
-    "clear_exact_full_fill_without_automatic_ledger_mutation"
+    "clear_exact_terminal_outcome_without_automatic_ledger_mutation"
 )
 CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS = 120
 CONTROLLED_SUBMISSION_CLEARANCE_REJECTION_EVENT_TYPE = (
@@ -47,7 +51,7 @@ class ControlledSubmissionReconciliationClearanceRejected(ValueError):
 
 
 class ControlledSubmissionReconciliationClearanceService:
-    """Turn exact reviewed broker evidence into real fills without ledger writes."""
+    """Record an exact reviewed terminal outcome without ledger writes."""
 
     def __init__(
         self,
@@ -66,7 +70,7 @@ class ControlledSubmissionReconciliationClearanceService:
         return {
             "schema_version": CONTROLLED_SUBMISSION_CLEARANCE_STATUS_SCHEMA_VERSION,
             "contract_status": (
-                "signed_full_fill_clearance_available"
+                "signed_terminal_outcome_clearance_available"
                 if callable(self._account_truth_provider)
                 and self._trusted_operator_identities
                 else "disabled_waiting_for_account_truth_and_operator_signature"
@@ -78,7 +82,10 @@ class ControlledSubmissionReconciliationClearanceService:
             "maximum_account_truth_age_seconds": (
                 CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS
             ),
-            "partial_fill_clearance_enabled": False,
+            "full_fill_clearance_enabled": True,
+            "partial_fill_terminal_cancel_clearance_enabled": True,
+            "open_partial_fill_clearance_enabled": False,
+            "no_fill_cancel_clearance_enabled": True,
             "automatic_ledger_mutation_enabled": False,
             "automatic_submission_enabled": False,
             "strategy_direct_submission_enabled": False,
@@ -162,12 +169,23 @@ class ControlledSubmissionReconciliationClearanceService:
         else:
             if str(latest_item.get("run_id") or "") != normalized_run_id:
                 blockers.append("controlled_submission_clearance_item_not_latest_run")
-            if str(latest_item.get("item_status") or "") != (
-                "controlled_submission_broker_evidence_available"
-            ):
+            item_status = str(latest_item.get("item_status") or "")
+            expected_actions = {
+                "controlled_submission_broker_evidence_available": (
+                    "review_controlled_submission_broker_evidence"
+                ),
+                "controlled_submission_partial_fill_cancel_evidence_available": (
+                    "review_partial_fill_cancel_and_import_account_truth"
+                ),
+                "controlled_submission_cancel_evidence_available": (
+                    "review_cancel_evidence_before_interlock_clearance"
+                ),
+            }
+            if item_status not in expected_actions:
                 blockers.append("controlled_submission_clearance_item_not_clearable")
-            if str(latest_item.get("suggested_action") or "") != (
-                "review_controlled_submission_broker_evidence"
+            elif (
+                str(latest_item.get("suggested_action") or "")
+                != expected_actions[item_status]
             ):
                 blockers.append("controlled_submission_clearance_action_mismatch")
 
@@ -191,8 +209,6 @@ class ControlledSubmissionReconciliationClearanceService:
             if isinstance(item, dict)
         ]
         broker_evidence_fingerprint = _fingerprint(broker_evidence)
-        if not broker_evidence:
-            blockers.append("controlled_submission_clearance_broker_evidence_missing")
         if str(controlled_summary.get("broker_evidence_fingerprint") or "") != (
             broker_evidence_fingerprint
         ):
@@ -200,18 +216,13 @@ class ControlledSubmissionReconciliationClearanceService:
                 "controlled_submission_clearance_broker_fingerprint_invalid"
             )
 
-        source = self._resolve_broker_source(broker_evidence)
-        blockers.extend(source["blockers"])
         account_truth = self._resolve_account_truth(now=now)
         blockers.extend(account_truth["blockers"])
-        if source["import_run_id"] != account_truth["import_run_id"]:
-            blockers.append(
-                "controlled_submission_clearance_account_truth_import_mismatch"
-            )
-        if source["file_fingerprint"] != account_truth["file_fingerprint"]:
-            blockers.append(
-                "controlled_submission_clearance_account_truth_file_mismatch"
-            )
+        terminal_lifecycle = self._resolve_terminal_lifecycle(
+            intent=intent,
+            order=order,
+        )
+        blockers.extend(terminal_lifecycle["blockers"])
 
         order_quantity = abs(_decimal(order.get("quantity")) or Decimal("0"))
         broker_quantity = sum(
@@ -221,8 +232,71 @@ class ControlledSubmissionReconciliationClearanceService:
             ),
             Decimal("0"),
         )
-        if order_quantity <= 0 or broker_quantity != order_quantity:
-            blockers.append("controlled_submission_clearance_full_fill_required")
+        terminal_status = str(terminal_lifecycle.get("terminal_status") or "")
+        if terminal_lifecycle["status"] == "non_terminal":
+            blockers.append("controlled_submission_clearance_terminal_outcome_required")
+        elif terminal_lifecycle["status"] == "not_available":
+            if order_quantity > 0 and broker_quantity == order_quantity:
+                terminal_status = "filled"
+                terminal_lifecycle = {
+                    **terminal_lifecycle,
+                    "terminal_status": terminal_status,
+                    "order_quantity": _decimal_string(order_quantity),
+                    "filled_quantity": _decimal_string(broker_quantity),
+                    "cancelled_quantity": "0",
+                    "terminal_evidence_source": "independent_broker_statement",
+                }
+            else:
+                blockers.append(
+                    "controlled_submission_clearance_terminal_outcome_required"
+                )
+
+        filled_quantity = _decimal(
+            terminal_lifecycle.get("filled_quantity")
+        ) or Decimal("0")
+        cancelled_quantity = _decimal(
+            terminal_lifecycle.get("cancelled_quantity")
+        ) or Decimal("0")
+        if terminal_status not in {"filled", "cancelled"}:
+            blockers.append("controlled_submission_clearance_terminal_status_invalid")
+        if broker_quantity != filled_quantity:
+            blockers.append(
+                "controlled_submission_clearance_broker_fill_quantity_mismatch"
+            )
+        if terminal_status == "filled" and (
+            filled_quantity != order_quantity or cancelled_quantity != 0
+        ):
+            blockers.append("controlled_submission_clearance_full_fill_mismatch")
+        if terminal_status == "cancelled" and (
+            cancelled_quantity <= 0
+            or filled_quantity + cancelled_quantity != order_quantity
+        ):
+            blockers.append("controlled_submission_clearance_cancel_quantity_mismatch")
+        if filled_quantity > 0 and not broker_evidence:
+            blockers.append("controlled_submission_clearance_broker_evidence_missing")
+        if terminal_status == "cancelled" and filled_quantity > 0:
+            blockers.extend(
+                _terminal_cancel_statement_blockers(
+                    terminal_lifecycle,
+                    broker_evidence,
+                )
+            )
+
+        source = self._resolve_broker_source(
+            broker_evidence,
+            account_truth=account_truth,
+            evidence_required=filled_quantity > 0,
+        )
+        blockers.extend(source["blockers"])
+        if source["import_run_id"] != account_truth["import_run_id"]:
+            blockers.append(
+                "controlled_submission_clearance_account_truth_import_mismatch"
+            )
+        if source["file_fingerprint"] != account_truth["file_fingerprint"]:
+            blockers.append(
+                "controlled_submission_clearance_account_truth_file_mismatch"
+            )
+
         expected_event_type = (
             "trade_buy"
             if str(order.get("side") or "").lower() == "buy"
@@ -272,6 +346,24 @@ class ControlledSubmissionReconciliationClearanceService:
             "account_truth_file_fingerprint": account_truth["file_fingerprint"],
             "account_truth_source_fingerprint": account_truth["source_fingerprint"],
             "account_truth_captured_at": account_truth["captured_at"],
+            "terminal_status": terminal_status,
+            "terminal_evidence_source": str(
+                terminal_lifecycle.get("terminal_evidence_source")
+                or "broker_order_lifecycle_and_account_truth"
+            ),
+            "cancelled_quantity": _decimal_string(cancelled_quantity),
+            "lifecycle_observation_id": str(
+                terminal_lifecycle.get("observation_id") or ""
+            ),
+            "lifecycle_evidence_fingerprint": str(
+                terminal_lifecycle.get("evidence_fingerprint") or ""
+            ),
+            "lifecycle_source_sequence": int(
+                terminal_lifecycle.get("source_sequence") or 0
+            ),
+            "lifecycle_fill_fingerprint": str(
+                terminal_lifecycle.get("fill_fingerprint") or _fingerprint([])
+            ),
             "operator_id": str(intent.get("operator_id") or ""),
             "fill_count": len(broker_evidence),
             "fill_quantity": _decimal_string(broker_quantity),
@@ -312,6 +404,11 @@ class ControlledSubmissionReconciliationClearanceService:
             "blockers": unique_blockers,
             "broker_evidence": broker_evidence,
             "account_truth": account_truth,
+            "terminal_lifecycle": {
+                key: value
+                for key, value in terminal_lifecycle.items()
+                if key != "lifecycle_fills"
+            },
             "fills": fills,
             "required_operator_approval": {
                 "action": "clear_controlled_submission_reconciliation",
@@ -451,6 +548,13 @@ class ControlledSubmissionReconciliationClearanceService:
                 "account_truth_file_fingerprint",
                 "account_truth_source_fingerprint",
                 "clearance_reconciliation_run_id",
+                "terminal_status",
+                "terminal_evidence_source",
+                "cancelled_quantity",
+                "lifecycle_observation_id",
+                "lifecycle_evidence_fingerprint",
+                "lifecycle_source_sequence",
+                "lifecycle_fill_fingerprint",
                 "operator_id",
                 "fill_count",
                 "fill_quantity",
@@ -462,7 +566,7 @@ class ControlledSubmissionReconciliationClearanceService:
                 "status": "cleared",
                 "manual_final_signature_verified": True,
                 "interlock_released": True,
-                "oms_terminal_status": "filled",
+                "oms_terminal_status": preview["terminal_status"],
                 "production_ledger_mutated": False,
                 "automatic_submission_enabled": False,
                 "strategy_direct_submission_enabled": False,
@@ -522,12 +626,17 @@ class ControlledSubmissionReconciliationClearanceService:
     def _resolve_broker_source(
         self,
         broker_evidence: list[dict[str, Any]],
+        *,
+        account_truth: dict[str, Any],
+        evidence_required: bool,
     ) -> dict[str, Any]:
         blockers: list[str] = []
         import_ids = sorted(
             {str(item.get("import_run_id") or "") for item in broker_evidence}
         )
-        if len(import_ids) != 1 or not import_ids[0]:
+        if not broker_evidence and not evidence_required:
+            import_run_id = str(account_truth.get("import_run_id") or "")
+        elif len(import_ids) != 1 or not import_ids[0]:
             blockers.append("controlled_submission_clearance_single_import_required")
             import_run_id = ""
         else:
@@ -583,6 +692,43 @@ class ControlledSubmissionReconciliationClearanceService:
             "source_type": source_type,
             "broker_evidence_fingerprint": _fingerprint(resolved),
             "blockers": list(dict.fromkeys(blockers)),
+        }
+
+    def _resolve_terminal_lifecycle(
+        self,
+        *,
+        intent: dict[str, Any],
+        order: dict[str, Any],
+    ) -> dict[str, Any]:
+        db_path = getattr(self._db, "_path", None)
+        payload = _json_object(intent.get("payload_json"))
+        if db_path is None:
+            evidence: dict[str, Any] = {}
+        else:
+            evidence = BrokerOrderLifecycleEvidenceRepository(
+                Path(db_path),
+                ensure_schema=False,
+            ).resolve_order(
+                gateway_id=str(intent.get("gateway_id") or ""),
+                account_alias=str(
+                    intent.get("account_alias") or payload.get("account_alias") or ""
+                ),
+                broker_order_id=str(intent.get("broker_order_id") or ""),
+                client_order_id=str(intent.get("client_order_id") or ""),
+            )
+        terminal = broker_order_lifecycle_terminal_outcome(order, evidence)
+        return {
+            **terminal,
+            "terminal_evidence_source": (
+                "broker_order_lifecycle_and_account_truth"
+                if terminal.get("status") == "terminal"
+                else ""
+            ),
+            "lifecycle_fills": [
+                _mapping(item)
+                for item in evidence.get("fills") or []
+                if isinstance(item, dict)
+            ],
         }
 
     def _resolve_account_truth(self, *, now: datetime) -> dict[str, Any]:
@@ -781,6 +927,74 @@ def _broker_event_contract(event: Any) -> dict[str, Any]:
     }
 
 
+def _terminal_cancel_statement_blockers(
+    terminal_lifecycle: dict[str, Any],
+    broker_evidence: list[dict[str, Any]],
+) -> list[str]:
+    """Require partial-cancel statement facts to match lifecycle fill totals."""
+
+    lifecycle_fills = [
+        _mapping(item)
+        for item in terminal_lifecycle.get("lifecycle_fills") or []
+        if isinstance(item, dict)
+    ]
+    if not lifecycle_fills:
+        return [
+            "controlled_submission_clearance_partial_cancel_lifecycle_fills_missing"
+        ]
+
+    def total(rows: list[dict[str, Any]], field: str) -> Decimal:
+        return sum(
+            (_decimal(row.get(field)) or Decimal("0") for row in rows),
+            Decimal("0"),
+        )
+
+    lifecycle_quantity = sum(
+        (abs(_decimal(row.get("quantity")) or Decimal("0")) for row in lifecycle_fills),
+        Decimal("0"),
+    )
+    statement_quantity = sum(
+        (abs(_decimal(row.get("quantity")) or Decimal("0")) for row in broker_evidence),
+        Decimal("0"),
+    )
+    lifecycle_gross = sum(
+        (
+            abs(_decimal(row.get("quantity")) or Decimal("0"))
+            * abs(_decimal(row.get("price")) or Decimal("0"))
+            for row in lifecycle_fills
+        ),
+        Decimal("0"),
+    )
+    statement_gross = sum(
+        (
+            abs(_decimal(row.get("gross_amount")) or Decimal("0"))
+            for row in broker_evidence
+        ),
+        Decimal("0"),
+    )
+    blockers: list[str] = []
+    comparisons = {
+        "quantity": (lifecycle_quantity, statement_quantity),
+        "gross_amount": (lifecycle_gross, statement_gross),
+        "fee": (total(lifecycle_fills, "fee"), total(broker_evidence, "fee")),
+        "tax": (total(lifecycle_fills, "tax"), total(broker_evidence, "tax")),
+        "transfer_fee": (
+            total(lifecycle_fills, "transfer_fee"),
+            total(broker_evidence, "transfer_fee"),
+        ),
+        "net_amount": (
+            total(lifecycle_fills, "net_amount"),
+            total(broker_evidence, "net_amount"),
+        ),
+    }
+    for field, (lifecycle_value, statement_value) in comparisons.items():
+        if lifecycle_value != statement_value:
+            blockers.append(
+                f"controlled_submission_clearance_partial_cancel_{field}_mismatch"
+            )
+    return blockers
+
+
 def _reconciliation_item_contract(item: dict[str, Any]) -> dict[str, Any]:
     return {
         key: item.get(key)
@@ -801,6 +1015,10 @@ def _reconciliation_item_contract(item: dict[str, Any]) -> dict[str, Any]:
 
 def _clearance_response(row: dict[str, Any], *, reused: bool) -> dict[str, Any]:
     payload = _json_object(row.get("payload_json"))
+    terminal_status = str(
+        row.get("terminal_status") or payload.get("terminal_status") or "filled"
+    )
+    fill_count = int(row.get("fill_count") or 0)
     return {
         **payload,
         "database_id": int(row.get("id") or 0),
@@ -809,14 +1027,19 @@ def _clearance_response(row: dict[str, Any], *, reused: bool) -> dict[str, Any]:
         "submit_intent_id": str(row.get("submit_intent_id") or ""),
         "order_id": str(row.get("order_id") or ""),
         "status": str(row.get("status") or "cleared"),
-        "fill_count": int(row.get("fill_count") or 0),
+        "terminal_status": terminal_status,
+        "cancelled_quantity": str(
+            row.get("cancelled_quantity") or payload.get("cancelled_quantity") or "0"
+        ),
+        "fill_count": fill_count,
         "fill_quantity": str(row.get("fill_quantity") or "0"),
         "cleared_at": str(row.get("cleared_at") or ""),
         "persisted": bool(row),
         "reused": reused,
         "interlock_released": True,
-        "oms_terminal_status": "filled",
-        "real_fills_recorded": True,
+        "oms_terminal_status": terminal_status,
+        "real_fills_recorded": fill_count > 0,
+        "terminal_outcome_recorded": True,
         "production_ledger_mutated": False,
         "automatic_submission_enabled": False,
         "strategy_direct_submission_enabled": False,
@@ -888,7 +1111,9 @@ def _safety_flags() -> dict[str, bool]:
         "exact_latest_reconciliation_required": True,
         "exact_broker_and_client_order_identity_required": True,
         "fresh_account_truth_required": True,
-        "full_fill_only": True,
+        "exact_terminal_outcome_required": True,
+        "open_partial_fill_clearance_disabled": True,
+        "partial_cancel_records_actual_fills_only": True,
         "atomic_fill_oms_clearance": True,
         "automatic_ledger_mutation_disabled": True,
         "automatic_submission_disabled": True,

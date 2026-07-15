@@ -382,6 +382,121 @@ def broker_order_lifecycle_clearance_blockers(
     return []
 
 
+def broker_order_lifecycle_terminal_outcome(
+    order: dict[str, Any],
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve an exact terminal fill/cancel fact without granting authority."""
+
+    base = {
+        "schema_version": "karkinos.broker_order_lifecycle_terminal_outcome.v1",
+        "status": "not_available",
+        "terminal_status": "",
+        "order_quantity": "0",
+        "filled_quantity": "0",
+        "cancelled_quantity": "0",
+        "observation_id": "",
+        "evidence_fingerprint": "",
+        "source_sequence": 0,
+        "fill_count": 0,
+        "fill_fingerprint": _fingerprint([]),
+        "blockers": [],
+        "provider_contacted": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_fills": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_release_submission_interlock": True,
+        "authorizes_execution": False,
+    }
+    resolution_status = str(evidence.get("status") or "")
+    if resolution_status in {"blocked", "identity_conflict"}:
+        return {
+            **base,
+            "status": "blocked",
+            "blockers": [
+                "controlled_submission_terminal_clearance_lifecycle_evidence_blocked"
+            ],
+        }
+    if resolution_status != "found":
+        return base
+
+    observation = _dict(evidence.get("observation"))
+    lifecycle_order = _dict(evidence.get("order"))
+    lifecycle_fills = [
+        _dict(item) for item in evidence.get("fills") or [] if isinstance(item, dict)
+    ]
+    expected_quantity = abs(_decimal(order.get("quantity")))
+    order_quantity = abs(_decimal(lifecycle_order.get("order_quantity")))
+    filled_quantity = abs(_decimal(lifecycle_order.get("cumulative_filled_quantity")))
+    cancelled_quantity = abs(_decimal(lifecycle_order.get("cancelled_quantity")))
+    blockers: list[str] = []
+
+    collector_evidence = _dict(evidence.get("collector_evidence"))
+    if (
+        bool(collector_evidence.get("required"))
+        and str(collector_evidence.get("status") or "") != "healthy"
+    ):
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_collector_unhealthy"
+        )
+    if str(lifecycle_order.get("symbol") or "") != str(order.get("symbol") or ""):
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_symbol_mismatch"
+        )
+    if str(lifecycle_order.get("side") or "") != str(order.get("side") or ""):
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_side_mismatch"
+        )
+    if expected_quantity <= 0 or order_quantity != expected_quantity:
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_quantity_mismatch"
+        )
+
+    lifecycle_status = str(lifecycle_order.get("status") or "")
+    terminal_status = (
+        lifecycle_status if lifecycle_status in {"filled", "cancelled"} else ""
+    )
+    if terminal_status == "filled" and (
+        filled_quantity != expected_quantity or cancelled_quantity != 0
+    ):
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_fill_mismatch"
+        )
+    elif terminal_status == "cancelled" and (
+        cancelled_quantity <= 0
+        or filled_quantity + cancelled_quantity != expected_quantity
+    ):
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_cancel_mismatch"
+        )
+
+    fill_quantity = sum(
+        (abs(_decimal(item.get("quantity"))) for item in lifecycle_fills),
+        Decimal("0"),
+    )
+    if fill_quantity != filled_quantity:
+        blockers.append(
+            "controlled_submission_terminal_clearance_lifecycle_fill_sum_mismatch"
+        )
+    status = (
+        "blocked" if blockers else ("terminal" if terminal_status else "non_terminal")
+    )
+    return {
+        **base,
+        "status": status,
+        "terminal_status": terminal_status,
+        "order_quantity": _format_decimal(order_quantity),
+        "filled_quantity": _format_decimal(filled_quantity),
+        "cancelled_quantity": _format_decimal(cancelled_quantity),
+        "observation_id": str(observation.get("observation_id") or ""),
+        "evidence_fingerprint": str(observation.get("evidence_fingerprint") or ""),
+        "source_sequence": int(observation.get("source_sequence") or 0),
+        "fill_count": len(lifecycle_fills),
+        "fill_fingerprint": _fingerprint(lifecycle_fills),
+        "blockers": list(dict.fromkeys(blockers)),
+    }
+
+
 def _resolve_broker_order_lifecycle_collector_evidence(
     conn: sqlite3.Connection,
     observation: dict[str, Any],
