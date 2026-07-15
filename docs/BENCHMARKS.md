@@ -1,5 +1,7 @@
 # Benchmark Notes
 
+[中文](BENCHMARKS.zh.md) | [Documentation](README.en.md)
+
 Karkinos may learn from mature open-source finance and quant systems, but it
 must not copy their code or dilute its own safety boundary. These notes are
 architecture and product-design references only.
