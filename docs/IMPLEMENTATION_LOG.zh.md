@@ -25,6 +25,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   interlock、lifecycle evidence、operator projection 与 capital-scaling review。
 - provider-neutral adapter release manifest、append-only 人工 accept/reject/revoke 证据，以及
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
+- provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
+  绑定、最新结果优先与 prepare/commit 复核；不宣称支持真实 adapter。
 - connector-scoped soak recovery evidence：无 scope、无关或混合 connector 的 drill 不能满足
   promotion，同 scope 的最新失败会使旧 pass 与其签名 dossier acceptance 失效。
 
@@ -48,6 +50,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 默认关闭的 one-shot submission、unknown recovery 与 cross-order interlock；
 - 已签名的 exact-full-fill clearance 与 broker-neutral lifecycle ingestion；
 - 版本化 adapter capability/boundary manifest 与可撤销的 live collector release review gate；
+- 与 release review 绑定并在 live collector prepare/commit 前复核的 deterministic local adapter
+  conformance 证据；
 - connector-scoped、latest-result-wins 的 soak promotion recovery-drill gate；
 - 已持久化 operator projection 与 evidence-based scale review。
 

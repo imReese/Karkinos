@@ -6,6 +6,13 @@ from copy import deepcopy
 
 import pytest
 
+from account_truth.broker_adapter_conformance import (
+    BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    BrokerAdapterConformanceRepository,
+)
+from account_truth.broker_adapter_conformance_fixtures import (
+    run_deterministic_broker_adapter_conformance,
+)
 from account_truth.broker_adapter_release import (
     BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
     BrokerAdapterReleaseRejected,
@@ -79,8 +86,17 @@ def accept_release(
     preview: dict | None = None,
     review_id: str = "fixture-release-review-accepted-v1",
 ) -> dict:
+    effective_preview = preview or preview_manifest()
+    conformance = run_deterministic_broker_adapter_conformance(
+        effective_preview,
+        run_id=f"{review_id}-conformance",
+    )
+    BrokerAdapterConformanceRepository(repository._path).record_report(
+        conformance,
+        acknowledgement=BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    )
     return repository.record_review(
-        preview or preview_manifest(),
+        effective_preview,
         review_id=review_id,
         decision="accepted",
         reviewer_ref="fixture-human-reviewer",

@@ -39,7 +39,7 @@ authority, bypass risk, or call a broker directly.
 | v1.0-v1.3 | Completed | Strategy runtime, Paper Broker/OMS, broker evidence, professional Decision workflow |
 | v1.4-v1.7 | Completed | Attribution/cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, lifecycle evidence, capital-scaling review |
-| v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, capability/boundary matrix, append-only accept/reject/revoke review, and exact live collector binding; no real provider selected or registered |
+| v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, and exact live collector binding; no real provider selected or registered |
 | AI-native Phase 1-1.18 | Formula research vertical implemented | Provider-neutral, evidence-bound, human-reviewed research, memory, allowlisted Formula DSL, canonical after-cost backtest, and critique workflows without trading authority |
 
 Account Truth and reconciliation remain mandatory safety gates, but they are
@@ -93,10 +93,12 @@ still register no write adapter or release provider by default.
 **Exit gate:** the provider capability matrix and threat model are accepted;
 strategy, risk, Decision, and AI modules cannot import the provider SDK.
 
-Current state: the provider-neutral release manifest and append-only review gate
-are implemented, including prepare/commit drift and revocation checks. Selecting
-the real provider, accepting its actual ADR/threat model, and authorizing its
-deployment remain open and require explicit owner input.
+Current state: the provider-neutral release manifest, deterministic local
+conformance suite, append-only report, and review gate are implemented,
+including exact conformance-to-review binding and prepare/commit drift and
+revocation checks. The suite validates Karkinos contracts, not a real adapter.
+Selecting the real provider, accepting its actual ADR/threat model, and
+authorizing its deployment remain open and require explicit owner input.
 
 ### M1 — Read-Only Adapter and Soak
 
@@ -171,9 +173,9 @@ incident returns the system to `disabled`.
 
 ## Recommended Development Order
 
-1. Adapter ADR, capability matrix, threat model, and acceptance manifest.
-2. Provider-neutral conformance fixtures.
-3. Provider read-only adapter, collector integration, health, and soak.
+1. **Implemented foundation:** adapter ADR/capability/threat/deployment manifest contract.
+2. **Implemented foundation:** provider-neutral deterministic conformance fixtures and release binding.
+3. **Next after explicit provider approval:** provider read-only adapter, collector integration, health, and soak.
 4. Query/callback lifecycle and partial/cancel/unknown recovery.
 5. Default-closed write adapter and per-order submit/cancel gates.
 6. Reconciled ledger posting and financial invariants.

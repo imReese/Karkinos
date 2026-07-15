@@ -89,6 +89,9 @@ Required evidence:
   review, with exact provider, gateway, deployment, version, fingerprint,
   account alias, mode, capability, and process-boundary binding; rejection,
   revocation, or drift blocks new ingestion;
+- one latest passing deterministic local conformance report exactly bound to
+  that manifest and human review; this validates Karkinos contracts, not the
+  real adapter;
 - one reviewed adapter for cash, positions, orders, fills, session status,
   heartbeat, and source timestamps;
 - immutable snapshots, cursor, schema, deployment, capability health, and

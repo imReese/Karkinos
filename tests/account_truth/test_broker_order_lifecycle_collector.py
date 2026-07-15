@@ -7,6 +7,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from account_truth.broker_adapter_conformance import (
+    BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    BrokerAdapterConformanceRepository,
+    preview_broker_adapter_conformance_result,
+)
+from account_truth.broker_adapter_conformance_fixtures import (
+    run_deterministic_broker_adapter_conformance,
+)
 from account_truth.broker_adapter_release import (
     BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
     BrokerAdapterReleaseReviewRepository,
@@ -186,6 +194,14 @@ def _release_preview() -> dict:
 
 def _accept_live_release(db_path) -> dict:
     preview = _release_preview()
+    conformance = run_deterministic_broker_adapter_conformance(
+        preview,
+        run_id="fixture-live-conformance-v1",
+    )
+    BrokerAdapterConformanceRepository(db_path).record_report(
+        conformance,
+        acknowledgement=BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    )
     return BrokerAdapterReleaseReviewRepository(db_path).record_review(
         preview,
         review_id="fixture-release-review-accepted-v1",
@@ -788,6 +804,68 @@ def test_release_revocation_between_prepare_and_commit_blocks_restart_replay(
         in result["blockers"]
     )
     assert "broker_adapter_release_review_not_accepted" in result["blockers"]
+    assert (
+        BrokerOrderLifecycleEvidenceRepository(
+            db_path,
+            ensure_schema=False,
+        ).list_observations()
+        == []
+    )
+
+
+def test_newer_failed_conformance_between_prepare_and_commit_blocks_replay(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "collector-conformance-drift.db"
+    repository = BrokerOrderLifecycleCollectorRepository(db_path)
+    _accept_live_release(db_path)
+    live_payload = _batch(
+        run_id="collector-conformance-failed-during-prepare",
+        collection_mode="callback",
+        source_contact_status="read_only_contact",
+        connection_status="connected",
+        release_review_status="reviewed",
+        callbacks_received=1,
+    )
+    prepared = repository.prepare(
+        _preview(live_payload),
+        acknowledgement=BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    )
+
+    release_preview = _release_preview()
+    failed_result = run_deterministic_broker_adapter_conformance(
+        release_preview,
+        run_id="fixture-live-conformance-v2-failed",
+    )
+    failed_payload = {
+        key: deepcopy(failed_result[key])
+        for key in (
+            "run_id",
+            "release_evidence_ref",
+            "manifest_fingerprint",
+            "suite_version",
+            "fixture_kind",
+            "scenarios",
+            "provider_contacted",
+            "adapter_registered",
+            "broker_write_contacted",
+        )
+    }
+    failed_payload["schema_version"] = "karkinos.broker_adapter_conformance_result.v1"
+    failed_payload["scenarios"][0]["observed_status"] = "unexpected"
+    failed_preview = preview_broker_adapter_conformance_result(failed_payload)
+    BrokerAdapterConformanceRepository(db_path).record_report(
+        failed_preview,
+        acknowledgement=BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    )
+
+    restarted = BrokerOrderLifecycleCollectorRepository(db_path)
+    result = restarted.commit_prepared("collector-conformance-failed-during-prepare")
+
+    assert prepared["run_status"] == "prepared"
+    assert result["run_status"] == "blocked"
+    assert "broker_adapter_conformance_latest_report_not_passed" in (result["blockers"])
+    assert "broker_adapter_release_conformance_review_drift" in result["blockers"]
     assert (
         BrokerOrderLifecycleEvidenceRepository(
             db_path,

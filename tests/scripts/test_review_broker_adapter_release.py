@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import json
 
+from account_truth.broker_adapter_conformance import (
+    BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    BrokerAdapterConformanceRepository,
+)
+from account_truth.broker_adapter_conformance_fixtures import (
+    run_deterministic_broker_adapter_conformance,
+)
 from account_truth.broker_adapter_release import (
     BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
     BrokerAdapterReleaseReviewRepository,
+    preview_broker_adapter_release_manifest,
 )
 from scripts.review_broker_adapter_release import main
 from tests.account_truth.test_broker_adapter_release import (
@@ -24,6 +32,17 @@ def test_cli_preview_is_side_effect_free_and_acceptance_is_explicit(
     preview_code = main(["--file", str(manifest_path), "--db", str(db_path)])
     preview = json.loads(capsys.readouterr().out)
     database_created_by_preview = db_path.exists()
+    release_preview = preview_broker_adapter_release_manifest(
+        manifest_path.read_text(encoding="utf-8")
+    )
+    conformance = run_deterministic_broker_adapter_conformance(
+        release_preview,
+        run_id="cli-fixture-conformance-v1",
+    )
+    BrokerAdapterConformanceRepository(db_path).record_report(
+        conformance,
+        acknowledgement=BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    )
     record_code = main(
         [
             "--file",

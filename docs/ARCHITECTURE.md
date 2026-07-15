@@ -135,6 +135,7 @@ run identity, retry, status, limitations, and recovery tasks.
 
 ```text
 candidate adapter release manifest
+-> deterministic local conformance report
 -> human accept / reject / revoke review
 -> exact live collector deployment binding
 -> explicit broker import or collector evidence
@@ -148,13 +149,18 @@ candidate adapter release manifest
 Raw provider facts retain source identity. Duplicate, sequence, account,
 quantity, and schema conflicts fail closed.
 
-A collector's own release-status field is not authority. Live callback/poll
-ingestion resolves an append-only adapter release review and binds collector,
+A collector's own release-status field is not authority. Release acceptance
+first binds the latest passing deterministic conformance report to the exact
+manifest fingerprint. Live callback/poll ingestion then resolves the
+append-only adapter release review and binds collector,
 deployment fingerprint, provider, gateway, account alias, authorization,
 capability matrix, process boundaries, and rollback/privacy evidence at both
 prepare and commit. Missing, rejected, revoked, tampered, or drifted release
-evidence blocks ingestion. Acceptance neither registers an adapter nor grants
-broker-write or capital authority.
+evidence blocks ingestion. A newer conformance result, including a newer pass,
+requires a new human review; a newer failure invalidates the old eligibility.
+The local suite validates Karkinos contracts and does not claim a real adapter
+works. Acceptance neither registers an adapter nor grants broker-write or
+capital authority.
 
 Read-only soak promotion also binds recovery evidence to one exact connector.
 Unscoped, unrelated, or mixed-connector drills cannot satisfy another
