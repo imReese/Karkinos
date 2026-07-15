@@ -83,6 +83,7 @@ kill switch 与运营健康
 - 不可变 snapshot、cursor、schema、deployment、capability health 与 freshness；
 - 启动、盘中与日终对账；
 - disconnect、stale、duplicate、out-of-order、partial-batch、schema-drift 与 restart 演练；
+- drill evidence 绑定精确 connector/release scope，且同 scope 的最新结果优先于旧 pass；
 - 至少 20 个经复核交易日，且没有未解决的 critical mismatch。
 
 退出条件：soak 期间适配器不暴露写能力，每个事实都可追溯到经过复核的

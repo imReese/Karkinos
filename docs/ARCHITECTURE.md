@@ -156,6 +156,12 @@ prepare and commit. Missing, rejected, revoked, tampered, or drifted release
 evidence blocks ingestion. Acceptance neither registers an adapter nor grants
 broker-write or capital authority.
 
+Read-only soak promotion also binds recovery evidence to one exact connector.
+Unscoped, unrelated, or mixed-connector drills cannot satisfy another
+connector's dossier. For each drill type, the newest matching scoped result is
+authoritative; a later failure invalidates the earlier pass and changes the
+dossier fingerprint, so an old operator acceptance no longer matches.
+
 ### Controlled execution
 
 ```text

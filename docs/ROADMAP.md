@@ -109,6 +109,9 @@ broker implicitly.
 evidence with no unresolved critical cash, position, order, or fill mismatch.
 Disconnect, duplicate, out-of-order, cursor-gap, schema-drift, partial-batch,
 adapter-restart, and Karkinos-restart drills fail safely and deterministically.
+Every drill and conformance result is bound to the exact connector/release
+scope; unrelated evidence cannot satisfy the gate, and a newer scoped failure
+invalidates an older pass.
 
 ### M2 — Full Order Lifecycle and Recovery
 

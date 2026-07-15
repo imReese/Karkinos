@@ -99,6 +99,8 @@ schema version、cursor、batch 和 deployment identity。GET 和告警路径不
 **退出门：** 连续 20 个已复核交易日具备完整 startup/intraday/EOD 证据，没有未解决的 critical
 现金、持仓、订单或成交差异；断线、重复、乱序、cursor gap、schema drift、partial batch、
 adapter restart 和 Karkinos restart 演练均确定性降级并安全阻断。
+每个 drill 与 conformance result 必须绑定精确 connector/release scope；无关证据不能满足门禁，
+同 scope 的较新失败会使旧 pass 失效。
 
 ### M2 — 完整订单生命周期与恢复
 

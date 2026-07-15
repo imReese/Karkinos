@@ -321,7 +321,9 @@ class BrokerConnectorSoakPromotionService:
                     f"runbook_phase_coverage_incomplete:{phase}:"
                     f"{len(covered)}/{len(selected_days)}"
                 )
-        drill_coverage, drill_refs = self._drill_coverage()
+        drill_coverage, drill_refs = self._drill_coverage(
+            connector_id=connector_id,
+        )
         for drill_type in _REQUIRED_DRILLS:
             if not drill_coverage.get(drill_type):
                 blockers.append(f"recovery_drill_missing:{drill_type}")
@@ -415,7 +417,11 @@ class BrokerConnectorSoakPromotionService:
             phase: sorted(days) for phase, days in sorted(coverage.items())
         }, sorted(set(refs))
 
-    def _drill_coverage(self) -> tuple[dict[str, bool], list[str]]:
+    def _drill_coverage(
+        self,
+        *,
+        connector_id: str,
+    ) -> tuple[dict[str, bool], list[str]]:
         rows = self._db.list_events_sync(
             event_type=BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
             entity_type=BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
@@ -423,15 +429,31 @@ class BrokerConnectorSoakPromotionService:
             limit=500,
         )
         coverage = {drill_type: False for drill_type in _REQUIRED_DRILLS}
+        resolved: set[str] = set()
         refs: list[str] = []
         for row in rows:
             payload = _json_object(row.get("payload_json"))
             drill_type = str(payload.get("drill_type") or "")
-            if drill_type in coverage and payload.get("drill_status") == "passed":
-                coverage[drill_type] = True
-                refs.append(
-                    f"broker_soak_drill:{payload.get('drill_id') or row.get('id')}"
+            if drill_type not in coverage or drill_type in resolved:
+                continue
+            first_scope = _drill_connector_scope(
+                payload.get("first_observations"),
+            )
+            if first_scope != {connector_id}:
+                continue
+            passed = payload.get("drill_status") == "passed"
+            if drill_type in {"duplicate_evidence", "restart_recovery"}:
+                second_scope = _drill_connector_scope(
+                    payload.get("second_observations"),
                 )
+                if passed and second_scope != {connector_id}:
+                    resolved.add(drill_type)
+                    continue
+            resolved.add(drill_type)
+            if not passed:
+                continue
+            coverage[drill_type] = passed
+            refs.append(f"broker_soak_drill:{payload.get('drill_id') or row.get('id')}")
         return coverage, sorted(set(refs))
 
     def _account_truth_evidence(self) -> dict[str, Any]:
@@ -619,6 +641,16 @@ def _connector_id(connector: Any) -> str:
         or getattr(getattr(connector, "snapshot", None), "connector_id", "")
         or ""
     ).strip()
+
+
+def _drill_connector_scope(value: Any) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    return {
+        str(item.get("connector_id") or "").strip()
+        for item in value
+        if isinstance(item, dict) and str(item.get("connector_id") or "").strip()
+    }
 
 
 def _blocked_account_truth(blockers: list[str]) -> dict[str, Any]:

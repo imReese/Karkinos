@@ -92,10 +92,13 @@ curl -sS -X POST \
 The preview remains blocked unless it can select exactly 20 unique healthy
 days with clear, zero-open-item execution reconciliation; find passed startup,
 intraday, and end-of-day runs for every selected day; find all five passed
-drills; retain one stable account alias/hash; and recompute current Account
-Truth as pass, fresh, and zero-unresolved. The Account Truth fingerprint changes
-when its import, ledger projection, reconciliation items, or manual reviews
-change.
+drills scoped exactly to that connector; retain one stable account alias/hash;
+and recompute current Account Truth as pass, fresh, and zero-unresolved. An
+unscoped drill, a drill for another connector, or a mixed-connector drill cannot
+satisfy the dossier. For each drill type, the newest matching scoped result
+wins, so a later failure invalidates an older pass and any prior acceptance.
+The Account Truth fingerprint changes when its import, ledger projection,
+reconciliation items, or manual reviews change.
 
 If the dossier is review-ready, request an operator-approval challenge with:
 
