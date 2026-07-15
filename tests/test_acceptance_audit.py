@@ -42,7 +42,6 @@ from analytics.acceptance_audit import (
 )
 
 
-
 def test_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
     audit = build_acceptance_audit()
 
