@@ -6,8 +6,11 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable
+
+from dotenv import dotenv_values, set_key, unset_key
 
 Provider = str
 TokenReader = Callable[[], str]
@@ -32,6 +35,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=SUPPORTED_PROVIDERS,
         help="Data source provider to configure.",
     )
+    parser.add_argument(
+        "--env-file",
+        default=None,
+        help="Credential environment file. Defaults to KARKINOS_ENV_FILE or ./.env.",
+    )
     return parser.parse_args(argv)
 
 
@@ -46,9 +54,25 @@ def save_config(config_path: Path, config: dict[str, Any]) -> None:
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
 
 
+def save_tushare_environment_token(env_path: Path, token: str | None) -> None:
+    """Persist or remove the TuShare credential without placing it in JSON."""
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    if token is None:
+        if env_path.exists():
+            if "TUSHARE_TOKEN" in dotenv_values(env_path):
+                unset_key(str(env_path), "TUSHARE_TOKEN")
+            env_path.chmod(0o600)
+        return
+    if not env_path.exists():
+        env_path.touch(mode=0o600)
+    set_key(str(env_path), "TUSHARE_TOKEN", token, quote_mode="always")
+    env_path.chmod(0o600)
+
+
 def save_data_source_config(
     *,
     config_path: Path,
+    env_path: Path,
     provider: Provider,
     token_reader: TokenReader,
 ) -> dict[str, Any]:
@@ -64,18 +88,22 @@ def save_data_source_config(
     else:
         data_source = {}
 
-    for legacy_field in ("tushare_token", "live_poll_interval"):
-        if legacy_field in config:
-            data_source[legacy_field] = config.pop(legacy_field)
+    if "tushare_token" in config or "tushare_token" in data_source:
+        raise ValueError(
+            "tushare_token is not accepted in config.json; remove it and use "
+            "TUSHARE_TOKEN in the selected environment file"
+        )
+    if "live_poll_interval" in config:
+        data_source["live_poll_interval"] = config.pop("live_poll_interval")
     data_source["provider"] = provider
 
     if provider == "akshare":
-        data_source.pop("tushare_token", None)
+        save_tushare_environment_token(env_path, None)
     else:
         token = token_reader().strip()
         if not token:
             raise ValueError("TuShare token is required when provider is tushare")
-        data_source["tushare_token"] = token
+        save_tushare_environment_token(env_path, token)
 
     config["data_source"] = data_source
     save_config(config_path, config)
@@ -97,17 +125,20 @@ def prompt_provider() -> Provider:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     config_path = Path(args.config_path)
+    env_path = Path(args.env_file or os.environ.get("KARKINOS_ENV_FILE") or ".env")
     provider = args.provider or prompt_provider()
 
     save_data_source_config(
         config_path=config_path,
+        env_path=env_path,
         provider=provider,
         token_reader=lambda: getpass.getpass("TuShare token: "),
     )
 
     print(f"Saved local data source provider: {provider}")
     print(f"Local runtime config: {config_path}")
-    print("Do not commit config.json or paste tokens into commands.")
+    print(f"Credential environment file: {env_path}")
+    print("Do not commit config.json/.env or paste tokens into commands.")
     return 0
 
 

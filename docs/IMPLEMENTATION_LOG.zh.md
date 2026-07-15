@@ -19,6 +19,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - provider-neutral、evidence-bound 的 AI 研究、复核与 memory lineage；
 - 基于精确保存数据集、人工门禁和 allowlisted Formula DSL 的研究，由 canonical backtest engine
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
+- fail-fast 分组运行配置、仅限环境变量的 TuShare/AI 凭证，以及 Server 与旧 CLI 共用的 dotenv
+  选择路径；
 - 已签名有界执行 policy、原子预算、runtime session、live gate、pause/replacement、submission
   interlock、lifecycle evidence、operator projection 与 capital-scaling review。
 

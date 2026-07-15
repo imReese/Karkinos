@@ -762,9 +762,6 @@ def _resolve_api_key(
         provider_value = str(environment.get(provider_env_name) or "").strip()
         if provider_value:
             return provider_value, f"environment:{provider_env_name}"
-    local_value = str(ai.api_keys.get(provider_id) or "").strip()
-    if local_value:
-        return local_value, "ignored_local_config"
     return "", "missing"
 
 

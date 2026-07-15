@@ -110,6 +110,18 @@ def load_runtime_environment_file(
     return True
 
 
+def load_selected_runtime_environment_file(
+    explicit_path: str | Path | None = None,
+) -> bool:
+    """Load the CLI-selected, process-selected, or default runtime dotenv file."""
+    configured_path = os.environ.get("KARKINOS_ENV_FILE")
+    env_file = explicit_path or configured_path or ".env"
+    return load_runtime_environment_file(
+        env_file,
+        required=explicit_path is not None or configured_path is not None,
+    )
+
+
 def load_runtime_config(
     config_cls: type[BacktestConfig] = BacktestConfig, **overrides: Any
 ) -> BacktestConfig:

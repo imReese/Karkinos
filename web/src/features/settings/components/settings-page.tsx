@@ -61,10 +61,6 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function isMaskedToken(value: string) {
-  return value.startsWith('****');
-}
-
 function dailyTaskKey() {
   return `karkinos.tushareDailyTasks.${new Date().toISOString().slice(0, 10)}`;
 }
@@ -85,7 +81,6 @@ export function SettingsPage() {
   const { locale, setLocale, theme, setTheme, resolvedTheme } =
     usePreferences();
   const [dataSource, setDataSource] = useState('');
-  const [providerToken, setProviderToken] = useState('');
   const [pollInterval, setPollInterval] = useState('60');
   const [accountCommissionRate, setAccountCommissionRate] = useState('0.0001');
   const [accountMinCommission, setAccountMinCommission] = useState('5');
@@ -105,7 +100,6 @@ export function SettingsPage() {
       return;
     }
     setDataSource(settings.data.data_source);
-    setProviderToken(settings.data.tushare_token);
     setPollInterval(String(settings.data.live_poll_interval));
     setAccountCommissionRate(String(settings.data.account_commission_rate));
     setAccountMinCommission(String(settings.data.account_min_commission));
@@ -452,10 +446,9 @@ export function SettingsPage() {
     }
     return (
       dataSource !== settings.data.data_source ||
-      providerToken !== settings.data.tushare_token ||
       Number(pollInterval) !== settings.data.live_poll_interval
     );
-  }, [dataSource, pollInterval, providerToken, settings.data]);
+  }, [dataSource, pollInterval, settings.data]);
 
   const accountCommissionChanged = useMemo(() => {
     if (!settings.data) {
@@ -472,7 +465,6 @@ export function SettingsPage() {
     const normalizedInterval = Math.max(Number(pollInterval) || 60, 15);
     await updateDataSource.mutateAsync({
       data_source: dataSource.trim() || settings.data?.data_source || 'akshare',
-      tushare_token: providerToken,
       live_poll_interval: normalizedInterval,
     });
     setPollInterval(String(normalizedInterval));
@@ -997,30 +989,34 @@ export function SettingsPage() {
                   </span>
                 </div>
               </label>
-              <label className="grid gap-2">
+              <div className="grid gap-2">
                 <span className="text-sm font-medium">
                   {copy.settings.token}
                 </span>
-                <input
+                <div
+                  className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-sm"
+                  role="status"
                   aria-label={copy.settings.token}
-                  className="app-field rounded-2xl px-3 py-2 text-sm"
-                  value={providerToken}
-                  onChange={(event) => setProviderToken(event.target.value)}
-                  disabled={settings.isLoading || dataSource !== 'tushare'}
-                />
-                {isMaskedToken(providerToken) ? (
-                  <span className="app-muted text-xs">
-                    {copy.settings.maskedToken}
-                  </span>
-                ) : null}
-              </label>
+                >
+                  {dataSource !== 'tushare'
+                    ? copy.settings.credentialNotRequired
+                    : settings.data?.tushare_token_configured
+                      ? copy.settings.credentialConfigured
+                      : copy.settings.credentialMissing}
+                </div>
+                <span className="app-muted text-xs leading-5">
+                  {copy.settings.credentialEnvironmentDetail}
+                </span>
+              </div>
               <button
                 type="submit"
                 className="app-button-primary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={
                   settings.isLoading ||
                   updateDataSource.isPending ||
-                  !dataSourceChanged
+                  !dataSourceChanged ||
+                  (dataSource === 'tushare' &&
+                    !settings.data?.tushare_token_configured)
                 }
                 aria-busy={updateDataSource.isPending}
               >

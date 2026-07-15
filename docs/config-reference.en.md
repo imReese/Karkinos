@@ -45,7 +45,7 @@ The recommended configuration has four groups. See the repository-root [`config.
 | Group | Purpose |
 | --- | --- |
 | `server` | Web server, CORS, scheduler, and notification |
-| `data_source` | Market-data provider, legacy TuShare token entry, and polling |
+| `data_source` | Market-data provider and polling; credentials are environment-only |
 | `broker_fee` | Broker fee modeling |
 | `ai` | External-model connection settings; credentials default to environment variables |
 
@@ -66,7 +66,6 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `provider` | string | `akshare` | `akshare` or `tushare`. |
-| `tushare_token` | string | empty | Compatibility input; prefer `TUSHARE_TOKEN` for new deployments. |
 | `live_poll_interval` | integer | `60` | Market and scheduler polling interval in seconds. |
 
 The interactive setup script preserves the grouped shape:
@@ -76,7 +75,7 @@ uv run python scripts/configure_data_source.py --provider akshare
 uv run python scripts/configure_data_source.py --provider tushare
 ```
 
-The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script writes the Git-ignored `config.json`; environment variables remain preferable for containers and long-lived deployments.
+The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script writes only provider/polling settings to the Git-ignored `config.json`, and writes the token to a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
 
 ### broker_fee
 
@@ -87,6 +86,10 @@ The TuShare token is read through a hidden prompt and is never accepted as a CLI
 | `account_profile_id` | string | Sanitized profile id, never a full brokerage account number. |
 | `broker_name` | string | Broker display name. |
 | `schedule_id` | string | Fee-rule identifier. |
+| `display_name` | string | Local human-readable description only. |
+| `currency` | string | Fee-model currency descriptor, such as `CNY`. |
+| `source_type` | string | Sanitized source type for the fee input. |
+| `precedence` | string | Declares that broker statements override config estimates. |
 | `stock_a_commission_rate` | number/string | A-share commission rate. |
 | `stock_a_min_commission` | number/string | A-share minimum commission. |
 | `fund_etf_commission_rate` | number/string | ETF/exchange-fund commission rate. |
@@ -99,6 +102,8 @@ The TuShare token is read through a hidden prompt and is never accepted as a CLI
 | `limitations` | string[] | Known assumptions and review items. |
 
 `account_identifier_saved`, `screenshots_saved`, and `private_exports_saved` must remain `false`. Full account identifiers, screenshots, statements, and real exports are forbidden.
+
+The parser also accepts `profile_id`, `schema_version`, `source`, `effective_from`, `captured_at`, `rounding`, `rule_application`, `broker_absorbed_components`, `commission`, and `taxes_and_fees` as structured import/normalization inputs. They do not become separate account facts; runtime retains only normalized fee terms, schedule/profile identity, and limitations.
 
 `broker_fee_schedule`, `account_commission_rate`, and `account_min_commission` are migration-only inputs. New writes use `broker_fee`.
 
@@ -116,7 +121,7 @@ The TuShare token is read through a hidden prompt and is never accepted as a CLI
 
 Enabling `ai.enabled` requires explicit `provider`, `model`, and credential-free HTTPS `base_url` values. Core code does not guess an endpoint for DeepSeek or any other vendor.
 
-`ai.api_keys` remains a legacy ignored-local-config migration input but is omitted from the recommended example. Do not commit API keys.
+`ai.api_keys` is no longer accepted. API keys must come from environment variables; configuring this field in JSON stops startup.
 
 `allow_financial_context` has been removed. Keeping it now stops startup with a migration hint; remove the field. Each external evidence flow is constrained by its exact human confirmation, immutable evidence scope, and API contract, so one global boolean cannot widen that boundary.
 
@@ -125,7 +130,6 @@ AI credentials resolve in this order:
 1. `KARKINOS_AI_API_KEY`;
 2. the environment variable named by `ai.api_key_env`;
 3. the provider-derived `<PROVIDER>_API_KEY`;
-4. the legacy local `ai.api_keys` value.
 
 ## Environment variables
 
@@ -142,7 +146,7 @@ AI credentials resolve in this order:
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | comma-separated `server.cors_allowed_origins` |
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
-| `TUSHARE_TOKEN` | `data_source.tushare_token` |
+| `TUSHARE_TOKEN` | TuShare edge credential; never enters `config.json` or the Settings API |
 
 Runtime and AI overrides are handled by the same startup loader. Booleans accept `true/false`, `1/0`, `yes/no`, and `on/off`. Misspellings stop startup. Ports, polling intervals, AI timeout, HTTPS base URLs, and empty CORS lists are also validated.
 

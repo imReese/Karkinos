@@ -14,7 +14,12 @@ from core.event_bus import EventBus
 from core.events import SignalEvent
 from data.live import LiveDataFeed
 from notification.notifier import build_notifier, format_signal_message
-from server.bootstrap import build_strategy, create_runtime_context, load_runtime_config
+from server.bootstrap import (
+    build_strategy,
+    create_runtime_context,
+    load_runtime_config,
+    load_selected_runtime_environment_file,
+)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -24,6 +29,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.parse_args(argv)
 
+    load_selected_runtime_environment_file()
     config = load_runtime_config()
     runtime = create_runtime_context(config)
     event_bus = EventBus()

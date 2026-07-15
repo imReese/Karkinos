@@ -26,7 +26,7 @@ const defaultSettings = {
   short_period: 5,
   long_period: 20,
   data_source: 'akshare',
-  tushare_token: '****1234',
+  tushare_token_configured: true,
   notification: { type: 'console' },
   live_poll_interval: 60,
   account_commission_rate: 0.0001,
@@ -374,13 +374,45 @@ test('saves data source settings through the settings endpoint', async () => {
         method: 'PUT',
         body: JSON.stringify({
           data_source: 'akshare',
-          tushare_token: '****1234',
           live_poll_interval: 90,
         }),
       }),
     );
   });
+  expect(
+    screen.queryByRole('textbox', { name: 'TuShare credential' }),
+  ).toBeNull();
+  expect(
+    await screen.findByText('Not required by the selected provider'),
+  ).toBeTruthy();
   expect(await screen.findByText('Data settings saved')).toBeTruthy();
+});
+
+test('blocks TuShare selection until the environment credential is configured', async () => {
+  const user = userEvent.setup();
+  renderSettingsPage({
+    settings: { ...defaultSettings, tushare_token_configured: false },
+  });
+
+  await user.click(
+    await screen.findByRole('button', { name: 'Data source: Tushare' }),
+  );
+
+  expect(
+    await screen.findByText(
+      'Missing; configure TUSHARE_TOKEN before switching',
+    ),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Save data settings',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    screen.queryByRole('textbox', { name: 'TuShare credential' }),
+  ).toBeNull();
 });
 
 test('saves account commission settings through the settings endpoint', async () => {
