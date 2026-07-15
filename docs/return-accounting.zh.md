@@ -1,5 +1,7 @@
 # Karkinos 收益与成本口径
 
+[English](return-accounting.en.md) | [中文文档](README.zh.md)
+
 本文记录 Karkinos Web 与后端 API 中收益、成本和基准价的基础口径。目标是让组合级数字、单只股票/基金数字、收益日历和持仓详情使用同一套可解释规则。
 
 Karkinos 不提供投资建议，也不保证行情或券商成本永远完全一致；这些口径用于本地组合驾驶舱的可追溯计算与诊断。

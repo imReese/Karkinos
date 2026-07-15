@@ -1,6 +1,6 @@
 # Karkinos 路线图
 
-[English Roadmap](ROADMAP.md) | [战略目标](KARKINOS_GOAL.md) | [架构](ARCHITECTURE.md) | [实现记录](IMPLEMENTATION_LOG.md)
+[English Roadmap](ROADMAP.md) | [战略目标](KARKINOS_GOAL.zh.md) | [架构](ARCHITECTURE.zh.md) | [实现记录](IMPLEMENTATION_LOG.zh.md)
 
 ## 文档职责
 

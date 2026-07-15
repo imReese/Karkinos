@@ -1,5 +1,7 @@
 # Account Truth 导入预览
 
+[English](account-truth-import.en.md) | [中文文档](README.zh.md)
+
 Account Truth 用于把本地券商交割单、资金流水或持仓快照先转换成可审计的
 broker evidence，再由后续对账流程决定是否需要人工处理。当前实现提供
 canonical broker statement CSV 的只读导入预览，以及 staged broker evidence

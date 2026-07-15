@@ -27,23 +27,24 @@ npm --prefix web run build
 npm --prefix web run test
 ```
 
-更完整的运行参数、通知、数据目录和本地配置见
-[配置参考](config-reference.zh.md)。
+更完整的运行参数、通知、数据目录和本地配置见配置参考：
+[中文](config-reference.zh.md) / [English](config-reference.en.md)。
 
 ## 从哪里开始
 
-| 目标 | 文档 |
+| 主题 | 语言版本 |
 | --- | --- |
-| 理解产品定位和长期边界 | [Karkinos Goal](KARKINOS_GOAL.md) |
-| 查看当前版本优先级 | [路线图](ROADMAP.zh.md) |
-| 理解系统分层和权限边界 | [架构](ARCHITECTURE.md) |
-| 查看已完成版本和验证摘要 | [实现记录](IMPLEMENTATION_LOG.md) |
-| 配置本地服务、通知和数据目录 | [配置参考](config-reference.zh.md) |
-| 导入并复核 Account Truth | [Account Truth 导入](account-truth-import.zh.md) |
-| 理解收益和现金流口径 | [收益核算](return-accounting.zh.md) |
-| 理解订单生命周期采集 | [券商订单生命周期](broker-order-lifecycle-ingestion.zh.md) |
-| 理解受控执行的安全门 | [受控执行计划](CONTROLLED_EXECUTION_PLAN.md) |
-| 查看外部项目参考边界 | [Benchmarks](BENCHMARKS.md) |
+| 产品介绍、安装与工作流入口 | [中文](README.zh.md) / [English](README.en.md) |
+| 产品定位和长期边界 | [中文](KARKINOS_GOAL.zh.md) / [English](KARKINOS_GOAL.md) |
+| 当前优先级、里程碑和验收门禁 | [中文](ROADMAP.zh.md) / [English](ROADMAP.md) |
+| 系统分层、流程和权限边界 | [中文](ARCHITECTURE.zh.md) / [English](ARCHITECTURE.md) |
+| 本地服务、通知和数据配置 | [中文](config-reference.zh.md) / [English](config-reference.en.md) |
+| Account Truth 导入与复核契约 | [中文](account-truth-import.zh.md) / [English](account-truth-import.en.md) |
+| 组合收益和成本口径 | [中文](return-accounting.zh.md) / [English](return-accounting.en.md) |
+| 券商订单生命周期采集 | [中文](broker-order-lifecycle-ingestion.zh.md) / [English](broker-order-lifecycle-ingestion.en.md) |
+| 受控执行安全门 | [中文](CONTROLLED_EXECUTION_PLAN.zh.md) / [English](CONTROLLED_EXECUTION_PLAN.md) |
+| 已完成版本和验证摘要 | [中文](IMPLEMENTATION_LOG.zh.md) / [English](IMPLEMENTATION_LOG.md) |
+| 外部项目参考边界 | [中文](BENCHMARKS.zh.md) / [English](BENCHMARKS.md) |
 
 ## 日常工作流
 
