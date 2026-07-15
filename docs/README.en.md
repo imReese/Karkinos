@@ -33,19 +33,34 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
 
 ## Documentation map
 
-| Topic | Languages |
-| --- | --- |
-| Product introduction, installation, and workflow index | [中文](README.zh.md) / [English](README.en.md) |
-| Product North Star and durable boundaries | [中文](KARKINOS_GOAL.zh.md) / [English](KARKINOS_GOAL.md) |
-| Current priorities, milestones, and acceptance gates | [中文](ROADMAP.zh.md) / [English](ROADMAP.md) |
-| Components, flows, and authority boundaries | [中文](ARCHITECTURE.zh.md) / [English](ARCHITECTURE.md) |
-| Local runtime configuration | [中文](config-reference.zh.md) / [English](config-reference.en.md) |
-| Account Truth import and review contract | [中文](account-truth-import.zh.md) / [English](account-truth-import.en.md) |
-| Portfolio return and cost accounting | [中文](return-accounting.zh.md) / [English](return-accounting.en.md) |
-| Broker-order lifecycle ingestion | [中文](broker-order-lifecycle-ingestion.zh.md) / [English](broker-order-lifecycle-ingestion.en.md) |
-| Controlled-execution safety plan | [中文](CONTROLLED_EXECUTION_PLAN.zh.md) / [English](CONTROLLED_EXECUTION_PLAN.md) |
-| Completed release evidence | [中文](IMPLEMENTATION_LOG.zh.md) / [English](IMPLEMENTATION_LOG.md) |
-| External-project reference boundary | [中文](BENCHMARKS.zh.md) / [English](BENCHMARKS.md) |
+### Core
+
+- [Product goal](KARKINOS_GOAL.md) — North Star, durable promises, and
+  boundaries that must not be crossed.
+- [Roadmap](ROADMAP.md) — current priorities, milestones, acceptance gates,
+  and development order.
+- [Architecture](ARCHITECTURE.md) — system layers, core flows, authority
+  boundaries, and failure semantics.
+
+### Guides
+
+- [Account Truth import and review](account-truth-import.en.md) — preview,
+  evidence staging, reconciliation, and human disposition.
+- [Return and cost accounting](return-accounting.en.md) — shared rules for
+  today's, unrealized, and realized results.
+- [Broker-order lifecycle](broker-order-lifecycle-ingestion.en.md) — read-only
+  lifecycle evidence and collector ingestion.
+- [Controlled execution](CONTROLLED_EXECUTION_PLAN.md) — human authority,
+  runtime gates, recovery, and capital-scaling rules.
+
+### Reference
+
+- [Configuration reference](config-reference.en.md) — local runtime, market
+  data, fees, connector, and authority fields.
+- [Implementation log](IMPLEMENTATION_LOG.md) — release-level outcomes and
+  validation ownership.
+- [Benchmark notes](BENCHMARKS.md) — design lessons and prohibited product
+  bindings from external projects.
 
 ## Core workflows
 
