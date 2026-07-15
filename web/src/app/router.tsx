@@ -3272,6 +3272,14 @@ export function RiskPage() {
     todayDecision.data?.summary.candidate_count ??
     0;
   const riskCheckedCount = riskReviewEvidence?.risk_checked_count ?? 0;
+  const isInitialRiskLoad =
+    (!state.data && state.isLoading) ||
+    (!risks.data && risks.isLoading) ||
+    (!workspace.data && workspace.isLoading);
+  const isRiskWorkspaceUnavailable = !state.data || !workspace.data;
+  const hasRiskRefreshError =
+    !isRiskWorkspaceUnavailable &&
+    (state.isError || risks.isError || workspace.isError);
   const runBatchRiskGate = async () => {
     setBatchRiskMessage(null);
     setBatchRiskError(null);
@@ -3298,16 +3306,12 @@ export function RiskPage() {
         subtitle={copy.riskPage.subtitle}
       />
 
-      {state.isLoading || risks.isLoading || workspace.isLoading ? (
+      {isInitialRiskLoad ? (
         <StatusCard
           title={copy.states.loading}
           detail={copy.riskPage.loading}
         />
-      ) : state.isError ||
-        risks.isError ||
-        workspace.isError ||
-        !state.data ||
-        !workspace.data ? (
+      ) : isRiskWorkspaceUnavailable ? (
         <StatusCard
           title={copy.states.error}
           detail={copy.riskPage.error}
@@ -3315,6 +3319,14 @@ export function RiskPage() {
         />
       ) : (
         <div className="space-y-5 sm:space-y-6">
+          {hasRiskRefreshError ? (
+            <div
+              role="status"
+              className="rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--app-warning)]"
+            >
+              {copy.riskPage.refreshError}
+            </div>
+          ) : null}
           {riskReviewTask ? (
             <section
               data-testid="risk-decision-handoff"

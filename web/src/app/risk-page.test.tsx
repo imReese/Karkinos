@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -299,7 +299,7 @@ function renderRiskPage(options?: {
       </QueryClientProvider>
     </PreferencesProvider>,
   );
-  return fetchMock;
+  return { fetchMock, queryClient };
 }
 
 beforeEach(() => {
@@ -411,7 +411,7 @@ test('localizes decision risk handoff without asking users to inspect every risk
 
 test('runs batch pre-trade risk gate from the risk handoff panel', async () => {
   const user = userEvent.setup();
-  const fetchMock = renderRiskPage({ locale: 'zh' });
+  const { fetchMock } = renderRiskPage({ locale: 'zh' });
 
   const handoff = await screen.findByTestId('risk-decision-handoff');
   await user.click(
@@ -426,6 +426,35 @@ test('runs batch pre-trade risk gate from the risk handoff panel', async () => {
   expect(
     await screen.findByText('批量风控完成：通过 48，阻断 2。'),
   ).toBeTruthy();
+});
+
+test('keeps the last persisted risk projection visible when a post-run refresh fails', async () => {
+  const user = userEvent.setup();
+  const { fetchMock, queryClient } = renderRiskPage({ locale: 'zh' });
+
+  const handoff = await screen.findByTestId('risk-decision-handoff');
+  await user.click(
+    within(handoff).getByRole('button', { name: '运行批量风控' }),
+  );
+  expect(
+    await screen.findByText('批量风控完成：通过 48，阻断 2。'),
+  ).toBeTruthy();
+
+  fetchMock.mockRejectedValueOnce(new Error('temporary refresh failure'));
+  await act(async () => {
+    await queryClient.refetchQueries({
+      queryKey: ['portfolio-risk-workspace'],
+      exact: true,
+    });
+  });
+
+  expect(
+    await screen.findByText(
+      '部分风控数据暂时无法刷新。当前显示最近一次成功加载的持久化投影，继续操作前请复核数据状态。',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText('现金占比')).toBeTruthy();
+  expect(screen.queryByText('风控中心加载失败。')).toBeNull();
 });
 
 test('localizes risk blocking detail codes before rendering alerts', async () => {

@@ -705,6 +705,8 @@ export const copy = {
         'Review current alerts, capital pressure, and equity attribution in one place.',
       loading: 'Loading risk control center.',
       error: 'Failed to load risk control center.',
+      refreshError:
+        'Some risk data could not be refreshed. Showing the last successful persisted projection; review data status before acting.',
       decisionHandoffKicker: 'Decision handoff',
       decisionHandoffTitle: 'Run pre-trade risk gate for candidates',
       decisionHandoffDetail: (candidates: number, checked: number) =>
@@ -3150,6 +3152,8 @@ export const copy = {
       subtitle: '统一查看风险提示、资金压力与净值归因。',
       loading: '正在加载风控中心。',
       error: '风控中心加载失败。',
+      refreshError:
+        '部分风控数据暂时无法刷新。当前显示最近一次成功加载的持久化投影，继续操作前请复核数据状态。',
       decisionHandoffKicker: '决策交接',
       decisionHandoffTitle: '候选动作需要下单前风控',
       decisionHandoffDetail: (candidates: number, checked: number) =>
