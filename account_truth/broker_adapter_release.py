@@ -11,6 +11,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from account_truth.broker_adapter_conformance import (
+    BrokerAdapterConformanceRepository,
+)
+
 BROKER_ADAPTER_RELEASE_MANIFEST_SCHEMA_VERSION = (
     "karkinos.broker_adapter_release_manifest.v1"
 )
@@ -329,6 +333,29 @@ class BrokerAdapterReleaseReviewRepository:
 
         release_ref = str(preview["release_evidence_ref"])
         manifest_fingerprint = str(preview["manifest_fingerprint"])
+        conformance_run_id = ""
+        conformance_report_fingerprint = ""
+        if normalized_decision == "accepted":
+            conformance = BrokerAdapterConformanceRepository(
+                self._path,
+                ensure_schema=False,
+            ).verify_release_binding(
+                release_evidence_ref=release_ref,
+                manifest_fingerprint=manifest_fingerprint,
+            )
+            if conformance.get("blockers"):
+                raise BrokerAdapterReleaseRejected(
+                    "adapter release conformance evidence is blocked",
+                    evidence=_rejection(
+                        preview,
+                        [
+                            "broker_adapter_release_conformance_blocked",
+                            *[str(item) for item in conformance.get("blockers") or []],
+                        ],
+                    ),
+                )
+            conformance_run_id = str(conformance["run_id"])
+            conformance_report_fingerprint = str(conformance["report_fingerprint"])
         manifest_payload = _manifest_core(preview)
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(self._path, timeout=2) as conn:
@@ -387,6 +414,8 @@ class BrokerAdapterReleaseReviewRepository:
                     "reviewer_ref": normalized_reviewer,
                     "reviewed_at": normalized_reviewed_at,
                     "reason_ref": normalized_reason,
+                    "conformance_run_id": conformance_run_id,
+                    "conformance_report_fingerprint": conformance_report_fingerprint,
                 }
             )
             if existing_review is not None:
@@ -441,8 +470,9 @@ class BrokerAdapterReleaseReviewRepository:
                 INSERT INTO broker_adapter_release_review_events (
                     review_id, release_evidence_ref, manifest_fingerprint,
                     decision, reviewer_ref, reviewed_at, reason_ref,
+                    conformance_run_id, conformance_report_fingerprint,
                     review_fingerprint, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     normalized_review_id,
@@ -452,6 +482,8 @@ class BrokerAdapterReleaseReviewRepository:
                     normalized_reviewer,
                     normalized_reviewed_at,
                     normalized_reason,
+                    conformance_run_id,
+                    conformance_report_fingerprint,
                     expected_review_fingerprint,
                     now,
                 ),
@@ -533,6 +565,11 @@ class BrokerAdapterReleaseReviewRepository:
                 "reviewer_ref": str(review["reviewer_ref"]),
                 "reviewed_at": str(review["reviewed_at"]),
                 "reason_ref": str(review["reason_ref"]),
+                "conformance_run_id": _row_text(review, "conformance_run_id"),
+                "conformance_report_fingerprint": _row_text(
+                    review,
+                    "conformance_report_fingerprint",
+                ),
             }
         ):
             blockers.append("broker_adapter_release_review_integrity_invalid")
@@ -574,12 +611,41 @@ class BrokerAdapterReleaseReviewRepository:
             if boundaries.get(field) is not expected:
                 blockers.append(f"broker_adapter_release_boundary_invalid:{field}")
 
+        conformance_run_id = ""
+        conformance_report_fingerprint = ""
+        if str(review["decision"]) == "accepted":
+            conformance = BrokerAdapterConformanceRepository(
+                self._path,
+                ensure_schema=False,
+            ).verify_release_binding(
+                release_evidence_ref=release_ref,
+                manifest_fingerprint=manifest_fingerprint,
+            )
+            blockers.extend(str(item) for item in conformance.get("blockers") or [])
+            conformance_run_id = str(conformance.get("run_id") or "")
+            conformance_report_fingerprint = str(
+                conformance.get("report_fingerprint") or ""
+            )
+            if not _row_text(review, "conformance_run_id") or not _row_text(
+                review,
+                "conformance_report_fingerprint",
+            ):
+                blockers.append("broker_adapter_release_conformance_binding_missing")
+            elif (
+                _row_text(review, "conformance_run_id") != conformance_run_id
+                or _row_text(review, "conformance_report_fingerprint")
+                != conformance_report_fingerprint
+            ):
+                blockers.append("broker_adapter_release_conformance_review_drift")
+
         unique_blockers = list(dict.fromkeys(blockers))
         return {
             "status": "clear" if not unique_blockers else "blocked",
             "review_id": str(review["review_id"]),
             "release_evidence_ref": release_ref,
             "manifest_fingerprint": manifest_fingerprint,
+            "conformance_run_id": conformance_run_id,
+            "conformance_report_fingerprint": conformance_report_fingerprint,
             "blockers": unique_blockers,
             **_safety_flags(),
         }
@@ -629,6 +695,11 @@ class BrokerAdapterReleaseReviewRepository:
             "reviewer_ref": str(row["reviewer_ref"]),
             "reviewed_at": str(row["reviewed_at"]),
             "reason_ref": str(row["reason_ref"]),
+            "conformance_run_id": _row_text(row, "conformance_run_id"),
+            "conformance_report_fingerprint": _row_text(
+                row,
+                "conformance_report_fingerprint",
+            ),
             "review_fingerprint": str(row["review_fingerprint"]),
             "persisted": True,
             "reused": reused,
@@ -668,6 +739,8 @@ class BrokerAdapterReleaseReviewRepository:
                     reviewer_ref TEXT NOT NULL,
                     reviewed_at TEXT NOT NULL,
                     reason_ref TEXT NOT NULL,
+                    conformance_run_id TEXT NOT NULL DEFAULT '',
+                    conformance_report_fingerprint TEXT NOT NULL DEFAULT '',
                     review_fingerprint TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -677,6 +750,21 @@ class BrokerAdapterReleaseReviewRepository:
                     release_evidence_ref, id DESC
                 );
                 """)
+            columns = {
+                str(row[1])
+                for row in conn.execute(
+                    "PRAGMA table_info(broker_adapter_release_review_events)"
+                ).fetchall()
+            }
+            for name in (
+                "conformance_run_id",
+                "conformance_report_fingerprint",
+            ):
+                if name not in columns:
+                    conn.execute(
+                        "ALTER TABLE broker_adapter_release_review_events "
+                        f"ADD COLUMN {name} TEXT NOT NULL DEFAULT ''"
+                    )
             conn.commit()
 
 
@@ -724,6 +812,8 @@ def _verification_blocked(
         "review_id": "",
         "release_evidence_ref": release_ref,
         "manifest_fingerprint": "",
+        "conformance_run_id": "",
+        "conformance_report_fingerprint": "",
         "blockers": list(dict.fromkeys(blockers)),
         **_safety_flags(),
     }
@@ -898,3 +988,7 @@ def _json_object(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _row_text(row: sqlite3.Row, field: str) -> str:
+    return str(row[field]) if field in row.keys() else ""

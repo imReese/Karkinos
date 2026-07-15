@@ -46,6 +46,8 @@ npm --prefix web run test
 - [Account Truth 导入与复核](account-truth-import.zh.md) — 预览、证据暂存、对账和人工处置。
 - [收益与成本口径](return-accounting.zh.md) — 今日、浮动和已实现收益的统一计算规则。
 - [券商订单生命周期](broker-order-lifecycle-ingestion.zh.md) — 只读 lifecycle evidence 与 collector ingestion。
+- [券商适配器一致性验证](broker-adapter-conformance.zh.md) — 本地 deterministic fixture、精确
+  release 绑定与 latest-result-wins 门禁。
 - [券商适配器发布审查](broker-adapter-release-review.zh.md) — provider-neutral capability、威胁、
   部署、回滚、隐私与显式人工 acceptance 证据。
 - [受控执行](CONTROLLED_EXECUTION_PLAN.zh.md) — 人工权限、运行门禁、恢复和资本扩容规则。

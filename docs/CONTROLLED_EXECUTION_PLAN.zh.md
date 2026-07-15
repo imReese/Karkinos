@@ -78,6 +78,8 @@ kill switch 与运营健康
 - 一个通过 append-only 人工复核接受的 canonical adapter release manifest，精确绑定
   provider、gateway、deployment、version、fingerprint、account alias、mode、capability 与
   process boundary；拒绝、撤销或漂移会阻断新增摄取；
+- 一份与该 manifest 和人工 review 精确绑定的最新 passing deterministic local conformance
+  report；它验证 Karkinos 契约，不验证真实 adapter；
 - 一个经过复核、覆盖现金、持仓、订单、成交、session status、heartbeat 与 source timestamp
   的适配器；
 - 不可变 snapshot、cursor、schema、deployment、capability health 与 freshness；

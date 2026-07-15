@@ -117,8 +117,11 @@ telemetry and cannot authorize itself. Before live preparation, Karkinos
 requires the exact `release_evidence_ref`, deployment, capabilities, collection
 mode, and authorization to match a persisted human acceptance under the
 [broker adapter release review contract](broker-adapter-release-review.en.md).
-The same gate is rechecked before a prepared run commits, so a review revoked
-during restart recovery blocks lifecycle persistence and cursor advancement.
+That acceptance is also bound to the latest passing
+[deterministic conformance report](broker-adapter-conformance.en.md). The same
+gate is rechecked before a prepared run commits, so a newer conformance result
+or a review revoked during restart recovery blocks lifecycle persistence and
+cursor advancement until the exact evidence is reviewed again.
 
 `callback` and `poll` are labels reported by a future edge; they trigger no
 provider contact. Explicit local execution:
@@ -149,8 +152,9 @@ Deterministic rules:
   is marked duplicate;
 - same cursor with different evidence, cursor regression/gap, or deployment,
   release, authorization, or account drift blocks;
-- a live batch with missing, rejected, revoked, or drifted canonical adapter
-  release review blocks even if the batch claims `reviewed`;
+- a live batch with missing, failed, rejected, revoked, tampered, or drifted
+  canonical conformance/release review blocks even if the batch claims
+  `reviewed`;
 - a disconnect or partial batch may be recorded as operational evidence but
   cannot advance the cursor;
 - duplicate/out-of-order callback counts are recorded; one complete batch still
@@ -185,7 +189,8 @@ or capital authority.
 
 No broker SDK, broker-specific runtime, or support claim is added before the
 user explicitly identifies the real broker environment. A future adapter uses
-the versioned [release-review boundary](broker-adapter-release-review.en.md) to
+the versioned [conformance](broker-adapter-conformance.en.md) and
+[release-review boundary](broker-adapter-release-review.en.md) to
 bind dependency/source review, capability and threat evidence, deployment,
 rollback, privacy, and explicit user authorization. It must still pass
 disconnect/restart, duplicate/out-of-order, partial-batch, logging,

@@ -50,6 +50,8 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
   today's, unrealized, and realized results.
 - [Broker-order lifecycle](broker-order-lifecycle-ingestion.en.md) — read-only
   lifecycle evidence and collector ingestion.
+- [Broker adapter conformance](broker-adapter-conformance.en.md) — local
+  deterministic fixtures, exact release binding, and latest-result-wins gates.
 - [Broker adapter release review](broker-adapter-release-review.en.md) —
   provider-neutral capability, threat, deployment, rollback, privacy, and
   explicit human acceptance evidence.

@@ -32,6 +32,9 @@ The latest completed cross-cutting work includes:
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
+- provider-neutral deterministic conformance fixtures with append-only reports,
+  exact manifest/review binding, latest-result precedence, and prepare/commit
+  revalidation; this does not claim a real adapter is supported.
 - connector-scoped soak recovery evidence where unscoped, unrelated, or mixed
   drills cannot satisfy promotion, and the newest scoped failure invalidates an
   older pass and its signed dossier acceptance.
@@ -60,6 +63,8 @@ Implemented foundation:
 - signed exact-full-fill clearance and broker-neutral lifecycle ingestion;
 - versioned adapter capability/boundary manifests and revocable release review
   gates for live collector ingestion;
+- deterministic local adapter conformance evidence bound to release review and
+  rechecked before live collector prepare/commit;
 - connector-scoped, latest-result-wins recovery-drill gates for soak promotion;
 - persisted operator projection and evidence-based scale review.
 
