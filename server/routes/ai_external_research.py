@@ -46,9 +46,12 @@ class HumanExternalBacktestReportPayload(BaseModel):
 
 
 def create_router() -> APIRouter:
-    router = APIRouter(prefix="/api/ai/external-research", tags=["ai-research"])
+    router = APIRouter()
+    external_router = APIRouter(
+        prefix="/api/ai/external-research", tags=["ai-research"]
+    )
 
-    @router.post("/backtest-reports")
+    @external_router.post("/backtest-reports")
     async def run_external_backtest_report(
         payload: HumanExternalBacktestReportPayload,
     ) -> JSONResponse:
@@ -93,6 +96,12 @@ def create_router() -> APIRouter:
         }[result.workflow.status.value]
         return JSONResponse(status_code=status_code, content=result.to_dict())
 
+    from server.routes.ai_strategy_research import (
+        create_router as create_strategy_router,
+    )
+
+    router.include_router(external_router)
+    router.include_router(create_strategy_router())
     return router
 
 

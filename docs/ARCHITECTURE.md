@@ -810,6 +810,79 @@ input, trade plan, OMS/ledger/risk mutation, broker submit/cancel, capital
 change, or execution authority. Any future consumer must be a new explicit
 workflow with its own evidence-export review.
 
+### Evidence-Bound Formula Strategy Research
+
+Phase 1.18 is an isolated research-artifact chain, not a strategy or execution
+chain:
+
+```text
+saved analysis-ready canonical backtest + exact persisted dataset snapshot
+-> human selects immutable universe/window/frequency/cost and confirms export
+-> local read tools expose sanitized evidence, Formula DSL catalog, selection
+-> one provider-neutral model call proposes 1..3 non-executable hypotheses
+-> local schema, citation, frozen-input, formula and fingerprint validation
+-> human confirms one valid draft
+-> restricted adapter reads the exact persisted bars
+-> completed-bar signal is applied only on the next available persisted bar
+-> existing canonical after-cost BacktestEngine runs without a database sink
+-> existing backtest-result persistence stores the canonical result
+-> human separately confirms normalized result export
+-> one model call creates a non-authoritative evidence critique
+-> human records accept / revise / reject
+```
+
+The Formula DSL permits only reviewed JSON AST operators over OHLCV fields,
+bounded lag/window parameters, boolean/arithmetic composition, and bounded
+equal-weight sizing. Unknown operators, fields, keys, future/invalid periods,
+non-finite numbers, arbitrary code, URLs, paths, provider tools, and model
+changes to the frozen selection fail closed. Formula identity includes the AST,
+universe, dataset snapshot, window, frequency, cost model, anti-lookahead
+assumptions, parameter values, and initial cash. The formula is research-only:
+it is never inserted into the production strategy registry.
+
+`RestrictedFormulaBacktestAdapter` is deliberately narrower than the public
+backtest route. It cannot fetch market data, contact a provider, or persist
+engine order/fill events into shared trading tables. It reconstructs the
+selected `DataStore` bars, recomputes and verifies the exact dataset-snapshot
+identity, and delegates all prices, fills, commissions, slippage, equity,
+returns, drawdown, turnover, and other metrics to the existing canonical
+backtest implementation. The model cannot supply or replace those metrics.
+Negative, partial, blocked, and failed outcomes remain visible audit facts.
+
+The domain storage is additive and isolated:
+
+* `ai_strategy_research_sessions` binds the idempotent request, selected saved
+  result, context/evidence identity, provider/model/prompt identity, and stage;
+* `ai_strategy_hypothesis_drafts` stores normalized drafts plus local
+  validation and formula fingerprints;
+* `ai_strategy_formula_backtests` binds the selected draft to the exact
+  canonical saved-backtest result and research evidence;
+* `ai_strategy_backtest_critiques` stores only normalized critique artifacts
+  and redacted provenance;
+* `ai_strategy_research_reviews` stores the immutable human disposition;
+* `ai_strategy_research_events` provides hash-chained replay.
+
+Provider/model/role registration remains runtime-decoupled. DeepSeek is one
+replaceable OpenAI-compatible edge; it is not imported by the domain and has no
+provider-side tools. Thinking may remain enabled, but raw reasoning, raw
+responses, credentials, account identity, valuation-snapshot ids, ledger-cutoff
+ids, and permission facts are not sent or persisted as model content. Only
+normalized output, content/request fingerprints, model identity, finish reason,
+token usage, latency, and whether reasoning was present are retained. A saved
+backtest that uses no account facts marks valuation/ledger binding as explicitly
+not applicable; if account-derived facts are ever added, the canonical
+valuation snapshot and ledger cutoff become mandatory local bindings and remain
+outside the provider payload.
+
+All mutating steps are explicit POST commands with distinct confirmation
+phrases and atomic external-cost claims. Terminal duplicate requests replay
+without another model call; changed inputs under one idempotency key fail
+closed. GET formula/session paths initialize no schema, load no credentials,
+contact no provider, refresh no data, and write no state. No step creates a
+Decision input, trade plan, paper/shadow promotion, OMS/ledger/risk mutation,
+kill-switch change, broker submit/cancel, permission grant, capital change, or
+execution authority.
+
 ## Financial Data Integrity and Valuation
 
 Financial accuracy takes precedence over freshness and UI convenience across

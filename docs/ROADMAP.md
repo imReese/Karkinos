@@ -39,12 +39,14 @@ authority, bypass risk, or call a broker directly.
 | v1.0-v1.3 | Completed | Strategy runtime, Paper Broker/OMS, broker evidence, professional Decision workflow |
 | v1.4-v1.7 | Completed | Attribution/cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, lifecycle evidence, capital-scaling review |
-| AI-native Phase 1-1.17 | Foundation implemented | Provider-neutral, evidence-bound, human-reviewed research and memory workflows without trading authority |
+| AI-native Phase 1-1.18 | Formula research vertical implemented | Provider-neutral, evidence-bound, human-reviewed research, memory, allowlisted Formula DSL, canonical after-cost backtest, and critique workflows without trading authority |
 
 Account Truth and reconciliation remain mandatory safety gates, but they are
-not the next product mainline. AI Phase 1.18+ is paused until the controlled
-execution loop is operationally closed; adding another retrieval-analysis-
-review-promotion cycle is lower value than validating the existing platform.
+not the next product mainline. Phase 1.18 was completed as one explicitly
+authorized formula-research vertical; v1.8 remains the active product milestone.
+Further AI Phase 1.19+, semantic-memory expansion, and automatic prompt
+injection remain deferred until the controlled-execution loop is operationally
+closed.
 
 ## Active Milestone: v1.8 — Broker-Connected Controlled Pilot
 
@@ -76,7 +78,7 @@ promotion decision backed by operating evidence, not a shortcut for v1.8.
 | P0 | End-to-end `manual_each_order` pilot | v1.8 release gate |
 | P1 | Operator UX, alerts, adapter conformance, fault injection, deployment and rollback runbooks | Release gate |
 | P2 | `session_bounded` pilot and a second broker adapter | After v1.8 evidence review |
-| P3 | AI Phase 1.18+, semantic memory, automatic prompt injection | Deferred |
+| P3 | AI Phase 1.19+, semantic memory, automatic prompt injection | Deferred |
 
 ## Milestones
 
@@ -205,4 +207,3 @@ unable to renew, resume, widen, or scale itself.
 When a milestone completes, update its status here in a few lines and move the
 evidence summary to `IMPLEMENTATION_LOG.md`. Do not append implementation
 diaries, full diffs, or repeated safety disclaimers to the roadmap.
-
