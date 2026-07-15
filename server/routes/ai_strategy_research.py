@@ -34,7 +34,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchSelection,
     StrategyResearchService,
 )
-from server.bootstrap import resolve_config_path, resolve_data_dir
+from server.bootstrap import resolve_data_dir
 from server.routes.ai_research import build_human_context_capture_service
 
 
@@ -287,9 +287,7 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
     evidence_repository.init()
     ai_store.init()
     research_store.init()
-    settings = (
-        load_provider_connectivity_settings(resolve_config_path()) if external else None
-    )
+    settings = load_provider_connectivity_settings(state.config) if external else None
     return StrategyResearchService(
         db=state.db,
         db_path=db_path,

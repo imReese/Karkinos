@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from collections.abc import MutableMapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ _NON_STRATEGY_FIELDS = {
     "port",
     "live_auto_start",
     "cors_allowed_origins",
+    "ai",
 }
 
 _RUNTIME_ENV_FIELDS = {
@@ -45,6 +47,18 @@ _RUNTIME_ENV_FIELDS = {
     "KARKINOS_DATA_SOURCE": "data_source",
     "KARKINOS_LIVE_POLL_INTERVAL": "live_poll_interval",
     "TUSHARE_TOKEN": "tushare_token",
+    "KARKINOS_AI_ENABLED": "ai.enabled",
+    "KARKINOS_AI_PROVIDER": "ai.provider",
+    "KARKINOS_AI_MODEL": "ai.model",
+    "KARKINOS_AI_BASE_URL": "ai.base_url",
+    "KARKINOS_AI_ADAPTER_KIND": "ai.adapter_kind",
+    "KARKINOS_AI_TIMEOUT_SECONDS": "ai.timeout_seconds",
+}
+_EMPTY_ENV_MEANS_UNSET = {
+    "TUSHARE_TOKEN",
+    "KARKINOS_AI_PROVIDER",
+    "KARKINOS_AI_MODEL",
+    "KARKINOS_AI_BASE_URL",
 }
 
 
@@ -68,6 +82,34 @@ def resolve_data_dir() -> str:
     return os.environ.get("KARKINOS_DATA_DIR") or "data/store"
 
 
+def load_runtime_environment_file(
+    path: str | Path = ".env",
+    *,
+    environ: MutableMapping[str, str] | None = None,
+    required: bool = False,
+) -> bool:
+    """Load one dotenv file without overriding the existing process environment."""
+    from dotenv import dotenv_values
+
+    dotenv_path = Path(path)
+    if not dotenv_path.exists():
+        if required:
+            raise ValueError(f"environment file does not exist: {dotenv_path}")
+        return False
+    try:
+        values = dotenv_values(dotenv_path)
+    except OSError as exc:
+        raise ValueError(
+            f"environment file could not be loaded: {dotenv_path}"
+        ) from exc
+    target = os.environ if environ is None else environ
+    for name, value in values.items():
+        if value is None:
+            raise ValueError(f"environment file variable has no value: {name}")
+        target.setdefault(name, value)
+    return True
+
+
 def load_runtime_config(
     config_cls: type[BacktestConfig] = BacktestConfig, **overrides: Any
 ) -> BacktestConfig:
@@ -85,12 +127,15 @@ def load_runtime_config(
 def _runtime_environment_overrides(config: BacktestConfig) -> dict[str, Any]:
     resolved: dict[str, Any] = {}
     for env_name, field_name in _RUNTIME_ENV_FIELDS.items():
-        if not hasattr(config, field_name):
+        root_field, _, nested_field = field_name.partition(".")
+        if not hasattr(config, root_field):
+            continue
+        if nested_field and not hasattr(getattr(config, root_field), nested_field):
             continue
         raw_value = os.environ.get(env_name)
         if raw_value is None:
             continue
-        if env_name == "TUSHARE_TOKEN" and not raw_value.strip():
+        if env_name in _EMPTY_ENV_MEANS_UNSET and not raw_value.strip():
             continue
         resolved[field_name] = _parse_runtime_environment_value(env_name, raw_value)
     return resolved
@@ -98,7 +143,7 @@ def _runtime_environment_overrides(config: BacktestConfig) -> dict[str, Any]:
 
 def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
     value = raw_value.strip()
-    if env_name == "KARKINOS_LIVE_AUTO_START":
+    if env_name in {"KARKINOS_LIVE_AUTO_START", "KARKINOS_AI_ENABLED"}:
         normalized = value.lower()
         if normalized in {"1", "true", "yes", "on"}:
             return True
@@ -114,6 +159,14 @@ def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
         if parsed <= 0 or (upper_bound is not None and parsed > upper_bound):
             raise ValueError(f"{env_name} is outside the supported range")
         return parsed
+    if env_name == "KARKINOS_AI_TIMEOUT_SECONDS":
+        try:
+            parsed_timeout = float(value)
+        except ValueError as exc:
+            raise ValueError(f"{env_name} must be numeric") from exc
+        if parsed_timeout <= 0 or parsed_timeout > 60:
+            raise ValueError(f"{env_name} is outside the supported range")
+        return parsed_timeout
     if env_name == "KARKINOS_CORS_ALLOWED_ORIGINS":
         origins = tuple(
             dict.fromkeys(
@@ -137,10 +190,21 @@ def _apply_runtime_overrides(
     config: BacktestConfig,
     overrides: dict[str, Any],
 ) -> None:
+    nested_overrides: dict[str, dict[str, Any]] = {}
     for key, value in overrides.items():
+        root_field, separator, nested_field = key.partition(".")
+        if separator:
+            if not hasattr(config, root_field) or not hasattr(
+                getattr(config, root_field), nested_field
+            ):
+                raise ValueError(f"unsupported runtime config override: {key}")
+            nested_overrides.setdefault(root_field, {})[nested_field] = value
+            continue
         if not hasattr(config, key):
             raise ValueError(f"unsupported runtime config override: {key}")
         setattr(config, key, value)
+    for root_field, values in nested_overrides.items():
+        setattr(config, root_field, replace(getattr(config, root_field), **values))
 
 
 def build_watchlist(

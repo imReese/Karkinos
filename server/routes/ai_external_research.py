@@ -25,7 +25,6 @@ from server.ai_runtime.provider_connectivity import (
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.bootstrap import resolve_config_path
 from server.routes.ai_research import build_human_context_capture_service
 
 
@@ -117,7 +116,7 @@ def build_external_backtest_report_service(
     ai_store.init()
     report_store.init()
     return HumanExternalBacktestReportService(
-        settings=load_provider_connectivity_settings(resolve_config_path()),
+        settings=load_provider_connectivity_settings(state.config),
         capture_service=build_human_context_capture_service(state),
         evidence_repository=evidence_repository,
         ai_store=ai_store,

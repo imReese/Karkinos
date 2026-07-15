@@ -26,7 +26,6 @@ from server.ai_runtime.provider_connectivity import (
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.bootstrap import resolve_config_path
 from server.routes.ai_external_analysis_reviews import (
     create_router as create_external_analysis_review_router,
 )
@@ -134,9 +133,7 @@ def build_human_external_memory_analysis_service(
     if initialize:
         store.init()
     return HumanExternalMemoryAnalysisService(
-        settings_loader=lambda: load_provider_connectivity_settings(
-            resolve_config_path()
-        ),
+        settings_loader=lambda: load_provider_connectivity_settings(state.config),
         retrieval_service=retrieval_service,
         ai_store=AiAuditStore(db_path),
         evidence_repository=CanonicalEvidenceRepository(db_path),

@@ -19,7 +19,6 @@ from server.ai_runtime.provider_connectivity import (
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.bootstrap import resolve_config_path
 
 
 class HumanProviderConnectivityCheckPayload(BaseModel):
@@ -77,7 +76,7 @@ def create_router() -> APIRouter:
 def build_provider_connectivity_service(state) -> ProviderConnectivityService:
     """Build the explicit network probe on AI-only audit tables."""
     db_path = _database_path(state.db)
-    settings = load_provider_connectivity_settings(resolve_config_path())
+    settings = load_provider_connectivity_settings(state.config)
     ai_store = AiAuditStore(db_path)
     audit_store = ProviderConnectivityAuditStore(db_path)
     ai_store.init()
