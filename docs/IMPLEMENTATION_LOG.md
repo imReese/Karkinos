@@ -1,6 +1,6 @@
 # Karkinos Implementation Log
 
-[Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md) | [Goal](KARKINOS_GOAL.md)
+[中文](IMPLEMENTATION_LOG.zh.md) | [Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md) | [Goal](KARKINOS_GOAL.md)
 
 This file records release-level outcomes and validation evidence. It is not a
 commit diary. Detailed code history, intermediate slices, and exact diffs live
