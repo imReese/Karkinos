@@ -104,19 +104,14 @@ containing credentials or private account information.
 
 ## Documentation
 
-| Topic | Languages |
-| --- | --- |
-| Product introduction, installation, and workflow index | [中文](docs/README.zh.md) / [English](docs/README.en.md) |
-| Product North Star and durable boundaries | [中文](docs/KARKINOS_GOAL.zh.md) / [English](docs/KARKINOS_GOAL.md) |
-| Current priorities, milestones, and acceptance gates | [中文](docs/ROADMAP.zh.md) / [English](docs/ROADMAP.md) |
-| Components, flows, and authority boundaries | [中文](docs/ARCHITECTURE.zh.md) / [English](docs/ARCHITECTURE.md) |
-| Local runtime configuration | [中文](docs/config-reference.zh.md) / [English](docs/config-reference.en.md) |
-| Account Truth import and review contract | [中文](docs/account-truth-import.zh.md) / [English](docs/account-truth-import.en.md) |
-| Portfolio return and cost accounting | [中文](docs/return-accounting.zh.md) / [English](docs/return-accounting.en.md) |
-| Broker-order lifecycle ingestion | [中文](docs/broker-order-lifecycle-ingestion.zh.md) / [English](docs/broker-order-lifecycle-ingestion.en.md) |
-| Controlled-execution safety plan | [中文](docs/CONTROLLED_EXECUTION_PLAN.zh.md) / [English](docs/CONTROLLED_EXECUTION_PLAN.md) |
-| Completed release evidence | [中文](docs/IMPLEMENTATION_LOG.zh.md) / [English](docs/IMPLEMENTATION_LOG.md) |
-| External-project reference boundary | [中文](docs/BENCHMARKS.zh.md) / [English](docs/BENCHMARKS.md) |
+Choose one documentation index:
+
+- [中文文档](docs/README.zh.md) — 安装、工作流、产品边界和专题参考
+- [English documentation](docs/README.en.md) — setup, workflows, product
+  boundaries, and topic references
+
+Each index organizes the same material into core documents, operational
+guides, and references. Individual pages link directly to their translation.
 
 ## Repository layout
 
