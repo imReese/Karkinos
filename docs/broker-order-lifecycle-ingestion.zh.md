@@ -1,5 +1,7 @@
 # 通用券商订单生命周期证据与 collector ingestion
 
+[English](broker-order-lifecycle-ingestion.en.md) | [中文文档](README.zh.md)
+
 Stage 3.15/3.16 的 canonical 边界是 broker-neutral 的只读证据链，不是券商连接或
 交易权限。`provider` 只标记来源；QMT、PTrade、本地文件 watcher 或其他第三方组件
 都只能在边缘把事实转换成本文契约，默认不注册，也不代表 Karkinos 官方支持。
