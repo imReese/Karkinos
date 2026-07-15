@@ -32,6 +32,9 @@ The latest completed cross-cutting work includes:
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
+- connector-scoped soak recovery evidence where unscoped, unrelated, or mixed
+  drills cannot satisfy promotion, and the newest scoped failure invalidates an
+  older pass and its signed dossier acceptance.
 
 Exact historical test totals are intentionally not maintained here because
 they become stale after every change. CI artifacts and the acceptance-audit
@@ -57,6 +60,7 @@ Implemented foundation:
 - signed exact-full-fill clearance and broker-neutral lifecycle ingestion;
 - versioned adapter capability/boundary manifests and revocable release review
   gates for live collector ingestion;
+- connector-scoped, latest-result-wins recovery-drill gates for soak promotion;
 - persisted operator projection and evidence-based scale review.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only

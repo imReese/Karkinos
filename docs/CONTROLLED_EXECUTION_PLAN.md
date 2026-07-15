@@ -96,6 +96,8 @@ Required evidence:
 - startup, intraday, and end-of-day reconciliation;
 - disconnect, stale, duplicate, out-of-order, partial-batch, schema-drift, and
   restart drills;
+- drill evidence scoped to the exact connector/release, with the newest scoped
+  result authoritative over older passes;
 - at least 20 reviewed trading days with no unresolved critical mismatch.
 
 Exit condition: the adapter exposes no write capability during soak, and every
