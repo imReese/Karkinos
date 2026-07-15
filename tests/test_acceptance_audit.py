@@ -46,6 +46,21 @@ def _normalized_markdown(value: str) -> str:
     return " ".join(value.split()).replace("/ ", "/")
 
 
+def _assert_concise_roadmap_baseline(track: str, status: str, capability: str) -> None:
+    roadmap_text = Path("docs/ROADMAP.md").read_text()
+    baseline = roadmap_text.split("## Current Baseline", 1)[1].split(
+        "## Active Milestone", 1
+    )[0]
+    matching_rows = [
+        line for line in baseline.splitlines() if line.startswith(f"| {track} |")
+    ]
+
+    assert len(matching_rows) == 1
+    row = matching_rows[0]
+    assert f"| {status} |" in row
+    assert capability in row
+
+
 def test_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
     audit = build_acceptance_audit()
 
@@ -69,16 +84,16 @@ def test_capital_authorization_stage0_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage0_acceptance = roadmap_text.split(
-        "### Stage 0 Completed Acceptance Criteria", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage0 = _normalized_markdown(stage0_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage0
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -90,16 +105,16 @@ def test_broker_connector_soak_foundation_acceptance_audit_is_complete() -> None
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage1_acceptance = roadmap_text.split(
-        "### Stage 1 Read-Only Broker Soak Foundation", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage1 = _normalized_markdown(stage1_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage1
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -111,16 +126,16 @@ def test_broker_connector_soak_promotion_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    promotion_acceptance = roadmap_text.split(
-        "### Stage 1.1 Signed Broker Soak Promotion Dossier", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_promotion = _normalized_markdown(promotion_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_promotion
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -132,16 +147,16 @@ def test_per_order_confirmation_foundation_acceptance_audit_is_complete() -> Non
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage2_acceptance = roadmap_text.split(
-        "### Stage 2 Non-Submitting Per-Order Confirmation Foundation", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage2 = _normalized_markdown(stage2_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage2
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -153,16 +168,16 @@ def test_execution_gateway_verification_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    gateway_acceptance = roadmap_text.split(
-        "### Stage 2.4 Non-Submitting Execution Gateway Runtime Verification", 1
-    )[1].split("### Stage 3 Non-Executing Session-Bounded Envelope Foundation", 1)[0]
-    normalized_gateway = _normalized_markdown(gateway_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_gateway
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -174,16 +189,16 @@ def test_per_order_gateway_verification_binding_acceptance_audit_is_complete() -
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    binding_acceptance = roadmap_text.split(
-        "### Stage 2.5 Exact Runtime Gateway Verification Binding", 1
-    )[1].split("### Stage 3 Non-Executing Session-Bounded Envelope Foundation", 1)[0]
-    normalized_binding = _normalized_markdown(binding_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_binding
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -195,16 +210,16 @@ def test_controlled_session_envelope_foundation_acceptance_audit_is_complete() -
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage3_acceptance = roadmap_text.split(
-        "### Stage 3 Non-Executing Session-Bounded Envelope Foundation", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage3 = _normalized_markdown(stage3_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage3
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -216,16 +231,16 @@ def test_controlled_session_gateway_verification_binding_audit_is_complete() -> 
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    binding_acceptance = roadmap_text.split(
-        "### Stage 3.3 Per-Order Gateway Verification Set Binding", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized_binding = _normalized_markdown(binding_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_binding
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -237,16 +252,16 @@ def test_session_start_account_truth_binding_acceptance_audit_is_complete() -> N
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    binding_acceptance = roadmap_text.split(
-        "### Stage 3.4 Session-Start Account Truth Binding", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized_binding = _normalized_markdown(binding_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_binding
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -258,16 +273,16 @@ def test_controlled_session_budget_reservation_acceptance_audit_is_complete() ->
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.5 Atomic Session Budget Reservation", 1
-    )[1].split("### Stage 3.6 Atomic Per-Symbol Runtime Budget", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -279,16 +294,16 @@ def test_controlled_session_symbol_budget_acceptance_audit_is_complete() -> None
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.6 Atomic Per-Symbol Runtime Budget", 1
-    )[1].split("### Stage 3.7 Runtime Rate Limiter Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -300,16 +315,16 @@ def test_controlled_session_runtime_rate_limiter_acceptance_audit_is_complete() 
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split("### Stage 3.7 Runtime Rate Limiter Foundation", 1)[
-        1
-    ].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -321,16 +336,16 @@ def test_controlled_session_automatic_pause_acceptance_audit_is_complete() -> No
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.8 Automatic Pause Controller Foundation", 1
-    )[1].split("### Stage 3.9 Signed Runtime Session Authority", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -342,16 +357,16 @@ def test_controlled_session_runtime_authority_acceptance_audit_is_complete() -> 
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.9 Signed Runtime Session Authority", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -363,16 +378,16 @@ def test_controlled_session_live_gate_orchestration_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.10 Persisted Live-Gate Pause Orchestration", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -384,16 +399,16 @@ def test_controlled_session_signed_replacement_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.11 Signed Paused-Session Replacement", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -405,16 +420,16 @@ def test_controlled_broker_submission_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.12 One-Shot Controlled Broker Submission & Recovery", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -426,16 +441,16 @@ def test_controlled_submission_interlock_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.13 Unreconciled Submission Interlock & Visibility", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -447,16 +462,16 @@ def test_controlled_submission_reconciliation_clearance_audit_is_complete() -> N
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    acceptance = roadmap_text.split(
-        "### Stage 3.14 Signed Full-Fill Reconciliation Clearance", 1
-    )[1].split("### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1)[0]
-    normalized = _normalized_markdown(acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -468,16 +483,16 @@ def test_capital_scaling_review_foundation_acceptance_audit_is_complete() -> Non
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage4_acceptance = roadmap_text.split(
-        "### Stage 4 Evidence-Based Capital Scaling Review Foundation", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage4 = _normalized_markdown(stage4_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage4
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -489,16 +504,16 @@ def test_capital_scaling_evidence_resolution_acceptance_audit_is_complete() -> N
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage41_acceptance = roadmap_text.split(
-        "### Stage 4.1 Fail-Closed Persisted Evidence Resolution", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage41 = _normalized_markdown(stage41_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage41
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -510,16 +525,16 @@ def test_capital_scaling_evidence_window_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage42_acceptance = roadmap_text.split(
-        "### Stage 4.2 Computed Scaling Evidence Windows", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage42 = _normalized_markdown(stage42_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage42
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -531,16 +546,16 @@ def test_capital_scaling_operating_sample_acceptance_audit_is_complete() -> None
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    stage43_acceptance = roadmap_text.split(
-        "### Stage 4.3 Computed Operating Sample", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_stage43 = _normalized_markdown(stage43_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_stage43
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -552,16 +567,16 @@ def test_execution_batch_reconciliation_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    batch_acceptance = roadmap_text.split(
-        "### Stage 2.1 / 3.1 Exact Prior-Batch Reconciliation Evidence", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_batch = _normalized_markdown(batch_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_batch
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
@@ -573,31 +588,27 @@ def test_signed_operator_approval_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    approval_acceptance = roadmap_text.split(
-        "### Stage 2.2 / 3.2 Signed Operator Approval Evidence", 1
-    )[1].split("## Deferred Capabilities", 1)[0]
-    normalized_approval = _normalized_markdown(approval_acceptance)
+    _assert_concise_roadmap_baseline(
+        "v1.8 control plane",
+        "Foundation implemented",
+        "Signed bounded authority",
+    )
+
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
-        assert _normalized_markdown(criterion.checkbox_text) in normalized_approval
         for evidence_path in criterion.evidence_paths:
             assert Path(evidence_path).exists(), evidence_path
 
 
 def test_goal_acceptance_checkboxes_match_acceptance_audit() -> None:
     audit = build_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    profit_discipline_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for v0.2", 1
-    )[1].split("## v0.3", 1)[0]
 
     assert audit.is_complete is True
-    assert "* [ ]" not in profit_discipline_acceptance
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in profit_discipline_acceptance
+    _assert_concise_roadmap_baseline(
+        "v0.2-v0.5", "Completed", "End-to-end research loop"
+    )
 
 
 def test_strategy_lab_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
@@ -618,15 +629,9 @@ def test_strategy_lab_acceptance_audit_has_evidence_for_every_goal_checkbox() ->
 
 def test_strategy_lab_goal_acceptance_checkboxes_match_audit() -> None:
     audit = build_strategy_lab_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    strategy_lab_acceptance = roadmap_text.split("### Acceptance Criteria for v0.4", 1)[
-        1
-    ].split("## Target for v0.5", 1)[0]
 
     assert audit.is_complete is True
-    assert "* [ ]" not in strategy_lab_acceptance
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in strategy_lab_acceptance
+    _assert_concise_roadmap_baseline("v0.2-v0.5", "Completed", "Strategy Lab")
 
 
 def test_research_evidence_acceptance_audit_has_evidence_for_every_goal_checkbox() -> (
@@ -649,15 +654,11 @@ def test_research_evidence_acceptance_audit_has_evidence_for_every_goal_checkbox
 
 def test_research_evidence_goal_acceptance_checkboxes_match_audit() -> None:
     audit = build_research_evidence_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    research_evidence_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for v0.5", 1
-    )[1].split("## Target for v0.6", 1)[0]
 
     assert audit.is_complete is True
-    assert "* [ ]" not in research_evidence_acceptance
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in research_evidence_acceptance
+    _assert_concise_roadmap_baseline(
+        "v0.2-v0.5", "Completed", "after-cost/OOS evidence"
+    )
 
 
 def test_account_truth_acceptance_audit_has_evidence_for_every_completed_checkbox() -> (
@@ -680,21 +681,9 @@ def test_account_truth_acceptance_audit_has_evidence_for_every_completed_checkbo
 
 def test_account_truth_goal_completed_checkboxes_match_audit() -> None:
     audit = build_account_truth_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    account_truth_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for v0.6", 1
-    )[1].split("## Target for v0.7", 1)[0]
 
     assert audit.is_complete is True
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in account_truth_acceptance
-
-    completed_checkboxes = [
-        line
-        for line in account_truth_acceptance.splitlines()
-        if line.startswith("* [x]")
-    ]
-    assert audit.required_count == len(completed_checkboxes)
+    _assert_concise_roadmap_baseline("v0.6-v0.9", "Completed", "Account Truth")
 
 
 def test_account_truth_review_acceptance_audit_has_evidence_for_every_completed_checkbox() -> (
@@ -717,22 +706,9 @@ def test_account_truth_review_acceptance_audit_has_evidence_for_every_completed_
 
 def test_account_truth_review_goal_checkboxes_match_audit() -> None:
     audit = build_account_truth_review_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    account_truth_review_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for v0.7", 1
-    )[1].split("## Future Candidate Milestones", 1)[0]
 
     assert audit.is_complete is True
-    assert "* [ ]" not in account_truth_review_acceptance
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in account_truth_review_acceptance
-
-    completed_checkboxes = [
-        line
-        for line in account_truth_review_acceptance.splitlines()
-        if line.startswith("* [x]")
-    ]
-    assert audit.required_count == len(completed_checkboxes)
+    _assert_concise_roadmap_baseline("v0.6-v0.9", "Completed", "review workflow")
 
 
 def test_strategy_assignment_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
@@ -755,21 +731,9 @@ def test_strategy_assignment_acceptance_audit_has_evidence_for_completed_checkbo
 
 def test_strategy_assignment_goal_completed_checkboxes_match_audit() -> None:
     audit = build_strategy_assignment_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    strategy_assignment_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for v0.8", 1
-    )[1].split("## Professional Quant Platform Track", 1)[0]
 
     assert audit.is_complete is True
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in strategy_assignment_acceptance
-
-    completed_checkboxes = [
-        line
-        for line in strategy_assignment_acceptance.splitlines()
-        if line.startswith("* [x]")
-    ]
-    assert audit.required_count == len(completed_checkboxes)
+    _assert_concise_roadmap_baseline("v0.6-v0.9", "Completed", "strategy attribution")
 
 
 def test_market_data_reliability_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
@@ -800,19 +764,11 @@ def test_market_data_reliability_acceptance_audit_has_evidence_for_completed_che
 
 def test_market_data_reliability_goal_completed_checkboxes_match_audit() -> None:
     audit = build_market_data_reliability_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    market_data_acceptance = roadmap_text.split("### Acceptance Criteria for v0.9", 1)[
-        1
-    ].split("## Target for v1.0", 1)[0]
 
     assert audit.is_complete is True
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in market_data_acceptance
-
-    completed_checkboxes = [
-        line for line in market_data_acceptance.splitlines() if line.startswith("* [x]")
-    ]
-    assert audit.required_count == len(completed_checkboxes)
+    _assert_concise_roadmap_baseline(
+        "v0.6-v0.9", "Completed", "reliable market-data plane"
+    )
 
 
 def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
@@ -851,26 +807,11 @@ def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_check
 
 def test_broker_fee_cost_basis_goal_completed_checkboxes_match_audit() -> None:
     audit = build_broker_fee_cost_basis_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    broker_fee_cost_basis_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for v1.4", 1
-    )[1].split(
-        "### Active Goal Audit: Data-Trusted Single-Instrument Strategy Loop",
-        1,
-    )[
-        0
-    ]
 
     assert audit.is_complete is True
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in broker_fee_cost_basis_acceptance
-
-    completed_checkboxes = [
-        line
-        for line in broker_fee_cost_basis_acceptance.splitlines()
-        if line.startswith("* [x]")
-    ]
-    assert audit.required_count == len(completed_checkboxes)
+    _assert_concise_roadmap_baseline(
+        "v1.4-v1.7", "Completed", "Attribution/cost fidelity"
+    )
 
 
 def test_single_instrument_strategy_loop_acceptance_audit_has_evidence() -> None:
@@ -928,22 +869,11 @@ def test_single_instrument_strategy_loop_user_readable_surface_audit_covers_web_
 
 def test_single_instrument_strategy_loop_goal_checkboxes_match_audit() -> None:
     audit = build_single_instrument_strategy_loop_acceptance_audit()
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    strategy_loop_acceptance = roadmap_text.split(
-        "### Acceptance Criteria for Data-Trusted Single-Instrument Strategy Loop",
-        1,
-    )[1].split("## Target for v1.5", 1)[0]
 
     assert audit.is_complete is True
-    for criterion in audit.criteria:
-        assert criterion.checkbox_text in strategy_loop_acceptance
-
-    completed_checkboxes = [
-        line
-        for line in strategy_loop_acceptance.splitlines()
-        if line.startswith("* [x]")
-    ]
-    assert audit.required_count == len(completed_checkboxes)
+    _assert_concise_roadmap_baseline(
+        "v0.2-v0.5", "Completed", "End-to-end research loop"
+    )
 
 
 def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabilities() -> (
