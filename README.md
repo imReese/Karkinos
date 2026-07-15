@@ -104,18 +104,19 @@ containing credentials or private account information.
 
 ## Documentation
 
-| Need | Document |
+| Topic | Languages |
 | --- | --- |
-| Product North Star and boundaries | [KARKINOS_GOAL.md](docs/KARKINOS_GOAL.md) |
-| Current priority and milestones | [ROADMAP.md](docs/ROADMAP.md) |
-| Components, flows, and authority boundaries | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Chinese installation and workflow index | [README.zh.md](docs/README.zh.md) |
-| English installation and workflow index | [README.en.md](docs/README.en.md) |
-| Configuration reference | [config-reference.zh.md](docs/config-reference.zh.md) |
-| Account Truth import contract | [account-truth-import.zh.md](docs/account-truth-import.zh.md) |
-| Broker lifecycle ingestion | [broker-order-lifecycle-ingestion.zh.md](docs/broker-order-lifecycle-ingestion.zh.md) |
-| Controlled-execution safety plan | [CONTROLLED_EXECUTION_PLAN.md](docs/CONTROLLED_EXECUTION_PLAN.md) |
-| Completed release evidence | [IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md) |
+| Product introduction, installation, and workflow index | [中文](docs/README.zh.md) / [English](docs/README.en.md) |
+| Product North Star and durable boundaries | [中文](docs/KARKINOS_GOAL.zh.md) / [English](docs/KARKINOS_GOAL.md) |
+| Current priorities, milestones, and acceptance gates | [中文](docs/ROADMAP.zh.md) / [English](docs/ROADMAP.md) |
+| Components, flows, and authority boundaries | [中文](docs/ARCHITECTURE.zh.md) / [English](docs/ARCHITECTURE.md) |
+| Local runtime configuration | [中文](docs/config-reference.zh.md) / [English](docs/config-reference.en.md) |
+| Account Truth import and review contract | [中文](docs/account-truth-import.zh.md) / [English](docs/account-truth-import.en.md) |
+| Portfolio return and cost accounting | [中文](docs/return-accounting.zh.md) / [English](docs/return-accounting.en.md) |
+| Broker-order lifecycle ingestion | [中文](docs/broker-order-lifecycle-ingestion.zh.md) / [English](docs/broker-order-lifecycle-ingestion.en.md) |
+| Controlled-execution safety plan | [中文](docs/CONTROLLED_EXECUTION_PLAN.zh.md) / [English](docs/CONTROLLED_EXECUTION_PLAN.md) |
+| Completed release evidence | [中文](docs/IMPLEMENTATION_LOG.zh.md) / [English](docs/IMPLEMENTATION_LOG.md) |
+| External-project reference boundary | [中文](docs/BENCHMARKS.zh.md) / [English](docs/BENCHMARKS.md) |
 
 ## Repository layout
 
