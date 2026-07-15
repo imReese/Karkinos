@@ -12,12 +12,36 @@ CORE_DOC_BUDGETS = {
     "docs/README.zh.md": 180,
     "docs/README.en.md": 180,
     "docs/KARKINOS_GOAL.md": 180,
+    "docs/KARKINOS_GOAL.zh.md": 180,
     "docs/ROADMAP.md": 260,
     "docs/ROADMAP.zh.md": 240,
     "docs/ARCHITECTURE.md": 650,
+    "docs/ARCHITECTURE.zh.md": 650,
     "docs/IMPLEMENTATION_LOG.md": 400,
+    "docs/IMPLEMENTATION_LOG.zh.md": 400,
     "docs/CONTROLLED_EXECUTION_PLAN.md": 350,
+    "docs/CONTROLLED_EXECUTION_PLAN.zh.md": 350,
 }
+
+LANGUAGE_PAIRS = (
+    ("docs/README.zh.md", "docs/README.en.md"),
+    ("docs/KARKINOS_GOAL.zh.md", "docs/KARKINOS_GOAL.md"),
+    ("docs/ROADMAP.zh.md", "docs/ROADMAP.md"),
+    ("docs/ARCHITECTURE.zh.md", "docs/ARCHITECTURE.md"),
+    ("docs/config-reference.zh.md", "docs/config-reference.en.md"),
+    ("docs/account-truth-import.zh.md", "docs/account-truth-import.en.md"),
+    ("docs/return-accounting.zh.md", "docs/return-accounting.en.md"),
+    (
+        "docs/broker-order-lifecycle-ingestion.zh.md",
+        "docs/broker-order-lifecycle-ingestion.en.md",
+    ),
+    (
+        "docs/CONTROLLED_EXECUTION_PLAN.zh.md",
+        "docs/CONTROLLED_EXECUTION_PLAN.md",
+    ),
+    ("docs/IMPLEMENTATION_LOG.zh.md", "docs/IMPLEMENTATION_LOG.md"),
+    ("docs/BENCHMARKS.zh.md", "docs/BENCHMARKS.md"),
+)
 
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 
@@ -65,10 +89,32 @@ def _check_tests_do_not_parse_roadmap() -> list[str]:
     return errors
 
 
+def _check_language_pairs() -> list[str]:
+    errors: list[str] = []
+    for zh_path_text, en_path_text in LANGUAGE_PAIRS:
+        zh_path = REPO_ROOT / zh_path_text
+        en_path = REPO_ROOT / en_path_text
+        for path in (zh_path, en_path):
+            if not path.is_file():
+                errors.append(
+                    f"missing documentation language pair: {path.relative_to(REPO_ROOT)}"
+                )
+        if not zh_path.is_file() or not en_path.is_file():
+            continue
+        zh_text = zh_path.read_text(encoding="utf-8")
+        en_text = en_path.read_text(encoding="utf-8")
+        if en_path.name not in zh_text:
+            errors.append(f"{zh_path_text} does not link to {en_path.name}")
+        if zh_path.name not in en_text:
+            errors.append(f"{en_path_text} does not link to {zh_path.name}")
+    return errors
+
+
 def main() -> int:
     errors: list[str] = []
     for path_text, line_budget in CORE_DOC_BUDGETS.items():
         errors.extend(_check_core_doc(path_text, line_budget))
+    errors.extend(_check_language_pairs())
     errors.extend(_check_tests_do_not_parse_roadmap())
 
     if errors:
@@ -79,7 +125,7 @@ def main() -> int:
 
     print(
         "Documentation health check passed: core ownership budgets, local "
-        "links, and roadmap/test separation are valid."
+        "links, language pairs, and roadmap/test separation are valid."
     )
     return 0
 
