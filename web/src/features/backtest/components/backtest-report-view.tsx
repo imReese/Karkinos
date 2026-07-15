@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatTimestamp,
 } from '../../../shared/format';
+import { StrategyHypothesisPanel } from '../../ai-research/components/strategy-hypothesis-panel';
 import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';
@@ -146,6 +147,7 @@ export function BacktestReportView() {
         </div>
       ) : report.data ? (
         <>
+          <StrategyHypothesisPanel report={report.data} />
           <MetricsGrid report={report.data} />
           <ValidationEvidencePanel report={report.data} />
           <StrategyMetadataSnapshotPanel report={report.data} />

@@ -2457,6 +2457,28 @@ test('renders dataset snapshot metadata for saved reports', async () => {
   expect(await screen.findByText('qfq')).toBeTruthy();
 });
 
+test('binds AI strategy research to the selected saved canonical report', async () => {
+  renderBacktestPage();
+  await screen.findByText('sha256:fixture-dataset-snapshot');
+
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open AI strategy research' }),
+  );
+
+  const panel = screen
+    .getByRole('heading', { name: 'Evidence-bound hypothesis lab' })
+    .closest('section');
+  expect(panel).toBeTruthy();
+  expect(within(panel!).getByText('#1')).toBeTruthy();
+  expect(
+    within(panel!).getByText('sha256:fixture-dataset-snapshot'),
+  ).toBeTruthy();
+  expect(within(panel!).getByText('600519')).toBeTruthy();
+  expect(
+    within(panel!).queryByText('Run and save a backtest first.'),
+  ).toBeNull();
+});
+
 test('localizes dataset snapshot asset classes in chinese reports', async () => {
   renderBacktestPage({ locale: 'zh' });
 

@@ -6,6 +6,37 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-15: AI-native Phase 1.18 adds the first complete, separately
+  human-gated formula-research vertical over one saved canonical after-cost
+  backtest: evidence-bound hypothesis export, a locally allowlisted Formula
+  DSL, an exact frozen dataset/window/universe/cost binding, next-persisted-bar
+  signal execution through the existing canonical backtest engine, an
+  evidence-bound external critique, and an exact final human disposition.
+  Assumptions: models may propose and critique but never calculate authoritative
+  portfolio or performance facts; the Formula DSL is research-only and cannot
+  execute arbitrary code; saved datasets and results are immutable research
+  facts; DeepSeek is one replaceable configured edge rather than a core
+  dependency; and every external export needs its own exact confirmation. Six
+  isolated `ai_*` tables retain hypothesis, backtest, critique, review, and
+  hash-chained event evidence without writing OMS, ledger, risk, kill-switch,
+  capital, Decision, broker, or execution-authority state. Parameter ranges,
+  AST, dataset snapshot, universe, window, frequency, cost model, signal timing,
+  and initial cash are fingerprinted; drift, partial evidence, replay failure,
+  duplicate commands, stage failure, or unauthorized tools fail closed while
+  retaining negative results. Deterministic validation passes all 1,637 backend
+  tests and 101 trading-safety tests. Under Node 24.14.0, all 425 Web tests,
+  Prettier, and the production build pass; changed Python files pass Black and
+  isort. Desktop (1440 px) and mobile (390 px) checks bind the panel to the
+  selected saved report and show no horizontal overflow or authority controls.
+  A bounded real-provider smoke exported only deterministic synthetic research
+  evidence: the configured DeepSeek-compatible API was reachable and received
+  exactly one hypothesis request, but its response failed the local closed-world
+  artifact contract (`external_research_invalid_response`). No draft, local
+  backtest, critique request, or review was created; no automatic retry ran;
+  raw response/reasoning and the API key were not persisted. This distinguishes
+  edge connectivity from schema-qualified research output instead of claiming a
+  successful analysis.
+
 - 2026-07-15: AI-native Phase 1.17 adds the separately versioned, explicit
   current-evidence retrieval required for Phase 1.16 promoted-analysis memory.
   Assumptions: recall eligibility is not automatic recall; historical research

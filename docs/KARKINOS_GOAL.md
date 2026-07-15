@@ -291,6 +291,18 @@ Active planning target:
   permission: it performs no semantic search, prompt injection, model call,
   Decision handoff, trade-plan creation, financial mutation, broker action,
   capital change, or execution-authority grant.
+  Phase 1.18 establishes the first full evidence-bound strategy-research loop:
+  a human selects one saved canonical backtest and exact persisted dataset,
+  explicitly exports sanitized evidence for non-executable hypotheses, chooses
+  one locally allowlisted Formula DSL draft, separately confirms a canonical
+  after-cost backtest, optionally exports only that normalized result for AI
+  critique, and records a final human disposition. DeepSeek or any other model
+  remains a replaceable provider edge. The model cannot change the frozen
+  universe, window, dataset, frequency, cost model, canonical accounting, or
+  anti-lookahead execution timing. The loop creates research evidence only: no
+  strategy registration, Decision input, trade plan, paper/shadow promotion,
+  OMS/ledger/risk mutation, broker action, permission, capital change, or
+  execution authority.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

@@ -38,7 +38,15 @@ Key Features:
   ledger-bound context. Phase 1.8/1.13 remain unchanged; retrieval is neither
   automatic recall nor export permission and adds no model call, Decision
   input, trade plan, financial write, broker action, capital, or execution
-  authority.
+  authority. Phase 1.18 adds a separately human-gated strategy-research loop:
+  a replaceable OpenAI-compatible model may propose only non-executable,
+  locally allowlisted Formula DSL over one saved canonical backtest and exact
+  persisted dataset. A second confirmation runs the selected formula through
+  the existing canonical after-cost engine with completed-bar signals applied
+  on the next bar; a third confirmation permits a normalized evidence critique,
+  followed by human disposition. DeepSeek is not a core dependency. The loop
+  registers no production strategy and creates no Decision/trade plan,
+  financial mutation, broker action, capital, or execution authority.
 - **Event-Driven Architecture** — All components communicate through EventBus, ensuring deterministic backtesting
 - **Multi-Asset Support** — A-shares, ETFs, gold spot, exchange-traded bonds; Instrument field values carry asset differences
 - **Target Weight Signals** — Strategies output target weights (0~1), Portfolio auto-converts to share counts
