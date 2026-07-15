@@ -85,6 +85,10 @@ always denies. An allowed policy evaluation alone issues no runtime authority.
 
 Required evidence:
 
+- one canonical adapter release manifest accepted through an append-only human
+  review, with exact provider, gateway, deployment, version, fingerprint,
+  account alias, mode, capability, and process-boundary binding; rejection,
+  revocation, or drift blocks new ingestion;
 - one reviewed adapter for cash, positions, orders, fills, session status,
   heartbeat, and source timestamps;
 - immutable snapshots, cursor, schema, deployment, capability health, and

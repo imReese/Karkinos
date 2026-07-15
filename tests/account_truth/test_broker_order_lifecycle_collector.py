@@ -7,6 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from account_truth.broker_adapter_release import (
+    BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
+    BrokerAdapterReleaseReviewRepository,
+    preview_broker_adapter_release_manifest,
+)
 from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRepository,
@@ -123,6 +128,72 @@ def _ingest(repository, preview: dict) -> dict:
     return repository.ingest(
         preview,
         acknowledgement=BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    )
+
+
+def _release_preview() -> dict:
+    return preview_broker_adapter_release_manifest(
+        json.dumps(
+            {
+                "schema_version": "karkinos.broker_adapter_release_manifest.v1",
+                "release_evidence_ref": "fixture-release-unreviewed",
+                "collector_id": "deterministic-fixture-collector",
+                "deployment_id": "fixture-deployment-1",
+                "collector_version": "fixture-v1",
+                "deployment_fingerprint": "d" * 64,
+                "provider": "deterministic_fixture",
+                "gateway_id": "fixture-gateway-1",
+                "account_alias": "fixture-account",
+                "adapter_authorization_ref": "test-only-user-authorization",
+                "collection_modes": ["callback", "poll"],
+                "capabilities": {
+                    "can_read_account": False,
+                    "can_read_cash": False,
+                    "can_read_positions": False,
+                    "can_read_orders": True,
+                    "can_read_fills": True,
+                    "can_read_market_session": False,
+                    "can_read_heartbeat": True,
+                    "can_submit_orders": False,
+                    "can_cancel_orders": False,
+                },
+                "boundaries": {
+                    "runtime_auth_material_external": True,
+                    "strategy_imports_adapter": False,
+                    "ai_imports_adapter": False,
+                    "core_imports_provider_sdk": False,
+                    "writes_oms": False,
+                    "writes_production_ledger": False,
+                    "writes_risk_state": False,
+                    "writes_kill_switch": False,
+                    "writes_capital_authority": False,
+                    "default_registered": False,
+                },
+                "review_refs": {
+                    "adapter_adr": "fixture-adr-v1",
+                    "capability_matrix": "fixture-capability-matrix-v1",
+                    "threat_model": "fixture-threat-model-v1",
+                    "deployment_runbook": "fixture-deployment-runbook-v1",
+                    "rollback_runbook": "fixture-rollback-runbook-v1",
+                    "privacy_review": "fixture-privacy-review-v1",
+                },
+                "limitations": ["Deterministic test-only adapter release."],
+            }
+        ),
+        source_name="deterministic adapter release fixture",
+    )
+
+
+def _accept_live_release(db_path) -> dict:
+    preview = _release_preview()
+    return BrokerAdapterReleaseReviewRepository(db_path).record_review(
+        preview,
+        review_id="fixture-release-review-accepted-v1",
+        decision="accepted",
+        reviewer_ref="fixture-human-reviewer",
+        reviewed_at=NOW.isoformat(),
+        reason_ref="fixture-release-approved",
+        acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
     )
 
 
@@ -290,6 +361,7 @@ def test_disconnect_and_partial_batch_are_persisted_without_cursor_advance(
     expected_blocker: str,
 ) -> None:
     db_path = tmp_path / f"{connection_status}-{batch_status}.db"
+    _accept_live_release(db_path)
     repository = BrokerOrderLifecycleCollectorRepository(db_path)
     payload = _batch(
         run_id=f"collector-{connection_status}-{batch_status}",
@@ -397,6 +469,7 @@ def test_duplicate_and_out_of_order_callback_telemetry_cannot_add_facts(
     tmp_path,
 ) -> None:
     db_path = tmp_path / "collector.db"
+    _accept_live_release(db_path)
     repository = BrokerOrderLifecycleCollectorRepository(db_path)
     payload = _batch(
         collection_mode="callback",
@@ -431,21 +504,16 @@ def test_live_source_requires_reviewed_read_only_adapter_authorization(
     repository = BrokerOrderLifecycleCollectorRepository(tmp_path / "collector.db")
     payload = _batch(
         collection_mode="callback",
+        source_contact_status="read_only_contact",
         connection_status="connected",
+        release_review_status="reviewed",
         callbacks_received=1,
     )
 
     result = _ingest(repository, _preview(payload))
 
     assert result["run_status"] == "blocked"
-    assert (
-        "broker_order_lifecycle_collector_live_source_contact_not_read_only"
-        in result["blockers"]
-    )
-    assert (
-        "broker_order_lifecycle_collector_adapter_release_not_reviewed"
-        in result["blockers"]
-    )
+    assert "broker_adapter_release_review_not_found" in result["blockers"]
     assert (
         repository.get_state(
             provider="deterministic_fixture",
@@ -647,6 +715,7 @@ def test_partial_poll_batch_reblocks_previously_healthy_collector_scope(
     db_path = tmp_path / "collector.db"
     repository = BrokerOrderLifecycleCollectorRepository(db_path)
     _ingest(repository, _preview(_batch()))
+    _accept_live_release(db_path)
     captured_at = NOW + timedelta(seconds=1)
     partial_payload = _batch(
         run_id="collector-partial-poll-2",
@@ -678,6 +747,53 @@ def test_partial_poll_batch_reblocks_previously_healthy_collector_scope(
     assert resolved["collector_evidence"]["status"] == "blocked"
     assert "broker_order_lifecycle_collector_latest_run_blocked" in (
         resolved["collector_evidence"]["blockers"]
+    )
+
+
+def test_release_revocation_between_prepare_and_commit_blocks_restart_replay(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "collector.db"
+    _accept_live_release(db_path)
+    repository = BrokerOrderLifecycleCollectorRepository(db_path)
+    payload = _batch(
+        run_id="collector-release-revoked-during-prepare",
+        collection_mode="callback",
+        source_contact_status="read_only_contact",
+        connection_status="connected",
+        release_review_status="reviewed",
+        callbacks_received=1,
+    )
+    prepared = repository.prepare(
+        _preview(payload),
+        acknowledgement=BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    )
+    BrokerAdapterReleaseReviewRepository(db_path).record_review(
+        _release_preview(),
+        review_id="fixture-release-review-revoked-v1",
+        decision="revoked",
+        reviewer_ref="fixture-human-reviewer",
+        reviewed_at=(NOW + timedelta(seconds=1)).isoformat(),
+        reason_ref="fixture-release-disabled",
+        acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
+    )
+
+    restarted = BrokerOrderLifecycleCollectorRepository(db_path)
+    result = restarted.commit_prepared("collector-release-revoked-during-prepare")
+
+    assert prepared["run_status"] == "prepared"
+    assert result["run_status"] == "blocked"
+    assert (
+        "broker_order_lifecycle_collector_adapter_release_review_blocked"
+        in result["blockers"]
+    )
+    assert "broker_adapter_release_review_not_accepted" in result["blockers"]
+    assert (
+        BrokerOrderLifecycleEvidenceRepository(
+            db_path,
+            ensure_schema=False,
+        ).list_observations()
+        == []
     )
 
 

@@ -105,12 +105,20 @@ lifecycle it binds:
 
 - `run_id`, `collector_id`, `deployment_id`, `collector_version`, and a
   deployment fingerprint;
-- separately reviewed `release_evidence_ref` and `user_authorization_ref`;
+- separately reviewed `release_evidence_ref` and `adapter_authorization_ref`;
 - provider/gateway/account scope plus `callback`, `poll`, `replay`, or `fixture`
   mode;
 - connection/batch state, current/next cursor, and callback
   received/deduplicated/out-of-order counts;
 - one complete batch's canonical lifecycle fact.
+
+For `callback` and `poll`, `release_review_status=reviewed` is only edge
+telemetry and cannot authorize itself. Before live preparation, Karkinos
+requires the exact `release_evidence_ref`, deployment, capabilities, collection
+mode, and authorization to match a persisted human acceptance under the
+[broker adapter release review contract](broker-adapter-release-review.en.md).
+The same gate is rechecked before a prepared run commits, so a review revoked
+during restart recovery blocks lifecycle persistence and cursor advancement.
 
 `callback` and `poll` are labels reported by a future edge; they trigger no
 provider contact. Explicit local execution:
@@ -141,6 +149,8 @@ Deterministic rules:
   is marked duplicate;
 - same cursor with different evidence, cursor regression/gap, or deployment,
   release, authorization, or account drift blocks;
+- a live batch with missing, rejected, revoked, or drifted canonical adapter
+  release review blocks even if the batch claims `reviewed`;
 - a disconnect or partial batch may be recorded as operational evidence but
   cannot advance the cursor;
 - duplicate/out-of-order callback counts are recorded; one complete batch still
@@ -174,13 +184,13 @@ or capital authority.
 ## Third-party adapter review gate
 
 No broker SDK, broker-specific runtime, or support claim is added before the
-user explicitly identifies the real broker environment. A future adapter needs
-separate review of dependency source/license, credential isolation, read-only
-capability, account binding, callback/poll semantics, disconnect/restart,
-duplicate/out-of-order and partial-batch behavior, release/rollback, sanitized
-logging, kill-switch visibility, and multi-day soak, followed by explicit user
-authorization. Adapter review cannot also grant submit/cancel or capital
-authority.
+user explicitly identifies the real broker environment. A future adapter uses
+the versioned [release-review boundary](broker-adapter-release-review.en.md) to
+bind dependency/source review, capability and threat evidence, deployment,
+rollback, privacy, and explicit user authorization. It must still pass
+disconnect/restart, duplicate/out-of-order, partial-batch, logging,
+kill-switch-visibility, and multi-day-soak review. Adapter acceptance never
+registers the adapter and cannot grant submit/cancel or capital authority.
 
 ## Assumptions, validation, and risk impact
 

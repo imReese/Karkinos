@@ -134,7 +134,10 @@ run identity, retry, status, limitations, and recovery tasks.
 ### Account Truth and reconciliation
 
 ```text
-explicit broker import or collector evidence
+candidate adapter release manifest
+-> human accept / reject / revoke review
+-> exact live collector deployment binding
+-> explicit broker import or collector evidence
 -> preview and validation
 -> persisted broker facts
 -> account/execution reconciliation
@@ -144,6 +147,14 @@ explicit broker import or collector evidence
 
 Raw provider facts retain source identity. Duplicate, sequence, account,
 quantity, and schema conflicts fail closed.
+
+A collector's own release-status field is not authority. Live callback/poll
+ingestion resolves an append-only adapter release review and binds collector,
+deployment fingerprint, provider, gateway, account alias, authorization,
+capability matrix, process boundaries, and rollback/privacy evidence at both
+prepare and commit. Missing, rejected, revoked, tampered, or drifted release
+evidence blocks ingestion. Acceptance neither registers an adapter nor grants
+broker-write or capital authority.
 
 ### Controlled execution
 
