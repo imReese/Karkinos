@@ -2416,8 +2416,12 @@ export const copy = {
       no: 'No',
       pollInterval: 'Poll interval',
       pollIntervalUnit: 'seconds',
-      token: 'Provider token',
-      maskedToken: 'Masked token retained',
+      token: 'TuShare credential',
+      credentialConfigured: 'Configured in the runtime environment',
+      credentialMissing: 'Missing; configure TUSHARE_TOKEN before switching',
+      credentialNotRequired: 'Not required by the selected provider',
+      credentialEnvironmentDetail:
+        'Credentials are never accepted by this page. Set TUSHARE_TOKEN in the selected .env file and restart Karkinos.',
       accountCostProfile: 'Account cost profile',
       accountCostProfileDetail:
         'Used only to prefill manual stock/ETF trade fees. It does not change backtest assumptions or submit orders.',
@@ -4781,8 +4785,12 @@ export const copy = {
       no: '否',
       pollInterval: '轮询间隔',
       pollIntervalUnit: '秒',
-      token: '供应商 token',
-      maskedToken: '保留已脱敏 token',
+      token: 'TuShare 凭证',
+      credentialConfigured: '已通过运行环境配置',
+      credentialMissing: '尚未配置；切换前请先设置 TUSHARE_TOKEN',
+      credentialNotRequired: '当前供应商不需要凭证',
+      credentialEnvironmentDetail:
+        '此页面不接收凭证。请在选定的 .env 文件中设置 TUSHARE_TOKEN，然后重启 Karkinos。',
       accountCostProfile: '账户成本配置',
       accountCostProfileDetail:
         '仅用于手工录入股票/ETF 交易时预填费用，不改变回测假设，也不会提交订单。',

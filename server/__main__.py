@@ -33,17 +33,12 @@ def main() -> None:
 
     from server.bootstrap import (
         load_runtime_config,
-        load_runtime_environment_file,
+        load_selected_runtime_environment_file,
         resolve_config_path,
     )
     from server.config import ServerConfig
 
-    configured_env_file = os.environ.get("KARKINOS_ENV_FILE")
-    env_file = args.env_file or configured_env_file or ".env"
-    load_runtime_environment_file(
-        env_file,
-        required=args.env_file is not None or configured_env_file is not None,
-    )
+    load_selected_runtime_environment_file(args.env_file)
 
     config_overrides = {}
     if args.host is not None:

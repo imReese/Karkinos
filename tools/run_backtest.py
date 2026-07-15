@@ -11,7 +11,12 @@ from datetime import datetime
 
 from analytics.report import generate_report
 from backtest.engine import BacktestEngine
-from server.bootstrap import build_strategy, create_runtime_context, load_runtime_config
+from server.bootstrap import (
+    build_strategy,
+    create_runtime_context,
+    load_runtime_config,
+    load_selected_runtime_environment_file,
+)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -21,6 +26,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.parse_args(argv)
 
+    load_selected_runtime_environment_file()
     config = load_runtime_config()
     runtime = create_runtime_context(config)
     manager = runtime.data_manager

@@ -16,6 +16,7 @@ from server.bootstrap import (
     create_runtime_context,
     load_runtime_config,
     load_runtime_environment_file,
+    load_selected_runtime_environment_file,
     resolve_config_path,
     resolve_data_dir,
 )
@@ -58,7 +59,6 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
                 },
                 "data_source": {
                     "provider": "tushare",
-                    "tushare_token": "local-token",
                     "live_poll_interval": 120,
                 },
                 "broker_fee": {
@@ -70,7 +70,6 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
                     "enabled": False,
                     "provider": "",
                     "model": "",
-                    "api_keys": {},
                 },
             }
         ),
@@ -83,7 +82,7 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
     assert config.port == 9000
     assert config.live_auto_start is False
     assert config.data_source == "tushare"
-    assert config.tushare_token == "local-token"
+    assert config.tushare_token == ""
     assert config.live_poll_interval == 120
     assert config.broker_fee_schedule.schedule_id == "grouped-fee-schedule"
     assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
@@ -131,6 +130,28 @@ def test_server_config_rejects_removed_global_ai_authority_switch(tmp_path):
     )
 
     with pytest.raises(ValueError, match="allow_financial_context was removed"):
+        ServerConfig.from_json(config_path)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            {"data_source": {"provider": "tushare", "tushare_token": "secret"}},
+            "data_source.tushare_token is not accepted",
+        ),
+        ({"tushare_token": "secret"}, "tushare_token is not accepted"),
+        (
+            {"ai": {"enabled": False, "api_keys": {"provider": "secret"}}},
+            "ai.api_keys is not accepted",
+        ),
+    ],
+)
+def test_server_config_rejects_credentials_in_json(tmp_path, payload, message):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
         ServerConfig.from_json(config_path)
 
 
@@ -234,6 +255,21 @@ def test_dotenv_loader_preserves_process_precedence_and_can_require_file(tmp_pat
             environ=environment,
             required=True,
         )
+
+
+def test_selected_runtime_environment_loader_uses_process_path(
+    tmp_path,
+    monkeypatch,
+):
+    env_file = tmp_path / "selected.env"
+    env_file.write_text("KARKINOS_PORT=9200\n", encoding="utf-8")
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("KARKINOS_ENV_FILE", str(env_file))
+    monkeypatch.delenv("KARKINOS_PORT", raising=False)
+
+    assert load_selected_runtime_environment_file() is True
+    assert load_runtime_config(ServerConfig).port == 9200
 
 
 def test_server_main_check_config_loads_default_dotenv_without_starting(
@@ -972,7 +1008,6 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     }
     assert example["data_source"] == {
         "provider": "akshare",
-        "tushare_token": "",
         "live_poll_interval": 60,
     }
     assert example["ai"] == {

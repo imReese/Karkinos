@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -1160,6 +1160,8 @@ class HoldingStrategyAttributionReport(BaseModel):
 
 
 class SettingsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     host: str = "0.0.0.0"
     port: int = 8000
     live_auto_start: bool = True
@@ -1171,7 +1173,7 @@ class SettingsResponse(BaseModel):
     short_period: int = 5
     long_period: int = 20
     data_source: str = "akshare"
-    tushare_token: str = ""
+    tushare_token_configured: bool = False
     notification: dict = Field(default_factory=lambda: {"type": "console"})
     live_poll_interval: int = 60
     account_commission_rate: float = 0.0001
@@ -1179,8 +1181,9 @@ class SettingsResponse(BaseModel):
 
 
 class DataSourceSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     data_source: str = "akshare"
-    tushare_token: str = ""
     live_poll_interval: int = 60
 
 

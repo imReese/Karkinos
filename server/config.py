@@ -100,9 +100,7 @@ _EXCHANGE_ALIASES = {
 _SERVER_CONFIG_GROUP_FIELDS = frozenset(
     {"host", "port", "live_auto_start", "cors_allowed_origins", "notification"}
 )
-_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
-    {"provider", "tushare_token", "live_poll_interval"}
-)
+_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset({"provider", "live_poll_interval"})
 _AI_CONFIG_GROUP_FIELDS = frozenset(
     {
         "enabled",
@@ -112,9 +110,6 @@ _AI_CONFIG_GROUP_FIELDS = frozenset(
         "adapter_kind",
         "timeout_seconds",
         "api_key_env",
-        # Migration-only credential input. New configurations keep secrets in
-        # the environment named by api_key_env.
-        "api_keys",
     }
 )
 _ENV_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
@@ -146,6 +141,11 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
     data_source = data.get("data_source")
     if isinstance(data_source, dict):
         group = dict(data_source)
+        if "tushare_token" in group:
+            raise ValueError(
+                "data_source.tushare_token is not accepted in config.json; "
+                "set TUSHARE_TOKEN in the environment"
+            )
         unknown = sorted(set(group) - _DATA_SOURCE_CONFIG_GROUP_FIELDS)
         if unknown:
             raise ValueError(
@@ -155,7 +155,6 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
         data.pop("data_source")
         field_mapping = {
             "provider": "data_source",
-            "tushare_token": "tushare_token",
             "live_poll_interval": "live_poll_interval",
         }
         for grouped_field, value in group.items():
@@ -182,6 +181,11 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
             raise ValueError(
                 "ai.allow_financial_context was removed; external financial "
                 "evidence must be authorized by its workflow-specific contract"
+            )
+        if "api_keys" in ai:
+            raise ValueError(
+                "ai.api_keys is not accepted in config.json; set the environment "
+                "variable named by ai.api_key_env"
             )
         unknown = sorted(set(ai) - _AI_CONFIG_GROUP_FIELDS)
         if unknown:
@@ -261,7 +265,6 @@ class AIProviderConfig:
     adapter_kind: str = "openai_compatible_https"
     timeout_seconds: float = 20.0
     api_key_env: str = "KARKINOS_AI_API_KEY"
-    api_keys: dict[str, str] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.enabled, bool):
@@ -287,11 +290,6 @@ class AIProviderConfig:
             raise ValueError("ai.timeout_seconds must be within (0, 60]")
         if not _ENV_NAME_PATTERN.fullmatch(self.api_key_env):
             raise ValueError("ai.api_key_env name is invalid")
-        if not isinstance(self.api_keys, dict) or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in self.api_keys.items()
-        ):
-            raise ValueError("ai.api_keys migration input must map strings to strings")
         if self.base_url:
             parsed = urlparse(self.base_url)
             if (
@@ -440,6 +438,11 @@ class ServerConfig(BacktestConfig):
 def _validate_runtime_config_fields(data: dict) -> None:
     """Reject misspelled or unsupported top-level fields before startup."""
 
+    if "tushare_token" in data:
+        raise ValueError(
+            "tushare_token is not accepted in config.json; set TUSHARE_TOKEN "
+            "in the environment"
+        )
     allowed_fields = set(ServerConfig.__dataclass_fields__)
     unknown = sorted(set(data) - allowed_fields)
     if unknown:
@@ -460,7 +463,6 @@ def _parse_ai_provider_config(value: object) -> AIProviderConfig:
         timeout_seconds = float(timeout_seconds)
     except (TypeError, ValueError) as exc:
         raise ValueError("ai.timeout_seconds must be numeric") from exc
-    api_keys = value.get("api_keys", {})
     return AIProviderConfig(
         enabled=value.get("enabled", False),
         provider=value.get("provider", ""),
@@ -469,7 +471,6 @@ def _parse_ai_provider_config(value: object) -> AIProviderConfig:
         adapter_kind=value.get("adapter_kind", "openai_compatible_https"),
         timeout_seconds=timeout_seconds,
         api_key_env=value.get("api_key_env") or "KARKINOS_AI_API_KEY",
-        api_keys=dict(api_keys) if isinstance(api_keys, dict) else api_keys,
     )
 
 
@@ -503,8 +504,6 @@ def _validate_core_runtime_values(data: dict) -> None:
         raise ValueError("server.notification must be an object")
     if "data_source" in data and data["data_source"] not in {"akshare", "tushare"}:
         raise ValueError("data_source.provider must be akshare or tushare")
-    if "tushare_token" in data and not isinstance(data["tushare_token"], str):
-        raise ValueError("data_source.tushare_token must be a string")
     if "live_poll_interval" in data and (
         isinstance(data["live_poll_interval"], bool)
         or not isinstance(data["live_poll_interval"], int)

@@ -288,37 +288,38 @@ def test_confirmation_is_required_before_any_provider_request(tmp_path):
 
 
 @pytest.mark.unit
-def test_settings_loader_supports_generic_env_and_ignored_config_migration(tmp_path):
-    local_config = AIProviderConfig(
-        enabled=True,
-        provider="deepseek",
-        model="deepseek-v4-pro",
-        base_url="https://api.deepseek.com",
-        api_keys={"deepseek": "local-secret"},
-    )
+def test_settings_loader_supports_generic_and_configured_environment_names():
     environment_config = AIProviderConfig(
         enabled=True,
         provider="compatible-provider",
         model="compatible-model",
         base_url="https://compatible.example/v1",
     )
+    configured_environment = AIProviderConfig(
+        enabled=True,
+        provider="configured-provider",
+        model="configured-model",
+        base_url="https://configured.example/v1",
+        api_key_env="CONFIGURED_PROVIDER_KEY",
+    )
 
-    local = load_provider_connectivity_settings(local_config, environ={})
     env = load_provider_connectivity_settings(
         environment_config,
         environ={
             "KARKINOS_AI_API_KEY": "environment-secret",
         },
     )
+    configured = load_provider_connectivity_settings(
+        configured_environment,
+        environ={"CONFIGURED_PROVIDER_KEY": "configured-secret"},
+    )
 
-    assert local.base_url == "https://api.deepseek.com"
-    assert local.model_name == "deepseek-v4-pro"
-    assert local.credential_source == "ignored_local_config"
-    assert "local-secret" not in repr(local)
     assert env.provider_id == "compatible-provider"
     assert env.base_url == "https://compatible.example/v1"
     assert env.credential_source == "environment:KARKINOS_AI_API_KEY"
     assert "environment-secret" not in repr(env)
+    assert configured.credential_source == "environment:CONFIGURED_PROVIDER_KEY"
+    assert "configured-secret" not in repr(configured)
 
 
 @pytest.mark.unit
@@ -329,14 +330,13 @@ def test_settings_loader_supports_generic_env_and_ignored_config_migration(tmp_p
             "enabled": False,
             "provider": "deepseek",
             "model": "deepseek-v4-pro",
-            "api_keys": {"deepseek": "secret"},
+            "base_url": "https://api.deepseek.com",
         },
         {
             "enabled": True,
             "provider": "deepseek",
             "model": "deepseek-v4-pro",
             "base_url": "https://api.deepseek.com",
-            "api_keys": {},
         },
     ],
 )

@@ -23,6 +23,9 @@ The latest completed cross-cutting work includes:
 - human-gated allowlisted Formula DSL research over exact saved datasets,
   executed by the canonical backtest engine with next-bar semantics and no
   production-strategy or trading-authority side effects;
+- fail-fast grouped runtime configuration, environment-only TuShare/AI
+  credentials, and one dotenv-selection path shared by server and legacy CLI
+  entrypoints;
 - signed bounded execution policy, atomic budgets, runtime sessions, live
   gates, pause/replacement, submission interlock, lifecycle evidence, operator
   projection, and capital-scaling review.

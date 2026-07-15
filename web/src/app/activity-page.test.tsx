@@ -91,7 +91,7 @@ function installActivityFetchMock(extraLedgerEntries: unknown[] = []) {
         short_period: 5,
         long_period: 20,
         data_source: 'akshare',
-        tushare_token: '',
+        tushare_token_configured: false,
         notification: {},
         live_poll_interval: 60,
         account_commission_rate: 0.00015,

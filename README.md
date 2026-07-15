@@ -102,8 +102,9 @@ Docker:
 docker compose up --build
 ```
 
-Use fake or sanitized data for development. Do not commit a real `config.json`
-containing credentials or private account information.
+Use fake or sanitized data for development. Do not commit `config.json` or
+`.env`; credentials are rejected from JSON and belong only in the selected
+runtime environment file or process environment.
 
 ## Documentation
 

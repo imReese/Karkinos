@@ -13,7 +13,6 @@
     },
     "data_source": {
         "provider": "akshare",
-        "tushare_token": "",
         "live_poll_interval": 60
     },
     "broker_fee": {

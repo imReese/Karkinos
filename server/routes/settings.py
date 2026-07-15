@@ -7,7 +7,7 @@ import logging
 from dataclasses import is_dataclass, replace
 from decimal import Decimal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from server.bootstrap import resolve_config_path
 from server.models import (
@@ -25,17 +25,20 @@ from server.services.asset_metadata import (
 
 logger = logging.getLogger(__name__)
 
-_MASK = "****"
-
-
-def _mask_token(token: str) -> str:
-    if not token:
-        return ""
-    return f"{_MASK}{token[-4:]}" if len(token) > 4 else _MASK
-
 
 def _provider_requires_token(provider_name: str) -> bool:
     return provider_name == "tushare"
+
+
+def _require_configured_provider_credential(provider_name: str, config) -> None:
+    if provider_name == "tushare" and not config.tushare_token:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "TUSHARE_TOKEN is not configured; set it in the selected "
+                "environment file and restart Karkinos before enabling TuShare"
+            ),
+        )
 
 
 def _provider_configured(config, provider_name: str) -> bool:
@@ -102,7 +105,7 @@ def _settings_response(state) -> SettingsResponse:
         short_period=config.short_period,
         long_period=config.long_period,
         data_source=config.data_source,
-        tushare_token=_mask_token(config.tushare_token),
+        tushare_token_configured=bool(config.tushare_token),
         notification=config.notification,
         live_poll_interval=config.live_poll_interval,
         account_commission_rate=float(account_rate),
@@ -186,18 +189,19 @@ def _persist_runtime_config(
         data_source = (
             {"provider": raw_data_source} if raw_data_source is not None else {}
         )
-    for legacy_field in ("tushare_token", "live_poll_interval"):
-        if legacy_field in persisted:
-            data_source[legacy_field] = persisted.pop(legacy_field)
+    data_source.pop("tushare_token", None)
+    persisted.pop("tushare_token", None)
+    if "live_poll_interval" in persisted:
+        data_source["live_poll_interval"] = persisted.pop("live_poll_interval")
 
     for field in remove_fields:
-        if field in {"data_source", "tushare_token", "live_poll_interval"}:
+        if field in {"data_source", "live_poll_interval"}:
             grouped_field = "provider" if field == "data_source" else field
             data_source.pop(grouped_field, None)
         else:
             persisted.pop(field, None)
     for field, value in updates.items():
-        if field in {"data_source", "tushare_token", "live_poll_interval"}:
+        if field in {"data_source", "live_poll_interval"}:
             grouped_field = "provider" if field == "data_source" else field
             data_source[grouped_field] = value
         else:
@@ -299,6 +303,8 @@ def create_router() -> APIRouter:
         state = get_app_state()
         config = state.config
 
+        _require_configured_provider_credential(settings.data_source, config)
+
         # 更新 config 对象
         config.host = settings.host
         config.port = settings.port
@@ -310,10 +316,6 @@ def create_router() -> APIRouter:
         config.short_period = settings.short_period
         config.long_period = settings.long_period
         config.data_source = settings.data_source
-        # tushare_token 条件更新：非脱敏值才写入
-        new_token = settings.tushare_token
-        if not new_token.startswith(_MASK):
-            config.tushare_token = new_token
         config.notification = settings.notification
         config.live_poll_interval = settings.live_poll_interval
         _set_account_cost_settings(
@@ -351,21 +353,14 @@ def create_router() -> APIRouter:
         state = get_app_state()
         config = state.config
 
+        _require_configured_provider_credential(payload.data_source, config)
         config.data_source = payload.data_source
-        token_changed = not payload.tushare_token.startswith(_MASK)
-        if token_changed:
-            config.tushare_token = payload.tushare_token
         config.live_poll_interval = payload.live_poll_interval
         updates = {
             "data_source": config.data_source,
             "live_poll_interval": config.live_poll_interval,
         }
-        remove_fields: tuple[str, ...] = ()
-        if config.data_source == "akshare":
-            remove_fields = ("tushare_token",)
-        elif token_changed:
-            updates["tushare_token"] = config.tushare_token
-        _persist_runtime_config(updates, remove_fields=remove_fields)
+        _persist_runtime_config(updates)
 
         return _settings_response(state)
 

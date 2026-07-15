@@ -45,7 +45,7 @@ python -m server
 | 分组 | 用途 |
 | --- | --- |
 | `server` | Web 服务、CORS、调度器和通知 |
-| `data_source` | 行情提供方、TuShare token 兼容入口和轮询间隔 |
+| `data_source` | 行情提供方和轮询间隔；凭证只能来自环境变量 |
 | `broker_fee` | 券商费用建模 |
 | `ai` | 外部模型连接参数；密钥默认来自环境变量 |
 
@@ -66,7 +66,6 @@ python -m server
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `provider` | string | `akshare` | `akshare` 或 `tushare`。 |
-| `tushare_token` | string | 空 | 兼容入口；新部署优先使用 `TUSHARE_TOKEN`。 |
 | `live_poll_interval` | integer | `60` | 行情和调度轮询间隔，单位秒。 |
 
 交互式配置脚本会保留分组结构：
@@ -76,7 +75,7 @@ uv run python scripts/configure_data_source.py --provider akshare
 uv run python scripts/configure_data_source.py --provider tushare
 ```
 
-TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会写入已被 Git 忽略的 `config.json`；容器和长期部署仍推荐使用环境变量。
+TuShare token 通过隐藏输入读取，不接受命令行参数。脚本只把 provider 和轮询参数写入已被 Git 忽略的 `config.json`，把 Token 写入权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
 
 ### broker_fee
 
@@ -87,6 +86,10 @@ TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会写
 | `account_profile_id` | string | 脱敏账户 profile id，不能写完整资金账号。 |
 | `broker_name` | string | 券商展示名称。 |
 | `schedule_id` | string | 费用规则标识。 |
+| `display_name` | string | 仅用于本地可读说明。 |
+| `currency` | string | 费用模型币种说明，示例为 `CNY`。 |
+| `source_type` | string | 费用输入的脱敏来源类型。 |
+| `precedence` | string | 声明券商账单优先于配置估算。 |
 | `stock_a_commission_rate` | number/string | A 股佣金率。 |
 | `stock_a_min_commission` | number/string | A 股最低佣金。 |
 | `fund_etf_commission_rate` | number/string | ETF/场内基金佣金率。 |
@@ -99,6 +102,8 @@ TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会写
 | `limitations` | string[] | 当前费用模型的已知假设和待复核项。 |
 
 `account_identifier_saved`、`screenshots_saved` 和 `private_exports_saved` 必须保持 `false`。完整账号、截图、交割单或真实导出不得写入配置。
+
+解析器还接受 `profile_id`、`schema_version`、`source`、`effective_from`、`captured_at`、`rounding`、`rule_application`、`broker_absorbed_components`、`commission` 和 `taxes_and_fees` 作为结构化导入/归一化输入。它们不会成为独立账户事实；运行时只保留归一化后的费用条款、schedule/profile 标识和限制。
 
 旧字段 `broker_fee_schedule`、`account_commission_rate` 和 `account_min_commission` 仅用于迁移读取；新写入统一使用 `broker_fee`。
 
@@ -116,7 +121,7 @@ TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会写
 
 启用 `ai.enabled` 时必须显式设置 `provider`、`model` 和无凭证 HTTPS `base_url`。核心不会为 DeepSeek 或其他厂商猜测 endpoint。
 
-`ai.api_keys` 仍可作为旧本机配置迁移输入，但不再出现在推荐示例中。不要把 API Key 提交到仓库。
+`ai.api_keys` 不再接受；API Key 只能来自环境变量。继续在 JSON 中配置该字段会阻止启动。
 
 `allow_financial_context` 已移除；继续配置它会带迁移提示并阻止启动。删除该字段即可。是否允许发送某一类证据由具体的人工确认、不可变证据范围和对应 API 契约决定，不能由一个全局布尔值放宽。
 
@@ -125,7 +130,6 @@ AI 凭证解析顺序为：
 1. `KARKINOS_AI_API_KEY`；
 2. `ai.api_key_env` 指向的环境变量；
 3. 根据 provider 推导的 `<PROVIDER>_API_KEY`；
-4. 旧的本机 `ai.api_keys` 兼容值。
 
 ## 环境变量
 
@@ -142,7 +146,7 @@ AI 凭证解析顺序为：
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | `server.cors_allowed_origins`，逗号分隔 |
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
-| `TUSHARE_TOKEN` | `data_source.tushare_token` |
+| `TUSHARE_TOKEN` | TuShare 边缘适配器凭证；不会进入 `config.json` 或 Settings API |
 
 运行时与 AI 覆盖由同一个启动加载器处理。布尔值接受 `true/false`、`1/0`、`yes/no` 和 `on/off`；拼写错误会阻止启动。Port、轮询间隔、AI timeout、HTTPS base URL 和 CORS 空列表同样会被校验。
 

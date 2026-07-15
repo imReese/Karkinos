@@ -4041,7 +4041,7 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
         short_period=5,
         long_period=20,
         data_source="akshare",
-        tushare_token="",
+        tushare_token="environment-token",
         notification={"type": "console"},
         live_poll_interval=60,
     )
@@ -4061,7 +4061,6 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
         update_route.endpoint(
             settings_routes.DataSourceSettingsUpdate(
                 data_source="tushare",
-                tushare_token="token-1234",
                 live_poll_interval=120,
             )
         )
@@ -4084,7 +4083,6 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
     assert persisted == {
         "data_source": {
             "provider": "tushare",
-            "tushare_token": "token-1234",
             "live_poll_interval": 120,
         },
         "assets": [{"symbol": "600519", "asset_class": "stock"}],
@@ -4092,7 +4090,24 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
     }
 
 
-def test_update_settings_persists_account_commission_without_overwriting_token(
+def test_settings_payloads_reject_credential_fields():
+    from pydantic import ValidationError
+
+    from server.models import DataSourceSettingsUpdate, SettingsResponse
+
+    with pytest.raises(ValidationError, match="tushare_token"):
+        DataSourceSettingsUpdate.model_validate(
+            {
+                "data_source": "tushare",
+                "tushare_token": "must-not-enter-api",
+                "live_poll_interval": 60,
+            }
+        )
+    with pytest.raises(ValidationError, match="tushare_token"):
+        SettingsResponse.model_validate({"tushare_token": "must-not-enter-api"})
+
+
+def test_update_settings_persists_account_commission_without_credentials(
     monkeypatch,
 ):
     from server.bootstrap import resolve_config_path
@@ -4119,7 +4134,7 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
         short_period=5,
         long_period=20,
         data_source="akshare",
-        tushare_token="secret-token",
+        tushare_token="environment-secret-token",
         notification={"type": "console"},
         live_poll_interval=60,
         account_commission_rate=Decimal("0.0001"),
@@ -4137,7 +4152,6 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
     config_path = resolve_config_path()
     original_config = {
         "data_source": "akshare",
-        "tushare_token": "secret-token",
         "account_commission_rate": 0.0001,
         "account_min_commission": 5.0,
         "broker_fee_schedule": {
@@ -4164,7 +4178,7 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
                 short_period=5,
                 long_period=20,
                 data_source="akshare",
-                tushare_token="****oken",
+                tushare_token_configured=True,
                 notification={"type": "console"},
                 live_poll_interval=60,
                 account_commission_rate=0.00015,
@@ -4181,8 +4195,38 @@ def test_update_settings_persists_account_commission_without_overwriting_token(
     assert persisted["broker_fee"]["stock_a_min_commission"] == 5.0
     assert persisted["broker_fee"]["schedule_id"] == "local_broker_fee_schedule"
     assert persisted["data_source"] == "akshare"
-    assert persisted["tushare_token"] == "secret-token"
+    assert "tushare_token" not in persisted
     assert persisted["sentinel"] == "preserve-me"
+
+
+def test_full_settings_update_blocks_tushare_without_environment_credential(
+    monkeypatch,
+):
+    from server.routes import settings as settings_routes
+
+    router = settings_routes.create_router()
+    update_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/settings"
+        and "PUT" in route.methods
+    )
+    config = SimpleNamespace(tushare_token="")
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(config=config),
+    )
+
+    with pytest.raises(
+        settings_routes.HTTPException,
+        match="TUSHARE_TOKEN is not configured",
+    ):
+        asyncio.run(
+            update_route.endpoint(
+                settings_routes.SettingsResponse(data_source="tushare")
+            )
+        )
 
 
 def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
