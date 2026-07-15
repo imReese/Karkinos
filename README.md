@@ -78,6 +78,9 @@ scheduler:
 
 ```bash
 npm --prefix web run build
+cp config.example.json config.json
+cp .env.example .env
+uv run python -m server --check-config
 uv run python -m server --no-live
 ```
 

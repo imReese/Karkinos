@@ -10,19 +10,22 @@ Neither `config.json` nor `.env` should be committed. The JSON file holds ordina
 
 ```bash
 cp config.example.json config.json
-# Optional: create the environment template used by Docker Compose
+# Optional: create the environment template used by Compose or python -m server
 cp .env.example .env
+python -m server --check-config
 python -m server
 ```
 
-A direct `python -m server` process does not load `.env` automatically. Export the variables before starting the process, or use Docker Compose, which uses the project `.env` file for variable substitution.
+A direct `python -m server` process now loads `.env` from the project directory. Existing process variables are never overwritten by `.env`. Use `--env-file PATH` or the process variable `KARKINOS_ENV_FILE` to select another file; an explicitly selected missing file stops startup.
+
+`--check-config` resolves `.env`, JSON, environment overrides, and typed validation, then exits. It does not start the Web service, contact market/AI/broker systems, or prove that an API key works.
 
 ## Sources and precedence
 
 When the same setting is supplied more than once, the effective precedence is:
 
 ```text
-CLI arguments > environment variables > config.json > program defaults
+CLI arguments > existing process environment > .env > config.json > program defaults
 ```
 
 | Source | Intended content | Commit it? |
@@ -46,7 +49,7 @@ The recommended configuration has four groups. See the repository-root [`config.
 | `broker_fee` | Broker fee modeling |
 | `ai` | External-model connection settings; credentials default to environment variables |
 
-Unknown top-level fields, unknown group fields, and fields supplied in both grouped and legacy-flat forms stop startup. Misspellings are not silently ignored.
+Unknown top-level fields, unknown group fields, wrong field types, and fields supplied in both grouped and legacy-flat forms stop startup. Misspellings and invalid values are not silently ignored. The file is parsed only at startup; routes reuse the same typed configuration object instead of rereading JSON during a request.
 
 ### server
 
@@ -111,9 +114,11 @@ The TuShare token is read through a hidden prompt and is never accepted as a CLI
 | `timeout_seconds` | number | `20` | Per-request timeout in the range (0, 60]. |
 | `api_key_env` | string | `KARKINOS_AI_API_KEY` | Name of the environment variable holding the key, not the key itself. |
 
+Enabling `ai.enabled` requires explicit `provider`, `model`, and credential-free HTTPS `base_url` values. Core code does not guess an endpoint for DeepSeek or any other vendor.
+
 `ai.api_keys` remains a legacy ignored-local-config migration input but is omitted from the recommended example. Do not commit API keys.
 
-`allow_financial_context` is no longer a recommended global switch. Each external evidence flow is constrained by its exact human confirmation, immutable evidence scope, and API contract; one boolean cannot widen that boundary.
+`allow_financial_context` has been removed. Keeping it now stops startup with a migration hint; remove the field. Each external evidence flow is constrained by its exact human confirmation, immutable evidence scope, and API contract, so one global boolean cannot widen that boundary.
 
 AI credentials resolve in this order:
 
@@ -130,6 +135,7 @@ AI credentials resolve in this order:
 | --- | --- |
 | `KARKINOS_CONFIG_PATH` | `config.json` path, default `./config.json` |
 | `KARKINOS_DATA_DIR` | data directory, default `./data/store` |
+| `KARKINOS_ENV_FILE` | environment file used by `python -m server`; `--env-file` also selects it |
 | `KARKINOS_HOST` | `server.host` |
 | `KARKINOS_PORT` | `server.port` |
 | `KARKINOS_LIVE_AUTO_START` | `server.live_auto_start` |
@@ -138,7 +144,7 @@ AI credentials resolve in this order:
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
 | `TUSHARE_TOKEN` | `data_source.tushare_token` |
 
-Booleans accept `true/false`, `1/0`, `yes/no`, and `on/off`. Misspellings stop startup. Ports, polling intervals, and empty CORS lists are also validated.
+Runtime and AI overrides are handled by the same startup loader. Booleans accept `true/false`, `1/0`, `yes/no`, and `on/off`. Misspellings stop startup. Ports, polling intervals, AI timeout, HTTPS base URLs, and empty CORS lists are also validated.
 
 ### AI
 
@@ -181,4 +187,3 @@ Those boundaries are controlled by runtime storage, explicit human confirmation,
 - Do not store full account numbers, screenshots, statements, real account exports, or runtime databases in configuration.
 - Configure explicit production CORS origins; avoid uncontrolled wildcards.
 - Fix configuration errors before startup; do not catch them and fall back to defaults.
-

@@ -26,6 +26,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import httpx
 
+from server.config import AIProviderConfig, BacktestConfig
+
 from .contracts import (
     ModelRegistration,
     ProviderRegistration,
@@ -43,11 +45,6 @@ CONNECTIVITY_PROBE_TOKEN = "KARKINOS_AI_CONNECTIVITY_OK"
 
 _ENV_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _PROVIDER_ENV_PATTERN = re.compile(r"[^A-Z0-9]+")
-_DEFAULT_EDGE_ENDPOINTS = {
-    # Edge-profile convenience only. The adapter remains OpenAI-compatible and
-    # any explicitly configured HTTPS base URL takes precedence.
-    "deepseek": "https://api.deepseek.com",
-}
 
 
 class ConnectivityStatus(StrEnum):
@@ -709,54 +706,27 @@ class ProviderConnectivityService:
 
 
 def load_provider_connectivity_settings(
-    config_path: str | Path,
+    runtime_config: BacktestConfig | AIProviderConfig,
     *,
     environ: Mapping[str, str] | None = None,
 ) -> ProviderConnectivitySettings:
-    """Resolve an explicit provider without ever returning credentials in output."""
+    """Resolve one startup-validated provider config and its edge credential."""
     environment = os.environ if environ is None else environ
-    path = Path(config_path)
-    config: object = {}
-    if path.exists():
-        try:
-            config = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ConnectivityConfigurationError(
-                "AI provider config could not be loaded"
-            ) from exc
-    root = config if isinstance(config, dict) else {}
-    ai = root.get("ai") if isinstance(root.get("ai"), dict) else {}
-    enabled = _resolve_bool(environment.get("KARKINOS_AI_ENABLED"), ai.get("enabled"))
-    provider_id = str(
-        environment.get("KARKINOS_AI_PROVIDER") or ai.get("provider") or ""
-    ).strip()
-    model_name = str(
-        environment.get("KARKINOS_AI_MODEL") or ai.get("model") or ""
-    ).strip()
-    adapter_kind = str(
-        environment.get("KARKINOS_AI_ADAPTER_KIND")
-        or ai.get("adapter_kind")
-        or "openai_compatible_https"
-    ).strip()
-    base_url = str(
-        environment.get("KARKINOS_AI_BASE_URL")
-        or ai.get("base_url")
-        or _DEFAULT_EDGE_ENDPOINTS.get(provider_id.lower(), "")
-    ).strip()
+    if isinstance(runtime_config, AIProviderConfig):
+        ai = runtime_config
+    elif isinstance(runtime_config, BacktestConfig):
+        ai = runtime_config.ai
+    else:
+        raise ConnectivityConfigurationError("AI startup config is unavailable")
+    provider_id = ai.provider.strip()
+    model_name = ai.model.strip()
+    adapter_kind = ai.adapter_kind.strip()
+    base_url = ai.base_url.strip()
     api_key, credential_source = _resolve_api_key(
         ai=ai,
         provider_id=provider_id,
         environment=environment,
     )
-    timeout_raw = environment.get("KARKINOS_AI_TIMEOUT_SECONDS") or ai.get(
-        "timeout_seconds", 20
-    )
-    try:
-        timeout_seconds = float(timeout_raw)
-    except (TypeError, ValueError) as exc:
-        raise ConnectivityConfigurationError(
-            "AI provider timeout_seconds must be numeric"
-        ) from exc
     return ProviderConnectivitySettings(
         provider_id=provider_id,
         model_name=model_name,
@@ -764,21 +734,21 @@ def load_provider_connectivity_settings(
         api_key=api_key,
         credential_source=credential_source,
         adapter_kind=adapter_kind,
-        enabled=enabled,
-        timeout_seconds=timeout_seconds,
+        enabled=ai.enabled,
+        timeout_seconds=ai.timeout_seconds,
     )
 
 
 def _resolve_api_key(
     *,
-    ai: Mapping[str, Any],
+    ai: AIProviderConfig,
     provider_id: str,
     environment: Mapping[str, str],
 ) -> tuple[str, str]:
     generic = str(environment.get("KARKINOS_AI_API_KEY") or "").strip()
     if generic:
         return generic, "environment:KARKINOS_AI_API_KEY"
-    configured_env_name = str(ai.get("api_key_env") or "").strip()
+    configured_env_name = ai.api_key_env.strip()
     if configured_env_name:
         if not _ENV_NAME_PATTERN.fullmatch(configured_env_name):
             raise ConnectivityConfigurationError("AI api_key_env name is invalid")
@@ -792,25 +762,10 @@ def _resolve_api_key(
         provider_value = str(environment.get(provider_env_name) or "").strip()
         if provider_value:
             return provider_value, f"environment:{provider_env_name}"
-    api_keys = ai.get("api_keys")
-    if isinstance(api_keys, dict):
-        local_value = str(api_keys.get(provider_id) or "").strip()
-        if local_value:
-            return local_value, "ignored_local_config"
+    local_value = str(ai.api_keys.get(provider_id) or "").strip()
+    if local_value:
+        return local_value, "ignored_local_config"
     return "", "missing"
-
-
-def _resolve_bool(environment_value: str | None, config_value: object) -> bool:
-    value = environment_value if environment_value is not None else config_value
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-    raise ConnectivityConfigurationError("AI provider enabled must be boolean")
 
 
 def _safe_usage(value: object) -> dict[str, int]:

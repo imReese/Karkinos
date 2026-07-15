@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import urlparse
 
 _DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 _BROKER_CONNECTOR_ALLOWED_FIELDS = frozenset(
@@ -111,13 +112,12 @@ _AI_CONFIG_GROUP_FIELDS = frozenset(
         "adapter_kind",
         "timeout_seconds",
         "api_key_env",
-        # Read-only compatibility inputs. New configurations should keep
-        # credentials in the environment and should not use a global
-        # financial-context switch.
+        # Migration-only credential input. New configurations keep secrets in
+        # the environment named by api_key_env.
         "api_keys",
-        "allow_financial_context",
     }
 )
+_ENV_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 
 
 def _normalize_grouped_config_payload(raw: object) -> dict:
@@ -178,11 +178,17 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
     if ai is not None:
         if not isinstance(ai, dict):
             raise ValueError("ai config group must be an object")
+        if "allow_financial_context" in ai:
+            raise ValueError(
+                "ai.allow_financial_context was removed; external financial "
+                "evidence must be authorized by its workflow-specific contract"
+            )
         unknown = sorted(set(ai) - _AI_CONFIG_GROUP_FIELDS)
         if unknown:
             raise ValueError(
                 "ai config group contains unsupported fields: " + ", ".join(unknown)
             )
+        data["ai"] = dict(ai)
 
     return data
 
@@ -244,6 +250,71 @@ class BrokerFeeScheduleConfig:
     )
 
 
+@dataclass(frozen=True)
+class AIProviderConfig:
+    """Provider-neutral external-model settings without runtime authority."""
+
+    enabled: bool = False
+    provider: str = ""
+    model: str = ""
+    base_url: str = ""
+    adapter_kind: str = "openai_compatible_https"
+    timeout_seconds: float = 20.0
+    api_key_env: str = "KARKINOS_AI_API_KEY"
+    api_keys: dict[str, str] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ValueError("ai.enabled must be boolean")
+        for field_name in (
+            "provider",
+            "model",
+            "base_url",
+            "adapter_kind",
+            "api_key_env",
+        ):
+            if not isinstance(getattr(self, field_name), str):
+                raise ValueError(f"ai.{field_name} must be a string")
+        if self.adapter_kind != "openai_compatible_https":
+            raise ValueError(
+                "ai.adapter_kind must be the reviewed openai_compatible_https adapter"
+            )
+        if isinstance(self.timeout_seconds, bool) or not isinstance(
+            self.timeout_seconds, int | float
+        ):
+            raise ValueError("ai.timeout_seconds must be numeric")
+        if self.timeout_seconds <= 0 or self.timeout_seconds > 60:
+            raise ValueError("ai.timeout_seconds must be within (0, 60]")
+        if not _ENV_NAME_PATTERN.fullmatch(self.api_key_env):
+            raise ValueError("ai.api_key_env name is invalid")
+        if not isinstance(self.api_keys, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in self.api_keys.items()
+        ):
+            raise ValueError("ai.api_keys migration input must map strings to strings")
+        if self.base_url:
+            parsed = urlparse(self.base_url)
+            if (
+                parsed.scheme != "https"
+                or not parsed.netloc
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "ai.base_url must be a credential-free HTTPS origin/path"
+                )
+        if self.enabled and (
+            not self.provider.strip()
+            or not self.model.strip()
+            or not self.base_url.strip()
+        ):
+            raise ValueError(
+                "enabled AI config requires ai.provider, ai.model, and ai.base_url"
+            )
+
+
 @dataclass
 class BacktestConfig:
     """回测配置。"""
@@ -269,6 +340,7 @@ class BacktestConfig:
     broker_fee_schedule: BrokerFeeScheduleConfig = field(
         default_factory=BrokerFeeScheduleConfig
     )
+    ai: AIProviderConfig = field(default_factory=AIProviderConfig)
 
     @classmethod
     def from_json(cls, path: str | Path) -> BacktestConfig:
@@ -305,6 +377,9 @@ class BacktestConfig:
             data["broker_connectors"] = _parse_broker_connector_configs(
                 data["broker_connectors"]
             )
+        if "ai" in data:
+            data["ai"] = _parse_ai_provider_config(data["ai"])
+        _validate_core_runtime_values(data)
         if "controlled_bridge_policy" in data:
             data["controlled_bridge_policy"] = _parse_controlled_bridge_policy_config(
                 data["controlled_bridge_policy"]
@@ -371,6 +446,71 @@ def _validate_runtime_config_fields(data: dict) -> None:
         raise ValueError(
             "config.json contains unsupported top-level fields: " + ", ".join(unknown)
         )
+
+
+def _parse_ai_provider_config(value: object) -> AIProviderConfig:
+    if value is None:
+        return AIProviderConfig()
+    if not isinstance(value, dict):
+        raise ValueError("ai config group must be an object")
+    timeout_seconds = value.get("timeout_seconds", 20.0)
+    if isinstance(timeout_seconds, bool):
+        raise ValueError("ai.timeout_seconds must be numeric")
+    try:
+        timeout_seconds = float(timeout_seconds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ai.timeout_seconds must be numeric") from exc
+    api_keys = value.get("api_keys", {})
+    return AIProviderConfig(
+        enabled=value.get("enabled", False),
+        provider=value.get("provider", ""),
+        model=value.get("model", ""),
+        base_url=value.get("base_url", ""),
+        adapter_kind=value.get("adapter_kind", "openai_compatible_https"),
+        timeout_seconds=timeout_seconds,
+        api_key_env=value.get("api_key_env") or "KARKINOS_AI_API_KEY",
+        api_keys=dict(api_keys) if isinstance(api_keys, dict) else api_keys,
+    )
+
+
+def _validate_core_runtime_values(data: dict) -> None:
+    if "host" in data and (
+        not isinstance(data["host"], str) or not data["host"].strip()
+    ):
+        raise ValueError("server.host must be a non-empty string")
+    if "port" in data and (
+        isinstance(data["port"], bool)
+        or not isinstance(data["port"], int)
+        or data["port"] <= 0
+        or data["port"] > 65_535
+    ):
+        raise ValueError("server.port must be an integer within [1, 65535]")
+    if "live_auto_start" in data and not isinstance(data["live_auto_start"], bool):
+        raise ValueError("server.live_auto_start must be boolean")
+    if "cors_allowed_origins" in data:
+        origins = data["cors_allowed_origins"]
+        if (
+            not isinstance(origins, list)
+            or not origins
+            or any(
+                not isinstance(origin, str) or not origin.strip() for origin in origins
+            )
+        ):
+            raise ValueError(
+                "server.cors_allowed_origins must be a non-empty string list"
+            )
+    if "notification" in data and not isinstance(data["notification"], dict):
+        raise ValueError("server.notification must be an object")
+    if "data_source" in data and data["data_source"] not in {"akshare", "tushare"}:
+        raise ValueError("data_source.provider must be akshare or tushare")
+    if "tushare_token" in data and not isinstance(data["tushare_token"], str):
+        raise ValueError("data_source.tushare_token must be a string")
+    if "live_poll_interval" in data and (
+        isinstance(data["live_poll_interval"], bool)
+        or not isinstance(data["live_poll_interval"], int)
+        or data["live_poll_interval"] <= 0
+    ):
+        raise ValueError("data_source.live_poll_interval must be a positive integer")
 
 
 def _parse_broker_connector_configs(value: object) -> list[BrokerConnectorConfig]:

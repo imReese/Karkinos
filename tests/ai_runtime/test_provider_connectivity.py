@@ -25,6 +25,7 @@ from server.ai_runtime.provider_connectivity import (
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
+from server.config import AIProviderConfig
 
 
 class FixtureTransport:
@@ -288,30 +289,24 @@ def test_confirmation_is_required_before_any_provider_request(tmp_path):
 
 @pytest.mark.unit
 def test_settings_loader_supports_generic_env_and_ignored_config_migration(tmp_path):
-    config_path = tmp_path / "config.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "ai": {
-                    "enabled": True,
-                    "provider": "deepseek",
-                    "model": "deepseek-v4-pro",
-                    "api_keys": {"deepseek": "local-secret"},
-                    "allow_financial_context": True,
-                }
-            }
-        ),
-        encoding="utf-8",
+    local_config = AIProviderConfig(
+        enabled=True,
+        provider="deepseek",
+        model="deepseek-v4-pro",
+        base_url="https://api.deepseek.com",
+        api_keys={"deepseek": "local-secret"},
+    )
+    environment_config = AIProviderConfig(
+        enabled=True,
+        provider="compatible-provider",
+        model="compatible-model",
+        base_url="https://compatible.example/v1",
     )
 
-    local = load_provider_connectivity_settings(config_path, environ={})
+    local = load_provider_connectivity_settings(local_config, environ={})
     env = load_provider_connectivity_settings(
-        config_path,
+        environment_config,
         environ={
-            "KARKINOS_AI_ENABLED": "true",
-            "KARKINOS_AI_PROVIDER": "compatible-provider",
-            "KARKINOS_AI_MODEL": "compatible-model",
-            "KARKINOS_AI_BASE_URL": "https://compatible.example/v1",
             "KARKINOS_AI_API_KEY": "environment-secret",
         },
     )
@@ -340,23 +335,16 @@ def test_settings_loader_supports_generic_env_and_ignored_config_migration(tmp_p
             "enabled": True,
             "provider": "deepseek",
             "model": "deepseek-v4-pro",
+            "base_url": "https://api.deepseek.com",
             "api_keys": {},
-        },
-        {
-            "enabled": True,
-            "provider": "custom",
-            "model": "model",
-            "base_url": "http://insecure.example",
-            "api_keys": {"custom": "secret"},
         },
     ],
 )
-def test_settings_fail_closed_when_disabled_missing_secret_or_not_https(tmp_path, ai):
-    config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"ai": ai}), encoding="utf-8")
+def test_settings_fail_closed_when_disabled_missing_secret_or_not_https(ai):
+    config = AIProviderConfig(**ai)
 
     with pytest.raises(ConnectivityConfigurationError):
-        load_provider_connectivity_settings(config_path, environ={})
+        load_provider_connectivity_settings(config, environ={})
 
 
 @pytest.mark.unit

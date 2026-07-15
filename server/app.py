@@ -156,9 +156,8 @@ async def lifespan(app: FastAPI):
     state = get_app_state()
 
     # ---- Startup ----
-    from notification.notifier import build_notifier
-
     from core.event_bus import EventBus
+    from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
     from server.config import ServerConfig
 
@@ -268,13 +267,18 @@ async def lifespan(app: FastAPI):
     logger.info("Karkinos Server stopped")
 
 
-def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
+def create_app(
+    config_overrides: dict[str, Any] | None = None,
+    *,
+    runtime_config: Any | None = None,
+) -> FastAPI:
     """创建 FastAPI 应用实例。"""
     effective_overrides = dict(config_overrides or {})
-    from server.bootstrap import load_runtime_config
-    from server.config import ServerConfig
+    if runtime_config is None:
+        from server.bootstrap import load_runtime_config
+        from server.config import ServerConfig
 
-    runtime_config = load_runtime_config(ServerConfig, **effective_overrides)
+        runtime_config = load_runtime_config(ServerConfig, **effective_overrides)
 
     app = FastAPI(
         title="Karkinos Server",

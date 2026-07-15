@@ -15,10 +15,12 @@ from server.bootstrap import (
     build_watchlist,
     create_runtime_context,
     load_runtime_config,
+    load_runtime_environment_file,
     resolve_config_path,
     resolve_data_dir,
 )
 from server.config import (
+    AIProviderConfig,
     BacktestConfig,
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
@@ -86,6 +88,7 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
     assert config.broker_fee_schedule.schedule_id == "grouped-fee-schedule"
     assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
     assert config.broker_fee_schedule.stock_a_min_commission == Decimal("3")
+    assert config.ai == AIProviderConfig()
 
 
 def test_server_config_rejects_grouped_and_flat_field_conflicts(tmp_path):
@@ -118,6 +121,143 @@ def test_server_config_rejects_unknown_top_level_and_ai_fields(tmp_path):
 
     with pytest.raises(ValueError, match="unsupported fields: modle"):
         ServerConfig.from_json(config_path)
+
+
+def test_server_config_rejects_removed_global_ai_authority_switch(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"ai": {"enabled": false, "allow_financial_context": true}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="allow_financial_context was removed"):
+        ServerConfig.from_json(config_path)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"server": {"port": "8000"}}, "server.port"),
+        ({"server": {"live_auto_start": "true"}}, "live_auto_start"),
+        ({"server": {"cors_allowed_origins": []}}, "cors_allowed_origins"),
+        ({"data_source": {"provider": "unknown"}}, "data_source.provider"),
+        (
+            {"data_source": {"provider": "akshare", "live_poll_interval": 0}},
+            "live_poll_interval",
+        ),
+        (
+            {
+                "ai": {
+                    "enabled": False,
+                    "base_url": "http://insecure.example",
+                }
+            },
+            "ai.base_url",
+        ),
+        (
+            {"ai": {"enabled": True, "provider": "provider", "model": "model"}},
+            "requires ai.provider, ai.model, and ai.base_url",
+        ),
+    ],
+)
+def test_server_config_rejects_invalid_grouped_value_types(
+    tmp_path,
+    payload,
+    message,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        ServerConfig.from_json(config_path)
+
+
+def test_runtime_environment_uses_one_typed_ai_override_path(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "ai": {
+                    "enabled": False,
+                    "provider": "file-provider",
+                    "model": "file-model",
+                    "base_url": "https://file.example/v1",
+                    "timeout_seconds": 20,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("KARKINOS_AI_ENABLED", "true")
+    monkeypatch.setenv("KARKINOS_AI_PROVIDER", "environment-provider")
+    monkeypatch.setenv("KARKINOS_AI_MODEL", "environment-model")
+    monkeypatch.setenv("KARKINOS_AI_BASE_URL", "https://environment.example/v1")
+    monkeypatch.setenv("KARKINOS_AI_TIMEOUT_SECONDS", "12.5")
+
+    config = load_runtime_config(ServerConfig)
+
+    assert config.ai == AIProviderConfig(
+        enabled=True,
+        provider="environment-provider",
+        model="environment-model",
+        base_url="https://environment.example/v1",
+        timeout_seconds=12.5,
+    )
+
+
+def test_dotenv_loader_preserves_process_precedence_and_can_require_file(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "KARKINOS_HOST=dotenv-host\nKARKINOS_PORT=9000\n",
+        encoding="utf-8",
+    )
+    environment = {"KARKINOS_HOST": "process-host"}
+
+    loaded = load_runtime_environment_file(env_file, environ=environment)
+
+    assert loaded is True
+    assert environment == {
+        "KARKINOS_HOST": "process-host",
+        "KARKINOS_PORT": "9000",
+    }
+    assert (
+        load_runtime_environment_file(
+            tmp_path / "optional-missing.env",
+            environ=environment,
+        )
+        is False
+    )
+    with pytest.raises(ValueError, match="does not exist"):
+        load_runtime_environment_file(
+            tmp_path / "required-missing.env",
+            environ=environment,
+            required=True,
+        )
+
+
+def test_server_main_check_config_loads_default_dotenv_without_starting(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    from server import __main__ as server_main
+
+    (tmp_path / ".env").write_text(
+        "KARKINOS_HOST=dotenv-host\nKARKINOS_PORT=9100\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KARKINOS_HOST", raising=False)
+    monkeypatch.delenv("KARKINOS_PORT", raising=False)
+    monkeypatch.delenv("KARKINOS_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("KARKINOS_ENV_FILE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["python -m server", "--check-config"])
+
+    server_main.main()
+
+    assert "Karkinos configuration valid: config.json" in capsys.readouterr().out
 
 
 def test_runtime_environment_overrides_file_and_explicit_values_win(
