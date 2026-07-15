@@ -39,7 +39,7 @@ authority, bypass risk, or call a broker directly.
 | v1.0-v1.3 | Completed | Strategy runtime, Paper Broker/OMS, broker evidence, professional Decision workflow |
 | v1.4-v1.7 | Completed | Attribution/cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, lifecycle evidence, capital-scaling review |
-| v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, and exact live collector binding; no real provider selected or registered |
+| v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, exact live collector binding, and persisted-only operator readiness visibility; no real provider selected or registered |
 | AI-native Phase 1-1.18 | Formula research vertical implemented | Provider-neutral, evidence-bound, human-reviewed research, memory, allowlisted Formula DSL, canonical after-cost backtest, and critique workflows without trading authority |
 
 Account Truth and reconciliation remain mandatory safety gates, but they are
@@ -96,7 +96,11 @@ strategy, risk, Decision, and AI modules cannot import the provider SDK.
 Current state: the provider-neutral release manifest, deterministic local
 conformance suite, append-only report, and review gate are implemented,
 including exact conformance-to-review binding and prepare/commit drift and
-revocation checks. The suite validates Karkinos contracts, not a real adapter.
+revocation checks. Operations now projects release, conformance, and collector
+evidence through one persisted-only readiness view; an unconfigured provider is
+neutral, while evidence drift or a failed active collector is explicit. The
+suite validates Karkinos contracts, not a real adapter, and the view exposes no
+registration or review mutation control.
 Selecting the real provider, accepting its actual ADR/threat model, and
 authorizing its deployment remain open and require explicit owner input.
 

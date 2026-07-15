@@ -146,6 +146,11 @@ conformance result（包括较新 pass）后必须重新人工复核；较新失
 suite 只验证 Karkinos 契约，不宣称真实 adapter 可用。Acceptance 既不会注册 adapter，也不会
 授予券商写权限或资本权限。
 
+Operations 通过 `karkinos.broker_adapter_readiness.v1` 投影同一套已持久化的 release、conformance
+与 collector binding。该 projection 以只读方式打开数据库，不创建缺失 schema、不联系 provider，
+并把“尚未选择真实 provider”视为中性状态，而不是系统异常。它可以展示 drift 或 collector 失败，
+但不能记录 review、注册 adapter，或授予执行与资本权限。
+
 只读 soak promotion 还会把 recovery evidence 绑定到一个精确 connector。无 scope、属于其他
 connector 或混合 connector 的 drill 不能满足目标 connector 的 dossier。每种 drill type 以最新
 的匹配 scoped result 为准；后来失败会推翻旧 pass 并改变 dossier fingerprint，因此旧 operator

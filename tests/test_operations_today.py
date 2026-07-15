@@ -119,6 +119,53 @@ def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None
     ]
 
 
+def test_operations_today_surfaces_broker_adapter_evidence_without_activation() -> None:
+    readiness = {
+        "schema_version": "karkinos.broker_adapter_readiness.v1",
+        "status": "evidence_ready_not_activated",
+        "subsystem_status": "skipped",
+        "next_manual_action": (
+            "obtain_explicit_owner_authorization_before_adapter_activation"
+        ),
+        "latest_release": {
+            "collector_updated_at": None,
+        },
+        "limitations": ["Persisted evidence only; no provider contact."],
+    }
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        broker_adapter_readiness=readiness,
+        generated_at="2026-07-01T09:32:00+08:00",
+    )
+
+    subsystem = next(
+        item
+        for item in summary["subsystems"]
+        if item["id"] == "broker_adapter_evidence"
+    )
+    assert summary["broker_adapter_readiness"] == readiness
+    assert subsystem == {
+        "id": "broker_adapter_evidence",
+        "status": "skipped",
+        "tone": "neutral",
+        "target": "account-truth",
+        "last_run_at": None,
+        "next_action": (
+            "obtain_explicit_owner_authorization_before_adapter_activation"
+        ),
+        "limitations": ["Persisted evidence only; no provider contact."],
+        "detail_status": "evidence_ready_not_activated",
+    }
+
+
 def test_operations_today_surfaces_manual_execution_reconciliation_review() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
