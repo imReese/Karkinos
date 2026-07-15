@@ -27,6 +27,27 @@ class FakeFundSource:
         return dict(self.snapshot)
 
 
+class BatchInspectingFundSource:
+    def __init__(self, db: AppDatabase) -> None:
+        self.db = db
+        self.calls: list[str] = []
+
+    def fetch_latest(self, symbol: Symbol, asset_class: AssetClass = AssetClass.STOCK):
+        value = str(symbol)
+        self.calls.append(value)
+        assert self.db.get_latest_quote_sync(value, asset_type="fund") is None
+        if value == "019998":
+            assert self.db.get_latest_quote_sync("019999", asset_type="fund") is None
+        return {
+            "price": 2.0 if value == "019999" else 3.0,
+            "timestamp": "2026-06-12 15:00",
+            "source": "deterministic_fixture",
+            "quote_source": "deterministic_fixture",
+            "provider_name": "fixture",
+            "nav_date": "2026-06-12",
+        }
+
+
 def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_path):
     from server.services import fund_nav_sync
 
@@ -112,3 +133,37 @@ def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
     assert result.failed == {}
     assert source.calls == []
     assert db.get_latest_quote_sync("019999", asset_type="fund") is None
+
+
+def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
+    monkeypatch, tmp_path
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = BatchInspectingFundSource(db)
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"akshare": source},
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare", tushare_token=""),
+        db,
+        watchlist=[
+            (Symbol("019999"), AssetClass.FUND),
+            (Symbol("019998"), AssetClass.FUND),
+        ],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 15, 5),
+        ttl_seconds=0,
+    )
+
+    assert source.calls == ["019999", "019998"]
+    assert result.refreshed == ["019999", "019998"]
+    assert db.get_latest_quote_sync("019999", asset_type="fund") is not None
+    assert db.get_latest_quote_sync("019998", asset_type="fund") is not None
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    assert publication["status"] == "ready"
