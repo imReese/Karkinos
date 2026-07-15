@@ -102,6 +102,22 @@ _SERVER_CONFIG_GROUP_FIELDS = frozenset(
 _DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
     {"provider", "tushare_token", "live_poll_interval"}
 )
+_AI_CONFIG_GROUP_FIELDS = frozenset(
+    {
+        "enabled",
+        "provider",
+        "model",
+        "base_url",
+        "adapter_kind",
+        "timeout_seconds",
+        "api_key_env",
+        # Read-only compatibility inputs. New configurations should keep
+        # credentials in the environment and should not use a global
+        # financial-context switch.
+        "api_keys",
+        "allow_financial_context",
+    }
+)
 
 
 def _normalize_grouped_config_payload(raw: object) -> dict:
@@ -157,6 +173,16 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
         if "broker_fee_schedule" in data:
             raise ValueError("broker fee config cannot appear both grouped and flat")
         data["broker_fee_schedule"] = broker_fee
+
+    ai = data.pop("ai", None)
+    if ai is not None:
+        if not isinstance(ai, dict):
+            raise ValueError("ai config group must be an object")
+        unknown = sorted(set(ai) - _AI_CONFIG_GROUP_FIELDS)
+        if unknown:
+            raise ValueError(
+                "ai config group contains unsupported fields: " + ", ".join(unknown)
+            )
 
     return data
 
@@ -250,6 +276,7 @@ class BacktestConfig:
         path = Path(path)
         with path.open("r") as f:
             data = _normalize_grouped_config_payload(json.load(f))
+        _validate_runtime_config_fields(data)
 
         # 将数值型 initial_cash 转为 Decimal
         if "initial_cash" in data and not isinstance(data["initial_cash"], Decimal):
@@ -333,6 +360,18 @@ class ServerConfig(BacktestConfig):
     trusted_operator_identities: list[TrustedOperatorIdentityConfig] = field(
         default_factory=list
     )
+
+
+def _validate_runtime_config_fields(data: dict) -> None:
+    """Reject misspelled or unsupported top-level fields before startup."""
+
+    allowed_fields = set(ServerConfig.__dataclass_fields__)
+    unknown = sorted(set(data) - allowed_fields)
+    if unknown:
+        raise ValueError(
+            "config.json contains unsupported top-level fields: "
+            + ", ".join(unknown)
+        )
 
 
 def _parse_broker_connector_configs(value: object) -> list[BrokerConnectorConfig]:

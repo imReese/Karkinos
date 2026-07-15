@@ -87,7 +87,9 @@
         "enabled": false,
         "provider": "",
         "model": "",
-        "api_keys": {},
-        "allow_financial_context": false
+        "base_url": "",
+        "adapter_kind": "openai_compatible_https",
+        "timeout_seconds": 20,
+        "api_key_env": "KARKINOS_AI_API_KEY"
     }
 }
