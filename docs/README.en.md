@@ -32,9 +32,13 @@ Key Features:
   review, retrieval, source-memory,
   context, evidence, provider/model/prompt, quality/cost, and audit identities;
   it is not a current fact and must rebind current evidence before future use.
-  Phase 1.12 remains unchanged, and Phase 1.16 adds no retrieval, automatic
-  recall, Decision input, trade plan, financial write, broker action, capital,
-  or execution authority.
+  Phase 1.12 remains unchanged. Phase 1.17 adds a separate human-started
+  exact-ID retrieval for this new memory type: every source canonical tool
+  must map to unique current complete evidence under an existing valuation and
+  ledger-bound context. Phase 1.8/1.13 remain unchanged; retrieval is neither
+  automatic recall nor export permission and adds no model call, Decision
+  input, trade plan, financial write, broker action, capital, or execution
+  authority.
 - **Event-Driven Architecture** — All components communicate through EventBus, ensuring deterministic backtesting
 - **Multi-Asset Support** — A-shares, ETFs, gold spot, exchange-traded bonds; Instrument field values carry asset differences
 - **Target Weight Signals** — Strategies output target weights (0~1), Portfolio auto-converts to share counts

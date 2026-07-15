@@ -38,7 +38,10 @@ class FixtureService:
                 "effective_status": "recall_eligible",
                 "memory_recall_eligible": True,
                 "automatic_recall_enabled": False,
-                "retrieval_contract_available": False,
+                "retrieval_contract_available": True,
+                "retrieval_contract_version": (
+                    "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+                ),
                 "legacy_phase_1_12_contract_modified": False,
                 "external_model_invocation_count": 0,
                 "decision_handoff_enabled": False,
@@ -153,7 +156,10 @@ def test_promoted_analysis_memory_routes_are_explicit_local_and_read_lazy(
     assert promoted.status_code == 200
     assert promoted.json()["memory_recall_eligible"] is True
     assert promoted.json()["automatic_recall_enabled"] is False
-    assert promoted.json()["retrieval_contract_available"] is False
+    assert promoted.json()["retrieval_contract_available"] is True
+    assert promoted.json()["retrieval_contract_version"] == (
+        "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+    )
     assert promoted.json()["legacy_phase_1_12_contract_modified"] is False
     assert promoted.json()["external_model_invocation_count"] == 0
     assert promoted.json()["decision_handoff_enabled"] is False
@@ -178,7 +184,10 @@ def test_promoted_analysis_memory_routes_are_explicit_local_and_read_lazy(
     assert revoked.status_code == 200
     assert listed.status_code == fetched.status_code == replayed.status_code == 200
     assert listed.json()["automatic_recall_enabled"] is False
-    assert listed.json()["retrieval_contract_available"] is False
+    assert listed.json()["retrieval_contract_available"] is True
+    assert listed.json()["retrieval_contract_version"] == (
+        "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+    )
     assert listed.json()["legacy_phase_1_12_contract_modified"] is False
     assert listed.json()["provider_invocation_count"] == 0
     assert initialize_calls == [True, True, False, False, False]
@@ -224,5 +233,21 @@ def test_main_app_registers_promoted_analysis_memory_routes():
     ) in routes
     assert (
         "/api/ai/external-promoted-analysis-memory-promotions/{promotion_id}/" "replay",
+        "GET",
+    ) in routes
+    assert (
+        "/api/ai/external-promoted-analysis-memory-retrievals",
+        "POST",
+    ) in routes
+    assert (
+        "/api/ai/external-promoted-analysis-memory-retrievals",
+        "GET",
+    ) in routes
+    assert (
+        "/api/ai/external-promoted-analysis-memory-retrievals/{retrieval_id}",
+        "GET",
+    ) in routes
+    assert (
+        "/api/ai/external-promoted-analysis-memory-retrievals/{retrieval_id}/replay",
         "GET",
     ) in routes

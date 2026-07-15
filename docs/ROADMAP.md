@@ -43,6 +43,7 @@ user manual; current usage guidance belongs in the README files.
 | AI-native Phase 1.14 | Promoted-memory external analysis implemented | Explicit export, local evidence rereads, reasoning-preserving claim/debate/report, and no automatic recall or trade authority |
 | AI-native Phase 1.15 | Promoted-memory analysis human review implemented | Exact source/report disposition, quality/token/latency/cost replay, drift invalidation, and no memory or trade authority |
 | AI-native Phase 1.16 | Reviewed promoted-analysis memory promotion implemented | Explicit versioned promotion, source-bound historical artifact, append-only revocation, drift invalidation, and no automatic recall or trade authority |
+| AI-native Phase 1.17 | Reviewed promoted-analysis memory retrieval implemented | Isolated exact-ID retrieval, current complete-evidence rebinding, Phase 1.13 compatibility, and no automatic/model consumption |
 
 Completion evidence recorded on 2026-07-10: the operations runbook acceptance
 audit is 19/19, the controlled broker bridge foundation audit is 15/15, the
@@ -483,11 +484,32 @@ Phase 1.16 adds that separate promotion boundary without widening Phase 1.12:
   recompute the full target. Source revocation or evidence/artifact/review/audit
   drift hides memory content and removes recall eligibility without deleting
   history;
-* `recall_eligible` is only eligibility for a future separately versioned,
-  explicit retrieval contract. Phase 1.16 provides no retrieval, semantic
+* `recall_eligible` is only eligibility for a separately versioned, explicit
+  retrieval contract. Phase 1.16 itself provides no retrieval, semantic
   search, automatic prompt injection, provider promotion, Decision handoff,
   trade plan, financial write, broker action, permission, capital, or execution
   effect.
+
+Phase 1.17 supplies that separate retrieval without widening Phase 1.13:
+
+* `POST /api/ai/external-promoted-analysis-memory-retrievals` requires an exact
+  human confirmation, identity, purpose, idempotency key, explicit Phase 1.16
+  promotion-id allowlist, and one already-persisted current context;
+* every selected promotion, review/report lineage, memory artifact, and audit
+  chain is replayed. Each source canonical evidence record must map by tool and
+  kind to exactly one current `complete` record under the current context's
+  valuation snapshot, ledger cutoff, and ledger fingerprint;
+* the request, composed target, evidence rebindings, and one start event are
+  persisted in isolated Phase 1.17 tables. Exact concurrent/restart duplicates
+  reuse one result; idempotency-key changes fail closed;
+* every GET/list/replay recomputes the source and current target. Revocation,
+  partial/missing/duplicate current evidence, context drift, source drift, or
+  event-chain drift hides selected content without deleting historical rows;
+* Phase 1.8 and Phase 1.13 request schemas, fingerprints, tables, and replay
+  remain unchanged. Retrieval performs no semantic search, automatic recall,
+  provider/model call, provider-side tool use, prompt injection, Decision
+  handoff, trade plan, financial write, broker action, permission, capital, or
+  execution effect. Any consumer requires another explicit review.
 
 Planned migration, each behind a separate review:
 
@@ -529,15 +551,20 @@ Planned migration, each behind a separate review:
    invalidates eligibility without deleting history;
 6. **Completed Phase 1.16 review:** a currently eligible Phase 1.15 result may
    become a new historical memory only through a separate explicit, revocable,
-   versioned promotion. The Phase 1.12 schema remains unchanged and no
-   retrieval or automatic recall is enabled;
-7. **Next review:** if Phase 1.16 memory should be consumed, add a new explicit
-   retrieval/current-evidence rebinding contract rather than extending Phase
-   1.13 or silently injecting it into prompts;
-8. separately review any broader use of a real provider inside the task,
+   versioned promotion. The Phase 1.12 schema remains unchanged and the
+   promotion itself enables no retrieval or automatic recall;
+7. **Completed Phase 1.17 review:** a new explicit retrieval accepts exact
+   Phase 1.16 promotion ids plus an existing current context, replays every
+   source, and rebinds each canonical tool to unique current complete evidence.
+   Phase 1.13 remains unchanged, and retrieval is not model-consumption or
+   export permission;
+8. **Next review:** if a model should consume Phase 1.17 output, add another
+   explicit workflow and data-export confirmation rather than extending Phase
+   1.14 or silently injecting retrieval content into prompts;
+9. separately review any broader use of a real provider inside the task,
    debate, memory, Portfolio, Account Truth, Operations, or paper/shadow graph
    without making any vendor canonical;
-9. consider a one-way, human-reviewed handoff from a trade-plan draft into the
+10. consider a one-way, human-reviewed handoff from a trade-plan draft into the
    existing Decision workflow. Existing account-truth, risk, paper/shadow,
    manual confirmation, capital, OMS, gateway, reconciliation, and kill-switch
    gates remain authoritative.

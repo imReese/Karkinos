@@ -87,7 +87,10 @@ latency 和审计回放；任一来源或证据漂移都会撤销当前资格但
 Phase 1.16 再增加独立、显式、可撤销的提升：只有当前仍有效的 Phase 1.15 已接受复核才能复制
 精确规范化 report，形成绑定 review/retrieval/source promotions/context/evidence/provider/model/
 prompt/quality/cost/audit 的新历史 memory。撤销只追加事件，漂移会隐藏内容；Phase 1.12 schema
-保持不变。本阶段没有检索、自动召回、Decision、trade plan、财务写入、券商动作、资本或执行权限。
+保持不变。Phase 1.17 再用隔离契约增加人工显式检索：请求必须列出精确 Phase 1.16 promotion id
+和既有 current context，每个历史证据工具都必须重绑定到唯一当前 `complete` 证据；撤销或任一
+来源、当前证据、target、审计漂移都会隐藏内容。Phase 1.8/1.13 保持不变；检索不是自动召回或
+外发许可，不调用模型，也没有 Decision、trade plan、财务、券商、资本或执行权限。
 
 [中文文档](docs/README.zh.md) | [English Docs](docs/README.en.md)
 
@@ -217,8 +220,11 @@ public demos and development.
   into a new historical memory bound to the review, retrieval, source
   promotions, context, evidence, provider/model/prompt, quality/cost, and audit
   fingerprints. Revocation appends history and drift hides content. The Phase
-  1.12 schema remains unchanged; no retrieval, automatic recall, Decision,
-  trade-plan, financial, broker, capital, or execution capability is added.
+  1.12 schema remains unchanged. Phase 1.17 adds a separate exact-ID retrieval
+  that rebinds every source tool to unique current complete evidence under an
+  existing context. It leaves Phase 1.8/1.13 unchanged and adds no automatic
+  recall, model consumption, Decision, trade-plan, financial, broker, capital,
+  or execution capability.
 - Controlled automation architecture: research evidence, daily plan, risk
   gate, paper/shadow, OMS, manual ticket, reconciliation, and future gated
   broker bridge remain separate authority layers
