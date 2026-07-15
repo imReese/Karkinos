@@ -28,24 +28,24 @@ npm --prefix web run build
 npm --prefix web run test
 ```
 
-See the [configuration reference](config-reference.zh.md) for runtime,
-notification, and local-data settings. The reference is currently maintained
-in Chinese; contracts and field names remain language-independent.
+See the configuration reference for runtime, notification, and local-data
+settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
 
 ## Documentation map
 
-| Need | Document |
+| Topic | Languages |
 | --- | --- |
-| Product North Star and long-term boundaries | [Goal](KARKINOS_GOAL.md) |
-| Current priorities and release gates | [Roadmap](ROADMAP.md) |
-| Components, flows, and authority boundaries | [Architecture](ARCHITECTURE.md) |
-| Completed release and validation summary | [Implementation log](IMPLEMENTATION_LOG.md) |
-| Local runtime configuration | [Configuration reference](config-reference.zh.md) |
-| Account Truth import contract | [Account Truth import](account-truth-import.zh.md) |
-| Portfolio-return accounting | [Return accounting](return-accounting.zh.md) |
-| Broker-order lifecycle evidence | [Lifecycle ingestion](broker-order-lifecycle-ingestion.zh.md) |
-| Controlled-execution safety gates | [Controlled execution plan](CONTROLLED_EXECUTION_PLAN.md) |
-| External project reference boundary | [Benchmarks](BENCHMARKS.md) |
+| Product introduction, installation, and workflow index | [中文](README.zh.md) / [English](README.en.md) |
+| Product North Star and durable boundaries | [中文](KARKINOS_GOAL.zh.md) / [English](KARKINOS_GOAL.md) |
+| Current priorities, milestones, and acceptance gates | [中文](ROADMAP.zh.md) / [English](ROADMAP.md) |
+| Components, flows, and authority boundaries | [中文](ARCHITECTURE.zh.md) / [English](ARCHITECTURE.md) |
+| Local runtime configuration | [中文](config-reference.zh.md) / [English](config-reference.en.md) |
+| Account Truth import and review contract | [中文](account-truth-import.zh.md) / [English](account-truth-import.en.md) |
+| Portfolio return and cost accounting | [中文](return-accounting.zh.md) / [English](return-accounting.en.md) |
+| Broker-order lifecycle ingestion | [中文](broker-order-lifecycle-ingestion.zh.md) / [English](broker-order-lifecycle-ingestion.en.md) |
+| Controlled-execution safety plan | [中文](CONTROLLED_EXECUTION_PLAN.zh.md) / [English](CONTROLLED_EXECUTION_PLAN.md) |
+| Completed release evidence | [中文](IMPLEMENTATION_LOG.zh.md) / [English](IMPLEMENTATION_LOG.md) |
+| External-project reference boundary | [中文](BENCHMARKS.zh.md) / [English](BENCHMARKS.md) |
 
 ## Core workflows
 
